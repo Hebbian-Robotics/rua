@@ -21,7 +21,8 @@ uv run rua serve --profile ./robot.toml
 
 Already have a uv project? Start with `uv add`. Choose just the extras you need.
 
-See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it.
+See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it,
+and the [example applications](examples/applications/README.md) for complete projects.
 
 See [connecting a simulator](docs/simulators.md) to try in simulation.
 

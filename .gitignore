@@ -35,3 +35,6 @@ __pycache__/
 
 # Local metadata
 /EXPORT.json
+
+# Example application runs: camera frames and model moves
+/examples/applications/*/runs/
