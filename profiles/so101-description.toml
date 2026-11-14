@@ -1,0 +1,20 @@
+# What an LLM is told about an SO-101, shared by every SO-101 profile.
+description = """\
+SO-101: each arm has five arm joints (shoulder_pan, shoulder_lift,
+elbow_flex, wrist_flex, wrist_roll) and a gripper with one fixed and one
+swinging jaw. Arm names are in the state; a pair stands side by side, both
+facing world +X. Tool poses are URDF gripper_frame_link frames near the jaw
+tips in a shared world frame. Cameras named phone_<label> are phones a
+person placed; the label describes where, and their poses are unknown.
+Camera extrinsics and the table plane are not verified. Gripper opening 0
+is closed and 1 is open; contact is an estimate.
+
+Frames: world +X forward, +Y left, +Z up. gripper_frame_link local +Z points
+toward the jaw tips; the jaws close along local X. jawYawDegrees is set by
+wrist_roll, whose limits exclude some yaws; the jaws close along the same
+line at yaw + 180, so try that after a rejection. The arm swings in a
+vertical plane through its shoulder_pan axis, so the approach direction's
+heading follows the target's direction from that arm's base; choose its tilt
+(down, forward or between). Receipts report achieved approach,
+degreesFromDown, jawYawDegrees and target errors; the examples specify
+orientation, not collision-free grasp positions."""

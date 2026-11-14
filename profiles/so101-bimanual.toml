@@ -1,0 +1,19 @@
+# Two SO-101 followers on one table, each on its own USB bus with its own guard.
+# Motion settings and joint mappings are shared; hardware joint ranges come
+# from each arm's own LeRobot calibration.
+extends = "so101"
+name = "so101-bimanual"
+arms = ["left", "right"]
+
+# Geometry-only layout; the physical mounts must be measured to match before use.
+# Both bases are on the table plane, facing +x, with a shared target/pose frame.
+[base_poses.left]
+position_meters = [0.0, 0.19057474487310352, 0.0]
+
+[base_poses.right]
+position_meters = [0.0, -0.19057474487310352, 0.0]
+
+[feetech]
+ports = { left = "/dev/so101-left", right = "/dev/so101-right" }
+# LeRobot calibration files, one per arm, under robots/so_follower/.
+calibration_ids = { left = "left", right = "right" }

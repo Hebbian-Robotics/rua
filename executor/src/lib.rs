@@ -1,0 +1,44 @@
+//! Robot control and the station adapters that host it.
+//!
+//! [`control_loop`] owns motor-cycle execution; [`control_link`] carries
+//! commands and feedback across the host/controller boundary. [`station_api`]
+//! hosts HTTP and client coordination through a small public facade. See
+//! executor/README.md for process ownership and deployment.
+
+pub mod arm;
+pub mod config;
+pub mod contract;
+pub mod control_link;
+pub mod control_loop;
+pub mod controller_bridge;
+pub mod controller_service;
+pub mod controller_transport;
+pub mod corner_path;
+pub(crate) mod cycle;
+/// Compatibility path for the SO-101 servo adapter.
+pub mod feetech {
+    pub use crate::so101::driver::*;
+}
+pub(crate) mod gripper;
+pub mod guard;
+pub(crate) mod handoff;
+pub mod ik;
+pub(crate) mod joint_limits;
+pub mod kinematics;
+pub mod lease;
+pub(crate) mod limits;
+pub(crate) mod numeric;
+pub mod planning;
+pub mod plant;
+pub mod policy;
+pub mod preview;
+pub mod profile;
+pub(crate) mod reference_filter;
+pub mod robot;
+pub mod self_collision;
+pub mod sim_plant;
+pub mod so101;
+pub mod station_api;
+pub(crate) mod surface_guard;
+pub(crate) mod sync;
+pub(crate) mod trace;

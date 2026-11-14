@@ -1,0 +1,13 @@
+from_variants 1.0.2 and from_variants_impl 1.0.2
+Author recorded by the packages: Ted Driggs <ted.driggs@outlook.com>
+Upstream: https://github.com/TedDriggs/from_variants
+Commit: 5ced1950ed3f5bc01b10cf8c036588ac4b02558a
+
+The Cargo.toml files at this revision declare "MIT/Apache-2.0". This
+redistribution uses the Apache-2.0 option. The upstream source and crate
+archives contain no license text files. LICENSE-APACHE is the standard
+Apache License, Version 2.0, obtained from:
+https://www.apache.org/licenses/LICENSE-2.0.txt
+
+This provenance notice was prepared for the RUA distribution; it is not an
+upstream NOTICE file. No upstream copyright statement has been invented.

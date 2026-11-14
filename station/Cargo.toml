@@ -1,0 +1,39 @@
+[package]
+name = "hebbian-station"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+authors = ["Hebbian Robotics"]
+license = "MIT"
+description = "The station binary, installed as `hebbian-robot-use-server`: the control loop and its HTTP server with recording, lease routes and LiveKit access."
+readme = "../executor/README.md"
+publish = false
+
+[[bin]]
+name = "hebbian-robot-use-server"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+hdrhistogram = { version = "7.6.0", default-features = false }
+dotenvy = "0.15"
+hebbian-contracts = { path = "../contracts" }
+hebbian-robot-use-server = { path = "../executor" }
+recordings = { path = "../recordings" }
+nix = { version = "0.31", features = ["signal", "process"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+signal-hook = { version = "0.4.6", default-features = false }
+station-access = { path = "../station-access" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

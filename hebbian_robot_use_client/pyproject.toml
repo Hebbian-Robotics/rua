@@ -1,0 +1,24 @@
+[project]
+name = "hebbian-robot-use-client"
+version = "0.1.0"
+authors = [{ name = "Hebbian Robotics" }]
+license = "MIT"
+license-files = ["LICENSE"]
+description = "Client and wire models for a Hebbian robot use server"
+readme = "README.md"
+requires-python = ">=3.12"
+# Small on purpose: tests/test_hebbian_robot_use_client_boundary.py enforces this list,
+# so installing the client never pulls in robot, solver or video stacks.
+dependencies = [
+    "httpx2>=2.16.0",
+    "pydantic>=2.11",
+    "python-dotenv>=1.2.4",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+module-name = "hebbian_robot_use_client"

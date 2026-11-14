@@ -1,0 +1,6 @@
+# The SO-101 with the learned reaching policy instead of IK + Ruckig: the executor
+# steps the policy toward each goal pose and ends the command when the tool settles.
+# The policy's settings and assets are in so101-policy-settings.toml. Run the executor
+# from the repository root.
+extends = ["so101", "so101-policy-settings"]
+name = "so101-policy"

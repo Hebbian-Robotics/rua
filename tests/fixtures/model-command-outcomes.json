@@ -1,0 +1,85 @@
+[
+  {
+    "name": "reached",
+    "record": {
+      "command_id": "motion",
+      "label": "move_to_joints",
+      "accepted_at": 1.0,
+      "joint_speed": null,
+      "completion": {
+        "outcome": "completed",
+        "finished_at": 2.0,
+        "detail": null
+      },
+      "checkpoints": [],
+      "goal_joints": null,
+      "target_joints": null,
+      "target_position": null,
+      "target_quaternion": null,
+      "target_status": "reached",
+      "path_limited": null,
+      "pose_limited": null,
+      "achieved": null,
+      "group_id": "group-1",
+      "trace_context": null
+    },
+    "expected_error": false,
+    "expected_status": "reached"
+  },
+  {
+    "name": "limited",
+    "record": {
+      "command_id": "motion",
+      "label": "move_to_joints",
+      "accepted_at": 1.0,
+      "joint_speed": null,
+      "completion": {
+        "outcome": "completed",
+        "finished_at": 2.0,
+        "detail": null
+      },
+      "checkpoints": [],
+      "goal_joints": null,
+      "target_joints": null,
+      "target_position": null,
+      "target_quaternion": null,
+      "target_status": "reached",
+      "path_limited": {
+        "reason": "self-collision"
+      },
+      "pose_limited": null,
+      "achieved": null,
+      "group_id": "group-1",
+      "trace_context": null
+    },
+    "expected_error": true,
+    "expected_status": "limited"
+  },
+  {
+    "name": "stopped_short",
+    "record": {
+      "command_id": "motion",
+      "label": "move_to_joints",
+      "accepted_at": 1.0,
+      "joint_speed": null,
+      "completion": {
+        "outcome": "stopped_short",
+        "finished_at": 2.0,
+        "detail": null
+      },
+      "checkpoints": [],
+      "goal_joints": null,
+      "target_joints": null,
+      "target_position": null,
+      "target_quaternion": null,
+      "target_status": "stopped_short",
+      "path_limited": null,
+      "pose_limited": null,
+      "achieved": null,
+      "group_id": "group-1",
+      "trace_context": null
+    },
+    "expected_error": true,
+    "expected_status": "stopped_short"
+  }
+]

@@ -1,0 +1,18 @@
+# Linux builds use mold for faster linking. Install it before building, or
+# override these target-specific rustflags to use your system linker. macOS
+# uses its default linker.
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# libwebrtc (livekit-cameras) must be built with clang 21+, not GCC. Set CC and CXX in
+# your shell to override, e.g. `CC=clang CXX=clang++` on macOS, where Apple clang is the
+# default and `clang-21` does not exist.
+# [env]
+# CC = "clang-21"
+# CXX = "clang++-21"
+
+# Configure sccache in your user Cargo configuration if you use it.

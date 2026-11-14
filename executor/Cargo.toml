@@ -1,0 +1,44 @@
+[package]
+name = "hebbian-robot-use-server"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+authors = ["Hebbian Robotics"]
+license = "MIT"
+description = "The real-time control loop: owns the arm's bus and its deadlines, and accepts goals through the station HTTP API."
+publish = false
+
+[dependencies]
+hebbian-contracts = { path = "../contracts" }
+anyhow = "1.0.104"
+async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }
+axum = "0.8.9"
+hdrhistogram = { version = "7.6.0", default-features = false }
+libc = "0.2"
+nalgebra = "0.35.0"
+# The experimental policy loads its ONNX runtime only when selected. Ordinary
+# servers do not need the runtime or its platform-specific native libraries.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-31"] }
+parry3d-f64 = "0.31.1"
+rsruckig = "3.0.1"
+rustypot = "1.13.1"
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serialport = { version = "4.10.1", default-features = false }
+sha2 = "0.10.9"
+stl_io = "0.11.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "fs", "sync", "io-util", "time", "macros"] }
+tokio-stream = "0.1.19"
+tokio-util = { version = "0.7.20", features = ["io"] }
+tower-http = { version = "0.6.11", default-features = false, features = ["fs", "set-header"] }
+toml = "0.9.12"
+urdf-rs = "0.10.0"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+flate2 = "1.1.11"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+
+[lints]
+workspace = true

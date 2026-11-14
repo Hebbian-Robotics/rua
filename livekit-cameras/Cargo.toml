@@ -1,0 +1,49 @@
+[package]
+name = "livekit-cameras"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+publish = false
+default-run = "hebbian-robot-use-media"
+
+autobins = false
+
+[[bin]]
+name = "hebbian-robot-use-media"
+path = "src/main.rs"
+
+[dependencies]
+livekit-camera-frames = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "fc1d8d67394b081ecb2244b689325b464304c0d8" }
+livekit-camera-recorder = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "fc1d8d67394b081ecb2244b689325b464304c0d8" }
+nix = { version = "0.31", features = ["signal", "process"] }
+cameras = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "fc1d8d67394b081ecb2244b689325b464304c0d8" }
+livekit-camera-publisher = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "fc1d8d67394b081ecb2244b689325b464304c0d8" }
+chrono = "0.4"
+clap = { version = "4.6.7", features = ["derive"] }
+livekit = { version = "=0.9.7", features = ["rustls-tls-native-roots"] }
+station-access = { path = "../station-access" }
+# Keep the SDK's signaling dependency on the matching release.
+livekit-signaling = "=0.1.7"
+mcap = "=0.26.0"
+hebbian-mcap = { git = "https://github.com/Hebbian-Robotics/mcap-tools", rev = "ec9f4262d5ec5681e0960f7a93f66347b64cb612" }
+hebbian-contracts = { path = "../contracts" }
+axum = "0.8.9"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "process", "io-util"] }
+tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["rt"] }
+
+[dev-dependencies]
+prost = "0.14"
+hebbian-robot-use-server = { path = "../executor" }
+# The run telemetry buffer lives in the station; the recorder test needs a real one.
+hebbian-station = { path = "../station" }
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -1,0 +1,6423 @@
+{
+  "components": {
+    "schemas": {
+      "Achieved": {
+        "description": "Where the arm was, measured, when a command ended.",
+        "properties": {
+          "joint_error_radians": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "joint_errors_radians": {
+            "description": "Each joint's absolute distance from the target joints.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrientationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tool orientation in grasp terms, against the target's when there is one."
+          },
+          "orientation_error_radians": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "position": {
+            "description": "The tool pose at `joints`; absent when the executor has no tool link.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "position_error_meters": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sampled_at": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sampled_at",
+          "joints"
+        ],
+        "type": "object"
+      },
+      "ActionSequenceMovement": {
+        "description": "One movement in an action sequence. The arm settles at each target.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "joints",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "joints"
+            ],
+            "title": "ActionSequenceJointsMovement",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "pose",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "orientation": {
+                "$ref": "#/components/schemas/PoseOrientation"
+              },
+              "position": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "position",
+              "orientation"
+            ],
+            "title": "ActionSequencePoseMovement",
+            "type": "object"
+          }
+        ]
+      },
+      "ActionSequencePhase": {
+        "description": "Progress of an action sequence, including the records of each finished step.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "running",
+                "type": "string"
+              },
+              "step": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "state",
+              "step"
+            ],
+            "title": "ActionSequenceRunning",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "completed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "title": "ActionSequenceCompleted",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "state": {
+                "const": "stopped",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "detail"
+            ],
+            "title": "ActionSequenceStopped",
+            "type": "object"
+          }
+        ]
+      },
+      "ActionSequenceRecord": {
+        "description": "The station's retained action sequence state.",
+        "properties": {
+          "arm": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/ActionSequencePhase"
+          },
+          "requested_steps": {
+            "description": "The submitted steps, including those not yet executed.",
+            "items": {
+              "$ref": "#/components/schemas/ActionSequenceStep"
+            },
+            "type": "array"
+          },
+          "steps": {
+            "description": "Command records for steps that have finished or been interrupted.",
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/CommandRecord"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "arm",
+          "requested_steps",
+          "phase",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "ActionSequenceRequest": {
+        "additionalProperties": false,
+        "description": "An ordered set of steps to execute under the caller's lease.",
+        "properties": {
+          "arm": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "default": null,
+            "description": "Refuse the action sequence (and stop it between steps) once the arm's revision\nmoves past this; see `ArmState::revision`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ActionSequenceStep"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "arm",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "ActionSequenceStartRequest": {
+        "additionalProperties": false,
+        "description": "Start an action sequence under an explicit station lease.",
+        "properties": {
+          "action_sequence": {
+            "$ref": "#/components/schemas/ActionSequenceRequest"
+          },
+          "lease_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_token",
+          "action_sequence"
+        ],
+        "type": "object"
+      },
+      "ActionSequenceStep": {
+        "additionalProperties": false,
+        "description": "A movement and gripper target in the same step start together.",
+        "properties": {
+          "gripper_opening": {
+            "default": null,
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "max_joint_speed": {
+            "default": null,
+            "description": "Speed for both resources in rad/s; overrides the movement speed when provided.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "movement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionSequenceMovement"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "type": "object"
+      },
+      "Approach": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NamedApproach"
+          },
+          {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "ApproachDirection",
+            "type": "array"
+          }
+        ],
+        "description": "The direction the jaws point along: a named one, or a nonzero world direction."
+      },
+      "ArmMode": {
+        "description": "Where the arm stands.",
+        "oneOf": [
+          {
+            "const": "disabled",
+            "description": "Torque off; only `enable` is accepted.",
+            "type": "string"
+          },
+          {
+            "const": "holding",
+            "description": "Torque on, holding between commands.",
+            "type": "string"
+          },
+          {
+            "const": "moving",
+            "description": "Following a motion or a stream.",
+            "type": "string"
+          },
+          {
+            "const": "faulted",
+            "description": "Powered off after a hard fault; refuses everything until `clear_fault`.",
+            "type": "string"
+          },
+          {
+            "const": "disconnected",
+            "description": "The bus stopped answering: torque is off as far as the bus allowed, and\nthe port is opened again every second. Refuses everything meanwhile.",
+            "type": "string"
+          },
+          {
+            "const": "reconnected",
+            "description": "The bus answers again, set up as at startup, with torque off. Nothing\nresumes on its own: as when disabled, only `enable` is accepted.",
+            "type": "string"
+          }
+        ]
+      },
+      "ArmRecord": {
+        "description": "A command record and the arm it belongs to.",
+        "properties": {
+          "arm": {
+            "type": "string"
+          },
+          "record": {
+            "$ref": "#/components/schemas/CommandRecord"
+          }
+        },
+        "required": [
+          "arm",
+          "record"
+        ],
+        "type": "object"
+      },
+      "ArmRecoveryIssue": {
+        "description": "Why automatic recovery stopped, including motors found without torque.",
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "motors_without_torque": {
+            "items": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "motors_without_torque",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "ArmState": {
+        "description": "One arm as clients see it.",
+        "properties": {
+          "active_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "arm": {
+            "type": "string"
+          },
+          "commanded_joints": {
+            "description": "Joint setpoint sent in the latest sample, if the arm was commanded.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "controller": {
+            "$ref": "#/components/schemas/ControllerKind",
+            "description": "Which controller turns commands into motion."
+          },
+          "fault": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gripper_opening": {
+            "description": "0 closed to 1 open; none without a gripper.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "interlocks": {
+            "description": "Conditions refusing motion on this arm until they clear.",
+            "items": {
+              "$ref": "#/components/schemas/Interlock"
+            },
+            "type": "array"
+          },
+          "last_command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "measured_joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ArmMode"
+          },
+          "recovery_issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArmRecoveryIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rest_pose": {
+            "description": "The pose the arm was enabled at; shutdown returns there first.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "revision": {
+            "description": "Bumped each time an interlock is raised; commands may carry it as\n`expected_revision`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sampled_at_unix_seconds": {
+            "description": "When the newest sample was taken, in Unix seconds; none before the first.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "segment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Why the arm is as it is, in a few words.",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoseDescription"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tool's pose at the measured joints, its orientation in grasp terms,\nand the joint origins a viewer sketches the arm through."
+          }
+        },
+        "required": [
+          "arm",
+          "mode",
+          "measured_joints",
+          "controller",
+          "status",
+          "interlocks",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "CameraListing": {
+        "description": "A camera as the media service's `GET /cameras` lists it.",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "available"
+        ],
+        "type": "object"
+      },
+      "Checkpoint": {
+        "description": "Where the arm stood, as measured, when it settled at the end of a segment.",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "measured_joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "target_position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "target_quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "measured_joints"
+        ],
+        "type": "object"
+      },
+      "ClientMessage": {
+        "description": "Shared client request models used by SDK command and telemetry helpers.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Submit an ordered action sequence under this connection's lease.",
+            "properties": {
+              "action_sequence": {
+                "$ref": "#/components/schemas/ActionSequenceRequest"
+              },
+              "kind": {
+                "const": "start_action_sequence",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "action_sequence"
+            ],
+            "title": "StartActionSequence",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Cancel an action sequence by its identifier.",
+            "properties": {
+              "action_sequence_id": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "cancel_action_sequence",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "action_sequence_id"
+            ],
+            "title": "CancelActionSequence",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "The first message: the last sequence number seen per arm, for the arms\nto resume; the others start from a snapshot.",
+            "properties": {
+              "kind": {
+                "const": "hello",
+                "type": "string"
+              },
+              "resume_after": {
+                "additionalProperties": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "default": {},
+                "type": "object"
+              },
+              "run_after": {
+                "default": null,
+                "description": "The last run sequence number seen; without one, the run telemetry\nstream starts at its newest record.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "ClientHello",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Acquire the lease on every arm for this connection, answered by\n`lease`: granted when no one holds it, else the holder.",
+            "properties": {
+              "holder": {
+                "$ref": "#/components/schemas/LeaseHolder"
+              },
+              "kind": {
+                "const": "acquire_lease",
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "on_interruption": {
+                "$ref": "#/components/schemas/OnInterruption",
+                "default": "wait_for_approval"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "required_cameras": {
+                "default": [],
+                "description": "Cameras the holder cannot work without.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "holder",
+              "label"
+            ],
+            "title": "AcquireLease",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Take the lease from whoever holds it, stopping every arm first.",
+            "properties": {
+              "holder": {
+                "$ref": "#/components/schemas/LeaseHolder"
+              },
+              "kind": {
+                "const": "take_lease",
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "on_interruption": {
+                "$ref": "#/components/schemas/OnInterruption",
+                "default": "wait_for_approval"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "required_cameras": {
+                "default": [],
+                "description": "Cameras the holder cannot work without.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "holder",
+              "label"
+            ],
+            "title": "TakeLease",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Give the lease up; the arms keep doing what they were told.",
+            "properties": {
+              "kind": {
+                "const": "return_lease",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "ReturnLease",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "A command for one arm, answered by `command_answer`. A stop can bypass\nearlier requests.",
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "command": {
+                "$ref": "#/components/schemas/StationCommand"
+              },
+              "expected_revision": {
+                "default": null,
+                "description": "Refuse the command as `stale_revision` if the arm's revision moved on.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "const": "command",
+                "type": "string"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "trace_context": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TraceContext"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "The caller's trace context; the command's record carries it."
+              }
+            },
+            "required": [
+              "kind",
+              "arm",
+              "command"
+            ],
+            "title": "ArmCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Stop one arm only while this connection still holds the lease, answered\nby `command_answer`: accepted with no records once the stop is\nsubmitted, or refused as `lease_held_elsewhere` when the lease changed.\nA plain `stop` command is accepted from anyone.",
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "stop_while_leased",
+                "type": "string"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "arm"
+            ],
+            "title": "StopWhileLeased",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "The lease holder reports whether a camera it requires gives frames,\nanswered by `command_answer` like `stop_while_leased`. A fresh frame\nclears the camera's interlock.",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "camera": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "report_camera",
+                "type": "string"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "camera",
+              "available"
+            ],
+            "title": "ReportCamera",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Move several arms together, answered by `command_answer`.",
+            "properties": {
+              "command": {
+                "$ref": "#/components/schemas/MoveArmsCommand"
+              },
+              "expected_revisions": {
+                "additionalProperties": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "default": {},
+                "description": "Per arm: refuse the move as `stale_revision` if that arm's revision\nmoved on.",
+                "type": "object"
+              },
+              "kind": {
+                "const": "move_arms",
+                "type": "string"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "trace_context": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TraceContext"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "The caller's trace context; each arm's record carries it."
+              }
+            },
+            "required": [
+              "kind",
+              "command"
+            ],
+            "title": "MoveArms",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Where an arm would take the tool toward a pose, answered by\n`preview_answer`; nothing moves.",
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "preview",
+                "type": "string"
+              },
+              "pose": {
+                "$ref": "#/components/schemas/PreviewPose"
+              },
+              "request_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "arm",
+              "pose"
+            ],
+            "title": "Preview",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "An event from a model loop, for the viewer's live run.",
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/RunEvent"
+              },
+              "kind": {
+                "const": "run_event",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "event"
+            ],
+            "title": "RunEventMessage",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Trace spans from a model loop: running ones as they start, then finished.",
+            "properties": {
+              "kind": {
+                "const": "run_spans",
+                "type": "string"
+              },
+              "spans": {
+                "items": {
+                  "$ref": "#/components/schemas/TraceSpan"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "spans"
+            ],
+            "title": "RunSpansMessage",
+            "type": "object"
+          }
+        ]
+      },
+      "CommandAnswer": {
+        "description": "How a command was answered: accepted with its records (one per arm for\n`move_arms`), or refused, in which case nothing moved.",
+        "oneOf": [
+          {
+            "properties": {
+              "records": {
+                "items": {
+                  "$ref": "#/components/schemas/ArmRecord"
+                },
+                "type": "array"
+              },
+              "status": {
+                "const": "accepted",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "records"
+            ],
+            "title": "CommandAccepted",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/RejectionReason"
+              },
+              "status": {
+                "const": "refused",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reason",
+              "detail"
+            ],
+            "title": "CommandRefused",
+            "type": "object"
+          }
+        ]
+      },
+      "CommandCancellationRequest": {
+        "additionalProperties": false,
+        "description": "Cancel a submission and stop its affected arms while the lease is current.",
+        "properties": {
+          "arms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lease_token": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "station_instance_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "station_instance_id",
+          "lease_token",
+          "arms"
+        ],
+        "type": "object"
+      },
+      "CommandCompletion": {
+        "description": "The outcome and timestamp are recorded together when a command ends.",
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "format": "double",
+            "type": "number"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CommandOutcome"
+          }
+        },
+        "required": [
+          "finished_at",
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "CommandOutcome": {
+        "description": "How a command ended.",
+        "enum": [
+          "completed",
+          "stopped",
+          "tripped",
+          "timed_out",
+          "stopped_short",
+          "superseded",
+          "faulted",
+          "interrupted",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "CommandRecord": {
+        "additionalProperties": false,
+        "description": "One command, from acceptance to its end.",
+        "properties": {
+          "accepted_at": {
+            "format": "double",
+            "type": "number"
+          },
+          "achieved": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Achieved"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/Checkpoint"
+            },
+            "type": "array"
+          },
+          "command_id": {
+            "type": "string"
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommandCompletion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal_joints": {
+            "description": "The newest goal of a joint stream, after clamping to the joint limits.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "group_id": {
+            "description": "The grouped motion this command is one arm's part of, if it is.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "joint_speed": {
+            "description": "Speed actually used, after clamping, for motions.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "What the command is: `enable`, `stream_joints`, or the label a move carried.",
+            "type": "string"
+          },
+          "path_limited": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PathLimited"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pose_limited": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoseLimited"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "target_position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "target_quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "target_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trace_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TraceContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The trace context the command arrived with, if any."
+          }
+        },
+        "required": [
+          "command_id",
+          "label",
+          "accepted_at",
+          "checkpoints"
+        ],
+        "type": "object"
+      },
+      "CommandSubmissionRequest": {
+        "additionalProperties": false,
+        "description": "Submit one arm command with a client-generated request identifier.\nThe station uses the identifier to recognize retries of the same submission.",
+        "properties": {
+          "arm": {
+            "type": "string"
+          },
+          "command": {
+            "$ref": "#/components/schemas/StationCommand"
+          },
+          "expected_revision": {
+            "default": null,
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lease_token": {
+            "default": null,
+            "description": "The active lease token, when one is required for this command.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "description": "A caller-generated UUID v4 identifying this submission.",
+            "type": "string"
+          },
+          "station_instance_id": {
+            "description": "The server instance the caller observed when creating this request.",
+            "type": "string"
+          },
+          "trace_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TraceContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "request_id",
+          "station_instance_id",
+          "arm",
+          "command"
+        ],
+        "type": "object"
+      },
+      "ControllerKind": {
+        "enum": [
+          "ik",
+          "policy"
+        ],
+        "type": "string"
+      },
+      "ControllerStatus": {
+        "oneOf": [
+          {
+            "properties": {
+              "phase": {
+                "const": "unmanaged",
+                "type": "string"
+              }
+            },
+            "required": [
+              "phase"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "phase": {
+                "const": "starting",
+                "type": "string"
+              }
+            },
+            "required": [
+              "phase"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "phase": {
+                "const": "online",
+                "type": "string"
+              }
+            },
+            "required": [
+              "phase"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "guard_released": {
+                "type": "boolean"
+              },
+              "phase": {
+                "const": "unavailable",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "reports": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "phase",
+              "reason",
+              "guard_released",
+              "reports"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "phase": {
+                "const": "waiting_for_guard",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "reports": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "phase",
+              "reason",
+              "reports"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CornerPlan": {
+        "properties": {
+          "peak_speed": {
+            "format": "double",
+            "type": "number"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "segments",
+          "peak_speed"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "description": "Executor to client.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Sample",
+            "properties": {
+              "kind": {
+                "const": "state",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "State",
+            "type": "object"
+          },
+          {
+            "description": "The one answer to a request that carried a request id: the command's\nrecord when it was accepted, or the reason it was not.",
+            "properties": {
+              "accepted": {
+                "type": "boolean"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PoseDescription"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The answer to a `describe_pose`."
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ik": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/IkResult"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How a `solve_pose` ended."
+              },
+              "kind": {
+                "const": "reply",
+                "type": "string"
+              },
+              "lease": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LeaseAnswer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The answer to a request about the lease."
+              },
+              "plan": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PlannedMotion"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The plan a `plan_motion` made."
+              },
+              "projection": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PoseProjection"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The answer to a `project_pose`."
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RejectionReason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "record": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandRecord"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "records": {
+                "default": [],
+                "description": "The records of a grouped move, one per arm in the order asked; empty\nfor any other request.",
+                "items": {
+                  "$ref": "#/components/schemas/CommandRecord"
+                },
+                "type": "array"
+              },
+              "request_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "request_id",
+              "accepted"
+            ],
+            "title": "Reply",
+            "type": "object"
+          },
+          {
+            "description": "The answer to `snapshot`, and to `subscribe` when events were lost.",
+            "properties": {
+              "fault": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "const": "snapshot",
+                "type": "string"
+              },
+              "log": {
+                "description": "The retained log, oldest first.",
+                "items": {
+                  "$ref": "#/components/schemas/Frame"
+                },
+                "type": "array"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/ArmMode"
+              },
+              "records": {
+                "description": "The commands the arm still remembers, oldest first, as they stand.",
+                "items": {
+                  "$ref": "#/components/schemas/CommandRecord"
+                },
+                "type": "array"
+              },
+              "sample": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Sample"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "seq": {
+                "description": "The newest sequence number issued; subscribing after it misses nothing.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "seq",
+              "mode",
+              "records",
+              "log"
+            ],
+            "title": "SnapshotTaken",
+            "type": "object"
+          },
+          {
+            "description": "A resume point the retained log no longer reaches, or that is ahead of\nit: events between `after` and `oldest_retained` are lost. A snapshot\nfollows.",
+            "properties": {
+              "after": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "kind": {
+                "const": "resync",
+                "type": "string"
+              },
+              "newest": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "oldest_retained": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "after",
+              "oldest_retained",
+              "newest"
+            ],
+            "title": "Resync",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "A command's record changed: accepted, started, a checkpoint, ended.",
+            "properties": {
+              "accepted_at": {
+                "format": "double",
+                "type": "number"
+              },
+              "achieved": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Achieved"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "checkpoints": {
+                "items": {
+                  "$ref": "#/components/schemas/Checkpoint"
+                },
+                "type": "array"
+              },
+              "command_id": {
+                "type": "string"
+              },
+              "completion": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CommandCompletion"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "goal_joints": {
+                "description": "The newest goal of a joint stream, after clamping to the joint limits.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "group_id": {
+                "description": "The grouped motion this command is one arm's part of, if it is.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "joint_speed": {
+                "description": "Speed actually used, after clamping, for motions.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "kind": {
+                "const": "record",
+                "type": "string"
+              },
+              "label": {
+                "description": "What the command is: `enable`, `stream_joints`, or the label a move carried.",
+                "type": "string"
+              },
+              "path_limited": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PathLimited"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pose_limited": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PoseLimited"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "target_position": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "target_quaternion": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 4,
+                "minItems": 4,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "target_status": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TargetStatus"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "trace_context": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TraceContext"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The trace context the command arrived with, if any."
+              }
+            },
+            "required": [
+              "kind",
+              "command_id",
+              "label",
+              "accepted_at",
+              "checkpoints"
+            ],
+            "title": "Record",
+            "type": "object"
+          },
+          {
+            "description": "The arm changed mode.",
+            "properties": {
+              "fault": {
+                "description": "Why, after a fault.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "const": "mode",
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/ArmMode"
+              }
+            },
+            "required": [
+              "kind",
+              "mode"
+            ],
+            "title": "Mode",
+            "type": "object"
+          },
+          {
+            "description": "A request that was not acted on, when it carried no request id to reply to.",
+            "properties": {
+              "kind": {
+                "const": "rejected",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "title": "Rejected",
+            "type": "object"
+          },
+          {
+            "description": "A safety check stopped the arm, which holds where it is. Reported once\neach time a check starts failing.",
+            "properties": {
+              "kind": {
+                "const": "tripped",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "title": "Tripped",
+            "type": "object"
+          },
+          {
+            "description": "The station lost its motor-controller process; the arm's torque is unknown.",
+            "properties": {
+              "kind": {
+                "const": "controller_unavailable",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A fresh controller passed startup checks and the arm is disabled.",
+            "properties": {
+              "kind": {
+                "const": "controller_available",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Frame": {
+        "description": "One line from the executor: a log event with its sequence number, or an\nunsequenced sample or reply.",
+        "properties": {
+          "emitted_unix_nano": {
+            "$ref": "#/components/schemas/UnixNanos",
+            "description": "When the executor's writer made the frame; a replayed log event keeps\nthe time it was first emitted."
+          },
+          "event": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "seq": {
+            "description": "Present on log events only; numbers rise by one with no gaps.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "emitted_unix_nano",
+          "event"
+        ],
+        "type": "object"
+      },
+      "GroupCommandSubmissionRequest": {
+        "additionalProperties": false,
+        "description": "Submit a coordinated multi-arm move with retry-safe request identity.",
+        "properties": {
+          "command": {
+            "$ref": "#/components/schemas/MoveArmsCommand"
+          },
+          "expected_revisions": {
+            "additionalProperties": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "default": {},
+            "type": "object"
+          },
+          "lease_token": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "description": "A caller-generated UUID v4 identifying this submission.",
+            "type": "string"
+          },
+          "station_instance_id": {
+            "type": "string"
+          },
+          "trace_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TraceContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "request_id",
+          "station_instance_id",
+          "command"
+        ],
+        "type": "object"
+      },
+      "IkFailure": {
+        "description": "Why a solve stopped short.",
+        "oneOf": [
+          {
+            "const": "at_joint_limit",
+            "description": "The best pose it found has a joint at its limit, and no step improves it.",
+            "type": "string"
+          },
+          {
+            "const": "stalled",
+            "description": "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
+            "type": "string"
+          },
+          {
+            "const": "iteration_limit",
+            "description": "It was still improving when it ran out of iterations.",
+            "type": "string"
+          },
+          {
+            "const": "out_of_reach",
+            "description": "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
+            "type": "string"
+          }
+        ]
+      },
+      "IkPose": {
+        "description": "Where a solve left the arm.",
+        "properties": {
+          "joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "orientation_error_radians": {
+            "description": "From the required orientation, or from the seed's when it was free.",
+            "format": "double",
+            "type": "number"
+          },
+          "position_error_meters": {
+            "format": "double",
+            "type": "number"
+          },
+          "tool_position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "tool_quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": [
+          "joints",
+          "tool_position",
+          "tool_quaternion",
+          "position_error_meters",
+          "orientation_error_radians"
+        ],
+        "type": "object"
+      },
+      "IkResult": {
+        "description": "A solve's outcome.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/IkPose",
+            "description": "The tool is within tolerance of the target.",
+            "properties": {
+              "outcome": {
+                "const": "solved",
+                "type": "string"
+              }
+            },
+            "required": [
+              "outcome"
+            ],
+            "title": "IkSolved",
+            "type": "object"
+          },
+          {
+            "description": "It is not; `best` is the pose with the smallest position error found,\nalways inside the joint limits.",
+            "properties": {
+              "best": {
+                "$ref": "#/components/schemas/IkPose"
+              },
+              "outcome": {
+                "const": "failed",
+                "type": "string"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/IkFailure"
+              }
+            },
+            "required": [
+              "outcome",
+              "reason",
+              "best"
+            ],
+            "title": "IkFailed",
+            "type": "object"
+          }
+        ]
+      },
+      "Interlock": {
+        "description": "A condition on an arm that refuses motion until it clears. `stop`,\n`disable`, `approve_recovery` and `clear_fault` are still accepted.",
+        "oneOf": [
+          {
+            "description": "The bus stopped answering. Clears when the arm reconnects and holds.",
+            "properties": {
+              "kind": {
+                "const": "arm_disconnected",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "ArmDisconnectedInterlock",
+            "type": "object"
+          },
+          {
+            "description": "The arm reconnected unpowered or failed its checks. Clears when an\noperator sends `approve_recovery` after supporting the arm.",
+            "properties": {
+              "kind": {
+                "const": "recovery_approval_required",
+                "type": "string"
+              },
+              "motors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "motors"
+            ],
+            "title": "RecoveryApprovalRequiredInterlock",
+            "type": "object"
+          },
+          {
+            "description": "A camera in the lease's `required_cameras` dropped. Clears when the\nholder reports a fresh frame, or when the lease ends.",
+            "properties": {
+              "camera": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "required_camera_unavailable",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "camera"
+            ],
+            "title": "RequiredCameraUnavailableInterlock",
+            "type": "object"
+          }
+        ]
+      },
+      "JawClosingAxis": {
+        "description": "The tool-frame axis the gripper's jaws close along.",
+        "enum": [
+          "x",
+          "y"
+        ],
+        "type": "string"
+      },
+      "JawYawRange": {
+        "description": "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+        "properties": {
+          "from_degrees": {
+            "format": "double",
+            "type": "number"
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to_degrees": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "from_degrees",
+          "to_degrees",
+          "reachable"
+        ],
+        "type": "object"
+      },
+      "JawYawReference": {
+        "description": "The world axis jaw yaw zero is projected from.",
+        "enum": [
+          "world_x",
+          "world_y"
+        ],
+        "type": "string"
+      },
+      "KnownRunEvent": {
+        "description": "A run event the server acts on.",
+        "oneOf": [
+          {
+            "properties": {
+              "task": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "const": "run_started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "RunStartedEvent",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "steps": {
+                "items": {
+                  "$ref": "#/components/schemas/PlanStep"
+                },
+                "type": "array"
+              },
+              "type": {
+                "const": "plan_update",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "steps"
+            ],
+            "title": "PlanUpdateEvent",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "notes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": {
+                "const": "notes_update",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "notes"
+            ],
+            "title": "NotesUpdateEvent",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "const": "usage_update",
+                "type": "string"
+              },
+              "usage": {
+                "$ref": "#/components/schemas/RunUsage"
+              }
+            },
+            "required": [
+              "type",
+              "usage"
+            ],
+            "title": "UsageUpdateEvent",
+            "type": "object"
+          }
+        ]
+      },
+      "LeaseAcquireRequest": {
+        "additionalProperties": false,
+        "description": "Acquire a station lease, optionally taking it from the current holder.",
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/LeaseRequest"
+          },
+          "request_id": {
+            "description": "Caller-generated UUID v4, reused when retrying this acquisition.",
+            "type": "string"
+          },
+          "station_instance_id": {
+            "description": "The station process observed before this acquisition was created.",
+            "type": "string"
+          },
+          "take": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "request_id",
+          "station_instance_id",
+          "request"
+        ],
+        "type": "object"
+      },
+      "LeaseAnswer": {
+        "description": "What a request about the lease answers.",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/LeaseGrant",
+            "description": "The lease is yours.",
+            "properties": {
+              "kind": {
+                "const": "granted",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "LeaseGranted",
+            "type": "object"
+          },
+          {
+            "description": "Who holds the lease, if anyone.",
+            "properties": {
+              "kind": {
+                "const": "holder",
+                "type": "string"
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LeaseStatus"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "LeaseHeld",
+            "type": "object"
+          }
+        ]
+      },
+      "LeaseCameraReport": {
+        "additionalProperties": false,
+        "description": "Report a required camera's availability under the current lease.",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "camera": {
+            "type": "string"
+          },
+          "lease_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_token",
+          "camera",
+          "available"
+        ],
+        "type": "object"
+      },
+      "LeaseGrant": {
+        "description": "Proof of the lease: send the token with every command.",
+        "properties": {
+          "lease_seconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "lease_token": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LeaseStatus"
+          }
+        },
+        "required": [
+          "lease_token",
+          "lease_seconds",
+          "status"
+        ],
+        "type": "object"
+      },
+      "LeaseHolder": {
+        "description": "The kind of controller holding the lease.",
+        "oneOf": [
+          {
+            "const": "agent",
+            "description": "A model loop, started from the terminal or the agent server.",
+            "type": "string"
+          },
+          {
+            "const": "manual",
+            "description": "A person driving the arms from the viewer's manual controls.",
+            "type": "string"
+          }
+        ]
+      },
+      "LeaseRequest": {
+        "additionalProperties": false,
+        "description": "The requested holder and interruption policy for a station lease.",
+        "properties": {
+          "holder": {
+            "$ref": "#/components/schemas/LeaseHolder"
+          },
+          "label": {
+            "type": "string"
+          },
+          "on_interruption": {
+            "$ref": "#/components/schemas/OnInterruption",
+            "default": "wait_for_approval"
+          },
+          "required_cameras": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "holder",
+          "label"
+        ],
+        "type": "object"
+      },
+      "LeaseStatus": {
+        "description": "The current lease, as everyone may see it.",
+        "properties": {
+          "expires_in_seconds": {
+            "description": "The lease lapses this long after its grant or last explicit renewal.",
+            "format": "double",
+            "type": "number"
+          },
+          "holder": {
+            "$ref": "#/components/schemas/LeaseHolder"
+          },
+          "label": {
+            "type": "string"
+          },
+          "on_interruption": {
+            "$ref": "#/components/schemas/OnInterruption"
+          },
+          "required_cameras": {
+            "description": "Cameras the holder cannot work without.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "holder",
+          "label",
+          "required_cameras",
+          "on_interruption",
+          "expires_in_seconds"
+        ],
+        "type": "object"
+      },
+      "LeaseToken": {
+        "additionalProperties": false,
+        "description": "A lease token, for routes that act only while it is current.",
+        "properties": {
+          "lease_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_token"
+        ],
+        "type": "object"
+      },
+      "LiveRun": {
+        "description": "The model loop's live telemetry, as the viewer draws it.",
+        "properties": {
+          "memory": {
+            "$ref": "#/components/schemas/RunMemory"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSpan"
+            },
+            "type": "array"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "spans",
+          "memory"
+        ],
+        "type": "object"
+      },
+      "MediaState": {
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Not asked for: `publish` without `LiveKit` credentials or USB cameras.",
+            "properties": {
+              "state": {
+                "const": "not_configured",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "It exited and will be started again.",
+            "properties": {
+              "last_exit": {
+                "type": "string"
+              },
+              "state": {
+                "const": "restarting",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "last_exit"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "It cannot be started, for instance because the binary is missing.",
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "const": "unavailable",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "MoveArmsCommand": {
+        "additionalProperties": false,
+        "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+        "properties": {
+          "max_joint_speed": {
+            "default": null,
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "targets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Waypoint"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "type": "object"
+      },
+      "NamedApproach": {
+        "description": "A named approach direction.",
+        "oneOf": [
+          {
+            "const": "down",
+            "description": "World -Z.",
+            "type": "string"
+          },
+          {
+            "const": "forward",
+            "description": "World +X.",
+            "type": "string"
+          }
+        ]
+      },
+      "OnInterruption": {
+        "description": "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
+        "oneOf": [
+          {
+            "const": "wait_for_approval",
+            "description": "Keep the lease and wait for an operator's `approve_recovery`.",
+            "type": "string"
+          },
+          {
+            "const": "return_lease",
+            "description": "Give the lease up.",
+            "type": "string"
+          }
+        ]
+      },
+      "OrientationSummary": {
+        "description": "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+        "properties": {
+          "approach": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "degrees_from_down": {
+            "format": "double",
+            "type": "number"
+          },
+          "jaw_yaw_degrees": {
+            "format": "double",
+            "type": "number"
+          },
+          "jaw_yaw_reference": {
+            "$ref": "#/components/schemas/JawYawReference"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "approach",
+          "degrees_from_down",
+          "jaw_yaw_degrees",
+          "jaw_yaw_reference"
+        ],
+        "type": "object"
+      },
+      "PathLimited": {
+        "description": "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "PhoneInvite": {
+        "description": "A phone invite: scan `url` to stream the phone as `camera_name`.",
+        "properties": {
+          "camera_name": {
+            "type": "string"
+          },
+          "qr_code_image": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "camera_name",
+          "url",
+          "qr_code_image"
+        ],
+        "type": "object"
+      },
+      "PhoneInviteRequest": {
+        "description": "`POST /viewer/api/phone-invites`.",
+        "properties": {
+          "label": {
+            "description": "The phone streams as `phone_<label>`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "PlanStep": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/PlanStepStatus"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PlanStepStatus": {
+        "enum": [
+          "pending",
+          "active",
+          "done",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "PlannedMotion": {
+        "description": "What the arm is asked to run, and why it stops short of the target if it does.",
+        "properties": {
+          "path_limited": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PathLimited"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan": {
+            "$ref": "#/components/schemas/CornerPlan"
+          },
+          "pose_limited": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoseLimited"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "type": "object"
+      },
+      "PoseDescription": {
+        "description": "The tool's pose at some joints, in the station's world frame.",
+        "properties": {
+          "model_points": {
+            "description": "Each joint's origin, then the tool's: the points a viewer draws the arm through.",
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "orientation": {
+            "$ref": "#/components/schemas/OrientationSummary"
+          },
+          "position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": [
+          "position",
+          "quaternion",
+          "orientation",
+          "model_points"
+        ],
+        "type": "object"
+      },
+      "PoseLimited": {
+        "description": "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
+        "properties": {
+          "advice": {
+            "description": "What would be reachable exactly instead, in the terms a pose takes.",
+            "type": "string"
+          },
+          "orientation_shortfall_radians": {
+            "description": "From the closest pose's orientation to the requested one.",
+            "format": "double",
+            "type": "number"
+          },
+          "position_shortfall_meters": {
+            "description": "From the closest pose's tool position to the requested one.",
+            "format": "double",
+            "type": "number"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/IkFailure"
+          },
+          "waypoint": {
+            "description": "The waypoint the move stops at, counted from 0; later waypoints are left out.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "waypoint",
+          "reason",
+          "position_shortfall_meters",
+          "orientation_shortfall_radians",
+          "advice"
+        ],
+        "type": "object"
+      },
+      "PoseOrientation": {
+        "description": "A tool orientation as a client gives it.",
+        "oneOf": [
+          {
+            "description": "The approach direction and the jaw yaw about it, in degrees.",
+            "properties": {
+              "approach": {
+                "$ref": "#/components/schemas/Approach"
+              },
+              "jaw_yaw_degrees": {
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "const": "grasp",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "approach",
+              "jaw_yaw_degrees"
+            ],
+            "title": "GraspOrientation",
+            "type": "object"
+          },
+          {
+            "description": "A raw quaternion, `[x, y, z, w]`.",
+            "properties": {
+              "kind": {
+                "const": "quaternion",
+                "type": "string"
+              },
+              "quaternion": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 4,
+                "minItems": 4,
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "quaternion"
+            ],
+            "title": "QuaternionOrientation",
+            "type": "object"
+          }
+        ]
+      },
+      "PosePreviewBatchRequest": {
+        "additionalProperties": false,
+        "description": "Independent pose candidates for one arm; identifiers are supplied by the caller.",
+        "properties": {
+          "arm": {
+            "type": "string"
+          },
+          "poses": {
+            "description": "At least one independent candidate.",
+            "items": {
+              "$ref": "#/components/schemas/PosePreviewCandidate"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "arm",
+          "poses"
+        ],
+        "type": "object"
+      },
+      "PosePreviewBatchResponse": {
+        "properties": {
+          "results": {
+            "description": "One answer per candidate, in request order.",
+            "items": {
+              "$ref": "#/components/schemas/PosePreviewCandidateResult"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
+      },
+      "PosePreviewCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "A caller-generated UUID v4, unique within the batch.",
+            "type": "string"
+          },
+          "label": {
+            "default": null,
+            "description": "Optional human-readable context, echoed with the answer.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pose": {
+            "$ref": "#/components/schemas/PreviewPose"
+          }
+        },
+        "required": [
+          "id",
+          "pose"
+        ],
+        "type": "object"
+      },
+      "PosePreviewCandidateResult": {
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/PreviewAnswer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "answer"
+        ],
+        "type": "object"
+      },
+      "PoseProjection": {
+        "description": "The answer to a projection.",
+        "properties": {
+          "calculation_milliseconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "jaw_yaw_ranges": {
+            "description": "The jaw yaws the arm can take at the projected position and approach;\nempty when nothing was projected or the arm has no wrist roll.",
+            "items": {
+              "$ref": "#/components/schemas/JawYawRange"
+            },
+            "type": "array"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ProjectionOutcome"
+          },
+          "requested": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestedOrientation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None for a position-only target the solver chose the orientation for."
+          }
+        },
+        "required": [
+          "outcome",
+          "jaw_yaw_ranges",
+          "calculation_milliseconds"
+        ],
+        "type": "object"
+      },
+      "PreviewAnswer": {
+        "description": "How a preview was answered.",
+        "oneOf": [
+          {
+            "properties": {
+              "projection": {
+                "$ref": "#/components/schemas/PoseProjection"
+              },
+              "status": {
+                "const": "projected",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "projection"
+            ],
+            "title": "PreviewProjected",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/RejectionReason"
+              },
+              "status": {
+                "const": "refused",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reason",
+              "detail"
+            ],
+            "title": "PreviewRefused",
+            "type": "object"
+          }
+        ]
+      },
+      "PreviewPose": {
+        "additionalProperties": false,
+        "description": "Where the arm's controller would take the tool toward a pose, without moving.",
+        "properties": {
+          "orientation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PoseOrientation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "None leaves the orientation to the solver."
+          },
+          "position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          }
+        },
+        "required": [
+          "position"
+        ],
+        "type": "object"
+      },
+      "ProjectedPose": {
+        "description": "Where the arm would put the tool.",
+        "properties": {
+          "joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "orientation": {
+            "$ref": "#/components/schemas/ToolOrientation"
+          },
+          "orientation_error_radians": {
+            "description": "From the requested orientation; none when the solver chose it.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "position_error_meters": {
+            "format": "double",
+            "type": "number"
+          },
+          "quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": [
+          "joints",
+          "position",
+          "quaternion",
+          "orientation",
+          "position_error_meters"
+        ],
+        "type": "object"
+      },
+      "ProjectionOutcome": {
+        "description": "A usable projected pose, or why the preview could not produce one.",
+        "oneOf": [
+          {
+            "description": "The best pose found, including an approximation when the target was not met.",
+            "properties": {
+              "kind": {
+                "const": "projected",
+                "type": "string"
+              },
+              "pose": {
+                "$ref": "#/components/schemas/ProjectedPose"
+              },
+              "reason": {
+                "description": "Why the target was not met; none when it was met within tolerance.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "within_tolerance": {
+                "description": "The solver or controller met the target without a path constraint.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "pose",
+              "within_tolerance"
+            ],
+            "title": "ProjectedPoseOutcome",
+            "type": "object"
+          },
+          {
+            "description": "The preview could not produce a usable pose.",
+            "properties": {
+              "kind": {
+                "const": "unavailable",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ],
+            "title": "UnavailableProjection",
+            "type": "object"
+          }
+        ]
+      },
+      "ReconnectRequest": {
+        "properties": {
+          "supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported"
+        ],
+        "type": "object"
+      },
+      "Recording": {
+        "description": "One recording directory. Its data, video included, is `recording.mcap`.",
+        "properties": {
+          "mcapPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "sizeBytes"
+        ],
+        "type": "object"
+      },
+      "RecordingStatus": {
+        "description": "Where the station's recorder is. Recording starts and stops only on request,\nindependent of power and the lease.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "idle",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "state": {
+                "const": "recording",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "state": {
+                "const": "stopping",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "state": {
+                "const": "finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "state": {
+                "const": "failed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "name",
+              "detail"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Recordings": {
+        "properties": {
+          "active": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recordings": {
+            "items": {
+              "$ref": "#/components/schemas/Recording"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "recordings"
+        ],
+        "type": "object"
+      },
+      "RejectionReason": {
+        "description": "Why a command was not accepted.",
+        "enum": [
+          "arm_busy",
+          "not_enabled",
+          "stale_revision",
+          "interlocked",
+          "faulted",
+          "invalid_target",
+          "stream_ended",
+          "unreachable",
+          "lease_held_elsewhere",
+          "malformed"
+        ],
+        "type": "string"
+      },
+      "RequestedOrientation": {
+        "description": "The orientation the target asked for, so a caller that sent a quaternion\nlearns the approach and jaw yaw it stands for, and one that sent those gets\nthe quaternion to send instead.",
+        "properties": {
+          "orientation": {
+            "$ref": "#/components/schemas/ToolOrientation"
+          },
+          "quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": [
+          "orientation",
+          "quaternion"
+        ],
+        "type": "object"
+      },
+      "RoomAccess": {
+        "properties": {
+          "server_url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_url",
+          "token"
+        ],
+        "type": "object"
+      },
+      "RunEvent": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/KnownRunEvent"
+          },
+          true
+        ],
+        "description": "An event a model loop reports: one the server acts on, or any other kept\nas it came."
+      },
+      "RunMemory": {
+        "description": "What the model keeps in mind: its task, its plan and its notes.",
+        "properties": {
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStep"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "task": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "RunSpansRequest": {
+        "additionalProperties": false,
+        "description": "A set of model-loop trace span updates.",
+        "properties": {
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSpan"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "spans"
+        ],
+        "type": "object"
+      },
+      "RunUsage": {
+        "description": "A model run's token use so far.",
+        "properties": {
+          "cached_input_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "input_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "output_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reasoning_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "turns": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "turns",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+          "reasoning_tokens"
+        ],
+        "type": "object"
+      },
+      "Sample": {
+        "description": "One control cycle's state; a sample, so a slow client may miss some.",
+        "properties": {
+          "active_command": {
+            "description": "The command being carried out, when one is.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commanded_positions": {
+            "description": "Joint setpoint successfully sent this cycle, if any.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "cycle": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cycle_seconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "efforts": {
+            "description": "Each arm joint's load, in percent of the servo's rated load.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "fault": {
+            "description": "A fault the hardware reports this cycle, tripped or not.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gripper_angle": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "hold_pose": {
+            "description": "Where the arm holds between commands, which a plan must start from; only\nwhile the motors are enabled.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ArmMode"
+          },
+          "positions": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "recovery_issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArmRecoveryIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rest_pose": {
+            "description": "Where the arm rested unpowered when it was enabled; shutdown returns there.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "segment": {
+            "description": "The segment of the active motion being followed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "temperatures_celsius": {
+            "description": "The last reading of each driven motor, the gripper's last; empty in\nsimulation. Sent while tripped too, so a holding arm that heats shows.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "velocities": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "voltages_volts": {
+            "description": "The supply voltage each driven motor last reported, as the temperatures.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cycle",
+          "mode",
+          "positions",
+          "velocities",
+          "efforts",
+          "temperatures_celsius",
+          "voltages_volts",
+          "cycle_seconds"
+        ],
+        "type": "object"
+      },
+      "Segment": {
+        "description": "One straight run between corners, with where it is meant to end.",
+        "properties": {
+          "corners": {
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "label": {
+            "type": "string"
+          },
+          "minimum_duration_seconds": {
+            "default": null,
+            "description": "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "target_position": {
+            "default": null,
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "target_quaternion": {
+            "default": null,
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "corners"
+        ],
+        "type": "object"
+      },
+      "ServerMessage": {
+        "description": "Station event and result models shared with SDKs.",
+        "oneOf": [
+          {
+            "properties": {
+              "action_sequence_id": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "action_sequence_accepted",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "action_sequence_id"
+            ],
+            "title": "ActionSequenceAccepted",
+            "type": "object"
+          },
+          {
+            "description": "The first message: the arms this executor serves.",
+            "properties": {
+              "arms": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "hello",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "arms"
+            ],
+            "title": "ServerHello",
+            "type": "object"
+          },
+          {
+            "description": "One frame from one arm's link.",
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "frame": {
+                "$ref": "#/components/schemas/Frame"
+              },
+              "kind": {
+                "const": "frame",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "arm",
+              "frame"
+            ],
+            "title": "ArmFrame",
+            "type": "object"
+          },
+          {
+            "description": "The answer to `acquire_lease` and `take_lease`.",
+            "properties": {
+              "answer": {
+                "$ref": "#/components/schemas/LeaseAnswer"
+              },
+              "kind": {
+                "const": "lease",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "answer"
+            ],
+            "title": "LeaseReply",
+            "type": "object"
+          },
+          {
+            "description": "The answer to `command` or `move_arms`.",
+            "properties": {
+              "answer": {
+                "$ref": "#/components/schemas/CommandAnswer"
+              },
+              "kind": {
+                "const": "command_answer",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "answer"
+            ],
+            "title": "CommandAnswerMessage",
+            "type": "object"
+          },
+          {
+            "description": "The answer to `preview`.",
+            "properties": {
+              "answer": {
+                "$ref": "#/components/schemas/PreviewAnswer"
+              },
+              "kind": {
+                "const": "preview_answer",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "answer"
+            ],
+            "title": "PreviewAnswerMessage",
+            "type": "object"
+          },
+          {
+            "description": "This connection no longer holds the lease: taken, revoked, returned\nfor an interruption, or lapsed.",
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "lease_lost",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "detail"
+            ],
+            "title": "LeaseLost",
+            "type": "object"
+          },
+          {
+            "description": "The station, ten times a second.",
+            "properties": {
+              "kind": {
+                "const": "state",
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/components/schemas/StationState"
+              }
+            },
+            "required": [
+              "kind",
+              "state"
+            ],
+            "title": "StateMessage",
+            "type": "object"
+          },
+          {
+            "description": "Current or most recent action sequence, sent on connection and when it changes.",
+            "properties": {
+              "action_sequence": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ActionSequenceRecord"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "const": "action_sequence_state",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "ActionSequenceState",
+            "type": "object"
+          },
+          {
+            "description": "An event a model loop reported, as the server received it.",
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/RunEvent"
+              },
+              "kind": {
+                "const": "run_event",
+                "type": "string"
+              },
+              "received_unix_nano": {
+                "$ref": "#/components/schemas/UnixNanos"
+              },
+              "seq": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "seq",
+              "received_unix_nano",
+              "event"
+            ],
+            "title": "RunEventRecord",
+            "type": "object"
+          },
+          {
+            "description": "A span as a model loop reported it; every revision arrives, unlike the\nretained spans in `run`.",
+            "properties": {
+              "kind": {
+                "const": "run_span",
+                "type": "string"
+              },
+              "received_unix_nano": {
+                "$ref": "#/components/schemas/UnixNanos"
+              },
+              "seq": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "span": {
+                "$ref": "#/components/schemas/TraceSpan"
+              }
+            },
+            "required": [
+              "kind",
+              "seq",
+              "received_unix_nano",
+              "span"
+            ],
+            "title": "RunSpanRecord",
+            "type": "object"
+          },
+          {
+            "description": "The run cursor fell out of the retained records, or is ahead of them:\nrecords after it up to `oldest_retained` are lost. The stream continues\nafter `newest`.",
+            "properties": {
+              "kind": {
+                "const": "run_resync",
+                "type": "string"
+              },
+              "newest": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "oldest_retained": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "oldest_retained",
+              "newest"
+            ],
+            "title": "RunResync",
+            "type": "object"
+          },
+          {
+            "description": "The model loop's telemetry, whenever it changed.",
+            "properties": {
+              "kind": {
+                "const": "run",
+                "type": "string"
+              },
+              "run": {
+                "$ref": "#/components/schemas/LiveRun"
+              }
+            },
+            "required": [
+              "kind",
+              "run"
+            ],
+            "title": "RunMessage",
+            "type": "object"
+          },
+          {
+            "description": "A message the server could not act on; the connection stays open.",
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "refused",
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "detail"
+            ],
+            "title": "Refused",
+            "type": "object"
+          }
+        ]
+      },
+      "SpanStatus": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/SpanStatusCode",
+            "default": "STATUS_CODE_UNSET"
+          },
+          "message": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SpanStatusCode": {
+        "enum": [
+          "STATUS_CODE_UNSET",
+          "STATUS_CODE_OK",
+          "STATUS_CODE_ERROR"
+        ],
+        "type": "string"
+      },
+      "StationCommand": {
+        "description": "A command for one arm.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Preflight, then power the motors holding their present pose.",
+            "properties": {
+              "kind": {
+                "const": "enable",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "EnableCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Approve recovery after inspecting and supporting the arm.",
+            "properties": {
+              "kind": {
+                "const": "approve_recovery",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "ApproveRecoveryCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Turn torque off where the arm is; an unsupported arm will fall.",
+            "properties": {
+              "kind": {
+                "const": "disable",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "DisableCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "End the active motion with outcome stopped and hold where the arm is.\nAnyone may send it, whoever holds the lease.",
+            "properties": {
+              "kind": {
+                "const": "stop",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "StopCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Acknowledge a fault; the arm is already disabled.",
+            "properties": {
+              "kind": {
+                "const": "clear_fault",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "ClearFaultCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Move to joint angles, one per joint in the state's order.",
+            "properties": {
+              "joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "move_to_joints",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "description": "Peak joint speed in rad/s; clamped to the profile's maximum.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "joints"
+            ],
+            "title": "MoveToJointsCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Move the tool to a world position and orientation.",
+            "properties": {
+              "kind": {
+                "const": "move_to_pose",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "orientation": {
+                "$ref": "#/components/schemas/PoseOrientation"
+              },
+              "position": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "position",
+              "orientation"
+            ],
+            "title": "MoveToPoseCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Waypoints are corners: the arm comes to rest and settles at each one.",
+            "properties": {
+              "kind": {
+                "const": "follow_path",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "waypoints": {
+                "items": {
+                  "$ref": "#/components/schemas/Waypoint"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "waypoints"
+            ],
+            "title": "FollowPathCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Stream trajectory destinations. The first goal, without\n`stream_command_id`, starts a stream when the arm is holding; later goals\ncarry the command id it returned. Each cycle the arm moves toward the\nnewest goal at up to the first goal's speed. The stream ends stopped when\ngoals stop arriving, on stop, or on a trip.",
+            "properties": {
+              "gripper_opening": {
+                "default": null,
+                "description": "The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "stream_joints",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "stream_command_id": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "joints"
+            ],
+            "title": "StationStreamJointsCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Open or close the gripper, 0 closed to 1 open, whether the arm is holding\nor moving. It completes on arrival or on contact.",
+            "properties": {
+              "kind": {
+                "const": "set_gripper",
+                "type": "string"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "description": "Peak gripper speed in rad/s; uses the arm default and maximum.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "opening": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "kind",
+              "opening"
+            ],
+            "title": "StationSetGripperCommand",
+            "type": "object"
+          }
+        ]
+      },
+      "StationInstance": {
+        "description": "Identifies one station process for retry and event-cursor fencing.",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "StationState": {
+        "description": "The whole station, as `GET /state` and the event stream provide it.",
+        "properties": {
+          "arms": {
+            "items": {
+              "$ref": "#/components/schemas/ArmState"
+            },
+            "type": "array"
+          },
+          "description": {
+            "description": "What a model is told about this robot: layout, frames, reach.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jaw_closing_axis": {
+            "$ref": "#/components/schemas/JawClosingAxis",
+            "description": "The tool-frame axis the jaws close along."
+          },
+          "joint_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lease": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeaseStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None while no one holds the lease: anyone may command."
+          },
+          "max_joint_speed": {
+            "format": "double",
+            "type": "number"
+          },
+          "robot": {
+            "description": "The profile name, absent for a bare executor configuration.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "surface_guard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SurfaceGuardConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when the profile turns the table guard off."
+          }
+        },
+        "required": [
+          "joint_names",
+          "jaw_closing_axis",
+          "max_joint_speed",
+          "arms"
+        ],
+        "type": "object"
+      },
+      "SurfaceGuardConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "leeway_meters": {
+            "format": "double",
+            "type": "number"
+          },
+          "surface_height_meters": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "surface_height_meters",
+          "leeway_meters"
+        ],
+        "type": "object"
+      },
+      "TargetComparison": {
+        "description": "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
+        "properties": {
+          "approach_error_degrees": {
+            "format": "double",
+            "type": "number"
+          },
+          "jaw_yaw_degrees": {
+            "format": "double",
+            "type": "number"
+          },
+          "jaw_yaw_reference": {
+            "$ref": "#/components/schemas/JawYawReference"
+          },
+          "orientation_error_degrees": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "jaw_yaw_degrees",
+          "jaw_yaw_reference",
+          "approach_error_degrees",
+          "orientation_error_degrees"
+        ],
+        "type": "object"
+      },
+      "TargetStatus": {
+        "description": "Whether the arm ended where the command was aimed.",
+        "enum": [
+          "reached",
+          "stopped_short",
+          "partial",
+          "not_started"
+        ],
+        "type": "string"
+      },
+      "ToolOrientation": {
+        "description": "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+        "properties": {
+          "approach": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "jaw_yaw_degrees": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "approach",
+          "jaw_yaw_degrees"
+        ],
+        "type": "object"
+      },
+      "TraceContext": {
+        "description": "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
+        "properties": {
+          "traceparent": {
+            "description": "`00-<trace id>-<parent span id>-<flags>`.",
+            "type": "string"
+          },
+          "tracestate": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "traceparent"
+        ],
+        "type": "object"
+      },
+      "TraceFile": {
+        "description": "One trace file, as `GET /traces` lists it.",
+        "properties": {
+          "modifiedUnixSeconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "sizeBytes",
+          "modifiedUnixSeconds"
+        ],
+        "type": "object"
+      },
+      "TraceSpan": {
+        "description": "One span of a model loop's trace, in OpenTelemetry's terms.",
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "default": {},
+            "type": "object"
+          },
+          "end_time_unix_nano": {
+            "$ref": "#/components/schemas/UnixNanos"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_span_id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "span_id": {
+            "type": "string"
+          },
+          "start_time_unix_nano": {
+            "$ref": "#/components/schemas/UnixNanos"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SpanStatus",
+            "default": {
+              "code": "STATUS_CODE_UNSET",
+              "message": null
+            }
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "span_id",
+          "name",
+          "start_time_unix_nano",
+          "end_time_unix_nano"
+        ],
+        "type": "object"
+      },
+      "UnixNanos": {
+        "pattern": "^[0-9]+$",
+        "type": "string"
+      },
+      "ViewerControl": {
+        "description": "`GET /viewer/api/control-mode`.",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/ViewerControlMode"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "ViewerControlMode": {
+        "description": "What the viewer shows for driving the arm.",
+        "oneOf": [
+          {
+            "const": "llm",
+            "description": "A model loop drives; the viewer only watches.",
+            "type": "string"
+          },
+          {
+            "const": "so101_manual",
+            "description": "The viewer's pose controls drive a single SO-101.",
+            "type": "string"
+          }
+        ]
+      },
+      "Waypoint": {
+        "description": "One corner of a move: joints, or a tool pose solved for joints.",
+        "oneOf": [
+          {
+            "properties": {
+              "joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "joints",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "joints"
+            ],
+            "title": "JointsWaypoint",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "pose",
+                "type": "string"
+              },
+              "orientation": {
+                "$ref": "#/components/schemas/PoseOrientation"
+              },
+              "position": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "position",
+              "orientation"
+            ],
+            "title": "PoseWaypoint",
+            "type": "object"
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "description": "Generated by `hebbian-robot-use-server schema --openapi`.",
+    "title": "Hebbian robot-use station",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "redirect_to_viewer",
+        "responses": {
+          "307": {
+            "description": "Temporary redirect"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Redirects to the viewer when one is built.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/action_sequence": {
+      "get": {
+        "operationId": "get_current_action_sequence",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ActionSequenceRecord"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The newest action sequence, if any.",
+        "x-sdk": false,
+        "x-server": "station"
+      },
+      "post": {
+        "operationId": "start_action_sequence_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionSequenceStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Start an action sequence under a lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/action_sequence/{id}": {
+      "get": {
+        "operationId": "get_action_sequence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionSequenceRecord"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "A running or recently finished action sequence by identifier.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/action_sequence/{id}/cancel": {
+      "post": {
+        "operationId": "cancel_action_sequence_http",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Cancel an action sequence.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/arms/{arm}/stop": {
+      "post": {
+        "operationId": "stop_leased_arm_http",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "arm",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Stop one arm while holding the lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/cameras": {
+      "get": {
+        "operationId": "list_cameras",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CameraListing"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The cameras the media service knows.",
+        "x-sdk": true,
+        "x-server": "media"
+      }
+    },
+    "/cameras/{name}": {
+      "get": {
+        "operationId": "get_camera",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The newest JPEG frame from a camera, with `X-Captured-At-Unix-Ns` when known.",
+        "x-sdk": true,
+        "x-server": "media"
+      }
+    },
+    "/commands": {
+      "post": {
+        "operationId": "submit_command_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandSubmissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Submit an individual arm command.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/commands/cancel": {
+      "post": {
+        "operationId": "cancel_command_submission_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandCancellationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Cancel a submission and stop its arms while holding the lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/commands/{id}": {
+      "get": {
+        "operationId": "get_command",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandRecord"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "A retained command record, with the arm that ran it.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "stream_events",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Stream station events with resumable event IDs.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/group_commands": {
+      "post": {
+        "operationId": "submit_group_command_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupCommandSubmissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Submit a coordinated arm command.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Answers while the process runs.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/instance": {
+      "get": {
+        "operationId": "get_station_instance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationInstance"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Identify the current station process.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/leases": {
+      "post": {
+        "operationId": "acquire_lease_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseAcquireRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseGrant"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Acquire or take the station lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/leases/camera": {
+      "post": {
+        "operationId": "report_lease_camera_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseCameraReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Report a required camera's availability.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/leases/release": {
+      "post": {
+        "operationId": "release_lease_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Release a current station lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/leases/renew": {
+      "post": {
+        "operationId": "renew_lease_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Renew a current station lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/pose_previews": {
+      "post": {
+        "operationId": "preview_poses",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PosePreviewBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PosePreviewBatchResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Preview independent pose candidates for one arm in input order.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/run": {
+      "get": {
+        "operationId": "get_live_run",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveRun"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The model loop's live telemetry.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/run/events": {
+      "post": {
+        "operationId": "record_run_event_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Record a model-loop event.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/run/records": {
+      "get": {
+        "operationId": "replay_run_records",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ServerMessage"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Replay retained run records after the `after` query cursor.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/run/spans": {
+      "post": {
+        "operationId": "record_run_spans_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSpansRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Record model-loop span updates.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/state": {
+      "get": {
+        "operationId": "get_state",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationState"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The whole station.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/traces": {
+      "get": {
+        "operationId": "list_traces",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TraceFile"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The executor's trace files, newest first.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/traces/{name}": {
+      "get": {
+        "operationId": "get_trace_file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "A trace file's bytes exactly as served: gzip-compressed.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/control-mode": {
+      "get": {
+        "operationId": "get_control_mode",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerControl"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Whether the viewer shows manual controls.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/controller": {
+      "get": {
+        "operationId": "get_controller_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The controller's availability and guard reports.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/controller/reconnect": {
+      "post": {
+        "operationId": "reconnect_controller",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Reconnect after the operator supports the arm.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/media-status": {
+      "get": {
+        "operationId": "get_media_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/MediaState"
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Every media program's state, by name.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/phone-invites": {
+      "post": {
+        "operationId": "phone_invite",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneInvite"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "An invite to stream a phone as camera `phone_<label>`.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recording-enabled": {
+      "get": {
+        "operationId": "get_recording_enabled",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Whether the station can record.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recording/start": {
+      "post": {
+        "operationId": "start_recording",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Start recording and return the recording's name.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recording/status": {
+      "get": {
+        "operationId": "recording_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordingStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Whether the station is recording.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recording/stop": {
+      "post": {
+        "operationId": "stop_recording",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Stop recording.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recording/stop-for-lease": {
+      "post": {
+        "operationId": "stop_recording_for_lease",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Stop recording only while the token still holds the lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recordings": {
+      "get": {
+        "operationId": "list_recordings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recordings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The recordings on disk.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/recordings/{path}": {
+      "delete": {
+        "operationId": "delete_recording",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Delete a recording.",
+        "x-sdk": false,
+        "x-server": "station"
+      },
+      "get": {
+        "operationId": "get_recording_file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "A file of a recording.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/viewer/api/token": {
+      "get": {
+        "operationId": "get_room_access",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomAccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Watch-only LiveKit access to every camera in the room.",
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    }
+  }
+}

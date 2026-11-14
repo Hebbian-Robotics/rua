@@ -1,0 +1,11 @@
+# Two SO-101s in one MuJoCo scene, laid out as in so101-bimanual.toml; limits
+# from so101-sim.toml.
+extends = "so101-sim"
+name = "so101-bimanual-sim"
+arms = ["left", "right"]
+
+[base_poses.left]
+position_meters = [0.0, 0.19057474487310352, 0.0]
+
+[base_poses.right]
+position_meters = [0.0, -0.19057474487310352, 0.0]

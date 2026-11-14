@@ -1,0 +1,13 @@
+[project]
+name = "rua-python-examples"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["hebbian-rua==0.1.0", "openai>=3.49.0", "anthropic>=2.8.0", "google-genai>=3.1.0"]
+
+[tool.uv]
+package = false
+exclude-newer = "3 days"
+
+[tool.uv.sources]
+hebbian-rua = { path = "../..", editable = true }
+hebbian-robot-use-client = { path = "../../hebbian_robot_use_client", editable = true }

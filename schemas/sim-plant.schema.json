@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SimPlantContract",
+  "description": "The messages of the simulator socket, as one type for the schema.",
+  "type": "object",
+  "properties": {
+    "hello": {
+      "description": "The simulator's first line.",
+      "$ref": "#/$defs/SimHello"
+    },
+    "state": {
+      "description": "The simulator's reply to each step.",
+      "$ref": "#/$defs/SimState"
+    },
+    "step": {
+      "description": "The executor's line each cycle.",
+      "$ref": "#/$defs/SimStep"
+    }
+  },
+  "required": [
+    "hello",
+    "state",
+    "step"
+  ],
+  "$defs": {
+    "SimHello": {
+      "description": "The simulator's first line: who it is, and where the arm starts.",
+      "type": "object",
+      "properties": {
+        "joint_names": {
+          "description": "The URDF joint names the simulator serves: the arm's, then the gripper's\nwhen it has one. They must equal the executor's driven joints.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "protocol_version": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "state": {
+          "$ref": "#/$defs/SimState"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "joint_names",
+        "state"
+      ]
+    },
+    "SimState": {
+      "description": "What the simulator measures after a step. Efforts are in the profile's effort\nunit (percent of rated for the SO-101 profiles).",
+      "type": "object",
+      "properties": {
+        "efforts": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "gripper_angle": {
+          "description": "The jaw's angle in the URDF's gripper joint; present when the arm has one.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "positions": {
+          "description": "The arm's joints, in the order of the hello's `joint_names`.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "velocities": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "positions",
+        "velocities",
+        "efforts"
+      ]
+    },
+    "SimStep": {
+      "description": "What the executor sends each cycle.",
+      "type": "object",
+      "properties": {
+        "gripper_angle": {
+          "description": "The jaw's target angle, when the arm has a gripper.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "positions": {
+          "description": "Position targets for the arm's joints.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "powered": {
+          "description": "Whether the arm has torque. When it does not, the targets are the arm's\nown positions and the simulator should let it rest where it is.",
+          "type": "boolean"
+        },
+        "seconds": {
+          "description": "How much simulated time this step lasts.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "positions",
+        "seconds",
+        "powered"
+      ]
+    }
+  }
+}

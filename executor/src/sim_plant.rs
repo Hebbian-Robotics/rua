@@ -1,0 +1,445 @@
+//! A plant that is somebody else's simulator, reached over a Unix socket.
+//!
+//! The executor listens; the simulator connects and says hello with the joints it
+//! serves and where they are. From then on the simulator drives time: each cycle
+//! the executor sends one [`SimStep`] (the commanded joint targets and how long
+//! the step lasts), the simulator advances its physics by that long and answers
+//! with one [`SimState`]. The executor never sleeps while waiting, so a simulator
+//! may run faster or slower than real time, and a run is as deterministic as the
+//! simulator is. A simulator that disconnects, or does not answer within the
+//! configured time, stops the arm's loop like any plant that cannot be read.
+//!
+//! Replies are read at the start of the next cycle, not right after the step is
+//! sent, so that several arms sharing one scene can all send their step before the
+//! simulator advances the shared physics once and answers every arm.
+//!
+//! Messages are one JSON object per line. These types are the contract:
+//! `hebbian-robot-use-server schema --sim-plant` writes their JSON Schema, and the Python
+//! models in `hebbian_robot_use_client` are generated from it.
+
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, bail, ensure};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use crate::plant::{Feedback, Pacing, Plant};
+
+/// Bumped when the messages change in a way an old simulator cannot follow.
+pub(crate) const PROTOCOL_VERSION: u32 = 1;
+
+/// What the simulator measures after a step. Efforts are in the profile's effort
+/// unit (percent of rated for the SO-101 profiles).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SimState {
+    /// The arm's joints, in the order of the hello's `joint_names`.
+    pub positions: Vec<f64>,
+    pub velocities: Vec<f64>,
+    pub efforts: Vec<f64>,
+    /// The jaw's angle in the URDF's gripper joint; present when the arm has one.
+    #[serde(default)]
+    pub gripper_angle: Option<f64>,
+}
+
+/// The simulator's first line: who it is, and where the arm starts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SimHello {
+    pub protocol_version: u32,
+    /// The URDF joint names the simulator serves: the arm's, then the gripper's
+    /// when it has one. They must equal the executor's driven joints.
+    pub joint_names: Vec<String>,
+    pub state: SimState,
+}
+
+/// What the executor sends each cycle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SimStep {
+    /// Position targets for the arm's joints.
+    pub positions: Vec<f64>,
+    /// The jaw's target angle, when the arm has a gripper.
+    #[serde(default)]
+    pub gripper_angle: Option<f64>,
+    /// How much simulated time this step lasts.
+    pub seconds: f64,
+    /// Whether the arm has torque. When it does not, the targets are the arm's
+    /// own positions and the simulator should let it rest where it is.
+    pub powered: bool,
+}
+
+/// The messages of the simulator socket, as one type for the schema.
+#[derive(JsonSchema)]
+pub struct SimPlantContract {
+    /// The simulator's first line.
+    pub hello: SimHello,
+    /// The simulator's reply to each step.
+    pub state: SimState,
+    /// The executor's line each cycle.
+    pub step: SimStep,
+}
+
+/// The sim-plant contract's JSON Schema, pretty-printed with a trailing newline.
+///
+/// # Panics
+/// Never in practice: a schema is always serializable.
+#[must_use]
+pub fn schema_json() -> String {
+    let schema = schemars::schema_for!(SimPlantContract);
+    let mut text = serde_json::to_string_pretty(&schema).expect("a schema serializes");
+    text.push('\n');
+    text
+}
+
+/// How long the executor waits for a simulator to connect, and for each reply.
+#[derive(Debug, Clone, Copy)]
+pub struct SimTimeouts {
+    pub connect: Duration,
+    pub reply: Duration,
+    /// Whether cycles wait out the wall-clock period (the default), or run as fast
+    /// as the simulator replies.
+    pub real_time: bool,
+}
+
+pub struct SocketPlant {
+    reader: BufReader<UnixStream>,
+    writer: UnixStream,
+    joint_count: usize,
+    state: SimState,
+    /// The jaw target sent with each step, the last one commanded.
+    gripper_target: Option<f64>,
+    powered: bool,
+    /// A step was sent and its reply has not been read.
+    awaiting_reply: bool,
+    real_time: bool,
+}
+
+impl SocketPlant {
+    /// Listen on `path` and wait for the simulator to connect and say hello.
+    ///
+    /// # Errors
+    /// No simulator connected in time, or its hello does not match the arm.
+    pub fn accept(
+        listener: &UnixListener,
+        driven_joints: &[String],
+        joint_count: usize,
+        timeouts: SimTimeouts,
+        shutdown_requested: &AtomicBool,
+    ) -> anyhow::Result<Self> {
+        listener.set_nonblocking(true)?;
+        let deadline = Instant::now() + timeouts.connect;
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    ensure!(
+                        !shutdown_requested.load(Ordering::Relaxed),
+                        "Stopped while waiting for a simulator to connect"
+                    );
+                    ensure!(
+                        Instant::now() < deadline,
+                        "No simulator connected within {} s",
+                        timeouts.connect.as_secs_f64()
+                    );
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => return Err(error).context("Accepting the simulator failed"),
+            }
+        };
+        stream.set_nonblocking(false)?;
+        stream.set_read_timeout(Some(timeouts.reply))?;
+        stream.set_write_timeout(Some(timeouts.reply))?;
+        let mut reader = BufReader::new(stream.try_clone()?);
+        let hello: SimHello = read_line(&mut reader).context("The simulator's hello")?;
+        ensure!(
+            hello.protocol_version == PROTOCOL_VERSION,
+            "The simulator speaks protocol {}, the executor {PROTOCOL_VERSION}",
+            hello.protocol_version
+        );
+        ensure!(
+            hello.joint_names == driven_joints,
+            "The simulator serves joints {:?}, but this arm drives {driven_joints:?}",
+            hello.joint_names
+        );
+        let has_gripper = driven_joints.len() == joint_count + 1;
+        check_state(&hello.state, joint_count, has_gripper)?;
+        Ok(Self {
+            reader,
+            writer: stream,
+            joint_count,
+            gripper_target: hello.state.gripper_angle,
+            state: hello.state,
+            powered: false,
+            awaiting_reply: false,
+            real_time: timeouts.real_time,
+        })
+    }
+
+    fn send_step(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
+        ensure!(
+            !self.awaiting_reply,
+            "The simulator has not answered the previous step"
+        );
+        let step = SimStep {
+            positions: positions.to_vec(),
+            gripper_angle: self.gripper_target,
+            seconds,
+            powered: self.powered,
+        };
+        let mut line = serde_json::to_string(&step)?;
+        line.push('\n');
+        self.writer
+            .write_all(line.as_bytes())
+            .context("The simulator is gone")?;
+        self.awaiting_reply = true;
+        Ok(())
+    }
+}
+
+fn check_state(state: &SimState, joint_count: usize, has_gripper: bool) -> anyhow::Result<()> {
+    ensure!(
+        state.positions.len() == joint_count
+            && state.velocities.len() == joint_count
+            && state.efforts.len() == joint_count,
+        "The simulator reported {} positions, {} velocities and {} efforts for {joint_count} joints",
+        state.positions.len(),
+        state.velocities.len(),
+        state.efforts.len()
+    );
+    ensure!(
+        state.gripper_angle.is_some() == has_gripper,
+        "The simulator's gripper does not match the arm's"
+    );
+    ensure!(
+        state
+            .positions
+            .iter()
+            .chain(&state.velocities)
+            .chain(&state.efforts)
+            .chain(&state.gripper_angle)
+            .all(|value| value.is_finite()),
+        "The simulator reported a value that is not finite"
+    );
+    Ok(())
+}
+
+fn read_line<T: for<'de> Deserialize<'de>>(
+    reader: &mut BufReader<UnixStream>,
+) -> anyhow::Result<T> {
+    let mut line = String::new();
+    match reader.read_line(&mut line) {
+        Ok(0) => bail!("The simulator disconnected"),
+        Ok(_) => serde_json::from_str(&line).context("The simulator sent an invalid message"),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            bail!("The simulator did not answer in time")
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::UnexpectedEof
+            ) =>
+        {
+            bail!("The simulator disconnected")
+        }
+        Err(error) => Err(error).context("Reading from the simulator failed"),
+    }
+}
+
+impl Plant for SocketPlant {
+    fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
+        if self.awaiting_reply {
+            self.state = read_line(&mut self.reader)?;
+            self.awaiting_reply = false;
+            check_state(&self.state, self.joint_count, self.gripper_target.is_some())?;
+        }
+        feedback.positions.clone_from(&self.state.positions);
+        feedback.velocities.clone_from(&self.state.velocities);
+        feedback.efforts.clone_from(&self.state.efforts);
+        feedback.temperatures_celsius.clear();
+        feedback.voltages_volts.clear();
+        feedback.environment_confirmations.clear();
+        feedback.gripper_angle = self.state.gripper_angle;
+        feedback.fault = None;
+        Ok(())
+    }
+
+    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
+        self.send_step(positions, seconds)
+    }
+
+    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
+        ensure!(self.gripper_target.is_some(), "This arm has no gripper");
+        self.gripper_target = Some(angle);
+        Ok(())
+    }
+
+    fn preflight(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn enable(&mut self) -> anyhow::Result<()> {
+        self.powered = true;
+        Ok(())
+    }
+
+    fn release(&mut self) -> anyhow::Result<()> {
+        self.powered = false;
+        Ok(())
+    }
+
+    fn pacing(&self) -> Pacing {
+        if self.real_time {
+            Pacing::RepliesAtClockSpeed
+        } else {
+            Pacing::RepliesAsFastAsPossible
+        }
+    }
+
+    fn advance(&mut self, seconds: f64) -> anyhow::Result<()> {
+        // An arm whose loop has ended is not read any more; take its last reply
+        // before the next step so the simulator is not left waiting.
+        if self.awaiting_reply {
+            self.read_feedback()?;
+        }
+        let rest = self.state.positions.clone();
+        self.send_step(&rest, seconds)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::net::UnixStream;
+
+    use super::*;
+
+    fn joints() -> Vec<String> {
+        vec!["a".to_owned(), "b".to_owned()]
+    }
+
+    fn state(position: f64) -> SimState {
+        SimState {
+            positions: vec![position; 2],
+            velocities: vec![0.0; 2],
+            efforts: vec![0.0; 2],
+            gripper_angle: None,
+        }
+    }
+
+    fn timeouts() -> SimTimeouts {
+        SimTimeouts {
+            connect: Duration::from_secs(2),
+            reply: Duration::from_millis(300),
+            real_time: true,
+        }
+    }
+
+    fn listen(test_name: &str) -> (UnixListener, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "hebbian-sim-plant-{test_name}-{}.sock",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        (UnixListener::bind(&path).unwrap(), path)
+    }
+
+    fn say_hello(stream: &mut UnixStream, names: Vec<String>) {
+        let hello = SimHello {
+            protocol_version: PROTOCOL_VERSION,
+            joint_names: names,
+            state: state(0.25),
+        };
+        writeln!(stream, "{}", serde_json::to_string(&hello).unwrap()).unwrap();
+    }
+
+    fn connected(test_name: &str) -> (SocketPlant, UnixStream, BufReader<UnixStream>) {
+        let (listener, path) = listen(test_name);
+        let mut sim = UnixStream::connect(&path).unwrap();
+        say_hello(&mut sim, joints());
+        let plant =
+            SocketPlant::accept(&listener, &joints(), 2, timeouts(), &AtomicBool::new(false))
+                .unwrap();
+        let reader = BufReader::new(sim.try_clone().unwrap());
+        (plant, sim, reader)
+    }
+
+    #[test]
+    fn the_simulator_drives_each_step_and_the_reply_is_read_next_cycle() {
+        let (mut plant, mut sim, mut sim_reader) = connected("steps");
+        assert_eq!(plant.read_feedback().unwrap().positions, vec![0.25; 2]);
+        plant.enable().unwrap();
+        plant.command(&[0.5, -0.5], 0.01).unwrap();
+        let step: SimStep = read_line(&mut sim_reader).unwrap();
+        assert_eq!(step.positions, vec![0.5, -0.5]);
+        assert!(step.powered);
+        assert!((step.seconds - 0.01).abs() < f64::EPSILON);
+        writeln!(sim, "{}", serde_json::to_string(&state(0.3)).unwrap()).unwrap();
+        assert_eq!(plant.read_feedback().unwrap().positions, vec![0.3; 2]);
+    }
+
+    #[test]
+    fn two_steps_without_a_reply_between_are_refused() {
+        let (mut plant, _sim, _sim_reader) = connected("double");
+        plant.command(&[0.0, 0.0], 0.01).unwrap();
+        assert!(plant.command(&[0.0, 0.0], 0.01).is_err());
+    }
+
+    #[test]
+    fn a_silent_simulator_is_an_error_not_a_hang() {
+        let (mut plant, _sim, _sim_reader) = connected("silent");
+        plant.command(&[0.0, 0.0], 0.01).unwrap();
+        let error = plant.read_feedback().err().unwrap();
+        assert!(format!("{error:#}").contains("did not answer"));
+    }
+
+    #[test]
+    fn a_disconnected_simulator_is_an_error() {
+        let (mut plant, sim, sim_reader) = connected("gone");
+        plant.command(&[0.0, 0.0], 0.01).unwrap();
+        drop(sim);
+        drop(sim_reader);
+        let error = plant.read_feedback().err().unwrap();
+        assert!(format!("{error:#}").contains("disconnected"));
+    }
+
+    #[test]
+    fn a_simulator_serving_other_joints_is_refused_at_hello() {
+        let (listener, path) = listen("names");
+        let mut sim = UnixStream::connect(&path).unwrap();
+        say_hello(&mut sim, vec!["x".to_owned(), "y".to_owned()]);
+        let error =
+            SocketPlant::accept(&listener, &joints(), 2, timeouts(), &AtomicBool::new(false))
+                .err()
+                .unwrap();
+        assert!(format!("{error:#}").contains("serves joints"));
+    }
+
+    #[test]
+    fn waiting_for_a_simulator_ends_on_shutdown_or_timeout() {
+        let (listener, _path) = listen("nobody");
+        let quick = SimTimeouts {
+            connect: Duration::from_millis(100),
+            reply: Duration::from_millis(100),
+            real_time: true,
+        };
+        let error = SocketPlant::accept(&listener, &joints(), 2, quick, &AtomicBool::new(false))
+            .err()
+            .unwrap();
+        assert!(format!("{error:#}").contains("No simulator connected"));
+        let error =
+            SocketPlant::accept(&listener, &joints(), 2, timeouts(), &AtomicBool::new(true))
+                .err()
+                .unwrap();
+        assert!(format!("{error:#}").contains("Stopped"));
+    }
+}

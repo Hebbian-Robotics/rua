@@ -1,0 +1,6 @@
+# Stress variant of the training-aligned SO-101 simulation.
+extends = "so101-sim"
+name = "so101-sim-2ms"
+
+[mujoco]
+timestep_seconds = 0.002

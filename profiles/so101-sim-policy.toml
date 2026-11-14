@@ -1,0 +1,4 @@
+# The MuJoCo SO-101 driven by the learned reaching policy instead of IK + Ruckig.
+# Needs the policy assets of so101-policy-settings.toml.
+extends = ["so101-sim", "so101-policy-settings"]
+name = "so101-sim-policy"
