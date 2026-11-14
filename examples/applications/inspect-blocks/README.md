@@ -1,4 +1,4 @@
-# Block oracle
+# Inspect Blocks
 
 Arrange some blocks, then ask a yes/no question such as "Are there more than two
 blocks?" or "Are the blocks stacked?". The model drives the arm to inspect the
@@ -21,11 +21,11 @@ moves, so the answer is always shown the same way.
 
 ## Run
 
-Start the station with your profile and camera, then the oracle:
+Start the station with your profile and camera, then the app:
 
 ```sh
 uv run rua serve --profile ~/.config/rua/so101.toml --camera table=0
-uv run --project examples/python examples/applications/block-oracle/block_oracle.py --model <openai-model>
+uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py --model <openai-model>
 ```
 
 Type a question and press Enter; a blank line quits. Pass

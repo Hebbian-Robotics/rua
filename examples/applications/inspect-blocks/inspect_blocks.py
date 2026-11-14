@@ -1,11 +1,11 @@
-"""A yes/no oracle for blocks on the table.
+"""Inspect Blocks: yes/no questions about blocks on the table.
 
 Arrange some blocks, then type a yes/no question. The model drives the arm to
 inspect the scene with the wrist camera, decides, and the arm nods (yes) or
 shakes its head (no) with fixed gestures. The arm rehomes and disables between
 questions, so start it resting on the table.
 
-    uv run --project examples/python examples/applications/block-oracle/block_oracle.py --model gpt-6-astra
+    uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py --model gpt-6-astra
 """
 
 import argparse
