@@ -174,7 +174,7 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         RobotToolDefinition {
             name: "rehome",
             operation: RobotToolOperation::Rehome,
-            description: "Return this arm to the joint pose recorded when it was enabled. This moves the arm without changing the gripper; ensure the path and workspace are clear.".into(),
+            description: "Close the gripper, then return this arm to the joint pose recorded when it was enabled. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.".into(),
             parameters: model_arguments::<StopArguments>(),
         },
         RobotToolDefinition {

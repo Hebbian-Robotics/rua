@@ -193,8 +193,15 @@ class LeasedArm(ArmMotionCommands):
             expected_revision=expected_revision,
         )
 
-    async def rehome(self, *, expected_revision: int | None = None) -> CommandResult:
-        """Return to the pose the arm was enabled at."""
+    async def rehome(
+        self, *, close_gripper: bool = True, expected_revision: int | None = None
+    ) -> CommandResult:
+        """Return to the pose the arm was enabled at, by default closing the gripper first.
+
+        The jaws close before the move, while they are clear of the table; closing
+        stops on contact, so a held object stays held. Pass `close_gripper=False`
+        to leave the gripper as it is.
+        """
         rest_pose = (await self._client.arm(self.name).state()).rest_pose
         if rest_pose is None:
             return CommandResult.of(
@@ -203,6 +210,10 @@ class LeasedArm(ArmMotionCommands):
                     detail=f"{self.name} has no rest pose; enable it first",
                 )
             )
+        if close_gripper:
+            closed = await self.set_gripper(0.0, expected_revision=expected_revision)
+            if not closed.completed:
+                return closed
         return await self.move_to_joints(
             list(rest_pose), expected_revision=expected_revision
         )

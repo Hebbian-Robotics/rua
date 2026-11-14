@@ -2,9 +2,12 @@
 
 import os
 import shutil
+import subprocess
 import sys
 import sysconfig
 from pathlib import Path
+
+from hebbian_rua.live_view import media_url_from_serve_arguments
 
 
 def main() -> None:
@@ -28,4 +31,19 @@ def main() -> None:
         raise SystemExit(
             "RUA server binary is missing. Install a hebbian-rua wheel for your platform, or build the server from source."
         )
-    os.execv(str(executable), ["rua", *sys.argv[1:]])
+    arguments = sys.argv[1:]
+    if arguments[:1] == ["serve"]:
+        if "--no-view" in arguments:
+            arguments.remove("--no-view")
+        else:
+            start_live_view(media_url_from_serve_arguments(arguments))
+    os.execv(str(executable), ["rua", *arguments])
+
+
+def start_live_view(media_url: str) -> None:
+    """Open the camera window from a separate process, since exec replaces this one."""
+    subprocess.Popen(
+        [sys.executable, "-m", "hebbian_rua.live_view", media_url],
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,  # Ctrl-C on the station leaves the page opener alone
+    )

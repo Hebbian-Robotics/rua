@@ -12,6 +12,15 @@ from your uv project with a USB camera:
 uv run rua serve --profile ./robot.toml --camera table=0
 ```
 
+## Live view
+
+`rua serve` opens a browser window with a live feed from every camera once
+the media service has one, so whoever watches the robot sees what its cameras
+see. It needs no LiveKit: the page polls each camera's newest frame from the
+media service, shows the frame rate, and keeps retrying while the station
+restarts. Pass `--no-view` to skip it, for example on a headless machine. To open
+it again, run `uv run python -m hebbian_rua.live_view`.
+
 ## Configure LiveKit
 
 Create your own [LiveKit project](https://cloud.livekit.io) and copy its URL,
