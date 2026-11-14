@@ -13,3 +13,4 @@ uv sync --project examples/python --locked
 | Application | What it does | Uses |
 |---|---|---|
 | [Block oracle](block-oracle/README.md) | Ask a yes/no question about blocks on the table. The model inspects the scene with the wrist camera, then the arm nods or shakes its head. | LLM-driven inspection, scripted gestures, run logging |
+| [Image Q&A](image-qa/README.md) | Ask a yes/no question about an image on a display. The model researches it on the web, then the arm nods or shakes its head. | Fixed viewing pose, web search, scripted gestures, run logging |
