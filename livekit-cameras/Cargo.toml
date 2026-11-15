@@ -26,7 +26,7 @@ station-access = { path = "../station-access" }
 # Keep the SDK's signaling dependency on the matching release.
 livekit-signaling = "=0.1.7"
 mcap = "=0.26.0"
-hebbian-mcap = { git = "https://github.com/Hebbian-Robotics/mcap-tools", rev = "ec9f4262d5ec5681e0960f7a93f66347b64cb612" }
+hebbian-mcap = { git = "https://github.com/Hebbian-Robotics/mcap-tools", rev = "5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd" }
 hebbian-contracts = { path = "../contracts" }
 axum = "0.8.9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }

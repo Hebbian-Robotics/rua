@@ -95,7 +95,7 @@ class GeminiRobotTools:
                                 response={
                                     "error"
                                     if result.is_error
-                                    else "result": result.data
+                                    else "result": result.model_data
                                 },
                             )
                         )

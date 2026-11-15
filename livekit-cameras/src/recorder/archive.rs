@@ -106,19 +106,22 @@ impl RecordingArchive {
         )
     }
 
-    /// One arm's joint positions as a ROS 2 `sensor_msgs/JointState`, for Foxglove and Rerun.
+    /// One arm's joints as a ROS 2 `sensor_msgs/JointState`, for Foxglove and Rerun.
+    /// Velocities and efforts are each empty or one per joint.
     pub fn joint_states(
         &self,
         arm: &str,
         timestamp: u64,
         names: &[String],
         positions: &[f64],
+        velocities: &[f64],
+        efforts: &[f64],
     ) -> Result<(), RecorderError> {
         self.write(
             &format!("/arms/{arm}/joint_states"),
             "cdr",
             timestamp,
-            &joint_state::encode(timestamp, arm, names, positions)?,
+            &joint_state::encode(timestamp, arm, names, positions, velocities, efforts)?,
             Payload::JointState,
         )
     }

@@ -1290,8 +1290,8 @@ dependencies = [
 
 [[package]]
 name = "hebbian-mcap"
-version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/mcap-tools?rev=ec9f4262d5ec5681e0960f7a93f66347b64cb612#ec9f4262d5ec5681e0960f7a93f66347b64cb612"
+version = "0.1.2"
+source = "git+https://github.com/Hebbian-Robotics/mcap-tools?rev=5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd#5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd"
 dependencies = [
  "mcap",
  "prost",
@@ -1346,7 +1346,7 @@ dependencies = [
 [[package]]
 name = "hebbian-so101"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/so101?rev=7fd1b4fa94804963b05c8cecfa36de116309f7e3#7fd1b4fa94804963b05c8cecfa36de116309f7e3"
+source = "git+https://github.com/Hebbian-Robotics/so101?rev=9f49365f21703c1c898f4b587cd169697a6aa62d#9f49365f21703c1c898f4b587cd169697a6aa62d"
 dependencies = [
  "anyhow",
  "hdrhistogram",

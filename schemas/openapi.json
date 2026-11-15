@@ -489,6 +489,22 @@
               }
             ]
           },
+          "measured_joint_efforts": {
+            "description": "Measured joint efforts in the hardware profile's effort units, in\n`measured_joints` order.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "measured_joint_velocities": {
+            "description": "Measured joint velocities in radians per second, in `measured_joints` order.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
           "measured_joints": {
             "items": {
               "format": "double",
@@ -560,6 +576,8 @@
           "arm",
           "mode",
           "measured_joints",
+          "measured_joint_velocities",
+          "measured_joint_efforts",
           "controller",
           "status",
           "interlocks",

@@ -63,6 +63,14 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
             .as_ref()
             .map(|sample| sample.positions.clone())
             .unwrap_or_default(),
+        measured_joint_velocities: sample
+            .as_ref()
+            .map(|sample| sample.velocities.clone())
+            .unwrap_or_default(),
+        measured_joint_efforts: sample
+            .as_ref()
+            .map(|sample| sample.efforts.clone())
+            .unwrap_or_default(),
         commanded_joints: sample
             .as_ref()
             .and_then(|sample| sample.commanded_positions.clone()),

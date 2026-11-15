@@ -1,22 +1,17 @@
 """Shared tool parsing, resource rules, and result formatting."""
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import assert_never
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from hebbian_rua.client.contract.station_api import (
-    ArmMode,
-    ArmState,
     CommandOutcome,
     CommandRecord,
     CommandRefused,
-    PoseDescription,
-    StationState,
 )
-from hebbian_rua.client.llm.response_format import model_response
+from hebbian_rua.client.llm.response_format import result_from_data
 from hebbian_rua.client.llm.tools import (
     ROBOT_TOOL_INPUTS,
     RobotToolInput,
@@ -84,42 +79,6 @@ type CallWrapper = Callable[
 ]
 
 
-class ArmSummary(BaseModel):
-    """One arm as the model sees it: the state without diagnostics."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    mode: ArmMode
-    sampled_at_unix_seconds: float | None
-    fault: str | None
-    joint_names: list[str]
-    measured_joints: list[float]
-    # The tool's position, quaternion, grasp-terms orientation and model points.
-    tool: PoseDescription | None
-    max_joint_speed: float
-    # 0 closed to 1 open; none without a gripper.
-    gripper_opening: float | None
-
-
-ARM_SUMMARIES_ADAPTER: TypeAdapter[dict[str, ArmSummary]] = TypeAdapter(
-    dict[str, ArmSummary]
-)
-
-
-def arm_summary(state: StationState, arm_state: ArmState) -> ArmSummary:
-    opening = arm_state.gripper_opening
-    return ArmSummary(
-        mode=arm_state.mode,
-        sampled_at_unix_seconds=arm_state.sampled_at_unix_seconds,
-        fault=arm_state.fault,
-        joint_names=state.joint_names,
-        measured_joints=[round(value, 4) for value in arm_state.measured_joints],
-        tool=arm_state.tool,
-        max_joint_speed=state.max_joint_speed,
-        gripper_opening=None if opening is None else round(opening, 3),
-    )
-
-
 @dataclass(frozen=True)
 class CapturedObservation:
     """An observation with the capture details a recorder may want to keep."""
@@ -133,10 +92,7 @@ def records_result(
 ) -> RobotToolResult:
     """Report incomplete or limited commands as errors; group moves by status."""
     limited = any(command_record_was_limited(record) for record in records)
-    payloads = [
-        model_response(record.model_dump(mode="json", exclude={"checkpoints"}))
-        for record in records
-    ]
+    payloads = [record.model_dump(mode="json") for record in records]
     if grouped:
         outcomes = {
             record.completion.outcome if record.completion else None
@@ -150,20 +106,18 @@ def records_result(
             status = "stopped_short"
         else:
             status = "partial"
-        text = json.dumps(
-            {
-                "group_id": records[0].group_id,
-                "status": status,
-                "commands": payloads,
-            }
-        )
+        payload = {
+            "group_id": records[0].group_id,
+            "status": status,
+            "commands": payloads,
+        }
     elif len(records) == 1:
-        text = json.dumps(payloads[0], separators=(",", ":"))
+        payload = payloads[0]
     else:
-        text = json.dumps(payloads)
-    return RobotToolResult(
+        payload = payloads
+    return result_from_data(
         call,
-        text,
+        payload,
         is_error=limited
         or any(
             outcome_is_error(record.completion.outcome if record.completion else None)
@@ -190,9 +144,9 @@ def command_results(
     sees, marked in the text too since not every provider has an error flag."""
     refusal = results[0].record
     if isinstance(refusal, CommandRefused):
-        return RobotToolResult(
+        return result_from_data(
             call,
-            json.dumps(model_response(refusal.model_dump(mode="json"))),
+            refusal.model_dump(mode="json"),
             is_error=True,
             halt=refusal.reason.value == "faulted",
             interrupted=refusal.reason.value
