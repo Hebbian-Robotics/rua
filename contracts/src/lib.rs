@@ -377,6 +377,11 @@ pub struct ArmState {
     /// When the newest sample was taken, in Unix seconds; none before the first.
     pub sampled_at_unix_seconds: Option<f64>,
     pub measured_joints: Vec<f64>,
+    /// Measured joint velocities in radians per second, in `measured_joints` order.
+    pub measured_joint_velocities: Vec<f64>,
+    /// Measured joint efforts in the hardware profile's effort units, in
+    /// `measured_joints` order.
+    pub measured_joint_efforts: Vec<f64>,
     /// Joint setpoint sent in the latest sample, if the arm was commanded.
     pub commanded_joints: Option<Vec<f64>>,
     /// The tool's pose at the measured joints, its orientation in grasp terms,

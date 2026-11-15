@@ -1869,6 +1869,18 @@ class ArmState(BaseModel):
         Field(description="Conditions refusing motion on this arm until they clear."),
     ]
     last_command: CommandRecord | None = None
+    measured_joint_efforts: Annotated[
+        list[float],
+        Field(
+            description="Measured joint efforts in the hardware profile's effort units, in\n`measured_joints` order."
+        ),
+    ]
+    measured_joint_velocities: Annotated[
+        list[float],
+        Field(
+            description="Measured joint velocities in radians per second, in `measured_joints` order."
+        ),
+    ]
     measured_joints: list[float]
     mode: ArmMode
     recovery_issue: ArmRecoveryIssue | None = None

@@ -1290,8 +1290,8 @@ dependencies = [
 
 [[package]]
 name = "hebbian-mcap"
-version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/mcap-tools?rev=ec9f4262d5ec5681e0960f7a93f66347b64cb612#ec9f4262d5ec5681e0960f7a93f66347b64cb612"
+version = "0.1.2"
+source = "git+https://github.com/Hebbian-Robotics/mcap-tools?rev=5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd#5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd"
 dependencies = [
  "mcap",
  "prost",

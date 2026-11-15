@@ -17,6 +17,7 @@ _POSITION_FIELDS = {
 _ANGLE_FIELDS = {
     "joints": "joints_degrees",
     "measured_joints": "measured_joints_degrees",
+    "measured_joint_velocities": "measured_joint_velocities_degrees_per_second",
     "commanded_joints": "commanded_joints_degrees",
     "rest_pose": "rest_pose_degrees",
     "target_joints": "target_joints_degrees",

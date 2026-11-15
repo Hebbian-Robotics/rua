@@ -270,6 +270,16 @@ fn verify_recording(
             .map(|schema| schema.name.as_str()),
         Some("sensor_msgs/msg/JointState")
     );
+    // The message ends with the velocity and effort arrays: each a count, padding
+    // to eight bytes and one double for each of the two joints.
+    let per_joint_array_bytes = 4 + 4 + 2 * 8;
+    let payload = &joint_state.data;
+    for array_start in [
+        payload.len() - 2 * per_joint_array_bytes,
+        payload.len() - per_joint_array_bytes,
+    ] {
+        assert_eq!(payload[array_start..array_start + 4], 2_u32.to_le_bytes());
+    }
     assert!(messages.iter().any(
         |message| message.channel.topic == "/station/recording_errors"
             && String::from_utf8_lossy(&message.data).contains("cameras unavailable")
