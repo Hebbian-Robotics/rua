@@ -72,7 +72,7 @@ class RobotToolResult:
 
     @property
     def data(self) -> object:
-        """Full station payload in original SI units, or the original error text."""
+        """Full station payload in original units, or the original error text."""
         return self.raw_data if self.raw_data is not None else self.model_data
 
     @property

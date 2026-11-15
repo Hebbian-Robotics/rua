@@ -25,7 +25,7 @@ model_tools = OpenAIRobotTools(robot.map_output(full_formatter))
 ```
 
 `robot` is your existing `RobotTools` instance. `full_formatter` shows all fields
-in their original SI units and precision. It includes configured observation
+in their original units and precision. It includes configured observation
 cameras, notes and camera availability/timing information.
 
 ## Your own formatter
@@ -72,7 +72,7 @@ Close the shared station only after all views have finished using it.
 With the lower-level SDK, `await robot.execute_one(call)` returns a
 `RobotToolResult`; provider adapters also expose these as `turn.results`:
 
-- `result.data`: complete station payload in original SI units and precision,
+- `result.data`: complete station payload in original units and precision,
   or the original error text.
 - `result.text`: the selected model-facing text.
 - `result.model_data`: the selected text parsed as JSON when possible.
