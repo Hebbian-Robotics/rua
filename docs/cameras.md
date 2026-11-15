@@ -5,40 +5,58 @@ publishes their tracks into LiveKit. The media service reads room tracks back
 as JPEG snapshots for the Python SDK. The browser subscribes directly to the
 same room, so previewing never opens the USB device a second time.
 
-The wheel includes the media companion. After configuring LiveKit, launch RUA
-from your uv project with a USB camera:
+The wheel includes the media companion. You only need your LiveKit project and
+the hosted Room viewer; no frontend build or LiveKit SDK is needed in your agent.
 
-```sh
-uv run rua serve --profile ./robot.toml --camera table=0
-```
+## Watch a USB camera
 
-## Live view
+1. Create a [LiveKit project](https://cloud.livekit.io). Put its credentials in
+   `.env` in the directory where you launch RUA:
 
-`rua serve` opens a browser window with a live feed from every camera once
-the media service has one, so whoever watches the robot sees what its cameras
-see. It needs no LiveKit: the page polls each camera's newest frame from the
-media service, shows the frame rate, and keeps retrying while the station
-restarts. Pass `--no-view` to skip it, for example on a headless machine. To open
-it again, run `uv run python -m hebbian_rua.live_view`.
+   ```sh
+   LIVEKIT_URL=wss://your-project.livekit.cloud
+   LIVEKIT_API_KEY=your-api-key
+   LIVEKIT_API_SECRET=your-api-secret
+   ```
 
-## Configure LiveKit
+2. Start the station with your robot profile and USB camera:
 
-Create your own [LiveKit project](https://cloud.livekit.io) and copy its URL,
-API key and secret into `.env` in the launch directory:
+   ```sh
+   uv run rua serve --profile ./robot.toml --camera table=0
+   ```
 
-```sh
-LIVEKIT_URL=wss://your-project.livekit.cloud
-LIVEKIT_API_KEY=your-api-key
-LIVEKIT_API_SECRET=your-api-secret
-```
+   `table` is the name your agent uses. `0` selects USB camera index 0; you can
+   also use a device identifier such as `table=/dev/video0`. Repeat `--camera`
+   for more cameras. RUA starts the publisher and snapshot service itself.
+
+3. In another terminal on the station machine, request watch-only room access:
+
+   ```sh
+   curl --fail http://127.0.0.1:8792/viewer/api/token
+   ```
+
+   Open [camera tools](https://hebbian-robotics.github.io/livekit-cameras/),
+   select **Room viewer**, and paste the response's `server_url` and `token`
+   into the matching fields. Connect to see the room's camera tracks, including
+   cameras that join later. Use your station's actual HTTP address if it differs
+   from the default above.
+
+The browser streams video directly from LiveKit while your agent requests
+snapshots from the same tracks. Neither the browser nor the snapshot reader opens
+the USB camera again.
+The station does not open a browser automatically.
+
+Keep the viewer token private; it grants access to the room's media. Your LiveKit
+API key and secret stay on the station and are not entered in the browser.
+
+## Rooms and restarts
 
 Restart the station after changing credentials. It chooses a new room on each
-start; `--room demo` keeps one room across restarts. Use distinct rooms for
-distinct stations sharing a project.
+start, so request a new viewer token and reconnect after restarting.
+`--room demo` keeps one room across restarts. Use distinct rooms for distinct
+stations sharing a project.
 
-Add `--camera table=0` to the station command for USB camera index 0, or use a
-device identifier such as `--camera table=/dev/video0`. Repeat the flag for
-other cameras. The station starts the publisher and snapshot service itself.
+## Add a phone camera
 
 To publish a phone instead, run this from your uv project while the station
 is running with LiveKit configured:
@@ -61,18 +79,7 @@ camera name is `phone_table`. The default invite uses the hosted camera tools
 page. Invites contain a publishing token valid for 12 hours; use a trusted page
 and keep the invite private. It connects directly to LiveKit, not your station.
 
-## Watch the room
-
-Open [camera tools](https://hebbian-robotics.github.io/livekit-cameras/) and select
-**Room viewer**. Request a subscribe-only token locally:
-
-```sh
-curl --fail http://127.0.0.1:8792/viewer/api/token
-```
-
-Paste the response's `server_url` and `token` into the viewer. Keep
-the token private. No LiveKit SDK or frontend build is needed in your example.
-Use your station's actual HTTP address when it differs from the default.
+## Hosting and local capture
 
 The camera tools live in the separate public
 [livekit-cameras repository](https://github.com/Hebbian-Robotics/livekit-cameras).
@@ -99,5 +106,3 @@ finds it automatically. These native prerequisites apply even when recording
 is disabled. FFmpeg is additionally required for recording, but not camera viewing.
 The media build and camera path are not validated on macOS or Windows.
 
-FFmpeg is an external command used for recording. Install it separately when
-you need recording; it is not required just to watch cameras.

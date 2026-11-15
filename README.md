@@ -8,7 +8,7 @@ parts of our stack that make that loop easy to build. More coming soon.
 
 - Rust server
 - Python SDK and a small agent loop
-- [LiveKit camera preview](https://hebbian-robotics.github.io/livekit-cameras/)
+- [LiveKit camera preview](docs/cameras.md)
 
 Start a project with [uv](https://docs.astral.sh/uv/):
 
@@ -25,6 +25,7 @@ See [getting started](docs/getting-started.md) and the [Python examples](example
 and the [example applications](examples/applications/README.md) for example toy projects.
 
 See [connecting a simulator](docs/simulators.md) to try in simulation.
+To watch your cameras, follow the [LiveKit web preview setup](docs/cameras.md#watch-a-usb-camera).
 
 ## Build an agent
 
