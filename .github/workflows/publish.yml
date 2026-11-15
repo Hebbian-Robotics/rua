@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_EXCLUDE_NEWER: "3 days"
+
 concurrency:
   group: publish-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: false
