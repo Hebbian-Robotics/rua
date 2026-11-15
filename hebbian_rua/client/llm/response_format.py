@@ -98,8 +98,6 @@ def _compact_output(value: object) -> object:
             "revision",
             "sampled_at_unix_seconds",
             "measured_joints",
-            "measured_joint_velocities",
-            "measured_joint_efforts",
             "tool",
             "gripper_opening",
         }

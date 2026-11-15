@@ -3,15 +3,16 @@
 `RobotTools` keeps full station responses and formats a concise view for the
 model. The same view works with the OpenAI, Anthropic and Gemini adapters.
 
-By default, observations show each arm once, with measured joints, joint velocities and efforts, tool pose,
+By default, observations show each arm once, with measured joints, tool pose,
 gripper state, faults and interlocks. Motion results keep outcomes, achieved
 poses and limits while omitting checkpoints, trace metadata and rendering
 geometry. Sequence results show their phase, requested/recorded step counts and
 the last step instead of repeating the whole history. Model views use rounded
-millimetres and degrees, with velocities in degrees per second. Effort readings
-keep the hardware profile's units; they are not necessarily torque in newton-metres.
-Full output preserves velocities in radians per second. Tool inputs still use
-metres and radians.
+millimetres and degrees; tool inputs still use metres and radians. Joint
+velocities and efforts are retained in full output for diagnostics, rather than
+included in the concise state. Full output preserves velocities in radians per
+second and efforts in the hardware profile's units; efforts are not necessarily
+torque in newton-metres.
 
 ## Full output
 

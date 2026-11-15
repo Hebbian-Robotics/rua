@@ -88,8 +88,8 @@ def test_observation_summary_preserves_interlocks_cameras_and_recovery_context()
     summary = default_formatter(output)
     assert summary.cameras == {"table": b"jpeg"}
     assert "required_camera_unavailable" in summary.text
-    assert '"measured_joint_velocities_degrees_per_second":[28.6]' in summary.text
-    assert '"measured_joint_efforts":[0.42]' in summary.text
+    assert "measured_joint_velocities" not in summary.text
+    assert "measured_joint_efforts" not in summary.text
     assert "test fault" in summary.text
     assert "Recovered connection" in summary.text
     assert "Optional cameras unavailable: wrist" in summary.text
@@ -100,6 +100,8 @@ def test_observation_summary_preserves_interlocks_cameras_and_recovery_context()
     assert "123.5" in summary.text
     detailed = full_formatter(output)
     assert "0.123456789" in detailed.text
+    assert '"measured_joint_velocities": [0.5]' in detailed.text
+    assert '"measured_joint_efforts": [0.42]' in detailed.text
     assert "model_points" in detailed.text
     assert detailed.cameras == summary.cameras
     assert state["arms"][0]["measured_joints"] == [0.123456789]
