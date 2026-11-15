@@ -50,3 +50,11 @@ checks do not cover a physical camera or arm.
 Use the workspace's existing Clippy allowances and Python lint settings. The
 release uses `panic = "abort"`; default test builds retain unwinding. Configure
 sccache in your own Cargo settings rather than requiring it for contributors.
+
+## Documentation boundaries
+
+Keep setup commands, configuration and behavior specific to RUA here. Link to
+[SO-101](https://github.com/Hebbian-Robotics/so101),
+[LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras) and
+[MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools) for their workflows,
+APIs and internals. Keep a complete RUA quickstart; avoid copying their guides.

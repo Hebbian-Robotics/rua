@@ -60,6 +60,12 @@ Use `AnthropicRobotTools` from `hebbian_rua.anthropic` or `GeminiRobotTools` fro
 `hebbian_rua.gemini` with the corresponding SDK. See the
 [Python examples](examples/python/README.md).
 
+Hardware setup, camera tools and recording utilities have their own guides:
+[SO-101](https://github.com/Hebbian-Robotics/so101),
+[LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras) and
+[MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools). RUA handles their
+integration with your robot and agent.
+
 ## Coming soon
 
 - TypeScript and Rust SDKs

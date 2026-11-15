@@ -1,5 +1,11 @@
 # Set up each SO-101
 
+[SO-101](https://github.com/Hebbian-Robotics/so101) owns the driver, calibration
+tool and model assets. Its [setup guide](https://github.com/Hebbian-Robotics/so101/tree/main/setup)
+covers calibration; the steps below connect a calibrated arm to RUA profiles.
+RUA reads LeRobot calibration JSON; the standalone tool's `setup.toml` is not a
+RUA profile.
+
 Every physical arm needs its own serial port, LeRobot calibration and verified
 model mapping. The bundled profile provides starting values, not a calibration
 or universal servo tune. Keep the arm supported with torque off during setup,

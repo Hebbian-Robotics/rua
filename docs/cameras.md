@@ -1,17 +1,12 @@
 # Cameras and the web preview
 
-The station supervises its media companion, which owns USB devices and
-publishes their tracks into LiveKit. The media service reads room tracks back
-as JPEG snapshots for the Python SDK. The browser subscribes directly to the
-same room, so previewing never opens the USB device a second time.
-
-The wheel includes the media companion. You only need your LiveKit project and
-the hosted Room viewer; no frontend build or LiveKit SDK is needed in your agent.
+RUA uses [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras)
+for camera streaming and its hosted web preview. RUA starts the media companion
+for you; your Python agent needs no LiveKit SDK or frontend build.
 
 ## Watch a USB camera
 
-1. Create a [LiveKit project](https://cloud.livekit.io). Put its credentials in
-   `.env` in the directory where you launch RUA:
+1. Put your LiveKit project's credentials in `.env` where you launch RUA:
 
    ```sh
    LIVEKIT_URL=wss://your-project.livekit.cloud
@@ -19,50 +14,36 @@ the hosted Room viewer; no frontend build or LiveKit SDK is needed in your agent
    LIVEKIT_API_SECRET=your-api-secret
    ```
 
-2. Start the station with your robot profile and USB camera:
+2. Start RUA with your robot profile and camera:
 
    ```sh
    uv run rua serve --profile ./robot.toml --camera table=0
    ```
 
-   `table` is the name your agent uses. `0` selects USB camera index 0; you can
-   also use a device identifier such as `table=/dev/video0`. Repeat `--camera`
-   for more cameras. RUA starts the publisher and snapshot service itself.
+   `table` is the SDK camera name; `0` is the device index. Device paths such as
+   `table=/dev/video0` also work. Repeat `--camera` for more cameras.
 
-3. In another terminal on the station machine, request watch-only room access:
+3. Request watch-only access on the station machine:
 
    ```sh
    curl --fail http://127.0.0.1:8792/viewer/api/token
    ```
 
-   Open [camera tools](https://hebbian-robotics.github.io/livekit-cameras/),
-   select **Room viewer**, and paste the response's `server_url` and `token`
-   into the matching fields. Connect to see the room's camera tracks, including
-   cameras that join later. Use your station's actual HTTP address if it differs
-   from the default above.
+   Open [camera tools](https://hebbian-robotics.github.io/livekit-cameras/), select
+   **Room viewer**, and connect with the returned `server_url` and `token`.
+   Use your station's HTTP address if it differs from the default above.
 
-The browser streams video directly from LiveKit while your agent requests
-snapshots from the same tracks. Neither the browser nor the snapshot reader opens
-the USB camera again.
-The station does not open a browser automatically.
+The agent and viewer share the cameras. Keep tokens private; API keys and secrets
+stay on the station. See the [Room viewer guide](https://github.com/Hebbian-Robotics/livekit-cameras#room-viewer)
+for viewer behavior and the [camera tools guide](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
+for browser controls and hosting.
 
-Keep the viewer token private; it grants access to the room's media. Your LiveKit
-API key and secret stay on the station and are not entered in the browser.
+## Add a phone
 
-## Rooms and restarts
-
-Restart the station after changing credentials. It chooses a new room on each
-start, so request a new viewer token and reconnect after restarting.
-`--room demo` keeps one room across restarts. Use distinct rooms for distinct
-stations sharing a project.
-
-## Add a phone camera
-
-To publish a phone instead, run this from your uv project while the station
-is running with LiveKit configured:
+With RUA running, generate an invite from your agent project:
 
 ```sh
-uv run python - <<'PY'
+uv run python - <<'PYTHON'
 import asyncio
 from hebbian_rua import StationClient
 
@@ -71,37 +52,23 @@ async def main():
         print((await station.phone_invite("table")).url)
 
 asyncio.run(main())
-PY
+PYTHON
 ```
 
-Open the returned invite URL on the phone and allow camera access. Its SDK
-camera name is `phone_table`. The default invite uses the hosted camera tools
-page. Invites contain a publishing token valid for 12 hours; use a trusted page
-and keep the invite private. It connects directly to LiveKit, not your station.
+Open the private invite on your phone. Its SDK camera name is `phone_table`.
+Follow the [browser camera instructions](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
+to start streaming. Set `HEBBIAN_PHONE_PAGE_URL` before starting RUA if you host
+that page yourself.
 
-## Hosting and local capture
+## RUA configuration
 
-The camera tools live in the separate public
-[livekit-cameras repository](https://github.com/Hebbian-Robotics/livekit-cameras).
-You can host that app yourself and set `HEBBIAN_PHONE_PAGE_URL` for invites.
-
-Without LiveKit credentials, the media service captures local USB cameras for
-SDK snapshots, and simulator views always come from the simulator socket.
-Neither path provides tracks to Room viewer. The server continues controlling
-the arm if media is unavailable; camera-dependent agent requests may be refused.
-
-## From source
-
-On Linux install `libglib2.0-dev`, clang/clang++ 21 or newer and the matching
-libclang development package. The source checkout uses mold. On Ubuntu 24.04,
-LLVM's [APT repository](https://apt.llvm.org/) provides the clang 21 packages.
-With those prerequisites installed:
-
-```sh
-CC=clang-21 CXX=clang++-21 cargo build -p livekit-cameras
-```
-
-The binary is created beside the server in `target/debug`, where the station
-finds it automatically. These native prerequisites apply even when recording
-is disabled. FFmpeg is additionally required for recording, but not camera viewing.
-The media build and camera path are not validated on macOS or Windows.
+- Restart RUA after changing credentials. By default, each start creates a new
+  room; request a new viewer token and phone invite after restarting.
+- Pass `--room demo` to reuse a room. Use distinct rooms for distinct stations.
+- Without LiveKit credentials, local USB and simulator snapshots still work for
+  the SDK, but are not published to Room viewer. See [simulator integration](simulators.md)
+  for user-owned camera streams.
+- Source builds need the [native prerequisites](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/CONTRIBUTING.md#native-rust),
+  then `CC=clang-21 CXX=clang++-21 cargo build -p livekit-cameras` on Linux.
+  RUA finds the media binary beside the server in `target/debug`.
+  Recording additionally needs [FFmpeg](recording.md).
