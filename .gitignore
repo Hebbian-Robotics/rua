@@ -38,3 +38,6 @@ __pycache__/
 
 # Example application runs: camera frames and model moves
 /examples/applications/*/runs/
+
+# Generated from the pinned SO-101 release during source setup.
+/robots/so101/
