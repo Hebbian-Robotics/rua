@@ -1,8 +1,10 @@
 # Get started
 
 `hebbian-rua` bundles the Python SDK, Rust server, media companion and robot
-models in one wheel. The prebuilt wheel targets Ubuntu 24.04 x86-64
-(Linux with glibc 2.39 or newer). No Rust compiler is needed for that install.
+models in one wheel. Prebuilt wheels support Linux x86-64 with glibc 2.39+
+(such as Ubuntu 24.04) and macOS 14+ on Apple Silicon.
+No Rust compiler is needed for those installs.
+On Windows, see [Windows with WSL2](windows-wsl.md) for setup considerations.
 
 Use [uv](https://docs.astral.sh/uv/) for your agent project:
 

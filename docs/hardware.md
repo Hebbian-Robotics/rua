@@ -14,7 +14,8 @@ and keep a physical power cutoff accessible.
 1. Follow [LeRobot's SO-101 setup](https://huggingface.co/docs/lerobot/en/so101)
    to identify the port and calibrate with a unique robot ID. The station reads
    `~/.cache/huggingface/lerobot/calibration/robots/so_follower/<id>.json`.
-   Prefer a stable `/dev/serial/by-id/` path on Linux.
+   Prefer a stable `/dev/serial/by-id/` path on Linux; on macOS, use the arm's
+   `/dev/cu.*` serial device.
 2. Create a private profile such as `$HOME/.config/rua/so101.toml`:
 
    ```toml

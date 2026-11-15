@@ -106,7 +106,9 @@ def main() -> None:
     print("Installed models, license and attribution match the pinned SO-101 release")
     port = available_port()
     stopped = threading.Event()
-    with tempfile.TemporaryDirectory(prefix="rua-installed-check-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="rua-installed-check-", dir="/tmp"
+    ) as temporary:
         directory = Path(temporary)
         environment = {
             name: value

@@ -21,31 +21,55 @@ jobs:
         with:
           version: "0.13.6"
           python-version: "3.14"
+          enable-cache: true
       - run: uv sync --locked
       - run: uv run rua-dev validate --lane python
       - run: uv lock --check --project examples/python
 
   rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
     if: github.repository == 'Hebbian-Robotics/rua'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    env:
-      CC: clang-21
-      CXX: clang++-21
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Install native build tools
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
         run: |
           curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
           echo 'deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-21 main' | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update
           sudo apt-get install -y pkg-config mold libudev-dev libglib2.0-dev clang-21 libclang-21-dev ffmpeg
+          {
+            echo 'CC=clang-21'
+            echo 'CXX=clang++-21'
+          } >> "$GITHUB_ENV"
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg pkg-config
+          {
+            echo 'CC=clang'
+            echo 'CXX=clang++'
+            echo 'MACOSX_DEPLOYMENT_TARGET=14.0'
+            echo 'TMPDIR=/tmp'
+          } >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.13.6"
           python-version: "3.14"
+          enable-cache: true
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: checks-${{ matrix.os }}
+          env-vars: CC CXX MACOSX_DEPLOYMENT_TARGET
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
       - name: Prepare pinned robot assets
         run: uv run rua-dev setup
       - run: rustup show active-toolchain

@@ -3,11 +3,10 @@
 //! or the viewer. `LIVEKIT_URL` points at an address that never answers.
 
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use hebbian_robot_use_server::config::ExecutorConfig;
@@ -100,23 +99,32 @@ impl Plant for FailingPlant {
 
 /// Status code and body of one request.
 fn request(address: SocketAddr, method: &str, path: &str, body: Option<&Value>) -> (u16, String) {
-    let mut stream = TcpStream::connect(address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    let body = body.map(Value::to_string).unwrap_or_default();
-    write!(
-        stream,
-        "{method} {path} HTTP/1.1\r\nHost: station.local:8793\r\nConnection: close\r\n\
-         Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-        body.len()
-    )
-    .unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    let (head, body) = response.split_once("\r\n\r\n").unwrap();
-    let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
-    (status, body.to_owned())
+    static HTTP_RUNTIME_AND_CLIENT: OnceLock<(tokio::runtime::Runtime, reqwest::Client)> =
+        OnceLock::new();
+    let (runtime, client) = HTTP_RUNTIME_AND_CLIENT.get_or_init(|| {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        (runtime, client)
+    });
+    runtime.block_on(async {
+        let mut request = client.request(
+            reqwest::Method::from_bytes(method.as_bytes()).unwrap(),
+            format!("http://{address}{path}"),
+        );
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        // Read the framed HTTP body, rather than waiting for TCP EOF: macOS
+        // can report a reset after a complete response closes the connection.
+        let response = request.send().await.unwrap();
+        let status = response.status().as_u16();
+        (status, response.text().await.unwrap())
+    })
 }
 
 fn get(address: SocketAddr, path: &str) -> (u16, String) {

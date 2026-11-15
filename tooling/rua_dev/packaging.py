@@ -168,7 +168,9 @@ def build_local(
         )
         if media_staging is not None:
             media_environment = os.environ | {
-                "CXX": os.environ.get("CXX", "clang++-21")
+                "CXX": os.environ.get(
+                    "CXX", "clang++" if platform.system() == "Darwin" else "clang++-21"
+                )
             }
             with tempfile.TemporaryDirectory(
                 prefix="rua-media-build-"

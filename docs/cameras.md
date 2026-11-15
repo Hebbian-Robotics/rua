@@ -70,5 +70,7 @@ that page yourself.
   for user-owned camera streams.
 - Source builds need the [native prerequisites](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/CONTRIBUTING.md#native-rust),
   then `CC=clang-21 CXX=clang++-21 cargo build -p livekit-cameras` on Linux.
+  On macOS, use `CC=clang CXX=clang++ cargo build -p livekit-cameras`.
+  Allow camera access for your terminal in macOS System Settings when prompted.
   RUA finds the media binary beside the server in `target/debug`.
   Recording additionally needs [FFmpeg](recording.md).

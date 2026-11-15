@@ -11,8 +11,9 @@ launches `rua serve`. Installing it only on a remote SDK client is insufficient.
 The RUA wheel does not bundle FFmpeg.
 
 These instructions install FFmpeg across platforms. The current prebuilt RUA
-wheel supports Linux x86-64 with glibc 2.39+ (such as Ubuntu 24.04); installing
-FFmpeg does not add RUA support for macOS, Windows or older Linux systems.
+wheels support Linux x86-64 with glibc 2.39+ (such as Ubuntu 24.04) and
+macOS 14+ on Apple Silicon. Installing FFmpeg does not add native
+Windows support or support for older systems.
 
 ### Ubuntu / Debian
 

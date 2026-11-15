@@ -2,10 +2,14 @@
 
 The published `hebbian-rua` wheel includes the SDK, native binaries and robot
 models. Source development additionally needs Rust, Python and uv. This workflow
-is exercised on Ubuntu 24.04 x86-64; macOS and Windows are not validated for RUA.
+is exercised on Ubuntu 24.04 x86-64 and macOS 14+ (Apple Silicon).
+Native Windows is not validated for RUA.
+For Windows setup considerations, see [Windows with WSL2](windows-wsl.md).
 
 Install [uv](https://docs.astral.sh/uv/), the pinned Rust toolchain and, on Ubuntu,
-`build-essential`, `pkg-config`, `libudev-dev` and `mold`. From the checkout root:
+`build-essential`, `pkg-config`, `libudev-dev` and `mold`. On macOS, install
+Xcode Command Line Tools (`xcode-select --install`) and use the default Apple
+Clang compiler. From the checkout root:
 
 ```sh
 uv run rua-dev setup

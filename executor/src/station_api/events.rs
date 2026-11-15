@@ -18,7 +18,7 @@ struct JournalState {
     next_sequence: u64,
     events: VecDeque<StationEvent>,
     snapshots: BTreeMap<String, (u64, serde_json::Value)>,
-    records: VecDeque<(String, u64, serde_json::Value)>,
+    records: VecDeque<((String, String), u64, serde_json::Value)>,
 }
 
 /// Events and subscription are captured under one lock to avoid replay gaps.
@@ -65,16 +65,21 @@ impl EventJournal {
                 .pointer("/frame/event/command_id")
                 .and_then(serde_json::Value::as_str)
         {
-            let id = format!(
-                "{}:{id}",
+            let record_identity = (
                 payload
                     .get("arm")
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or_default()
+                    .to_owned(),
+                id.to_owned(),
             );
             let sequence = state.next_sequence;
-            state.records.retain(|(existing, _, _)| existing != &id);
-            state.records.push_back((id, sequence, payload.clone()));
+            state
+                .records
+                .retain(|(existing, _, _)| existing != &record_identity);
+            state
+                .records
+                .push_back((record_identity, sequence, payload.clone()));
             if state.records.len() > RETAINED_EVENTS {
                 state.records.pop_front();
             }
@@ -112,8 +117,9 @@ impl EventJournal {
         };
         if let Some(key) = snapshot_key {
             if let Some(arm) = key.strip_prefix("snapshot:") {
-                let prefix = format!("{arm}:");
-                state.records.retain(|(id, _, _)| !id.starts_with(&prefix));
+                state
+                    .records
+                    .retain(|((record_arm, _), _, _)| record_arm != arm);
             }
             let sequence = state.next_sequence;
             state.snapshots.insert(key, (sequence, payload.clone()));
@@ -221,6 +227,21 @@ mod tests {
         assert_eq!(snapshot[0]["frame"]["event"]["kind"], "snapshot");
         assert_eq!(snapshot[1]["frame"]["event"]["kind"], "state");
         assert_eq!(snapshot[2]["frame"]["event"]["command_id"], "new");
+    }
+
+    #[test]
+    fn snapshot_preserves_records_for_other_arms_with_shared_name_prefixes() {
+        let journal = EventJournal::default();
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left:tool", "frame":{"event":{"kind":"record", "command_id":"move"}}}));
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"event":{"kind":"record", "command_id":"tool:move"}}}));
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"event":{"kind":"snapshot"}}}));
+
+        let (_, snapshot, _) = journal.subscribe_with_snapshot();
+        assert_eq!(snapshot.len(), 2);
+        assert_eq!(snapshot[0]["arm"], "left:tool");
+        assert_eq!(snapshot[0]["frame"]["event"]["command_id"], "move");
+        assert_eq!(snapshot[1]["arm"], "left");
+        assert_eq!(snapshot[1]["frame"]["event"]["kind"], "snapshot");
     }
 
     #[test]

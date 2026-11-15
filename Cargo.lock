@@ -1314,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-robot-use-server"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-station"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2062,7 +2062,7 @@ dependencies = [
 
 [[package]]
 name = "livekit-cameras"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "cameras",

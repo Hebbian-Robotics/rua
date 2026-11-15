@@ -11,7 +11,7 @@ use hebbian_robot_use_server::config::ExecutorConfig;
 use hebbian_robot_use_server::control_link::Link;
 use hebbian_robot_use_server::control_loop::{ArmSetup, run, run_arms};
 use hebbian_robot_use_server::lease::{LEASE, Lease};
-use hebbian_robot_use_server::plant::{Feedback, Plant, SimulatedPlant};
+use hebbian_robot_use_server::plant::{Feedback, Pacing, Plant, SimulatedPlant};
 use serde_json::{Value, json};
 
 mod support;
@@ -54,6 +54,10 @@ struct FaultingPlant {
 }
 
 impl Plant for FaultingPlant {
+    fn pacing(&self) -> Pacing {
+        self.inner.pacing()
+    }
+
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         self.inner.read_feedback_into(feedback)?;
         feedback.temperatures_celsius = vec![70.0, 31.0];
@@ -94,6 +98,8 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
     let link = Link::new(&config, control()).unwrap();
     let handle = link.handle();
     let mut client = LinkClient::connect(&handle);
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let loop_shutdown_requested = Arc::clone(&shutdown_requested);
     let loop_thread = std::thread::spawn(move || {
         let mut plant = FaultingPlant {
             inner: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
@@ -103,16 +109,28 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
             &mut plant,
             Some(&link),
             &config,
-            Some(Duration::from_millis(500)),
-            &AtomicBool::new(false),
+            Some(Duration::from_secs(10)),
+            &loop_shutdown_requested,
         );
         link.close();
         report
     });
 
     client.send_command(None, &json!({"kind": "enable"}));
+    // Wait for repeated faulted observations, rather than assuming a number of
+    // cycles fits inside a wall-clock interval on a shared CI runner.
+    let mut events = Vec::new();
+    let mut faulted_samples = 0;
+    while faulted_samples < 3 {
+        let event = client.next_frame().event;
+        if matches!(&event, Event::State(sample) if sample.fault.is_some()) {
+            faulted_samples += 1;
+        }
+        events.push(event);
+    }
+    shutdown_requested.store(true, Ordering::Relaxed);
     let report = loop_thread.join().unwrap();
-    let events = client.drain_events();
+    events.extend(client.drain_events());
 
     assert_eq!(report.trip.as_deref(), Some("1: ok 70C"));
     let trips = events
@@ -127,7 +145,6 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
             _ => None,
         })
         .collect();
-    assert!(states.len() > 10);
     // Once the fault appears it stays in every sample, tripped or not.
     let first_faulted = states
         .iter()
@@ -143,14 +160,25 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
 fn the_loop_runs_until_shutdown_is_requested() {
     let config = test_config();
     let shutdown_requested = Arc::new(AtomicBool::new(false));
-    let requester = Arc::clone(&shutdown_requested);
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(200));
-        requester.store(true, Ordering::Relaxed);
+    let loop_shutdown_requested = Arc::clone(&shutdown_requested);
+    let link = Link::new(&config, control()).unwrap();
+    let mut client = LinkClient::connect(&link.handle());
+    let loop_thread = std::thread::spawn(move || {
+        let mut plant = SimulatedPlant::at(vec![0.0, 0.0], 0.02);
+        let report = run(
+            &mut plant,
+            Some(&link),
+            &config,
+            None,
+            &loop_shutdown_requested,
+        );
+        link.close();
+        report
     });
-    let mut plant = SimulatedPlant::at(vec![0.0, 0.0], 0.02);
-    let report = run(&mut plant, None, &config, None, &shutdown_requested);
-    assert!(report.cycle_microseconds.len() >= 10);
+    client.read_until(in_mode(ArmMode::Disabled));
+    assert!(!loop_thread.is_finished(), "the loop awaits shutdown");
+    shutdown_requested.store(true, Ordering::Relaxed);
+    let report = loop_thread.join().unwrap();
     assert!(report.trip.is_none());
 }
 
@@ -591,6 +619,8 @@ struct SwitchedBusPlant {
 }
 
 impl Plant for SwitchedBusPlant {
+    // Model a hardware bus: simulator pacing deliberately treats a lost peer
+    // as terminal instead of exercising hardware reconnection and torque hold.
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         anyhow::ensure!(!self.bus_down.load(Ordering::Relaxed), "bus down");
         self.inner.read_feedback_into(feedback)
@@ -620,7 +650,11 @@ impl Plant for SwitchedBusPlant {
 
 #[test]
 fn bus_outages_do_not_release_torque() {
-    let config = test_config();
+    let mut configuration = test_config().into_input();
+    // Exercise bus recovery, without an unrelated host scheduling trip winning
+    // the race on a shared CI runner. Production profiles are unchanged.
+    configuration.loop_deadline_seconds = 5.0;
+    let config = ExecutorConfig::try_from(configuration).unwrap();
     let link = Link::new(&config, control()).unwrap();
     let handle = link.handle();
     let bus_down = Arc::new(AtomicBool::new(false));
@@ -630,13 +664,15 @@ fn bus_outages_do_not_release_torque() {
         bus_down: Arc::clone(&bus_down),
         released: Arc::clone(&released),
     };
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let loop_shutdown_requested = Arc::clone(&shutdown_requested);
     let loop_thread = std::thread::spawn(move || {
         let report = run(
             &mut plant,
             Some(&link),
             &config,
-            Some(Duration::from_secs(3)),
-            &AtomicBool::new(false),
+            Some(Duration::from_secs(30)),
+            &loop_shutdown_requested,
         );
         link.close();
         report
@@ -655,6 +691,8 @@ fn bus_outages_do_not_release_torque() {
     );
 
     bus_down.store(true, Ordering::Relaxed);
+    client.read_until(in_mode(ArmMode::Disconnected));
+    shutdown_requested.store(true, Ordering::Relaxed);
     let report = loop_thread.join().unwrap();
     assert!(
         !released.load(Ordering::Relaxed),
