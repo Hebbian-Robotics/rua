@@ -1,0 +1,25 @@
+[project]
+name = "rua-dev"
+version = "0.1.0"
+description = "Development and release commands for the RUA source checkout"
+requires-python = ">=3.12"
+dependencies = [
+    "cyclopts>=5.3.2",
+    "hebbian-robot-use-client==0.1.0",
+    "jsonref>=1.1.0",
+    "packaging>=26.3",
+    "pydantic>=2.11",
+    "wheel>=0.45",
+    "tomli-w>=1.2,<2",
+]
+
+[project.scripts]
+rua-dev = "rua_dev.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+module-name = "rua_dev"

@@ -10,11 +10,11 @@ moves, so the answer is always shown the same way.
 
 ## You need
 
-- One SO-101 with [per-arm setup](../../../docs/hardware.md) done, resting on its
+- One SO-101 with [per-arm setup](https://github.com/Hebbian-Robotics/rua/blob/main/docs/hardware.md) done, resting on its
   table. The arm rehomes and disables between questions, and disabling drops it,
   so the start pose must be supported.
 - A camera named `table` that the model can point, such as a wrist camera
-  ([cameras](../../../docs/cameras.md)).
+  ([cameras](https://github.com/Hebbian-Robotics/rua/blob/main/docs/cameras.md)).
 - A clear workspace, by default a mat in front of the arm. Questions only cover
   objects on it.
 - `OPENAI_API_KEY` in your environment or `.env`.

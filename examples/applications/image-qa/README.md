@@ -12,10 +12,10 @@ least one search is required.
 
 ## You need
 
-- One SO-101 with [per-arm setup](../../../docs/hardware.md) done, resting on its
+- One SO-101 with [per-arm setup](https://github.com/Hebbian-Robotics/rua/blob/main/docs/hardware.md) done, resting on its
   table. Quitting rehomes the arm and disables it, and disabling drops it, so the
   start pose must be supported.
-- A camera named `table` mounted on the wrist ([cameras](../../../docs/cameras.md)).
+- A camera named `table` mounted on the wrist ([cameras](https://github.com/Hebbian-Robotics/rua/blob/main/docs/cameras.md)).
 - A display in front of the arm, roughly at eye level for a raised gripper.
 - `OPENAI_API_KEY` in your environment or `.env`, and a model that supports web
   search.

@@ -1,4 +1,4 @@
-# Two SO-101s in one MuJoCo scene, laid out as in so101-bimanual.toml; limits
+# Two SO-101s in a user-owned simulator, laid out as in so101-bimanual.toml; limits
 # from so101-sim.toml.
 extends = "so101-sim"
 name = "so101-bimanual-sim"

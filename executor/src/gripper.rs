@@ -76,6 +76,7 @@ impl GripperController {
                 &[angle],
                 speed,
                 &self.motion_limits,
+                None,
             ))
         } else {
             None
@@ -105,7 +106,7 @@ impl GripperController {
     pub fn step(&mut self, measured: f64, interval: f64) -> anyhow::Result<f64> {
         if self.state == GripperState::Moving {
             if let Some(trajectory) = &mut self.trajectory {
-                self.reference = trajectory.step(interval, None)?;
+                trajectory.step(interval, &mut self.reference)?;
             }
             let command = self.reference.positions[0];
             if (command - self.target).abs() <= 1e-8

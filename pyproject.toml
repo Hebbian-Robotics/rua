@@ -5,45 +5,90 @@ readme = "README.md"
 version = "0.1.0"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = ["LICENSE"]
-# Local source development; release wheels embed the SDK rather than depending on it.
-dependencies = ["hebbian-robot-use-client==0.1.0"]
+license-files = [
+    "LICENSE",
+]
+authors = [
+    { name = "Hebbian Robotics" },
+]
+dependencies = [
+    "hebbian-robot-use-client==0.1.0",
+]
+
+[project.urls]
+Repository = "https://github.com/Hebbian-Robotics/rua"
+Documentation = "https://github.com/Hebbian-Robotics/rua#readme"
 
 [project.optional-dependencies]
-openai = ["openai>=3.49.0"]
-anthropic = ["anthropic>=2.8.0"]
-gemini = ["google-genai>=3.1.0"]
+openai = [
+    "openai>=3.49.0",
+]
+anthropic = [
+    "anthropic>=2.8.0",
+]
+gemini = [
+    "google-genai>=3.1.0",
+]
 
 [project.scripts]
 rua = "hebbian_rua.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.13.6,<0.14"]
+requires = [
+    "uv_build>=0.13.6,<0.14",
+]
 build-backend = "uv_build"
+
+[tool.uv]
+exclude-newer = "3 days"
 
 [tool.uv.build-backend]
 module-root = ""
 module-name = "hebbian_rua"
 
-[tool.uv.sources]
-hebbian-robot-use-client = { path = "hebbian_robot_use_client", editable = true }
+[tool.uv.sources.hebbian-robot-use-client]
+workspace = true
+
+[tool.uv.sources.rua-dev]
+workspace = true
 
 [tool.uv.workspace]
-exclude = ["examples/python"]
-
-[tool.uv]
-exclude-newer = "3 days"
-
-[dependency-groups]
-dev = ["ruff>=0.17.4", "ty>=0.0.100", "pytest>=9.2.0", "openai>=3.49.0", "anthropic>=2.8.0", "google-genai>=3.1.0"]
+members = [
+    "hebbian_robot_use_client",
+    "tooling",
+]
+exclude = [
+    "examples/python",
+    "examples/mujoco_sim",
+]
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "C4", "UP", "ANN", "PTH", "RET", "SIM", "TID", "RUF"]
-ignore = ["E501", "B008", "C901", "RET504", "ANN401"]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "UP",
+    "ANN",
+    "PTH",
+    "RET",
+    "SIM",
+    "TID",
+    "RUF",
+]
+ignore = [
+    "E501",
+    "B008",
+    "C901",
+    "RET504",
+    "ANN401",
+]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -55,8 +100,43 @@ deprecated = "error"
 unused-ignore-comment = "error"
 possibly-unresolved-reference = "error"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
 [tool.ty.src]
-exclude = ["hebbian_robot_use_client/hebbian_robot_use_client/contract/station_api.py"]
+exclude = [
+    "hebbian_robot_use_client/hebbian_robot_use_client/contract/station_api.py",
+]
+
+[tool.ty.analysis]
+allowed-unresolved-imports = [
+    "onnx",
+    "onnxruntime",
+    "torch",
+]
+
+[[tool.ty.overrides]]
+include = [
+    "scripts/export_so101_policy_onnx.py",
+]
+
+[tool.ty.overrides.rules]
+incompatible-mutable-override = "ignore"
+
+[tool.ty.environment]
+extra-paths = []
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+
+[dependency-groups]
+dev = [
+    "rua-dev",
+    "openai>=3.49.0",
+    "anthropic>=2.8.0",
+    "google-genai>=3.1.0",
+    "datamodel-code-generator>=0.89.0",
+    "jsonref>=1.1.0",
+    "pytest>=9.2.0",
+    "ruff",
+    "ty",
+]

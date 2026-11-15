@@ -88,8 +88,8 @@ impl Planner {
             return Ok(None);
         }
         let robot = load_shared_robot(config)?.context("A tool link loads the robot model")?;
-        let solver =
-            IkSolver::for_arm(config, &robot)?.context("A tool link gives a pose solver")?;
+        let solver = crate::ik::solver_for_arm(config, &robot)?
+            .context("A tool link gives a pose solver")?;
         let joint_names = config
             .driven_joints
             .get(..config.joint_count)

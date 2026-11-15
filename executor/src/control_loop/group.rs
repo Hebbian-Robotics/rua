@@ -98,12 +98,13 @@ impl ActiveGroup {
         measured: &[f64],
         interval: f64,
     ) -> Result<Vec<GroupReference>, Trip> {
-        let reference = self.supervisor.step(measured, interval)?;
+        self.supervisor.advance(measured, interval)?;
         let checkpoints = self.supervisor.take_new_checkpoints(self.checkpoints_sent);
         self.checkpoints_sent += checkpoints.len();
         let segment = self.supervisor.segment_label().map(str::to_owned);
         let status = MotionStatus::of(&self.supervisor);
-        let final_pose = self.supervisor.final_pose().to_vec();
+        let final_pose = (status != MotionStatus::Running).then(|| self.supervisor.final_pose());
+        let reference = self.supervisor.reference();
         let mut start = 0;
         Ok(self
             .joint_counts
@@ -127,7 +128,8 @@ impl ActiveGroup {
                         .collect(),
                     segment: segment.clone(),
                     status,
-                    final_pose: final_pose[part].to_vec(),
+                    final_pose: final_pose
+                        .map_or_else(Vec::new, |positions| positions[part].to_vec()),
                 }
             })
             .collect())

@@ -99,7 +99,7 @@ pub trait GuardedArm {
 
 impl GuardedArm for Servos<SerialBus> {
     fn read(&mut self) -> anyhow::Result<(Feedback, Vec<bool>)> {
-        let feedback = self.read_feedback()?;
+        let feedback = Plant::read_feedback(self)?;
         let torque = self.torque_enabled()?;
         Ok((feedback, torque))
     }

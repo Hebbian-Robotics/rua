@@ -1,10 +1,10 @@
-# Legacy MuJoCo adapter settings; provide your own scene and simulator.
+# SO-101 control profile for a user-owned simulator connected over the plant socket.
 name = "so101-sim"
 extends = "so101-description"
 self_collision_check = true
-driver = "mujoco"
+driver = "simulator"
 arms = ["follower"]
-# RUA uses the bundled URDF; your adapter supplies its own physics model.
+# Robot geometry is bundled; the adapter owns its physics model.
 urdf = "robots/so101/robot.urdf"
 urdf_naming = "plain"
 joint_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
@@ -59,17 +59,3 @@ contact_dwell_seconds = 0.2
 # Actuator force as a percentage of the MJCF forcerange, at 80 %.
 unit = "percent_of_rated_load"
 joint_effort_limits = [80.0, 80.0, 80.0, 80.0, 80.0]
-
-[mujoco]
-# Match the policy training physics; 2 ms implicit-fast remains available as a stress variant.
-timestep_seconds = 0.005
-integrator = "implicitfast"
-# Provisional: fivefold greater deflection under the same load (0.04 vs 0.008 rad).
-servo_stiffness_scale = 0.2
-arm_model = "your-simulator/model.xml"
-start_pose_radians = [0.0, -1.0, 1.0, 0.5, 0.0]
-target_block_position_meters = [0.25, 0.0, 0.015]
-# The forcerange the SO-ARM100 so101_new_calib.xml sets on every actuator (N m). Its
-# sts3215 class default and the Feetech 12 V datasheet stall torque (30 kg.cm +-10 %)
-# are 2.94; the 3.35 is kept to match the model this profile loads.
-rated_actuator_force = 3.35

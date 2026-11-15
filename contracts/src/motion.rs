@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{IkFailure, PathLimited, PoseLimited};
+use crate::{PathLimited, PoseLimited};
 
 /// Above this absolute normalized approach X, jaw yaw zero uses world Y.
 pub const JAW_REFERENCE_SWITCH_APPROACH_X: f64 = 0.95;
@@ -244,39 +244,4 @@ pub struct PoseProjection {
     pub calculation_milliseconds: f64,
 }
 
-/// What orientation the tool must have.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum OrientationGoal {
-    /// The tool reaches this orientation, `[x, y, z, w]`, as well as the position.
-    #[schemars(title = "RequiredOrientation")]
-    Required { quaternion: [f64; 4] },
-    /// Only the position matters. The solve prefers the orientation the tool has
-    /// at the seed, weighed far below position, and reports where it landed.
-    #[schemars(title = "FreeOrientation")]
-    Free,
-}
-
-/// Where a solve left the arm.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct IkPose {
-    pub joints: Vec<f64>,
-    pub tool_position: [f64; 3],
-    pub tool_quaternion: [f64; 4],
-    pub position_error_meters: f64,
-    /// From the required orientation, or from the seed's when it was free.
-    pub orientation_error_radians: f64,
-}
-
-/// A solve's outcome.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "outcome", rename_all = "snake_case")]
-pub enum IkResult {
-    /// The tool is within tolerance of the target.
-    #[schemars(title = "IkSolved")]
-    Solved(IkPose),
-    /// It is not; `best` is the pose with the smallest position error found,
-    /// always inside the joint limits.
-    #[schemars(title = "IkFailed")]
-    Failed { reason: IkFailure, best: IkPose },
-}
+pub use hebbian_robot_geometry::outcomes::{IkPose, IkResult, OrientationGoal};

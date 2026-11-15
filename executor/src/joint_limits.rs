@@ -1,42 +1,5 @@
-//! The arm's joint limits and speed, each applied in one place: the starting
-//! pose's recovery tolerance and the speed a motion runs at.
-
-/// A pose with a joint farther outside its limits than the recovery tolerance.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct OutsideRecovery {
-    pub joint: usize,
-    pub value: f64,
-}
-
-/// A measured pose clamped into the joint limits, when no joint is outside them
-/// by more than `tolerance`, as one resting at an end stop may be. This is the
-/// one check of a starting pose: enabling, the reference filter's start and the
-/// pose solver's seed all go through it.
-///
-/// # Errors
-/// The first joint outside its limits by more than the tolerance.
-pub(crate) fn clamp_within_recovery(
-    joints: &[f64],
-    lower: &[f64],
-    upper: &[f64],
-    tolerance: f64,
-) -> Result<Vec<f64>, OutsideRecovery> {
-    joints
-        .iter()
-        .zip(lower.iter().zip(upper))
-        .enumerate()
-        .map(|(joint, (value, (lower, upper)))| {
-            if *value < lower - tolerance || *value > upper + tolerance {
-                Err(OutsideRecovery {
-                    joint,
-                    value: *value,
-                })
-            } else {
-                Ok(value.clamp(*lower, *upper))
-            }
-        })
-        .collect()
-}
+//! Joint recovery and executor motion-speed policy.
+pub(crate) use hebbian_robot_geometry::joint_limits::{OutsideRecovery, clamp_within_recovery};
 
 /// A requested joint speed that is not a positive, finite number.
 #[derive(Debug, Clone, Copy, PartialEq)]

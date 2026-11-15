@@ -106,7 +106,8 @@ impl Loop<'_> {
         let Activity::Motion(active) = &mut self.activity else {
             return Err(Trip("No motion is running".into()));
         };
-        let reference = active.supervisor.step(&feedback.positions, interval)?;
+        active.supervisor.advance(&feedback.positions, interval)?;
+        self.reference.copy_from(active.supervisor.reference());
         let settling_at_end = active.supervisor.settling_at_end();
         let new = active
             .supervisor
@@ -125,7 +126,7 @@ impl Loop<'_> {
             },
         };
         self.core.set_settling(settling_at_end);
-        self.motion_progress(feedback, reference, progress, now)
+        self.motion_progress(feedback, progress, now)
     }
 
     /// What a cycle of a planned motion, alone or in a group, did to the command:
@@ -134,7 +135,6 @@ impl Loop<'_> {
     pub(super) fn motion_progress(
         &mut self,
         feedback: &Feedback,
-        reference: Reference,
         progress: MotionProgress,
         now: Now,
     ) -> Result<(), Trip> {
@@ -149,7 +149,7 @@ impl Loop<'_> {
                 let errors: Vec<String> = feedback
                     .positions
                     .iter()
-                    .zip(&reference.positions)
+                    .zip(&self.reference.positions)
                     .map(|(measured, target)| format!("{:.3}", (measured - target).abs()))
                     .collect();
                 (
@@ -160,7 +160,8 @@ impl Loop<'_> {
                     ),
                 )
             } else {
-                let final_error = max_joint_deviation(&feedback.positions, &reference.positions);
+                let final_error =
+                    max_joint_deviation(&feedback.positions, &self.reference.positions);
                 (
                     CommandOutcome::Completed,
                     format!("Final joint error {final_error:.4} rad"),
@@ -169,7 +170,6 @@ impl Loop<'_> {
             self.end_activity(outcome, Some(detail), Some(progress.final_pose), now);
             return Ok(());
         }
-        self.reference = reference;
         Ok(())
     }
 
@@ -190,16 +190,15 @@ impl Loop<'_> {
             self.reference.set_at_rest(self.filter.positions(), None);
             return Ok(());
         };
-        let share = share.clone()?;
-        let reference = share.reference;
+        let share = share.as_ref().map_err(Clone::clone)?;
+        self.reference.copy_from(&share.reference);
         self.motion_progress(
             feedback,
-            reference,
             MotionProgress {
-                checkpoints: share.checkpoints,
-                segment: share.segment,
+                checkpoints: share.checkpoints.clone(),
+                segment: share.segment.clone(),
                 status: share.status,
-                final_pose: share.final_pose,
+                final_pose: share.final_pose.clone(),
             },
             now,
         )

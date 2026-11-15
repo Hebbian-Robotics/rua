@@ -8,7 +8,7 @@ parts of our stack that make that loop easy to build. More coming soon.
 
 - Rust server
 - Python SDK and a small agent loop
-- [LiveKit camera preview](https://hebbian-robotics.github.io/livekit-cameras/)
+- [LiveKit camera preview](docs/cameras.md)
 
 Start a project with [uv](https://docs.astral.sh/uv/):
 
@@ -25,6 +25,7 @@ See [getting started](docs/getting-started.md) and the [Python examples](example
 and the [example applications](examples/applications/README.md) for example toy projects.
 
 See [connecting a simulator](docs/simulators.md) to try in simulation.
+To watch your cameras, follow the [LiveKit web preview setup](docs/cameras.md#watch-a-usb-camera).
 
 ## Build an agent
 
@@ -58,6 +59,12 @@ state come back for the next turn. You can change the prompt, model and loop.
 Use `AnthropicRobotTools` from `hebbian_rua.anthropic` or `GeminiRobotTools` from
 `hebbian_rua.gemini` with the corresponding SDK. See the
 [Python examples](examples/python/README.md).
+
+Hardware setup, camera tools and recording utilities have their own guides:
+[SO-101](https://github.com/Hebbian-Robotics/so101),
+[LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras) and
+[MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools). RUA handles their
+integration with your robot and agent.
 
 ## Coming soon
 

@@ -111,64 +111,10 @@ pub struct PolicyConfig {
     pub orientation_tolerance_radians: f64,
 }
 
-/// One motor's entry from the arm's `LeRobot` calibration file.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct MotorCalibration {
-    pub homing_offset: i64,
-    pub range_min: i64,
-    pub range_max: i64,
-}
-
-/// Position-loop gains the servo must already hold: P, I, D.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Gains {
-    pub p: i64,
-    pub i: i64,
-    pub d: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FeetechMotor {
-    pub id: u8,
-    /// Joint angle = sign * (steps - 2047) * 2 pi / resolution + offset.
-    pub sign: i32,
-    pub offset_radians: f64,
-    pub calibration: MotorCalibration,
-    pub expected_gains: Gains,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FeetechGripper {
-    pub motor: FeetechMotor,
-    /// Share of the servo's torque the jaw may use, held while gripping.
-    pub force_fraction: f64,
-}
-
-/// The SO-101's Feetech bus: where it is and what its servos must look like
-/// before torque goes on. The station reads the profile and the `LeRobot`
-/// calibration file once and writes the result here.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FeetechConfig {
-    pub port: String,
-    /// The arm's joints in order.
-    pub joints: Vec<FeetechMotor>,
-    pub gripper: Option<FeetechGripper>,
-    /// Motors on the bus that stay torque-free.
-    pub passive_motor_ids: Vec<u8>,
-    /// `Return_Delay_Time` every driven servo must already hold; unset skips the
-    /// check. Checked in preflight, never written. Each unit adds 2 us per motor
-    /// to every bus read; `LeRobot` sets 0, the factory value is 250.
-    #[serde(default)]
-    pub expected_return_delay_time: Option<i64>,
-    pub max_temperature_celsius: f64,
-    pub min_voltage_volts: f64,
-    pub max_voltage_volts: f64,
-}
+// Preserve the station wire format while the SO-101 crate owns its hardware data.
+pub use hebbian_so101::config::{
+    FeetechConfig, FeetechGripper, FeetechMotor, Gains, MotorCalibration,
+};
 
 /// An external simulator stands in for the arm: it connects to the arm's plant
 /// socket (`NAME.plant.sock` in the socket directory) and drives time. See
@@ -474,22 +420,7 @@ impl ExecutorConfigInput {
             if feetech.joints.len() != n {
                 bail!("The Feetech bus needs one motor per joint");
             }
-            if feetech.min_voltage_volts >= feetech.max_voltage_volts {
-                bail!("The Feetech voltage range is empty");
-            }
-            let motors = feetech
-                .joints
-                .iter()
-                .chain(feetech.gripper.iter().map(|gripper| &gripper.motor));
-            for motor in motors {
-                let calibration = &motor.calibration;
-                if !(0 <= calibration.range_min && calibration.range_min < calibration.range_max) {
-                    bail!("Motor {} has an invalid calibrated range", motor.id);
-                }
-                if motor.sign != 1 && motor.sign != -1 {
-                    bail!("Motor {} sign must be 1 or -1", motor.id);
-                }
-            }
+            feetech.validate()?;
         }
         Ok(())
     }

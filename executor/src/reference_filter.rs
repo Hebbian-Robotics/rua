@@ -6,7 +6,7 @@
 //! commanded velocity.
 
 use rsruckig::prelude::{
-    ControlInterface, DataArrayOrVec, InputParameter, Ruckig, RuckigResult, Synchronization,
+    ControlInterface, InputParameter, OutputParameter, Ruckig, RuckigResult, Synchronization,
     ThrowErrorHandler, Trajectory,
 };
 
@@ -37,6 +37,14 @@ impl Reference {
         }
     }
 
+    /// Copy a reference while retaining the destination's per-joint buffers.
+    pub(crate) fn copy_from(&mut self, source: &Self) {
+        self.positions.clone_from(&source.positions);
+        self.velocities.clone_from(&source.velocities);
+        self.accelerations.clone_from(&source.accelerations);
+        self.speed_limit = source.speed_limit;
+    }
+
     /// Become `at_rest` without a new allocation once the buffers have grown.
     pub(crate) fn set_at_rest(&mut self, positions: &[f64], speed_limit: Option<f64>) {
         self.positions.clear();
@@ -65,14 +73,10 @@ pub(crate) struct ReferenceFilter {
     interval: f64,
     generator: Ruckig<0, ThrowErrorHandler>,
     input: InputParameter<0>,
-    trajectory: Trajectory<0>,
+    output: OutputParameter<0>,
     positions: Vec<f64>,
     velocities: Vec<f64>,
     accelerations: Vec<f64>,
-    /// Where Ruckig writes each cycle's state, kept so a cycle allocates nothing.
-    next_positions: DataArrayOrVec<f64, 0>,
-    next_velocities: DataArrayOrVec<f64, 0>,
-    next_accelerations: DataArrayOrVec<f64, 0>,
 }
 
 impl ReferenceFilter {
@@ -110,9 +114,6 @@ impl ReferenceFilter {
         input.max_jerk.iter_mut().for_each(|j| *j = jerk_limit);
         // Each joint independently: the filter bounds motion, it does not shape paths.
         input.synchronization = Synchronization::None;
-        let next_positions = input.current_position.clone();
-        let next_velocities = input.current_velocity.clone();
-        let next_accelerations = input.current_acceleration.clone();
         Ok(Self {
             joint_count: n,
             recovering_inward: vec![0; n],
@@ -134,13 +135,10 @@ impl ReferenceFilter {
             interval: 1.0 / config.frequency_hertz,
             generator: Ruckig::<0, ThrowErrorHandler>::new(Some(n), 1.0 / config.frequency_hertz),
             input,
-            trajectory: Trajectory::<0>::new(Some(n)),
+            output: OutputParameter::<0>::new(Some(n)),
             positions: initial.to_vec(),
             velocities: vec![0.0; n],
             accelerations: vec![0.0; n],
-            next_positions,
-            next_velocities,
-            next_accelerations,
         })
     }
 
@@ -290,24 +288,19 @@ impl ReferenceFilter {
                 )
             };
         }
-        match self.generator.calculate(&self.input, &mut self.trajectory) {
+        // Current state comes from the guarded values above, so a clamp,
+        // reset or followed motion also invalidates Ruckig's cached prediction.
+        self.generator.delta_time = interval;
+        match self.generator.update(&self.input, &mut self.output) {
             Ok(RuckigResult::Working | RuckigResult::Finished) => {}
             Ok(other) => return Err(Trip(format!("Reference filter failed: {other:?}"))),
             Err(error) => return Err(Trip(format!("Reference filter failed: {error}"))),
         }
         // Past its end Ruckig extrapolates the target state, which is what a
         // reference that keeps moving at the target velocity would do.
-        let positions = &mut self.next_positions;
-        let velocities = &mut self.next_velocities;
-        let accelerations = &mut self.next_accelerations;
-        self.trajectory.at_time(
-            interval,
-            &mut Some(&mut *positions),
-            &mut Some(&mut *velocities),
-            &mut Some(&mut *accelerations),
-            &mut None,
-            &mut None,
-        );
+        let positions = &mut self.output.new_position;
+        let velocities = &self.output.new_velocity;
+        let accelerations = &self.output.new_acceleration;
         // Clamp only picoradian-scale numerical rounding at a boundary.
         for (joint, position) in positions.iter_mut().enumerate() {
             if *position < self.recovery_lower[joint] - ROUNDING_TOLERANCE_RADIANS
@@ -356,17 +349,21 @@ mod tests {
 
     #[test]
     fn the_filter_arrives_without_exceeding_its_speed_cap() {
-        let mut filter = filter_at(&[0.0, 0.0]);
-        let goal = Reference::at_rest(&[1.0, -0.5], Some(1.0));
-        let mut previous = vec![0.0, 0.0];
-        for _ in 0..400 {
-            let command = applied(&mut filter, &goal);
-            for joint in 0..2 {
-                assert!((command[joint] - previous[joint]).abs() / 0.01 <= 1.0 + 1e-6);
+        for intervals in [&[0.01][..], &[0.001, 0.007, 0.019, 0.031, 0.012][..]] {
+            let mut filter = filter_at(&[0.0, 0.0]);
+            let goal = Reference::at_rest(&[1.0, -0.5], Some(1.0));
+            let mut previous = vec![0.0, 0.0];
+            let mut command = Vec::new();
+            for cycle in 0..400 {
+                let interval = intervals[cycle % intervals.len()];
+                filter.apply(&goal, interval, &mut command).unwrap();
+                for joint in 0..2 {
+                    assert!((command[joint] - previous[joint]).abs() / interval <= 1.0 + 1e-6);
+                }
+                previous.clone_from(&command);
             }
-            previous = command;
+            assert!((previous[0] - 1.0).abs() < 1e-3 && (previous[1] + 0.5).abs() < 1e-3);
         }
-        assert!((previous[0] - 1.0).abs() < 1e-3 && (previous[1] + 0.5).abs() < 1e-3);
     }
 
     #[test]
