@@ -1,0 +1,17 @@
+[project]
+name = "hebbian-robot-use-server"
+description = "The Hebbian arm executor: a prebuilt real-time control loop, installed as the `hebbian-robot-use-server` command"
+requires-python = ">=3.12"
+authors = [{ name = "Hebbian Robotics" }]
+license = "MIT"
+dynamic = ["version"]
+
+# Maturin installs the binary on PATH. The wheel's data contains the profiles,
+# robot models, viewer and notices; media is distributed separately.
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "bin"
+data = "wheel-data"

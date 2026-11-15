@@ -57,6 +57,17 @@ def package_check(wheel: Path) -> None:
     check_wheel(wheel.resolve())
 
 
+def package_rua(
+    *, server_wheel: Path | None = None, media_wheel: Path | None = None
+) -> None:
+    """Build the hebbian-rua release wheel; never publish it."""
+    from rua_dev.bundle import build_rua_bundle
+
+    print(
+        build_rua_bundle(Path.cwd(), server_wheel=server_wheel, media_wheel=media_wheel)
+    )
+
+
 def create_app() -> App:
     app = App(help=__doc__)
     package_app = App(name="package", help="Wheel distribution commands.")
@@ -69,6 +80,7 @@ def create_app() -> App:
     if importlib.util.find_spec(module_name) is not None:
         importlib.import_module(module_name).register_commands(app, package_app)
     else:
+        package_app.command(package_rua, name="rua")
         app.command(contracts)
         app.command(validate)
     return app

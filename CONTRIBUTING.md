@@ -31,6 +31,9 @@ cargo test --workspace --all-features
 `uv run rua-dev validate` checks all included components. Native prerequisites
 are required for its Rust checks. To verify a built wheel outside the checkout,
 use `uv run rua-dev package check /path/to/hebbian_rua.whl`.
+Build the bundled release wheel with `uv run rua-dev package rua`. The Publish
+workflow builds and tests on manual runs; publishing a GitHub release also
+uploads the verified wheel to PyPI and attaches it to the release.
 
 Check guide links with `lychee --offline -v README.md CONTRIBUTING.md docs`;
 use the same command without `--offline` for external links. Check export
