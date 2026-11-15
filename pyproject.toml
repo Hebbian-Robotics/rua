@@ -26,16 +26,18 @@ module-root = ""
 module-name = "hebbian_rua"
 
 [tool.uv.sources]
-hebbian-robot-use-client = { path = "hebbian_robot_use_client", editable = true }
+hebbian-robot-use-client = { workspace = true }
+rua-dev = { workspace = true }
 
 [tool.uv.workspace]
+members = ["hebbian_robot_use_client", "tooling"]
 exclude = ["examples/python"]
 
 [tool.uv]
 exclude-newer = "3 days"
 
 [dependency-groups]
-dev = ["ruff>=0.17.4", "ty>=0.0.100", "pytest>=9.2.0", "openai>=3.49.0", "anthropic>=2.8.0", "google-genai>=3.1.0"]
+dev = ["rua-dev", "datamodel-code-generator>=0.89.0", "ruff>=0.17.4", "ty>=0.0.100", "pytest>=9.2.0", "openai>=3.49.0", "anthropic>=2.8.0", "google-genai>=3.1.0"]
 
 [tool.ruff]
 line-length = 88

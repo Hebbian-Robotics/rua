@@ -1,12 +1,7 @@
-"""Prepare checksum-pinned SO-101 assets before building a source checkout.
-
-This standard-library-only module is also exported as tools/prepare_robot_assets.py.
-Installed RUA distributions contain the assets and never run this preparation.
-"""
+"""Prepare checksum-pinned SO-101 assets for a source checkout."""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import re
 import tempfile
@@ -153,18 +148,3 @@ def prepare_robot_assets(repository: Path) -> tuple[Path, ...]:
         for filename in source.files:
             (extracted / filename).replace(destination / filename)
     return tuple(destination / filename for filename in sorted(source.files))
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository", type=Path, default=Path.cwd())
-    arguments = parser.parse_args()
-    try:
-        assets = prepare_robot_assets(arguments.repository)
-    except (OSError, ValueError) as error:
-        parser.exit(1, f"Could not prepare robot assets: {error}\n")
-    print(f"Prepared {len(assets)} pinned SO-101 assets in {assets[0].parent}")
-
-
-if __name__ == "__main__":
-    main()

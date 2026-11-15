@@ -4,7 +4,7 @@ This is an early release of part of our robotics stack. Feedback and issue repor
 are welcome.
 
 For development, follow [source setup](docs/getting-started.md#from-source), then
-run `uv sync --locked` from the checkout root. The pinned Rust toolchain includes
+run `uv run rua-dev setup` from the checkout root. The pinned Rust toolchain includes
 Clippy and rustfmt. Python checks run on 3.14; the package supports Python 3.12+.
 Python dependencies keep a three-day minimum release age.
 
@@ -17,6 +17,10 @@ uv run ty check
 uv run pytest
 ```
 
+`uv run rua-dev validate --lane python` runs the Python checks and tests together.
+Use `uv run rua-dev contracts --check` to verify schemas and the Python SDK, or
+omit `--check` to regenerate them. Targets default to SDKs present in the checkout.
+
 For Rust changes:
 
 ```sh
@@ -24,6 +28,10 @@ cargo fmt
 cargo clippy --all-targets --all-features
 cargo test --workspace --all-features
 ```
+
+`uv run rua-dev validate` checks all included components. Native prerequisites
+are required for its Rust checks. To verify a built wheel outside the checkout,
+use `uv run rua-dev package check /path/to/hebbian_rua.whl`.
 
 Check documentation links with `lychee --offline -v .`; use `lychee -v .` to
 include external links. CI checks Python and Rust on Ubuntu 24.04.
