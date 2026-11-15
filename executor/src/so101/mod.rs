@@ -11,11 +11,4 @@ pub mod policy;
 pub mod registry;
 pub mod settings;
 
-/// The joints the SO-101 policy was trained on, in order.
-pub(crate) const SO101_JOINT_NAMES: [&str; 5] = [
-    "shoulder_pan",
-    "shoulder_lift",
-    "elbow_flex",
-    "wrist_flex",
-    "wrist_roll",
-];
+pub(crate) use hebbian_so101::SO101_JOINT_NAMES;

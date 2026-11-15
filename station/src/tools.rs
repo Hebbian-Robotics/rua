@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use hebbian_robot_use_server::config::ExecutorConfig;
 use hebbian_robot_use_server::kinematics::pose_from_xyzw;
-use hebbian_robot_use_server::plant::Plant;
 use hebbian_robot_use_server::profile;
 use hebbian_robot_use_server::robot::Robot;
 use hebbian_robot_use_server::so101::driver::{SerialBus, Servos};

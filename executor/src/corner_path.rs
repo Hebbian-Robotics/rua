@@ -5,7 +5,8 @@
 
 use anyhow::{Context, bail, ensure};
 use rsruckig::prelude::{
-    InputParameter, Ruckig, RuckigResult, Synchronization, ThrowErrorHandler, Trajectory,
+    InputParameter, OutputParameter, Ruckig, RuckigResult, Synchronization, ThrowErrorHandler,
+    Trajectory,
 };
 use serde::Serialize;
 
@@ -19,9 +20,9 @@ const SAME_CORNER_RADIANS: f64 = 1e-12;
 /// The plan's first corner and the arm must agree to this, as in the station.
 pub(crate) const CONTINUITY_RADIANS: f64 = 1e-8;
 
-/// Ruckig's constructor wants a control period; these generators only evaluate
-/// `at_time` at the caller's interval, so the value never affects the output.
-const UNUSED_PERIOD_SECONDS: f64 = 0.01;
+/// Validation only calculates trajectories. Online sections replace this initial
+/// constructor period with the actual cycle interval before updating.
+const INITIAL_PERIOD_SECONDS: f64 = 0.01;
 
 /// The pose the plan starts from: its first corner.
 ///
@@ -126,7 +127,7 @@ impl SmoothTrajectory {
             }
         }
         let mut generator =
-            Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), UNUSED_PERIOD_SECONDS);
+            Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
         // Each section is computed once here so a plan Ruckig cannot follow is
         // refused before it starts.
         for pair in waypoints.windows(2) {
@@ -173,12 +174,9 @@ pub(crate) struct OnlineSection {
     start: Vec<f64>,
     target: Vec<f64>,
     distance: f64,
-    generator: Ruckig<0, ThrowErrorHandler>,
-    input: InputParameter<0>,
-    trajectory: Trajectory<0>,
-    positions: rsruckig::prelude::DataArrayOrVec<f64, 0>,
-    velocities: rsruckig::prelude::DataArrayOrVec<f64, 0>,
-    accelerations: rsruckig::prelude::DataArrayOrVec<f64, 0>,
+    generator: Ruckig<1, ThrowErrorHandler>,
+    input: InputParameter<1>,
+    output: OutputParameter<1>,
 }
 
 impl OnlineSection {
@@ -187,6 +185,7 @@ impl OnlineSection {
         target: &[f64],
         speed: f64,
         limits: &MotionLimits,
+        minimum_duration: Option<f64>,
     ) -> Self {
         let (joint, distance) = reference
             .positions
@@ -197,70 +196,50 @@ impl OnlineSection {
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .expect("a path has joints");
         let direction = (target[joint] - reference.positions[joint]).signum();
-        let mut input = InputParameter::<0>::new(Some(1));
+        let mut input = InputParameter::<1>::new(None);
+        input.target_position[0] = distance;
+        input.minimum_duration = minimum_duration;
         input.max_velocity[0] = speed;
         input.max_acceleration[0] = limits.acceleration_limit;
         input.max_jerk[0] = limits.jerk_limit;
         input.current_velocity[0] = reference.velocities[joint] * direction;
         input.current_acceleration[0] = reference.accelerations[joint] * direction;
-        input.synchronization = Synchronization::None;
+        // Even this one scalar must synchronize to a requested minimum duration.
+        input.synchronization = Synchronization::Time;
         Self {
             start: reference.positions.clone(),
             target: target.to_vec(),
             distance,
-            generator: Ruckig::new(Some(1), UNUSED_PERIOD_SECONDS),
+            generator: Ruckig::new(None, INITIAL_PERIOD_SECONDS),
             input,
-            trajectory: Trajectory::new(Some(1)),
-            positions: rsruckig::prelude::DataArrayOrVec::new(Some(1), 0.0),
-            velocities: rsruckig::prelude::DataArrayOrVec::new(Some(1), 0.0),
-            accelerations: rsruckig::prelude::DataArrayOrVec::new(Some(1), 0.0),
+            output: OutputParameter::new(None),
         }
     }
 
-    pub(crate) fn step(
-        &mut self,
-        interval: f64,
-        minimum_duration: Option<f64>,
-    ) -> anyhow::Result<Reference> {
-        // Only the actual corner is a zero-velocity target. An intermediate
-        // target would force Ruckig to keep braking before the real destination.
-        self.input.target_position[0] = self.distance;
-        self.input.minimum_duration = minimum_duration;
-        match self.generator.calculate(&self.input, &mut self.trajectory) {
+    pub(crate) fn step(&mut self, interval: f64, reference: &mut Reference) -> anyhow::Result<()> {
+        // The section owns a fixed endpoint and duration. Feed back Ruckig's
+        // emitted state so it can keep sampling the same trajectory.
+        self.generator.delta_time = interval;
+        match self.generator.update(&self.input, &mut self.output) {
             Ok(RuckigResult::Working | RuckigResult::Finished) => {}
             Ok(other) => bail!("Online trajectory failed: {other:?}"),
             Err(error) => bail!("Online trajectory failed: {error}"),
         }
-        self.trajectory.at_time(
-            interval.min(self.trajectory.get_duration()),
-            &mut Some(&mut self.positions),
-            &mut Some(&mut self.velocities),
-            &mut Some(&mut self.accelerations),
-            &mut None,
-            &mut None,
-        );
-        self.input.current_position[0] = self.positions[0];
-        self.input.current_velocity[0] = self.velocities[0];
-        self.input.current_acceleration[0] = self.accelerations[0];
-        let mapped = |scalar: f64| {
-            self.start
-                .iter()
-                .zip(&self.target)
-                .map(|(start, end)| scalar / self.distance * (end - start))
-                .collect::<Vec<_>>()
-        };
-        let positions = self
-            .start
-            .iter()
-            .zip(mapped(self.positions[0]))
-            .map(|(start, offset)| start + offset)
-            .collect();
-        Ok(Reference {
-            positions,
-            velocities: mapped(self.velocities[0]),
-            accelerations: mapped(self.accelerations[0]),
-            speed_limit: None,
-        })
+        self.output.pass_to_input(&mut self.input);
+        reference.positions.resize(self.start.len(), 0.0);
+        reference.velocities.resize(self.start.len(), 0.0);
+        reference.accelerations.resize(self.start.len(), 0.0);
+        for (joint, (start, target)) in self.start.iter().zip(&self.target).enumerate() {
+            let displacement = target - start;
+            reference.positions[joint] =
+                start + self.output.new_position[0] / self.distance * displacement;
+            reference.velocities[joint] =
+                self.output.new_velocity[0] / self.distance * displacement;
+            reference.accelerations[joint] =
+                self.output.new_acceleration[0] / self.distance * displacement;
+        }
+        reference.speed_limit = None;
+        Ok(())
     }
 }
 
@@ -273,7 +252,6 @@ struct CornerPathTracker {
     trajectories: Vec<SmoothTrajectory>,
     corner_index: usize,
     section: Option<OnlineSection>,
-    segment_elapsed: f64,
     checkpoints: Vec<Checkpoint>,
     /// The last rest point was accepted outside tolerance after the settle timeout.
     stopped_short: bool,
@@ -304,7 +282,6 @@ impl CornerPathTracker {
             trajectories,
             corner_index: 1,
             section: None,
-            segment_elapsed: 0.0,
             checkpoints: Vec::new(),
             stopped_short: false,
         })
@@ -317,7 +294,7 @@ impl CornerPathTracker {
     fn advance(&mut self, interval: f64) -> anyhow::Result<()> {
         let corners = &self.trajectories[self.segment_index].waypoints;
         if corners.len() <= 1 {
-            self.reference = Reference::at_rest(&corners[0], None);
+            self.reference.set_at_rest(&corners[0], None);
             self.stage = Stage::Settling;
             return Ok(());
         }
@@ -325,17 +302,19 @@ impl CornerPathTracker {
         if max_joint_deviation(&self.reference.positions, target) <= SAME_CORNER_RADIANS
             && self.section.is_none()
         {
-            self.reference = Reference::at_rest(target, None);
+            self.reference.set_at_rest(target, None);
         } else {
             let section = self.section.get_or_insert_with(|| {
-                OnlineSection::new(&self.reference, target, self.plan.peak_speed, &self.limits)
+                OnlineSection::new(
+                    &self.reference,
+                    target,
+                    self.plan.peak_speed,
+                    &self.limits,
+                    self.plan.segments[self.segment_index].minimum_duration_seconds,
+                )
             });
-            let minimum_duration = self.plan.segments[self.segment_index]
-                .minimum_duration_seconds
-                .map(|minimum| (minimum - self.segment_elapsed).max(0.0));
-            self.reference = section.step(interval, minimum_duration)?;
+            section.step(interval, &mut self.reference)?;
         }
-        self.segment_elapsed += interval;
         if max_joint_deviation(&self.reference.positions, target) <= SAME_CORNER_RADIANS
             && self.reference.velocities.iter().all(|v| v.abs() < 1e-8)
         {
@@ -370,7 +349,6 @@ impl CornerPathTracker {
         self.stage = Stage::Moving;
         self.corner_index = 1;
         self.section = None;
-        self.segment_elapsed = 0.0;
         Ok(())
     }
 }
@@ -462,6 +440,13 @@ impl MotionSupervisor {
     /// # Errors
     /// An internal `Trip` when the plan cannot be followed.
     pub fn step(&mut self, measured: &[f64], interval: f64) -> Result<Reference, Trip> {
+        self.advance(measured, interval)?;
+        Ok(self.tracker.reference.clone())
+    }
+
+    /// Update the retained reference; control-loop callers copy it into their own
+    /// existing buffers instead of requesting an owned snapshot each cycle.
+    pub(crate) fn advance(&mut self, measured: &[f64], interval: f64) -> Result<(), Trip> {
         if self.tracker.stage == Stage::Settling {
             let endpoint_error = max_joint_deviation(measured, &self.tracker.reference.positions);
             self.settled_seconds = if endpoint_error <= self.limits.settled_error_radians {
@@ -491,6 +476,6 @@ impl MotionSupervisor {
                 self.restart_stage();
             }
         }
-        Ok(self.tracker.reference.clone())
+        Ok(())
     }
 }

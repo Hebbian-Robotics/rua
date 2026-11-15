@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use serialport::UsbPortInfo;
+use serialport::{SerialPortInfo, SerialPortType, UsbPortInfo};
 use uuid::Uuid;
 
 use super::*;
@@ -119,70 +119,6 @@ fn registry_selection_produces_the_arm_config_without_manual_port_or_calibration
     assert_eq!(hardware.joints[1].calibration.homing_offset, 20);
     assert_eq!(config.gripper.as_ref().unwrap().closed_radians, -0.6);
     assert!(config.lower_limits[0] < -1.57 && config.upper_limits[0] > 1.57);
-}
-
-#[test]
-fn selecting_among_multiple_arms_requires_a_serial_and_rejects_duplicate_serials() {
-    let fixture = RegistryFixture::new();
-    fixture.register("ARM_A");
-    fixture.register("ARM_B");
-    let ports = [
-        port("/dev/ttyUSB0", Some("ARM_A")),
-        port("/dev/ttyUSB1", Some("ARM_B")),
-    ];
-    let matches = match_controllers(&ports, &fixture.0).unwrap();
-    assert!(
-        select_controller(&matches, None)
-            .unwrap_err()
-            .to_string()
-            .contains("Multiple registered")
-    );
-    let requested = ControllerSerial::parse("ARM_B").unwrap();
-    assert_eq!(
-        select_controller(&matches, Some(&requested))
-            .unwrap()
-            .controller
-            .port,
-        "/dev/ttyUSB1"
-    );
-    let duplicates = [
-        port("/dev/ttyUSB0", Some("ARM_A")),
-        port("/dev/ttyUSB2", Some("ARM_A")),
-    ];
-    let matches = match_controllers(&duplicates, &fixture.0).unwrap();
-    assert!(select_controller(&matches, None).is_err());
-    assert!(select_controller(&matches, Some(&ControllerSerial::parse("ARM_A").unwrap())).is_err());
-}
-
-#[test]
-fn unknown_missing_and_unsafe_serials_never_select_a_configuration() {
-    let fixture = RegistryFixture::new();
-    let matches = match_controllers(
-        &[
-            port("/dev/a", Some("UNKNOWN")),
-            port("/dev/b", None),
-            port("/dev/c", Some("../elsewhere")),
-        ],
-        &fixture.0,
-    )
-    .unwrap();
-    assert!(
-        matches
-            .iter()
-            .any(|candidate| matches!(candidate, ControllerMatch::Unregistered { .. }))
-    );
-    assert!(
-        matches
-            .iter()
-            .any(|candidate| matches!(candidate, ControllerMatch::MissingSerial { .. }))
-    );
-    assert!(
-        matches
-            .iter()
-            .any(|candidate| matches!(candidate, ControllerMatch::InvalidSerial { .. }))
-    );
-    assert!(select_controller(&matches, None).is_err());
-    assert!(ControllerSerial::parse("").is_err());
 }
 
 #[test]

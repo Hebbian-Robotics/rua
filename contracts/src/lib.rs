@@ -97,21 +97,7 @@ pub struct Checkpoint {
     pub target_quaternion: Option<[f64; 4]>,
 }
 
-/// Why a solve stopped short.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum IkFailure {
-    /// The best pose it found has a joint at its limit, and no step improves it.
-    AtJointLimit,
-    /// No step improves the best pose it found, away from any limit: the target
-    /// is out of reach, or the arm is in a singular pose that cannot move toward it.
-    Stalled,
-    /// It was still improving when it ran out of iterations.
-    IterationLimit,
-    /// The target is farther from the arm's first joint than the arm's links
-    /// reach; the best pose stretches toward it.
-    OutOfReach,
-}
+pub use hebbian_robot_geometry::outcomes::IkFailure;
 
 /// The tool-frame axis the gripper's jaws close along.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

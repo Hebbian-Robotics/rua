@@ -206,3 +206,103 @@ fn an_arm_that_converges_within_the_settle_timeout_settles_normally() {
         "settled after {seconds} s"
     );
 }
+
+#[test]
+fn variable_cycle_intervals_preserve_motion_limits_and_minimum_duration() {
+    let configuration = config();
+    for minimum_duration in [None, Some(3.0)] {
+        let mut motion_plan = plan();
+        motion_plan.segments[0].minimum_duration_seconds = minimum_duration;
+        let mut motion = MotionSupervisor::new(motion_plan, &configuration.motion, 2).unwrap();
+        let mut command = vec![0.0; 2];
+        let mut previous_velocity = vec![0.0; 2];
+        let mut previous_acceleration = vec![0.0; 2];
+        let mut elapsed_seconds = 0.0;
+        for cycle in 0..2000 {
+            let interval = [0.001, 0.007, 0.019, 0.031, 0.012][cycle % 5];
+            let reference = motion.step(&command, interval).unwrap();
+            elapsed_seconds += interval;
+            assert!((reference.positions[0] + 2.0 * reference.positions[1]).abs() < 1e-9);
+            for joint in 0..2 {
+                assert!(reference.velocities[joint].abs() <= 0.60001);
+                assert!(reference.accelerations[joint].abs() <= 5.00001);
+                assert!(
+                    (reference.velocities[joint] - previous_velocity[joint]).abs()
+                        <= 5.00001 * interval
+                );
+                assert!(
+                    (reference.accelerations[joint] - previous_acceleration[joint]).abs()
+                        <= 20.00001 * interval
+                );
+            }
+            if motion.stage() != Stage::Moving
+                && let Some(minimum) = minimum_duration
+            {
+                assert!(
+                    elapsed_seconds >= minimum - 1e-9,
+                    "settling at {elapsed_seconds:.12}s before minimum {minimum}s; reference {reference:?}"
+                );
+            }
+            command = reference.positions;
+            previous_velocity = reference.velocities;
+            previous_acceleration = reference.accelerations;
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(motion.done(), "motion never finished");
+        assert!((command[0] - 0.6).abs() < 1e-9);
+        assert!((command[1] + 0.3).abs() < 1e-9);
+    }
+}
+
+#[test]
+fn a_constant_target_preserves_the_continuous_jerk_limited_profile() {
+    let motion_limits = config().motion.clone();
+    let mut motion_plan = plan();
+    motion_plan.segments[0].corners = vec![vec![0.0; 5], vec![10.0, -5.0, 3.0, -2.0, 1.0]];
+    let mut motion = MotionSupervisor::new(motion_plan, &motion_limits, 5).unwrap();
+    let maximum_velocity = 0.6_f64;
+    let jerk = motion_limits.jerk_limit;
+    let ramp_seconds = (maximum_velocity / jerk).sqrt();
+    assert!(jerk * ramp_seconds < motion_limits.acceleration_limit);
+    let mut command = vec![0.0; 5];
+    let mut elapsed_seconds = 0.0;
+    for _ in 0..1000 {
+        let interval = 0.001;
+        let reference = motion.step(&command, interval).unwrap();
+        elapsed_seconds += interval;
+        // This long section is still accelerating or cruising: integrate the
+        // two constant-jerk ramps analytically, independently of Ruckig.
+        let (position, velocity, acceleration) = if elapsed_seconds <= ramp_seconds {
+            (
+                jerk * elapsed_seconds.powi(3) / 6.0,
+                jerk * elapsed_seconds.powi(2) / 2.0,
+                jerk * elapsed_seconds,
+            )
+        } else if elapsed_seconds <= 2.0 * ramp_seconds {
+            let after_peak = elapsed_seconds - ramp_seconds;
+            (
+                jerk * ramp_seconds.powi(3) / 6.0
+                    + jerk * ramp_seconds.powi(2) / 2.0 * after_peak
+                    + jerk * ramp_seconds / 2.0 * after_peak.powi(2)
+                    - jerk * after_peak.powi(3) / 6.0,
+                jerk * ramp_seconds.powi(2) / 2.0 + jerk * ramp_seconds * after_peak
+                    - jerk * after_peak.powi(2) / 2.0,
+                jerk * (ramp_seconds - after_peak),
+            )
+        } else {
+            (
+                maximum_velocity * (elapsed_seconds - ramp_seconds),
+                maximum_velocity,
+                0.0,
+            )
+        };
+        for (joint, scale) in [1.0, -0.5, 0.3, -0.2, 0.1].into_iter().enumerate() {
+            assert!((reference.positions[joint] - position * scale).abs() < 1e-10);
+            assert!((reference.velocities[joint] - velocity * scale).abs() < 1e-10);
+            assert!((reference.accelerations[joint] - acceleration * scale).abs() < 1e-10);
+        }
+        command = reference.positions;
+    }
+}

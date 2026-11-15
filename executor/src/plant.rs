@@ -1,7 +1,5 @@
 //! What the loop commands and reads back: a real bus, or a model of one.
 
-use serde::Serialize;
-
 /// A plant could not exchange a command or reading with its hardware.
 #[derive(Debug)]
 pub struct CommunicationFailure(pub String);
@@ -14,16 +12,8 @@ impl std::fmt::Display for CommunicationFailure {
 
 impl std::error::Error for CommunicationFailure {}
 
-/// An independent follow-up to a severe environmental reading.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnvironmentConfirmation {
-    pub motor_id: u8,
-    pub temperature_celsius: f64,
-    pub voltage_volts: f64,
-    pub status: i64,
-    pub packet_status: u8,
-}
+// Independent environmental confirmation is a hardware observation.
+pub use hebbian_so101::telemetry::EnvironmentConfirmation;
 
 #[derive(Clone, Default)]
 pub struct Feedback {
