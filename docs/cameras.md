@@ -105,4 +105,3 @@ The binary is created beside the server in `target/debug`, where the station
 finds it automatically. These native prerequisites apply even when recording
 is disabled. FFmpeg is additionally required for recording, but not camera viewing.
 The media build and camera path are not validated on macOS or Windows.
-
