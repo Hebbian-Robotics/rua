@@ -1,10 +1,10 @@
 """Robot tools for google-genai generate_content. Install the gemini extra."""
 
 from google.genai import types
-from hebbian_robot_use_client.llm.robot_tools import RobotTools
-from hebbian_robot_use_client.llm.types import RobotToolCall
 
 from hebbian_rua._tool_turn import RobotToolTurn
+from hebbian_rua.client.llm.robot_tools import RobotTools
+from hebbian_rua.client.llm.types import RobotToolCall
 
 
 class GeminiRobotTools:

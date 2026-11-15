@@ -15,7 +15,7 @@
 //!
 //! Messages are one JSON object per line. These types are the contract:
 //! `hebbian-robot-use-server schema --sim-plant` writes their JSON Schema, and the Python
-//! models in `hebbian_robot_use_client` are generated from it.
+//! models in `hebbian_rua.client` are generated from it.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

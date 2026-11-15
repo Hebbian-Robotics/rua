@@ -9,16 +9,16 @@ docs/control-model.md.
 import asyncio
 import logging
 
-from hebbian_robot_use_client.contract.station_api import ArmMode, ArmState
-from hebbian_robot_use_client.llm.robot_tool_rules import CapturedObservation
-from hebbian_robot_use_client.llm.robot_tools import (
+from hebbian_rua.client.contract.station_api import ArmMode, ArmState
+from hebbian_rua.client.llm.robot_tool_rules import CapturedObservation
+from hebbian_rua.client.llm.robot_tools import (
     ArmCommunicationInterrupted,
     RequiredCameraUnavailable,
     RobotTools,
 )
-from hebbian_robot_use_client.station_client import StationClient
-from hebbian_robot_use_client.station_connection import MessageRefused
-from hebbian_robot_use_client.station_types import LeaseLost
+from hebbian_rua.client.station_client import StationClient
+from hebbian_rua.client.station_connection import MessageRefused
+from hebbian_rua.client.station_types import LeaseLost
 
 log = logging.getLogger(__name__)
 INITIAL_CAMERA_RETRY_SECONDS = 0.1

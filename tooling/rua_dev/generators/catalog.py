@@ -5,9 +5,7 @@ from pathlib import Path
 
 from rua_dev.models import SdkTarget
 
-PYTHON_PATH = Path(
-    "hebbian_robot_use_client/hebbian_robot_use_client/llm/generated_robot_tools.py"
-)
+PYTHON_PATH = Path("hebbian_rua/client/llm/generated_robot_tools.py")
 TYPESCRIPT_PATH = Path("typescript-client/src/generated/robot-tools.ts")
 
 

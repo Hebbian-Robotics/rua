@@ -6,15 +6,15 @@ adapt the inputs the existing station client consumes.
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ActionSequenceStep,
     MoveArmsCommand,
     PosePreviewCandidate,
     StationSetGripperCommand,
     StopCommand,
 )
-from hebbian_robot_use_client.llm.generated_robot_tools import ROBOT_TOOL_CATALOG
-from hebbian_robot_use_client.llm.types import RobotToolSpec
+from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_CATALOG
+from hebbian_rua.client.llm.types import RobotToolSpec
 
 
 class PreviewPoseInput(BaseModel):

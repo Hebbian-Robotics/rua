@@ -7,24 +7,24 @@ from copy import deepcopy
 
 import httpx2
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ActionSequenceRequest,
     ArmMode,
     CommandOutcome,
 )
-from hebbian_robot_use_client.llm.generated_robot_tools import ROBOT_TOOL_CONTEXT
-from hebbian_robot_use_client.llm.response_format import model_response
-from hebbian_robot_use_client.llm.robot_tool_rules import (
+from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_CONTEXT
+from hebbian_rua.client.llm.response_format import model_response
+from hebbian_rua.client.llm.robot_tool_rules import (
     ARM_SUMMARIES_ADAPTER,
     CapturedObservation,
     RobotToolRules,
     arm_summary,
     command_results,
 )
-from hebbian_robot_use_client.llm.robot_tool_rules import (
+from hebbian_rua.client.llm.robot_tool_rules import (
     records_result as records_result,
 )
-from hebbian_robot_use_client.llm.tools import (
+from hebbian_rua.client.llm.tools import (
     ROBOT_TOOLS,
     ActionSequenceInput,
     ArmGripperInput,
@@ -35,18 +35,18 @@ from hebbian_robot_use_client.llm.tools import (
     RobotToolInput,
     StopInput,
 )
-from hebbian_robot_use_client.llm.types import (
+from hebbian_rua.client.llm.types import (
     RobotObservation,
     RobotToolCall,
     RobotToolResult,
     RobotToolSpec,
 )
-from hebbian_robot_use_client.station_client import (
+from hebbian_rua.client.station_client import (
     CameraJpeg,
     Lease,
     StationClient,
 )
-from hebbian_robot_use_client.station_connection import MessageRefused
+from hebbian_rua.client.station_connection import MessageRefused
 
 type CallWrapper = Callable[
     [RobotToolCall, Callable[[], Awaitable[RobotToolResult]]],

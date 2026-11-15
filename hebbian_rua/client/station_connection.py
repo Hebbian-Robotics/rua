@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Callable
 
 import httpx2
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
     ActionSequenceState,
     CommandRecord,
@@ -18,7 +18,7 @@ from hebbian_robot_use_client.contract.station_api import (
     StateMessage,
     StationState,
 )
-from hebbian_robot_use_client.station_events import (
+from hebbian_rua.client.station_events import (
     StationStreamEvent,
     stream_station_events,
 )

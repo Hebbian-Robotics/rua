@@ -18,13 +18,13 @@ from collections.abc import Awaitable, Mapping
 from pathlib import Path
 from typing import Any
 
-from hebbian_robot_use_client.contract.station_api import ArmMode
-from hebbian_robot_use_client.environment import load_environment
-from hebbian_robot_use_client.station_client import Lease
-from hebbian_robot_use_client.station_types import CommandResult
 from openai import AsyncOpenAI
 
 from hebbian_rua import RobotTools, StationClient
+from hebbian_rua.client.contract.station_api import ArmMode
+from hebbian_rua.client.environment import load_environment
+from hebbian_rua.client.station_client import Lease
+from hebbian_rua.client.station_types import CommandResult
 from hebbian_rua.openai import OpenAIRobotTools
 
 ARM = "follower"

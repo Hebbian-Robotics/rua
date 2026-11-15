@@ -9,11 +9,10 @@ import asyncio
 import json
 from typing import Literal
 
-from hebbian_robot_use_client.contract.station_api import ArmMode
-from hebbian_robot_use_client.environment import load_environment
-from hebbian_robot_use_client.station_client import DEFAULT_MEDIA_SERVER, DEFAULT_SERVER
-
 from hebbian_rua import RobotTools, StationClient
+from hebbian_rua.client.contract.station_api import ArmMode
+from hebbian_rua.client.environment import load_environment
+from hebbian_rua.client.station_client import DEFAULT_MEDIA_SERVER, DEFAULT_SERVER
 
 type Provider = Literal["openai", "anthropic", "gemini"]
 

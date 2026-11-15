@@ -18,7 +18,7 @@ from typing import Annotated
 
 from pydantic import BeforeValidator, Field, JsonValue, PlainSerializer
 
-from hebbian_robot_use_client.contract.wire_types import CamelCaseModel
+from hebbian_rua.client.contract.wire_types import CamelCaseModel
 
 TRACE_SPANS_TOPIC = "/trace/spans"
 # What a span is, for the viewer's lanes: run, observe, model, tool, command.

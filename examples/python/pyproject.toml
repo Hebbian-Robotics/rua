@@ -10,4 +10,3 @@ exclude-newer = "3 days"
 
 [tool.uv.sources]
 hebbian-rua = { path = "../..", editable = true }
-hebbian-robot-use-client = { path = "../../hebbian_robot_use_client", editable = true }

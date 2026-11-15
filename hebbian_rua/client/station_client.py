@@ -11,13 +11,13 @@ from typing import Self
 
 import httpx2
 
-from hebbian_robot_use_client.contract.arm_commands import (
+from hebbian_rua.client.contract.arm_commands import (
     ArmMotionCommands,
     ArmPowerCommands,
 )
-from hebbian_robot_use_client.contract.camera_api import CAPTURED_AT_HEADER
-from hebbian_robot_use_client.contract.http_routes import StationApi
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.camera_api import CAPTURED_AT_HEADER
+from hebbian_rua.client.contract.http_routes import StationApi
+from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
     ActionSequenceRequest,
     ActionSequenceStartRequest,
@@ -56,13 +56,13 @@ from hebbian_robot_use_client.contract.station_api import (
     StationState,
     TraceFile,
 )
-from hebbian_robot_use_client.contract.trace_spans import TraceSpan
-from hebbian_robot_use_client.station_connection import (
+from hebbian_rua.client.contract.trace_spans import TraceSpan
+from hebbian_rua.client.station_connection import (
     MessageRefused,
     RunUpdate,
     StationConnection,
 )
-from hebbian_robot_use_client.station_types import (
+from hebbian_rua.client.station_types import (
     CAMERA_TIMEOUT_SECONDS,
     DEFAULT_MEDIA_SERVER,
     DEFAULT_SERVER,
@@ -74,19 +74,19 @@ from hebbian_robot_use_client.station_types import (
     StationCommand,
     trace_context_for_commands,
 )
-from hebbian_robot_use_client.station_types import (
+from hebbian_rua.client.station_types import (
     JointSpeedRadiansPerSecond as JointSpeedRadiansPerSecond,
 )
-from hebbian_robot_use_client.station_types import (
+from hebbian_rua.client.station_types import (
     ResultOutcome as ResultOutcome,
 )
-from hebbian_robot_use_client.station_types import (
+from hebbian_rua.client.station_types import (
     WorldPositionMeters as WorldPositionMeters,
 )
-from hebbian_robot_use_client.station_types import (
+from hebbian_rua.client.station_types import (
     command_record_was_limited as command_record_was_limited,
 )
-from hebbian_robot_use_client.station_types import (
+from hebbian_rua.client.station_types import (
     commands_parented_to as commands_parented_to,
 )
 

@@ -16,9 +16,7 @@ OPENAPI_PATH = Path("schemas/openapi.json")
 CATALOG_PATH = Path("schemas/robot-tools.json")
 CONTEXT_PATH = Path("schemas/robot-context.json")
 SIM_MODELS_PATH = Path("examples/mujoco_sim/sim_plant_contract.py")
-PYTHON_MODELS_PATH = Path(
-    "hebbian_robot_use_client/hebbian_robot_use_client/contract/station_api.py"
-)
+PYTHON_MODELS_PATH = Path("hebbian_rua/client/contract/station_api.py")
 TYPESCRIPT_MODELS_PATH = Path("typescript-client/src/generated/api-schemas.ts")
 SCHEMA_PATHS = (SIM_SCHEMA_PATH, OPENAPI_PATH, CATALOG_PATH, CONTEXT_PATH)
 SDK_PATHS = {
@@ -39,7 +37,7 @@ SDK_PATHS = {
 
 def available_sdk_targets() -> frozenset[SdkTarget]:
     directories = {
-        SdkTarget.PYTHON: Path("hebbian_robot_use_client"),
+        SdkTarget.PYTHON: Path("hebbian_rua/client"),
         SdkTarget.RUST: Path("sdk"),
         SdkTarget.TYPESCRIPT: Path("typescript-client"),
     }

@@ -3,14 +3,14 @@
 import json
 from pathlib import Path
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     CommandCompletion,
     CommandOutcome,
     CommandRecord,
     TargetStatus,
 )
-from hebbian_robot_use_client.llm.robot_tools import records_result
-from hebbian_robot_use_client.llm.types import RobotToolCall
+from hebbian_rua.client.llm.robot_tools import records_result
+from hebbian_rua.client.llm.types import RobotToolCall
 
 
 def record(outcome: CommandOutcome, target_status: TargetStatus) -> CommandRecord:

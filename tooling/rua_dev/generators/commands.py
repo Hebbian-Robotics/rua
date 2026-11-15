@@ -10,9 +10,7 @@ from pathlib import Path
 from rua_dev.models import SdkTarget
 
 RUST_PATH = Path("sdk/src/generated/station_commands.rs")
-PYTHON_PATH = Path(
-    "hebbian_robot_use_client/hebbian_robot_use_client/contract/arm_commands.py"
-)
+PYTHON_PATH = Path("hebbian_rua/client/contract/arm_commands.py")
 TYPESCRIPT_PATH = Path("typescript-client/src/generated/arm-commands.ts")
 # The one place that says which commands need no lease: power, fault recovery and stop. Every
 # other StationCommand moves the arm, so the SDKs put it on the lease handle only; a new motion
@@ -251,12 +249,12 @@ def generate_python(variants: list[Variant], definitions: dict) -> str:
         "",
         "from typing import TYPE_CHECKING",
         "",
-        "from hebbian_robot_use_client.contract.station_api import (",
+        "from hebbian_rua.client.contract.station_api import (",
         *[f"    {name}," for name in sorted(imported)],
         ")",
         "",
         "if TYPE_CHECKING:",
-        "    from hebbian_robot_use_client.station_types import CommandResult, StationCommand",
+        "    from hebbian_rua.client.station_types import CommandResult, StationCommand",
     ]
     for class_name, needs_lease, summary in (
         (

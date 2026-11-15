@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ApproveRecoveryCommand,
     ClearFaultCommand,
     DisableCommand,
@@ -20,7 +20,7 @@ from hebbian_robot_use_client.contract.station_api import (
 )
 
 if TYPE_CHECKING:
-    from hebbian_robot_use_client.station_types import CommandResult, StationCommand
+    from hebbian_rua.client.station_types import CommandResult, StationCommand
 
 
 class ArmPowerCommands:

@@ -1,7 +1,5 @@
 """Robot tools for the OpenAI Responses API. Install the openai extra."""
 
-from hebbian_robot_use_client.llm.robot_tools import RobotTools
-from hebbian_robot_use_client.llm.types import RobotToolCall
 from openai.types.responses import Response, ResponseInputItemParam, ToolParam
 from openai.types.responses.response_input_content_param import (
     ResponseInputContentParam,
@@ -9,6 +7,8 @@ from openai.types.responses.response_input_content_param import (
 from pydantic import TypeAdapter
 
 from hebbian_rua._tool_turn import RobotToolTurn, decode_arguments, encode_camera
+from hebbian_rua.client.llm.robot_tools import RobotTools
+from hebbian_rua.client.llm.types import RobotToolCall
 
 _RESPONSE_INPUT = TypeAdapter(list[ResponseInputItemParam])
 

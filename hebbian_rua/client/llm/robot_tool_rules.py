@@ -7,7 +7,7 @@ from typing import assert_never
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ArmMode,
     ArmState,
     CommandOutcome,
@@ -16,17 +16,17 @@ from hebbian_robot_use_client.contract.station_api import (
     PoseDescription,
     StationState,
 )
-from hebbian_robot_use_client.llm.response_format import model_response
-from hebbian_robot_use_client.llm.tools import (
+from hebbian_rua.client.llm.response_format import model_response
+from hebbian_rua.client.llm.tools import (
     ROBOT_TOOL_INPUTS,
     RobotToolInput,
 )
-from hebbian_robot_use_client.llm.types import (
+from hebbian_rua.client.llm.types import (
     RobotObservation,
     RobotToolCall,
     RobotToolResult,
 )
-from hebbian_robot_use_client.station_client import (
+from hebbian_rua.client.station_client import (
     CameraJpeg,
     CommandResult,
     command_record_was_limited,

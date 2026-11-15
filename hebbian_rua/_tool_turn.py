@@ -4,7 +4,7 @@ import base64
 import json
 from dataclasses import dataclass
 
-from hebbian_robot_use_client.llm.types import RobotToolResult
+from hebbian_rua.client.llm.types import RobotToolResult
 
 
 @dataclass(frozen=True)

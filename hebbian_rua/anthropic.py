@@ -2,11 +2,11 @@
 
 from anthropic.types import Message, MessageParam, ToolParam, ToolResultBlockParam
 from anthropic.types.content_block_param import ContentBlockParam
-from hebbian_robot_use_client.llm.robot_tools import RobotTools
-from hebbian_robot_use_client.llm.types import RobotToolCall
 from pydantic import TypeAdapter
 
 from hebbian_rua._tool_turn import RobotToolTurn, encode_camera
+from hebbian_rua.client.llm.robot_tools import RobotTools
+from hebbian_rua.client.llm.types import RobotToolCall
 
 _ASSISTANT_CONTENT = TypeAdapter(list[ContentBlockParam])
 

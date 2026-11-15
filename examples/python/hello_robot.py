@@ -13,20 +13,19 @@ Motion exists only on the lease; power, stop and reads are on `station.arm(...)`
 import asyncio
 import os
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua import StationClient
+from hebbian_rua.client.contract.station_api import (
     ArmMode,
     PreviewRefused,
     ProjectedPoseOutcome,
     QuaternionOrientation,
     UnavailableProjection,
 )
-from hebbian_robot_use_client.station_client import (
+from hebbian_rua.client.station_client import (
     DEFAULT_SERVER,
     JointSpeedRadiansPerSecond,
     WorldPositionMeters,
 )
-
-from hebbian_rua import StationClient
 
 
 async def main() -> None:

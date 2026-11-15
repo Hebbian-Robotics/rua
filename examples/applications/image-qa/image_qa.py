@@ -17,12 +17,12 @@ import time
 from collections.abc import Awaitable
 from pathlib import Path
 
-from hebbian_robot_use_client.environment import load_environment
-from hebbian_robot_use_client.station_client import Lease
-from hebbian_robot_use_client.station_types import CommandResult
 from openai import AsyncOpenAI
 
 from hebbian_rua import StationClient
+from hebbian_rua.client.environment import load_environment
+from hebbian_rua.client.station_client import Lease
+from hebbian_rua.client.station_types import CommandResult
 
 ARM = "follower"
 CAMERA = "table"

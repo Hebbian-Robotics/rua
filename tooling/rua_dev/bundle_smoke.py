@@ -86,7 +86,7 @@ def main() -> None:
     )
     if own_distributions != ["hebbian-rua"]:
         raise RuntimeError(f"Expected one public distribution: {own_distributions}")
-    for unwanted in ("mujoco", "so101_setup", "rustypot"):
+    for unwanted in ("hebbian_robot_use_client", "mujoco", "so101_setup", "rustypot"):
         if importlib.util.find_spec(unwanted) is not None:
             raise RuntimeError(f"Unexpected runtime dependency: {unwanted}")
     command = shutil.which("rua")

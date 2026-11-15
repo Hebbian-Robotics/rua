@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType, Self
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ApproveRecoveryCommand,
     ClearFaultCommand,
     CommandOutcome,

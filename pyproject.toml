@@ -12,7 +12,9 @@ authors = [
     { name = "Hebbian Robotics" },
 ]
 dependencies = [
-    "hebbian-robot-use-client==0.1.0",
+    "httpx2>=2.16.0",
+    "pydantic>=2.11",
+    "python-dotenv>=1.2.4",
 ]
 
 [project.urls]
@@ -46,7 +48,7 @@ exclude-newer = "3 days"
 module-root = ""
 module-name = "hebbian_rua"
 
-[tool.uv.sources.hebbian-robot-use-client]
+[tool.uv.sources.hebbian-rua]
 workspace = true
 
 [tool.uv.sources.rua-dev]
@@ -54,7 +56,6 @@ workspace = true
 
 [tool.uv.workspace]
 members = [
-    "hebbian_robot_use_client",
     "tooling",
 ]
 exclude = [
@@ -102,7 +103,7 @@ possibly-unresolved-reference = "error"
 
 [tool.ty.src]
 exclude = [
-    "hebbian_robot_use_client/hebbian_robot_use_client/contract/station_api.py",
+    "hebbian_rua/client/contract/station_api.py",
 ]
 
 [tool.ty.analysis]

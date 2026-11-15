@@ -406,9 +406,9 @@ wheels = [
 ]
 
 [[package]]
-name = "hebbian-robot-use-client"
+name = "hebbian-rua"
 version = "0.1.0"
-source = { editable = "../../hebbian_robot_use_client" }
+source = { editable = "../../" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
@@ -417,25 +417,12 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx2", specifier = ">=2.16.0" },
-    { name = "pydantic", specifier = ">=2.11" },
-    { name = "python-dotenv", specifier = ">=1.2.4" },
-]
-
-[[package]]
-name = "hebbian-rua"
-version = "0.1.0"
-source = { editable = "../../" }
-dependencies = [
-    { name = "hebbian-robot-use-client" },
-]
-
-[package.metadata]
-requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=2.8.0" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=3.1.0" },
-    { name = "hebbian-robot-use-client", editable = "../../hebbian_robot_use_client" },
+    { name = "httpx2", specifier = ">=2.16.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=3.49.0" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
 ]
 provides-extras = ["openai", "anthropic", "gemini"]
 

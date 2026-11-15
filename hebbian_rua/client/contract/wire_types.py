@@ -1,7 +1,7 @@
 """Types shared by the client's payload models: pydantic and the standard library only.
 
 Keeping them free of the driver and simulator stacks (MuJoCo) means importing the
-contract never loads any of them; tests/test_hebbian_robot_use_client_boundary.py
+contract never loads any of them; tests/test_hebbian_rua.client_boundary.py
 guards that. The station's own types are generated from Rust into `station_api.py`.
 """
 

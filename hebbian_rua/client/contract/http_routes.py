@@ -5,7 +5,7 @@ from urllib.parse import quote
 import httpx2
 from pydantic import TypeAdapter
 
-from hebbian_robot_use_client.contract.station_api import (
+from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
     ActionSequenceStartRequest,
     CameraListing,

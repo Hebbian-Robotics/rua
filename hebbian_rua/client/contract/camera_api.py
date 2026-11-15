@@ -4,8 +4,8 @@ from typing import Literal
 
 from pydantic import Field
 
-from hebbian_robot_use_client.contract.trace_spans import TraceSpan
-from hebbian_robot_use_client.contract.wire_types import CamelCaseModel
+from hebbian_rua.client.contract.trace_spans import TraceSpan
+from hebbian_rua.client.contract.wire_types import CamelCaseModel
 
 # Response header on a camera frame: when it was captured, in Unix nanoseconds.
 CAPTURED_AT_HEADER = "X-Captured-At-Unix-Ns"
