@@ -16,7 +16,16 @@ fn an_external_profile_inherits_bundled_defaults_and_resolves_its_own_assets() {
     let path = directory.join("my-arm.toml");
     std::fs::write(
         &path,
-        "extends = \"so101-sim\"\nname = \"my-arm\"\nurdf = \"custom.urdf\"\n[mujoco]\narm_model = \"custom.xml\"\n",
+        r#"extends = "so101-sim"
+name = "my-arm"
+urdf = "custom.urdf"
+driver = "mujoco"
+[mujoco]
+arm_model = "custom.xml"
+start_pose_radians = [0.0, -1.0, 1.0, 0.5, 0.0]
+target_block_position_meters = [0.25, 0.0, 0.015]
+rated_actuator_force = 3.35
+"#,
     )
     .unwrap();
     let profile = load_robot_profile(&bundled_profiles(), path.to_str().unwrap()).unwrap();
@@ -40,13 +49,12 @@ fn a_profile_given_as_json_matches_its_toml() {
     assert!(parse_robot_profile_json("{\"name\": \"x\"}", &root).is_err());
 }
 
-const BUNDLED_PROFILES: [&str; 8] = [
+const BUNDLED_PROFILES: [&str; 7] = [
     "so101",
     "so101-bimanual",
     "so101-manual",
     "so101-policy",
     "so101-sim",
-    "so101-sim-2ms",
     "so101-bimanual-sim",
     "so101-sim-policy",
 ];

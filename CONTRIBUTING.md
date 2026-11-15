@@ -3,8 +3,7 @@
 This is an early release of part of our robotics stack. Feedback and issue reports
 are welcome.
 
-For development, follow [source setup](docs/getting-started.md#from-source), then
-run `uv run rua-dev setup` from the checkout root. The pinned Rust toolchain includes
+For development, follow [source setup](docs/install-from-source.md). The pinned Rust toolchain includes
 Clippy and rustfmt. Python checks run on 3.14; the package supports Python 3.12+.
 Python dependencies keep a three-day minimum release age.
 
@@ -33,8 +32,10 @@ cargo test --workspace --all-features
 are required for its Rust checks. To verify a built wheel outside the checkout,
 use `uv run rua-dev package check /path/to/hebbian_rua.whl`.
 
-Check documentation links with `lychee --offline -v .`; use `lychee -v .` to
-include external links. CI checks Python and Rust on Ubuntu 24.04.
+Check guide links with `lychee --offline -v README.md CONTRIBUTING.md docs`;
+use the same command without `--offline` for external links. Check export
+templates in an assembled checkout, where their relative links resolve. Automatic CI runs only in `Hebbian-Robotics/rua`;
+other checkouts use the same commands locally.
 
 The media build needs the prerequisites in [camera setup](docs/cameras.md).
 Rust workspace tests also need [FFmpeg](docs/recording.md) on `PATH`.
@@ -43,6 +44,9 @@ Keep credentials, recordings and per-arm calibration out of commits.
 For camera changes, verify a real USB or phone stream with LiveKit: browser
 video, SDK snapshots, simultaneous readers, reconnection and shutdown. Simulator
 checks do not cover a physical camera or arm.
+
+Additional component commands appear in `uv run rua-dev --help` when included.
+Use targeted checks first. Simulation does not validate physical hardware.
 
 ## Code style
 
@@ -54,6 +58,9 @@ checks do not cover a physical camera or arm.
 - Comment on non-obvious decisions rather than restating the code.
 - Test observable outcomes and real business logic, not mocks or library internals.
 - Use uv for Python. Keep changes scoped and run targeted checks first.
+- Keep control and SDK boundaries reusable; examples do not restrict downstream workflows.
+- Enforce each limit once, clamp or degrade valid requests, and trip on physical evidence.
+  Diagnose hardware from measurements; do not loosen limits to conceal a problem.
 
 Use the workspace's existing Clippy allowances and Python lint settings. The
 release uses `panic = "abort"`; default test builds retain unwinding. Configure

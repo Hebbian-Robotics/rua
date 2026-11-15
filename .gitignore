@@ -9,6 +9,7 @@ __pycache__/
 *.key
 .ruff_cache/
 .ty_cache/
+/diagnostics/
 /recordings/*
 !/recordings/Cargo.toml
 !/recordings/README.md
@@ -29,11 +30,16 @@ __pycache__/
 
 # Credentials
 .gemini-key*
+/station/wheel-data/
+/livekit-cameras/wheel-data/
+
+# Agent server run records
+/.agent-runs/
 
 /runs/
+.claude/worktrees/
 
-
-# Local metadata
+# Local export provenance, not part of the release source.
 /EXPORT.json
 
 # Example application runs: camera frames and model moves

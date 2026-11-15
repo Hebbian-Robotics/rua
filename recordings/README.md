@@ -1,4 +1,5 @@
 # Recordings
 
-Supporting components for station recordings. Playback and analysis interfaces
-will be shared in a future release.
+RUA's recording library lists and serves saved recordings, supports byte-range
+reads, and protects active recordings from deletion. See the
+[recording guide](../docs/recording.md) for setup and shared MCAP tools.

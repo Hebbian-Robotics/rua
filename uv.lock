@@ -435,7 +435,7 @@ wheels = [
 
 [[package]]
 name = "datamodel-code-generator"
-version = "0.94.0"
+version = "0.95.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "argcomplete" },
@@ -448,9 +448,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/d3/e0e435f9a574ba581a66c824219b7722bf3120573e483a9fa40633f88f56/datamodel_code_generator-0.94.0.tar.gz", hash = "sha256:b06fcedc3957daff769bfeac80270c54b54505b17b1fa22315cbb32f3ec9cb33", size = 9680376, upload-time = "2026-11-12T01:00:27.026Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/f6/c26bab1339e56606d1d61c25f3fa22e4241516ad02e894e32c07e0a821d3/datamodel_code_generator-0.95.0.tar.gz", hash = "sha256:81971c2cb0a219d5cbcd98b25fc9d6045cdd781bd85ae6416cacc39c2bf2373d", size = 9795993, upload-time = "2026-11-12T09:08:59.021Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/28/27/4be2fcb688336eaa6648ae03978314277287ebb4cc603501ba6fe1e9e78c/datamodel_code_generator-0.94.0-py3-none-any.whl", hash = "sha256:9060abb815af7e8cf792958824d0c6f6ef84b1aab83b2d7443c0541672361e96", size = 2448387, upload-time = "2026-11-12T01:00:24.561Z" },
+    { url = "https://files.pythonhosted.org/packages/51/8f/1a443487a88d72a16182a265de593557e034500ba9822d3e4aa3bd369a2c/datamodel_code_generator-0.95.0-py3-none-any.whl", hash = "sha256:7b5d5071de4f66c60ed56c2232338bb8db888dd308bb1ac9611104184ee271cd", size = 2445615, upload-time = "2026-11-12T09:08:57.002Z" },
 ]
 
 [[package]]
@@ -569,6 +569,7 @@ dev = [
     { name = "anthropic" },
     { name = "datamodel-code-generator" },
     { name = "google-genai" },
+    { name = "jsonref" },
     { name = "openai" },
     { name = "pytest" },
     { name = "rua-dev" },
@@ -590,11 +591,12 @@ dev = [
     { name = "anthropic", specifier = ">=2.8.0" },
     { name = "datamodel-code-generator", specifier = ">=0.89.0" },
     { name = "google-genai", specifier = ">=3.1.0" },
+    { name = "jsonref", specifier = ">=1.1.0" },
     { name = "openai", specifier = ">=3.49.0" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "rua-dev", editable = "tooling" },
-    { name = "ruff", specifier = ">=0.17.4" },
-    { name = "ty", specifier = ">=0.0.100" },
+    { name = "ruff" },
+    { name = "ty" },
 ]
 
 [[package]]
@@ -1339,6 +1341,7 @@ dependencies = [
     { name = "jsonref" },
     { name = "packaging" },
     { name = "pydantic" },
+    { name = "tomli-w" },
     { name = "wheel" },
 ]
 
@@ -1349,6 +1352,7 @@ requires-dist = [
     { name = "jsonref", specifier = ">=1.1.0" },
     { name = "packaging", specifier = ">=26.3" },
     { name = "pydantic", specifier = ">=2.11" },
+    { name = "tomli-w", specifier = ">=1.2,<2" },
     { name = "wheel", specifier = ">=0.45" },
 ]
 
@@ -1393,6 +1397,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
+]
+
+[[package]]
+name = "tomli-w"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/75/241269d1da26b624c0d5e110e8149093c759b7a286138f4efd61a60e75fe/tomli_w-1.2.0.tar.gz", hash = "sha256:2dd14fac5a47c27be9cd4c976af5a12d87fb1f0b4512f81d69cce3b35ae25021", size = 7184, upload-time = "2025-01-15T12:07:24.262Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/18/c86eb8e0202e32dd3df50d43d7ff9854f8e0603945ff398974c1d91ac1ef/tomli_w-1.2.0-py3-none-any.whl", hash = "sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90", size = 6675, upload-time = "2025-01-15T12:07:22.074Z" },
 ]
 
 [[package]]

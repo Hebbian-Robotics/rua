@@ -24,19 +24,5 @@ Use `from hebbian_rua import StationClient` in your Python program. See the
 
 ## From source
 
-Contributors need Rust 1.92+, Python 3.12+ and uv. On Ubuntu, install
-`build-essential`, `pkg-config`, `libudev-dev` and `mold`, then:
-
-```sh
-uv run rua-dev setup
-cargo build -p hebbian-station
-uv sync --project examples/python --locked
-uv run --project examples/python rua serve --profile ./robot.toml
-```
-
-Source setup prepares the pinned SO-101 models in the ignored `robots/so101`
-directory and caches its release archive under `.cache/so101`. Do this once
-before building; later builds and runs need no asset download. The installed
-wheel already includes the models, license and attribution.
-
+Follow [source installation](install-from-source.md), then return here.
 For cameras and the web preview, see [cameras](cameras.md).
