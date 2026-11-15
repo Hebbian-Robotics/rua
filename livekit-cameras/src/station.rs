@@ -457,6 +457,15 @@ fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> Recorde
     }
 }
 
+/// A plant that reports no velocity or effort leaves that array out of the message.
+fn one_per_joint(values: &[f64], joint_count: usize) -> &[f64] {
+    if values.len() == joint_count {
+        values
+    } else {
+        &[]
+    }
+}
+
 /// The station's state as JSON, and each arm's joints as a ROS 2 `JointState`.
 fn record_state(
     archive: &RecordingArchive,
@@ -468,7 +477,14 @@ fn record_state(
         if arm.sampled_at_unix_seconds.is_some()
             && arm.measured_joints.len() == state.joint_names.len()
         {
-            archive.joint_states(&arm.arm, now, &state.joint_names, &arm.measured_joints)?;
+            archive.joint_states(
+                &arm.arm,
+                now,
+                &state.joint_names,
+                &arm.measured_joints,
+                one_per_joint(&arm.measured_joint_velocities, state.joint_names.len()),
+                one_per_joint(&arm.measured_joint_efforts, state.joint_names.len()),
+            )?;
         }
     }
     Ok(())

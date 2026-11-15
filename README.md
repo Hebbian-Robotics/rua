@@ -59,6 +59,7 @@ state come back for the next turn. You can change the prompt, model and loop.
 Use `AnthropicRobotTools` from `hebbian_rua.anthropic` or `GeminiRobotTools` from
 `hebbian_rua.gemini` with the corresponding SDK. See the
 [Python examples](examples/python/README.md).
+Choose what reaches the model with [output formatters](docs/model-output.md).
 
 Hardware setup, camera tools and recording utilities have their own guides:
 [SO-101](https://github.com/Hebbian-Robotics/so101),

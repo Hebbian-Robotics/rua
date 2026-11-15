@@ -1,9 +1,10 @@
 """Async model-facing robot tools."""
 
 import asyncio
-import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from copy import deepcopy
+from copy import copy, deepcopy
+from dataclasses import replace
+from typing import Self
 
 import httpx2
 
@@ -13,12 +14,10 @@ from hebbian_rua.client.contract.station_api import (
     CommandOutcome,
 )
 from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_CONTEXT
-from hebbian_rua.client.llm.response_format import model_response
+from hebbian_rua.client.llm.response_format import default_formatter, result_from_data
 from hebbian_rua.client.llm.robot_tool_rules import (
-    ARM_SUMMARIES_ADAPTER,
     CapturedObservation,
     RobotToolRules,
-    arm_summary,
     command_results,
 )
 from hebbian_rua.client.llm.robot_tool_rules import (
@@ -36,7 +35,9 @@ from hebbian_rua.client.llm.tools import (
     StopInput,
 )
 from hebbian_rua.client.llm.types import (
+    OutputFormatter,
     RobotObservation,
+    RobotOutput,
     RobotToolCall,
     RobotToolResult,
     RobotToolSpec,
@@ -82,12 +83,24 @@ class RobotTools(RobotToolRules):
         names = [*cameras, *optional_cameras]
         if len(set(names)) != len(names):
             raise ValueError(f"Camera names repeat: {names}")
+        self._output_formatter: OutputFormatter = default_formatter
         self.station = station
         self.lease = lease
         self.arm = arm
         self.cameras = list(cameras)
         self.optional_cameras = list(optional_cameras)
         self.descriptions = dict(descriptions or {})
+
+    def map_output(self, formatter: OutputFormatter) -> Self:
+        """Return a view using this formatter on full data; share the connection.
+
+        The formatter replaces the previous formatter. It does not alter
+        execution, leases or fault/interruption flags. Close the shared station
+        only when all views are finished with it.
+        """
+        mapped = copy(self)
+        mapped._output_formatter = formatter
+        return mapped
 
     async def context(self) -> dict[str, object]:
         """Return factual conventions and the current station's robot description."""
@@ -127,7 +140,7 @@ class RobotTools(RobotToolRules):
         self, note: str = "", extra_lines: Sequence[str] = ()
     ) -> CapturedObservation:
         state = await self.station.state()
-        arms = {arm.arm: arm_summary(state, arm) for arm in state.arms}
+        arms = {arm.arm: arm for arm in state.arms}
         if self.arm not in arms:
             raise ValueError(f"The station has no arm {self.arm}")
         if arms[self.arm].mode in {ArmMode.disconnected, ArmMode.reconnected}:
@@ -166,37 +179,22 @@ class RobotTools(RobotToolRules):
                 raise result
             else:
                 captures[name] = result
-        lines = [
-            *extra_lines,
-            *([note] if note else []),
-            f"Robot profile: {state.robot or 'unknown'}.",
-            f"Arm state: {json.dumps(model_response(arms[self.arm].model_dump(mode='json')))}",
-            "All arm states: "
-            + json.dumps(
-                model_response(ARM_SUMMARIES_ADAPTER.dump_python(arms, mode="json"))
-            ),
-        ]
-        if missing_optional:
-            lines.append("Optional cameras unavailable: " + ", ".join(missing_optional))
-        if captures:
-            lines.append(
-                "Camera retrieval intervals (Unix seconds): "
-                + json.dumps(
-                    {
-                        name: [
-                            round(timestamp, 3)
-                            for timestamp in capture.retrieved_between_unix_seconds
-                        ]
-                        for name, capture in captures.items()
-                    }
-                )
-            )
+        raw_data = state.model_dump(mode="json")
+        output = RobotOutput(
+            "observation",
+            raw_data,
+            cameras={name: capture.jpeg for name, capture in captures.items()},
+            selected_arm=self.arm,
+            notes=(*extra_lines, *([note] if note else [])),
+            missing_optional_cameras=tuple(missing_optional),
+            camera_intervals={
+                name: capture.retrieved_between_unix_seconds
+                for name, capture in captures.items()
+            },
+        )
+        content = self._output_formatter(deepcopy(output))
         return CapturedObservation(
-            RobotObservation(
-                text="\n".join(lines),
-                cameras={name: capture.jpeg for name, capture in captures.items()},
-            ),
-            captures,
+            RobotObservation(content.text, content.cameras, raw_data), captures
         )
 
     async def execute(
@@ -255,7 +253,22 @@ class RobotTools(RobotToolRules):
                 raise outcome
             else:
                 results.append(outcome)
-        return results
+        if self._output_formatter is default_formatter:
+            return results
+        formatted_results = []
+        for result in results:
+            raw_data = result.data
+            content = self._output_formatter(
+                RobotOutput("result", deepcopy(raw_data), call=result.call)
+            )
+            if content.cameras:
+                raise ValueError(
+                    "Tool result formatters return text; use observations for camera images"
+                )
+            formatted_results.append(
+                replace(result, text=content.text, raw_data=raw_data)
+            )
+        return formatted_results
 
     async def _execute_individual(
         self,
@@ -266,18 +279,14 @@ class RobotTools(RobotToolRules):
         match tool_input:
             case PreviewPoseInput(poses=poses):
                 response = await self.station.preview_poses(self.arm, poses)
-                return RobotToolResult(
-                    call,
-                    json.dumps(model_response(response.model_dump(mode="json"))),
-                    False,
+                return result_from_data(
+                    call, response.model_dump(mode="json"), is_error=False
                 )
             case ObserveInput(wait_seconds=wait_seconds):
                 await asyncio.sleep(wait_seconds)
                 state = await self.station.state()
-                return RobotToolResult(
-                    call,
-                    json.dumps(model_response(state.model_dump(mode="json"))),
-                    False,
+                return result_from_data(
+                    call, state.model_dump(mode="json"), is_error=False
                 )
             case MoveArmsInput():
                 records = await self.lease.move_arms(
@@ -333,9 +342,9 @@ class RobotTools(RobotToolRules):
             (arm for arm in (await self.station.state()).arms if arm.arm == self.arm),
             None,
         )
-        return RobotToolResult(
+        return result_from_data(
             call,
-            json.dumps(model_response(action_sequence.model_dump(mode="json"))),
+            action_sequence.model_dump(mode="json"),
             is_error=action_sequence.phase.state != "completed",
             halt=CommandOutcome.faulted in outcomes
             or (arm is not None and arm.mode is ArmMode.faulted),

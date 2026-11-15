@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 hebbian-robot-geometry = { path = "../robot-geometry" }
-hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "7fd1b4fa94804963b05c8cecfa36de116309f7e3", features = ["schema"] }
+hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "9f49365f21703c1c898f4b587cd169697a6aa62d", features = ["schema"] }
 hebbian-contracts = { path = "../contracts" }
 anyhow = "1.0.104"
 async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }
