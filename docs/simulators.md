@@ -45,6 +45,5 @@ RUA owns target generation and its configured control limits. For cameras,
 publish your simulator's frames to LiveKit and use the [camera integration](cameras.md).
 
 For another robot, supply its URDF, joint order, limits and control profile.
-The existing `mujoco` driver/settings remain for compatibility with older
-adapters; new engine-neutral profiles use `driver = "simulator"` with no
-`[mujoco]` or `[feetech]` section.
+Simulator profiles use `driver = "simulator"` with no `[feetech]` section;
+engine settings such as model files and timesteps belong to your adapter.

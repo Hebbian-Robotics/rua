@@ -31,7 +31,7 @@ pub(crate) struct ServeArguments {
     /// profiles above the executor or the working directory.
     #[arg(long)]
     profile_directory: Option<PathBuf>,
-    /// Drive the lag simulator instead of the profile's servos or `MuJoCo` scene.
+    /// Drive the lag simulator instead of the profile's servos or simulator.
     #[arg(long)]
     simulate: bool,
     /// Serve the station HTTP API, event stream and viewer on this address.
@@ -51,10 +51,10 @@ pub(crate) struct ServeArguments {
     /// Where the cycle traces go. Default: the config's own.
     #[arg(long)]
     trace_directory: Option<PathBuf>,
-    /// How long to wait for a `MuJoCo` simulator to connect to each plant socket.
+    /// How long to wait for a simulator to connect to each plant socket.
     #[arg(long, default_value_t = 30.0)]
     simulator_connect_seconds: f64,
-    /// How long a `MuJoCo` simulator may take to answer one step before the arm trips.
+    /// How long a simulator may take to answer one step before the arm trips.
     #[arg(long, default_value_t = 5.0)]
     simulator_reply_seconds: f64,
 }
@@ -80,7 +80,7 @@ fn plant_kind(driver: &Driver, simulate: bool) -> PlantKind {
     match (simulate, driver) {
         (true, _) => PlantKind::Lag,
         (false, Driver::Feetech(_)) => PlantKind::Servos,
-        (false, Driver::Mujoco(_) | Driver::Simulator) => PlantKind::Simulator,
+        (false, Driver::Simulator) => PlantKind::Simulator,
     }
 }
 

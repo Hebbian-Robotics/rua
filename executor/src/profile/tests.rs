@@ -19,22 +19,13 @@ fn an_external_profile_inherits_bundled_defaults_and_resolves_its_own_assets() {
         r#"extends = "so101-sim"
 name = "my-arm"
 urdf = "custom.urdf"
-driver = "mujoco"
-[mujoco]
-arm_model = "custom.xml"
-start_pose_radians = [0.0, -1.0, 1.0, 0.5, 0.0]
-target_block_position_meters = [0.25, 0.0, 0.015]
-rated_actuator_force = 3.35
 "#,
     )
     .unwrap();
     let profile = load_robot_profile(&bundled_profiles(), path.to_str().unwrap()).unwrap();
     assert_eq!(profile.name, "my-arm");
     assert_eq!(profile.urdf, directory.join("custom.urdf"));
-    match profile.driver {
-        Driver::Mujoco(settings) => assert_eq!(settings.arm_model, directory.join("custom.xml")),
-        Driver::Feetech(_) | Driver::Simulator => panic!("Expected a MuJoCo profile"),
-    }
+    assert!(matches!(profile.driver, Driver::Simulator));
 }
 
 #[test]

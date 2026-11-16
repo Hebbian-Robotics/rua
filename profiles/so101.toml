@@ -1,7 +1,7 @@
 # SO-101 follower arm (Feetech STS3215). Hardware tests used per-arm local overrides;
 # the defaults below are starting values, not a calibration for every arm.
-# Limits follow the servo's ratings and LeRobot's practice; the MuJoCo profile
-# (so101-mujoco.toml) supplies its own simulated settings.
+# Limits follow the servo's ratings and LeRobot's practice; the simulator
+# profiles (so101-sim*.toml) supply their own simulated settings.
 name = "so101-follower"
 extends = "so101-description"
 # This follower may rest up to two degrees outside calibrated endpoints.

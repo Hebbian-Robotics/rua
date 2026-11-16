@@ -128,34 +128,6 @@ pub struct GripperSettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MujocoIntegrator {
-    Euler,
-    Implicitfast,
-}
-
-/// A `MuJoCo` scene standing in for the hardware. The executor only checks it;
-/// engine-specific adapters read it from the profile itself.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MujocoSettings {
-    pub arm_model: PathBuf,
-    #[serde(default)]
-    pub environment: Option<PathBuf>,
-    pub start_pose_radians: Vec<f64>,
-    pub target_block_position_meters: [f64; 3],
-    pub rated_actuator_force: f64,
-    #[serde(default)]
-    pub timestep_seconds: Option<f64>,
-    #[serde(default)]
-    pub integrator: Option<MujocoIntegrator>,
-    #[serde(default)]
-    pub servo_stiffness_scale: Option<f64>,
-    #[serde(default)]
-    pub gripper_joint: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum UrdfNaming {
     /// URDF joint and frame names carry the arm's name, as `<arm>_<joint>`.
     ArmPrefixed,
@@ -238,15 +210,13 @@ impl Default for SurfaceGuardSettings {
 #[serde(rename_all = "snake_case")]
 pub enum DriverKind {
     Feetech,
-    Mujoco,
     Simulator,
 }
 
 /// The hardware or simulator behind the arms, with its settings.
 #[derive(Debug, Clone)]
 pub enum Driver {
-    Feetech(FeetechSettings),
-    Mujoco(MujocoSettings),
+    Feetech(Box<FeetechSettings>),
     Simulator,
 }
 
@@ -306,8 +276,6 @@ struct ProfileTables {
     gripper: Option<GripperSettings>,
     #[serde(default)]
     feetech: Option<FeetechSettings>,
-    #[serde(default)]
-    mujoco: Option<MujocoSettings>,
 }
 
 /// A validated robot profile. With the policy controller selected, the motion
@@ -378,8 +346,8 @@ impl RobotProfile {
     #[must_use]
     pub fn feetech(&self) -> Option<&FeetechSettings> {
         match &self.driver {
-            Driver::Feetech(settings) => Some(settings),
-            Driver::Mujoco(_) | Driver::Simulator => None,
+            Driver::Feetech(settings) => Some(settings.as_ref()),
+            Driver::Simulator => None,
         }
     }
 }
@@ -469,10 +437,6 @@ fn profile_tables(directory: &Path, name: &str, depth: usize) -> anyhow::Result<
             .parent()
             .context("Profile file has no parent directory")?;
         resolve_local_asset(&mut tables, "urdf", local_directory);
-        if let Some(toml::Value::Table(mujoco)) = tables.get_mut("mujoco") {
-            resolve_local_asset(mujoco, "arm_model", local_directory);
-            resolve_local_asset(mujoco, "environment", local_directory);
-        }
         if let Some(toml::Value::Table(policy)) = tables.get_mut("policy") {
             resolve_local_asset(policy, "onnx", local_directory);
             resolve_local_asset(policy, "tool_frame_fixture", local_directory);
@@ -647,27 +611,15 @@ fn validated(tables: ProfileTables, repository_root: &Path) -> anyhow::Result<Ro
         bail!("Base pose for unknown arm {arm}");
     }
     check_limits(&tables)?;
-    let driver = match (tables.driver, &tables.feetech, &tables.mujoco) {
-        (DriverKind::Simulator, None, None) => Driver::Simulator,
-        (DriverKind::Feetech, Some(settings), None) => {
+    let driver = match (tables.driver, &tables.feetech) {
+        (DriverKind::Simulator, None) => Driver::Simulator,
+        (DriverKind::Feetech, Some(settings)) => {
             check_feetech(&tables, settings)?;
-            Driver::Feetech(settings.clone())
+            Driver::Feetech(Box::new(settings.clone()))
         }
-        (DriverKind::Mujoco, None, Some(settings)) => {
-            ensure!(
-                settings.start_pose_radians.len() == joint_count,
-                "The MuJoCo start pose needs one angle per joint"
-            );
-            Driver::Mujoco(settings.clone())
-        }
-        (DriverKind::Feetech, ..) => {
-            bail!("A Feetech profile needs a [feetech] section and no [mujoco] one")
-        }
-        (DriverKind::Simulator, ..) => {
-            bail!("A simulator profile must not contain [feetech] or [mujoco] settings")
-        }
-        (DriverKind::Mujoco, ..) => {
-            bail!("A MuJoCo profile needs a [mujoco] section and no [feetech] one")
+        (DriverKind::Feetech, None) => bail!("A Feetech profile needs a [feetech] section"),
+        (DriverKind::Simulator, Some(_)) => {
+            bail!("A simulator profile must not contain [feetech] settings")
         }
     };
     let mut motion = tables.motion;
