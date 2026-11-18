@@ -10,6 +10,7 @@ import httpx2
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
     ActionSequenceState,
+    ArmRecord,
     CommandRecord,
     RunEventRecord,
     RunMessage,
@@ -66,7 +67,7 @@ class StationConnection:
         self._state_count = 0
         self._action_sequence: ActionSequenceRecord | None = None
         self._action_sequence_revision = 0
-        self._records: OrderedDict[str, CommandRecord] = OrderedDict()
+        self._records: OrderedDict[str, ArmRecord] = OrderedDict()
         self.lease_lost = asyncio.Event()
         self._last_action_sequence: dict[str, int] = {}
 
@@ -242,25 +243,25 @@ class StationConnection:
                 action_sequence = self._action_sequence
             yield action_sequence
 
-    async def remember(self, record: CommandRecord) -> None:
+    async def remember(self, arm_record: ArmRecord) -> None:
         async with self._condition:
-            self._keep_record(record)
+            self._keep_record(arm_record)
             self._condition.notify_all()
 
     async def wait_for_outcome(self, command_id: str) -> CommandRecord:
         await self.start()
         async with self._condition:
             while True:
-                record = self._records.get(command_id)
-                if record is not None and record.completion is not None:
+                arm_record = self._records.get(command_id)
+                if arm_record is not None and arm_record.record.completion is not None:
                     await self._condition.wait_for(
-                        lambda record=record: (
-                            self._state_reflects(record)
+                        lambda arm_record=arm_record: (
+                            self._state_reflects(arm_record)
                             or self._closed
                             or not self._connected
                         )
                     )
-                    return record
+                    return arm_record.record
                 if self._closed or self._reader_error is not None:
                     raise ConnectionError(
                         f"The station connection to {self._url} ended"
@@ -282,32 +283,41 @@ class StationConnection:
                 else:
                     await self._condition.wait()
 
-    def _state_reflects(self, record: CommandRecord) -> bool:
-        """Whether an arm's last (finished, settled) command is this one or ended after it.
+    def _state_reflects(self, arm_record: ArmRecord) -> bool:
+        """Wait for the command's own arm to report its settled result.
 
-        Commands that finish in one cycle show only the latest.
+        Commands that finish in one cycle show only the latest on that arm.
         """
+        record = arm_record.record
         assert record.completion is not None
-        finished_at = record.completion.finished_at
-        return self._state is not None and any(
+        if self._state is None:
+            return False
+        arm = next((arm for arm in self._state.arms if arm.arm == arm_record.arm), None)
+        if arm is None or (
+            arm.active_command is not None
+            and arm.active_command.command_id == record.command_id
+        ):
+            return False
+        return (
             arm.last_command is not None
             and arm.last_command.completion is not None
             and (
                 arm.last_command.command_id == record.command_id
-                or arm.last_command.completion.finished_at >= finished_at
+                or arm.last_command.completion.finished_at
+                >= record.completion.finished_at
             )
-            for arm in self._state.arms
         )
 
-    def _keep_record(self, record: CommandRecord) -> None:
+    def _keep_record(self, arm_record: ArmRecord) -> None:
+        record = arm_record.record
         previous = self._records.get(record.command_id)
         if (
             previous is not None
-            and previous.completion is not None
+            and previous.record.completion is not None
             and record.completion is None
         ):
             return
-        self._records[record.command_id] = record
+        self._records[record.command_id] = arm_record
         self._records.move_to_end(record.command_id)
         while len(self._records) > RETAINED_RECORDS:
             self._records.popitem(last=False)
@@ -454,15 +464,20 @@ class StationConnection:
         cursor = action_sequence if isinstance(action_sequence, int) else None
         if event.get("kind") == "record":
             self._keep_record(
-                CommandRecord.model_validate(
-                    {key: value for key, value in event.items() if key != "kind"}
+                ArmRecord(
+                    arm=arm,
+                    record=CommandRecord.model_validate(
+                        {key: value for key, value in event.items() if key != "kind"}
+                    ),
                 )
             )
         elif event.get("kind") == "snapshot":
             for retained in event.get("log", []):
                 self._keep_frame(arm, retained)
             for record in event.get("records", []):
-                self._keep_record(CommandRecord.model_validate(record))
+                self._keep_record(
+                    ArmRecord(arm=arm, record=CommandRecord.model_validate(record))
+                )
             cursor = int(event["seq"])
         if cursor is not None:
             self._last_action_sequence[arm] = cursor

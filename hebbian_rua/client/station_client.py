@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from enum import Enum, auto
 from types import TracebackType
 from typing import Self
 
@@ -18,6 +19,7 @@ from hebbian_rua.client.contract.arm_commands import (
 from hebbian_rua.client.contract.camera_api import CAPTURED_AT_HEADER
 from hebbian_rua.client.contract.http_routes import StationApi
 from hebbian_rua.client.contract.station_api import (
+    ActionSequenceArmAction,
     ActionSequenceRecord,
     ActionSequenceRequest,
     ActionSequenceStartRequest,
@@ -27,6 +29,7 @@ from hebbian_rua.client.contract.station_api import (
     CommandCancellationRequest,
     CommandRefused,
     CommandSubmissionRequest,
+    CompilationArtifact,
     GraspOrientation,
     GroupCommandSubmissionRequest,
     LeaseAcquireRequest,
@@ -47,9 +50,13 @@ from hebbian_rua.client.contract.station_api import (
     PreviewPose,
     PreviewProjected,
     PreviewRefused,
+    ProgramCompiled,
+    ProgramContinuation,
+    ProgramRejected,
     QuaternionOrientation,
     RecordingStatus,
     RejectionReason,
+    RunCompiledProgramRequest,
     RunEventMessage,
     RunSpansMessage,
     RunSpansRequest,
@@ -68,6 +75,7 @@ from hebbian_rua.client.station_types import (
     DEFAULT_SERVER,
     RUNS_TIMEOUT_SECONDS,
     CameraJpeg,
+    CameraUnavailable,
     CommandResult,
     LeaseHeldElsewhere,
     LeaseLost,
@@ -157,7 +165,10 @@ class LeasedArm(ArmMotionCommands):
         )
 
     async def run_action_sequence(
-        self, steps: list[ActionSequenceStep], *, expected_revision: int | None = None
+        self,
+        steps: list[ActionSequenceArmAction],
+        *,
+        expected_revision: int | None = None,
     ) -> ActionSequenceRecord:
         """Execute ordered steps and return their final state.
 
@@ -167,7 +178,12 @@ class LeasedArm(ArmMotionCommands):
         self._client._check_lease(self._lease_token)
         action_sequence_id = await self._client._start_action_sequence(
             ActionSequenceRequest(
-                arm=self.name, steps=steps, expected_revision=expected_revision
+                steps=[
+                    ActionSequenceStep(arms={self.name: action}) for action in steps
+                ],
+                expected_revisions={self.name: expected_revision}
+                if expected_revision is not None
+                else {},
             )
         )
         return await self._client.wait_for_action_sequence(action_sequence_id)
@@ -196,11 +212,10 @@ class LeasedArm(ArmMotionCommands):
     async def rehome(
         self, *, close_gripper: bool = True, expected_revision: int | None = None
     ) -> CommandResult:
-        """Return to the pose the arm was enabled at, by default closing the gripper first.
+        """Return to the enable-time pose, then close the gripper, at up to 2 rad/s.
 
-        The jaws close before the move, while they are clear of the table; closing
-        stops on contact, so a held object stays held. Pass `close_gripper=False`
-        to leave the gripper as it is.
+        Closing starts only after the home move completes and stops on contact.
+        Pass `close_gripper=False` to leave the gripper as it is.
         """
         rest_pose = (await self._client.arm(self.name).state()).rest_pose
         if rest_pose is None:
@@ -210,17 +225,17 @@ class LeasedArm(ArmMotionCommands):
                     detail=f"{self.name} has no rest pose; enable it first",
                 )
             )
-        if close_gripper:
-            closed = await self.set_gripper(0.0, expected_revision=expected_revision)
-            if not closed.completed:
-                return closed
-        return await self.move_to_joints(
-            list(rest_pose), expected_revision=expected_revision
+        rehome_speed = min(2.0, (await self._client.state()).max_joint_speed)
+        homed = await self.move_to_joints(
+            list(rest_pose),
+            max_joint_speed=rehome_speed,
+            expected_revision=expected_revision,
         )
-
-    async def rest(self, *, expected_revision: int | None = None) -> CommandResult:
-        """Alias for rehome, retained for existing callers."""
-        return await self.rehome(expected_revision=expected_revision)
+        if not homed.completed or not close_gripper:
+            return homed
+        return await self.set_gripper(
+            0.0, max_joint_speed=rehome_speed, expected_revision=expected_revision
+        )
 
 
 class Lease:
@@ -261,6 +276,21 @@ class Lease:
         self._client._check_lease(self.grant.lease_token)
         return await self._client._start_action_sequence(action_sequence)
 
+    async def start_compiled_sequence(
+        self,
+        compilation_id: str,
+        *,
+        expected_revisions: dict[str, int] | None = None,
+        continuation: ProgramContinuation | None = None,
+    ) -> str:
+        """Submit a retained compilation under this lease; return its execution ID."""
+        self._client._check_lease(self.grant.lease_token)
+        return await self._client._start_compiled_sequence(
+            compilation_id,
+            expected_revisions=expected_revisions,
+            continuation=continuation,
+        )
+
     async def send(
         self,
         arm: str,
@@ -300,6 +330,11 @@ class Lease:
         await self._client._stop_recording_for_lease()
 
 
+class _LeasePhase(Enum):
+    IDLE = auto()
+    ACQUIRING = auto()
+
+
 class StationClient:
     """Station command client whose lifetime belongs to the calling event loop."""
 
@@ -312,11 +347,13 @@ class StationClient:
     ) -> None:
         """`run_after` resumes `run_telemetry` after that sequence number."""
         self._connection = StationConnection(server, run_after=run_after)
-        self._lease_token: str | None = None
-        self._acquiring_lease = False
+        self._lease_state: _LeasePhase | LeaseGranted = _LeasePhase.IDLE
         self._lease_renewal: asyncio.Task[None] | None = None
+        self._station_http = httpx2.AsyncClient(
+            base_url=server, timeout=RUNS_TIMEOUT_SECONDS
+        )
         self._api = StationApi(
-            httpx2.AsyncClient(base_url=server, timeout=RUNS_TIMEOUT_SECONDS),
+            self._station_http,
             httpx2.AsyncClient(base_url=media_server, timeout=CAMERA_TIMEOUT_SECONDS),
         )
 
@@ -332,19 +369,26 @@ class StationClient:
         await self.close()
 
     async def close(self) -> None:
+        try:
+            await self._close_lease()
+        finally:
+            try:
+                await self._connection.close()
+            finally:
+                await self._api.close()
+
+    async def _close_lease(self) -> None:
         if self._lease_renewal is not None:
             self._lease_renewal.cancel()
             await asyncio.gather(self._lease_renewal, return_exceptions=True)
             self._lease_renewal = None
-        if self._lease_token is not None:
-            token = self._lease_token
-            self._lease_token = None
+        if isinstance(self._lease_state, LeaseGranted):
+            token = self._lease_state.lease_token
+            self._lease_state = _LeasePhase.IDLE
             try:
                 await self._api.release_lease_http(LeaseToken(lease_token=token))
             except httpx2.HTTPError as error:
                 log.warning("Could not release lease during close: %s", error)
-        await self._connection.close()
-        await self._api.close()
 
     @property
     def lease_lost(self) -> asyncio.Event:
@@ -389,15 +433,39 @@ class StationClient:
             camera.name for camera in await self._api.list_cameras() if camera.available
         ]
 
-    async def camera_jpeg(self, name: str) -> CameraJpeg:
+    async def camera_jpeg(
+        self, name: str, *, maximum_bytes: int | None = None
+    ) -> CameraJpeg:
         started = time.time()
-        response = await self._api.get_camera(name)
+        try:
+            response = await self._api.get_camera(name, maximum_bytes=maximum_bytes)
+        except httpx2.HTTPStatusError as error:
+            if error.response.status_code != 404:
+                raise
+            try:
+                listed = await self._api.list_cameras()
+            except httpx2.HTTPError:
+                listed = []
+            raise CameraUnavailable(
+                name, listed, await self._camera_problem(name)
+            ) from error
         captured_at = response.headers.get(CAPTURED_AT_HEADER)
         return CameraJpeg(
             jpeg=response.content,
             retrieved_between_unix_seconds=(started, time.time()),
             captured_at_unix_ns=None if captured_at is None else int(captured_at),
         )
+
+    async def _camera_problem(self, name: str) -> str | None:
+        """The latest failure the station saw in the media programs' output for a
+        camera, or None when it has none or cannot be asked."""
+        try:
+            response = await self._station_http.get("/viewer/api/media-status")
+            response.raise_for_status()
+            detail = response.json()["cameras"][name]["detail"]
+        except (httpx2.HTTPError, KeyError, ValueError):
+            return None
+        return detail if isinstance(detail, str) else None
 
     async def start_recording(self) -> str:
         return await self._api.start_recording()
@@ -431,6 +499,14 @@ class StationClient:
             if error.response.status_code == 403:
                 raise LeaseLost from error
             raise
+
+    @property
+    def _lease_token(self) -> str | None:
+        return (
+            self._lease_state.lease_token
+            if isinstance(self._lease_state, LeaseGranted)
+            else None
+        )
 
     def _require_lease_token(self) -> str:
         if self._lease_token is None:
@@ -517,13 +593,50 @@ class StationClient:
             PosePreviewBatchRequest(arm=arm, poses=poses)
         )
 
+    async def compile_action_sequence(
+        self, source: ActionSequenceRequest
+    ) -> ProgramCompiled | ProgramRejected:
+        """Compile an action sequence without acquiring control or moving hardware."""
+        return await self._api.compile_action_sequence(source)
+
+    async def import_compilation(
+        self, artifact: CompilationArtifact
+    ) -> ProgramCompiled | ProgramRejected:
+        """Load an export by recompiling its source; saved plans grant no authority."""
+        return await self._api.import_compilation(artifact)
+
+    async def inspect_compilation(self, compilation_id: str) -> CompilationArtifact:
+        """Inspect a retained compilation; missing or expired artifacts return HTTP 404."""
+        return await self._api.inspect_compilation(compilation_id)
+
+    async def _start_compiled_sequence(
+        self,
+        compilation_id: str,
+        *,
+        expected_revisions: dict[str, int] | None = None,
+        continuation: ProgramContinuation | None = None,
+    ) -> str:
+        return await self._api.run_compiled_sequence_http(
+            RunCompiledProgramRequest(
+                request_id=str(uuid.uuid4()),
+                station_instance_id=(await self._api.get_station_instance()).id,
+                compilation_id=compilation_id,
+                continuation=continuation,
+                lease_token=self._require_lease_token(),
+                expected_revisions=expected_revisions or {},
+            )
+        )
+
     async def _start_action_sequence(
         self, action_sequence: ActionSequenceRequest
     ) -> str:
         """Submit an ordered action_sequence and return its station-assigned identifier."""
         return await self._api.start_action_sequence_http(
             ActionSequenceStartRequest(
-                lease_token=self._require_lease_token(), action_sequence=action_sequence
+                request_id=str(uuid.uuid4()),
+                station_instance_id=(await self._api.get_station_instance()).id,
+                lease_token=self._require_lease_token(),
+                action_sequence=action_sequence,
             )
         )
 
@@ -638,7 +751,7 @@ class StationClient:
             raise
         if isinstance(answer, CommandAccepted):
             for arm_record in answer.records:
-                await self._connection.remember(arm_record.record)
+                await self._connection.remember(arm_record)
         return answer
 
     async def _run(
@@ -754,9 +867,9 @@ class StationClient:
         """Acquire the lease (or with `take`, take it from its holder), yield the
         `Lease` that commands the arms, and return it on exit. Raises
         `LeaseHeldElsewhere` when someone else holds it."""
-        if self._lease_token is not None or self._acquiring_lease:
+        if self._lease_state is not _LeasePhase.IDLE:
             raise RuntimeError("This client already holds or is acquiring a lease")
-        self._acquiring_lease = True
+        self._lease_state = _LeasePhase.ACQUIRING
         try:
             async with self._holding_lease(
                 label,
@@ -765,10 +878,10 @@ class StationClient:
                 on_interruption=on_interruption,
                 holder=holder,
             ) as lease:
-                self._acquiring_lease = False
                 yield lease
         finally:
-            self._acquiring_lease = False
+            if self._lease_state is _LeasePhase.ACQUIRING:
+                self._lease_state = _LeasePhase.IDLE
 
     @asynccontextmanager
     async def _holding_lease(
@@ -837,7 +950,7 @@ class StationClient:
             raise ConnectionError(
                 "The station event stream was lost while acquiring the lease"
             )
-        self._lease_token = grant.lease_token
+        self._lease_state = grant
         self._lease_renewal = asyncio.create_task(self._renew_lease(grant))
         try:
             yield Lease(self, grant)
@@ -847,8 +960,8 @@ class StationClient:
             if renewal is not None:
                 renewal.cancel()
                 await asyncio.gather(renewal, return_exceptions=True)
-            if self._lease_token == grant.lease_token:
-                self._lease_token = None
+            if self._lease_state is grant:
+                self._lease_state = _LeasePhase.IDLE
                 try:
                     await self._api.release_lease_http(
                         LeaseToken(lease_token=grant.lease_token)

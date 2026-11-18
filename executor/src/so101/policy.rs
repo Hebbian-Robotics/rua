@@ -1,12 +1,6 @@
-//! The learned SO-101 pose policy, run from its ONNX export.
-//!
-//! The ONNX graph takes the raw
-//! goal (21) and raw history (150) and returns the unclamped action (5); this
-//! module builds those inputs, keeps the history, and applies the clamp and the
-//! 0.04 rad step. Model assets are supplied separately from the controller.
-
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use anyhow::{Context, ensure};
 use nalgebra::{Isometry3, Matrix3, Translation3, UnitQuaternion};
@@ -19,20 +13,81 @@ const FRAME_SIZE: usize = 15;
 const HISTORY_FRAMES: usize = 10;
 const HISTORY_SIZE: usize = FRAME_SIZE * HISTORY_FRAMES;
 const GOAL_SIZE: usize = 21;
-/// The network's contract: measured joints plus 0.04 rad times the clamped action.
-pub(crate) const ACTION_STEP_RADIANS: f64 = 0.04;
-/// Timing is part of this trained controller's action and history contract.
+struct ActionStep(f64);
+
+impl ActionStep {
+    fn parse(metadata: &str) -> anyhow::Result<Self> {
+        let radians: f64 = metadata.parse().context("Invalid `action_step` metadata")?;
+        ensure!(
+            radians.is_finite() && radians > 0.0,
+            "The policy's action step must be finite and positive"
+        );
+        Ok(Self(radians))
+    }
+
+    fn joint_target(&self, measured_position: f64, action: f64) -> f64 {
+        measured_position + self.0 * action.clamp(-1.0, 1.0)
+    }
+
+    // CONSTRAINT: The step is how far ahead of the measured joint the policy may set its target. It is
+    // a lead the servo chases, not a joint speed, so the profile accepts it as a distance.
+    fn validate_target_lead(&self, max_target_lead_radians: f64) -> anyhow::Result<()> {
+        ensure!(
+            self.0 <= max_target_lead_radians + 1e-12,
+            "The policy model sets targets up to {} rad ahead of the measured joints, but the profile accepts at most {max_target_lead_radians} rad ([policy] max_target_lead_radians)",
+            self.0
+        );
+        Ok(())
+    }
+}
+// CONSTRAINT: Timing is part of this trained controller's action and history contract.
 pub(crate) const CONTROL_FREQUENCY_HERTZ: f64 = 50.0;
 const METHOD: &str = "supermimic_so101_reference_pose_v2";
 
-/// The rigid transform from the training model's tool site to the station's tool
-/// frame, as written in the checkpoint's tool-frame fixture.
 #[derive(Deserialize)]
 struct ToolFrameFixture {
     transform_station_from_simulation_tool: [[f64; 4]; 4],
+    station_urdf_sha256: String,
 }
 
-/// The station tool pose and the target, mapped into the training model's frame.
+struct HardwareBinding {
+    hardware: String,
+    station_urdf_sha256: String,
+    transform_station_from_simulation_tool: [[f64; 4]; 4],
+}
+
+impl HardwareBinding {
+    // SAFETY: Refuse a tool-frame fixture that belongs to another arm model than the one this
+    // policy model was released for.
+    fn require_fixture(&self, fixture: &ToolFrameFixture) -> anyhow::Result<()> {
+        ensure!(
+            self.station_urdf_sha256 == fixture.station_urdf_sha256,
+            "The policy model is released for {} (URDF sha256 {}), but the tool-frame fixture was fitted to another URDF (sha256 {})",
+            self.hardware,
+            self.station_urdf_sha256,
+            fixture.station_urdf_sha256
+        );
+        let largest_difference = self
+            .transform_station_from_simulation_tool
+            .iter()
+            .flatten()
+            .zip(
+                fixture
+                    .transform_station_from_simulation_tool
+                    .iter()
+                    .flatten(),
+            )
+            .map(|(bound, fitted)| (bound - fitted).abs())
+            .fold(0.0, f64::max);
+        ensure!(
+            largest_difference < 1e-9,
+            "The policy model for {} carries a different tool-frame transform than the fixture",
+            self.hardware
+        );
+        Ok(())
+    }
+}
+
 fn simulation_pose(
     station_from_simulation: &Isometry3<f64>,
     station: &Isometry3<f64>,
@@ -62,13 +117,13 @@ fn rigid_transform(matrix: &[[f64; 4]; 4]) -> anyhow::Result<Isometry3<f64>> {
     ))
 }
 
-/// ONNX Runtime allows one environment per process, and a process holds more
-/// than one policy (each arm's control loop, and its ghost's rehearsal).
+// CONSTRAINT: ONNX Runtime allows one environment per process, and a process holds more
+// than one policy (each arm's control loop, and its ghost's rehearsal).
 fn runtime_environment() -> anyhow::Result<ort::environment::Environment> {
     static ENVIRONMENT: Mutex<Option<ort::environment::Environment>> = Mutex::new(None);
     let mut shared = ENVIRONMENT
         .lock()
-        .expect("the environment's lock is not poisoned");
+        .map_err(|_| anyhow::anyhow!("The policy runtime environment lock is poisoned"))?;
     if let Some(environment) = shared.as_ref() {
         return Ok(environment.clone());
     }
@@ -98,25 +153,24 @@ fn runtime_environment() -> anyhow::Result<ort::environment::Environment> {
     Ok(environment)
 }
 
-/// What the policy produced for one cycle.
 pub struct PolicyStep {
-    /// The network's raw output, before the clamp.
     pub action: [f64; JOINT_COUNT],
-    /// Measured joints + 0.04 * clamp(action). The loop's guards and joint
-    /// limits still apply to it.
+    // SAFETY: Measured joints + the model's action step * clamp(action). The loop's guards and joint
+    // limits still apply to it.
     pub joint_target: [f64; JOINT_COUNT],
 }
 
 pub struct Policy {
     session: Session,
+    action_step: ActionStep,
     station_from_simulation_tool: Isometry3<f64>,
     observation_joint_offset: [f64; JOINT_COUNT],
     previous_action: [f64; JOINT_COUNT],
     history: Option<Vec<f64>>,
+    pub(crate) inference_seconds: f64,
 }
 
 impl Policy {
-    /// Interpret live feedback using this model's five-joint observation layout.
     pub(crate) fn joint_goal(
         &mut self,
         feedback: &crate::plant::Feedback,
@@ -140,12 +194,6 @@ impl Policy {
             .joint_target)
     }
 
-    /// Load the exported network and refuse a model whose contract differs.
-    /// `expected_checkpoint_sha256` pins the checkpoint the model came from.
-    ///
-    /// # Errors
-    /// The model cannot load, its metadata names another contract or checkpoint,
-    /// or the fixture is not a rigid transform.
     pub fn load(
         onnx_path: &Path,
         tool_frame_fixture_path: &Path,
@@ -155,27 +203,33 @@ impl Policy {
         let session = Session::builder(&environment)
             .and_then(|mut builder| builder.commit_from_file(onnx_path))
             .with_context(|| format!("Cannot load the policy model {}", onnx_path.display()))?;
-        let observation_joint_offset = Self::check_metadata(&session, expected_checkpoint_sha256)?;
+        let (action_step, observation_joint_offset) =
+            Self::check_metadata(&session, expected_checkpoint_sha256)?;
         let fixture: ToolFrameFixture = serde_json::from_str(
             &std::fs::read_to_string(tool_frame_fixture_path)
                 .with_context(|| format!("Cannot read {}", tool_frame_fixture_path.display()))?,
         )
         .context("Cannot parse the tool-frame fixture")?;
+        if let Some(binding) = Self::hardware_binding(&session)? {
+            binding.require_fixture(&fixture)?;
+        }
         Ok(Self {
             session,
+            action_step,
             station_from_simulation_tool: rigid_transform(
                 &fixture.transform_station_from_simulation_tool,
             )?,
             observation_joint_offset,
             previous_action: [0.0; JOINT_COUNT],
             history: None,
+            inference_seconds: 0.0,
         })
     }
 
     fn check_metadata(
         session: &Session,
         expected_checkpoint_sha256: &str,
-    ) -> anyhow::Result<[f64; JOINT_COUNT]> {
+    ) -> anyhow::Result<(ActionStep, [f64; JOINT_COUNT])> {
         let metadata = session
             .metadata()
             .context("The policy model has no metadata")?;
@@ -189,12 +243,10 @@ impl Policy {
             "Unsupported SO-101 policy observation contract"
         );
         ensure!(
-            custom("action_mode")? == "measured_increment"
-                && custom("action_step")?
-                    .parse::<f64>()
-                    .is_ok_and(|step| (step - ACTION_STEP_RADIANS).abs() < 1e-12),
-            "The SO-101 policy must use 0.04 rad measured-increment actions"
+            custom("action_mode")? == "measured_increment",
+            "The SO-101 policy must use measured-increment actions"
         );
+        let action_step = ActionStep::parse(&custom("action_step")?)?;
         ensure!(
             custom("checkpoint_sha256")? == expected_checkpoint_sha256,
             "The policy model comes from a different checkpoint than the config pins"
@@ -205,20 +257,41 @@ impl Policy {
             offset.iter().all(|value| value.is_finite()),
             "The policy's joint offset must be finite"
         );
-        Ok(offset)
+        Ok((action_step, offset))
     }
 
-    /// Forget the history and the previous action, as at the start of a rollout.
+    fn hardware_binding(session: &Session) -> anyhow::Result<Option<HardwareBinding>> {
+        let metadata = session
+            .metadata()
+            .context("The policy model has no metadata")?;
+        let Some(hardware) = metadata.custom("hardware") else {
+            return Ok(None);
+        };
+        let custom = |key: &str| -> anyhow::Result<String> {
+            metadata.custom(key).with_context(|| {
+                format!("The policy model names hardware {hardware} but has no `{key}` metadata")
+            })
+        };
+        Ok(Some(HardwareBinding {
+            station_urdf_sha256: custom("station_urdf_sha256")?,
+            transform_station_from_simulation_tool: serde_json::from_str(&custom(
+                "transform_station_from_simulation_tool",
+            )?)
+            .context("Invalid `transform_station_from_simulation_tool` metadata")?,
+            hardware,
+        }))
+    }
+
+    pub(crate) fn validate_target_lead(&self, max_target_lead_radians: f64) -> anyhow::Result<()> {
+        self.action_step
+            .validate_target_lead(max_target_lead_radians)
+    }
+
     pub fn reset(&mut self) {
         self.previous_action = [0.0; JOINT_COUNT];
         self.history = None;
     }
 
-    /// One policy cycle. `tool` is the station's tool pose for `positions` (the
-    /// executor's forward kinematics) and `target` the station-frame goal.
-    ///
-    /// # Errors
-    /// An input is not finite, or the network fails or returns a non-finite action.
     pub fn step(
         &mut self,
         positions: &[f64; JOINT_COUNT],
@@ -265,7 +338,7 @@ impl Policy {
         goal.extend(current.translation.vector.iter());
         goal.extend(wanted.translation.vector.iter());
         goal.extend([0.0; 3]);
-        // The first two columns of each rotation matrix, row by row.
+        // CONSTRAINT: The first two columns of each rotation matrix, row by row.
         for rotation in [current.rotation, wanted.rotation] {
             let matrix = rotation.to_rotation_matrix();
             for row in 0..3 {
@@ -280,7 +353,7 @@ impl Policy {
         self.previous_action = action;
         let mut joint_target = [0.0; JOINT_COUNT];
         for ((target, position), raw) in joint_target.iter_mut().zip(positions).zip(&action) {
-            *target = position + ACTION_STEP_RADIANS * raw.clamp(-1.0, 1.0);
+            *target = self.action_step.joint_target(*position, *raw);
         }
         Ok(PolicyStep {
             action,
@@ -302,10 +375,13 @@ impl Policy {
                     .collect::<Vec<f32>>(),
             ))
         };
-        let outputs = self.session.run(ort::inputs![
+        let began = Instant::now();
+        let inference = self.session.run(ort::inputs![
             "goal" => to_tensor(goal)?,
             "history" => to_tensor(history)?,
-        ])?;
+        ]);
+        self.inference_seconds = began.elapsed().as_secs_f64();
+        let outputs = inference?;
         let (_, values) = outputs["action"].try_extract_tensor::<f32>()?;
         ensure!(
             values.len() == JOINT_COUNT,
@@ -324,7 +400,6 @@ impl Policy {
     }
 }
 
-/// Reject an embodiment layout this trained model cannot observe or command.
 pub(crate) fn validate_joint_count(joint_count: usize) -> anyhow::Result<()> {
     ensure!(
         joint_count == JOINT_COUNT,
@@ -333,21 +408,17 @@ pub(crate) fn validate_joint_count(joint_count: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Rate and action scale are part of the trained model, not shared loop policy.
+// CONSTRAINT: Rate and action scale are part of the trained model, not shared loop policy.
 pub(crate) fn validate_execution(config: &crate::config::ExecutorConfig) -> anyhow::Result<()> {
     validate_joint_count(config.joint_count)?;
     ensure!(
         (config.frequency_hertz - CONTROL_FREQUENCY_HERTZ).abs() < 1e-9,
         "The selected SO-101 policy requires a {CONTROL_FREQUENCY_HERTZ} Hz control rate"
     );
-    ensure!(
-        config.max_joint_speed >= ACTION_STEP_RADIANS * config.frequency_hertz,
-        "The selected policy's speed ceiling cannot accommodate its trained action step"
-    );
     Ok(())
 }
 
-/// The current policy was trained for one SO-101 in its original base frame.
+// CONSTRAINT: The current policy was trained for one SO-101 in its original base frame.
 pub(crate) fn validate_profile(
     arm_count: usize,
     joint_names: &[String],
@@ -358,4 +429,54 @@ pub(crate) fn validate_profile(
         "Policy selection requires SO-101 policy settings and an untransformed base"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ActionStep, HardwareBinding, ToolFrameFixture};
+
+    #[test]
+    fn checkpoint_step_scales_targets_and_must_fit_the_accepted_target_lead() {
+        let original_step = ActionStep::parse("0.04").unwrap();
+        let retrained_step = ActionStep::parse("0.12").unwrap();
+        original_step.validate_target_lead(0.04).unwrap();
+        assert!(retrained_step.validate_target_lead(0.04).is_err());
+        retrained_step.validate_target_lead(0.12).unwrap();
+        for (action, original_target, retrained_target) in [
+            (-2.0, 0.96, 0.88),
+            (0.0, 1.0, 1.0),
+            (0.5, 1.02, 1.06),
+            (2.0, 1.04, 1.12),
+        ] {
+            assert!((original_step.joint_target(1.0, action) - original_target).abs() < 1e-12);
+            assert!((retrained_step.joint_target(1.0, action) - retrained_target).abs() < 1e-12);
+        }
+        for invalid in ["", "not-a-number", "NaN", "inf", "-inf", "0", "-0.12"] {
+            assert!(ActionStep::parse(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn a_hardware_bound_model_refuses_a_fixture_for_another_arm_model() {
+        let mut transform = [[0.0; 4]; 4];
+        for (index, row) in transform.iter_mut().enumerate() {
+            row[index] = 1.0;
+        }
+        let binding = HardwareBinding {
+            hardware: "so101-soft-gripper-camera".into(),
+            station_urdf_sha256: "soft".into(),
+            transform_station_from_simulation_tool: transform,
+        };
+        let fixture = |urdf: &str, offset: f64| {
+            let mut fitted = transform;
+            fitted[2][3] = offset;
+            ToolFrameFixture {
+                transform_station_from_simulation_tool: fitted,
+                station_urdf_sha256: urdf.into(),
+            }
+        };
+        binding.require_fixture(&fixture("soft", 0.0)).unwrap();
+        assert!(binding.require_fixture(&fixture("stock", 0.0)).is_err());
+        assert!(binding.require_fixture(&fixture("soft", 0.011)).is_err());
+    }
 }

@@ -1,0 +1,68 @@
+id: documentation-python
+language: Python
+severity: info
+message: 'Python docstring.'
+ignores:
+  - 'livekit-cameras/**'
+rule:
+  kind: expression_statement
+  has:
+    stopBy: end
+    any:
+      - kind: string
+      - kind: concatenated_string
+  nthChild:
+    position: 1
+    ofRule:
+      not:
+        kind: comment
+  inside:
+    any:
+      - kind: module
+      - kind: block
+        inside:
+          any:
+            - kind: function_definition
+            - kind: class_definition
+---
+id: documentation-rust
+language: Rust
+severity: info
+message: 'Rust documentation comment.'
+ignores:
+  - 'livekit-cameras/**'
+rule:
+  any:
+    - kind: line_comment
+    - kind: block_comment
+  regex: '(?s)^(///[^/]|///$|//!|/\*\*[^*]|/\*!)'
+---
+id: documentation-typescript
+language: TypeScript
+severity: info
+message: 'TypeScript documentation comment.'
+ignores:
+  - 'livekit-cameras/**'
+rule:
+  kind: comment
+  regex: '(?s)^/\*\*[^*]'
+---
+id: documentation-tsx
+language: Tsx
+severity: info
+message: 'TSX documentation comment.'
+ignores:
+  - 'livekit-cameras/**'
+rule:
+  kind: comment
+  regex: '(?s)^/\*\*[^*]'
+---
+id: documentation-rust-attribute
+language: Rust
+severity: info
+message: 'Rust documentation attribute.'
+ignores: ['livekit-cameras/**']
+rule:
+  any:
+    - pattern: '#[doc = $TEXT]'
+    - pattern: '#![doc = $TEXT]'

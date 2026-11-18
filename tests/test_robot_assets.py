@@ -1,5 +1,3 @@
-"""Robot preparation preserves pinned geometry, attribution and offline operation."""
-
 import hashlib
 import io
 import urllib.request
@@ -14,6 +12,8 @@ ASSET_CONTENTS = {
     "base.stl": b"fixture mesh geometry\n",
     "LICENSE.txt": b"fixture model license\n",
     "README.md": b"fixture model attribution\n",
+    "robot-soft-gripper-camera.urdf": b'<robot name="optional"/>\n',
+    "soft-gripper-camera/camera_mount.stl": b"fixture camera bracket\n",
 }
 
 
@@ -47,18 +47,22 @@ def test_cached_release_prepares_exact_assets_and_repairs_tampering_offline(
 ) -> None:
     create_asset_source(tmp_path)
     assets = prepare_robot_assets(tmp_path)
-    assert {asset.name: asset.read_bytes() for asset in assets} == ASSET_CONTENTS
+    destination = tmp_path / "robots/so101"
+    assert {
+        asset.relative_to(destination).as_posix(): asset.read_bytes()
+        for asset in assets
+    } == ASSET_CONTENTS
     assert not (tmp_path / "robots/so101/private.txt").exists()
     (tmp_path / "robots/so101/base.stl").write_bytes(b"unreviewed local edit")
     prepare_robot_assets(tmp_path)
     assert (
         tmp_path / "robots/so101/base.stl"
     ).read_bytes() == b"fixture mesh geometry\n"
-    # Once prepared, the runtime files alone are sufficient, even without a cache.
     for cached_archive in (tmp_path / ".cache/so101").iterdir():
         cached_archive.unlink()
     assert {
-        asset.name: asset.read_bytes() for asset in prepare_robot_assets(tmp_path)
+        asset.relative_to(destination).as_posix(): asset.read_bytes()
+        for asset in prepare_robot_assets(tmp_path)
     } == ASSET_CONTENTS
 
 
@@ -99,15 +103,28 @@ def test_mismatched_asset_pin_rejects_the_entire_update(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "filename", ["../outside.stl", "/outside.stl", "..\\outside.stl"]
+    "filename",
+    ["../outside.stl", "/outside.stl", "..\\outside.stl", "nested/../../outside.stl"],
 )
 def test_asset_pin_cannot_write_outside_its_generated_directory(
     tmp_path: Path, filename: str
 ) -> None:
     manifest, _ = create_asset_source(tmp_path)
-    # Literal TOML keys preserve backslashes for the traversal case.
+    # WHY: Literal TOML keys preserve backslashes for the traversal case.
     manifest.write_text(manifest.read_text() + f"'{filename}' = '{'0' * 64}'\n")
     with pytest.raises(ValueError, match="filename"):
         prepare_robot_assets(tmp_path)
     assert not (tmp_path / "robots/so101").exists()
     assert not (tmp_path / "robots/outside.stl").exists()
+
+
+def test_nested_mesh_symlink_cannot_redirect_asset_preparation(tmp_path: Path) -> None:
+    create_asset_source(tmp_path)
+    destination = tmp_path / "robots/so101"
+    destination.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (destination / "soft-gripper-camera").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        prepare_robot_assets(tmp_path)
+    assert not list(outside.iterdir())

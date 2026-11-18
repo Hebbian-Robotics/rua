@@ -1,26 +1,22 @@
-//! How a client's request reaches an arm's state machine without a lock.
-//!
-//! The control loop owns every arm's [`ArmCore`]. A reader thread never touches
-//! one: it sends an [`ArmRequest`] down its arm's channel and waits for the
-//! answer. At the top of each cycle the loop takes what has arrived (a bounded
-//! number of requests, never waiting), applies each to the cores it owns and
-//! sends the answer back. So the real-time thread shares no lock with any other
-//! thread: a channel send and a try-receive never block on a thread that holds
-//! something.
+// INVARIANT: Only the control loop mutates ArmCore. Readers send requests through per-arm channels; each cycle drains a bounded number without waiting on readers.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
-use crate::arm::{ArmCore, GroupMembership, Now, Rejection, ShortOfTarget};
+use crate::action_step::{PreparedArmAction, PreparedMovement};
+use crate::arm::{
+    ArmCore, GripperTarget, GroupMembership, MotionScope, MoveDecision, Now, ReachGoal, Rejection,
+    ShortOfTarget,
+};
 use crate::sync::LockUnpoisoned;
-use hebbian_contracts::{ArmMove, Command, CommandRecord, RejectionReason, TraceContext};
+use hebbian_contracts::{
+    ArmMove, ArmRecord, Command, CommandRecord, RejectionReason, TraceContext,
+};
 
-/// Requests the loop applies per arm per cycle; a flood of requests waits for
-/// the next cycles rather than stretching this one.
+// CONSTRAINT: Bound per-arm admissions per cycle so a request flood cannot stretch the control deadline.
 pub(crate) const MAXIMUM_REQUESTS_PER_CYCLE: usize = 64;
 
-/// A control-loop reply can be consumed by a blocking or asynchronous caller.
 pub(crate) enum CommandReply<T> {
     Blocking(Sender<T>),
     Async(tokio::sync::oneshot::Sender<T>),
@@ -39,7 +35,6 @@ impl<T> CommandReply<T> {
     }
 }
 
-/// What a reader asks of the loop, with the way to answer.
 pub(crate) enum ArmRequest {
     ControlHandoffReadiness {
         reply: Sender<Result<bool, Rejection>>,
@@ -50,6 +45,12 @@ pub(crate) enum ArmRequest {
         now: Now,
         reply: CommandReply<Result<CommandRecord, Rejection>>,
     },
+    ActionStep {
+        actions: Vec<PreparedArmAction>,
+        trace_context: Option<TraceContext>,
+        now: Now,
+        reply: CommandReply<Result<Vec<ArmRecord>, Rejection>>,
+    },
     MoveArms {
         label: String,
         moves: Vec<ArmMove>,
@@ -59,14 +60,12 @@ pub(crate) enum ArmRequest {
     },
 }
 
-/// A reader's end: sends requests to one arm's loop and waits for each answer.
 #[derive(Clone)]
 pub(crate) struct ArmHandle {
     requests: Sender<ArmRequest>,
     available: Arc<Mutex<bool>>,
 }
 
-/// The loop's end: the requests its arm's readers have sent.
 pub(crate) struct ArmInbox {
     requests: Receiver<ArmRequest>,
     available: Arc<Mutex<bool>>,
@@ -112,8 +111,6 @@ impl ArmHandle {
         Ok(answer)
     }
 
-    /// Send a command to the arm without waiting; the loop answers on the
-    /// returned channel at the start of a cycle.
     pub(crate) fn submit_unawaited(
         &self,
         command: Command,
@@ -129,7 +126,6 @@ impl ArmHandle {
         Ok(answer)
     }
 
-    /// Send a command whose control-loop admission can be awaited asynchronously.
     pub(crate) fn submit_async(
         &self,
         command: Command,
@@ -145,7 +141,36 @@ impl ArmHandle {
         Ok(answer)
     }
 
-    /// Submit an atomic group move with an asynchronously awaitable reply.
+    pub(crate) fn action_step_async(
+        &self,
+        actions: Vec<PreparedArmAction>,
+        trace_context: Option<TraceContext>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<ArmRecord>, Rejection>>, Rejection> {
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        self.enqueue(ArmRequest::ActionStep {
+            actions,
+            trace_context,
+            now: Now::current(),
+            reply: CommandReply::Async(reply),
+        })?;
+        Ok(answer)
+    }
+
+    pub(crate) fn action_step_unawaited(
+        &self,
+        actions: Vec<PreparedArmAction>,
+        trace_context: Option<TraceContext>,
+    ) -> Result<Receiver<Result<Vec<ArmRecord>, Rejection>>, Rejection> {
+        let (reply, answer) = channel();
+        self.enqueue(ArmRequest::ActionStep {
+            actions,
+            trace_context,
+            now: Now::current(),
+            reply: CommandReply::Blocking(reply),
+        })?;
+        Ok(answer)
+    }
+
     pub(crate) fn move_arms_async(
         &self,
         label: String,
@@ -164,7 +189,6 @@ impl ArmHandle {
         Ok(answer)
     }
 
-    /// Admit a grouped move into every arm it names, or none.
     pub(crate) fn move_arms_unawaited(
         &self,
         label: String,
@@ -184,19 +208,16 @@ impl ArmHandle {
 }
 
 impl ArmInbox {
-    /// Fence new requests before draining a disconnected controller's queue.
+    // INVARIANT: Fence new requests before draining a disconnected controller's queue.
     pub(crate) fn set_available(&self, available: bool) {
         *self.available.lock_unpoisoned() = available;
     }
 
-    /// The next request that has already arrived, if any; never waits.
     pub(crate) fn next(&self) -> Option<ArmRequest> {
         self.requests.try_recv().ok()
     }
 }
 
-/// Apply one request that came to the arm called `own`; `cores` holds every arm
-/// the loop owns, by name, `own` included.
 pub(crate) fn apply_request(
     request: ArmRequest,
     own: &str,
@@ -227,6 +248,21 @@ pub(crate) fn apply_request(
             };
             reply.send(answer);
         }
+        ArmRequest::ActionStep {
+            actions,
+            trace_context,
+            now,
+            reply,
+        } => {
+            for core in cores.values_mut() {
+                core.set_trace_context(trace_context.clone());
+            }
+            let answer = admit_action_step(cores, actions, now);
+            for core in cores.values_mut() {
+                core.set_trace_context(None);
+            }
+            reply.send(answer);
+        }
         ArmRequest::MoveArms {
             label,
             moves,
@@ -246,86 +282,177 @@ pub(crate) fn apply_request(
     }
 }
 
-/// Admit a grouped move into every named arm, or into none.
 pub(crate) fn admit_group(
     cores: &mut BTreeMap<&str, &mut ArmCore>,
     label: &str,
     moves: Vec<ArmMove>,
     now: Now,
 ) -> Result<Vec<CommandRecord>, Rejection> {
+    admit_action_step(
+        cores,
+        moves
+            .into_iter()
+            .map(|part| PreparedArmAction {
+                arm: part.arm,
+                movement: Some(PreparedMovement::Trajectory {
+                    label: label.to_owned(),
+                    plan: part.plan,
+                    joint_speed: part.joint_speed,
+                    path_limited: part.path_limited,
+                    pose_limited: part.pose_limited,
+                }),
+                gripper: None,
+            })
+            .collect(),
+        now,
+    )
+    .map(|records| records.into_iter().map(|record| record.record).collect())
+}
+
+enum AdmittedMovement {
+    Trajectory {
+        label: String,
+        decision: MoveDecision,
+        short: ShortOfTarget,
+    },
+    PolicyPose {
+        label: String,
+        goal: ReachGoal,
+    },
+}
+
+struct AdmittedArmAction {
+    arm: String,
+    movement: Option<AdmittedMovement>,
+    gripper: Option<GripperTarget>,
+}
+
+// INVARIANT: Decide the whole arm action without changing records, targets or events.
+fn prepare_arm_action(
+    core: &ArmCore,
+    action: PreparedArmAction,
+) -> Result<AdmittedArmAction, Rejection> {
+    if action.movement.is_none() && action.gripper.is_none() {
+        return Err(Rejection {
+            reason: RejectionReason::InvalidTarget,
+            detail: "An action needs a movement or gripper target".into(),
+        });
+    }
+    let movement = action
+        .movement
+        .map(|movement| -> Result<_, Rejection> {
+            Ok(match movement {
+                PreparedMovement::Trajectory {
+                    label,
+                    plan,
+                    joint_speed,
+                    path_limited,
+                    pose_limited,
+                } => AdmittedMovement::Trajectory {
+                    label,
+                    decision: MoveDecision::prepare(core, plan, joint_speed, MotionScope::Grouped)?,
+                    short: ShortOfTarget {
+                        path_limited,
+                        pose_limited,
+                    },
+                },
+                PreparedMovement::PolicyPose {
+                    label,
+                    position,
+                    orientation,
+                } => AdmittedMovement::PolicyPose {
+                    label,
+                    goal: core.check_reach(position, orientation)?,
+                },
+            })
+        })
+        .transpose()?;
+    let gripper = action
+        .gripper
+        .map(|gripper| core.check_gripper_target(gripper.angle, gripper.joint_speed))
+        .transpose()?;
+    Ok(AdmittedArmAction {
+        arm: action.arm,
+        movement,
+        gripper,
+    })
+}
+
+// INVARIANT: Validate every resource before admitting the entire step in one control-loop cycle.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep validation, admission and failure cleanup together at the atomic boundary."
+)]
+#[expect(
+    clippy::expect_used,
+    reason = "Every arm is validated before admission and the exclusively borrowed map does not change membership."
+)]
+pub(crate) fn admit_action_step(
+    cores: &mut BTreeMap<&str, &mut ArmCore>,
+    actions: Vec<PreparedArmAction>,
+    now: Now,
+) -> Result<Vec<ArmRecord>, Rejection> {
     let invalid = |detail: String| Rejection {
         reason: RejectionReason::InvalidTarget,
         detail,
     };
-    if moves.is_empty() {
-        return Err(invalid("A grouped move needs at least one arm".into()));
+    if actions.is_empty() {
+        return Err(invalid("An action step needs at least one arm".into()));
     }
-    let mut names: Vec<String> = moves.iter().map(|part| part.arm.clone()).collect();
+    let mut names = actions
+        .iter()
+        .map(|action| action.arm.clone())
+        .collect::<Vec<_>>();
     names.sort_unstable();
     if let Some([duplicate, _]) = names.windows(2).find(|pair| pair[0] == pair[1]) {
         return Err(invalid(format!("Arm {duplicate} appears twice")));
     }
-    for part in &moves {
-        let [segment] = part.plan.segments.as_slice() else {
-            return Err(invalid(format!(
-                "{}: a grouped move is one straight run per arm",
-                part.arm
-            )));
-        };
-        if segment.corners.len() != 2 {
-            return Err(invalid(format!(
-                "{}: a grouped move is one straight run per arm",
-                part.arm
-            )));
-        }
-    }
-    for name in &names {
-        if !cores.contains_key(name.as_str()) {
-            return Err(invalid(format!("No arm {name}")));
-        }
-    }
-    // The loop is the only thread that touches a core, so the checks below
-    // still hold when the moves are submitted.
-    for part in &moves {
-        cores[part.arm.as_str()]
-            .check_move(&part.plan, part.joint_speed)
-            .map_err(|refused| Rejection {
+    let trajectory_arms = actions
+        .iter()
+        .filter(|action| matches!(action.movement, Some(PreparedMovement::Trajectory { .. })))
+        .map(|action| action.arm.clone())
+        .collect::<Vec<_>>();
+    let actions = actions
+        .into_iter()
+        .map(|action| {
+            let core = cores
+                .get(action.arm.as_str())
+                .ok_or_else(|| invalid(format!("No arm {}", action.arm)))?;
+            let arm = action.arm.clone();
+            prepare_arm_action(core, action).map_err(|refused| Rejection {
                 reason: refused.reason,
-                detail: format!("{}: {}", part.arm, refused.detail),
-            })?;
-    }
+                detail: format!("{arm}: {}", refused.detail),
+            })
+        })
+        .collect::<Result<Vec<_>, Rejection>>()?;
     let group = GroupMembership {
-        id: crate::arm::new_identifier(),
-        arms: moves.iter().map(|part| part.arm.clone()).collect(),
+        id: crate::arm::new_identifier().into(),
+        arms: trajectory_arms,
     };
     let mut records = Vec::new();
-    for part in moves {
+    for action in actions {
         let core = cores
-            .get_mut(part.arm.as_str())
-            .expect("every named arm was found");
-        let record = core.submit_move(
-            label,
-            part.plan,
-            part.joint_speed,
-            ShortOfTarget {
-                path_limited: part.path_limited,
-                pose_limited: part.pose_limited,
-            },
-            Some(group.clone()),
-            now,
-        );
-        match record {
-            Ok(record) => records.push(record),
-            Err(refused) => {
-                // Every check passed, so this is not expected; do not leave
-                // part of a group queued.
-                for name in &names {
-                    if let Some(core) = cores.get_mut(name.as_str()) {
-                        let _ = core.submit(Command::Stop, now);
-                    }
-                }
-                return Err(refused);
-            }
+            .get_mut(action.arm.as_str())
+            .expect("all arms validated");
+        if let Some(movement) = action.movement {
+            let record = match movement {
+                AdmittedMovement::Trajectory {
+                    label,
+                    decision,
+                    short,
+                } => core.apply_move(&label, decision, short, Some(group.clone()), now),
+                AdmittedMovement::PolicyPose { label, goal } => core.apply_reach(&label, goal, now),
+            };
+            records.push(ArmRecord {
+                arm: action.arm.clone(),
+                record,
+            });
+        }
+        if let Some(target) = action.gripper {
+            records.push(ArmRecord {
+                arm: action.arm,
+                record: core.apply_gripper(target, now),
+            });
         }
     }
     Ok(records)
@@ -377,6 +504,88 @@ mod tests {
             path_limited: None,
             pose_limited: None,
         }
+    }
+
+    #[test]
+    fn an_expired_manual_lease_allows_enable_only_after_every_arm_has_stopped() {
+        use crate::lease::{AdmissionOptions, Lease, SharedInterlocks};
+        use hebbian_contracts::{CommandOutcome, LeaseHolder, LeaseRequest, OnInterruption};
+        use std::sync::atomic::AtomicU64;
+        use std::time::{Duration, Instant};
+
+        let lease = Lease::new(Duration::from_secs(1));
+        let request = LeaseRequest {
+            holder: LeaseHolder::Manual,
+            label: "viewer".into(),
+            required_cameras: vec![],
+            on_interruption: OnInterruption::WaitForApproval,
+        };
+        let grant = lease.acquire_stopping_arms(request.clone(), false).unwrap();
+        let expired = Instant::now() + Duration::from_secs(2);
+        let (disabled_handle, disabled_inbox) = arm_channel();
+        let (moving_handle, moving_inbox) = arm_channel();
+        for handle in [disabled_handle, moving_handle] {
+            lease.register_arm(
+                handle,
+                Arc::new(AtomicU64::new(0)),
+                SharedInterlocks::default(),
+            );
+        }
+        let mut disabled = core();
+        let mut moving = holding_core();
+        let movement = part("moving", [0.5, 0.0]);
+        moving
+            .submit(
+                Command::Move {
+                    label: "move_to_joints".into(),
+                    plan: movement.plan,
+                    joint_speed: movement.joint_speed,
+                    path_limited: None,
+                    pose_limited: None,
+                },
+                Now::current(),
+            )
+            .unwrap();
+        moving.next_job().unwrap();
+        moving.begin_moving();
+        let mut cores = BTreeMap::from([("disabled", &mut disabled), ("moving", &mut moving)]);
+
+        assert!(lease.status(expired).is_some());
+        assert!(
+            lease
+                .admit_generation(None, expired, &[], &[], AdmissionOptions::default(), || ())
+                .is_err()
+        );
+        for (name, inbox) in [("disabled", &disabled_inbox), ("moving", &moving_inbox)] {
+            while let Some(request) = inbox.next() {
+                apply_request(request, name, &mut cores);
+            }
+        }
+        // WHY: The stop was accepted, but the active movement has not ended yet.
+        assert!(lease.status(expired).is_some());
+        cores.get_mut("moving").unwrap().motion_ended(
+            CommandOutcome::Stopped,
+            None,
+            &[0.2, 0.0],
+            Now::current(),
+        );
+        while let Some(request) = moving_inbox.next() {
+            apply_request(request, "moving", &mut cores);
+        }
+        assert!(lease.status(expired).is_none());
+        assert!(!lease.retain(Some(&grant.lease_token), expired));
+        let enabled = lease
+            .admit_generation(None, expired, &[], &[], AdmissionOptions::default(), || {
+                cores
+                    .get_mut("disabled")
+                    .unwrap()
+                    .submit(Command::Enable, Now::current())
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(enabled.label, "enable");
+        let fresh = lease.acquire_stopping_arms(request, false).unwrap();
+        assert_ne!(fresh.lease_token, grant.lease_token);
     }
 
     #[test]
@@ -496,11 +705,35 @@ mod tests {
                 .unwrap_err()
                 .detail
         };
-        assert_eq!(detail(vec![]), "A grouped move needs at least one arm");
+        assert!(detail(vec![]).contains("at least one arm"));
         assert_eq!(
             detail(vec![part("only", [0.1, 0.0]), part("only", [0.1, 0.0])]),
             "Arm only appears twice"
         );
         assert_eq!(detail(vec![part("gone", [0.1, 0.0])]), "No arm gone");
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(96))]
+
+        #[test]
+        fn a_rejected_group_leaves_every_arm_and_its_existing_records_unchanged(
+            target in -1.9_f64..1.9, outside in 2.001_f64..20.0
+        ) {
+            use proptest::{prop_assert, prop_assert_eq};
+            let mut left = holding_core();
+            let mut right = holding_core();
+            let left_poses = left.poses().cloned();
+            let right_poses = right.poses().cloned();
+            let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+            prop_assert!(admit_group(&mut cores, "generated", vec![part("left", [target, 0.0]), part("right", [outside, 0.0])], Now::current()).is_err());
+            drop(cores);
+            prop_assert_eq!(left.poses(), left_poses.as_ref());
+            prop_assert_eq!(right.poses(), right_poses.as_ref());
+            prop_assert!(left.next_job().is_none());
+            prop_assert!(right.next_job().is_none());
+            prop_assert!(left.last_finished().is_none());
+            prop_assert!(right.last_finished().is_none());
+        }
     }
 }

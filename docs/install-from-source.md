@@ -13,7 +13,6 @@ Clang compiler. From the checkout root:
 
 ```sh
 uv run rua-dev setup
-cargo build -p hebbian-station
 uv sync --project examples/python --locked
 ```
 
@@ -24,8 +23,12 @@ need no network access for builds or runs. Installed wheels need no setup step.
 Run the station with your calibrated profile or simulator connected:
 
 ```sh
-uv run rua serve --profile ./robot.toml
+uv run cargo run -p hebbian-station -- serve --profile ./robot.toml
 ```
+
+This source command checks and rebuilds the station before starting it.
+`uv run rua serve` launches an existing binary and does not rebuild it; reserve
+that command for installed wheels or explicitly selected builds.
 
 See [hardware setup](hardware.md), [simulator integration](simulators.md) and
 [cameras](cameras.md) for the RUA connection steps. `uv run rua-dev --help` lists
@@ -44,3 +47,25 @@ The station serves the resulting viewer assets from disk. Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
+
+## Updating a checkout
+
+Run commands from the repository root. After pulling dependency changes, run
+`uv sync` and `pnpm install --frozen-lockfile` (when using TypeScript).
+
+| What changed | Command | When the change takes effect |
+| --- | --- | --- |
+| Rust station or hardware profile | `uv run cargo run -p hebbian-station -- serve --profile ./robot.toml` | Stop the old station first; this builds and starts the current source. Support and disable the arm before stopping the control process. |
+| Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
+| TypeScript agent or client | `pnpm start:agent` | Restart the agent server to load current source. No client build is required. |
+| TypeScript agent during development | `pnpm dev:agent` | Watches the agent and imported client source and restarts on changes. |
+| Viewer served by the station | `pnpm build` | Refresh the browser; no station restart is needed. |
+| Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
+| Python SDK or examples | Rerun the Python command | Local editable sources load on the next process start. |
+
+Repository commands enable the TypeScript client’s `development` export condition
+in tsx, Vite and tests, so they load current source. Default package exports load
+compiled files for external consumers; `pnpm pack` builds them automatically.
+Run `pnpm test:package` to validate the packed SDK outside the workspace. `pnpm build` builds the static
+viewer in `dist/viewer`; it does not build Rust binaries or restart services.
+A running process continues using its loaded code until it restarts.

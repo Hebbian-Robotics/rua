@@ -1,5 +1,3 @@
-//! Smooth jaw motion and contact detection. The motor firmware caps grip force.
-
 use crate::config::{GripperLimits, MotionLimits};
 use crate::corner_path::OnlineSection;
 use crate::reference_filter::Reference;
@@ -8,7 +6,6 @@ use crate::reference_filter::Reference;
 pub(crate) enum GripperState {
     Moving,
     Reached,
-    /// Stopped short of the target: closed on something, or blocked opening.
     Contact,
 }
 
@@ -43,49 +40,60 @@ impl GripperController {
         }
     }
 
-    pub(crate) fn set_target(&mut self, angle: f64, speed: f64, measured: f64) {
+    pub(crate) fn set_target(
+        &mut self,
+        angle: f64,
+        speed: f64,
+        measured: f64,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            angle.is_finite() && measured.is_finite() && speed.is_finite() && speed > 0.0,
+            "A gripper target needs finite angles and positive finite speed"
+        );
         let same_target = (angle - self.target).abs() <= 1e-8;
         let same_speed = self
             .requested_speed
             .is_some_and(|previous_speed| (previous_speed - speed).abs() <= f64::EPSILON);
         let contact_direction = (self.target - measured) * (angle - measured);
         if self.state == GripperState::Contact && contact_direction >= 0.0 {
-            // Repeated or refined goals into an obstruction must not restart
+            // INVARIANT: Repeated or refined goals into an obstruction must not restart
             // closing. A goal on the other side of the jaw releases it.
             if contact_direction > 0.0 {
                 self.target = angle;
             }
-            return;
+            return Ok(());
         }
         if same_target && self.state == GripperState::Moving && same_speed {
-            return;
+            return Ok(());
         }
-        // A stream may refine its target every cycle. Keep watching for a
+        // INVARIANT: A stream may refine its target every cycle. Keep watching for a
         // stalled jaw while those targets continue in the same direction.
         let reset_contact_detection = self.state != GripperState::Moving
             || (self.target - measured) * (angle - measured) <= 0.0;
-        self.target = angle;
-        self.requested_speed = Some(speed);
-        // A slowly commanded jaw needs time to travel beyond the feedback
-        // tolerance; otherwise quantized feedback can look like a stall.
-        self.contact_detection_dwell_seconds =
-            self.contact_dwell_seconds.max(2.0 * self.tolerance / speed);
-        self.trajectory = if (angle - self.reference.positions[0]).abs() > 1e-8 {
+        let trajectory = if (angle - self.reference.positions[0]).abs() > 1e-8 {
             Some(OnlineSection::new(
                 &self.reference,
                 &[angle],
                 speed,
                 &self.motion_limits,
                 None,
-            ))
+            )?)
         } else {
             None
         };
+        self.target = angle;
+        self.requested_speed = Some(speed);
+        // WHY: A slowly commanded jaw needs time to travel beyond the feedback
+        // tolerance; otherwise quantized feedback can look like a stall.
+        self.contact_detection_dwell_seconds =
+            self.contact_dwell_seconds.max(2.0 * self.tolerance / speed);
+        self.trajectory = trajectory;
         self.state = GripperState::Moving;
         if reset_contact_detection {
             self.still_at = measured;
             self.still_seconds = 0.0;
         }
+        Ok(())
     }
 
     pub(crate) fn hold(&mut self, measured: f64) {
@@ -121,9 +129,10 @@ impl GripperController {
                 } else {
                     self.still_seconds += interval;
                     if self.still_seconds >= self.contact_detection_dwell_seconds {
-                        // Hold only one position tolerance past the measured jaw. This
+                        // WHY: Hold only one position tolerance past the measured jaw. This
                         // keeps the force-capped servo engaged without retaining a large
-                        // position error accumulated while the jaw was blocked.
+                        // position error accumulated while the jaw was blocked. The motor
+                        // firmware caps grip force.
                         let holding_command =
                             measured + (command - measured).clamp(-self.tolerance, self.tolerance);
                         self.reference = Reference::at_rest(&[holding_command], None);
@@ -166,7 +175,7 @@ mod tests {
     #[test]
     fn jaw_accelerates_brakes_and_reaches_the_target() {
         let mut jaw = controller(0.0);
-        jaw.set_target(1.0, 1.0, 0.0);
+        jaw.set_target(1.0, 1.0, 0.0).unwrap();
         let mut measured = 0.0;
         let mut velocities = Vec::new();
         while jaw.state() == GripperState::Moving {
@@ -186,7 +195,7 @@ mod tests {
     #[test]
     fn contact_freezes_the_command_before_the_far_endpoint_and_allows_reopening() {
         let mut jaw = controller(1.0);
-        jaw.set_target(0.0, 1.0, 1.0);
+        jaw.set_target(0.0, 1.0, 1.0).unwrap();
         let mut measured = 1.0;
         for _ in 0..500 {
             let command = jaw.step(measured, 0.01).unwrap();
@@ -202,7 +211,7 @@ mod tests {
         for _ in 0..20 {
             assert_eq!(jaw.step(measured, 0.01).unwrap(), held);
         }
-        jaw.set_target(1.0, 1.0, measured);
+        jaw.set_target(1.0, 1.0, measured).unwrap();
         for _ in 0..500 {
             measured = jaw.step(measured, 0.01).unwrap();
             if jaw.state() == GripperState::Reached {
@@ -217,7 +226,7 @@ mod tests {
         let mut jaw = controller(1.0);
         let mut measured = 1.0;
         for _ in 0..500 {
-            jaw.set_target(0.0, 1.0, measured);
+            jaw.set_target(0.0, 1.0, measured).unwrap();
             let command = jaw.step(measured, 0.01).unwrap();
             measured = command.max(0.6);
             if jaw.state() == GripperState::Contact {
@@ -227,7 +236,7 @@ mod tests {
         assert_eq!(jaw.state(), GripperState::Contact);
         let held = jaw.step(measured, 0.01).unwrap();
         for _ in 0..20 {
-            jaw.set_target(0.0, 1.0, measured);
+            jaw.set_target(0.0, 1.0, measured).unwrap();
             assert_eq!(jaw.state(), GripperState::Contact);
             assert_eq!(jaw.step(measured, 0.01).unwrap(), held);
         }
@@ -239,7 +248,7 @@ mod tests {
         let mut measured = 1.0;
         for index in 0..500 {
             let target = if index % 2 == 0 { 0.0 } else { 0.05 };
-            jaw.set_target(target, 1.0, measured);
+            jaw.set_target(target, 1.0, measured).unwrap();
             let command = jaw.step(measured, 0.01).unwrap();
             measured = command.max(0.6);
             if jaw.state() == GripperState::Contact {
@@ -248,8 +257,8 @@ mod tests {
         }
         assert_eq!(jaw.state(), GripperState::Contact);
         let held = jaw.step(measured, 0.01).unwrap();
-        jaw.set_target(0.0, 1.0, measured);
-        jaw.set_target(0.05, 1.0, measured);
+        jaw.set_target(0.0, 1.0, measured).unwrap();
+        jaw.set_target(0.05, 1.0, measured).unwrap();
         assert_eq!(jaw.state(), GripperState::Contact);
         assert_eq!(jaw.step(measured, 0.01).unwrap(), held);
     }
@@ -257,12 +266,12 @@ mod tests {
     #[test]
     fn a_moving_jaw_can_reverse_with_a_lower_speed_limit() {
         let mut jaw = controller(0.0);
-        jaw.set_target(1.0, 1.0, 0.0);
+        jaw.set_target(1.0, 1.0, 0.0).unwrap();
         let mut measured = 0.0;
         for _ in 0..100 {
             measured = jaw.step(measured, 0.01).unwrap();
         }
-        jaw.set_target(0.0, 0.2, measured);
+        jaw.set_target(0.0, 0.2, measured).unwrap();
         for _ in 0..1500 {
             measured = jaw.step(measured, 0.01).unwrap();
             if jaw.state() != GripperState::Moving {
@@ -276,7 +285,7 @@ mod tests {
     #[test]
     fn a_slow_jaw_is_not_mistaken_for_contact() {
         let mut jaw = controller(0.0);
-        jaw.set_target(0.05, 0.01, 0.0);
+        jaw.set_target(0.05, 0.01, 0.0).unwrap();
         let mut measured = 0.0;
         for _ in 0..1000 {
             measured = jaw.step(measured, 0.01).unwrap();
@@ -284,6 +293,32 @@ mod tests {
                 break;
             }
         }
+        assert_eq!(jaw.state(), GripperState::Reached);
+    }
+
+    #[test]
+    fn refused_gripper_targets_preserve_the_existing_motion() {
+        let mut jaw = controller(0.0);
+        jaw.set_target(0.3, 0.5, 0.0).unwrap();
+        for (angle, speed, measured) in [
+            (f64::NAN, 0.5, 0.0),
+            (0.8, 0.0, 0.0),
+            (0.8, -1.0, 0.0),
+            (0.8, f64::INFINITY, 0.0),
+            (0.8, 0.5, f64::NAN),
+        ] {
+            assert!(jaw.set_target(angle, speed, measured).is_err());
+            assert_eq!(jaw.target().to_bits(), 0.3_f64.to_bits());
+            assert_eq!(jaw.state(), GripperState::Moving);
+        }
+        let mut measured = 0.0;
+        for _ in 0..1000 {
+            measured = jaw.step(measured, 0.01).unwrap();
+            if jaw.state() == GripperState::Reached {
+                break;
+            }
+        }
+        assert!((measured - 0.3).abs() < 1e-6);
         assert_eq!(jaw.state(), GripperState::Reached);
     }
 }

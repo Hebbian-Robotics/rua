@@ -1,18 +1,16 @@
-//! Grouped motions: one trajectory stepped over every member arm.
-
 use super::activity::Activity;
 use super::runner::{PendingCycle, Runner};
 use super::trajectory::{ActiveGroupMember, GroupReference, MotionStatus};
 use crate::arm::{GroupMembership, Now};
 use crate::config::ExecutorConfig;
-use crate::corner_path::MotionSupervisor;
+use crate::corner_path::{MotionSupervisor, ValidatedPlan};
 use crate::limits::Trip;
+use crate::motion_values::GroupId;
 use crate::plant::Plant;
 use crate::reference_filter::Reference;
 use hebbian_contracts::{Checkpoint, CommandOutcome, CornerPlan, Segment};
 
 impl<P: Plant> Runner<'_, P> {
-    /// This arm's part of a grouped motion, if it is following one.
     pub(super) fn group_member(&self) -> Option<&ActiveGroupMember> {
         match &self.state.activity {
             Activity::Group(member) => Some(member),
@@ -20,12 +18,10 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    /// Why this arm's part of the group `group_id` ended without completing,
-    /// if its last finished command is that part and it did not complete.
-    pub(super) fn last_group_failure(&self, group_id: &str) -> Option<String> {
+    pub(super) fn last_group_failure(&self, group_id: &GroupId) -> Option<String> {
         let arm = &self.state.core;
         let record = arm.last_finished()?;
-        if record.group_id.as_deref() != Some(group_id) {
+        if record.group_id.as_deref() != Some(group_id.as_str()) {
             return None;
         }
         let outcome = record
@@ -42,11 +38,8 @@ impl<P: Plant> Runner<'_, P> {
     }
 }
 
-/// A grouped motion being followed: one trajectory over every member's joints,
-/// joined in the order of the group's arms, with one tracking gate.
 pub(super) struct ActiveGroup {
-    pub(super) id: String,
-    /// Runner indexes, in the group's order.
+    pub(super) id: GroupId,
     pub(super) members: Vec<usize>,
     pub(super) joint_counts: Vec<usize>,
     pub(super) supervisor: MotionSupervisor,
@@ -54,14 +47,31 @@ pub(super) struct ActiveGroup {
 }
 
 impl ActiveGroup {
-    /// Join the members' plans into one straight run from where every arm holds
-    /// to where every arm is going, at the first plan's speed.
     pub(super) fn form(
-        id: &str,
+        id: &GroupId,
         members: Vec<usize>,
-        plans: &[&CornerPlan],
+        plans: &[&ValidatedPlan],
         configs: &[&ExecutorConfig],
     ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !members.is_empty() && members.len() == plans.len() && plans.len() == configs.len(),
+            "A group needs matching nonempty members, plans and configurations"
+        );
+        let unique_members: std::collections::BTreeSet<_> = members.iter().collect();
+        anyhow::ensure!(
+            unique_members.len() == members.len(),
+            "A group cannot repeat a member"
+        );
+        for (plan, config) in plans.iter().zip(configs) {
+            anyhow::ensure!(
+                plan.segments.len() == 1 && plan.segments[0].corners.len() == 2,
+                "A group member needs one straight section"
+            );
+            anyhow::ensure!(
+                plan.initial_corner().len() == config.joint_count,
+                "A group member's plan does not match its arm's joint count"
+            );
+        }
         let joined = |corner: fn(&Segment) -> &Vec<f64>| -> Vec<f64> {
             plans
                 .iter()
@@ -78,12 +88,24 @@ impl ActiveGroup {
                 target_position: None,
                 target_quaternion: None,
             }],
-            peak_speed: plans[0].peak_speed,
+            peak_speed: plans
+                .iter()
+                .map(|plan| plan.peak_speed)
+                .fold(f64::INFINITY, f64::min),
         };
         let joint_count = configs.iter().map(|config| config.joint_count).sum();
-        let supervisor = MotionSupervisor::new(plan, &configs[0].motion, joint_count)?;
+        let mut motion_limits = configs[0].motion.clone();
+        motion_limits.acceleration_limit = configs
+            .iter()
+            .map(|config| config.motion.acceleration_limit)
+            .fold(f64::INFINITY, f64::min);
+        motion_limits.jerk_limit = configs
+            .iter()
+            .map(|config| config.motion.jerk_limit)
+            .fold(f64::INFINITY, f64::min);
+        let supervisor = MotionSupervisor::new(plan, &motion_limits, joint_count)?;
         Ok(Self {
-            id: id.to_owned(),
+            id: id.clone(),
             members,
             joint_counts: configs.iter().map(|config| config.joint_count).collect(),
             supervisor,
@@ -91,8 +113,6 @@ impl ActiveGroup {
         })
     }
 
-    /// The trajectory's next reference, split into one share per member, from the
-    /// members' measured joints. Each member's own loop checks its tracking.
     pub(super) fn step(
         &mut self,
         measured: &[f64],
@@ -136,17 +156,17 @@ impl ActiveGroup {
     }
 }
 
-/// Start the groups whose arms have all begun their parts. Arms are admitted
-/// into a group together, but each begins on its own cycle, so a group forms on
-/// the first cycle when all of them have.
-pub(super) fn form_groups<P: Plant>(runners: &[Runner<'_, P>], groups: &mut Vec<ActiveGroup>) {
-    let mut candidates: Vec<&GroupMembership> = Vec::new();
-    for runner in runners {
+// INVARIANT: Start the groups whose arms have all begun their parts. Arms are admitted
+// into a group together, but each begins on its own cycle, so a group forms on
+// the first cycle when all of them have.
+pub(super) fn form_groups<P: Plant>(runners: &mut [Runner<'_, P>], groups: &mut Vec<ActiveGroup>) {
+    let mut candidates: Vec<GroupMembership> = Vec::new();
+    for runner in runners.iter() {
         if let Some(member) = runner.group_member()
             && !groups.iter().any(|group| group.id == member.group.id)
             && !candidates.iter().any(|group| group.id == member.group.id)
         {
-            candidates.push(&member.group);
+            candidates.push(member.group.clone());
         }
     }
     for membership in candidates {
@@ -163,23 +183,31 @@ pub(super) fn form_groups<P: Plant>(runners: &[Runner<'_, P>], groups: &mut Vec<
             })
             .collect();
         let Some(indexes) = indexes else { continue };
-        let plans: Vec<&CornerPlan> = indexes
+        let plans: Vec<&ValidatedPlan> = indexes
             .iter()
-            .filter_map(|index| runners[*index].group_member().map(|member| &member.plan))
+            .filter_map(|index| runners[*index].group_member().map(|member| &*member.plan))
             .collect();
         let configs: Vec<&ExecutorConfig> =
             indexes.iter().map(|index| runners[*index].config).collect();
-        if let Ok(group) = ActiveGroup::form(&membership.id, indexes, &plans, &configs) {
-            groups.push(group);
+        let result = ActiveGroup::form(&membership.id, indexes.clone(), &plans, &configs);
+        match result {
+            Ok(group) => groups.push(group),
+            Err(error) => {
+                let detail = format!("Could not construct grouped motion: {error:#}");
+                let now = Now::current();
+                for index in indexes {
+                    runners[index].state.end_activity(
+                        CommandOutcome::Failed,
+                        Some(detail.clone()),
+                        None,
+                        now,
+                    );
+                }
+            }
         }
-        // A group that cannot form (its plans were validated at admission, so
-        // not expected) never gets a reference: its arms hold, and the first
-        // arm to end takes the rest with it.
     }
 }
 
-/// Step every group once, from this cycle's readings, into one share per arm,
-/// left in `steps`; with no group nothing is allocated.
 pub(super) fn step_groups<P: Plant>(
     runners: &[Runner<'_, P>],
     groups: &mut [ActiveGroup],
@@ -189,7 +217,7 @@ pub(super) fn step_groups<P: Plant>(
     steps.clear();
     steps.extend((0..runners.len()).map(|_| None));
     for group in groups {
-        // A member that did not read this cycle (its plant failed) cannot be
+        // INVARIANT: A member that did not read this cycle (its plant failed) cannot be
         // stepped with; the others hold until the group is settled.
         let Some(pendings) = group
             .members
@@ -223,8 +251,8 @@ pub(super) fn step_groups<P: Plant>(
     }
 }
 
-/// When one arm of a group has ended without completing, stop the others where
-/// they are; forget groups no arm is following any more.
+// SAFETY: When one arm of a group has ended without completing, stop the others where
+// they are; forget groups no arm is following any more.
 pub(super) fn settle_groups<P: Plant>(
     runners: &mut [Runner<'_, P>],
     groups: &mut Vec<ActiveGroup>,

@@ -1,5 +1,3 @@
-"""Generate wire contracts and selected SDKs from the Rust station."""
-
 import json
 import os
 import subprocess
@@ -15,7 +13,7 @@ SIM_SCHEMA_PATH = Path("schemas/sim-plant.schema.json")
 OPENAPI_PATH = Path("schemas/openapi.json")
 CATALOG_PATH = Path("schemas/robot-tools.json")
 CONTEXT_PATH = Path("schemas/robot-context.json")
-SIM_MODELS_PATH = Path("examples/mujoco_sim/sim_plant_contract.py")
+SIM_MODELS_PATH = Path("hebbian_rua/simulator/contract.py")
 PYTHON_MODELS_PATH = Path("hebbian_rua/client/contract/station_api.py")
 TYPESCRIPT_MODELS_PATH = Path("typescript-client/src/generated/api-schemas.ts")
 SCHEMA_PATHS = (SIM_SCHEMA_PATH, OPENAPI_PATH, CATALOG_PATH, CONTEXT_PATH)
@@ -89,7 +87,6 @@ def generate_contracts(targets: frozenset[SdkTarget], *, check: bool = False) ->
         )
         Path(destination).write_text(result.stdout)
 
-    # All SDK renderers share the same parsed OpenAPI document and catalogs.
     openapi_document = json.loads(OPENAPI_PATH.read_text())
     catalog.generate(
         json.loads(CATALOG_PATH.read_text()),
@@ -150,6 +147,8 @@ def generate_python_models() -> None:
                 str(output_path),
                 "--output-model-type",
                 "pydantic_v2.BaseModel",
+                "--strict-types",
+                "float",
                 "--formatters",
                 "ruff-format",
                 "ruff-check",

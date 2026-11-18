@@ -81,6 +81,9 @@ pub enum Request {
         waypoints: Vec<Waypoint>,
         /// The speed asked for; none for the arm's default. Never above its limit.
         joint_speed: Option<f64>,
+        /// Measured gripper angle used by the trajectory's geometry checks.
+        #[serde(default)]
+        gripper_angle: Option<f64>,
     },
     /// Where the arm could take the tool toward a pose from the measured joints,
     /// without moving it: for a policy arm the policy's own rehearsal, otherwise
@@ -173,6 +176,9 @@ pub struct Sample {
     pub gripper_angle: Option<f64>,
     /// A fault the hardware reports this cycle, tripped or not.
     pub fault: Option<String>,
+    /// The protective check currently preventing new motion, if any.
+    #[serde(default)]
+    pub active_trip: Option<String>,
     pub recovery_issue: Option<ArmRecoveryIssue>,
     pub cycle_seconds: f64,
 }
@@ -196,6 +202,7 @@ impl Sample {
             voltages_volts: Vec::new(),
             gripper_angle: None,
             fault: None,
+            active_trip: None,
             recovery_issue: None,
             cycle_seconds: 0.0,
         }

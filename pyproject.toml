@@ -75,6 +75,7 @@ select = [
     "I",
     "B",
     "C4",
+    "C901",
     "UP",
     "ANN",
     "PTH",
@@ -82,14 +83,39 @@ select = [
     "SIM",
     "TID",
     "RUF",
+    "PLE",
+    "LOG",
+    "PGH003",
+    "PGH004",
+    "PLW0108",
+    "PLC3002",
+    "PT010",
+    "PT011",
+    "PT012",
+    "PT014",
+    "PT016",
+    "PT017",
+    "PT018",
+    "PT028",
+    "PT030",
+    "PT031",
+    "ASYNC210",
+    "ASYNC220",
+    "ASYNC221",
+    "ASYNC222",
+    "ASYNC230",
+    "ASYNC250",
+    "ASYNC251",
 ]
 ignore = [
     "E501",
     "B008",
-    "C901",
     "RET504",
     "ANN401",
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.format]
 quote-style = "double"
@@ -99,6 +125,8 @@ indent-style = "space"
 division-by-zero = "error"
 deprecated = "error"
 unused-ignore-comment = "error"
+invalid-ignore-comment = "error"
+ignore-comment-unknown-rule = "error"
 possibly-unresolved-reference = "error"
 
 [tool.ty.src]
@@ -128,6 +156,7 @@ extra-paths = []
 testpaths = [
     "tests",
 ]
+addopts = "-q"
 
 [dependency-groups]
 dev = [

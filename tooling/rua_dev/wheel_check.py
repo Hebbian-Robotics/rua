@@ -1,5 +1,3 @@
-"""Verify a built distribution independently of the source checkout."""
-
 import os
 import subprocess
 from pathlib import Path

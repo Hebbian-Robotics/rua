@@ -1,40 +1,31 @@
-//! `hebbian-robot-use-media` beside the station: `serve` (camera snapshots)
-//! and, with `LiveKit`, `publish` (the profile's USB cameras into the room).
-//!
-//! Each runs as a child that is restarted at once after its first exit, then
-//! after a delay that doubles up to 3 s while it keeps failing, and
-//! stopped with SIGTERM when the station ends. A missing binary or a crash
-//! only makes cameras unavailable: nothing here is waited on by control, the event stream
-//! or the viewer.
+// CONSTRAINT: Media supervision must never block control, event delivery or the viewer; a
+// missing/crashed media child makes cameras unavailable while control continues.
 
 use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use hebbian_contracts::Backoff;
-use hebbian_station::media_status::{MediaState, MediaStatus};
+use hebbian_contracts::MediaState;
+use hebbian_station::media_status::MediaStatus;
 #[cfg(unix)]
 use nix::sys::signal::{Signal, kill};
 #[cfg(unix)]
 use nix::unistd::Pid;
 use station_access::CameraConfiguration;
-/// The longest wait before starting a program again after it keeps failing.
 const RESTART_DELAY_CAP: Duration = Duration::from_secs(3);
 
 const STOP_GRACE: Duration = Duration::from_secs(10);
 
-/// The simulator's camera socket, in the work directory.
 pub(crate) const SIMULATOR_CAMERA_SOCKET: &str = "scene.camera.sock";
 
 const PROGRAM: &str = "hebbian-robot-use-media";
 
-/// `hebbian-robot-use-media` beside this executable, else on `PATH`, else the dev build
-/// in a `target/debug` above the working directory; the bare name when there
-/// is none, which fails to start and reports cameras unavailable.
 pub(crate) fn find_media(explicit: Option<PathBuf>) -> PathBuf {
     if let Some(path) = explicit {
         return path;
@@ -63,16 +54,12 @@ pub(crate) fn find_media(explicit: Option<PathBuf>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(PROGRAM))
 }
 
-/// What the media programs are given.
 pub(crate) struct MediaPlan {
     pub executable: PathBuf,
     pub address: SocketAddr,
     pub room: String,
-    /// The station's HTTP base URL, where `publish` reads telemetry.
     pub station_url: String,
-    /// The profile's USB cameras: name to device.
     pub cameras: BTreeMap<String, String>,
-    /// Set when a simulator serves camera views.
     pub simulator_camera_socket: Option<PathBuf>,
 }
 
@@ -87,8 +74,12 @@ impl MediaPlan {
             arguments.extend(["--camera-socket".to_owned(), socket.display().to_string()]);
         }
         if livekit {
-            // `publish` owns the devices; `serve` reads them back from the room.
+            // WHY: `publish` owns the devices; `serve` reads them back from the room.
             arguments.extend(["--room".to_owned(), self.room.clone()]);
+            // WHY: A camera that fails to open never publishes; name it so it is listed as unavailable.
+            for name in self.cameras.keys() {
+                arguments.extend(["--expected-camera".to_owned(), name.clone()]);
+            }
         } else {
             for (name, device) in &self.cameras {
                 arguments.extend(["--camera".to_owned(), format!("{name}={device}")]);
@@ -112,13 +103,11 @@ impl MediaPlan {
     }
 }
 
-/// What a program's supervisor is told.
 enum Event {
     Stop,
     Exited(std::io::Result<ExitStatus>),
 }
 
-/// Runs the media programs until dropped, which stops them.
 pub(crate) struct MediaSupervisor {
     stops: Vec<Sender<Event>>,
     threads: Vec<JoinHandle<()>>,
@@ -172,10 +161,6 @@ impl Drop for MediaSupervisor {
     }
 }
 
-/// Run one program, starting it again after it exits (at once the first time,
-/// then with a growing delay), until `Event::Stop`. A binary that is not there
-/// is reported once and retried the same way. `exits` is the sending side of
-/// `events`.
 fn supervise(
     label: &str,
     executable: &Path,
@@ -191,7 +176,11 @@ fn supervise(
     let mut backoff = Backoff::new(RESTART_DELAY_CAP);
     loop {
         let started = Instant::now();
-        match Command::new(executable).args(arguments).spawn() {
+        match Command::new(executable)
+            .args(arguments)
+            .stderr(Stdio::piped())
+            .spawn()
+        {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if !reported_missing {
                     eprintln!(
@@ -211,7 +200,11 @@ fn supervise(
                     reason: error.to_string(),
                 });
             }
-            Ok(child) => {
+            Ok(mut child) => {
+                if let Some(stderr) = child.stderr.take() {
+                    let status = status.clone();
+                    std::thread::spawn(move || relay_output(stderr, &status));
+                }
                 report(MediaState::Running);
                 let Some(exit) = wait_or_stop(child, events, exits) else {
                     return;
@@ -229,8 +222,28 @@ fn supervise(
     }
 }
 
-/// The child's exit status, or `None` once a stop ended it (or it cannot be
-/// waited for). A thread blocks in `wait` and reports the exit on `exits`.
+fn relay_output(output: impl std::io::Read, status: &MediaStatus) {
+    for line in BufReader::new(output).lines().map_while(Result::ok) {
+        eprintln!("{line}");
+        if let Some((camera, detail)) = parse_camera_problem(&line) {
+            status.record_camera_problem(camera, detail);
+        }
+    }
+}
+
+// CONSTRAINT: Capture failures use `Camera <name>: <message>`; reopening lines only announce
+// a retry and must not replace the original failure detail.
+fn parse_camera_problem(line: &str) -> Option<(&str, &str)> {
+    let (camera, detail) = line.strip_prefix("Camera ")?.split_once(": ")?;
+    let valid_name = (1..=40).contains(&camera.len())
+        && camera
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
+    let detail = detail.trim();
+    (valid_name && !detail.is_empty() && !detail.starts_with("reopening "))
+        .then_some((camera, detail))
+}
+
 fn wait_or_stop(
     mut child: Child,
     events: &Receiver<Event>,
@@ -254,8 +267,8 @@ fn wait_or_stop(
     }
 }
 
-/// SIGTERM (on Unix) lets the program close its files; kill it if it does not
-/// exit within the grace period. Returns once the child has been reaped.
+// WHY: SIGTERM lets the child finalize files before forced termination; always reap
+// it after the grace period.
 fn terminate(process_id: u32, events: &Receiver<Event>) {
     #[cfg(unix)]
     {
@@ -286,7 +299,6 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let launches = directory.path().join("launches");
         let program = directory.path().join("hebbian-robot-use-media");
-        // Exits with an error the first time, then keeps running.
         std::fs::write(
             &program,
             format!(
@@ -308,6 +320,66 @@ mod tests {
             matches!(state, MediaState::Restarting { .. })
         });
         status.wait_until("serve", |state| *state == MediaState::Running);
+        stop.send(Event::Stop).unwrap();
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn camera_problems_are_read_from_the_capture_failure_lines() {
+        assert_eq!(
+            parse_camera_problem(
+                "Camera wrist: camera backend: Could not open device 0x1: Device is null"
+            ),
+            Some((
+                "wrist",
+                "camera backend: Could not open device 0x1: Device is null"
+            ))
+        );
+        for ignored in [
+            "Camera wrist: reopening 0x1 in 3s",
+            "Camera Wrist: broken",
+            "Camera : broken",
+            "Camera wrist:",
+            "Camera initialization unavailable: no backend",
+            "Media serve exited (exit status: 1)",
+        ] {
+            assert_eq!(parse_camera_problem(ignored), None, "{ignored}");
+        }
+    }
+
+    #[test]
+    fn a_program_that_cannot_open_a_camera_has_the_problem_reported() {
+        let directory = tempfile::tempdir().unwrap();
+        let program = directory.path().join("hebbian-robot-use-media");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\nwhile true; do\n\
+             echo 'Camera wrist: camera backend: Could not open device 0x1: Device is null' >&2\n\
+             echo 'Camera wrist: reopening 0x1 in 3s' >&2\nsleep 0.05\ndone\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let status = MediaStatus::default();
+        let (stop, events) = std::sync::mpsc::channel();
+        let thread = {
+            let (status, exits) = (status.clone(), stop.clone());
+            std::thread::spawn(move || {
+                supervise("publish", &program, &[], &events, &exits, &status);
+            })
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let problem = loop {
+            if let Some(problem) = status.report().cameras.get("wrist") {
+                break problem.clone();
+            }
+            assert!(Instant::now() < deadline, "no problem was reported");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(
+            problem.detail,
+            "camera backend: Could not open device 0x1: Device is null"
+        );
+        assert!(problem.last_seen_unix_seconds > 0.0);
         stop.send(Event::Stop).unwrap();
         thread.join().unwrap();
     }

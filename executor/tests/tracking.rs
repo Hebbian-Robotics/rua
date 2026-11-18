@@ -1,4 +1,11 @@
-//! Deterministic servo-lag regressions: no wall clock, sockets or hardware.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
+
 use hebbian_contracts::{CornerPlan, Segment};
 use hebbian_robot_use_server::config::ExecutorConfig;
 use hebbian_robot_use_server::corner_path::{MotionSupervisor, Stage};
@@ -160,9 +167,6 @@ fn a_loaded_joint_can_finish_within_the_configured_tracking_tolerance() {
     panic!("a joint with 0.035 rad of load deflection never completed");
 }
 
-/// Settle at the end of the path while the arm measures its second joint
-/// `error_at(t)` past the target, `t` seconds into the settling wait. Returns
-/// how long the wait lasted and the finished supervisor.
 fn settle_with_error(error_at: impl Fn(f64) -> f64) -> (f64, MotionSupervisor) {
     let config = config();
     let mut motion = MotionSupervisor::new(plan(), &config.motion, 2).unwrap();
@@ -272,7 +276,7 @@ fn a_constant_target_preserves_the_continuous_jerk_limited_profile() {
         let interval = 0.001;
         let reference = motion.step(&command, interval).unwrap();
         elapsed_seconds += interval;
-        // This long section is still accelerating or cruising: integrate the
+        // WHY: This long section is still accelerating or cruising: integrate the
         // two constant-jerk ramps analytically, independently of Ruckig.
         let (position, velocity, acceleration) = if elapsed_seconds <= ramp_seconds {
             (

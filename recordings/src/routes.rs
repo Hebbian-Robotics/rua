@@ -9,7 +9,7 @@ use axum::{
 };
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
-/// Routes are relative; the station can nest this under `/viewer/api`.
+// CONSTRAINT: Routes are relative; the station nests this under `/viewer/api`.
 pub fn router(library: RecordingLibrary) -> Router {
     Router::new()
         .route("/recordings", get(list))

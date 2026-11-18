@@ -1,8 +1,3 @@
-//! A model loop's live telemetry: the events and trace spans it reports over
-//! HTTP, kept in a bounded buffer the viewer reads, and `GET /run`.
-//! Independent of recording. The executor relays the typed messages and hands
-//! them here through `RunTelemetry`.
-
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -14,20 +9,15 @@ use hebbian_contracts::{
 };
 use hebbian_robot_use_server::station_api::{RunTelemetry, RunUpdates};
 
-/// Spans kept; older ones are dropped first.
 const KEPT_SPANS: usize = 1000;
-/// Sequenced records kept for resuming clients; older ones are dropped first.
 const KEPT_RECORDS: usize = 4096;
 
-/// What a model loop reported: an event, or a span as it stood.
 #[derive(Debug, Clone, PartialEq)]
 enum RunRecordKind {
     Event(RunEvent),
     Span(TraceSpan),
 }
 
-/// One thing a model loop reported, numbered in the order the server received
-/// it, for clients that resume.
 #[derive(Debug, Clone, PartialEq)]
 struct RunRecord {
     seq: u64,
@@ -35,15 +25,12 @@ struct RunRecord {
     kind: RunRecordKind,
 }
 
-/// A resume point the retained records no longer reach, or that is ahead of
-/// them (as after a restart).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RunGap {
     oldest_retained: u64,
     newest: u64,
 }
 
-/// The bounded buffer behind `LiveRun`.
 #[derive(Debug, Default)]
 struct RunBuffer {
     revision: u64,
@@ -72,8 +59,8 @@ impl RunBuffer {
         self.next_seq += 1;
     }
 
-    /// The records after `after`, oldest first; a gap when `after` is behind
-    /// the oldest retained record or ahead of the newest.
+    // INVARIANT: A cursor outside the retained range requires resynchronization, including a
+    // cursor ahead of the newest record after a restart.
     fn since(&self, after: u64) -> Result<Vec<RunRecord>, RunGap> {
         let newest = self.newest_seq();
         let oldest_retained = self
@@ -94,7 +81,6 @@ impl RunBuffer {
             .collect())
     }
 
-    /// Keep a span; one with the same ids replaces the earlier one.
     fn record_span(&mut self, span: TraceSpan) {
         self.log(RunRecordKind::Span(span.clone()));
         if let Some(index) = self
@@ -120,7 +106,7 @@ impl RunBuffer {
                     task,
                     ..RunMemory::default()
                 };
-                // Keep the run's root span, which the tracer sent as it started.
+                // WHY: Keep the run's root span, which the tracer sent as it started.
                 let root = self
                     .spans
                     .iter()
@@ -143,7 +129,6 @@ impl RunBuffer {
         self.revision += 1;
     }
 
-    /// The run now; running spans end now.
     fn snapshot(&self) -> LiveRun {
         let now = UnixNanos::now();
         LiveRun {
@@ -164,8 +149,6 @@ impl RunBuffer {
         }
     }
 
-    /// The records past `cursor` as messages, moving it to the newest; a gap
-    /// becomes a `run_resync`.
     fn messages_after(&self, cursor: &mut u64) -> Vec<ServerMessage> {
         let newest = self.newest_seq();
         let records = match self.since(*cursor) {
@@ -197,7 +180,6 @@ impl RunBuffer {
     }
 }
 
-/// The station's model-loop telemetry, shared by the event stream and `GET /run`.
 #[derive(Debug, Default)]
 pub struct LiveRunStore {
     buffer: Mutex<RunBuffer>,
@@ -210,7 +192,6 @@ impl LiveRunStore {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// `GET /run`.
     #[must_use]
     pub fn snapshot(&self) -> LiveRun {
         self.lock().snapshot()
@@ -244,7 +225,6 @@ impl RunTelemetry for LiveRunStore {
     }
 }
 
-/// `GET /run`.
 pub fn routes(store: Arc<LiveRunStore>) -> Router {
     Router::new()
         .route(
@@ -294,7 +274,6 @@ mod tests {
         );
         assert_eq!(run.memory.task.as_deref(), Some("stack"));
         assert_eq!(run.memory.notes, Vec::<String>::new());
-        // An event the server does not act on still counts.
         let before = buffer.revision;
         buffer.record_event(event(serde_json::json!({"type": "model_turn", "turn": {}})));
         assert_eq!(buffer.revision, before + 1);
@@ -313,7 +292,6 @@ mod tests {
         let seen = store.newest_seq();
         store.record_spans(vec![span("s", serde_json::json!({}))]);
 
-        // A span reported while nobody listens is replayed after the cursor.
         let mut cursor = seen;
         let mut revision_sent = None;
         let resumed = store.updates(&mut cursor, &mut revision_sent);
@@ -325,11 +303,9 @@ mod tests {
         assert_eq!(cursor, seen + 1);
         let snapshot = resumed.snapshot.expect("the first update carries the run");
         assert_eq!(snapshot.memory.notes, ["a"]);
-        // Nothing changed since: nothing to send.
         let quiet = store.updates(&mut cursor, &mut revision_sent);
         assert!(quiet.records.is_empty() && quiet.snapshot.is_none());
 
-        // A cursor beyond anything issued is reported as a gap.
         let mut ahead = 1_000_000;
         let gap = store.updates(&mut ahead, &mut None);
         assert!(matches!(

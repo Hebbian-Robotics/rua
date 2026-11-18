@@ -1,5 +1,3 @@
-"""Build the native station for contract and executor checks."""
-
 import json
 import subprocess
 from pathlib import Path

@@ -1,14 +1,3 @@
-//! Planning for the arm's clients: a target turned into the plan the arm runs,
-//! and what the arm could reach toward one, from the arm's own model.
-//!
-//! Every check runs before the arm moves. Joint targets are clamped into the
-//! limits, a pose is solved by inverse kinematics from the previous corner, and
-//! the straight joint line to each corner is cut short where the self-collision
-//! or table check first stops it. A pose no joints reach exactly runs to the
-//! closest pose the solver found, and the plan says how far short that is. Only
-//! malformed targets, a pose the arm cannot move toward at all, and a start the
-//! arm cannot leave are typed refusals.
-
 mod advice;
 pub mod orientation;
 mod projection;
@@ -31,11 +20,8 @@ use hebbian_contracts::{
     Segment, Waypoint,
 };
 use orientation::{orientation_summary, pose_orientation_quaternion, xyzw};
-/// The joint change below which a solve's closest pose counts as where the arm
-/// already is: it cannot move toward the target at all.
 const NO_MOVEMENT_JOINT_RADIANS: f64 = 1e-6;
 
-/// Why a target was not planned.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlanRefusal {
     pub reason: RejectionReason,
@@ -49,11 +35,8 @@ fn refusal(reason: RejectionReason, detail: impl Into<String>) -> PlanRefusal {
     }
 }
 
-/// The distal rotation about the tool axis, which alone sets the jaw yaw.
 const WRIST_ROLL_JOINT_NAME: &str = "wrist_roll";
 
-/// The wrist roll among the arm's joints; the URDF may prefix it with the arm's
-/// name, as `left_wrist_roll`.
 fn wrist_roll_index(joint_names: &[String]) -> Option<usize> {
     joint_names.iter().position(|name| {
         name == WRIST_ROLL_JOINT_NAME
@@ -63,7 +46,6 @@ fn wrist_roll_index(joint_names: &[String]) -> Option<usize> {
     })
 }
 
-/// An arm's planner: its model, limits and checks.
 pub struct Planner {
     solver: IkSolver,
     joint_names: Vec<String>,
@@ -78,11 +60,6 @@ pub struct Planner {
 }
 
 impl Planner {
-    /// The planner for the arm a config describes: `None` when it names no tool
-    /// link to plan poses for.
-    ///
-    /// # Errors
-    /// The URDF cannot be read, or the tool is not at the end of the arm's joints.
     pub fn for_arm(config: &ExecutorConfig) -> anyhow::Result<Option<Self>> {
         if config.tool_link.is_none() {
             return Ok(None);
@@ -114,20 +91,13 @@ impl Planner {
         &self.solver
     }
 
-    /// One segment per waypoint, each ending at rest at its corner, from `start`.
-    ///
-    /// A segment whose straight joint line would collide or drive into the
-    /// table is cut short at its last clear sample, the waypoints after it are
-    /// left out, and the plan says why.
-    ///
-    /// # Errors
-    /// A waypoint is malformed or out of reach, or the arm cannot leave a corner
-    /// without colliding or driving into the table.
+    // SAFETY: Cut a colliding segment short at its last clear sample and discard subsequent waypoints. Refuse a start the arm cannot safely leave.
     pub fn plan(
         &self,
         start: &[f64],
         waypoints: &[Waypoint],
         requested_speed: Option<f64>,
+        gripper_angle: Option<f64>,
     ) -> Result<PlannedMotion, PlanRefusal> {
         if waypoints.is_empty() {
             return Err(refusal(
@@ -159,7 +129,7 @@ impl Planner {
                     (corner, Some(*position), Some(quaternion), pose_limited)
                 }
             };
-            let (stop, path_limited) = self.clear_prefix(&previous, &corner)?;
+            let (stop, path_limited) = self.clear_prefix(&previous, &corner, gripper_angle)?;
             if path_limited.is_none() && pose_limited.is_none() {
                 segments.push(segment(
                     label,
@@ -171,7 +141,7 @@ impl Planner {
                 previous = corner;
                 continue;
             }
-            // The stop is not the requested pose, so the segment does not claim
+            // INVARIANT: The stop is not the requested pose, so the segment does not claim
             // it, and later waypoints, meant to follow that pose, are left out.
             segments.push(segment(label, previous, stop, None, None));
             return Ok(PlannedMotion {
@@ -193,11 +163,6 @@ impl Planner {
         })
     }
 
-    /// The tool's pose at these joints, which may be outside the limits, in the
-    /// world frame.
-    ///
-    /// # Errors
-    /// The joints are not one finite value per arm joint.
     pub fn describe(&self, joints: &[f64]) -> Result<PoseDescription, String> {
         self.require_joint_shape(joints)
             .map_err(|refused| refused.detail)?;
@@ -228,9 +193,6 @@ impl Planner {
         Ok(())
     }
 
-    /// The joints clamped into the limits: the one joint-limit check of a move,
-    /// against the limits the solver keeps every joint inside, so its solutions
-    /// and a target exactly on a bound pass unchanged.
     fn joint_target(&self, joints: &[f64]) -> Result<Vec<f64>, PlanRefusal> {
         self.require_joint_shape(joints)?;
         Ok(joints
@@ -240,12 +202,6 @@ impl Planner {
             .collect())
     }
 
-    /// Joints that put the tool at the pose, solved from the previous corner, or
-    /// the closest pose the solver found and how far short of the pose it is.
-    ///
-    /// # Errors
-    /// The solver refuses the request, or its closest pose is where the arm
-    /// already is, so the arm cannot move toward the target at all.
     fn solve_waypoint(
         &self,
         index: usize,
@@ -279,15 +235,13 @@ impl Planner {
                         reason,
                         position_shortfall_meters: best.position_error_meters,
                         orientation_shortfall_radians: best.orientation_error_radians,
-                        advice,
+                        advice: limited_summary(reason, &best, &advice),
                     }),
                 ))
             }
         }
     }
 
-    /// How far along the straight joint line from `start` to `goal` the arm may
-    /// go before it would fold into itself or drive down into the table.
     fn path_check(
         &self,
         start: &[f64],
@@ -312,15 +266,13 @@ impl Planner {
         })
     }
 
-    /// How far along the straight joint line from `start` to `goal` a move may
-    /// run: all of it, or up to the last clear sample and why it stops there, as
-    /// the preview cuts its ghost. Refused only when the arm cannot leave `start`.
     fn clear_prefix(
         &self,
         start: &[f64],
         goal: &[f64],
+        gripper_angle: Option<f64>,
     ) -> Result<(Vec<f64>, Option<PathLimited>), PlanRefusal> {
-        match self.path_check(start, goal, None) {
+        match self.path_check(start, goal, gripper_angle) {
             Ok(PathCheck::Clear) => Ok((goal.to_vec(), None)),
             Ok(PathCheck::StopsAt { last_safe, reason }) if last_safe.as_slice() != start => {
                 Ok((last_safe, Some(PathLimited { reason })))
@@ -339,8 +291,6 @@ impl Planner {
         self.solver.chain().tool_pose(joints).rotation
     }
 
-    /// The pose at `joints` as a projection reports it, measured against the
-    /// target's position and its orientation when one was asked for.
     fn projected(
         &self,
         joints: Vec<f64>,
@@ -359,8 +309,6 @@ impl Planner {
         }
     }
 
-    /// Solve toward a position, with the orientation asked for, or with the
-    /// solver's choice near the one held at `seed` when none is.
     fn solve_toward(
         &self,
         seed: &[f64],
@@ -404,7 +352,6 @@ impl Planner {
     }
 }
 
-/// What a corner plan's segment from `from` to `to` looks like.
 fn segment(
     label: String,
     from: Vec<f64>,
@@ -421,7 +368,6 @@ fn segment(
     }
 }
 
-/// Why a solve fell short, in words.
 fn shortfall_cause(reason: IkFailure) -> &'static str {
     match reason {
         IkFailure::AtJointLimit => "a joint stops at its limit short of the pose",
@@ -431,7 +377,20 @@ fn shortfall_cause(reason: IkFailure) -> &'static str {
     }
 }
 
-/// Why a solve that leaves the arm where it is fell short, for a refusal.
+// WHY: Models ignored bare advice; stating the shortfall and where the arm goes instead,
+// in the millimetres and degrees they work in, first makes the advice read as its fix.
+fn limited_summary(reason: IkFailure, best: &IkPose, advice: &str) -> String {
+    let [x, y, z] = best.tool_position.map(|meters| meters * 1000.0);
+    format!(
+        "The solver did not reach the target: the closest pose it found is {:.1} mm and {:.1} \
+         degrees away ({}), with the tool at [{x:.1}, {y:.1}, {z:.1}] mm, and the arm moves \
+         there instead. {advice}",
+        best.position_error_meters * 1000.0,
+        best.orientation_error_radians.to_degrees(),
+        shortfall_cause(reason),
+    )
+}
+
 fn not_reached(reason: IkFailure, best: &IkPose) -> String {
     format!(
         "No joints move the tool toward the pose: {}; the closest is {:.1} mm and {:.3} rad \

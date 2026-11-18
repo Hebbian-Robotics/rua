@@ -17,7 +17,6 @@ impl RecordingLibrary {
             active_recording: Arc::new(|| None),
         }
     }
-    /// Use the station's current recording name for listing and lifecycle guards.
     #[must_use]
     pub fn with_active_recording(
         mut self,
@@ -29,17 +28,11 @@ impl RecordingLibrary {
     pub(crate) fn active_recording(&self) -> Option<String> {
         (self.active_recording)()
     }
-    /// List visible, real recording directories, newest name first.
-    ///
-    /// # Errors
-    /// Returns an error if the recordings directory cannot be read.
     pub fn recordings(&self) -> Result<Recordings, Error> {
+        let active = self.active_recording();
         let mut recordings = Vec::new();
         if !self.directory.is_dir() {
-            return Ok(Recordings {
-                active: self.active_recording(),
-                recordings,
-            });
+            return Ok(Recordings { active, recordings });
         }
         for directory in visible_entries(&self.directory)? {
             if !directory.is_dir() {
@@ -52,6 +45,11 @@ impl RecordingLibrary {
                 .ok()
                 .and_then(|path| path.metadata().ok())
                 .map(|metadata| metadata.len());
+            // INVARIANT: An unrelated directory must never become a deletable recording.
+            // The active recorder may not have created its archive yet.
+            if size_bytes.is_none() && active.as_deref() != Some(name.as_str()) {
+                continue;
+            }
             recordings.push(Recording {
                 name,
                 mcap_path: size_bytes.map(|_| mcap_path),
@@ -59,20 +57,13 @@ impl RecordingLibrary {
             });
         }
         recordings.sort_by(|left, right| right.name.cmp(&left.name));
-        Ok(Recordings {
-            active: self.active_recording(),
-            recordings,
-        })
+        Ok(Recordings { active, recordings })
     }
-    /// Delete an exact listed recording.
-    ///
-    /// # Errors
-    /// Returns `NotFound` for an unlisted name, or a filesystem error.
     pub fn delete_recording(&self, name: &str) -> Result<(), Error> {
         if self.active_recording().as_deref() == Some(name) {
             return Err(Error::RecordingInProgress);
         }
-        // Resolve only the exact directory name returned by the listing.
+        // INVARIANT: Resolve only the exact directory name returned by the listing.
         let recording = self.listed(name)?;
         fs::remove_dir_all(self.directory.join(&recording.name))?;
         Ok(())
@@ -84,16 +75,21 @@ impl RecordingLibrary {
             .find(|recording| recording.name == name)
             .ok_or(Error::NotFound)
     }
-    /// Resolve a visible recording file while refusing symlinks and traversal.
-    ///
-    /// # Errors
-    /// Returns `NotFound` for missing, hidden or unsafe paths.
+    // SAFETY: Only visible recording files resolve; symlinks and traversal are refused.
     pub fn recording_file(&self, relative: &str) -> Result<PathBuf, Error> {
         self.safe_file(relative)
     }
     pub(crate) fn safe_file(&self, relative: &str) -> Result<PathBuf, Error> {
         let path = Path::new(relative);
-        if !path.components().all(|component| matches!(component, Component::Normal(part) if !part.to_string_lossy().starts_with('.'))) || !matches!(path.extension().and_then(|extension| extension.to_str()), Some("mcap")) { return Err(Error::NotFound); }
+        let has_only_visible_components = path.components().all(|component| {
+            matches!(component, Component::Normal(part) if !part.to_string_lossy().starts_with('.'))
+        });
+        let is_mcap_file = path
+            .extension()
+            .is_some_and(|extension| extension == "mcap");
+        if !has_only_visible_components || !is_mcap_file {
+            return Err(Error::NotFound);
+        }
         let root = self.directory.canonicalize().map_err(|_| Error::NotFound)?;
         let mut resolved = root.clone();
         for component in path.components() {

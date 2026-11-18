@@ -1,24 +1,16 @@
-//! The `OpenAPI` 3.1 document of every HTTP route the station and its media service
-//! serve: `hebbian-robot-use-server schema --openapi`. The three SDKs' per-route methods
-//! are generated from it, and `tests/openapi.rs` checks it against the real routers.
-//! Shared event and command message components are included for SDK generation.
-
 use hebbian_contracts::{
-    ActionSequenceRecord, ActionSequenceStartRequest, CameraListing, ClientMessage, CommandAnswer,
-    CommandCancellationRequest, CommandRecord, CommandSubmissionRequest,
+    ActionSequenceRecord, ActionSequenceRequest, ActionSequenceStartRequest, CameraListing,
+    ClientMessage, CommandAnswer, CommandCancellationRequest, CommandRecord,
+    CommandSubmissionRequest, CompilationArtifact, CompilationOutcome, ControllerStatus,
     GroupCommandSubmissionRequest, LeaseAcquireRequest, LeaseCameraReport, LeaseGrant, LeaseToken,
-    PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse,
-    RecordingStatus, RunEvent, RunSpansRequest, ServerMessage, StationInstance, StationState,
-    TraceFile,
+    MediaStatusReport, PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest,
+    PosePreviewBatchResponse, ReconnectRequest, RecordingStatus, RoomAccess,
+    RunCompiledProgramRequest, RunEvent, RunSpansRequest, ServerMessage, StationInstance,
+    StationState, TraceFile, ViewerControl,
 };
 use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
 use serde_json::{Map, Value, json};
-use station_access::RoomAccess;
-
-use crate::controller_supervisor::{ControllerStatus, ReconnectRequest};
-use crate::media_status::MediaState;
-use crate::web::ViewerControl;
 
 type SchemaOf = fn(&mut SchemaGenerator) -> Value;
 
@@ -26,24 +18,16 @@ fn schema_of<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value {
     generator.subschema_for::<T>().to_value()
 }
 
-/// What a route answers.
 enum Reply {
-    /// 200 with a JSON body of this schema.
     Json(SchemaOf),
-    /// 200 with a file of this media type.
-    File(&'static str),
-    /// 204.
+    File(&'static [&'static str]),
     NoContent,
-    /// 307 to the viewer.
     Redirect,
 }
 
-/// The service that serves a route.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Server {
-    /// The station (`--http`).
     Station,
-    /// The media service, a separate address (`hebbian-robot-use-media`).
     Media,
 }
 
@@ -55,7 +39,6 @@ pub struct Route {
     summary: &'static str,
     request: Option<SchemaOf>,
     reply: Reply,
-    /// Whether the SDKs get a generated method for it.
     sdk: bool,
 }
 
@@ -80,7 +63,6 @@ const fn route(
     }
 }
 
-/// Every route, with the viewer API's paths written in full.
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn routes() -> Vec<Route> {
@@ -145,7 +127,7 @@ pub fn routes() -> Vec<Route> {
             "/events",
             "Stream station events with resumable event IDs.",
             None,
-            Reply::File("text/event-stream"),
+            Reply::File(&["text/event-stream"]),
             false,
         ),
         route(
@@ -181,8 +163,17 @@ pub fn routes() -> Vec<Route> {
             "/traces/{name}",
             "A trace file's bytes exactly as served: gzip-compressed.",
             None,
-            Reply::File("application/gzip"),
+            Reply::File(&["application/gzip"]),
             true,
+        ),
+        route(
+            "get_robot_model_asset",
+            "get",
+            "/model/{arm}/{asset}",
+            "The configured arm's URDF as robot.urdf, or a referenced mesh (asset may contain slashes).",
+            None,
+            Reply::File(&["application/xml", "application/octet-stream"]),
+            false,
         ),
         route(
             "get_state",
@@ -191,6 +182,42 @@ pub fn routes() -> Vec<Route> {
             "The whole station.",
             None,
             Reply::Json(schema_of::<StationState>),
+            true,
+        ),
+        route(
+            "compile_action_sequence",
+            "post",
+            "/compilations/compile",
+            "Compile an action sequence without acquiring control or moving hardware.",
+            Some(schema_of::<ActionSequenceRequest>),
+            Reply::Json(schema_of::<CompilationOutcome>),
+            true,
+        ),
+        route(
+            "import_compilation",
+            "post",
+            "/compilations/import",
+            "Load an exported compilation by recompiling its source against this station.",
+            Some(schema_of::<CompilationArtifact>),
+            Reply::Json(schema_of::<CompilationOutcome>),
+            true,
+        ),
+        route(
+            "inspect_compilation",
+            "get",
+            "/compilations/{id}",
+            "Inspect a retained station-owned compilation.",
+            None,
+            Reply::Json(schema_of::<CompilationArtifact>),
+            true,
+        ),
+        route(
+            "run_compiled_sequence_http",
+            "post",
+            "/compilations/run",
+            "Run a retained compilation under a current lease.",
+            Some(schema_of::<RunCompiledProgramRequest>),
+            Reply::Json(schema_of::<String>),
             true,
         ),
         route(
@@ -368,9 +395,9 @@ pub fn routes() -> Vec<Route> {
             "get_media_status",
             "get",
             "/viewer/api/media-status",
-            "Every media program's state, by name.",
+            "Every media program's state by name, and each camera's latest problem.",
             None,
-            Reply::Json(schema_of::<std::collections::BTreeMap<String, MediaState>>),
+            Reply::Json(schema_of::<MediaStatusReport>),
             false,
         ),
         route(
@@ -424,7 +451,7 @@ pub fn routes() -> Vec<Route> {
             "/viewer/api/recordings/{path}",
             "A file of a recording.",
             None,
-            Reply::File("application/octet-stream"),
+            Reply::File(&["application/octet-stream"]),
             false,
         ),
         route(
@@ -459,7 +486,7 @@ pub fn routes() -> Vec<Route> {
                 "/cameras/{name}",
                 "The newest JPEG frame from a camera, with `X-Captured-At-Unix-Ns` when known.",
                 None,
-                Reply::File("image/jpeg"),
+                Reply::File(&["image/jpeg"]),
                 true,
             )
         },
@@ -481,24 +508,29 @@ fn response(reply: &Reply, generator: &mut SchemaGenerator) -> Value {
         Reply::Json(schema) => {
             json!({"200": {"description": "OK", "content": {"application/json": {"schema": schema(generator)}}}})
         }
-        Reply::File(media_type) => {
-            json!({"200": {"description": "OK", "content": {*media_type: {"schema": {"type": "string", "format": "binary"}}}}})
+        Reply::File(media_types) => {
+            let content: Map<String, Value> = media_types
+                .iter()
+                .map(|media_type| {
+                    (
+                        (*media_type).to_owned(),
+                        json!({"schema": {"type": "string", "format": "binary"}}),
+                    )
+                })
+                .collect();
+            json!({"200": {"description": "OK", "content": content}})
         }
         Reply::NoContent => json!({"204": {"description": "No content"}}),
         Reply::Redirect => json!({"307": {"description": "Temporary redirect"}}),
     }
 }
 
-/// The `OpenAPI` document.
-///
-/// # Panics
-/// Never in practice: a document is always serializable.
 #[must_use]
 pub fn openapi_json() -> String {
     let mut generator = SchemaSettings::draft2020_12()
         .with(|settings| settings.definitions_path = "/components/schemas".into())
         .into_generator();
-    // These shared message types also drive SDK convenience APIs and SSE parsing.
+    // WHY: These shared message types also drive SDK convenience APIs and SSE parsing.
     let _ = generator.subschema_for::<ClientMessage>();
     let _ = generator.subschema_for::<ServerMessage>();
     let mut paths: Map<String, Value> = Map::new();
@@ -543,6 +575,10 @@ pub fn openapi_json() -> String {
         "paths": paths,
         "components": {"schemas": Value::Object(generator.take_definitions(true))},
     });
+    #[expect(
+        clippy::expect_used,
+        reason = "The document is a serde_json Value, which cannot fail JSON serialization."
+    )]
     let mut text = serde_json::to_string_pretty(&document).expect("a document serializes");
     text.push('\n');
     text

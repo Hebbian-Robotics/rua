@@ -1,56 +1,31 @@
-//! Inverse kinematics for a serial arm: joints that put the tool at a pose.
-//!
-//! A damped least-squares (Levenberg-Marquardt) iteration on the tool's position
-//! and orientation error, with a weak pull toward the seed so the answer stays
-//! near where the arm is. Every iterate stays inside the joint limits: each step
-//! solves a bounded least-squares problem by active set, so a joint that reaches
-//! its limit stops there and the others keep working, and nothing is clamped
-//! after the fact. The solver reads the arm's own forward kinematics
-//! ([`crate::robot::Robot`]), so it and the guards agree on where the tool is.
-
+use crate::kinematics::UNIT_QUATERNION_TOLERANCE;
 use nalgebra::{DMatrix, DVector, Isometry3, Quaternion, UnitQuaternion, Vector3};
 
-use crate::joint_limits::{OutsideRecovery, clamp_within_recovery};
+use crate::joint_limits::{JointRecoveryLimits, RecoveryRefusal};
 use crate::kinematics::SerialChain;
-use crate::outcomes::{IkFailure, IkPose, IkResult, OrientationGoal};
+use hebbian_contracts::{IkFailure, IkPose, IkResult, OrientationGoal};
 
-/// A solution is at the target when the tool is this close to it.
 pub const POSITION_TOLERANCE_METERS: f64 = 0.0005;
-/// When orientation is required, a solution is this close to it.
 pub const ORIENTATION_TOLERANCE_RADIANS: f64 = 0.005;
 
 const MAXIMUM_ITERATIONS: usize = 300;
-/// Starts spread through the joint ranges, tried after the seed and the middle.
 const RESTARTS: usize = 24;
 const RESTART_SEQUENCE_SEED: u64 = 0x5EED_1DE0_0000_0001;
-/// The most any joint moves in one iteration.
 const MAXIMUM_STEP_RADIANS: f64 = 0.3;
-/// How hard the solution is pulled toward the seed, against a task error of
-/// one metre or radian.
 const POSTURE_WEIGHT: f64 = 1e-8;
-/// With the orientation left free, how much the held orientation counts against
-/// position: enough to break ties between solutions, never to give up position.
+// WHY: Free-orientation weighting breaks ties without sacrificing positional accuracy.
 const FREE_ORIENTATION_WEIGHT: f64 = 0.01;
 const INITIAL_DAMPING: f64 = 1e-3;
 const MINIMUM_DAMPING: f64 = 1e-9;
 const DAMPING_GROWTH: f64 = 4.0;
 const DAMPING_DECAY: f64 = 3.0;
 const TRIALS_PER_ITERATION: usize = 12;
-/// A joint this close to a limit counts as at it.
 const LIMIT_EPSILON: f64 = 1e-9;
-/// Joints within this of a limit at the end of a stalled run are called at it.
 const AT_LIMIT_RADIANS: f64 = 1e-6;
-const UNIT_QUATERNION_TOLERANCE: f64 = 1e-5;
-/// A step that changes the cost by less than this is no progress.
 const PROGRESS_FLOOR: f64 = 1e-16;
-/// The restarts stop once this many starts have fallen short at the same best
-/// error: the search keeps finding one optimum.
 const CONVERGED_STARTS: usize = 3;
-/// Two starts found the same optimum when their task errors (metres, or
-/// weighted radians) differ by less than this.
 const SAME_ERROR: f64 = 1e-5;
 
-/// A request the solver will not start on.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IkRefusal {
     WrongJointCount {
@@ -93,26 +68,19 @@ impl std::fmt::Display for IkRefusal {
 
 impl std::error::Error for IkRefusal {}
 
-/// The solver for one arm: its chain and joint limits.
 #[derive(Debug, Clone)]
 pub struct IkSolver {
     chain: SerialChain,
-    lower: DVector<f64>,
-    upper: DVector<f64>,
-    seed_tolerance_radians: f64,
+    limits: JointRecoveryLimits,
 }
 
-/// What a solve is after.
 struct Goal {
     position: Vector3<f64>,
     rotation: UnitQuaternion<f64>,
-    /// Weighs orientation error against position error in the cost.
     orientation_weight: f64,
-    /// Whether the orientation must be within tolerance for success.
     orientation_required: bool,
 }
 
-/// One pose the search visited.
 struct Visit {
     joints: DVector<f64>,
     tool: Isometry3<f64>,
@@ -126,9 +94,6 @@ enum Attempt {
 }
 
 impl IkSolver {
-    /// # Errors
-    /// The limits do not match the chain or are not finite with `lower < upper`,
-    /// or the seed tolerance is not a finite, non-negative number.
     pub fn new(
         chain: SerialChain,
         lower: &[f64],
@@ -142,23 +107,8 @@ impl IkSolver {
             lower.len(),
             upper.len()
         );
-        anyhow::ensure!(
-            lower
-                .iter()
-                .zip(upper)
-                .all(|(lower, upper)| lower.is_finite() && upper.is_finite() && lower < upper),
-            "Joint limits must be finite with lower below upper"
-        );
-        anyhow::ensure!(
-            seed_tolerance_radians.is_finite() && seed_tolerance_radians >= 0.0,
-            "The seed tolerance must be finite and not negative"
-        );
-        Ok(Self {
-            chain,
-            lower: DVector::from_column_slice(lower),
-            upper: DVector::from_column_slice(upper),
-            seed_tolerance_radians,
-        })
+        let limits = JointRecoveryLimits::new(lower, upper, seed_tolerance_radians)?;
+        Ok(Self { chain, limits })
     }
 
     #[must_use]
@@ -166,13 +116,10 @@ impl IkSolver {
         &self.chain
     }
 
-    /// Joints that put the tool at `position` with `orientation`, searching from
-    /// `seed`: first as given, then once more from the middle of the joint
-    /// ranges, which reaches targets in another elbow or wrist branch.
-    ///
-    /// # Errors
-    /// The seed or the target is malformed, or the seed is outside the limits by
-    /// more than the starting-pose tolerance (inside it, the seed is clamped in).
+    #[expect(
+        clippy::expect_used,
+        reason = "Every orientation goal tries at least the seed and middle; an unsolved attempt retains its best pose."
+    )]
     pub fn solve(
         &self,
         position: [f64; 3],
@@ -185,7 +132,7 @@ impl IkSolver {
         }
         let held = self.chain.tool_pose(seed.as_slice()).rotation;
         let position = Vector3::from(position);
-        // With the orientation free, the held orientation is a preference that can
+        // WHY: With the orientation free, the held orientation is a preference that can
         // trap the search in a pose that is far from the target; if every start
         // falls short with it, the same starts run once more with no preference.
         let goals = match orientation {
@@ -205,7 +152,7 @@ impl IkSolver {
                 })
                 .collect(),
         };
-        // Beyond the arm's reach no start can succeed: the seed's and the middle's
+        // CONSTRAINT: Beyond the arm's reach no start can succeed: the seed's and the middle's
         // searches stretch the arm toward the target, which is the closest pose.
         let out_of_reach = self
             .chain
@@ -215,23 +162,19 @@ impl IkSolver {
         for goal in &goals {
             let mut converged = ConvergedStarts::default();
             for start in self.starts(&seed).take(start_count) {
-                match self.attempt(goal, start, &seed) {
+                let (reason, visit) = match self.attempt(goal, start, &seed) {
                     Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
-                    Attempt::Fell {
-                        reason,
-                        best: visit,
-                    } => {
-                        let settled = converged.settled(task_error(goal, &visit));
-                        if best
-                            .as_ref()
-                            .is_none_or(|(_, held)| closer(&goals[0], &visit, held))
-                        {
-                            best = Some((reason, visit));
-                        }
-                        if settled {
-                            break;
-                        }
-                    }
+                    Attempt::Fell { reason, best } => (reason, best),
+                };
+                let settled = converged.settled(task_error(goal, &visit));
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, held)| closer(&goals[0], &visit, held))
+                {
+                    best = Some((reason, visit));
+                }
+                if settled {
+                    break;
                 }
             }
         }
@@ -246,49 +189,45 @@ impl IkSolver {
         })
     }
 
-    /// Where the search starts, in order: the seed, the middle of the joint
-    /// ranges (another elbow or wrist branch than the seed's), then points spread
-    /// through the ranges by a fixed sequence. A later start runs only when every
-    /// earlier one fell short, so a target near the seed never leaves it.
+    // WHY: Try the held pose before alternate elbow/wrist branches so a nearby target stays
+    // near its seed; deterministic restarts make failures reproducible.
     fn starts(&self, seed: &DVector<f64>) -> impl Iterator<Item = DVector<f64>> + '_ {
-        let middle = (&self.lower + &self.upper) / 2.0;
+        let middle = DVector::from_iterator(
+            self.limits.lower().len(),
+            self.limits
+                .lower()
+                .iter()
+                .zip(self.limits.upper())
+                .map(|(lower, upper)| (lower + upper) / 2.0),
+        );
         let mut state = RESTART_SEQUENCE_SEED;
         let spread = (0..RESTARTS).map(move |_| {
-            DVector::from_fn(self.lower.len(), |joint, _| {
+            DVector::from_fn(self.limits.lower().len(), |joint, _| {
                 let fraction = next_fraction(&mut state);
-                self.lower[joint] + (self.upper[joint] - self.lower[joint]) * fraction
+                self.limits.lower()[joint]
+                    + (self.limits.upper()[joint] - self.limits.lower()[joint]) * fraction
             })
         });
         [seed.clone(), middle].into_iter().chain(spread)
     }
 
     fn checked_seed(&self, seed: &[f64]) -> Result<DVector<f64>, IkRefusal> {
-        let expected = self.chain.joint_count();
-        if seed.len() != expected {
-            return Err(IkRefusal::WrongJointCount {
-                expected,
-                got: seed.len(),
-            });
-        }
-        if !seed.iter().all(|value| value.is_finite()) {
-            return Err(IkRefusal::NotFinite);
-        }
-        clamp_within_recovery(
-            seed,
-            self.lower.as_slice(),
-            self.upper.as_slice(),
-            self.seed_tolerance_radians,
-        )
-        .map(DVector::from_vec)
-        .map_err(
-            |OutsideRecovery { joint, value }| IkRefusal::SeedOutsideLimits {
-                joint,
-                value,
-                lower: self.lower[joint],
-                upper: self.upper[joint],
-                tolerance: self.seed_tolerance_radians,
-            },
-        )
+        self.limits
+            .clamp(seed)
+            .map(DVector::from_vec)
+            .map_err(|refusal| match refusal {
+                RecoveryRefusal::WrongJointCount { expected, got } => {
+                    IkRefusal::WrongJointCount { expected, got }
+                }
+                RecoveryRefusal::NotFinite { .. } => IkRefusal::NotFinite,
+                RecoveryRefusal::OutsideRecovery { joint, value } => IkRefusal::SeedOutsideLimits {
+                    joint,
+                    value,
+                    lower: self.limits.lower()[joint],
+                    upper: self.limits.upper()[joint],
+                    tolerance: self.limits.tolerance(),
+                },
+            })
     }
 
     fn pose(visit: &Visit) -> IkPose {
@@ -314,7 +253,6 @@ impl IkSolver {
         }
     }
 
-    /// The cost the iteration minimizes: task error plus the pull toward the seed.
     fn cost(goal: &Goal, visit: &Visit, seed: &DVector<f64>) -> f64 {
         let weighted = goal.orientation_weight * visit.orientation_error;
         let task = visit.position_error.powi(2) + weighted.powi(2);
@@ -382,8 +320,8 @@ impl IkSolver {
                 current = next;
             } else {
                 let at_limit = (0..count).any(|joint| {
-                    best.joints[joint] - self.lower[joint] < AT_LIMIT_RADIANS
-                        || self.upper[joint] - best.joints[joint] < AT_LIMIT_RADIANS
+                    best.joints[joint] - self.limits.lower()[joint] < AT_LIMIT_RADIANS
+                        || self.limits.upper()[joint] - best.joints[joint] < AT_LIMIT_RADIANS
                 });
                 let reason = if at_limit {
                     IkFailure::AtJointLimit
@@ -405,19 +343,15 @@ impl IkSolver {
         }
     }
 
-    /// The joint change that best reduces the cost for this damping while every
-    /// joint stays inside its limits, at most `MAXIMUM_STEP_RADIANS` in any joint.
-    ///
-    /// Active set: a joint at a limit that the unconstrained step pushes outward
-    /// starts pinned; the rest are solved together, and any that would leave
-    /// their range are pinned at the limit and the rest solved again.
-    /// The joints a step leads to.
+    // INVARIANT: Active-set steps pin outward-moving joints at their limits, then solve the remaining
+    // joints together; no post-solve clamping can distort the task step.
     fn trial(&self, joints: &DVector<f64>, step: &DVector<f64>) -> DVector<f64> {
-        // A step pinned to a limit is `limit - joint`, and adding it back can
+        // CONSTRAINT: A step pinned to a limit is `limit - joint`, and adding it back can
         // round a unit past the limit; the clamp lands it on the limit.
         let mut trial = joints + step;
         for joint in 0..trial.len() {
-            trial[joint] = trial[joint].clamp(self.lower[joint], self.upper[joint]);
+            trial[joint] =
+                trial[joint].clamp(self.limits.lower()[joint], self.limits.upper()[joint]);
         }
         trial
     }
@@ -432,8 +366,8 @@ impl IkSolver {
         let count = joints.len();
         let mut pinned: Vec<Option<f64>> = (0..count)
             .map(|joint| {
-                let at_lower = joints[joint] - self.lower[joint] <= LIMIT_EPSILON;
-                let at_upper = self.upper[joint] - joints[joint] <= LIMIT_EPSILON;
+                let at_lower = joints[joint] - self.limits.lower()[joint] <= LIMIT_EPSILON;
+                let at_upper = self.limits.upper()[joint] - joints[joint] <= LIMIT_EPSILON;
                 ((at_lower && gradient[joint] < 0.0) || (at_upper && gradient[joint] > 0.0))
                     .then_some(0.0)
             })
@@ -447,11 +381,11 @@ impl IkSolver {
                     continue;
                 }
                 let target = joints[joint] + step[joint];
-                if target < self.lower[joint] {
-                    pinned[joint] = Some(self.lower[joint] - joints[joint]);
+                if target < self.limits.lower()[joint] {
+                    pinned[joint] = Some(self.limits.lower()[joint] - joints[joint]);
                     violated = true;
-                } else if target > self.upper[joint] {
-                    pinned[joint] = Some(self.upper[joint] - joints[joint]);
+                } else if target > self.limits.upper()[joint] {
+                    pinned[joint] = Some(self.limits.upper()[joint] - joints[joint]);
                     violated = true;
                 }
             }
@@ -467,8 +401,10 @@ impl IkSolver {
     }
 }
 
-/// The next number in `[0, 1)` of a fixed pseudo-random sequence (SplitMix64):
-/// the same restarts every time, with no random-number crate.
+#[expect(
+    clippy::expect_used,
+    reason = "Shifting a u64 by 40 leaves at most 24 bits, which fit in u32."
+)]
 fn next_fraction(state: &mut u64) -> f64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut mixed = *state;
@@ -479,21 +415,17 @@ fn next_fraction(state: &mut u64) -> f64 {
         / f64::from(1_u32 << 24)
 }
 
-/// How far a pose is from the goal: position and weighted orientation error,
-/// without the seed's pull.
 fn task_error(goal: &Goal, visit: &Visit) -> f64 {
     (visit.position_error.powi(2) + (goal.orientation_weight * visit.orientation_error).powi(2))
         .sqrt()
 }
 
-/// Whether `visit` is nearer the goal than `held`, by the task error alone (the
-/// seed's pull does not count when choosing which pose to report).
+// WHY: Report the best task error, excluding the seed penalty, so regularization cannot
+// make a less accurate pose look like the best achievable target.
 fn closer(goal: &Goal, visit: &Visit, held: &Visit) -> bool {
     task_error(goal, visit) < task_error(goal, held)
 }
 
-/// Whether the restarts keep landing on the same best pose, so more of them
-/// would only find it again.
 #[derive(Default)]
 struct ConvergedStarts {
     best_error: Option<f64>,
@@ -501,7 +433,6 @@ struct ConvergedStarts {
 }
 
 impl ConvergedStarts {
-    /// Count a start that fell short at `error`; true once enough agree on the best.
     fn settled(&mut self, error: f64) -> bool {
         match self.best_error {
             Some(best) if (error - best).abs() < SAME_ERROR => self.agreeing += 1,
@@ -515,7 +446,6 @@ impl ConvergedStarts {
     }
 }
 
-/// The task error: the position and rotation vector that take the tool to the goal.
 fn residual(goal: &Goal, tool: &Isometry3<f64>) -> (Vector3<f64>, Vector3<f64>) {
     (
         goal.position - tool.translation.vector,
@@ -539,9 +469,8 @@ fn required_rotation(quaternion: [f64; 4]) -> Result<UnitQuaternion<f64>, IkRefu
     Ok(UnitQuaternion::from_quaternion(Quaternion::new(w, x, y, z)))
 }
 
-/// Solve `(H + damping I) step = gradient` over the joints that are not pinned,
-/// holding the pinned ones at their given change. A system that cannot be solved
-/// leaves the free joints still.
+// CONSTRAINT: A singular reduced system leaves its free joints still rather than emitting an
+// undefined step.
 fn solve_free(
     hessian: &DMatrix<f64>,
     gradient: &DVector<f64>,
@@ -582,8 +511,6 @@ mod tests {
     use crate::kinematics::ChainJoint;
     use nalgebra::Unit;
 
-    /// A deterministic spread of numbers in `[0, 1)`, so the tests need no
-    /// random-number crate and never change between runs.
     struct Sequence(u64);
 
     impl Sequence {
@@ -612,8 +539,6 @@ mod tests {
         }
     }
 
-    /// Seven revolute joints about z, each a metre from the last: the chain the
-    /// station's kinematics test reaches an analytic pose with.
     fn planar_chain() -> IkSolver {
         let joints = (0..7)
             .map(|_| joint(translate(1.0, 0.0, 0.0), [0.0, 0.0, 1.0]))
@@ -627,8 +552,6 @@ mod tests {
         .unwrap()
     }
 
-    /// An SO-101-shaped arm: pan about z, lift, elbow and wrist flex about y,
-    /// roll about the forearm's x axis, with the tool ahead of the wrist.
     fn so101_like() -> IkSolver {
         let joints = vec![
             joint(translate(0.0, 0.0, 0.1), [0.0, 0.0, 1.0]),
@@ -741,14 +664,19 @@ mod tests {
         let mut solved_count = 0;
         for _ in 0..300 {
             let goal: Vec<f64> = (0..5)
-                .map(|joint| numbers.between(solver.lower[joint] + 0.1, solver.upper[joint] - 0.1))
+                .map(|joint| {
+                    numbers.between(
+                        solver.limits.lower()[joint] + 0.1,
+                        solver.limits.upper()[joint] - 0.1,
+                    )
+                })
                 .collect();
             let seed: Vec<f64> = goal
                 .iter()
                 .enumerate()
                 .map(|(joint, value)| {
                     (value + numbers.between(-0.5, 0.5))
-                        .clamp(solver.lower[joint], solver.upper[joint])
+                        .clamp(solver.limits.lower()[joint], solver.limits.upper()[joint])
                 })
                 .collect();
             let (position, orientation) = required(&solver, &goal);
@@ -783,14 +711,17 @@ mod tests {
                 IkResult::Solved(pose) | IkResult::Failed { best: pose, .. } => pose,
             };
             for (joint, value) in pose.joints.iter().enumerate() {
-                assert!(*value >= solver.lower[joint] && *value <= solver.upper[joint]);
+                assert!(
+                    *value >= solver.limits.lower()[joint]
+                        && *value <= solver.limits.upper()[joint]
+                );
             }
         }
     }
 
     #[test]
     fn a_step_pinned_to_a_limit_lands_on_it_and_not_past_it() {
-        // A step pinned to a limit is `limit - joint`, and `joint + (limit - joint)`
+        // CONSTRAINT: A step pinned to a limit is `limit - joint`, and `joint + (limit - joint)`
         // can round one unit past `limit`: here to 0.20326983630657217, from a
         // case where the solver handed the planner a joint past its limit.
         let upper = 0.203_269_836_306_572_14;
@@ -804,7 +735,7 @@ mod tests {
             0.0,
         )
         .unwrap();
-        // A pull far past the limit, so the step is pinned to it.
+        // WHY: A pull far past the limit, so the step is pinned to it.
         let hessian = DMatrix::from_element(1, 1, 1.0);
         let gradient = DVector::from_element(1, 10.0);
         let current = DVector::from_element(1, joint_value);
@@ -838,7 +769,7 @@ mod tests {
 
     #[test]
     fn a_joint_at_its_limit_does_not_stall_the_others() {
-        // Reaching a point the planar chain can only get to by bending the other
+        // WHY: Reaching a point the planar chain can only get to by bending the other
         // joints further, with the first joint held at its limit by the seed.
         let solver = planar_chain();
         let seed = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
@@ -852,7 +783,7 @@ mod tests {
     fn a_free_orientation_reaches_a_position_a_fixed_one_cannot() {
         let solver = so101_like();
         let seed = [0.0, -0.5, 0.8, 0.6, 0.0];
-        // Straight down with the tool above the table is out of this arm's reach
+        // CONSTRAINT: Straight down with the tool above the table is out of this arm's reach
         // here, while some other orientation gets the position.
         let target = [0.2, 0.0, 0.15];
         let down = OrientationGoal::Required {
@@ -891,7 +822,7 @@ mod tests {
 
     #[test]
     fn a_target_past_the_links_laid_end_to_end_is_out_of_reach_and_the_arm_stretches_toward_it() {
-        // The planar chain's first joint is at x = 1 and six metre links follow it.
+        // CONSTRAINT: The planar chain's first joint is at x = 1 and six metre links follow it.
         let solver = planar_chain();
         let seed = [0.3, -0.2, 0.1, 0.0, 0.0, 0.0, 0.0];
         let inside = solver.solve([6.99, 0.0, 0.0], OrientationGoal::Free, &seed);
@@ -983,7 +914,6 @@ mod tests {
         for _ in 0..100 {
             let _ = solver.solve(position, orientation, &[0.0, -0.5, 0.5, 0.0, 0.0]);
         }
-        // The build is optimized even in tests; a solve is far under 10 ms.
         assert!(started.elapsed() / 100 < std::time::Duration::from_millis(10));
     }
 }

@@ -1,15 +1,9 @@
-//! Keep the arm from being driven down through the table it stands on.
-//!
-//! Light contact with the surface is fine, but a step that takes any part of the
-//! arm further below it is refused. Only descent is refused, so an arm already
-//! past the surface can still climb out.
-
 use std::sync::Arc;
 
 use crate::robot::{PathCheck, Robot, path_samples};
 use hebbian_contracts::SurfaceGuardConfig;
 
-/// A descent smaller than this is numerical noise, not driving into the table.
+// WHY: Ignore numerical noise when deciding whether the arm is descending.
 const DESCENT_NOISE_METERS: f64 = 1e-6;
 pub(crate) struct SurfaceGuard {
     floor: f64,
@@ -25,18 +19,14 @@ impl SurfaceGuard {
         }
     }
 
-    /// Height of the lowest moving part, in the arm's base frame.
-    ///
-    /// # Errors
-    /// The joint values are malformed.
     pub fn lowest_point(&self, arm: &[f64], gripper_angle: Option<f64>) -> anyhow::Result<f64> {
         self.robot
             .lowest_point(&self.robot.driven_values(arm, gripper_angle))
     }
 
-    /// Why going from one lowest point to another is refused, if it is.
     #[must_use]
     pub(crate) fn descent_reason(&self, before: f64, after: f64) -> Option<String> {
+        // SAFETY: Allow upward recovery even when the arm is already below the limit.
         (after < self.floor && after < before - DESCENT_NOISE_METERS).then(|| {
             format!(
                 "The arm would go {:.1} mm past the table surface guard's limit; raise the target",
@@ -45,7 +35,6 @@ impl SurfaceGuard {
         })
     }
 
-    /// Check jaw motion at the current arm pose, including recovery from below the table.
     pub(crate) fn jaw_descent_reason(
         &self,
         arm: &[f64],
@@ -57,12 +46,6 @@ impl SurfaceGuard {
         Ok(self.descent_reason(before, after))
     }
 
-    /// Why the straight joint path from `start` to `goal` is refused, if it is:
-    /// the per-cycle trip's reading of [`Self::safe_prefix`], which the planner
-    /// and the preview cut paths short with.
-    ///
-    /// # Errors
-    /// The joint values are malformed.
     pub(crate) fn path_reason(
         &self,
         start: &[f64],
@@ -72,12 +55,6 @@ impl SurfaceGuard {
         Ok(self.safe_prefix(start, goal, gripper_angle)?.refusal())
     }
 
-    /// How far along the straight joint path from `start` to `goal` the arm may
-    /// go: up to the last sampled step before the first that descends past the
-    /// limit. The start itself is never refused, so an arm can climb out.
-    ///
-    /// # Errors
-    /// The joint values are malformed.
     pub(crate) fn safe_prefix(
         &self,
         start: &[f64],
@@ -106,8 +83,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// A 0.4 m bar, 0.1 m square, pivoting about the world's y axis: at angle 0 its
-    /// underside is 0.05 m below the pivot, and its tip dips as the angle grows.
+    // WHY: This bar's known geometry makes its lowest point predictable as it pivots.
     const BAR_URDF: &str = r#"<robot name="bar">
       <link name="world"/>
       <link name="bar"><collision><origin xyz="0.2 0 0"/><geometry><box size="0.4 0.1 0.1"/></geometry></collision></link>
@@ -142,7 +118,7 @@ mod tests {
     #[test]
     fn touching_and_pressing_within_the_leeway_is_allowed_but_not_past_it() {
         let guard = guard("leeway");
-        // The floor is 0.06 m below the pivot's plane: the bar at rest is 0.01 m above it.
+        // CONSTRAINT: The floor is 0.06 m below the pivot's plane: the bar at rest is 0.01 m above it.
         assert!(guard.path_reason(&[0.0], &[0.01], None).unwrap().is_none());
         assert!(guard.path_reason(&[0.0], &[0.5], None).unwrap().is_some());
     }
@@ -157,7 +133,7 @@ mod tests {
     fn jaw_motion_cannot_descend_through_the_table_but_can_recover() {
         let path = std::env::temp_dir().join(format!("jaw-surface-{}.urdf", std::process::id()));
         std::fs::write(&path, BAR_URDF).unwrap();
-        // The only driven slot is the gripper; there are no arm joints.
+        // CONSTRAINT: The only driven slot is the gripper; there are no arm joints.
         let robot = Arc::new(Robot::load(&path, &["lift".to_owned()]).unwrap());
         std::fs::remove_file(path).unwrap();
         let guard = SurfaceGuard::new(

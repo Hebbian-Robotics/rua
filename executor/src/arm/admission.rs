@@ -1,23 +1,38 @@
-//! Which commands are admitted, and the records, queue and mode they change.
-
+use super::motion_admission::{MotionScope, MoveDecision, MoveDisposition};
 use super::state::{ArmCore, new_identifier};
 use super::types::{
     GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Job, Lifecycle, Now,
     PowerState, ReachGoal, Rejection, ShortOfTarget, ShutdownState, StreamGoal, rejection,
 };
-use crate::corner_path::validate_plan;
 use crate::joint_limits::motion_speed;
+use crate::motion_values::{JointAngle, JointSpeed};
 use crate::planning::orientation::{from_xyzw, orientation_summary, pose_orientation_quaternion};
 use hebbian_contracts::{
     Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandRecord, CornerPlan,
-    Event, PoseOrientation, RejectionReason, TargetStatus,
+    Event, GripperResult, PoseOrientation, RejectionReason, TargetStatus,
 };
 
-/// Records kept for clients that ask about a command after it ended.
 pub(super) const RETAINED_RECORDS: usize = 200;
-/// A fault is cleared only on feedback this fresh, taken after the fault.
+// SAFETY: A fault is cleared only on feedback this fresh, taken after the fault.
 const FAULT_RECOVERY_FEEDBACK_MAX_AGE_SECONDS: f64 = 1.0;
 const POSE_QUATERNION_TOLERANCE: f64 = 1e-5;
+
+// WHY: Joint errors alone do not tell a model why a move stalled or where to aim next;
+// where the tool rests does. A limited move's segment claims no target position, so the
+// distance left is given only when there is one. Each joint's error stays in `achieved`.
+fn stopped_short_summary(achieved: &Achieved) -> Option<String> {
+    let [x, y, z] = achieved.position?.map(|meters| meters * 1000.0);
+    let shortfall = achieved
+        .position_error_meters
+        .map_or(String::new(), |meters| {
+            format!(" {:.1} mm", meters * 1000.0)
+        });
+    Some(format!(
+        "Stopped{shortfall} short of the target and no longer closing on it, with the tool at \
+         [{x:.1}, {y:.1}, {z:.1}] mm; something is likely in the way, such as the table or \
+         an object"
+    ))
+}
 
 impl ArmCore {
     pub(super) fn busy(&self) -> bool {
@@ -47,7 +62,6 @@ impl ArmCore {
         rejection(RejectionReason::ArmBusy, "The controller is shutting down")
     }
 
-    /// Why a motion cannot start now.
     pub(super) fn mode_rejection(&self) -> Option<Rejection> {
         if self.shutdown_requested() {
             return Some(Self::shutting_down());
@@ -81,13 +95,19 @@ impl ArmCore {
         record
     }
 
-    /// Keep and announce a record's latest state.
     pub(super) fn store(&mut self, record: CommandRecord) {
         let id = record.command_id.clone();
         if self.records.insert(id.clone(), record.clone()).is_none() {
             self.record_order.push_back(id.clone());
             while self.record_order.len() > RETAINED_RECORDS {
-                if let Some(oldest) = self.record_order.pop_front() {
+                let Some(completed) = self.record_order.iter().position(|id| {
+                    self.records
+                        .get(id)
+                        .is_some_and(|record| record.completion.is_some())
+                }) else {
+                    break;
+                };
+                if let Some(oldest) = self.record_order.remove(completed) {
                     self.records.remove(&oldest);
                 }
             }
@@ -115,7 +135,6 @@ impl ArmCore {
         }
     }
 
-    /// End a record: its outcome, and where the arm was against its target.
     pub(super) fn finish(
         &mut self,
         command_id: &str,
@@ -123,20 +142,38 @@ impl ArmCore {
         detail: Option<String>,
         now: Now,
     ) {
+        self.finish_with_gripper_result(command_id, outcome, detail, None, now);
+    }
+
+    pub(super) fn finish_with_gripper_result(
+        &mut self,
+        command_id: &str,
+        outcome: CommandOutcome,
+        detail: Option<String>,
+        gripper: Option<GripperResult>,
+        now: Now,
+    ) {
         let Some(mut record) = self.records.get(command_id).cloned() else {
             return;
         };
         let is_active = self.active_command_id() == Some(command_id);
-        record.completion = Some(CommandCompletion {
-            finished_at: now.unix_seconds,
-            outcome,
-            detail,
-        });
         record.achieved = if outcome == CommandOutcome::Interrupted {
             None
         } else {
             self.achieved(&record)
         };
+        let detail = match (outcome, &record.achieved) {
+            (CommandOutcome::StoppedShort, Some(achieved)) => {
+                stopped_short_summary(achieved).or(detail)
+            }
+            _ => detail,
+        };
+        record.completion = Some(CommandCompletion {
+            finished_at: now.unix_seconds,
+            outcome,
+            detail,
+            gripper,
+        });
         record.target_status = record.target_joints.as_ref().and_then(|_| {
             if outcome == CommandOutcome::Interrupted {
                 return None;
@@ -203,10 +240,6 @@ impl ArmCore {
         })
     }
 
-    /// Admit a command: its record, or why not.
-    ///
-    /// # Errors
-    /// The arm's mode, queue or the command's own shape refuses it.
     pub(crate) fn submit(
         &mut self,
         command: Command,
@@ -241,15 +274,15 @@ impl ArmCore {
                 joint_speed,
                 stream_command_id,
             } => {
-                // The loop owns the core exclusively: validate both targets before
+                // INVARIANT: The loop owns the core exclusively: validate both targets before
                 // mutation, so a refusal cannot leave half the request applied.
-                if let Some(angle) = gripper_angle {
-                    self.check_gripper(angle)?;
-                }
+                let gripper = gripper_angle
+                    .map(|angle| self.check_gripper_target(angle, joint_speed))
+                    .transpose()?;
                 let record =
                     self.submit_stream_joints(positions, joint_speed, stream_command_id, now)?;
-                if let Some(angle) = gripper_angle {
-                    self.submit_gripper(angle, joint_speed, now)?;
+                if let Some(target) = gripper {
+                    self.apply_gripper(target, now);
                 }
                 Ok(record)
             }
@@ -335,11 +368,11 @@ impl ArmCore {
     pub(super) fn submit_stop(&mut self, now: Now) -> CommandRecord {
         self.request_stop();
         self.cancel_queued(now, "Stopped before start");
-        // A queued stream was just dropped; a running one ends with the motion.
+        // INVARIANT: A queued stream was just dropped; a running one ends with the motion.
         if self.active_command_id().is_none() {
             self.stream = None;
         }
-        // Stop includes the jaw: it must not keep moving toward its old target.
+        // INVARIANT: Stop includes the jaw: it must not keep moving toward its old target.
         self.gripper_stop_requested = true;
         if let Some(command) = self.gripper_command.take() {
             self.finish(
@@ -442,89 +475,62 @@ impl ArmCore {
         self.records[&id].clone()
     }
 
-    /// Why this plan could not be admitted now, without admitting it.
-    ///
-    /// # Errors
-    /// The arm's mode, or the plan's shape, limits or speed, refuse it.
-    pub(crate) fn check_move(&self, plan: &CornerPlan, joint_speed: f64) -> Result<(), Rejection> {
-        if let Some(refused) = self.mode_rejection() {
-            return Err(refused);
-        }
-        self.check_move_shape(plan, joint_speed)
-    }
-
-    /// Whether a new move may replace the running motion: it has finished its
-    /// path and only waits to settle, and nothing else is in the way.
-    fn replaces_settling_motion(&self) -> bool {
+    pub(super) fn replaces_settling_motion(&self) -> bool {
         matches!(self.lifecycle, Lifecycle::Executing { settling: true, .. })
             && !self.shutdown_requested()
             && !self.mode().refuses_everything()
     }
 
-    /// # Errors
-    /// The plan's shape or speed, or not holding, refuse it.
-    fn check_move_shape(&self, plan: &CornerPlan, joint_speed: f64) -> Result<(), Rejection> {
-        if self.poses().is_none() {
-            return Err(rejection(RejectionReason::NotEnabled, "Not holding"));
-        }
-        validate_plan(plan, self.limits.joint_count)
-            .map_err(|error| rejection(RejectionReason::InvalidTarget, format!("{error:#}")))?;
-        // Where the plan starts is not checked: admission splices it onto the
-        // hold pose. The joint limits are the
-        // planner's: it clamps the plan, so they are not checked here.
-        if !(joint_speed.is_finite() && joint_speed > 0.0) {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                "A joint speed must be positive and finite",
-            ));
-        }
-        Ok(())
-    }
-
-    /// Admit a move; with a `group`, it is this arm's part of a grouped motion.
-    ///
-    /// # Errors
-    /// As [`Self::check_move`].
     pub(crate) fn submit_move(
         &mut self,
         label: &str,
-        mut plan: CornerPlan,
+        plan: CornerPlan,
         joint_speed: f64,
         short: ShortOfTarget,
         group: Option<GroupMembership>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
-        let replacing = group.is_none() && self.replaces_settling_motion();
-        if replacing {
-            self.check_move_shape(&plan, joint_speed)?;
-        } else {
-            self.check_move(&plan, joint_speed)?;
-        }
-        // The plan was made from a snapshot of the hold pose; it starts from
-        // where the arm actually holds, so a rounding or a newer hold cannot
-        // make the trajectory jump. A motion that replaces a settling one starts
-        // from the latest measured joints.
-        let start = match (&self.observation, replacing) {
-            (Some(observed), true) => Some(observed.positions.clone()),
-            _ => self.poses().map(|poses| poses.hold.clone()),
-        };
-        if let (Some(start), Some(first)) = (start, plan.segments.first_mut()) {
-            first.corners[0] = start;
-        }
-        let target = plan.segments.last().expect("a validated plan has segments");
-        let mut record = self.new_record(label, Some(joint_speed), now);
-        record.target_joints = target.corners.last().cloned();
+        let decision = MoveDecision::prepare(
+            self,
+            plan,
+            joint_speed,
+            if group.is_some() {
+                MotionScope::Grouped
+            } else {
+                MotionScope::Individual
+            },
+        )?;
+        Ok(self.apply_move(label, decision, short, group, now))
+    }
+
+    pub(crate) fn apply_move(
+        &mut self,
+        label: &str,
+        decision: MoveDecision,
+        short: ShortOfTarget,
+        group: Option<GroupMembership>,
+        now: Now,
+    ) -> CommandRecord {
+        let MoveDecision {
+            plan,
+            speed,
+            disposition,
+        } = decision;
+        let replacing = matches!(disposition, MoveDisposition::ReplaceSettling { .. });
+        let target = plan.final_segment();
+        let mut record = self.new_record(label, Some(speed.radians_per_second()), now);
+        record.target_joints = Some(plan.final_corner().to_vec());
         record.target_position = target.target_position;
         record.target_quaternion = target.target_quaternion;
         record.path_limited = short.path_limited;
         record.pose_limited = short.pose_limited;
-        record.group_id = group.as_ref().map(|group| group.id.clone());
+        record.group_id = group.as_ref().map(|group| group.id.as_str().to_owned());
         let job = Job::Move {
             command_id: record.command_id.clone(),
             plan,
             group,
         };
-        if replacing && let Some(old_id) = self.active_command_id().map(str::to_owned) {
+        if let MoveDisposition::ReplaceSettling { command_id: old_id } = disposition {
             self.finish(
                 &old_id,
                 CommandOutcome::Superseded,
@@ -533,16 +539,14 @@ impl ArmCore {
             );
         }
         self.enqueue(&record, job, replacing);
-        Ok(record)
+        record
     }
 
-    pub(super) fn submit_reach(
-        &mut self,
-        label: &str,
+    pub(crate) fn check_reach(
+        &self,
         position: [f64; 3],
         orientation: PoseOrientation,
-        now: Now,
-    ) -> Result<CommandRecord, Rejection> {
+    ) -> Result<ReachGoal, Rejection> {
         let Some(settings) = self.limits.pose_goals else {
             return Err(rejection(
                 RejectionReason::InvalidTarget,
@@ -560,12 +564,26 @@ impl ArmCore {
         }
         let quaternion = pose_orientation_quaternion(orientation, self.limits.jaw_closing_axis)
             .map_err(|why| rejection(RejectionReason::InvalidTarget, why.to_string()))?;
-        let goal = ReachGoal {
+        Ok(ReachGoal {
             position,
             quaternion,
             position_tolerance_meters: settings.position_tolerance_meters,
             orientation_tolerance_radians: settings.orientation_tolerance_radians,
-        };
+        })
+    }
+
+    pub(super) fn submit_reach(
+        &mut self,
+        label: &str,
+        position: [f64; 3],
+        orientation: PoseOrientation,
+        now: Now,
+    ) -> Result<CommandRecord, Rejection> {
+        let goal = self.check_reach(position, orientation)?;
+        Ok(self.apply_reach(label, goal, now))
+    }
+
+    pub(crate) fn apply_reach(&mut self, label: &str, goal: ReachGoal, now: Now) -> CommandRecord {
         let mut record = self.new_record(label, None, now);
         record.target_position = Some(goal.position);
         record.target_quaternion = Some(goal.quaternion);
@@ -574,7 +592,7 @@ impl ArmCore {
             goal,
         };
         self.enqueue(&record, job, false);
-        Ok(record)
+        record
     }
 
     pub(super) fn submit_stream_joints(
@@ -605,13 +623,10 @@ impl ArmCore {
             .map(|(value, (lower, upper))| value.clamp(*lower, *upper))
             .collect();
         self.submit_stream(
-            "stream_joints",
             StreamGoal::Joints {
-                positions: goal.clone(),
+                positions: goal,
                 joint_speed: speed,
             },
-            Some(goal),
-            Some(speed),
             stream_command_id,
             now,
         )
@@ -640,36 +655,29 @@ impl ArmCore {
             ));
         }
         self.submit_stream(
-            "stream_pose",
             StreamGoal::Pose {
                 position,
                 quaternion,
             },
-            None,
-            None,
             stream_command_id,
             now,
         )
     }
 
-    /// Start a stream, or replace the goal of a running one.
     pub(super) fn submit_stream(
         &mut self,
-        kind: &str,
         goal: StreamGoal,
-        goal_joints: Option<Vec<f64>>,
-        joint_speed: Option<f64>,
         stream_command_id: Option<String>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         if let Some(id) = stream_command_id {
-            return self.update_stream(&id, kind, goal, goal_joints, now);
+            return self.update_stream(&id, goal, now);
         }
         if let Some(refused) = self.mode_rejection() {
             return Err(refused);
         }
-        let mut record = self.new_record(kind, joint_speed, now);
-        record.goal_joints = goal_joints;
+        let mut record = self.new_record(goal.label(), goal.joint_speed(), now);
+        record.goal_joints = goal.joints().map(<[f64]>::to_vec);
         self.stream = Some(HeldStreamGoal {
             command_id: record.command_id.clone(),
             goal,
@@ -685,9 +693,7 @@ impl ArmCore {
     pub(super) fn update_stream(
         &mut self,
         id: &str,
-        kind: &str,
         goal: StreamGoal,
-        goal_joints: Option<Vec<f64>>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         let running = self
@@ -717,22 +723,21 @@ impl ArmCore {
                 "A stream cannot change between joint and pose goals",
             ));
         }
-        stream.goal = goal;
-        stream.last_goal_at = now.instant;
         let mut record = self.records[id].clone();
-        record.goal_joints = goal_joints;
-        if record.label != kind {
+        if record.label != goal.label() {
             return Err(rejection(
                 RejectionReason::InvalidTarget,
                 "A stream cannot change its kind",
             ));
         }
+        record.goal_joints = goal.joints().map(<[f64]>::to_vec);
+        stream.goal = goal;
+        stream.last_goal_at = now.instant;
         self.store(record.clone());
         Ok(record)
     }
 
-    /// The jaw target the gripper is sent: `angle` clamped into its range.
-    fn check_gripper(&self, angle: f64) -> Result<f64, Rejection> {
+    pub(crate) fn check_gripper(&self, angle: f64) -> Result<f64, Rejection> {
         if self.shutdown_requested() {
             return Err(Self::shutting_down());
         }
@@ -760,12 +765,11 @@ impl ArmCore {
         Ok(angle.clamp(minimum, maximum))
     }
 
-    pub(super) fn submit_gripper(
-        &mut self,
+    pub(crate) fn check_gripper_target(
+        &self,
         angle: f64,
         requested_speed: Option<f64>,
-        now: Now,
-    ) -> Result<CommandRecord, Rejection> {
+    ) -> Result<GripperTarget, Rejection> {
         let angle = self.check_gripper(angle)?;
         let speed = motion_speed(
             requested_speed,
@@ -773,6 +777,25 @@ impl ArmCore {
             self.limits.max_joint_speed,
         )
         .map_err(|invalid| rejection(RejectionReason::InvalidTarget, invalid.to_string()))?;
+        let invalid =
+            |error: anyhow::Error| rejection(RejectionReason::InvalidTarget, error.to_string());
+        Ok(GripperTarget {
+            angle: JointAngle::new(angle).map_err(invalid)?,
+            speed: JointSpeed::new(speed).map_err(invalid)?,
+        })
+    }
+
+    pub(super) fn submit_gripper(
+        &mut self,
+        angle: f64,
+        requested_speed: Option<f64>,
+        now: Now,
+    ) -> Result<CommandRecord, Rejection> {
+        let target = self.check_gripper_target(angle, requested_speed)?;
+        Ok(self.apply_gripper(target, now))
+    }
+
+    pub(crate) fn apply_gripper(&mut self, target: GripperTarget, now: Now) -> CommandRecord {
         if let Some(replaced) = self.gripper_command.take() {
             self.finish(
                 &replaced.command_id,
@@ -781,15 +804,12 @@ impl ArmCore {
                 now,
             );
         }
-        let record = self.new_record("set_gripper", Some(speed), now);
+        let record = self.new_record("set_gripper", Some(target.speed.radians_per_second()), now);
         self.gripper_command = Some(GripperCommand {
             command_id: record.command_id.clone(),
-            pending_target: Some(GripperTarget {
-                angle_radians: angle,
-                max_speed_radians_per_second: speed,
-            }),
+            pending_target: Some(target),
         });
         self.store(record.clone());
-        Ok(record)
+        record
     }
 }

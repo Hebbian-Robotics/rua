@@ -1,7 +1,3 @@
-//! The station's recorder: `hebbian-robot-use-media record` started and
-//! stopped on request, independent of power and the lease. Nothing ends a
-//! recording implicitly except the station shutting down.
-
 use crate::lease_routes::Refusal;
 use axum::{
     Json, Router,
@@ -25,25 +21,31 @@ use std::{
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
-    sync::{mpsc, watch},
+    sync::watch,
     time::Duration,
 };
 pub struct RecordingConfiguration {
     pub credentials: station_access::Credentials,
     pub room: String,
     pub directory: PathBuf,
-    /// Installed `hebbian-robot-use-media` executable. The native media crate is not linked here.
     pub executable: PathBuf,
 }
 #[derive(Clone)]
 pub struct RecordingManager {
     station_url: String,
     recording: Option<Arc<RecordingConfiguration>>,
-    announcements: mpsc::UnboundedSender<bool>,
+    announcements: watch::Sender<RecordingAnnouncement>,
+    announced: watch::Receiver<u64>,
     state: Arc<Mutex<RecordingState>>,
     controller_available: Arc<AtomicBool>,
-    /// Ticks each time a recording ends.
+    shutting_down: Arc<AtomicBool>,
     ended: watch::Sender<()>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct RecordingAnnouncement {
+    enabled: bool,
+    revision: u64,
 }
 
 enum RecordingState {
@@ -59,28 +61,33 @@ impl RecordingManager {
     #[must_use]
     pub fn new(configuration: Option<RecordingConfiguration>, station_url: String) -> Self {
         let recording = configuration.map(Arc::new);
-        let (announcements, mut receiver) = mpsc::unbounded_channel::<bool>();
+        let (announcements, mut receiver) = watch::channel(RecordingAnnouncement::default());
+        let (completed, announced) = watch::channel(0);
         let configuration = recording.clone();
-        // Serialize announcements so a delayed start cannot overwrite a later stop.
+        // INVARIANT: Keep only the latest desired state while a request is in flight.
         // No lifecycle lock is held during the HTTP calls.
         tokio::spawn(async move {
-            while let Some(enabled) = receiver.recv().await {
+            while receiver.changed().await.is_ok() {
+                let announcement = *receiver.borrow_and_update();
                 if let Some(configuration) = &configuration
                     && let Err(error) = configuration
                         .credentials
-                        .announce_recording(&configuration.room, enabled)
+                        .announce_recording(&configuration.room, announcement.enabled)
                         .await
                 {
                     eprintln!("Recording announcement failed: {error}");
                 }
+                completed.send_replace(announcement.revision);
             }
         });
         Self {
             station_url,
             recording,
             announcements,
+            announced,
             state: Arc::new(Mutex::new(RecordingState::Inactive(RecordingStatus::Idle))),
             controller_available: Arc::new(AtomicBool::new(true)),
+            shutting_down: Arc::new(AtomicBool::new(false)),
             ended: watch::Sender::new(()),
         }
     }
@@ -99,7 +106,7 @@ impl RecordingManager {
         .map_err(|error| error.to_string())
     }
 
-    /// Preserve controller loss even when recording stops before telemetry arrives.
+    // INVARIANT: Preserve controller loss even when recording stops before telemetry arrives.
     pub fn controller_unavailable(&self) {
         self.controller_available.store(false, Ordering::Release);
         let mut state = self
@@ -154,13 +161,14 @@ impl RecordingManager {
             } => RecordingStatus::Stopping { name: name.clone() },
         }
     }
-    /// # Errors
-    /// Recording is not configured, or a recording is already active.
     pub fn start_recording(&self) -> Result<String, String> {
         let mut state = self
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err("The station is shutting down".into());
+        }
         if matches!(*state, RecordingState::Active { .. }) {
             return Err("A recording is already active".into());
         }
@@ -185,7 +193,7 @@ impl RecordingManager {
             stopping: false,
             controller_interrupted,
         };
-        let _ = self.announcements.send(true);
+        self.announce(true);
         let manager = self.clone();
         let recording_name = name.clone();
         tokio::spawn(async move {
@@ -211,7 +219,7 @@ impl RecordingManager {
             if let Some(reader) = reader {
                 reader.abort();
             }
-            let _ = manager.announcements.send(false);
+            manager.announce(false);
             let mut state = manager
                 .state
                 .lock()
@@ -237,7 +245,13 @@ impl RecordingManager {
         Ok(name)
     }
 
-    /// Request finalization of the independent recording.
+    fn announce(&self, enabled: bool) {
+        self.announcements.send_modify(|announcement| {
+            announcement.enabled = enabled;
+            announcement.revision += 1;
+        });
+    }
+
     pub fn stop_recording(&self) {
         self.stop_recording_if(|stop| {
             stop();
@@ -258,13 +272,23 @@ impl RecordingManager {
         };
         authorize(&mut stop)
     }
-    /// Stop recording and wait for it to finish before the server drops its runtime.
+    // INVARIANT: Close admission and finish recording/announcement work before dropping the
+    // server runtime so pending finalization is not abandoned.
     pub async fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::Release);
         self.stop_recording();
         self.wait_until_inactive().await;
+        let revision = self.announcements.borrow().revision;
+        let mut announced = self.announced.clone();
+        if announced
+            .wait_for(|completed| *completed >= revision)
+            .await
+            .is_err()
+        {
+            eprintln!("Recording announcement worker stopped before shutdown completed");
+        }
     }
 
-    /// Returns once no recording is active.
     pub async fn wait_until_inactive(&self) {
         let mut ended = self.ended.subscribe();
         while self.is_active() {
@@ -338,9 +362,7 @@ async fn interrupt(child: &mut Child) -> std::io::Result<std::process::ExitStatu
     child.wait().await
 }
 
-/// `/recording/...`, mounted under `/viewer/api`. `stop-for-lease` stops only
-/// while the presented lease is current, so a holder that lost the lease cannot
-/// stop someone else's recording.
+// SAFETY: A lease-checked stop must not let a former holder stop the newer holder's recording.
 pub fn router(manager: RecordingManager, arms: crate::lease_routes::ServedArms) -> Router {
     Router::new()
         .route("/recording/start", post(start_recording))
@@ -380,3 +402,6 @@ async fn stop_recording(State(manager): State<RecordingManager>) -> Json<()> {
     manager.stop_recording();
     Json(())
 }
+
+#[cfg(test)]
+mod tests;

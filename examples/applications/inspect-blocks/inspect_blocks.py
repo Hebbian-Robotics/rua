@@ -1,13 +1,3 @@
-"""Inspect Blocks: yes/no questions about blocks on the table.
-
-Arrange some blocks, then type a yes/no question. The model drives the arm to
-inspect the scene with the wrist camera, decides, and the arm nods (yes) or
-shakes its head (no) with fixed gestures. The arm rehomes and disables between
-questions, so start it resting on the table.
-
-    uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py --model gpt-6-astra
-"""
-
 import argparse
 import asyncio
 import base64
@@ -23,9 +13,19 @@ from openai import AsyncOpenAI
 from hebbian_rua import RobotTools, StationClient
 from hebbian_rua.client.contract.station_api import ArmMode
 from hebbian_rua.client.environment import load_environment
+from hebbian_rua.client.llm.openai import OpenAIRobotTools
 from hebbian_rua.client.station_client import Lease
 from hebbian_rua.client.station_types import CommandResult
-from hebbian_rua.openai import OpenAIRobotTools
+
+CLI_HELP = """Inspect Blocks: yes/no questions about blocks on the table.
+
+Arrange some blocks, then type a yes/no question. The model drives the arm to
+inspect the scene with the wrist camera, decides, and the arm nods (yes) or
+shakes its head (no) with fixed gestures. The arm rehomes and disables between
+questions, so start it resting on the table.
+
+    uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py
+"""
 
 ARM = "follower"
 CAMERA = "table"
@@ -53,7 +53,7 @@ and right of the reachable area. Find the workspace edges in the images and look
 closer wherever you are unsure. From above, blocks stacked on each other look like
 a single block, so also look at every block from a low, side-on angle (camera about
 5-8 cm above the table, pointing roughly horizontally) to judge heights and stacking
-before counting. Rules: pass max_joint_speed of 0.6 or less on every
+before counting. Rules: pass max_joint_speed_degrees_per_second of 34 or less on every
 move, keep the gripper at least 5 cm above the table, never touch or move the blocks,
 and do not use the gripper.
 
@@ -65,7 +65,7 @@ blocks are on the workspace, where, and which are stacked, then a final line tha
 async def inspect_and_decide(
     client: AsyncOpenAI, robot: RobotTools, model: str, workspace: str, question: str
 ) -> tuple[str | None, str]:
-    """Let the model drive the arm until it answers; return (YES/NO or None, text)."""
+
     robot_tools = OpenAIRobotTools(robot)
     instructions = INSTRUCTIONS.format(workspace=workspace) + json.dumps(
         await robot.context()
@@ -100,7 +100,7 @@ async def inspect_and_decide(
 
 
 def save_frames(observation: Mapping[str, Any], prefix: Path) -> None:
-    """Write the camera images the model is about to see, for replaying a run."""
+
     images = [
         item["image_url"]
         for item in observation["content"]
@@ -112,7 +112,7 @@ def save_frames(observation: Mapping[str, Any], prefix: Path) -> None:
 
 
 async def gesture(lease: Lease, answer: str) -> None:
-    """Move to the presenting pose, then nod (YES) or shake (NO) three times."""
+
     moving = lease.arm(ARM)
     joint, swing = (3, NOD_RADIANS) if answer == "YES" else (0, SHAKE_RADIANS)
     poses = [PRESENT_JOINTS]
@@ -156,8 +156,8 @@ async def ask(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="OpenAI model ID")
+    parser = argparse.ArgumentParser(description=CLI_HELP)
+    parser.add_argument("--model", default="gpt-6.2-astra", help="OpenAI model ID")
     parser.add_argument(
         "--workspace",
         default=DEFAULT_WORKSPACE,
@@ -167,7 +167,10 @@ async def main() -> None:
     load_environment()
     async with StationClient() as station, AsyncOpenAI() as client:
         while True:
-            question = input("Ask a yes/no question about the blocks (blank to quit): ")
+            # No lease is held here; main-thread stdin lets Ctrl-C exit promptly.
+            question = input(  # noqa: ASYNC250
+                "Ask a yes/no question about the blocks (blank to quit): "
+            )
             if not question.strip():
                 break
             await ask(station, client, arguments.model, arguments.workspace, question)

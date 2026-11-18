@@ -1,5 +1,3 @@
-"""Ensure the packages in one RUA release agree on their version."""
-
 import tomllib
 from pathlib import Path
 

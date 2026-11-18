@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 pub struct Arguments {
     #[arg(long)]
     pub room: String,
+    #[command(flatten)]
+    pub publishing: livekit_camera_publisher::config::PublishingOptions,
     #[arg(long, default_value = "http://127.0.0.1:8792")]
     pub executor_url: String,
     /// Camera mapping: name=device, repeatable.
@@ -35,7 +37,11 @@ impl Arguments {
         }
         cameras
             .into_iter()
-            .map(|(name, device)| CameraConfiguration::new(name, device).map_err(Into::into))
+            .map(|(name, device)| {
+                let mut camera = CameraConfiguration::new(name, device)?;
+                camera.publishing = self.publishing;
+                Ok(camera)
+            })
             .collect()
     }
 }

@@ -1,13 +1,11 @@
-//! Retained station events for resumable client streams.
-
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Mutex;
 
 use tokio::sync::broadcast;
 
 const RETAINED_EVENTS: usize = 4096;
+const RETAINED_ARM_LOG_FRAMES: usize = 4096;
 
-/// One serialized station event and its monotonically increasing cursor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StationEvent {
     pub sequence: u64,
@@ -21,13 +19,13 @@ struct JournalState {
     records: VecDeque<((String, String), u64, serde_json::Value)>,
 }
 
-/// Events and subscription are captured under one lock to avoid replay gaps.
+// INVARIANT: Events and subscription are captured under one lock to avoid replay gaps.
 pub struct EventJournal {
     state: Mutex<JournalState>,
     updates: broadcast::Sender<StationEvent>,
 }
 
-/// A cursor outside retained history requires a new snapshot.
+// CONSTRAINT: A cursor outside retained history requires a new snapshot.
 pub enum EventSubscription {
     Replay {
         events: Vec<StationEvent>,
@@ -52,6 +50,10 @@ impl Default for EventJournal {
 }
 
 impl EventJournal {
+    #[expect(
+        clippy::expect_used,
+        reason = "A u64 event counter cannot exhaust in practice; wrapping would make replay cursors ambiguous."
+    )]
     pub fn publish(&self, payload: serde_json::Value) {
         let mut state = self
             .state
@@ -110,11 +112,20 @@ impl EventJournal {
             Some("state") => Some("station_state".to_owned()),
             Some("run") => Some("run".to_owned()),
             Some("action_sequence_state") => payload
-                .pointer("/action_sequence/arm")
-                .and_then(serde_json::Value::as_str)
-                .map(|id| format!("sequence:{id}")),
+                .pointer("/action_sequence/arms")
+                .and_then(serde_json::Value::as_array)
+                .map(|arms| {
+                    format!(
+                        "sequence:{}",
+                        arms.iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    )
+                }),
             _ => None,
         };
+        fold_logged_frame_into_arm_snapshot(&mut state.snapshots, &payload);
         if let Some(key) = snapshot_key {
             if let Some(arm) = key.strip_prefix("snapshot:") {
                 state
@@ -139,7 +150,6 @@ impl EventJournal {
         let _ = self.updates.send(event);
     }
 
-    /// Invalidate a stale station snapshot when fresh observations are unavailable.
     pub fn invalidate_station_state(&self) {
         let removed = self
             .state
@@ -153,7 +163,7 @@ impl EventJournal {
         }
     }
 
-    /// Capture the latest retained state and start live delivery atomically.
+    // INVARIANT: Capture the latest retained state and start live delivery atomically.
     pub fn subscribe_with_snapshot(
         &self,
     ) -> (
@@ -208,6 +218,53 @@ impl EventJournal {
     }
 }
 
+// WHY: Refresh the retained snapshot from the sequenced log so later clients see controller recovery rather than the one-time startup state.
+fn fold_logged_frame_into_arm_snapshot(
+    snapshots: &mut BTreeMap<String, (u64, serde_json::Value)>,
+    payload: &serde_json::Value,
+) {
+    if payload.get("kind").and_then(serde_json::Value::as_str) != Some("frame") {
+        return;
+    }
+    let event_kind = payload
+        .pointer("/frame/event/kind")
+        .and_then(serde_json::Value::as_str);
+    if matches!(event_kind, Some("state" | "snapshot")) {
+        return;
+    }
+    let (Some(arm), Some(frame_sequence), Some(frame)) = (
+        payload.get("arm").and_then(serde_json::Value::as_str),
+        payload
+            .pointer("/frame/seq")
+            .and_then(serde_json::Value::as_u64),
+        payload.get("frame"),
+    ) else {
+        return;
+    };
+    let Some((_, snapshot)) = snapshots.get_mut(&format!("snapshot:{arm}")) else {
+        return;
+    };
+    if event_kind == Some("mode") {
+        for field in ["mode", "fault"] {
+            snapshot["frame"]["event"][field] = payload
+                .pointer(&format!("/frame/event/{field}"))
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+        }
+    }
+    let Some(retained_log) = snapshot
+        .pointer_mut("/frame/event/log")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    retained_log.push(frame.clone());
+    if retained_log.len() > RETAINED_ARM_LOG_FRAMES {
+        retained_log.remove(0);
+    }
+    snapshot["frame"]["event"]["seq"] = frame_sequence.into();
+}
+
 #[cfg(test)]
 mod tests {
     use super::{EventJournal, EventSubscription, RETAINED_EVENTS};
@@ -227,6 +284,33 @@ mod tests {
         assert_eq!(snapshot[0]["frame"]["event"]["kind"], "snapshot");
         assert_eq!(snapshot[1]["frame"]["event"]["kind"], "state");
         assert_eq!(snapshot[2]["frame"]["event"]["command_id"], "new");
+    }
+
+    #[test]
+    fn a_later_logged_event_reaches_clients_that_join_after_it() {
+        let journal = EventJournal::default();
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"seq":1, "event":{"kind":"snapshot", "seq":1, "log":[{"seq":1, "event":{"kind":"controller_unavailable"}}]}}}));
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"seq":2, "event":{"kind":"controller_available"}}}));
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"seq":null, "event":{"kind":"state"}}}));
+
+        let (_, snapshot, _) = journal.subscribe_with_snapshot();
+        let arm_snapshot = &snapshot[0]["frame"]["event"];
+        assert_eq!(arm_snapshot["seq"], 2);
+        let log = arm_snapshot["log"].as_array().unwrap();
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[1]["event"]["kind"], "controller_available");
+    }
+
+    #[test]
+    fn a_later_mode_change_replaces_the_snapshots_mode_and_clears_its_fault() {
+        let journal = EventJournal::default();
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"seq":1, "event":{"kind":"snapshot", "seq":1, "mode":"enabled", "fault":"stale", "log":[]}}}));
+        journal.publish(serde_json::json!({"kind":"frame", "arm":"left", "frame":{"seq":2, "event":{"kind":"mode", "mode":"disabled"}}}));
+
+        let (_, snapshot, _) = journal.subscribe_with_snapshot();
+        let arm_snapshot = &snapshot[0]["frame"]["event"];
+        assert_eq!(arm_snapshot["mode"], "disabled");
+        assert!(arm_snapshot["fault"].is_null());
     }
 
     #[test]

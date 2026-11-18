@@ -1,13 +1,10 @@
-//! When a pose is out of reach, what would be, in the terms a pose takes.
-
 use nalgebra::Vector3;
 
 use super::Planner;
 use super::orientation::{from_xyzw, grasp_rotation, rounded, tool_orientation, xyzw};
 use hebbian_contracts::{Approach, IkResult, JawYawRange, OrientationGoal, ProjectionOutcome};
 
-/// How far inside a reachable run's edge a suggested jaw yaw sits, so it does
-/// not land on the wrist roll's limit itself.
+// WHY: Keep suggested yaw inside the reachable arc so rounding does not place it on the wrist-roll limit.
 const SUGGESTION_EDGE_INSET_DEGREES: f64 = 1.0;
 
 fn circular_degrees_between(first: f64, second: f64) -> f64 {
@@ -15,7 +12,6 @@ fn circular_degrees_between(first: f64, second: f64) -> f64 {
     gap.min(360.0 - gap)
 }
 
-/// One candidate yaw per reachable run, the run's point nearest `wanted`, nearest first.
 fn nearest_reachable_yaws(ranges: &[JawYawRange], wanted: f64) -> Vec<f64> {
     let mut candidates: Vec<f64> = ranges
         .iter()
@@ -42,8 +38,6 @@ fn nearest_reachable_yaws(ranges: &[JawYawRange], wanted: f64) -> Vec<f64> {
     candidates
 }
 
-/// A number as JSON writes it, with a decimal point on whole numbers, so a
-/// suggestion reads the same as the floats a client sends.
 fn json_number(value: f64) -> String {
     if value.is_finite() && value.fract() == 0.0 {
         format!("{value:.1}")
@@ -52,7 +46,17 @@ fn json_number(value: f64) -> String {
     }
 }
 
-/// The orientation a client sends back, as JSON.
+fn projected_position_advice(found: [f64; 3], requested: [f64; 3]) -> String {
+    format!(
+        "The solver did not find a pose reaching this position; the closest position it found \
+         with an unconstrained orientation is position_mm=[{}] ({:.1} mm away)",
+        found
+            .map(|value| json_number(rounded(value * 1000.0, 1)))
+            .join(", "),
+        (Vector3::from(found) - Vector3::from(requested)).norm() * 1000.0
+    )
+}
+
 fn orientation_json(approach: [f64; 3], yaw: f64) -> String {
     format!(
         "\"orientation\": {{\"approach\": [{}], \"jaw_yaw_degrees\": {}}}",
@@ -62,7 +66,6 @@ fn orientation_json(approach: [f64; 3], yaw: f64) -> String {
 }
 
 impl Planner {
-    /// Joints that reach the full pose from `seed`, if the solver finds them.
     fn joints_reaching(
         &self,
         seed: &[f64],
@@ -78,12 +81,7 @@ impl Planner {
         }
     }
 
-    /// Why a pose was not reachable and what would be.
-    ///
-    /// First the same position and approach at the nearest jaw yaw the wrist
-    /// roll's range allows, then the orientation a position-only solve landed
-    /// on, else that the position is out of reach. Every suggestion is solved
-    /// again before it is offered, so sending it back is accepted from this start.
+    // INVARIANT: Solve every suggested alternative again before offering it so the client can submit it from this start.
     pub(super) fn unreachable_advice(
         &self,
         start: &[f64],
@@ -98,7 +96,7 @@ impl Planner {
             self.joints_reaching(start, position, xyzw(&rotation))?;
             Some(orientation_json(approach, yaw))
         };
-        // The ranges depend on position and approach only, so any yaw that solves
+        // WHY: The ranges depend on position and approach only, so any yaw that solves
         // for this approach gives them; the tilt the solve settles at shifts them a
         // little, so each anchor is tried until one suggestion verifies.
         for turn in [180.0, 90.0, 270.0] {
@@ -132,26 +130,19 @@ impl Planner {
                     rounded(chosen.jaw_yaw_degrees, 1),
                 ) {
                     return format!(
-                        "No jaw yaw reaches this position with the requested approach; the \
-                         solver reached it with another approach. Try {found}"
+                        "The solver did not find a reachable jaw yaw with the requested approach; it \
+                         found this alternative approach. Try {found}"
                     );
                 }
-                "The position is out of reach for any orientation".to_owned()
+                "The solver did not find a pose reaching this position with the orientations it tried".to_owned()
             }
             ProjectionOutcome::Projected {
                 pose,
                 within_tolerance: false,
                 ..
-            } => format!(
-                "The position is out of reach for any orientation; the nearest the arm gets \
-                 is [{}] ({:.1} cm away)",
-                pose.position
-                    .map(|value| json_number(rounded(value, 3)))
-                    .join(", "),
-                (Vector3::from(pose.position) - Vector3::from(position)).norm() * 100.0
-            ),
+            } => projected_position_advice(pose.position, position),
             ProjectionOutcome::Unavailable { .. } => {
-                "The position is out of reach for any orientation".to_owned()
+                "The solver did not find a pose reaching this position with the orientations it tried".to_owned()
             }
         }
     }
@@ -171,15 +162,20 @@ mod tests {
     }
 
     #[test]
+    fn projected_position_advice_uses_explicit_millimeters() {
+        let advice = projected_position_advice([0.134, 0.011, 0.083], [0.127, 0.010, 0.087]);
+        assert!(advice.contains("position_mm=[134.0, 11.0, 83.0]"));
+        assert!(advice.contains("8.1 mm away"));
+    }
+
+    #[test]
     fn a_suggested_yaw_is_the_nearest_point_inside_each_reachable_run() {
         let ranges = [
             span(0.0, 100.0, true),
             span(100.0, 200.0, false),
             span(200.0, 360.0, true),
         ];
-        // Inside a run, the wanted yaw itself.
         assert_eq!(nearest_reachable_yaws(&ranges, 50.0)[0], 50.0);
-        // In the blocked run, the nearer edge of each run, inset from the limit.
         assert_eq!(nearest_reachable_yaws(&ranges, 120.0), vec![99.0, 201.0]);
     }
 

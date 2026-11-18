@@ -30,18 +30,11 @@ With [Homebrew](https://formulae.brew.sh/formula/ffmpeg) installed:
 brew install ffmpeg
 ```
 
-### Windows
+### Windows with WSL2
 
-In PowerShell with WinGet installed:
-
-```powershell
-winget install --id Gyan.FFmpeg --exact
-```
-
-Open a new PowerShell window after installation so it picks up the updated
-`PATH`. Without WinGet, download a Windows build linked from the
-[FFmpeg download page](https://ffmpeg.org/download.html), extract it, and add
-the directory containing `ffmpeg.exe` to your user `PATH`.
+Install FFmpeg inside the Ubuntu environment running RUA, using the Ubuntu
+commands above. See [Windows with WSL2](windows-wsl.md); a Windows executable is
+not a substitute for the Linux FFmpeg required by that station.
 
 ### Other Linux distributions
 
@@ -80,5 +73,9 @@ Each arm's joints are recorded on `/arms/<arm>/joint_states` as ROS 2
 second, and efforts in the hardware profile's effort units. A plant that
 reports no velocity or effort leaves that array empty.
 
-See [cameras](cameras.md) for RUA's camera configuration. RUA playback and analysis
-interfaces are coming soon.
+See [cameras](cameras.md) for camera configuration. Enable recording on the
+station with `--enable-recording`, then use `await station.ensure_recording()`
+from the Python SDK. Finish it with `await lease.stop_recording()` while holding
+the lease, or use the station’s recording HTTP API. Recording continues across
+lease handover until explicitly stopped or the station shuts down. The full
+interactive playback UI is not included in this distribution.

@@ -1,0 +1,10 @@
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+deny = [
+    { crate = "hebbian-robot-use-server", reason = "Production clients use station contracts and HTTP, not server implementations." },
+    "hebbian-station",
+    "libwebrtc",
+    "webrtc-sys",
+    "livekit-cameras",
+]

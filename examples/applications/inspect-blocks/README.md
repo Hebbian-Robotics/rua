@@ -25,7 +25,7 @@ Start the station with your profile and camera, then the app:
 
 ```sh
 uv run rua serve --profile ~/.config/rua/so101.toml --camera table=0
-uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py --model <openai-model>
+uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py
 ```
 
 Type a question and press Enter; a blank line quits. Pass
@@ -36,7 +36,7 @@ Each question writes the camera frames the model saw and the moves it made to
 
 ## Before the first run
 
-- **Cap speed in the station.** The prompt asks for at most 0.6 rad/s, but a model
+- **Cap speed in the station.** The prompt asks for at most 34 degrees/s (about 0.59 rad/s), but a model
   can ignore that. Set `[motion] max_joint_speed` in your private profile so the
   station enforces a limit; we used 1.0 rad/s.
 - **Check the presenting pose.** `PRESENT_JOINTS` was chosen on one arm to leave

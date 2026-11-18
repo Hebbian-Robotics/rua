@@ -2,16 +2,18 @@
 
 import json
 import math
+from collections.abc import Collection
+from dataclasses import replace
+from typing import Literal
 
 from hebbian_rua.client.llm.types import (
     ModelContent,
     RobotOutput,
     RobotToolCall,
     RobotToolResult,
+    SequenceImageHistory,
 )
 
-# Only fields with a defined unit are converted. Quaternions and approach
-# vectors remain exact because clients may send them back as orientations.
 _POSITION_FIELDS = {
     "position": "position_mm",
     "target_position": "target_position_mm",
@@ -52,25 +54,39 @@ def _scale_numbers(value: object, factor: float) -> object:
     return value
 
 
-def model_response(value: object, field_name: str = "") -> object:
-    """Convert model-facing JSON without altering command or telemetry records."""
-    if field_name in {"quaternion", "target_quaternion", "approach", "jaw_yaw_degrees"}:
+def model_response(value: object) -> object:
+    """Convert an SI payload to readable model units without summarizing its history."""
+    return _format_model_field(value, "")
+
+
+def _format_model_field(value: object, field_name: str) -> object:
+    if field_name in {"approach", "jaw_yaw_degrees"}:
         return value
     if isinstance(value, dict):
         formatted = {}
         for key, item in value.items():
             if item is None or (key == "checkpoints" and item == []):
                 continue
-            if key in _POSITION_FIELDS:
+            if (
+                key == "target_status"
+                and item == "reached"
+                and (
+                    value.get("pose_limited") is not None
+                    or value.get("path_limited") is not None
+                )
+            ):
+                formatted[key] = "limited"
+            elif key in _POSITION_FIELDS:
                 formatted[_POSITION_FIELDS[key]] = _scale_numbers(item, 1000.0)
             elif key in _ANGLE_FIELDS:
                 formatted[_ANGLE_FIELDS[key]] = _scale_numbers(item, 180.0 / math.pi)
             else:
-                formatted[key] = model_response(item, key)
+                formatted[key] = _format_model_field(item, key)
         return formatted
     if isinstance(value, list):
-        return [model_response(item, field_name) for item in value]
+        return [_format_model_field(item, field_name) for item in value]
     if isinstance(value, float):
+        # Rounded quaternion components are normalized by station parsing on reuse.
         return _round_half_away_from_zero(
             value,
             3
@@ -81,35 +97,89 @@ def model_response(value: object, field_name: str = "") -> object:
     return value
 
 
-def _compact_output(value: object) -> object:
-    """Keep outcomes and actionable state; omit history and rendering geometry."""
+_STATE_FIELDS = ("robot", "joint_names", "max_joint_speed", "surface_guard")
+_STATION_CONTEXT_FIELDS = ("description", "lease")
+_ARM_FIELDS = {
+    "arm",
+    "mode",
+    "status",
+    "fault",
+    "active_trip",
+    "interlocks",
+    "recovery_issue",
+    "revision",
+    "sampled_at_unix_seconds",
+    "measured_joints",
+    "tool",
+    "gripper_opening",
+}
+_DIAGNOSTIC_FIELDS = {
+    "id",
+    "command_id",
+    "group_id",
+    "sequence_id",
+    "action_sequence_id",
+    "checkpoints",
+    "trace_context",
+    "model_points",
+    "accepted_at",
+    "finished_at",
+}
+
+
+def _compact_earlier_step(value: object) -> object:
+    if not isinstance(value, list):
+        return concise_output(value)
+    entries: list[object] = []
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get("record"), dict):
+            entries.append(concise_output(item))
+            continue
+        record = item["record"]
+        entries.append(
+            concise_output(
+                {
+                    **{key: item[key] for key in ("arm",) if key in item},
+                    "record": {
+                        key: record[key]
+                        for key in (
+                            "label",
+                            "completion",
+                            "target_status",
+                            "pose_limited",
+                            "path_limited",
+                        )
+                        if key in record
+                    },
+                }
+            )
+        )
+    return entries
+
+
+def concise_output(value: object, *, keep_station_context: bool = False) -> object:
+    """Keep outcomes and actionable state; omit history and rendering geometry.
+
+    `keep_station_context` also keeps a station state's `description` (frames and
+    conventions) and `lease` holder, for a caller that has no other way to learn them.
+    Observations leave them out because the model is given the conventions separately.
+    """
     if isinstance(value, list):
-        return [_compact_output(item) for item in value]
+        return [
+            concise_output(item, keep_station_context=keep_station_context)
+            for item in value
+        ]
     if not isinstance(value, dict):
         return value
     if "arms" in value and "joint_names" in value:
-        arm_fields = {
-            "arm",
-            "mode",
-            "status",
-            "fault",
-            "interlocks",
-            "recovery_issue",
-            "revision",
-            "sampled_at_unix_seconds",
-            "measured_joints",
-            "tool",
-            "gripper_opening",
-        }
+        kept_state_fields = _STATE_FIELDS + (
+            _STATION_CONTEXT_FIELDS if keep_station_context else ()
+        )
         return {
-            **{
-                key: value[key]
-                for key in ("robot", "joint_names", "max_joint_speed", "surface_guard")
-                if key in value
-            },
+            **{key: value[key] for key in kept_state_fields if key in value},
             "arms": [
-                _compact_output(
-                    {key: item for key, item in arm.items() if key in arm_fields}
+                concise_output(
+                    {key: item for key, item in arm.items() if key in _ARM_FIELDS}
                 )
                 for arm in value["arms"]
             ],
@@ -117,36 +187,88 @@ def _compact_output(value: object) -> object:
     if "requested_steps" in value and "steps" in value:
         steps = value["steps"]
         return {
-            **{key: value[key] for key in ("id", "arm", "phase") if key in value},
+            **{key: value[key] for key in ("arms", "phase") if key in value},
             "requested_step_count": len(value["requested_steps"]),
             "recorded_step_count": len(steps),
-            "last_step": _compact_output(steps[-1]) if steps else [],
+            "steps": [
+                concise_output(step)
+                if index == len(steps) - 1
+                else _compact_earlier_step(step)
+                for index, step in enumerate(steps)
+            ],
         }
-    omitted = {
-        "checkpoints",
-        "trace_context",
-        "model_points",
-        "accepted_at",
-        "finished_at",
-    }
     return {
-        key: _compact_output(item) for key, item in value.items() if key not in omitted
+        key: concise_output(item, keep_station_context=keep_station_context)
+        for key, item in value.items()
+        if key not in _DIAGNOSTIC_FIELDS
     }
 
 
-def default_formatter(output: RobotOutput) -> ModelContent:
-    """A concise model view; full station data remains on the result/observation."""
-    formatted = model_response(_compact_output(output.data))
-    if output.kind == "result":
-        return ModelContent(
-            output.data
-            if isinstance(output.data, str)
-            else json.dumps(formatted, separators=(",", ":"))
+def concise_response(value: object, *, keep_station_context: bool = False) -> object:
+    """The model view: the concise layer, then readable units and rounding."""
+    return model_response(
+        concise_output(value, keep_station_context=keep_station_context)
+    )
+
+
+def summarize_output(output: RobotOutput) -> RobotOutput:
+    """Select concise payload fields, preserving SI units and observation context."""
+    return replace(output, data=concise_output(output.data))
+
+
+def select_output_cameras(output: RobotOutput, names: Collection[str]) -> RobotOutput:
+    """Select model images and their retrieval intervals without changing capture.
+
+    Availability notices remain visible even when a camera's image is omitted.
+    """
+    return replace(
+        output,
+        cameras={name: jpeg for name, jpeg in output.cameras.items() if name in names},
+        sequence_images=replace(
+            output.sequence_images,
+            images=[
+                image
+                for image in output.sequence_images.images
+                if image.camera in names
+            ],
         )
+        if output.sequence_images is not None
+        else None,
+        camera_intervals={
+            name: interval
+            for name, interval in output.camera_intervals.items()
+            if name in names
+        },
+    )
+
+
+def render_output(
+    output: RobotOutput, *, units: Literal["model", "si"] = "model"
+) -> ModelContent:
+    """Render once, converting to readable model units or retaining exact SI data."""
+    data = model_response(output.data) if units == "model" else output.data
+    text = (
+        data
+        if isinstance(data, str)
+        else json.dumps(data, separators=(",", ":") if units == "model" else None)
+    )
+    cameras = {}
+    if output.sequence_images is not None:
+        history = output.sequence_images
+        for index, image in enumerate(history.images):
+            label = (
+                f"Sequence {history.call_id} image {index + 1}: {image.camera}, "
+                f"+{image.elapsed_seconds:.3f}s, {image.boundary}; "
+                f"retrieved {image.retrieved_between_unix_seconds} Unix seconds"
+            )
+            cameras[label] = image.jpeg
+    cameras.update(output.cameras)
+    if output.kind == "result":
+        return ModelContent(text, cameras)
     lines = [
         *output.notes,
         f"Selected arm: {output.selected_arm}.",
-        "Arm state: " + json.dumps(formatted, separators=(",", ":")),
+        "Arm state: " + text,
     ]
     if output.missing_optional_cameras:
         lines.append(
@@ -154,34 +276,28 @@ def default_formatter(output: RobotOutput) -> ModelContent:
             + ", ".join(output.missing_optional_cameras)
         )
     if output.camera_intervals:
-        lines.append(
-            "Camera retrieval intervals (Unix seconds): "
-            + json.dumps(
-                {
-                    name: [round(timestamp, 3) for timestamp in interval]
-                    for name, interval in output.camera_intervals.items()
-                }
-            )
+        intervals = (
+            {
+                name: tuple(round(timestamp, 3) for timestamp in interval)
+                for name, interval in output.camera_intervals.items()
+            }
+            if units == "model"
+            else output.camera_intervals
         )
-    return ModelContent("\n".join(lines), dict(output.cameras))
+        lines.append(
+            "Camera retrieval intervals (Unix seconds): " + json.dumps(intervals)
+        )
+    return ModelContent("\n".join(lines), cameras)
+
+
+def default_formatter(output: RobotOutput) -> ModelContent:
+    """A concise model view; full station data remains on the result/observation."""
+    return render_output(summarize_output(output))
 
 
 def full_formatter(output: RobotOutput) -> ModelContent:
     """Show the complete payload in original SI units, without rounding."""
-    text = output.data if isinstance(output.data, str) else json.dumps(output.data)
-    if output.kind == "observation":
-        text = "\n".join(
-            [
-                *output.notes,
-                f"Selected arm: {output.selected_arm}.",
-                text,
-                "Optional cameras unavailable: "
-                + ", ".join(output.missing_optional_cameras),
-                "Camera retrieval intervals (Unix seconds): "
-                + json.dumps(output.camera_intervals),
-            ]
-        )
-    return ModelContent(text, dict(output.cameras))
+    return render_output(output, units="si")
 
 
 def result_from_data(
@@ -191,13 +307,26 @@ def result_from_data(
     is_error: bool,
     halt: bool = False,
     interrupted: bool = False,
+    cameras: dict[str, bytes] | None = None,
+    sequence_images: SequenceImageHistory | None = None,
 ) -> RobotToolResult:
     """Retain a full result alongside its default model view and control flags."""
+    content = default_formatter(
+        RobotOutput(
+            "result",
+            data,
+            call=call,
+            cameras=cameras or {},
+            sequence_images=sequence_images,
+        )
+    )
     return RobotToolResult(
         call,
-        default_formatter(RobotOutput("result", data, call=call)).text,
+        content.text,
         is_error=is_error,
         halt=halt,
         interrupted=interrupted,
-        raw_data=data,
+        data=data,
+        cameras=content.cameras,
+        sequence_images=sequence_images,
     )

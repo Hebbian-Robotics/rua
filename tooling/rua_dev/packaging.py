@@ -1,5 +1,3 @@
-"""Stage redistributable assets and build server wheels."""
-
 import os
 import platform
 import shutil
@@ -103,7 +101,7 @@ def stage_server_assets(
 
 @contextmanager
 def fresh_staging_directory(directory: Path) -> Generator[Path]:
-    # Never delete staging owned by an earlier or concurrent build.
+    # INVARIANT: Never delete staging owned by an earlier or concurrent build.
     directory.mkdir()
     try:
         yield directory
@@ -112,7 +110,11 @@ def fresh_staging_directory(directory: Path) -> Generator[Path]:
 
 
 def build_local(
-    repository_directory: Path, *, include_viewer: bool, include_media: bool
+    repository_directory: Path,
+    *,
+    include_viewer: bool,
+    include_media: bool,
+    output_directory: Path | None = None,
 ) -> None:
     with ExitStack() as staging:
         server_staging = staging.enter_context(
@@ -161,7 +163,7 @@ def build_local(
             "--compatibility",
             "off",
             "--out",
-            str(repository_directory / "target/local-wheels"),
+            str(output_directory or repository_directory / "target/local-wheels"),
         ]
         subprocess.run(
             [*build_arguments, "--manifest-path", "station/Cargo.toml"], check=True
@@ -274,7 +276,10 @@ def build_packages(
     *,
     include_viewer: bool,
     include_media: bool,
+    output_directory: Path | None = None,
 ) -> None:
+    if output_directory is not None and build_platform != BuildPlatform.LOCAL:
+        raise ValueError("A custom wheel output directory requires a local build")
     prepare_robot_assets(repository_directory)
     check_release_versions(repository_directory)
     match build_platform:
@@ -283,6 +288,16 @@ def build_packages(
                 repository_directory,
                 include_viewer=include_viewer,
                 include_media=include_media,
+                output_directory=output_directory,
             )
         case BuildPlatform.MANYLINUX:
             build_manylinux(repository_directory, include_viewer=include_viewer)
+
+
+def built_wheel(directory: Path, distribution: str, version: str) -> Path:
+    candidates = sorted(directory.glob(f"{distribution}-{version}-*.whl"))
+    if len(candidates) != 1:
+        raise ValueError(
+            f"Expected one {distribution} {version} wheel in {directory}; found {len(candidates)}"
+        )
+    return candidates[0]

@@ -1,5 +1,3 @@
-"""Development commands for a RUA source checkout."""
-
 import importlib
 import importlib.util
 import os
@@ -14,7 +12,6 @@ from rua_dev.models import SdkTarget, ValidationLane
 
 
 def setup() -> None:
-    """Prepare pinned robot assets for source development."""
     from rua_dev.robot_assets import prepare_robot_assets
 
     assets = prepare_robot_assets(Path.cwd())
@@ -28,10 +25,15 @@ def contracts(
     ] = (),
     check: bool = False,
 ) -> None:
-    """Generate schemas and SDKs; default to the SDK components in this checkout."""
     from rua_dev.contracts import available_sdk_targets, generate_contracts
 
     generate_contracts(frozenset(targets) or available_sdk_targets(), check=check)
+
+
+def check_architecture() -> None:
+    from rua_dev.validation import check_rust_architecture
+
+    check_rust_architecture()
 
 
 def validate(
@@ -44,14 +46,12 @@ def validate(
         ValidationLane.FULL,
     ] = ValidationLane.FULL,
 ) -> None:
-    """Validate the Python, Rust and contract components in this checkout."""
     from rua_dev.validation import validate as run_validation
 
     run_validation(lane)
 
 
 def package_check(wheel: Path) -> None:
-    """Install a release wheel in an empty environment and check real commands."""
     from rua_dev.wheel_check import check_wheel
 
     check_wheel(wheel.resolve())
@@ -60,7 +60,6 @@ def package_check(wheel: Path) -> None:
 def package_rua(
     *, server_wheel: Path | None = None, media_wheel: Path | None = None
 ) -> None:
-    """Build the hebbian-rua release wheel; never publish it."""
     from rua_dev.bundle import build_rua_bundle
 
     print(
@@ -69,20 +68,35 @@ def package_rua(
 
 
 def create_app() -> App:
-    app = App(help=__doc__)
+    app = App(help="Development commands for a RUA source checkout.")
     package_app = App(name="package", help="Wheel distribution commands.")
-    package_app.command(package_check, name="check")
+    package_app.command(
+        package_check,
+        name="check",
+        help="Install a release wheel in an empty environment and check real commands.",
+    )
     app.command(package_app)
-    app.command(setup)
-    # Component-specific command composition is optional. The shared entrypoint
+    app.command(setup, help="Prepare pinned robot assets for source development.")
+    app.command(check_architecture, help="Check Rust production dependency boundaries.")
+    # WHY: Component-specific command composition is optional. The shared entrypoint
     # and operations are identical in source distributions of any size.
     module_name = "rua_dev.workspace_commands"
     if importlib.util.find_spec(module_name) is not None:
         importlib.import_module(module_name).register_commands(app, package_app)
     else:
-        package_app.command(package_rua, name="rua")
-        app.command(contracts)
-        app.command(validate)
+        package_app.command(
+            package_rua,
+            name="rua",
+            help="Build the hebbian-rua release wheel; never publish it.",
+        )
+        app.command(
+            contracts,
+            help="Generate schemas and SDKs; default to the SDK components in this checkout.",
+        )
+        app.command(
+            validate,
+            help="Validate the Python, Rust and contract components in this checkout.",
+        )
     return app
 
 

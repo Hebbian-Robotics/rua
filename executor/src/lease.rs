@@ -1,31 +1,10 @@
-//! Who may command the arms right now (the lease), and what inhibits motion
-//! (interlocks). See `docs/control-model.md`.
-//!
-//! One [`Lease`] is shared by every arm of an executor, so every client,
-//! whether an agent run, the viewer's manual controls or a script, is
-//! arbitrated the same way, and nothing can bypass it by going around the
-//! station.
-//!
-//! - With no holder, a client without a token may command (scripts and the
-//!   command line keep working). A stale token cannot authorize a command.
-//! - With a holder, only commands carrying its token are accepted.
-//! - `stop` and `shutdown` are always accepted from anyone, and
-//!   `approve_recovery` is the operator's: stopping and recovering are never
-//!   what needs protecting.
-//! - The holder renews the lease explicitly. A lapse stops leased motion and
-//!   leaves the arms holding, so a crashed client cannot keep control.
-//! - Each arm carries a list of interlocks and a revision bumped whenever one
-//!   is raised. Motion is refused while any is active; a command carrying an
-//!   `expected_revision` the arm has moved past is refused as `stale_revision`.
-//!   A required camera's interlock belongs to the lease and ends with it.
-//!
-//! Every operation takes the instant it happens at, so the rules have no clock of
-//! their own.
+// INVARIANT: All arms share one lease, including requests that bypass the station. See docs/control-model.md for admission and interlock behavior.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -36,17 +15,13 @@ use hebbian_contracts::{
     Command, Interlock, LeaseGrant, LeaseHolder, LeaseStatus, OnInterruption, RejectionReason,
 };
 
-/// How long the lease lasts after its holder's last command or retain.
 pub const LEASE: Duration = Duration::from_secs(15);
 
-/// Whether anyone may send this command, whoever holds the lease.
 #[must_use]
 pub fn is_always_allowed(command: &Command) -> bool {
     matches!(command, Command::Stop | Command::Shutdown)
 }
 
-/// Whether a command is accepted while an interlock is active: it stops,
-/// powers off or recovers the arm rather than moving it.
 #[must_use]
 pub fn is_allowed_while_interlocked(command: &Command) -> bool {
     matches!(
@@ -64,17 +39,36 @@ pub use hebbian_contracts::LeaseRequest;
 struct Held {
     token: String,
     request: LeaseRequest,
-    /// Required cameras currently reported unavailable.
     unavailable_cameras: BTreeSet<String>,
     expires_at: Instant,
     phase: LeasePhase,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
 enum LeasePhase {
     Active,
     Transferring,
     Interrupted,
+    ExpiredManual(Vec<PendingArmStop>),
+}
+
+struct PendingArmStop {
+    arm: ArmHandle,
+    readiness: Receiver<Result<bool, Rejection>>,
+}
+
+impl PendingArmStop {
+    fn poll_stopped(&mut self) -> Result<bool, Rejection> {
+        match self.readiness.try_recv() {
+            Ok(Ok(true)) => Ok(true),
+            Ok(Ok(false)) => {
+                self.readiness = self.arm.control_handoff_readiness()?;
+                Ok(false)
+            }
+            Ok(Err(rejection)) => Err(rejection),
+            Err(TryRecvError::Empty) => Ok(false),
+            Err(TryRecvError::Disconnected) => Err(crate::handoff::loop_not_running()),
+        }
+    }
 }
 
 impl Held {
@@ -93,11 +87,10 @@ impl Held {
     }
 
     fn is_active_holder(&self, token: Option<&str>) -> bool {
-        self.phase == LeasePhase::Active && self.is_held_by(token)
+        matches!(self.phase, LeasePhase::Active) && self.is_held_by(token)
     }
 }
 
-/// Whether two tokens are equal, taking as long for every pair of the same length.
 fn same_token(held: &str, presented: &str) -> bool {
     held.len() == presented.len()
         && held
@@ -109,46 +102,38 @@ fn same_token(held: &str, presented: &str) -> bool {
             == 0
 }
 
-/// A token no one can guess: 24 random bytes in hex.
-fn new_token() -> String {
+fn new_token() -> std::io::Result<String> {
     let mut bytes = [0_u8; 24];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut random| random.read_exact(&mut bytes))
-        .expect("the system provides random bytes");
-    bytes.iter().fold(String::new(), |mut hex, byte| {
+    std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
+    Ok(bytes.iter().fold(String::new(), |mut hex, byte| {
         let _ = write!(hex, "{byte:02x}");
         hex
-    })
+    }))
 }
 
-/// One arm's own interlocks (those not tied to the lease) and its revision.
 #[derive(Debug, Default)]
 pub struct ArmInterlocks {
     active: Vec<Interlock>,
     revision: u64,
 }
 
-/// One arm's interlocks, shared between its link and the lease.
 pub type SharedInterlocks = Arc<Mutex<ArmInterlocks>>;
 
-/// An arm a command would move, and the revision the caller last saw on it.
 #[derive(Clone)]
 pub(crate) struct ArmGate {
     pub interlocks: SharedInterlocks,
     pub expected_revision: Option<u64>,
 }
 
-/// The lease on all of an executor's arms, and their interlocks.
 pub struct Lease {
     duration: Duration,
     held: Mutex<Option<Held>>,
     arms: Mutex<Vec<LeasedArm>>,
-    /// Even while a controller is available, odd while it is unavailable.
-    /// Changes on every transition so an acquisition cannot cross a reconnect.
+    // INVARIANT: Even while a controller is available, odd while it is unavailable.
+    // Changes on every transition so an acquisition cannot cross a reconnect.
     controller_epoch: AtomicU64,
 }
 
-/// The holder's token and the cameras it requires.
 #[derive(Clone)]
 pub struct CameraRequirements {
     pub token: String,
@@ -168,10 +153,10 @@ struct LeasedArm {
     interlocks: SharedInterlocks,
 }
 
-/// Acquiring can be refused by another holder or by an unsuccessful stop.
 #[derive(Debug)]
 pub enum AcquireError {
     Held(LeaseStatus),
+    Unavailable(std::io::Error),
     StopFailed {
         reason: RejectionReason,
         detail: String,
@@ -182,6 +167,10 @@ impl std::fmt::Display for AcquireError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Held(status) => write!(formatter, "The lease is held by '{}'.", status.label),
+            Self::Unavailable(error) => write!(
+                formatter,
+                "Could not generate a secure lease token: {error}"
+            ),
             Self::StopFailed { detail, .. } => {
                 write!(formatter, "Could not stop to take the lease: {detail}")
             }
@@ -189,7 +178,14 @@ impl std::fmt::Display for AcquireError {
     }
 }
 
-impl std::error::Error for AcquireError {}
+impl std::error::Error for AcquireError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Unavailable(error) => Some(error),
+            Self::Held(_) | Self::StopFailed { .. } => None,
+        }
+    }
+}
 
 fn controller_unavailable() -> AcquireError {
     AcquireError::StopFailed {
@@ -212,7 +208,6 @@ impl Lease {
         }
     }
 
-    /// Revoke every holder and pending handoff after controller loss.
     pub fn controller_lost(&self) {
         let mut held = self.held.lock_unpoisoned();
         if self.controller_epoch.load(Ordering::Acquire) & 1 == 0 {
@@ -224,7 +219,6 @@ impl Lease {
         }
     }
 
-    /// Allow fresh leases after a new controller completes recovery checks.
     pub fn controller_ready(&self) {
         let _held = self.held.lock_unpoisoned();
         if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
@@ -245,7 +239,6 @@ impl Lease {
         });
     }
 
-    /// Stop every arm only while the specified holder still holds the lease.
     pub fn stop_leased_motion(&self, token: &str) -> bool {
         let mut held = self.held.lock_unpoisoned();
         if !self
@@ -257,8 +250,8 @@ impl Lease {
         self.stop_all_arms()
     }
 
-    /// Stop a lease holder's sequence without invalidating the command that
-    /// requested the stop. Any earlier stop still invalidates that command.
+    // INVARIANT: Stop a lease holder's sequence without invalidating the command that
+    // requested the stop. Any earlier stop still invalidates that command.
     pub(crate) fn stop_leased_motion_for_submission(
         &self,
         token: &str,
@@ -298,12 +291,10 @@ impl Lease {
         submitted
     }
 
-    /// Run an action while the specified holder still holds the lease.
     pub fn with_lease(&self, token: &str, action: &mut dyn FnMut()) -> bool {
         self.with_captured_lease(Some(token), action)
     }
 
-    /// Run an action if the captured lease is current, or an unheld lease remains unheld.
     pub fn with_captured_lease(&self, token: Option<&str>, action: &mut dyn FnMut()) -> bool {
         let mut held = self.held.lock_unpoisoned();
         if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
@@ -321,12 +312,7 @@ impl Lease {
         authorized
     }
 
-    /// Acquire the lease, or with `take` take it, stopping every arm before
-    /// granting it. This waits for the control loop and must run outside
-    /// asynchronous workers.
-    ///
-    /// # Errors
-    /// Another client holds the lease, or an arm cannot finish stopping.
+    // CONSTRAINT: Lease transfer waits for every arm to stop before granting control and must run outside asynchronous workers.
     pub fn acquire_stopping_arms(
         &self,
         request: LeaseRequest,
@@ -352,20 +338,22 @@ impl Lease {
         take: bool,
         epoch: u64,
     ) -> Result<LeaseGrant, AcquireError> {
-        if !take && let Ok(grant) = self.acquire(request.clone(), Instant::now()) {
-            return Ok(grant);
+        if !take {
+            match self.acquire(request.clone(), Instant::now()) {
+                Ok(grant) => return Ok(grant),
+                Err(AcquireError::Held(_)) => {}
+                Err(error) => return Err(error),
+            }
         }
         let arms = self.arms.lock_unpoisoned().clone();
-        let (token, stops) = self
-            .begin_takeover(request, take, Instant::now(), || {
-                for arm in &arms {
-                    arm.generation.fetch_add(1, Ordering::AcqRel);
-                }
-                arms.iter()
-                    .map(|arm| arm.arm.submit_unawaited(Command::Stop, None))
-                    .collect::<Vec<_>>()
-            })
-            .map_err(AcquireError::Held)?;
+        let (token, stops) = self.begin_takeover(request, take, Instant::now(), || {
+            for arm in &arms {
+                arm.generation.fetch_add(1, Ordering::AcqRel);
+            }
+            arms.iter()
+                .map(|arm| arm.arm.submit_unawaited(Command::Stop, None))
+                .collect::<Vec<_>>()
+        })?;
         if self.controller_epoch.load(Ordering::Acquire) != epoch {
             let mut held = self.held.lock_unpoisoned();
             if held
@@ -418,16 +406,51 @@ impl Lease {
         }
     }
 
-    /// Fence and stop the previous holder before making an expired lease available.
+    // SAFETY: Keep expired manual control fenced until every arm confirms it has stopped.
     fn live<'a>(&self, held: &'a mut Option<Held>, now: Instant) -> Option<&'a mut Held> {
-        if held
-            .as_ref()
-            .is_some_and(|held| held.phase == LeasePhase::Active && held.expires_at <= now)
-        {
-            self.stop_all_arms();
+        if held.as_ref().is_some_and(|claim| {
+            matches!(claim.phase, LeasePhase::Active) && claim.expires_at <= now
+        }) {
+            let stops_submitted = self.stop_all_arms();
             if let Some(claim) = held.as_mut() {
-                claim.phase = LeasePhase::Interrupted;
+                claim.phase = if claim.request.holder == LeaseHolder::Manual && stops_submitted {
+                    self.arms
+                        .lock_unpoisoned()
+                        .iter()
+                        .map(|arm| {
+                            Ok(PendingArmStop {
+                                arm: arm.arm.clone(),
+                                readiness: arm.arm.control_handoff_readiness()?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, Rejection>>()
+                        .map_or(LeasePhase::Interrupted, LeasePhase::ExpiredManual)
+                } else {
+                    LeasePhase::Interrupted
+                };
             }
+        }
+        let mut release = false;
+        if let Some(claim) = held.as_mut()
+            && let LeasePhase::ExpiredManual(pending) = &mut claim.phase
+        {
+            let mut failed = false;
+            pending.retain_mut(|arm| {
+                if let Ok(stopped) = arm.poll_stopped() {
+                    !stopped
+                } else {
+                    failed = true;
+                    false
+                }
+            });
+            if failed {
+                claim.phase = LeasePhase::Interrupted;
+            } else {
+                release = pending.is_empty();
+            }
+        }
+        if release {
+            *held = None;
         }
         held.as_mut()
     }
@@ -438,24 +461,17 @@ impl Lease {
         self.live(&mut held, now).map(|held| held.status(now))
     }
 
-    /// The holder's token and required cameras, while the lease is active.
     #[must_use]
     pub fn camera_requirements(&self) -> Option<CameraRequirements> {
         let mut held = self.held.lock_unpoisoned();
         self.live(&mut held, Instant::now())
-            .filter(|claim| claim.phase == LeasePhase::Active)
+            .filter(|claim| matches!(claim.phase, LeasePhase::Active))
             .map(|claim| CameraRequirements {
                 token: claim.token.clone(),
                 cameras: claim.request.required_cameras.clone(),
             })
     }
 
-    /// Report whether a camera the holder requires gives frames. A camera
-    /// newly unavailable raises its interlock, bumps every arm's revision and
-    /// stops the arms; an available one clears it.
-    ///
-    /// # Errors
-    /// The token does not hold the lease, or the lease does not require the camera.
     pub fn report_camera(&self, token: &str, camera: &str, available: bool) -> Result<(), String> {
         let mut held = self.held.lock_unpoisoned();
         let Some(claim) = self
@@ -484,7 +500,6 @@ impl Lease {
         Ok(())
     }
 
-    /// One arm's active interlocks, its own and the lease's, and its revision.
     #[must_use]
     pub fn interlocks(&self, arm: &SharedInterlocks) -> (Vec<Interlock>, u64) {
         let cameras: Vec<Interlock> = {
@@ -507,9 +522,6 @@ impl Lease {
         (active, interlocks.revision)
     }
 
-    /// Raise an arm's interlock, bumping its revision when it is new. A
-    /// recovery that needs approval returns the lease when the holder asked
-    /// for that.
     pub fn raise(&self, arm: &SharedInterlocks, interlock: Interlock) {
         let raised = {
             let mut interlocks = arm.lock_unpoisoned();
@@ -532,7 +544,7 @@ impl Lease {
         if raised && matches!(interlock, Interlock::RecoveryApprovalRequired { .. }) {
             let mut held = self.held.lock_unpoisoned();
             if self.live(&mut held, Instant::now()).is_some_and(|claim| {
-                claim.phase == LeasePhase::Active
+                matches!(claim.phase, LeasePhase::Active)
                     && claim.request.on_interruption == OnInterruption::ReturnLease
             }) {
                 *held = None;
@@ -540,24 +552,19 @@ impl Lease {
         }
     }
 
-    /// Clear an arm's interlocks that match.
     pub fn clear(&self, arm: &SharedInterlocks, matches: impl Fn(&Interlock) -> bool) {
         arm.lock_unpoisoned()
             .active
             .retain(|interlock| !matches(interlock));
     }
 
-    /// Acquire the lease when no one holds it.
-    ///
-    /// # Errors
-    /// Someone else holds the lease: their status.
-    fn acquire(&self, request: LeaseRequest, now: Instant) -> Result<LeaseGrant, LeaseStatus> {
+    fn acquire(&self, request: LeaseRequest, now: Instant) -> Result<LeaseGrant, AcquireError> {
         let mut held = self.held.lock_unpoisoned();
         if let Some(existing) = self.live(&mut held, now) {
-            return Err(existing.status(now));
+            return Err(AcquireError::Held(existing.status(now)));
         }
         let claim = Held {
-            token: new_token(),
+            token: new_token().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
@@ -572,24 +579,24 @@ impl Lease {
         Ok(grant)
     }
 
-    /// Reserve the lease and queue all stops while command admission is locked.
-    /// The reservation's token is never given to a client until the stop ends.
+    // INVARIANT: Reserve the lease and queue all stops while command admission is locked.
+    // The reservation's token is never given to a client until the stop ends.
     pub(crate) fn begin_takeover<T>(
         &self,
         request: LeaseRequest,
         replace_active: bool,
         now: Instant,
         enqueue_stops: impl FnOnce() -> T,
-    ) -> Result<(String, T), LeaseStatus> {
+    ) -> Result<(String, T), AcquireError> {
         let mut held = self.held.lock_unpoisoned();
         if let Some(existing) = self.live(&mut held, now)
-            && (existing.phase == LeasePhase::Transferring
-                || (existing.phase == LeasePhase::Active && !replace_active))
+            && (matches!(existing.phase, LeasePhase::Transferring)
+                || (matches!(existing.phase, LeasePhase::Active) && !replace_active))
         {
-            return Err(existing.status(now));
+            return Err(AcquireError::Held(existing.status(now)));
         }
         let reservation = Held {
-            token: new_token(),
+            token: new_token().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
@@ -600,8 +607,8 @@ impl Lease {
         Ok((token, enqueue_stops()))
     }
 
-    /// Complete the reservation only after every arm has stopped. A failed
-    /// transfer stays reserved, preventing unleased commands until a retry.
+    // SAFETY: Complete the reservation only after every arm has stopped. A failed
+    // transfer stays reserved, preventing unleased commands until a retry.
     pub(crate) fn finish_takeover(
         &self,
         token: &str,
@@ -610,7 +617,8 @@ impl Lease {
     ) -> Option<LeaseGrant> {
         let mut held = self.held.lock_unpoisoned();
         let reservation = held.as_mut().filter(|reservation| {
-            reservation.phase == LeasePhase::Transferring && reservation.is_held_by(Some(token))
+            matches!(reservation.phase, LeasePhase::Transferring)
+                && reservation.is_held_by(Some(token))
         })?;
         if !stopped {
             reservation.phase = LeasePhase::Interrupted;
@@ -625,7 +633,6 @@ impl Lease {
         })
     }
 
-    /// Extend the holder's lease. False if the token is not the holder's.
     pub fn retain(&self, token: Option<&str>, now: Instant) -> bool {
         let mut held = self.held.lock_unpoisoned();
         let duration = self.duration;
@@ -635,7 +642,6 @@ impl Lease {
             .is_some()
     }
 
-    /// Give the lease up. Returning without holding it does nothing.
     pub fn return_lease(&self, token: Option<&str>, now: Instant) {
         let mut held = self.held.lock_unpoisoned();
         if self
@@ -646,7 +652,6 @@ impl Lease {
         }
     }
 
-    /// Return the current lease and stop any cancelled action sequence atomically.
     pub(crate) fn release_with(&self, token: &str, cancel_sequence: impl FnOnce() -> bool) -> bool {
         let mut held = self.held.lock_unpoisoned();
         if !self
@@ -662,7 +667,7 @@ impl Lease {
         true
     }
 
-    /// Queue the holder's disconnect stops before allowing another holder.
+    // INVARIANT: Queue the holder's disconnect stops before allowing another holder.
     pub(crate) fn return_after(&self, token: &str, now: Instant, stop: impl FnOnce()) {
         let mut held = self.held.lock_unpoisoned();
         if self
@@ -674,12 +679,12 @@ impl Lease {
         }
     }
 
-    /// End an active lease. An incomplete handoff cannot be revoked.
+    // INVARIANT: An incomplete handoff cannot be revoked: its stop must finish before control can become available.
     pub fn revoke(&self) -> bool {
         let mut held = self.held.lock_unpoisoned();
         if held
             .as_ref()
-            .is_none_or(|claim| claim.phase == LeasePhase::Active)
+            .is_none_or(|claim| matches!(claim.phase, LeasePhase::Active))
         {
             *held = None;
             true
@@ -688,7 +693,7 @@ impl Lease {
         }
     }
 
-    /// Invalidate prior submissions for this arm and queue its stop atomically.
+    // INVARIANT: Invalidate prior submissions for this arm and queue its stop atomically.
     pub(crate) fn interrupt<T>(&self, generation: &AtomicU64, enqueue: impl FnOnce() -> T) -> T {
         let _held = self.held.lock_unpoisoned();
         generation.fetch_add(1, Ordering::AcqRel);
@@ -726,7 +731,7 @@ impl Lease {
         Ok(())
     }
 
-    /// Approving recovery is the operator's, whoever holds the lease.
+    // SAFETY: Approving recovery is the operator's, whoever holds the lease.
     pub(crate) fn admit_recovery_approval<T>(
         &self,
         generations: &[(Arc<AtomicU64>, u64)],
@@ -798,10 +803,14 @@ impl Lease {
             });
         }
         if let Some(claim) = self.live(&mut held, now) {
-            if claim.phase == LeasePhase::Interrupted && options.allow_fault_recovery {
+            if matches!(
+                claim.phase,
+                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
+            ) && options.allow_fault_recovery
+            {
                 return Ok(act());
             }
-            if claim.phase != LeasePhase::Active {
+            if !matches!(claim.phase, LeasePhase::Active) {
                 return Err(Rejection {
                     reason: RejectionReason::ArmBusy,
                     detail: "The lease transfer has not finished; retry taking the lease"
@@ -832,7 +841,7 @@ impl Lease {
     }
 }
 
-/// Manual control needs no interlock but a required camera's on any arm.
+// CONSTRAINT: Manual control needs no interlock but a required camera's on any arm.
 pub(crate) fn manual_control_ready_without_waiting(
     links: &[crate::control_link::LinkHandle],
 ) -> Result<(), String> {
@@ -870,7 +879,7 @@ mod tests {
         }
     }
 
-    fn token_of(acquired: Result<LeaseGrant, LeaseStatus>) -> String {
+    fn token_of(acquired: Result<LeaseGrant, AcquireError>) -> String {
         match acquired {
             Ok(grant) => grant.lease_token,
             Err(holder) => panic!("refused, held by {holder:?}"),
@@ -999,7 +1008,6 @@ mod tests {
         assert!(gated(&lease, Some(&agent), &arm, None).is_ok());
         lease.report_camera(&agent, "front", false).unwrap();
         let manual = take(&lease, LeaseHolder::Manual, "operator", now);
-        // The camera interlock ended with the agent's lease.
         assert_eq!(lease.interlocks(&arm), (Vec::new(), 2));
         lease.report_camera(&manual, "front", false).unwrap();
         assert!(gated(&lease, Some(&manual), &arm, None).is_ok());
@@ -1029,7 +1037,7 @@ mod tests {
         let refused = lease
             .acquire(request(LeaseHolder::Manual, "viewer"), now)
             .unwrap_err();
-        assert_eq!(refused.label, "touch the block");
+        assert!(matches!(refused, AcquireError::Held(status) if status.label == "touch the block"));
     }
 
     #[test]
@@ -1054,6 +1062,31 @@ mod tests {
             .begin_takeover(request(LeaseHolder::Manual, "viewer"), false, lapsed, || ())
             .unwrap();
         assert!(lease.finish_takeover(&new_token, lapsed, true).is_some());
+    }
+
+    #[test]
+    fn an_expired_manual_lease_stays_fenced_when_the_loop_cannot_confirm_its_stop() {
+        for disconnect_before_expiry in [false, true] {
+            let (lease, now) = lease();
+            let token = token_of(lease.acquire(request(LeaseHolder::Manual, "viewer"), now));
+            let (handle, inbox) = crate::handoff::arm_channel();
+            lease.register_arm(
+                handle,
+                Arc::new(AtomicU64::new(0)),
+                SharedInterlocks::default(),
+            );
+            let mut inbox = Some(inbox);
+            if disconnect_before_expiry {
+                drop(inbox.take());
+            }
+            let expired = now + LEASE_FOR_TESTS * 2;
+            assert!(lease.status(expired).is_some());
+            drop(inbox);
+            assert!(lease.status(expired).is_some());
+            assert!(!lease.retain(Some(&token), expired));
+            assert!(command(&lease, None, expired).is_err());
+            assert!(!lease.revoke());
+        }
     }
 
     #[test]
@@ -1293,5 +1326,73 @@ mod tests {
             ran = true;
         });
         assert!(!ran);
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(64))]
+
+        #[test]
+        fn generated_lease_interruptions_never_restore_an_old_tokens_authority(
+            operations in proptest::collection::vec((0_u8..7, 0_u64..15000), 1..48)
+        ) {
+            use proptest::{prop_assert, prop_assert_eq};
+            enum Authority {
+                Offline,
+                Vacant,
+                Active { token: String, expires: Instant },
+                Fenced,
+            }
+            let (lease, mut now) = lease();
+            let mut authority = Authority::Vacant;
+            let mut issued = Vec::new();
+            for (operation, elapsed_millis) in operations {
+                now += Duration::from_millis(elapsed_millis);
+                if matches!(&authority, Authority::Active { expires, .. } if *expires <= now) {
+                    // INVARIANT: An expired agent lease remains fenced until recovery or takeover.
+                    authority = Authority::Fenced;
+                }
+                match operation {
+                    0 if !matches!(authority, Authority::Offline) => {
+                        let answer = lease.acquire(request(LeaseHolder::Agent, "generated"), now);
+                        prop_assert_eq!(answer.is_ok(), matches!(authority, Authority::Vacant));
+                        if let Ok(grant) = answer {
+                            issued.push(grant.lease_token.clone());
+                            authority = Authority::Active { token: grant.lease_token, expires: now + LEASE_FOR_TESTS };
+                        }
+                    }
+                    1 if !matches!(authority, Authority::Offline) => {
+                        let (token, ()) = lease.begin_takeover(request(LeaseHolder::Agent, "generated-take"), true, now, || ()).unwrap();
+                        let grant = lease.finish_takeover(&token, now, true).unwrap();
+                        issued.push(grant.lease_token.clone());
+                        authority = Authority::Active { token: grant.lease_token, expires: now + LEASE_FOR_TESTS };
+                    }
+                    2 => {
+                        if let Some(token) = issued.last() {
+                            lease.return_lease(Some(token), now);
+                            if matches!(&authority, Authority::Active { token: held, .. } if held == token) {
+                                authority = Authority::Vacant;
+                            }
+                        }
+                    }
+                    3 => {
+                        if let Authority::Active { token, expires } = &mut authority {
+                            prop_assert!(lease.retain(Some(token), now));
+                            *expires = now + LEASE_FOR_TESTS;
+                        }
+                    }
+                    4 => { lease.controller_lost(); authority = Authority::Offline; }
+                    5 => {
+                        lease.controller_ready();
+                        if matches!(authority, Authority::Offline) { authority = Authority::Vacant; }
+                    }
+                    _ => { prop_assert!(!lease.retain(Some("never-issued"), now)); }
+                }
+                prop_assert_eq!(command(&lease, None, now).is_ok(), matches!(authority, Authority::Vacant));
+                for token in &issued {
+                    let owns_current = matches!(&authority, Authority::Active { token: held, .. } if held == token);
+                    prop_assert_eq!(command(&lease, Some(token), now).is_ok(), owns_current);
+                }
+            }
+        }
     }
 }

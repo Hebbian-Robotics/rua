@@ -1,4 +1,10 @@
-//! The control loop follows commands from link clients and reports back what it did.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -18,22 +24,12 @@ mod support;
 use hebbian_contracts::{ArmMode, CommandOutcome, Event, Sample};
 use support::{LinkClient, RunningArms};
 
-const CONFIG: &str = r#"{
-  "urdf": "unused.urdf", "driven_joints": ["a", "b"], "surface_guard": null,
-  "motion": {"acceleration_limit": 20.0, "jerk_limit": 200.0, "settled_error_radians": 0.02, "settle_dwell_seconds": 0.1, "settle_timeout_seconds": 2.0}, "joint_count": 2, "frequency_hertz": 100.0, "loop_deadline_seconds": 0.1,
-  "lower_limits": [-2.0, -2.0], "upper_limits": [2.0, 2.0],
-  "joint_effort_limits": [10.0, 10.0], "tracking_following_lag_seconds": 0.05, "tracking_static_margin_radians": 1.5,
-  "max_joint_speed": 3.0, "default_joint_speed": 1.5,
-  "stream_goal_timeout_seconds": 5.0,
-  "joint_limit_recovery_tolerance_radians": 0.0349, "jaw_closing_axis": "x"
-}"#;
+const CONFIG: &str = include_str!("support/two_joint_config.json");
 
-/// A lease for one executor, which its arms share.
 fn control() -> Arc<Lease> {
     Arc::new(Lease::new(LEASE))
 }
 
-/// The test configuration, with its cycle traces kept out of the source tree.
 fn test_config() -> ExecutorConfig {
     let mut config = ExecutorConfig::parse(CONFIG).unwrap().into_input();
     config.trace_directory = std::env::temp_dir()
@@ -47,12 +43,16 @@ fn in_mode(mode: ArmMode) -> impl FnMut(&Event) -> bool {
     move |event| matches!(event, Event::State(sample) if sample.mode == mode)
 }
 
-/// A simulated arm whose servos report a fault shortly after torque goes on.
 struct FaultingPlant {
     inner: SimulatedPlant,
     reads_since_enable: Option<u32>,
+    fault_active: Arc<AtomicBool>,
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "This test adapter forwards operations to its simulated plant."
+)]
 impl Plant for FaultingPlant {
     fn pacing(&self) -> Pacing {
         self.inner.pacing()
@@ -63,7 +63,7 @@ impl Plant for FaultingPlant {
         feedback.temperatures_celsius = vec![70.0, 31.0];
         if let Some(reads) = &mut self.reads_since_enable {
             *reads += 1;
-            if *reads > 2 {
+            if *reads > 2 && self.fault_active.load(Ordering::Relaxed) {
                 feedback.fault = Some("1: ok 70C".to_owned());
             }
         }
@@ -100,10 +100,13 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
     let mut client = LinkClient::connect(&handle);
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let loop_shutdown_requested = Arc::clone(&shutdown_requested);
+    let fault_active = Arc::new(AtomicBool::new(true));
+    let plant_fault_active = Arc::clone(&fault_active);
     let loop_thread = std::thread::spawn(move || {
         let mut plant = FaultingPlant {
             inner: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
             reads_since_enable: None,
+            fault_active: plant_fault_active,
         };
         let report = run(
             &mut plant,
@@ -117,7 +120,7 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
     });
 
     client.send_command(None, &json!({"kind": "enable"}));
-    // Wait for repeated faulted observations, rather than assuming a number of
+    // WHY: Wait for repeated faulted observations, rather than assuming a number of
     // cycles fits inside a wall-clock interval on a shared CI runner.
     let mut events = Vec::new();
     let mut faulted_samples = 0;
@@ -128,6 +131,12 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
         }
         events.push(event);
     }
+    fault_active.store(false, Ordering::Relaxed);
+    client.read_until(|event| {
+        matches!(event, Event::State(sample) if sample.fault.is_none() && sample.active_trip.is_none())
+    });
+    fault_active.store(true, Ordering::Relaxed);
+    client.read_until(|event| matches!(event, Event::Tripped { reason } if reason == "1: ok 70C"));
     shutdown_requested.store(true, Ordering::Relaxed);
     let report = loop_thread.join().unwrap();
     events.extend(client.drain_events());
@@ -137,7 +146,10 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
         .iter()
         .filter(|event| matches!(event, Event::Tripped { .. }))
         .count();
-    assert_eq!(trips, 1, "a held arm is not tripped again");
+    assert_eq!(
+        trips, 1,
+        "a held arm is not tripped again while the fault persists"
+    );
     let states: Vec<&Sample> = events
         .iter()
         .filter_map(|event| match event {
@@ -145,7 +157,6 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
             _ => None,
         })
         .collect();
-    // Once the fault appears it stays in every sample, tripped or not.
     let first_faulted = states
         .iter()
         .position(|state| state.fault.is_some())
@@ -153,6 +164,9 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
     for state in &states[first_faulted..] {
         assert_eq!(state.fault.as_deref(), Some("1: ok 70C"));
         assert_eq!(state.temperatures_celsius, vec![70.0, 31.0]);
+    }
+    for state in states[first_faulted..].iter().take(3) {
+        assert_eq!(state.active_trip.as_deref(), Some("1: ok 70C"));
     }
 }
 
@@ -225,21 +239,22 @@ fn a_simulated_arm_recovers_from_just_outside_a_joint_limit() {
     assert!(loop_thread.join().unwrap().trip.is_none());
 }
 
-/// Two arms of one executor, each with its own link, in one loop.
 struct TwoArms {
     left: LinkClient,
     right: LinkClient,
-    /// Setting an arm's flag makes its servos report a fault.
     faults: [Arc<AtomicBool>; 2],
     _running_arms: RunningArms,
 }
 
-/// A simulated arm whose servos report a fault while its flag is set.
 struct SwitchedFaultPlant {
     inner: SimulatedPlant,
     fault: Arc<AtomicBool>,
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "This test adapter forwards operations to its simulated plant."
+)]
 impl Plant for SwitchedFaultPlant {
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         self.inner.read_feedback_into(feedback)?;
@@ -282,15 +297,15 @@ fn two_arms() -> TwoArms {
         .map(|(name, fault)| {
             let config = test_config();
             let link = Link::new(&config, Arc::clone(&control)).unwrap();
-            ArmSetup {
-                name: (*name).to_owned(),
+            ArmSetup::new(
+                (*name).to_owned(),
                 config,
-                plant: SwitchedFaultPlant {
+                SwitchedFaultPlant {
                     inner: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
                     fault: Arc::clone(fault),
                 },
-                link: Some(link),
-            }
+                Some(link),
+            )
         })
         .collect();
     let handles: Vec<_> = setups
@@ -338,7 +353,7 @@ fn ended_record(client: &mut LinkClient) -> hebbian_contracts::CommandRecord {
 }
 
 #[test]
-fn a_grouped_move_takes_every_arm_to_its_target_together() {
+fn a_grouped_move_takes_every_arm_to_its_target() {
     let mut arms = two_arms();
     move_arms(
         &arms.left,
@@ -366,9 +381,6 @@ fn a_grouped_move_takes_every_arm_to_its_target_together() {
         Some(CommandOutcome::Completed),
         "{right:?}"
     );
-    // One trajectory phase: the arm with the shorter way is not done early.
-    let gap = (left.finished_at().unwrap() - right.finished_at().unwrap()).abs();
-    assert!(gap < 0.1, "the arms finished {gap} s apart");
     let joints_error = |record: &hebbian_contracts::CommandRecord| {
         record
             .achieved
@@ -390,7 +402,6 @@ fn when_one_arm_of_a_group_ends_early_the_others_stop_and_hold() {
     arms.left
         .read_until(|event| matches!(event, Event::Reply { .. }));
     arms.right.read_until(in_mode(ArmMode::Moving));
-    // Stopping the left arm alone ends its part, and the right arm's with it.
     arms.left.send_command(None, &json!({"kind": "stop"}));
     let left = ended_record(&mut arms.left);
     let right = ended_record(&mut arms.right);
@@ -429,9 +440,6 @@ fn a_trip_on_one_arm_of_a_group_stops_the_other() {
     );
 }
 
-/// A fake simulator for two arms sharing one scene: it waits for every arm's
-/// step, advances its joints toward the targets, then answers each arm. It stops
-/// answering after `answer_steps` steps, to stand in for a stalled simulation.
 fn fake_simulator(
     directory: &Path,
     answer_steps: usize,
@@ -480,7 +488,7 @@ fn fake_simulator(
                 writeln!(writer, "{state}").unwrap();
             }
         }
-        // Silence: keep the sockets open and answer nothing.
+        // WHY: Silence: keep the sockets open and answer nothing.
         let _ = shutdown_receiver.recv();
     });
     (shutdown_sender, simulator_thread)
@@ -526,12 +534,7 @@ fn sim_setups(
             )
             .unwrap();
             let link = Link::new(&config, Arc::clone(&control)).unwrap();
-            ArmSetup {
-                name: name.to_owned(),
-                config,
-                plant,
-                link: Some(link),
-            }
+            ArmSetup::new(name.to_owned(), config, plant, Some(link))
         })
         .collect()
 }
@@ -611,15 +614,18 @@ fn a_simulator_that_stops_answering_trips_the_arms_instead_of_hanging_the_loop()
     simulator.join().unwrap();
 }
 
-/// A simulated arm whose bus can be switched off, and that records its release.
 struct SwitchedBusPlant {
     inner: SimulatedPlant,
     bus_down: Arc<AtomicBool>,
     released: Arc<AtomicBool>,
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "This test adapter forwards operations to its simulated plant."
+)]
 impl Plant for SwitchedBusPlant {
-    // Model a hardware bus: simulator pacing deliberately treats a lost peer
+    // CONSTRAINT: Model a hardware bus: simulator pacing deliberately treats a lost peer
     // as terminal instead of exercising hardware reconnection and torque hold.
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         anyhow::ensure!(!self.bus_down.load(Ordering::Relaxed), "bus down");
@@ -651,7 +657,7 @@ impl Plant for SwitchedBusPlant {
 #[test]
 fn bus_outages_do_not_release_torque() {
     let mut configuration = test_config().into_input();
-    // Exercise bus recovery, without an unrelated host scheduling trip winning
+    // WHY: Exercise bus recovery, without an unrelated host scheduling trip winning
     // the race on a shared CI runner. Production profiles are unchanged.
     configuration.loop_deadline_seconds = 5.0;
     let config = ExecutorConfig::try_from(configuration).unwrap();

@@ -1,45 +1,41 @@
-//! Enabling, releasing, carrying out queued commands and shutting down.
-
 use super::runner::Runner;
 use crate::arm::{Job, Now};
-use crate::joint_limits::{OutsideRecovery, clamp_within_recovery};
 use crate::limits::max_joint_deviation;
 use crate::plant::{Feedback, Plant};
-use hebbian_contracts::{CornerPlan, Segment};
-/// On shutdown, an arm this close to its rest pose is released without moving.
+use hebbian_robot_geometry::joint_limits::RecoveryRefusal;
 const SHUTDOWN_AT_REST_RADIANS: f64 = 0.01;
 
 impl<P: Plant> Runner<'_, P> {
-    /// The preflight, the drift checks and torque on; the reading that confirms it.
     pub(super) fn enable_checked(&mut self) -> anyhow::Result<Feedback> {
         let config = self.config;
         self.plant.preflight()?;
         let initial = self.plant.read_feedback()?;
-        if let Err(OutsideRecovery { joint, value }) = clamp_within_recovery(
-            &initial.positions,
-            &config.lower_limits,
-            &config.upper_limits,
-            config.joint_limit_recovery_tolerance_radians,
-        ) {
-            anyhow::bail!(
-                "Joint {joint} at {value:.3} rad is outside its limits; move it inside by hand before enabling"
-            );
+        initial.measured_positions(config)?;
+        if let Err(error) = config.recovery_limits().clamp(&initial.positions) {
+            return Err(match error {
+                RecoveryRefusal::OutsideRecovery { .. } => anyhow::anyhow!(
+                    "{error}; move the arm inside its limits by hand before enabling"
+                ),
+                error => anyhow::anyhow!(error),
+            });
         }
-        // The guard watches from before torque goes on.
+        // INVARIANT: The guard watches from before torque goes on.
         self.plant.start_guard()?;
         if let Some(checks) = &config.enable_checks {
             let settled = self.plant.read_feedback()?;
+            let settled_positions = settled.measured_positions(config)?;
             anyhow::ensure!(
-                max_joint_deviation(&settled.positions, &initial.positions)
+                max_joint_deviation(settled_positions.as_slice(), &initial.positions)
                     <= checks.preflight_drift_limit_radians,
                 "Moved during preflight"
             );
         }
         self.plant.enable()?;
         let fresh = self.plant.read_feedback()?;
+        let fresh_positions = fresh.measured_positions(config)?;
         if let Some(checks) = &config.enable_checks {
             anyhow::ensure!(
-                max_joint_deviation(&fresh.positions, &initial.positions)
+                max_joint_deviation(fresh_positions.as_slice(), &initial.positions)
                     <= checks.enable_drift_limit_radians,
                 "Moved during enable"
             );
@@ -50,7 +46,6 @@ impl<P: Plant> Runner<'_, P> {
         Ok(fresh)
     }
 
-    /// Take the arm's torque up, holding the present pose.
     pub(super) fn enable(&mut self, now: Now) {
         let result = self.enable_checked();
         match result {
@@ -59,7 +54,7 @@ impl<P: Plant> Runner<'_, P> {
                 self.state.arm().enabled(&fresh.positions, now);
             }
             Err(reason) => {
-                // A refused preflight leaves the arm disabled; release what the
+                // INVARIANT: A refused preflight leaves the arm disabled; release what the
                 // attempt may have left on.
                 let _ = self.plant.release();
                 self.state
@@ -81,8 +76,7 @@ impl<P: Plant> Runner<'_, P> {
         self.state.arm().released(&cleanup_errors, now);
     }
 
-    /// Carry out the next queued command, if one waits; true if it took longer
-    /// than a cycle, so the cycle timer must start afresh.
+    // WHY: Enabling may take longer than a cycle; restart the cycle timer after a long admission.
     pub(super) fn start_next(&mut self, now: Now) -> bool {
         let (job, mode) = {
             let arm = self.state.arm();
@@ -164,8 +158,8 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    /// On shutdown, with nothing left to carry out: return to where the arm
-    /// rested unpowered, then release.
+    // SAFETY: On shutdown, with nothing left to carry out: return to where the arm
+    // rested unpowered, then release.
     pub(super) fn shutdown_step(&mut self, now: Now) -> bool {
         if !self.state.arm().shutdown_requested() || !self.state.powered {
             return false;
@@ -183,17 +177,12 @@ impl<P: Plant> Runner<'_, P> {
         }
         self.state.shutdown_return_attempted = true;
         self.state.arm().allow_shutdown_return();
-        let plan = CornerPlan {
-            segments: vec![Segment {
-                label: "return_to_rest".into(),
-                corners: vec![poses.hold.clone(), poses.rest.clone()],
-                minimum_duration_seconds: None,
-                target_position: None,
-                target_quaternion: None,
-            }],
-            peak_speed: self.config.default_joint_speed,
-        };
-        match self.state.start_motion(plan) {
+        let motion = self
+            .state
+            .arm()
+            .shutdown_return_plan()
+            .and_then(|plan| self.state.start_motion(plan));
+        match motion {
             Ok(()) => self.state.arm().begin_moving(),
             Err(_) => self.release(now),
         }

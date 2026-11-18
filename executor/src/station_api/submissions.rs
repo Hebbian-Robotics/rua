@@ -1,5 +1,3 @@
-//! Request identity for independently submitted station commands.
-
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -9,18 +7,37 @@ use uuid::Uuid;
 
 const MAX_RETAINED_SUBMISSIONS: usize = 10_000;
 
-type LeaseOutcome = Result<hebbian_contracts::LeaseGrant, String>;
+type RequestOutcome<Reply> = Result<Reply, String>;
 
-struct LeaseSubmission {
-    request: hebbian_contracts::LeaseAcquireRequest,
-    outcome: watch::Sender<Option<LeaseOutcome>>,
+struct TrackedRequest<Request, Reply> {
+    request: Request,
+    outcome: watch::Sender<Option<RequestOutcome<Reply>>>,
 }
 
-/// Completed outcomes may be discarded, but their identities remain fenced.
-#[derive(Default)]
-pub struct LeaseSubmissions {
-    entries: Mutex<SubmissionHistory<LeaseSubmission>>,
+// INVARIANT: Completed outcomes may be discarded, but their identities remain fenced.
+pub struct RequestRegistry<Request, Reply> {
+    entries: Mutex<SubmissionHistory<TrackedRequest<Request, Reply>>>,
 }
+
+impl<Request, Reply> Default for RequestRegistry<Request, Reply> {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::default(),
+        }
+    }
+}
+
+pub type LeaseSubmissions =
+    RequestRegistry<hebbian_contracts::LeaseAcquireRequest, hebbian_contracts::LeaseGrant>;
+
+#[derive(Clone, PartialEq)]
+pub(crate) enum ProgramSubmissionRequest {
+    Source(hebbian_contracts::ActionSequenceStartRequest),
+    Compiled(hebbian_contracts::RunCompiledProgramRequest),
+}
+
+pub(crate) type ProgramSubmissions = RequestRegistry<ProgramSubmissionRequest, String>;
+pub(crate) type ProgramReservation = RequestReservation<String>;
 
 struct SubmissionHistory<T> {
     retained: HashMap<Uuid, T>,
@@ -59,50 +76,47 @@ impl<T> SubmissionHistory<T> {
     }
 }
 
-pub enum LeaseReservation {
-    New(watch::Sender<Option<LeaseOutcome>>),
-    Existing(watch::Receiver<Option<LeaseOutcome>>),
+pub enum RequestReservation<Reply> {
+    New(watch::Sender<Option<RequestOutcome<Reply>>>),
+    Existing(watch::Receiver<Option<RequestOutcome<Reply>>>),
     Conflict,
     Expired,
     Full,
 }
 
-impl LeaseSubmissions {
-    pub fn reserve(
-        &self,
-        id: Uuid,
-        request: hebbian_contracts::LeaseAcquireRequest,
-    ) -> LeaseReservation {
+pub type LeaseReservation = RequestReservation<hebbian_contracts::LeaseGrant>;
+
+impl<Request: PartialEq, Reply> RequestRegistry<Request, Reply> {
+    pub fn reserve(&self, id: Uuid, request: Request) -> RequestReservation<Reply> {
         let mut entries = self
             .entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(existing) = entries.retained.get(&id) {
             return if existing.request == request {
-                LeaseReservation::Existing(existing.outcome.subscribe())
+                RequestReservation::Existing(existing.outcome.subscribe())
             } else {
-                LeaseReservation::Conflict
+                RequestReservation::Conflict
             };
         }
         if entries.seen.contains(&id) {
-            return LeaseReservation::Expired;
+            return RequestReservation::Expired;
         }
         if !entries.make_room(|submission| submission.outcome.borrow().is_some()) {
-            return LeaseReservation::Full;
+            return RequestReservation::Full;
         }
         let (outcome, _) = watch::channel(None);
         entries.insert(
             id,
-            LeaseSubmission {
+            TrackedRequest {
                 request,
                 outcome: outcome.clone(),
             },
         );
-        LeaseReservation::New(outcome)
+        RequestReservation::New(outcome)
     }
 }
 
-/// A request ID is shared across single-arm and coordinated submissions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SubmissionRequest {
     Single(CommandSubmissionRequest),
@@ -114,13 +128,11 @@ struct Submission {
     outcome: watch::Sender<Option<Result<CommandAnswer, String>>>,
 }
 
-/// Tracks outcomes and permanently fences used identifiers for this process.
 #[derive(Default)]
 pub struct CommandSubmissions {
     entries: Mutex<SubmissionHistory<Submission>>,
 }
 
-/// The caller either owns a new submission or follows an existing one.
 pub enum SubmissionReservation {
     New(watch::Sender<Option<Result<CommandAnswer, String>>>),
     Existing(watch::Receiver<Option<Result<CommandAnswer, String>>>),
@@ -136,7 +148,6 @@ pub enum CancellationResult {
 }
 
 impl CommandSubmissions {
-    /// Atomically reserve an identifier or follow its original outcome.
     pub fn reserve(&self, id: Uuid, request: SubmissionRequest) -> SubmissionReservation {
         let mut entries = self
             .entries
@@ -170,8 +181,8 @@ impl CommandSubmissions {
         SubmissionReservation::New(outcome)
     }
 
-    /// Fence an identifier and stop its motion under the same reservation lock.
-    /// A future arrival for an identifier cancelled before submission is refused.
+    // INVARIANT: Fence an identifier and stop its motion under the same reservation lock.
+    // A future arrival for an identifier cancelled before submission is refused.
     pub fn cancel(
         &self,
         id: Uuid,
@@ -220,7 +231,7 @@ impl CommandSubmissions {
                     },
                 );
             } else {
-                // Even when all retained submissions are in flight, a stop must
+                // INVARIANT: Even when all retained submissions are in flight, a stop must
                 // never be refused just because its cancellation arrived first.
                 entries.seen.insert(id);
             }

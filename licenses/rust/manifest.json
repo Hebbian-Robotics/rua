@@ -49,8 +49,8 @@
     "name": "cameras",
     "version": "0.1.0",
     "repository": "https://github.com/Hebbian-Robotics/livekit-cameras",
-    "commit": "fc1d8d67394b081ecb2244b689325b464304c0d8",
-    "directory": "sources/livekit-cameras-fc1d8d67394b",
+    "commit": "38267051b750c2a6d831603e3ebd8f843df83377",
+    "directory": "sources/livekit-cameras-38267051b750",
     "files": [
       "LICENSE"
     ]
@@ -105,10 +105,10 @@
   },
   {
     "name": "libwebrtc",
-    "version": "0.3.55",
+    "version": "0.4.1",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "ede8ac53843a8fb91d6f4fb5629f5245f1758e38",
-    "directory": "sources/livekit-ede8ac53843a",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -116,10 +116,10 @@
   },
   {
     "name": "livekit",
-    "version": "0.9.7",
+    "version": "0.11.0",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "ead3a6936e7e526c6853255e2a731ba7648dd63d",
-    "directory": "sources/livekit-ead3a6936e7e",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -127,10 +127,10 @@
   },
   {
     "name": "livekit-api",
-    "version": "0.9.1",
+    "version": "0.10.2",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -140,8 +140,8 @@
     "name": "livekit-camera-frames",
     "version": "0.1.0",
     "repository": "https://github.com/Hebbian-Robotics/livekit-cameras",
-    "commit": "fc1d8d67394b081ecb2244b689325b464304c0d8",
-    "directory": "sources/livekit-cameras-fc1d8d67394b",
+    "commit": "38267051b750c2a6d831603e3ebd8f843df83377",
+    "directory": "sources/livekit-cameras-38267051b750",
     "files": [
       "LICENSE"
     ]
@@ -150,8 +150,8 @@
     "name": "livekit-camera-invite",
     "version": "0.1.0",
     "repository": "https://github.com/Hebbian-Robotics/livekit-cameras",
-    "commit": "fc1d8d67394b081ecb2244b689325b464304c0d8",
-    "directory": "sources/livekit-cameras-fc1d8d67394b",
+    "commit": "38267051b750c2a6d831603e3ebd8f843df83377",
+    "directory": "sources/livekit-cameras-38267051b750",
     "files": [
       "LICENSE"
     ]
@@ -160,8 +160,8 @@
     "name": "livekit-camera-publisher",
     "version": "0.1.0",
     "repository": "https://github.com/Hebbian-Robotics/livekit-cameras",
-    "commit": "fc1d8d67394b081ecb2244b689325b464304c0d8",
-    "directory": "sources/livekit-cameras-fc1d8d67394b",
+    "commit": "38267051b750c2a6d831603e3ebd8f843df83377",
+    "directory": "sources/livekit-cameras-38267051b750",
     "files": [
       "LICENSE"
     ]
@@ -170,18 +170,18 @@
     "name": "livekit-camera-recorder",
     "version": "0.1.0",
     "repository": "https://github.com/Hebbian-Robotics/livekit-cameras",
-    "commit": "fc1d8d67394b081ecb2244b689325b464304c0d8",
-    "directory": "sources/livekit-cameras-fc1d8d67394b",
+    "commit": "38267051b750c2a6d831603e3ebd8f843df83377",
+    "directory": "sources/livekit-cameras-38267051b750",
     "files": [
       "LICENSE"
     ]
   },
   {
     "name": "livekit-common",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -189,10 +189,10 @@
   },
   {
     "name": "livekit-data-stream",
-    "version": "0.1.9",
+    "version": "0.2.1",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -200,10 +200,10 @@
   },
   {
     "name": "livekit-datatrack",
-    "version": "0.2.4",
+    "version": "0.2.5",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -211,10 +211,10 @@
   },
   {
     "name": "livekit-net",
-    "version": "0.1.4",
+    "version": "0.2.0",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -222,10 +222,10 @@
   },
   {
     "name": "livekit-protocol",
-    "version": "0.8.2",
+    "version": "0.8.3",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -244,10 +244,10 @@
   },
   {
     "name": "livekit-rpc",
-    "version": "0.1.5",
+    "version": "0.3.0",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -255,10 +255,10 @@
   },
   {
     "name": "livekit-signaling",
-    "version": "0.1.7",
+    "version": "0.2.0",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -266,10 +266,10 @@
   },
   {
     "name": "livekit-token",
-    "version": "0.3.1",
+    "version": "0.4.1",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "fa46e8427050b6ee0c6e40670ff161ee3a2bbf5a",
-    "directory": "sources/livekit-fa46e8427050",
+    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
+    "directory": "sources/livekit-c0de3bc4c1c1",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -310,20 +310,10 @@
   },
   {
     "name": "nokhwa-bindings-macos",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "repository": "https://github.com/l1npengtul/nokhwa",
-    "commit": "dc8beced7fc8cedaf6a5de8975cec18889d4b31c",
-    "directory": "sources/nokhwa-dc8beced7fc8",
-    "files": [
-      "LICENSE"
-    ]
-  },
-  {
-    "name": "nokhwa-bindings-windows",
-    "version": "0.4.5",
-    "repository": "https://github.com/l1npengtul/nokhwa",
-    "commit": "d25151da6d7abd2bce78b569d626dc2a28416aa7",
-    "directory": "sources/nokhwa-d25151da6d7a",
+    "commit": "2ea0883136a9d28361a4a72c0afbeb08b6d130c9",
+    "directory": "sources/nokhwa-2ea0883136a9",
     "files": [
       "LICENSE"
     ]

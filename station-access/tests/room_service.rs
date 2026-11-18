@@ -1,4 +1,4 @@
-//! Requires a disposable `LiveKit` development server; see the README.
+// CONSTRAINT: Requires a disposable `LiveKit` development server; see the README.
 use livekit_api::services::room::RoomClient;
 use station_access::{Credentials, new_room_name};
 

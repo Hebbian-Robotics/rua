@@ -1,4 +1,3 @@
-//! Executor collision admission and path sampling, backed by shared geometry.
 use crate::robot::{PathCheck, Robot, path_samples};
 use hebbian_robot_geometry::self_collision::SelfCollisionModel;
 use std::sync::Arc;
@@ -9,34 +8,25 @@ pub struct SelfCollisionGuard {
 }
 
 impl SelfCollisionGuard {
-    /// Build collision geometry using the configured penetration allowance.
-    ///
-    /// # Errors
-    /// The collision geometry or allowance is invalid.
-    pub fn new(robot: Arc<Robot>, penetration_tolerance_meters: f64) -> anyhow::Result<Self> {
-        let model = SelfCollisionModel::new(robot.geometry(), penetration_tolerance_meters)?;
+    pub fn new(
+        robot: Arc<Robot>,
+        penetration_tolerance_meters: f64,
+        allowed_collision_pairs: &[[String; 2]],
+    ) -> anyhow::Result<Self> {
+        let model = SelfCollisionModel::new(robot.geometry(), penetration_tolerance_meters)?
+            .with_allowed_collisions(allowed_collision_pairs)?;
         Ok(Self { robot, model })
     }
 
-    /// The first self-collision at the arm and gripper pose, if present.
-    ///
-    /// # Errors
-    /// Joint values are malformed or the geometry query fails.
     pub fn collision(
         &self,
         arm: &[f64],
         gripper_angle: Option<f64>,
     ) -> anyhow::Result<Option<String>> {
-        self.model
-            .collision(&self.robot.driven_values(arm, gripper_angle))
+        let joints = self.robot.driven_values(arm, gripper_angle);
+        self.model.collision(&joints)
     }
 
-    /// Why the straight joint path from `start` to `goal` is refused, if it is:
-    /// the per-cycle trip's reading of [`Self::safe_prefix`], which the planner
-    /// and the preview cut paths short with.
-    ///
-    /// # Errors
-    /// The joint values are malformed, or the geometry query fails.
     pub(crate) fn path_reason(
         &self,
         start: &[f64],
@@ -46,12 +36,6 @@ impl SelfCollisionGuard {
         Ok(self.safe_prefix(start, goal, gripper_angle)?.refusal())
     }
 
-    /// How far along the straight joint path from `start` to `goal` the arm may
-    /// go: refused outright from a start already past the allowance, else up to
-    /// the last sampled step before the first collision.
-    ///
-    /// # Errors
-    /// The joint values are malformed, or the geometry query fails.
     pub(crate) fn safe_prefix(
         &self,
         start: &[f64],
@@ -60,6 +44,9 @@ impl SelfCollisionGuard {
     ) -> anyhow::Result<PathCheck> {
         if let Some(reason) = self.collision(start, gripper_angle)? {
             return Ok(PathCheck::StartRefused { reason });
+        }
+        if start == goal {
+            return Ok(PathCheck::Clear);
         }
         let mut last_safe = start.to_vec();
         for candidate in path_samples(start, goal) {
@@ -77,10 +64,6 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Three 0.2 m cubes. `world` is the base; `swinger` hangs off `pivot` and,
-    /// at rest, sits right on top of `world` (neighbours, by design); `far`
-    /// rides on `swinger` 0.3 m above the pivot, clear of `world` at rest, and
-    /// swings down onto it when the pivot turns a quarter turn the other way.
     const CUBES_URDF: &str = r#"<robot name="cubes">
       <link name="world"><collision><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link>
       <link name="swinger"><collision><origin xyz="-0.3 0 0"/><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link>
@@ -100,16 +83,19 @@ mod tests {
         std::fs::write(&path, CUBES_URDF).unwrap();
         let robot = Robot::load(&path, &["pivot".to_owned(), "far_pivot".to_owned()]).unwrap();
         let _ = std::fs::remove_file(path);
-        SelfCollisionGuard::new(Arc::new(robot), tolerance).unwrap()
+        SelfCollisionGuard::new(Arc::new(robot), tolerance, &[]).unwrap()
     }
 
     const QUARTER_TURN_DOWN: f64 = -std::f64::consts::FRAC_PI_2;
 
     #[test]
     fn neighbouring_links_may_overlap_by_design() {
-        // `swinger` sits inside `world` at rest, and nothing is refused.
         let guard = guard("neighbours", 0.0);
         assert!(guard.collision(&[0.0, 0.0], None).unwrap().is_none());
+        assert_eq!(
+            guard.safe_prefix(&[0.0, 0.0], &[0.0, 0.0], None).unwrap(),
+            PathCheck::Clear
+        );
     }
 
     #[test]
@@ -117,6 +103,44 @@ mod tests {
         let guard = guard("swing", 0.0);
         let reason = guard.collision(&[QUARTER_TURN_DOWN, 0.0], None).unwrap();
         assert!(reason.is_some_and(|text| text.contains("far") && text.contains("world")));
+    }
+
+    #[test]
+    fn an_allowed_contact_does_not_disable_other_collision_checks() {
+        let mut guard = guard("allowed-contact", 0.0);
+        guard.model = guard
+            .model
+            .with_allowed_collisions(&[["world".to_owned(), "swinger".to_owned()]])
+            .unwrap();
+        assert!(
+            guard
+                .collision(&[QUARTER_TURN_DOWN, 0.0], None)
+                .unwrap()
+                .is_some()
+        );
+        guard.model = guard
+            .model
+            .with_allowed_collisions(&[["far".to_owned(), "world".to_owned()]])
+            .unwrap();
+        assert!(
+            guard
+                .path_reason(&[0.0, 0.0], &[QUARTER_TURN_DOWN, 0.0], None)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn invalid_collision_allowances_fail_instead_of_silently_changing_protection() {
+        for pair in [["world", "missing"], ["world", "world"]] {
+            let guard = guard("invalid-allowance", 0.0);
+            assert!(
+                guard
+                    .model
+                    .with_allowed_collisions(&[pair.map(str::to_owned)])
+                    .is_err()
+            );
+        }
     }
 
     #[test]
@@ -140,5 +164,11 @@ mod tests {
             .path_reason(&[QUARTER_TURN_DOWN, 0.0], &[0.0, 0.0], None)
             .unwrap();
         assert!(reason.is_some());
+        assert!(matches!(
+            guard
+                .safe_prefix(&[QUARTER_TURN_DOWN, 0.0], &[QUARTER_TURN_DOWN, 0.0], None,)
+                .unwrap(),
+            PathCheck::StartRefused { .. }
+        ));
     }
 }

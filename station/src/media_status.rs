@@ -1,36 +1,16 @@
-//! Whether the media programs the station supervises are up, as it last saw
-//! them: `serve` (camera snapshots) and `publish` (USB cameras into
-//! the room). Served at `GET /viewer/api/media-status`; nothing waits on it.
-
 use std::collections::BTreeMap;
+
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
-use schemars::JsonSchema;
-use serde::Serialize;
+use hebbian_contracts::{CameraProblem, MediaState, MediaStatusReport};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum MediaState {
-    Running,
-    /// Not asked for: `publish` without `LiveKit` credentials or USB cameras.
-    NotConfigured,
-    /// It exited and will be started again.
-    Restarting {
-        last_exit: String,
-    },
-    /// It cannot be started, for instance because the binary is missing.
-    Unavailable {
-        reason: String,
-    },
-}
-
-/// The latest state of each supervised program, by name.
 #[derive(Debug, Clone)]
 pub struct MediaStatus(Arc<StatusInner>);
 
 #[derive(Debug)]
 struct StatusInner {
     states: Mutex<BTreeMap<String, MediaState>>,
+    camera_problems: Mutex<BTreeMap<String, CameraProblem>>,
     changed: Condvar,
 }
 
@@ -44,6 +24,7 @@ impl Default for MediaStatus {
                 ("publish".to_owned(), MediaState::NotConfigured),
                 ("serve".to_owned(), started_without),
             ])),
+            camera_problems: Mutex::new(BTreeMap::new()),
             changed: Condvar::new(),
         }))
     }
@@ -59,7 +40,36 @@ impl MediaStatus {
         self.0.changed.notify_all();
     }
 
-    /// Block until `program`'s state satisfies `wanted`.
+    pub fn record_camera_problem(&self, camera: &str, detail: &str) {
+        let last_seen_unix_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |elapsed| elapsed.as_secs_f64());
+        self.0
+            .camera_problems
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(
+                camera.to_owned(),
+                CameraProblem {
+                    detail: detail.to_owned(),
+                    last_seen_unix_seconds,
+                },
+            );
+    }
+
+    #[must_use]
+    pub fn report(&self) -> MediaStatusReport {
+        MediaStatusReport {
+            programs: self.all(),
+            cameras: self
+                .0
+                .camera_problems
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        }
+    }
+
     pub fn wait_until(&self, program: &str, wanted: impl Fn(&MediaState) -> bool) {
         let states = self.0.states.lock().unwrap_or_else(PoisonError::into_inner);
         let _states = self
@@ -69,7 +79,6 @@ impl MediaStatus {
             .unwrap_or_else(PoisonError::into_inner);
     }
 
-    /// Every program's state, by name.
     #[must_use]
     pub fn all(&self) -> BTreeMap<String, MediaState> {
         self.0

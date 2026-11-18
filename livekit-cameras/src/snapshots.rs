@@ -40,8 +40,11 @@ struct SocketReply {
 }
 
 impl Snapshots {
+    /// `expected` names cameras another program publishes into the room: they are listed
+    /// as unavailable until frames arrive, so a camera that never opens is still visible.
     pub fn start(
         mappings: Vec<String>,
+        expected: Vec<String>,
         socket: Option<PathBuf>,
         room: Option<String>,
     ) -> Result<Self, PublisherError> {
@@ -51,7 +54,15 @@ impl Snapshots {
         }
         let snapshots = Self {
             frames: CameraFrames::default(),
-            local_names: Arc::new(cameras.keys().cloned().collect()),
+            local_names: Arc::new(
+                cameras
+                    .keys()
+                    .cloned()
+                    .chain(expected)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+            ),
             socket,
         };
         if !cameras.is_empty()
@@ -236,6 +247,26 @@ fn image_response(jpeg: Vec<u8>, timestamp: u128) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn an_expected_camera_that_never_publishes_is_listed_unavailable()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let snapshots = Snapshots::start(Vec::new(), vec!["wrist".into()], None, None)?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let router = snapshots.router();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let listing: serde_json::Value = reqwest::get(format!("http://{address}/cameras"))
+            .await?
+            .json()
+            .await?;
+        assert_eq!(
+            listing,
+            serde_json::json!([{"name":"wrist","available":false}])
+        );
+        server.abort();
+        Ok(())
+    }
 
     #[tokio::test]
     async fn snapshot_routes_preserve_image_timestamp_and_reject_stale_frames()

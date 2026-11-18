@@ -1,23 +1,17 @@
-//! The online Ruckig smoother between a goal and the motors. Each cycle it moves
-//! from its last output toward the newest reference within the profile's one
-//! set of velocity (`max_joint_speed`), acceleration and jerk limits, the same
-//! ones planned motions use, independently per joint. Planned motions and policy
-//! output bypass it but keep its state current, so a stop brakes from the
-//! commanded velocity.
+// INVARIANT: Direct planned and policy outputs must keep the smoother’s state current so stops brake from commanded velocity.
 
+use anyhow::Context;
 use rsruckig::prelude::{
     ControlInterface, InputParameter, OutputParameter, Ruckig, RuckigResult, Synchronization,
     ThrowErrorHandler, Trajectory,
 };
 
 use crate::config::ExecutorConfig;
-use crate::joint_limits::clamp_within_recovery;
 use crate::limits::{Trip, is_finite_joint_vector};
 
-/// Ruckig refuses target states beyond its own caps; aim just inside them.
+// CONSTRAINT: Ruckig refuses target states beyond its own caps; aim just inside them.
 const INSIDE_CAP: f64 = 0.999;
 
-/// Where the arm should go, and how fast it may approach.
 #[derive(Debug, Clone)]
 pub struct Reference {
     pub positions: Vec<f64>,
@@ -37,7 +31,6 @@ impl Reference {
         }
     }
 
-    /// Copy a reference while retaining the destination's per-joint buffers.
     pub(crate) fn copy_from(&mut self, source: &Self) {
         self.positions.clone_from(&source.positions);
         self.velocities.clone_from(&source.velocities);
@@ -45,7 +38,6 @@ impl Reference {
         self.speed_limit = source.speed_limit;
     }
 
-    /// Become `at_rest` without a new allocation once the buffers have grown.
     pub(crate) fn set_at_rest(&mut self, positions: &[f64], speed_limit: Option<f64>) {
         self.positions.clear();
         self.positions.extend_from_slice(positions);
@@ -57,7 +49,6 @@ impl Reference {
     }
 }
 
-/// Numerical noise allowed when evaluating Ruckig at a joint boundary.
 const ROUNDING_TOLERANCE_RADIANS: f64 = 1e-10;
 
 pub(crate) struct ReferenceFilter {
@@ -80,25 +71,12 @@ pub(crate) struct ReferenceFilter {
 }
 
 impl ReferenceFilter {
-    /// Start at rest at `initial`.
-    ///
-    /// # Errors
-    /// The start is not finite, or is too far outside the joint limits to recover.
     pub fn new(config: &ExecutorConfig, initial: &[f64]) -> anyhow::Result<Self> {
         let n = config.joint_count;
-        if !is_finite_joint_vector(initial, n) {
-            anyhow::bail!("Invalid filter start");
-        }
-        if clamp_within_recovery(
-            initial,
-            &config.lower_limits,
-            &config.upper_limits,
-            config.joint_limit_recovery_tolerance_radians,
-        )
-        .is_err()
-        {
-            anyhow::bail!("Filter start exceeds joint-limit recovery tolerance");
-        }
+        config
+            .recovery_limits()
+            .clamp(initial)
+            .context("Invalid filter start")?;
         let velocity_limit = config.max_joint_speed;
         let acceleration_limit = config.motion.acceleration_limit;
         let jerk_limit = config.motion.jerk_limit;
@@ -112,7 +90,7 @@ impl ReferenceFilter {
             .iter_mut()
             .for_each(|a| *a = acceleration_limit);
         input.max_jerk.iter_mut().for_each(|j| *j = jerk_limit);
-        // Each joint independently: the filter bounds motion, it does not shape paths.
+        // WHY: Each joint independently: the filter bounds motion, it does not shape paths.
         input.synchronization = Synchronization::None;
         Ok(Self {
             joint_count: n,
@@ -147,19 +125,16 @@ impl ReferenceFilter {
         &self.positions
     }
 
-    /// Start at rest at these positions.
     pub fn reset(&mut self, positions: &[f64]) {
         self.follow(&Reference::at_rest(positions, None));
     }
 
-    /// A planned motion or policy commanded this reference directly: carry its
-    /// state, so the smoother continues from it.
     pub fn follow(&mut self, reference: &Reference) {
         self.positions.clone_from(&reference.positions);
         self.velocities.clone_from(&reference.velocities);
         self.accelerations.clone_from(&reference.accelerations);
         self.recovering_inward.fill(0);
-        // A start just outside a limit (an arm resting against its stop) is the
+        // INVARIANT: A start just outside a limit (an arm resting against its stop) is the
         // new edge of what the filter may output until it is back inside.
         for joint in 0..self.joint_count {
             self.recovery_lower[joint] = self.lower_limits[joint].min(self.positions[joint]);
@@ -167,7 +142,6 @@ impl ReferenceFilter {
         }
     }
 
-    /// Where the arm comes to rest if it brakes now within the limits.
     #[must_use]
     pub(crate) fn stopping_position(&self) -> Vec<f64> {
         let n = self.joint_count;
@@ -204,7 +178,7 @@ impl ReferenceFilter {
     }
 
     fn recovery_target(&mut self, joint: usize, wanted: f64) -> f64 {
-        // When an inward path starts outside a calibrated limit, aim the
+        // WHY: When an inward path starts outside a calibrated limit, aim the
         // filter at the limit until it has recovered. Chasing successive
         // outside waypoints can reverse velocity and move outward again.
         if self.recovering_inward[joint] == 0 {
@@ -239,10 +213,6 @@ impl ReferenceFilter {
         }
     }
 
-    /// The next command, `interval` seconds after the last, written to `command`.
-    ///
-    /// # Errors
-    /// A `Trip` when the reference is malformed or the filter cannot follow it.
     pub(crate) fn apply(
         &mut self,
         reference: &Reference,
@@ -264,7 +234,7 @@ impl ReferenceFilter {
         for joint in 0..n {
             let wanted = reference.positions[joint];
             let target = self.recovery_target(joint, wanted);
-            // `clamp` returns `wanted` itself when it is in range, so exact
+            // WHY: `clamp` returns `wanted` itself when it is in range, so exact
             // equality is the right test for "was moved to a limit".
             #[allow(clippy::float_cmp)]
             let at_limit = target != wanted || self.recovering_inward[joint] != 0;
@@ -288,7 +258,7 @@ impl ReferenceFilter {
                 )
             };
         }
-        // Current state comes from the guarded values above, so a clamp,
+        // INVARIANT: Current state comes from the guarded values above, so a clamp,
         // reset or followed motion also invalidates Ruckig's cached prediction.
         self.generator.delta_time = interval;
         match self.generator.update(&self.input, &mut self.output) {
@@ -296,12 +266,12 @@ impl ReferenceFilter {
             Ok(other) => return Err(Trip(format!("Reference filter failed: {other:?}"))),
             Err(error) => return Err(Trip(format!("Reference filter failed: {error}"))),
         }
-        // Past its end Ruckig extrapolates the target state, which is what a
+        // CONSTRAINT: Past its end Ruckig extrapolates the target state, which is what a
         // reference that keeps moving at the target velocity would do.
         let positions = &mut self.output.new_position;
         let velocities = &self.output.new_velocity;
         let accelerations = &self.output.new_acceleration;
-        // Clamp only picoradian-scale numerical rounding at a boundary.
+        // INVARIANT: Clamp only picoradian-scale numerical rounding at a boundary.
         for (joint, position) in positions.iter_mut().enumerate() {
             if *position < self.recovery_lower[joint] - ROUNDING_TOLERANCE_RADIANS
                 || *position > self.recovery_upper[joint] + ROUNDING_TOLERANCE_RADIANS
@@ -411,7 +381,6 @@ mod tests {
     #[test]
     fn a_stream_may_start_just_outside_a_limit_and_move_back_in() {
         let mut filter = filter_at(&[0.0, 0.0]);
-        // The arm rests 1.5 mrad past the upper limit of 2.0, as one resting on its stop does.
         filter.reset(&[2.0015, 0.0]);
         let goal = Reference::at_rest(&[1.5, 0.0], None);
         let mut last = vec![2.0015, 0.0];

@@ -1,5 +1,3 @@
-//! Launch and observe a motor-controller child and its independent guards.
-
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -14,7 +12,6 @@ use uuid::Uuid;
 
 const REMEMBERED_REPORTS: usize = 128;
 
-/// The exact configuration files and plants the child will own.
 pub struct ControllerLaunch {
     pub executable: PathBuf,
     pub arms: Vec<(String, PathBuf)>,
@@ -24,7 +21,6 @@ pub struct ControllerLaunch {
     pub hardware: bool,
 }
 
-/// A child and the guard reports inherited through its stderr pipe.
 pub struct ControllerProcess {
     child: Child,
     listener: UnixListener,
@@ -35,10 +31,6 @@ pub struct ControllerProcess {
 }
 
 impl ControllerProcess {
-    /// Start a fresh controller with a unique instance and private socket path.
-    ///
-    /// # Errors
-    /// The socket cannot be created or the child cannot start.
     pub fn start(configuration: &ControllerLaunch) -> anyhow::Result<Self> {
         ensure!(!configuration.arms.is_empty(), "A controller needs an arm");
         let instance = Uuid::new_v4();
@@ -131,14 +123,10 @@ impl ControllerProcess {
         self.child.id()
     }
 
-    /// Accept a controller connection without blocking the station's supervisor.
-    ///
-    /// # Errors
-    /// The listening socket fails.
     pub fn try_accept(&self) -> anyhow::Result<Option<UnixStream>> {
         match self.listener.accept() {
             Ok((socket, _)) => {
-                // Accepted sockets inherit the listener's nonblocking mode on
+                // CONSTRAINT: Accepted sockets inherit the listener's nonblocking mode on
                 // some platforms; controller transport performs blocking reads.
                 socket.set_nonblocking(false)?;
                 Ok(Some(socket))
@@ -148,18 +136,14 @@ impl ControllerProcess {
         }
     }
 
-    /// # Errors
-    /// The operating system cannot inspect the child.
     pub fn try_wait(&mut self) -> anyhow::Result<Option<ExitStatus>> {
         self.child
             .try_wait()
             .context("Cannot inspect the controller process")
     }
 
-    /// Stop only the controller. Any independent guard remains responsible for the arm.
-    ///
-    /// # Errors
-    /// The operating system cannot stop the child.
+    // SAFETY: Stopping the controller does not stop its independent guard; the guard remains
+    // responsible for the arm until release is verified.
     pub fn stop_controller(&mut self) -> anyhow::Result<()> {
         if self.try_wait()?.is_none() {
             self.child
@@ -169,8 +153,7 @@ impl ControllerProcess {
         Ok(())
     }
 
-    /// True only after the controller and any guard inheriting its stderr have
-    /// closed that pipe. This confirms process release, not motor torque.
+    // SAFETY: A closed stderr pipe confirms controller/guard process release, not motor torque.
     #[must_use]
     pub fn report_pipe_closed(&self) -> bool {
         self.report_pipe_closed.load(Ordering::Acquire)

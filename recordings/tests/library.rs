@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
+
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -15,6 +23,14 @@ fn fixture() -> (TempDir, RecordingLibrary) {
     fs::create_dir_all(root.path().join("take")).unwrap();
     fs::write(root.path().join(FILE), DATA).unwrap();
     fs::create_dir_all(root.path().join(".hidden")).unwrap();
+    for directory in ["src", "tests"] {
+        fs::create_dir(root.path().join(directory)).unwrap();
+        fs::write(
+            root.path().join(directory).join("keep.txt"),
+            b"source files",
+        )
+        .unwrap();
+    }
     let library = RecordingLibrary::new(root.path());
     (root, library)
 }
@@ -74,6 +90,8 @@ async fn serves_ranges_and_refuses_traversal_before_deleting_a_listed_recording(
         ".hidden",
         "take%2f..%2foutside",
         "unknown",
+        "src",
+        "tests",
     ] {
         let response = app
             .clone()
@@ -117,6 +135,12 @@ async fn serves_ranges_and_refuses_traversal_before_deleting_a_listed_recording(
         .unwrap();
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert!(!root.path().join("take").exists());
+    for directory in ["src", "tests"] {
+        assert_eq!(
+            fs::read(root.path().join(directory).join("keep.txt")).unwrap(),
+            b"source files"
+        );
+    }
 }
 #[cfg(unix)]
 #[test]
@@ -182,6 +206,7 @@ fn standalone_viewer_serves_the_bundle_and_api_then_stops_on_sigterm() {
 #[tokio::test]
 async fn active_recording_guards_follow_the_station_lifecycle_callback() {
     let (root, library) = fixture();
+    fs::remove_file(root.path().join(FILE)).unwrap();
     let active = std::sync::Arc::new(std::sync::Mutex::new(Some("take".to_owned())));
     let current = active.clone();
     let app = router(library.with_active_recording(move || current.lock().unwrap().clone()));
@@ -198,6 +223,10 @@ async fn active_recording_guards_follow_the_station_lifecycle_callback() {
     let listing: Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert_eq!(listing["active"], "take");
+    assert_eq!(listing["recordings"].as_array().unwrap().len(), 1);
+    assert_eq!(listing["recordings"][0]["name"], "take");
+    assert!(listing["recordings"][0]["mcapPath"].is_null());
+    fs::write(root.path().join(FILE), DATA).unwrap();
     for (method, path, expected) in [
         (
             "DELETE",

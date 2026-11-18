@@ -1,15 +1,28 @@
 //! Shared station state and command-record contracts.
 
+mod executor_config;
+pub use executor_config::*;
 mod backoff;
+pub mod server_sent_events;
 pub use backoff::*;
 mod lease;
 pub use lease::*;
+mod ik_outcomes;
+pub use ik_outcomes::*;
+mod station_status;
+pub use station_status::*;
+mod room_access;
+pub use room_access::*;
+mod sim_plant;
+pub use sim_plant::*;
 mod recording;
 pub use recording::*;
 mod http_api;
 pub use http_api::*;
 mod motion;
 pub use motion::*;
+mod robot_program;
+pub use robot_program::*;
 mod robot_tools;
 pub use robot_tools::*;
 mod protocol;
@@ -96,8 +109,6 @@ pub struct Checkpoint {
     pub target_position: Option<[f64; 3]>,
     pub target_quaternion: Option<[f64; 4]>,
 }
-
-pub use hebbian_robot_geometry::outcomes::IkFailure;
 
 /// The tool-frame axis the gripper's jaws close along.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -233,7 +244,8 @@ pub struct PoseLimited {
     pub position_shortfall_meters: f64,
     /// From the closest pose's orientation to the requested one.
     pub orientation_shortfall_radians: f64,
-    /// What would be reachable exactly instead, in the terms a pose takes.
+    /// The shortfall and the closest pose's tool position in millimetres, then what
+    /// would be reachable exactly instead, in the terms a pose takes.
     pub advice: String,
 }
 
@@ -302,12 +314,47 @@ pub struct CommandRecord {
     pub trace_context: Option<TraceContext>,
 }
 
+/// How a gripper command ended, in the jaw's own angle. The executor sees where the jaw
+/// stopped, not what stopped it, so it cannot tell a held object from a blocked jaw.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GripperResult {
+    /// The jaw arrived at the angle it was asked for.
+    Reached { measured_angle_radians: f64 },
+    /// The jaw stopped short of its target and stayed there: it closed on something,
+    /// was blocked opening, or its target was clipped to the jaw's range.
+    StoppedShort {
+        measured_angle_radians: f64,
+        target_angle_radians: f64,
+    },
+}
+
+impl GripperResult {
+    /// The human-readable form kept in [`CommandCompletion::detail`].
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Reached {
+                measured_angle_radians,
+            } => format!("Reached {measured_angle_radians:.3} rad"),
+            Self::StoppedShort {
+                measured_angle_radians,
+                target_angle_radians,
+            } => format!(
+                "Stopped at {measured_angle_radians:.3} rad short of {target_angle_radians:.3}: holding an object or blocked"
+            ),
+        }
+    }
+}
+
 /// The outcome and timestamp are recorded together when a command ends.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandCompletion {
     pub finished_at: f64,
     pub outcome: CommandOutcome,
     pub detail: Option<String>,
+    /// How a gripper command ended; null for every other command.
+    pub gripper: Option<GripperResult>,
 }
 
 impl CommandRecord {
@@ -397,6 +444,9 @@ pub struct ArmState {
     pub active_command: Option<CommandRecord>,
     pub last_command: Option<CommandRecord>,
     pub fault: Option<String>,
+    /// The protective check currently preventing new motion, if any.
+    #[serde(default)]
+    pub active_trip: Option<String>,
     pub recovery_issue: Option<ArmRecoveryIssue>,
     /// 0 closed to 1 open; none without a gripper.
     pub gripper_opening: Option<f64>,

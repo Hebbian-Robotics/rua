@@ -353,7 +353,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 [[package]]
 name = "cameras"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=fc1d8d67394b081ecb2244b689325b464304c0d8#fc1d8d67394b081ecb2244b689325b464304c0d8"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=38267051b750c2a6d831603e3ebd8f843df83377#38267051b750c2a6d831603e3ebd8f843df83377"
 dependencies = [
  "clap",
  "image",
@@ -645,6 +645,12 @@ dependencies = [
  "metal",
  "objc",
 ]
+
+[[package]]
+name = "core_detect"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
 name = "cpufeatures"
@@ -947,7 +953,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1282,7 +1288,6 @@ dependencies = [
 name = "hebbian-contracts"
 version = "0.1.0"
 dependencies = [
- "hebbian-robot-geometry",
  "schemars",
  "serde",
  "serde_json",
@@ -1291,7 +1296,7 @@ dependencies = [
 [[package]]
 name = "hebbian-mcap"
 version = "0.1.2"
-source = "git+https://github.com/Hebbian-Robotics/mcap-tools?rev=5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd#5c10b40dffbfbb03ac4bdb2b642a697a70bac7bd"
+source = "git+https://github.com/Hebbian-Robotics/mcap-tools?rev=9a9d57c10cd8adb5d4b5afe27bc2dadb9923b0a1#9a9d57c10cd8adb5d4b5afe27bc2dadb9923b0a1"
 dependencies = [
  "mcap",
  "prost",
@@ -1304,10 +1309,9 @@ name = "hebbian-robot-geometry"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hebbian-contracts",
  "nalgebra",
  "parry3d-f64",
- "schemars",
- "serde",
  "stl_io",
  "urdf-rs",
 ]
@@ -1327,6 +1331,7 @@ dependencies = [
  "libc",
  "nalgebra",
  "ort",
+ "proptest",
  "reqwest 0.12.28",
  "rsruckig",
  "schemars",
@@ -1346,7 +1351,7 @@ dependencies = [
 [[package]]
 name = "hebbian-so101"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/so101?rev=9f49365f21703c1c898f4b587cd169697a6aa62d#9f49365f21703c1c898f4b587cd169697a6aa62d"
+source = "git+https://github.com/Hebbian-Robotics/so101?rev=b07c114b2917fd550fa4c74360f6ee4bd8730f23#b07c114b2917fd550fa4c74360f6ee4bd8730f23"
 dependencies = [
  "anyhow",
  "hdrhistogram",
@@ -1355,6 +1360,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serialport",
+ "toml",
  "uuid",
 ]
 
@@ -1712,7 +1718,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1901,9 +1907,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libwebrtc"
-version = "0.3.55"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0399e372f69d3bb3ad8d51f6354f3090c57317de4f61521aa2f5a542c06fe1f"
+checksum = "814e93897c8689013dac8e4babc08957fdc04823748903f4be2409d5d3b8d9a2"
 dependencies = [
  "cxx",
  "jni 0.21.1",
@@ -1952,9 +1958,9 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "livekit"
-version = "0.9.7"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "597d8bae50d9de78c82d93b367b17bf08d62b0cd53727d493d7e56e8d3e58665"
+checksum = "353924a7238e999d49472ee4dce036eb24c42626e7954be39287610f057f4b52"
 dependencies = [
  "bmrng",
  "bytes",
@@ -1981,9 +1987,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-api"
-version = "0.9.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d23c1fcba4837f75f9e3596c60527dac6f0eec2f660118ef65c5b0da0488bbeb"
+checksum = "036d19943b88f8c9303ffde8478c86f00cfd15136ff8368693e16bf9932c1da3"
 dependencies = [
  "chrono",
  "http",
@@ -2010,7 +2016,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-frames"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=fc1d8d67394b081ecb2244b689325b464304c0d8#fc1d8d67394b081ecb2244b689325b464304c0d8"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=38267051b750c2a6d831603e3ebd8f843df83377#38267051b750c2a6d831603e3ebd8f843df83377"
 dependencies = [
  "cameras",
  "livekit",
@@ -2023,9 +2029,9 @@ dependencies = [
 [[package]]
 name = "livekit-camera-invite"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=fc1d8d67394b081ecb2244b689325b464304c0d8#fc1d8d67394b081ecb2244b689325b464304c0d8"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=38267051b750c2a6d831603e3ebd8f843df83377#38267051b750c2a6d831603e3ebd8f843df83377"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "qrcode",
  "thiserror 2.0.21",
  "url",
@@ -2034,7 +2040,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-publisher"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=fc1d8d67394b081ecb2244b689325b464304c0d8#fc1d8d67394b081ecb2244b689325b464304c0d8"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=38267051b750c2a6d831603e3ebd8f843df83377#38267051b750c2a6d831603e3ebd8f843df83377"
 dependencies = [
  "cameras",
  "clap",
@@ -2048,7 +2054,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-recorder"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=fc1d8d67394b081ecb2244b689325b464304c0d8#fc1d8d67394b081ecb2244b689325b464304c0d8"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=38267051b750c2a6d831603e3ebd8f843df83377#38267051b750c2a6d831603e3ebd8f843df83377"
 dependencies = [
  "cameras",
  "chrono",
@@ -2066,7 +2072,6 @@ version = "0.1.2"
 dependencies = [
  "axum",
  "cameras",
- "chrono",
  "clap",
  "hebbian-contracts",
  "hebbian-mcap",
@@ -2088,24 +2093,23 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-stream",
  "tokio-util",
 ]
 
 [[package]]
 name = "livekit-common"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "728a0e2cc2991a3392e2a1c9321b92f3f49d35f02ffc3e071ec75ea66fa9a5bc"
+checksum = "8dc9988885cf3c1ccb622a565f347a4b9e0681c5a0139a5ac58c8c392803469a"
 dependencies = [
  "livekit-protocol",
 ]
 
 [[package]]
 name = "livekit-data-stream"
-version = "0.1.9"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e47c0849044eb3efa012d5263ff32d6d64300667fa2d5c7d6c5cda4bb2cfb966"
+checksum = "ddf4c804cb77ee305c066e7c0f4e2f8aaf0d91fe44b1d133211cd6875d477b2f"
 dependencies = [
  "async-compression",
  "bmrng",
@@ -2121,14 +2125,15 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "uuid",
 ]
 
 [[package]]
 name = "livekit-datatrack"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a610cb4b2a6927fb21dee3d089bfb5d39da1b71de383201a89b7ac9bf80e1c74"
+checksum = "3f5252d30c12ebcf3c75700fd1dbee937b2766c11c2c20dd80c68f9119a94915"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2145,13 +2150,14 @@ dependencies = [
 
 [[package]]
 name = "livekit-net"
-version = "0.1.4"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92ee1131d54701875cf3d0a1ef5ea09f8e328c93afc8845ac65b36cdadf80422"
+checksum = "f0fb7676f2ea3384495fa6d1c56b77305874da9aaacca27e46be78c9410ac35a"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bytes",
+ "flate2",
  "futures-util",
  "http",
  "log",
@@ -2165,9 +2171,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-protocol"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1329f59d49f876eb15aae91b1a6bb72b8d75ea4f9eceba606191af468c2c231d"
+checksum = "c328ca101660ed5cfea2185de9225275f9b513e025d7c42a324a091be1af76d1"
 dependencies = [
  "pbjson",
  "pbjson-types",
@@ -2186,9 +2192,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-rpc"
-version = "0.1.5"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71d9d843d1354aafb39c4f9fd3481adcebbcde730f9b8ce247fde4b5330a7a5c"
+checksum = "9e63379493aa0a069fb645aebc703e7e335305a89eb24bef3cc00621cda0763c"
 dependencies = [
  "livekit-common",
  "livekit-data-stream",
@@ -2203,9 +2209,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-signaling"
-version = "0.1.7"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52fb8712633820ca0d186fadd7ca76c373d1cb3b555d143d7fee232b2493794b"
+checksum = "592d0b737567e1d4fb845ca010bbcf572e2cc5a1c2ac586afd95ff84030e5f1e"
 dependencies = [
  "base64 0.21.7",
  "device-info",
@@ -2222,14 +2228,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "url",
 ]
 
 [[package]]
 name = "livekit-token"
-version = "0.3.1"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce13289c46aab01eb50e29ca98544c703101b02a0d0a4caae416a441ee631c9b"
+checksum = "936feb1865c989dda5167d83bb27f554a22d039bf421dcc3109c627e14ee9e62"
 dependencies = [
  "hmac",
  "jsonwebtoken",
@@ -2494,9 +2501,9 @@ dependencies = [
 
 [[package]]
 name = "nokhwa"
-version = "0.10.10"
+version = "0.10.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4cae50786bfa1214ed441f98addbea51ca1b9aaa9e4bf5369cda36654b3efaa"
+checksum = "9d63f10b450319a0ace7aa8e0e25477d1fdb345313a97e220e886175539a1dbb"
 dependencies = [
  "flume",
  "image",
@@ -2521,9 +2528,9 @@ dependencies = [
 
 [[package]]
 name = "nokhwa-bindings-macos"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de78eb4a2d47a68f490899aa0516070d7a972f853ec2bb374ab53be0bd39b60f"
+checksum = "f70d3908ea68324e44a6b3a0f885aa59e433fb1f6678839d09e0df7d226fb42d"
 dependencies = [
  "block",
  "cocoa-foundation",
@@ -2538,9 +2545,9 @@ dependencies = [
 
 [[package]]
 name = "nokhwa-bindings-windows"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "899799275c93ef69bbe8cb888cf6f8249abe751cbc50be5299105022aec14a1c"
+checksum = "5be28886bad8abcec3655c1f24b965b4cb596a72b23164c910c54439ce55d2a4"
 dependencies = [
  "nokhwa-core",
  "once_cell",
@@ -3121,6 +3128,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "proptest"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8530004ccb15eae51c7e40009fbe317f341f804db54dc033eec1c50be28cfa0"
+dependencies = [
+ "bitflags 2.13.2",
+ "chacha20",
+ "core_detect",
+ "num-traits",
+ "rand 0.10.3",
+ "rand_xorshift",
+ "regex-syntax",
+ "unarray",
+]
+
+[[package]]
 name = "prost"
 version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3246,7 +3269,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3335,6 +3358,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_xorshift"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf"
+dependencies = [
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "rawpointer"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3346,9 +3378,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
+ "hebbian-contracts",
  "http-body-util",
- "schemars",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
@@ -3575,7 +3606,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3588,7 +3619,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3646,7 +3677,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3674,9 +3705,9 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rustypot"
-version = "1.13.1"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a077d7cfe6ad9aa970b863dabd53dafe116bd34b01a3dacd4883ba5e581683c"
+checksum = "ef97392bf1e5fde303502a9c5fc9a0610a7e7bc983fab35b39053768cf802faa"
 dependencies = [
  "clap",
  "env_logger",
@@ -4073,8 +4104,6 @@ dependencies = [
  "hebbian-contracts",
  "livekit-api",
  "livekit-camera-invite",
- "schemars",
- "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -4166,10 +4195,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4487,6 +4516,12 @@ name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "unarray"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "unescaper"
@@ -4819,7 +4854,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

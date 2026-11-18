@@ -1,5 +1,3 @@
-"""Copy the license from the WebRTC archive actually linked by a media build."""
-
 import json
 import shutil
 from pathlib import Path

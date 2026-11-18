@@ -7,12 +7,14 @@ from pydantic import TypeAdapter
 
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
+    ActionSequenceRequest,
     ActionSequenceStartRequest,
     CameraListing,
     CommandAccepted,
     CommandCancellationRequest,
     CommandRefused,
     CommandSubmissionRequest,
+    CompilationArtifact,
     GroupCommandSubmissionRequest,
     LeaseAcquireRequest,
     LeaseCameraReport,
@@ -22,7 +24,10 @@ from hebbian_rua.client.contract.station_api import (
     PhoneInviteRequest,
     PosePreviewBatchRequest,
     PosePreviewBatchResponse,
+    ProgramCompiled,
+    ProgramRejected,
     RecordingStatus,
+    RunCompiledProgramRequest,
     RunSpansRequest,
     StationInstance,
     StationState,
@@ -38,8 +43,10 @@ class StationApi:
         self._media = media
 
     async def close(self) -> None:
-        await self._station.aclose()
-        await self._media.aclose()
+        try:
+            await self._station.aclose()
+        finally:
+            await self._media.aclose()
 
     @staticmethod
     async def _send(
@@ -47,15 +54,42 @@ class StationApi:
         method: str,
         path: str,
         body: object = None,
+        *,
+        maximum_bytes: int | None = None,
     ) -> httpx2.Response:
-        response = await client.request(
+        if maximum_bytes is not None and maximum_bytes < 0:
+            raise ValueError("maximum bytes must be nonnegative")
+        request = client.build_request(
             method,
             path,
             content=None if body is None else TypeAdapter(object).dump_json(body),
             headers=None if body is None else {"Content-Type": "application/json"},
         )
-        response.raise_for_status()
-        return response
+        response = await client.send(request, stream=maximum_bytes is not None)
+        try:
+            response.raise_for_status()
+            if maximum_bytes is None:
+                return response
+            content = bytearray()
+            async for chunk in response.aiter_bytes(chunk_size=65536):
+                if len(content) + len(chunk) > maximum_bytes:
+                    raise ValueError("Response exceeds maximum bytes")
+                content.extend(chunk)
+            headers = [
+                (name, value)
+                for name, value in response.headers.multi_items()
+                if name.lower()
+                not in {"content-encoding", "content-length", "transfer-encoding"}
+            ]
+            return httpx2.Response(
+                response.status_code,
+                headers=headers,
+                content=bytes(content),
+                request=response.request,
+            )
+        finally:
+            if maximum_bytes is not None:
+                await response.aclose()
 
     async def start_action_sequence_http(self, body: ActionSequenceStartRequest) -> str:
         """Start an action sequence under a lease."""
@@ -86,9 +120,16 @@ class StationApi:
         response = await self._send(self._media, "GET", "/cameras")
         return TypeAdapter(list[CameraListing]).validate_json(response.content)
 
-    async def get_camera(self, name: str) -> httpx2.Response:
+    async def get_camera(
+        self, name: str, *, maximum_bytes: int | None = None
+    ) -> httpx2.Response:
         """The newest JPEG frame from a camera, with `X-Captured-At-Unix-Ns` when known."""
-        return await self._send(self._media, "GET", f"/cameras/{quote(name, safe='')}")
+        return await self._send(
+            self._media,
+            "GET",
+            f"/cameras/{quote(name, safe='')}",
+            maximum_bytes=maximum_bytes,
+        )
 
     async def submit_command_http(
         self, body: CommandSubmissionRequest
@@ -104,6 +145,38 @@ class StationApi:
     ) -> None:
         """Cancel a submission and stop its arms while holding the lease."""
         await self._send(self._station, "POST", "/commands/cancel", body)
+
+    async def compile_action_sequence(
+        self, body: ActionSequenceRequest
+    ) -> ProgramCompiled | ProgramRejected:
+        """Compile an action sequence without acquiring control or moving hardware."""
+        response = await self._send(
+            self._station, "POST", "/compilations/compile", body
+        )
+        return TypeAdapter(ProgramCompiled | ProgramRejected).validate_json(
+            response.content
+        )
+
+    async def import_compilation(
+        self, body: CompilationArtifact
+    ) -> ProgramCompiled | ProgramRejected:
+        """Load an exported compilation by recompiling its source against this station."""
+        response = await self._send(self._station, "POST", "/compilations/import", body)
+        return TypeAdapter(ProgramCompiled | ProgramRejected).validate_json(
+            response.content
+        )
+
+    async def run_compiled_sequence_http(self, body: RunCompiledProgramRequest) -> str:
+        """Run a retained compilation under a current lease."""
+        response = await self._send(self._station, "POST", "/compilations/run", body)
+        return TypeAdapter(str).validate_json(response.content)
+
+    async def inspect_compilation(self, id: str) -> CompilationArtifact:
+        """Inspect a retained station-owned compilation."""
+        response = await self._send(
+            self._station, "GET", f"/compilations/{quote(id, safe='')}"
+        )
+        return TypeAdapter(CompilationArtifact).validate_json(response.content)
 
     async def submit_group_command_http(
         self, body: GroupCommandSubmissionRequest
@@ -161,9 +234,16 @@ class StationApi:
         response = await self._send(self._station, "GET", "/traces")
         return TypeAdapter(list[TraceFile]).validate_json(response.content)
 
-    async def get_trace_file(self, name: str) -> httpx2.Response:
+    async def get_trace_file(
+        self, name: str, *, maximum_bytes: int | None = None
+    ) -> httpx2.Response:
         """A trace file's bytes exactly as served: gzip-compressed."""
-        return await self._send(self._station, "GET", f"/traces/{quote(name, safe='')}")
+        return await self._send(
+            self._station,
+            "GET",
+            f"/traces/{quote(name, safe='')}",
+            maximum_bytes=maximum_bytes,
+        )
 
     async def phone_invite(self, body: PhoneInviteRequest) -> PhoneInvite:
         """An invite to stream a phone as camera `phone_<label>`."""

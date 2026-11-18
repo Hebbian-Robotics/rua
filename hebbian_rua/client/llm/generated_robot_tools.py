@@ -5,215 +5,163 @@ import json
 ROBOT_TOOL_CATALOG = json.loads(r"""
 [
   {
-    "description": "Execute steps in order; each step can move and set the gripper together. The result reports completed steps and why execution stopped.",
+    "description": "Steps run in order; movement and gripper commands in the same step start together. A refusal or incomplete/limited target stops the sequence.",
     "name": "action_sequence",
     "operation": "start_action_sequence",
     "parameters": {
-      "$defs": {
-        "ActionSequenceMovement": {
-          "description": "One movement in an action sequence. The arm settles at each target.",
-          "oneOf": [
-            {
-              "additionalProperties": false,
-              "properties": {
-                "joints": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "type": "array"
-                },
-                "kind": {
-                  "const": "joints",
-                  "default": "joints",
-                  "type": "string"
-                },
-                "max_joint_speed": {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "default": null
-                }
-              },
-              "required": [
-                "joints"
-              ],
-              "title": "ActionSequenceJointsMovement",
-              "type": "object"
-            },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "kind": {
-                  "const": "pose",
-                  "default": "pose",
-                  "type": "string"
-                },
-                "max_joint_speed": {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "default": null
-                },
-                "orientation": {
-                  "$ref": "#/$defs/PoseOrientation"
-                },
-                "position": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 3,
-                  "minItems": 3,
-                  "type": "array"
-                }
-              },
-              "required": [
-                "position",
-                "orientation"
-              ],
-              "title": "ActionSequencePoseMovement",
-              "type": "object"
-            }
-          ]
-        },
-        "ActionSequenceStep": {
-          "additionalProperties": false,
-          "description": "A movement and gripper target in the same step start together.",
-          "properties": {
-            "gripper_opening": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
-            },
-            "max_joint_speed": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Speed for both resources in rad/s; overrides the movement speed when provided."
-            },
-            "movement": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ActionSequenceMovement"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
-            }
-          },
-          "type": "object"
-        },
-        "Approach": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NamedApproach"
-            },
-            {
-              "items": {
-                "type": "number"
-              },
-              "maxItems": 3,
-              "minItems": 3,
-              "title": "ApproachDirection",
-              "type": "array"
-            }
-          ],
-          "description": "The direction the jaws point along: a named one, or a nonzero world direction."
-        },
-        "NamedApproach": {
-          "description": "A named approach direction.",
-          "oneOf": [
-            {
-              "const": "down",
-              "description": "World -Z.",
-              "type": "string"
-            },
-            {
-              "const": "forward",
-              "description": "World +X.",
-              "type": "string"
-            }
-          ]
-        },
-        "PoseOrientation": {
-          "description": "A tool orientation as a client gives it.",
-          "oneOf": [
-            {
-              "description": "The approach direction and the jaw yaw about it, in degrees.",
-              "properties": {
-                "approach": {
-                  "$ref": "#/$defs/Approach"
-                },
-                "jaw_yaw_degrees": {
-                  "type": "number"
-                },
-                "kind": {
-                  "const": "grasp",
-                  "default": "grasp",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "approach",
-                "jaw_yaw_degrees"
-              ],
-              "title": "GraspOrientation",
-              "type": "object"
-            },
-            {
-              "description": "A raw quaternion, `[x, y, z, w]`.",
-              "properties": {
-                "kind": {
-                  "const": "quaternion",
-                  "default": "quaternion",
-                  "type": "string"
-                },
-                "quaternion": {
-                  "items": {
-                    "type": "number"
-                  },
-                  "maxItems": 4,
-                  "minItems": 4,
-                  "type": "array"
-                }
-              },
-              "required": [
-                "quaternion"
-              ],
-              "title": "QuaternionOrientation",
-              "type": "object"
-            }
-          ]
-        }
-      },
       "additionalProperties": false,
       "properties": {
         "steps": {
           "items": {
-            "$ref": "#/$defs/ActionSequenceStep"
+            "additionalProperties": false,
+            "description": "A movement and gripper target in the same step start together.",
+            "properties": {
+              "gripper_opening": {
+                "type": "number"
+              },
+              "max_joint_speed_degrees_per_second": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Peak speed in degrees per second; clamped to the profile maximum."
+              },
+              "movement": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "joints_degrees": {
+                        "items": {
+                          "type": "number"
+                        },
+                        "type": "array"
+                      },
+                      "max_joint_speed_degrees_per_second": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "Peak speed in degrees per second; clamped to the profile maximum."
+                      }
+                    },
+                    "required": [
+                      "joints_degrees"
+                    ],
+                    "title": "ActionSequenceJointsMovement",
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "max_joint_speed_degrees_per_second": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "default": null,
+                        "description": "Peak speed in degrees per second; clamped to the profile maximum."
+                      },
+                      "orientation": {
+                        "description": "A tool orientation as a client gives it.",
+                        "oneOf": [
+                          {
+                            "description": "The approach direction and the jaw yaw about it, in degrees.",
+                            "properties": {
+                              "approach": {
+                                "anyOf": [
+                                  {
+                                    "description": "A named approach direction.",
+                                    "oneOf": [
+                                      {
+                                        "const": "down",
+                                        "description": "World -Z.",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "const": "forward",
+                                        "description": "World +X.",
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "maxItems": 3,
+                                    "minItems": 3,
+                                    "title": "ApproachDirection",
+                                    "type": "array"
+                                  }
+                                ],
+                                "description": "The direction the jaws point along: a named one, or a nonzero world direction."
+                              },
+                              "jaw_yaw_degrees": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "approach",
+                              "jaw_yaw_degrees"
+                            ],
+                            "title": "GraspOrientation",
+                            "type": "object"
+                          },
+                          {
+                            "description": "A raw quaternion, `[x, y, z, w]`.",
+                            "properties": {
+                              "quaternion": {
+                                "items": {
+                                  "type": "number"
+                                },
+                                "maxItems": 4,
+                                "minItems": 4,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "quaternion"
+                            ],
+                            "title": "QuaternionOrientation",
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "position_mm": {
+                        "items": {
+                          "type": "number"
+                        },
+                        "maxItems": 3,
+                        "minItems": 3,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "position_mm",
+                      "orientation"
+                    ],
+                    "title": "ActionSequencePoseMovement",
+                    "type": "object"
+                  }
+                ]
+              }
+            },
+            "type": "object"
           },
           "minItems": 1,
           "type": "array"
@@ -226,7 +174,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
     }
   },
   {
-    "description": "Preview independent world-frame pose candidates without moving. Supply each candidate with a unique UUID v4 id, an optional label, and a pose. Results retain their ids and input order; each includes a projection or refusal. Omitting orientation lets the solver choose one.",
+    "description": "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.",
     "name": "preview_pose",
     "operation": "preview",
     "parameters": {
@@ -248,6 +196,18 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
           ],
           "description": "The direction the jaws point along: a named one, or a nonzero world direction."
         },
+        "ModelPreviewCandidate": {
+          "additionalProperties": false,
+          "properties": {
+            "pose": {
+              "$ref": "#/$defs/PreviewPose"
+            }
+          },
+          "required": [
+            "pose"
+          ],
+          "type": "object"
+        },
         "NamedApproach": {
           "description": "A named approach direction.",
           "oneOf": [
@@ -274,11 +234,6 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                 },
                 "jaw_yaw_degrees": {
                   "type": "number"
-                },
-                "kind": {
-                  "const": "grasp",
-                  "default": "grasp",
-                  "type": "string"
                 }
               },
               "required": [
@@ -291,11 +246,6 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             {
               "description": "A raw quaternion, `[x, y, z, w]`.",
               "properties": {
-                "kind": {
-                  "const": "quaternion",
-                  "default": "quaternion",
-                  "type": "string"
-                },
                 "quaternion": {
                   "items": {
                     "type": "number"
@@ -313,35 +263,6 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             }
           ]
         },
-        "PosePreviewCandidate": {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "description": "A caller-generated UUID v4, unique within the batch.",
-              "type": "string"
-            },
-            "label": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null,
-              "description": "Optional human-readable context, echoed with the answer."
-            },
-            "pose": {
-              "$ref": "#/$defs/PreviewPose"
-            }
-          },
-          "required": [
-            "id",
-            "pose"
-          ],
-          "type": "object"
-        },
         "PreviewPose": {
           "additionalProperties": false,
           "description": "Where the arm's controller would take the tool toward a pose, without moving.",
@@ -358,7 +279,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
               "default": null,
               "description": "None leaves the orientation to the solver."
             },
-            "position": {
+            "position_mm": {
               "items": {
                 "type": "number"
               },
@@ -368,7 +289,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             }
           },
           "required": [
-            "position"
+            "position_mm"
           ],
           "type": "object"
         }
@@ -377,7 +298,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
       "properties": {
         "poses": {
           "items": {
-            "$ref": "#/$defs/PosePreviewCandidate"
+            "$ref": "#/$defs/ModelPreviewCandidate"
           },
           "minItems": 1,
           "type": "array"
@@ -390,7 +311,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
     }
   },
   {
-    "description": "Move named arms together. Pose targets use a world position and orientation; joint targets use radians. Model guards do not detect collisions between arms or with workspace objects.",
+    "description": "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Model guards do not detect collisions between arms or with workspace objects.",
     "name": "move_arms",
     "operation": "move_arms",
     "parameters": {
@@ -438,11 +359,6 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                 },
                 "jaw_yaw_degrees": {
                   "type": "number"
-                },
-                "kind": {
-                  "const": "grasp",
-                  "default": "grasp",
-                  "type": "string"
                 }
               },
               "required": [
@@ -455,11 +371,6 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             {
               "description": "A raw quaternion, `[x, y, z, w]`.",
               "properties": {
-                "kind": {
-                  "const": "quaternion",
-                  "default": "quaternion",
-                  "type": "string"
-                },
                 "quaternion": {
                   "items": {
                     "type": "number"
@@ -482,35 +393,25 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
           "oneOf": [
             {
               "properties": {
-                "joints": {
+                "joints_degrees": {
                   "items": {
                     "type": "number"
                   },
                   "type": "array"
-                },
-                "kind": {
-                  "const": "joints",
-                  "default": "joints",
-                  "type": "string"
                 }
               },
               "required": [
-                "joints"
+                "joints_degrees"
               ],
               "title": "JointsWaypoint",
               "type": "object"
             },
             {
               "properties": {
-                "kind": {
-                  "const": "pose",
-                  "default": "pose",
-                  "type": "string"
-                },
                 "orientation": {
                   "$ref": "#/$defs/PoseOrientation"
                 },
-                "position": {
+                "position_mm": {
                   "items": {
                     "type": "number"
                   },
@@ -520,7 +421,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                 }
               },
               "required": [
-                "position",
+                "position_mm",
                 "orientation"
               ],
               "title": "PoseWaypoint",
@@ -532,7 +433,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
       "additionalProperties": false,
       "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
       "properties": {
-        "max_joint_speed": {
+        "max_joint_speed_degrees_per_second": {
           "anyOf": [
             {
               "type": "number"
@@ -541,7 +442,8 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "description": "Peak speed in degrees per second; clamped to the profile maximum."
         },
         "targets": {
           "additionalProperties": {
@@ -567,7 +469,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
         "arm": {
           "type": "string"
         },
-        "max_joint_speed": {
+        "max_joint_speed_degrees_per_second": {
           "anyOf": [
             {
               "type": "number"
@@ -577,7 +479,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             }
           ],
           "default": null,
-          "description": "Peak gripper speed in rad/s; uses the arm default and maximum."
+          "description": "Peak speed in degrees per second; clamped to the profile maximum."
         },
         "opening": {
           "type": "number"
@@ -591,7 +493,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
     }
   },
   {
-    "description": "Close the gripper, then return this arm to the joint pose recorded when it was enabled. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.",
+    "description": "Return this arm to the joint pose recorded when it was enabled, then close the gripper. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.",
     "name": "rehome",
     "operation": "rehome",
     "parameters": {
@@ -611,12 +513,26 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
     }
   },
   {
-    "description": "Return the station state after an optional wait without commanding motion. Camera images can be obtained separately.",
+    "description": "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.",
     "name": "observe",
     "operation": "observe",
     "parameters": {
+      "$defs": {
+        "ObservationSource": {
+          "description": "Select fresh observations or retained evidence from the latest action sequence.",
+          "enum": [
+            "current",
+            "last_sequence"
+          ],
+          "type": "string"
+        }
+      },
       "additionalProperties": false,
       "properties": {
+        "source": {
+          "$ref": "#/$defs/ObservationSource",
+          "default": "current"
+        },
         "wait_seconds": {
           "default": 0.0,
           "maximum": 10.0,
@@ -632,10 +548,12 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
 
 ROBOT_TOOL_CONTEXT = json.loads(r"""
 {
-  "frames": "Positions are in the station world frame. Tool inputs use meters, joint angles use radians, and joint speeds use radians per second.",
+  "frames": "Positions are in the station world frame. Tool inputs and outputs use millimeters, degrees, and degrees per second.",
   "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its movement speed for both movement and gripper.",
   "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
-  "orientation": "The approach is down (world -Z), forward (world +X), or a world direction vector. Jaw yaw is in degrees about minus approach; zero is projected world +X, or world +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
-  "outcomes": "A completed move may still have pose_limited or path_limited: the planned motion finished but did not reach the requested target. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are clamped."
+  "motion": "A pose target is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
+  "orientation": "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
+  "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are clamped.",
+  "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit."
 }
 """)

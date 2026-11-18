@@ -1,23 +1,12 @@
-//! SO-101 USB discovery and profile selection shared by station commands.
-
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, ensure};
+use anyhow::{Context, bail, ensure};
 use hebbian_robot_use_server::profile::{RobotProfile, load_robot_profile};
 use hebbian_robot_use_server::so101::calibration::lerobot_calibration_root;
 use hebbian_robot_use_server::so101::discovery::{self, ControllerSerial};
 use hebbian_robot_use_server::so101::registry::{CalibrationInstallation, install_calibration};
 
-#[derive(clap::Args, Default)]
-pub(crate) struct SelectionArguments {
-    /// Local SO-101 config checkout containing arms/<USB-serial>/{profile.toml,calibration.json}.
-    /// Default: `$HEBBIAN_SO101_CONFIG_DIRECTORY`, else `$XDG_CONFIG_HOME/rua/so101-arm-configs`.
-    #[arg(long)]
-    so101_config_directory: Option<PathBuf>,
-    /// Select one connected USB controller when several arms are registered.
-    #[arg(long)]
-    so101_serial: Option<String>,
-}
+use crate::commands::SelectionArguments;
 
 impl SelectionArguments {
     fn directory(&self) -> anyhow::Result<PathBuf> {
@@ -53,7 +42,7 @@ impl SelectionArguments {
         let profile = selected.load_profile(profile_directory)?;
         let settings = profile
             .feetech()
-            .expect("Selected SO-101 profile uses Feetech");
+            .context("Selected SO-101 profile has no Feetech settings")?;
         let installation = install_calibration(
             &selected.directory.join("calibration.json"),
             settings,

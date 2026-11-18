@@ -1,30 +1,23 @@
-//! Execution state and progress for planned IK/joint trajectories.
-//! Grouped trajectories use the same progress handling; policy inference lives
-//! separately in `learned`. Final setpoint guards stay in the common loop.
-
 use super::activity::{Activity, Loop};
-use crate::arm::{GroupMembership, Now};
+use crate::arm::{AdmittedPlan, GroupMembership, Now};
 use crate::corner_path::MotionSupervisor;
 use crate::limits::{Trip, max_joint_deviation};
 use crate::plant::Feedback;
 use crate::reference_filter::Reference;
-use hebbian_contracts::{Checkpoint, CommandOutcome, CornerPlan};
+use hebbian_contracts::{Checkpoint, CommandOutcome};
 
-/// A planned motion being followed.
 pub(super) struct ActiveMotion {
     pub(super) supervisor: MotionSupervisor,
     pub(super) checkpoints_sent: usize,
 }
 
-/// This arm's part of a grouped motion. The group's one trajectory is stepped
-/// by the loop that runs every arm, not by the arm.
+// INVARIANT: This arm's part of a grouped motion. The group's one trajectory is stepped
+// by the loop that runs every arm, not by the arm.
 pub(super) struct ActiveGroupMember {
     pub(super) group: GroupMembership,
-    pub(super) plan: CornerPlan,
+    pub(super) plan: crate::arm::AdmittedPlan,
 }
 
-/// Where a planned motion stands: still going, or ended where it was aimed or
-/// stalled short of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MotionStatus {
     Running,
@@ -42,17 +35,13 @@ impl MotionStatus {
     }
 }
 
-/// What one cycle of a planned motion did to its command.
 pub(super) struct MotionProgress {
-    /// Reached since the last cycle.
     pub(super) checkpoints: Vec<Checkpoint>,
     pub(super) segment: Option<String>,
     pub(super) status: MotionStatus,
     pub(super) final_pose: Vec<f64>,
 }
 
-/// One arm's share of a group's cycle: its reference, and what the group's
-/// shared trajectory did.
 #[derive(Clone)]
 pub(super) struct GroupReference {
     pub(super) reference: Reference,
@@ -63,9 +52,9 @@ pub(super) struct GroupReference {
 }
 
 impl Loop<'_> {
-    /// Begin following a planned motion.
-    pub(super) fn start_motion(&mut self, plan: CornerPlan) -> anyhow::Result<()> {
-        let supervisor = MotionSupervisor::new(plan, &self.config.motion, self.config.joint_count)?;
+    pub(super) fn start_motion(&mut self, plan: AdmittedPlan) -> anyhow::Result<()> {
+        let supervisor =
+            MotionSupervisor::from_validated(plan.into_validated(), &self.config.motion)?;
         self.hold_at = None;
         self.activity = Activity::Motion(Box::new(ActiveMotion {
             supervisor,
@@ -74,14 +63,15 @@ impl Loop<'_> {
         Ok(())
     }
 
-    /// Begin this arm's part of a grouped motion; it follows the group's
-    /// reference once every arm has begun.
-    pub(super) fn start_group_member(&mut self, plan: CornerPlan, group: GroupMembership) {
+    pub(super) fn start_group_member(
+        &mut self,
+        plan: crate::arm::AdmittedPlan,
+        group: GroupMembership,
+    ) {
         self.hold_at = None;
         self.activity = Activity::Group(Box::new(ActiveGroupMember { group, plan }));
     }
 
-    /// The reference for this cycle of a running motion, left in `self.reference`.
     pub(super) fn motion_reference(
         &mut self,
         interval: f64,
@@ -94,7 +84,7 @@ impl Loop<'_> {
             return Ok(());
         }
         if self.core.take_supersede() {
-            // A new command replaced this one while it only settled; the arm holds
+            // INVARIANT: A new command replaced this one while it only settled; the arm holds
             // where it measures, and the new motion plans from there.
             self.filter.reset(&feedback.positions);
             self.hold_at = Some(feedback.positions.clone());
@@ -118,7 +108,6 @@ impl Loop<'_> {
             checkpoints: new,
             segment: active.supervisor.segment_label().map(str::to_owned),
             status,
-            // Only a finished motion holds at its final pose.
             final_pose: if status == MotionStatus::Running {
                 Vec::new()
             } else {
@@ -129,9 +118,6 @@ impl Loop<'_> {
         self.motion_progress(feedback, progress, now)
     }
 
-    /// What a cycle of a planned motion, alone or in a group, did to the command:
-    /// its checkpoints and segment, and whether it finished.
-    /// Leaves the cycle's reference in `self.reference`.
     pub(super) fn motion_progress(
         &mut self,
         feedback: &Feedback,
@@ -143,7 +129,7 @@ impl Loop<'_> {
         }
         self.core.set_segment(progress.segment);
         if progress.status != MotionStatus::Running {
-            // The last rest point may have stalled short; the outcome says so and
+            // WHY: The last rest point may have stalled short; the outcome says so and
             // the record carries each joint's error.
             let (outcome, detail) = if progress.status == MotionStatus::StoppedShort {
                 let errors: Vec<String> = feedback
@@ -173,8 +159,6 @@ impl Loop<'_> {
         Ok(())
     }
 
-    /// The reference for this cycle of this arm's part of a grouped motion, as
-    /// the group's shared trajectory gave it; until the group has formed, hold.
     pub(super) fn group_reference(
         &mut self,
         feedback: &Feedback,

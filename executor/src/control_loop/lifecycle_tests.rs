@@ -1,6 +1,3 @@
-//! Tests of enabling, bus failures, shutdown and trip clearing against a plant
-//! that follows a script.
-
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -13,25 +10,24 @@ use crate::config::{EnableChecks, ExecutorConfig};
 use crate::plant::{Feedback, Plant, RecoveryObservation};
 use hebbian_contracts::{ArmMode, Command};
 
-/// How often the loop called the plant, readable after the runner has the plant.
 #[derive(Default, Clone)]
 struct Calls {
     enable: Arc<AtomicU32>,
     release: Arc<AtomicU32>,
     guard_start: Arc<AtomicU32>,
     recovery_hold: Arc<AtomicU32>,
+    position_writes: Arc<AtomicU32>,
+    gripper_writes: Arc<AtomicU32>,
 }
 
 fn count(counter: &Arc<AtomicU32>) -> u32 {
     counter.load(Ordering::SeqCst)
 }
 
-/// A plant that reads what it is given, then keeps repeating the last reading.
 struct ScriptedPlant {
     readings: VecDeque<Feedback>,
     last: Feedback,
     heartbeat_fails: bool,
-    /// The next this many reads go unanswered, as a bus that was unplugged.
     unanswered_reads: u32,
     recovery_unanswered_reads: u32,
     recovery_torque: Vec<bool>,
@@ -79,10 +75,12 @@ impl Plant for ScriptedPlant {
     }
 
     fn command(&mut self, _positions: &[f64], _seconds: f64) -> anyhow::Result<()> {
+        self.calls.position_writes.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     fn command_gripper(&mut self, _angle: f64) -> anyhow::Result<()> {
+        self.calls.gripper_writes.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
@@ -191,8 +189,6 @@ fn runner<'a>(
     runner
 }
 
-/// The runner's first reading is taken by its start, so a script's first entry is
-/// that one.
 fn enabling_error(readings: Vec<Feedback>, test_name: &str) -> (String, Calls) {
     let calls = Calls::default();
     let config = config(test_name);
@@ -534,6 +530,25 @@ fn a_shutdown_away_from_rest_returns_once_and_then_releases() {
 }
 
 #[test]
+fn shutdown_releases_instead_of_returning_to_rest_outside_joint_limits() {
+    let calls = Calls::default();
+    let config = config("shutdown-outside-limits");
+    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
+    let mut runner = powered_runner(&mut plant, &config);
+    let now = Now::current();
+    runner.state.arm().enabled(&[2.02, 0.0], now);
+    runner.state.arm().set_hold(&[0.0, 0.0]);
+    runner.state.arm().submit(Command::Shutdown, now).unwrap();
+
+    runner.shutdown_step(now);
+
+    assert!(!runner.state.powered);
+    assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
+    assert_eq!(count(&calls.position_writes), 0);
+    assert_eq!(count(&calls.release), 1);
+}
+
+#[test]
 fn a_shutdown_not_requested_or_an_unpowered_arm_does_nothing() {
     let calls = Calls::default();
     let config = config("shutdown-idle");
@@ -616,4 +631,191 @@ fn a_cycle_with_nothing_asked_of_it_serves_nothing_and_does_not_wait() {
         &mut 0,
     );
     assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
+}
+
+#[test]
+fn malformed_feedback_never_becomes_a_position_or_gripper_write() {
+    for positions in [
+        vec![],
+        vec![0.0],
+        vec![f64::NAN, 0.0],
+        vec![0.0, f64::INFINITY],
+        vec![0.0; 3],
+    ] {
+        let calls = Calls::default();
+        let config = config("malformed-cycle-feedback");
+        let mut malformed = at([0.0, 0.0]);
+        malformed.positions = positions;
+        let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0]), at([0.0, 0.0]), malformed], &calls);
+        let mut runner = powered_runner(&mut plant, &config);
+        assert!(matches!(
+            runner.begin_cycle(Duration::from_millis(10), None),
+            Begun::Pending(_)
+        ));
+        assert!(matches!(
+            runner.begin_cycle(Duration::from_millis(10), None),
+            Begun::Done(_, _)
+        ));
+        assert_eq!(count(&calls.position_writes), 0);
+        assert_eq!(count(&calls.gripper_writes), 0);
+        assert_eq!(runner.feedback.positions, vec![0.0, 0.0]);
+        assert_eq!(runner.state.core.poses().unwrap().hold, vec![0.0, 0.0]);
+    }
+}
+
+#[test]
+fn every_enable_reading_must_have_the_arms_finite_joint_count() {
+    for invalid_stage in 1..=3 {
+        for positions in [vec![], vec![0.0], vec![f64::NAN, 0.0], vec![0.0; 3]] {
+            let mut readings = vec![at([0.0, 0.0]); 4];
+            readings[invalid_stage].positions = positions;
+            let (refusal, calls) = enabling_error(readings, "malformed-enable-feedback");
+            assert!(
+                refusal.contains("finite") || refusal.contains("Expected"),
+                "{refusal}"
+            );
+            assert_eq!(count(&calls.enable), u32::from(invalid_stage == 3));
+        }
+    }
+}
+
+#[test]
+fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever() {
+    use crate::arm::{GroupMembership, ShortOfTarget};
+    use hebbian_contracts::{CommandOutcome, CornerPlan, Segment};
+    let left_config = config("group-formation-left");
+    let right_config = config("group-formation-right");
+    let mut mismatched_input = right_config.clone().into_input();
+    mismatched_input.joint_count = 3;
+    mismatched_input.driven_joints.push("third".into());
+    mismatched_input.lower_limits.push(-2.0);
+    mismatched_input.upper_limits.push(2.0);
+    mismatched_input.joint_effort_limits.push(10.0);
+    let mismatched_config = ExecutorConfig::try_from(mismatched_input).unwrap();
+    let mut left_plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let mut right_plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let mut left = powered_runner(&mut left_plant, &left_config);
+    let mut right = powered_runner(&mut right_plant, &right_config);
+    left.name = "left".into();
+    right.name = "right".into();
+    let membership = GroupMembership {
+        id: "formation".into(),
+        arms: vec!["left".into(), "right".into()],
+    };
+    let motion = || CornerPlan {
+        peak_speed: 0.5,
+        segments: vec![Segment {
+            label: "target".into(),
+            corners: vec![vec![0.0, 0.0], vec![0.2, 0.0]],
+            minimum_duration_seconds: None,
+            target_position: None,
+            target_quaternion: None,
+        }],
+    };
+    let now = Now::current();
+    let mut ids = Vec::new();
+    for runner in [&mut left, &mut right] {
+        ids.push(
+            runner
+                .state
+                .core
+                .submit_move(
+                    "group",
+                    motion(),
+                    0.5,
+                    ShortOfTarget::default(),
+                    Some(membership.clone()),
+                    now,
+                )
+                .unwrap()
+                .command_id,
+        );
+        runner.start_next(now);
+    }
+    right.config = &mismatched_config;
+    let mut runners = vec![left, right];
+    let mut groups = Vec::new();
+    super::group::form_groups(&mut runners, &mut groups);
+    assert!(groups.is_empty());
+    for (runner, id) in runners.iter().zip(ids) {
+        let record = runner.state.core.record(&id).unwrap();
+        assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
+        assert!(record.detail().unwrap().contains("grouped motion"));
+        assert!(matches!(
+            runner.state.activity,
+            super::activity::Activity::Idle
+        ));
+    }
+}
+
+fn gripper_config(test_name: &str) -> ExecutorConfig {
+    let mut input = config(test_name).into_input();
+    input.driven_joints.push("jaw".into());
+    input.gripper = Some(crate::config::GripperLimits {
+        closed_radians: 0.0,
+        open_radians: 1.0,
+        position_tolerance_radians: 0.02,
+        contact_dwell_seconds: 0.2,
+    });
+    ExecutorConfig::try_from(input).unwrap()
+}
+
+#[test]
+fn missing_required_gripper_feedback_skips_all_motor_writes() {
+    let calls = Calls::default();
+    let config = gripper_config("missing-gripper-feedback");
+    let mut initial = at([0.0, 0.0]);
+    initial.gripper_angle = Some(0.0);
+    let mut plant = ScriptedPlant::new(vec![initial, at([0.0, 0.0])], &calls);
+    let mut runner = runner(&mut plant, &config);
+    runner.state.power_up(&[0.0, 0.0], Some(0.0));
+    runner.state.core.enabled(&[0.0, 0.0], Now::current());
+    assert!(matches!(
+        runner.begin_cycle(Duration::from_millis(10), None),
+        Begun::Done(_, _)
+    ));
+    assert_eq!(count(&calls.position_writes), 0);
+    assert_eq!(count(&calls.gripper_writes), 0);
+}
+
+#[test]
+fn a_missing_gripper_controller_fails_its_command_and_holds_without_reconnecting() {
+    use hebbian_contracts::CommandOutcome;
+    let calls = Calls::default();
+    let config = gripper_config("missing-gripper-controller");
+    let mut initial = at([0.0, 0.0]);
+    initial.gripper_angle = Some(0.0);
+    let mut plant = ScriptedPlant::new(vec![initial], &calls);
+    let mut runner = runner(&mut plant, &config);
+    runner.state.power_up(&[0.0, 0.0], Some(0.0));
+    runner.state.core.enabled(&[0.0, 0.0], Now::current());
+    let record = runner
+        .state
+        .core
+        .submit(
+            Command::SetGripper {
+                angle: 0.5,
+                joint_speed: None,
+            },
+            Now::current(),
+        )
+        .unwrap();
+    runner.state.gripper = None;
+    let Begun::Pending(pending) = runner.begin_cycle(Duration::from_millis(10), None) else {
+        panic!("Trusted feedback permits an explicit measured hold");
+    };
+    runner.finish_cycle(pending, None);
+    let finished = runner.state.core.record(&record.command_id).unwrap();
+    assert_eq!(finished.outcome(), Some(CommandOutcome::Failed));
+    assert!(
+        finished
+            .detail()
+            .unwrap()
+            .contains("Missing measurement or controller")
+    );
+    assert!(runner.state.tripped.is_some());
+    assert!(matches!(runner.recovery, BusRecovery::Disabled));
+    assert_eq!(runner.failed_cycles, 0);
+    assert_eq!(runner.state.previous_command, vec![0.0, 0.0]);
+    assert_eq!(count(&calls.gripper_writes), 1);
 }

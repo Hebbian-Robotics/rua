@@ -1,5 +1,10 @@
-//! Exercise the real guard process against an exclusively locked simulated bus.
-
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 #![cfg(unix)]
 
 use std::fs::{File, OpenOptions};

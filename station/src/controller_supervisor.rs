@@ -1,5 +1,3 @@
-//! Supervise the motor controller independently of the station's HTTP server.
-
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -16,8 +14,8 @@ use hebbian_robot_use_server::control_link::Link;
 use hebbian_robot_use_server::controller_bridge::StationSession;
 use hebbian_robot_use_server::controller_service::serve_station_connection;
 use hebbian_robot_use_server::lease::Lease;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+
+use hebbian_contracts::{ControllerStatus, ReconnectRequest};
 
 use crate::controller_process::{ControllerLaunch, ControllerProcess};
 use crate::recording::RecordingManager;
@@ -25,29 +23,6 @@ use crate::recording::RecordingManager;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Debug, Serialize, JsonSchema)]
-#[serde(tag = "phase", rename_all = "snake_case")]
-pub enum ControllerStatus {
-    Unmanaged,
-    Starting,
-    Online,
-    Unavailable {
-        reason: String,
-        guard_released: bool,
-        reports: Vec<String>,
-    },
-    WaitingForGuard {
-        reason: String,
-        reports: Vec<String>,
-    },
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct ReconnectRequest {
-    pub supported: bool,
-}
-
-/// A shared handle to status and the operator's reconnect request.
 #[derive(Clone)]
 pub struct ControllerSupervisor {
     status: Arc<Mutex<ControllerStatus>>,
@@ -56,7 +31,6 @@ pub struct ControllerSupervisor {
 }
 
 impl ControllerSupervisor {
-    /// Status for an executor started without station supervision.
     #[must_use]
     pub fn unmanaged() -> Self {
         let (requests, _receiver) = mpsc::channel();
@@ -101,7 +75,6 @@ impl ControllerSupervisor {
         *current = status;
     }
 
-    /// Keep recordings informed even before they subscribe to telemetry.
     pub fn attach_recording(&self, recording: RecordingManager) {
         let status = self
             .status
@@ -122,10 +95,6 @@ impl ControllerSupervisor {
         *slot = Some(recording);
     }
 
-    /// Request recovery after the operator has supported the arm.
-    ///
-    /// # Errors
-    /// Recovery is already in progress, the controller is online, or the worker stopped.
     pub fn reconnect(&self) -> Result<(), &'static str> {
         let mut status = self
             .status
@@ -150,7 +119,7 @@ impl ControllerSupervisor {
     }
 }
 
-/// Start a supervisor with all handoffs initially fenced.
+// INVARIANT: Keep every handoff fenced until fresh controller feedback confirms readiness.
 #[must_use]
 pub fn start(
     configuration: ControllerLaunch,

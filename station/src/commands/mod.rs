@@ -1,4 +1,8 @@
 //! The command line: its arguments and commands.
+mod serve;
+pub(crate) mod so101;
+pub(crate) use serve::ServeArguments;
+pub(crate) use so101::SelectionArguments;
 
 use std::path::PathBuf;
 
@@ -14,11 +18,11 @@ pub(crate) struct Arguments {
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Serve the station for a robot profile: build each arm's config, drive its
-    /// servos, a `MuJoCo` simulator or the lag simulator, and serve the HTTP API,
+    /// servos, an external simulator or the lag simulator, and serve the HTTP API,
     /// the viewer, recording and lease routes over HTTP.
     Serve {
         #[command(flatten)]
-        arguments: crate::serve::ServeArguments,
+        arguments: serve::ServeArguments,
         #[command(flatten)]
         web: WebArguments,
     },
@@ -127,7 +131,7 @@ pub(crate) enum Command {
         )]
         profile: Option<String>,
         #[command(flatten)]
-        selection: crate::so101::SelectionArguments,
+        selection: so101::SelectionArguments,
         /// Read the profile from stdin as JSON with the TOML keys and no
         /// `extends`; relative paths resolve against the working directory.
         #[arg(long)]

@@ -19,7 +19,7 @@ jaw_closing_axis = "x"
 # This is a comparison reference, not proof of physical support or a move target.
 # The wide wrist-roll tolerance permits gripper rotation without affecting support.
 [rest_reference]
-joint_positions_radians = [0.0, -1.8377089838869982, 1.6582332317043782, 1.2916118233997098, -1.5201749607946704]
+joint_positions_radians = [-0.0037, -1.8435, 1.5765, 1.3296, -1.5536]
 joint_tolerances_radians = [0.15, 0.10, 0.10, 0.10, 6.3]
 
 [control]

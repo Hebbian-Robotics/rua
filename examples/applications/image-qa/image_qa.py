@@ -1,14 +1,3 @@
-"""Image Q&A: yes/no questions about whatever is on a display in front of the arm.
-
-The arm rises from rest to face the display and holds there. Show an image on the
-display and type a yes/no question. The model looks through the wrist camera,
-searches the web when it needs facts, and the arm nods (yes) or shakes its head
-(no). Leaving the session rehomes the arm and turns torque off, so start it resting
-on the table.
-
-    uv run --project examples/python examples/applications/image-qa/image_qa.py --model gpt-6-astra
-"""
-
 import argparse
 import asyncio
 import base64
@@ -23,6 +12,17 @@ from hebbian_rua import StationClient
 from hebbian_rua.client.environment import load_environment
 from hebbian_rua.client.station_client import Lease
 from hebbian_rua.client.station_types import CommandResult
+
+CLI_HELP = """Image Q&A: yes/no questions about whatever is on a display in front of the arm.
+
+The arm rises from rest to face the display and holds there. Show an image on the
+display and type a yes/no question. The model looks through the wrist camera,
+searches the web when it needs facts, and the arm nods (yes) or shakes its head
+(no). Leaving the session rehomes the arm and turns torque off, so start it resting
+on the table.
+
+    uv run --project examples/python examples/applications/image-qa/image_qa.py
+"""
 
 ARM = "follower"
 CAMERA = "table"
@@ -54,7 +54,7 @@ exactly 'ANSWER: YES' or 'ANSWER: NO'."""
 async def decide(
     client: AsyncOpenAI, model: str, jpeg: bytes, question: str
 ) -> tuple[str | None, str]:
-    """Ask the model about one frame; return (YES/NO or None, its reply)."""
+
     image = f"data:image/jpeg;base64,{base64.standard_b64encode(jpeg).decode()}"
     response = await client.responses.create(
         model=model,
@@ -78,7 +78,7 @@ async def decide(
 
 
 async def gesture(lease: Lease, answer: str) -> None:
-    """Nod (YES) or shake (NO) three times about the viewing pose."""
+
     moving = lease.arm(ARM)
     joint, swing = (3, NOD_RADIANS) if answer == "YES" else (0, SHAKE_RADIANS)
     for _ in range(3):
@@ -96,8 +96,8 @@ async def expect(command: Awaitable[CommandResult]) -> None:
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="OpenAI model ID")
+    parser = argparse.ArgumentParser(description=CLI_HELP)
+    parser.add_argument("--model", default="gpt-6.2-astra", help="OpenAI model ID")
     arguments = parser.parse_args()
     load_environment()
     async with (

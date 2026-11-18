@@ -1,10 +1,8 @@
-//! Locking that carries on after a panic elsewhere.
-
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-/// A lock whose holder panicked still guards consistent state here: every
-/// critical section leaves it valid between statements, and the loop must keep
-/// serving the arm rather than panic in turn.
+// INVARIANT: A lock whose holder panicked still guards consistent state here: every
+// critical section leaves it valid between statements, and the loop must keep
+// serving the arm rather than panic in turn.
 pub(crate) trait LockUnpoisoned<T> {
     fn lock_unpoisoned(&self) -> MutexGuard<'_, T>;
 }

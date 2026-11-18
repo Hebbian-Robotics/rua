@@ -1,17 +1,4 @@
-//! A record of every control cycle, always on, for measuring the real delay
-//! between a command and the arm's motion.
-//!
-//! One JSON line per cycle in a file named by the run's start time. The loop
-//! only pushes into a bounded queue; a writer thread does the file I/O, and a
-//! record that finds the queue full is dropped and counted, so the 50 Hz loop
-//! never waits on the disk. The field names are camel case, one object per
-//! line, so analysis scripts read these files directly.
-//!
-//! Within a cycle the loop **reads feedback, computes, then writes** the command.
-//! A record therefore holds the positions read at `readTime` and the command
-//! computed from them and written at `writeTime`; the arm first reacts to that
-//! command in the *next* cycle's reading. `seconds`, `readTime` and `writeTime`
-//! are monotonic seconds since the run started.
+// CONSTRAINT: Never block the motor loop on disk: push to a bounded writer queue and count dropped records. Each record pairs feedback read before this cycle’s command with the later write; motion appears in subsequent feedback.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -25,15 +12,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use serde::Serialize;
 
-/// Two seconds of cycles at 500 Hz; far more than the writer ever falls behind.
 const QUEUE_LENGTH: usize = 1024;
-/// Records written between flushes, so a crash loses little.
 const FLUSH_EVERY: u64 = 25;
 
-/// Wall-clock phase durations; queued with the cycle, never logged synchronously.
 #[derive(Debug, Default, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(clippy::struct_field_names)] // Explicit units in serialized diagnostics.
+#[allow(clippy::struct_field_names)]
 pub(crate) struct CycleTimings {
     pub requests_seconds: f64,
     pub timer_wait_seconds: f64,
@@ -41,6 +25,11 @@ pub(crate) struct CycleTimings {
     pub start_next_seconds: f64,
     pub gripper_seconds: f64,
     pub gripper_write_seconds: f64,
+    pub feedback_read_seconds: f64,
+    pub tool_pose_seconds: f64,
+    pub command_compute_seconds: f64,
+    pub policy_inference_seconds: f64,
+    pub command_write_seconds: f64,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -48,42 +37,32 @@ pub(crate) struct CycleTimings {
 pub(crate) struct TraceRecord {
     pub cycle: u64,
     pub timings: CycleTimings,
-    /// When this cycle began.
     pub seconds: f64,
     pub cycle_seconds: f64,
-    /// The command written this cycle.
     pub command: Vec<f64>,
-    /// What the arm reported at `read_time`, before this cycle's command.
     pub positions: Vec<f64>,
     pub velocities: Vec<f64>,
     pub efforts: Vec<f64>,
-    /// Driven motor readings, arm joints first and gripper last; empty if unavailable.
     pub temperatures_celsius: Vec<f64>,
     pub voltages_volts: Vec<f64>,
     pub feedback_fault: Option<String>,
     pub environment_confirmations: Vec<crate::plant::EnvironmentConfirmation>,
-    /// When the feedback read returned.
     pub read_time: f64,
-    /// When command computation finished and the plant write began.
     pub command_start_time: f64,
-    /// When the command write returned.
     pub write_time: f64,
 }
 
-/// What a finished trace reports.
 #[derive(Debug, Clone)]
 pub struct TraceSummary {
     pub path: PathBuf,
     pub written: u64,
     pub dropped: u64,
-    /// Set if the writer stopped on an I/O error; later records were dropped.
     pub error: Option<String>,
 }
 
 pub(crate) struct TraceWriter {
     sender: Option<SyncSender<TraceRecord>>,
-    /// Records the writer has written, sent back so the loop refills their
-    /// buffers instead of allocating new ones.
+    // WHY: Recycle trace record buffers to avoid allocations in the control loop.
     recycled: Receiver<TraceRecord>,
     dropped: Arc<AtomicU64>,
     writer: Option<JoinHandle<(u64, Option<String>)>>,
@@ -91,22 +70,31 @@ pub(crate) struct TraceWriter {
 }
 
 impl TraceWriter {
-    /// Create the trace file in `directory`, named by the current time.
-    ///
-    /// # Errors
-    /// The directory or file cannot be created: the run must not start without
-    /// its trace.
+    // SAFETY: Do not start a run if its trace file cannot be created.
     pub fn open(directory: &Path) -> anyhow::Result<Self> {
         std::fs::create_dir_all(directory).with_context(|| {
             format!("Cannot create the trace directory {}", directory.display())
         })?;
-        let nanoseconds = SystemTime::now()
+        let mut nanoseconds = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .context("The system clock is before 1970")?
             .as_nanos();
-        let path = directory.join(format!("executor-{nanoseconds}-trace.jsonl"));
-        let file = File::create_new(&path)
-            .with_context(|| format!("Cannot create the trace file {}", path.display()))?;
+        // CONSTRAINT: The clock ticks in microseconds on some platforms, so executors starting in the same
+        // tick would otherwise collide on the name; take the next free one.
+        let (path, file) = loop {
+            let path = directory.join(format!("executor-{nanoseconds}-trace.jsonl"));
+            match File::create_new(&path) {
+                Ok(file) => break (path, file),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    nanoseconds += 1;
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("Cannot create the trace file {}", path.display())
+                    });
+                }
+            }
+        };
         let (sender, queue) = sync_channel::<TraceRecord>(QUEUE_LENGTH);
         let (recycle, recycled) = sync_channel::<TraceRecord>(QUEUE_LENGTH);
         let writer = std::thread::spawn(move || {
@@ -127,7 +115,7 @@ impl TraceWriter {
                 if let Err(error) = result {
                     return (written, Some(error.to_string()));
                 }
-                // A full return queue only costs the loop an allocation.
+                // CONSTRAINT: A full return queue only costs the loop an allocation.
                 let _ = recycle.try_send(record);
             }
             (written, output.flush().err().map(|error| error.to_string()))
@@ -141,13 +129,10 @@ impl TraceWriter {
         })
     }
 
-    /// A record to fill: one the writer has finished with, or a new one while
-    /// the first records are still in flight.
     pub fn checkout(&self) -> TraceRecord {
         self.recycled.try_recv().unwrap_or_default()
     }
 
-    /// Queue a record; if the writer has fallen behind it is dropped and counted.
     pub fn record(&self, record: TraceRecord) {
         let Some(sender) = &self.sender else { return };
         match sender.try_send(record) {
@@ -158,8 +143,6 @@ impl TraceWriter {
         }
     }
 
-    /// Write what is queued and report the trace; a writer thread that panicked
-    /// is reported as the trace's error.
     #[must_use]
     pub(crate) fn finish(mut self) -> TraceSummary {
         drop(self.sender.take());
@@ -205,6 +188,21 @@ mod tests {
             command_start_time: 0.0015,
             write_time: 0.002,
         }
+    }
+
+    #[test]
+    fn executors_opened_at_the_same_instant_get_distinct_trace_files() {
+        let directory =
+            std::env::temp_dir().join(format!("trace-collision-test-{}", std::process::id()));
+        let mut paths = std::collections::BTreeSet::new();
+        let writers: Vec<_> = (0..200)
+            .map(|_| TraceWriter::open(&directory).unwrap())
+            .collect();
+        for writer in writers {
+            assert!(paths.insert(writer.finish().path));
+        }
+        assert_eq!(paths.len(), 200);
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

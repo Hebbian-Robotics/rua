@@ -1,5 +1,3 @@
-//! Recording lifecycle when the motor controller is unavailable.
-
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 

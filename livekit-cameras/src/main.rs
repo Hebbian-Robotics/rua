@@ -23,6 +23,10 @@ enum MediaCommand {
         /// Native camera mapping (name=device), repeatable.
         #[arg(long = "camera")]
         cameras: Vec<String>,
+        /// A camera another program publishes into the room, by name: listed as unavailable
+        /// until its frames arrive. Repeatable.
+        #[arg(long = "expected-camera")]
+        expected_cameras: Vec<String>,
         /// Unix socket exposed by the simulator.
         #[arg(long)]
         camera_socket: Option<PathBuf>,
@@ -46,7 +50,7 @@ struct CameraExit {
 async fn publish(arguments: Arguments) -> Result<(), PublisherError> {
     let cameras = arguments.cameras()?;
     let credentials = Arc::new(Credentials::from_environment()?);
-    // Request native camera permission once, before starting the capture subprocesses.
+    // WHY: Request native camera permission once, before starting the capture subprocesses.
     cameras::initialize()?;
     let stopped = CancellationToken::new();
     let mut interruption =
@@ -161,10 +165,12 @@ async fn run() -> Result<(), PublisherError> {
         MediaCommand::Serve {
             address,
             cameras,
+            expected_cameras,
             camera_socket,
             room,
         } => {
-            let snapshots = snapshots::Snapshots::start(cameras, camera_socket, room)?;
+            let snapshots =
+                snapshots::Snapshots::start(cameras, expected_cameras, camera_socket, room)?;
             let listener = tokio::net::TcpListener::bind(address).await?;
             axum::serve(listener, snapshots.router())
                 .with_graceful_shutdown(async {

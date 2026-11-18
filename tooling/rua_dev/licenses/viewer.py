@@ -1,5 +1,3 @@
-"""Copy viewer dependency licenses into a server-wheel staging directory."""
-
 import json
 import re
 import shutil

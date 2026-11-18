@@ -1,6 +1,10 @@
-//! The station serves the built viewer, `LiveKit` tokens, phone invites and the lease,
-//! and nothing that leaves the machine can hold up control, the HTTP API
-//! or the viewer. `LIVEKIT_URL` points at an address that never answers.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -18,15 +22,7 @@ use hebbian_robot_use_server::station_api::HttpServer;
 use hebbian_station::web::{self, WebSettings};
 use serde_json::{Value, json};
 
-const CONFIG: &str = r#"{
-  "urdf": "unused.urdf", "driven_joints": ["a", "b"], "surface_guard": null,
-  "motion": {"acceleration_limit": 20.0, "jerk_limit": 200.0, "settled_error_radians": 0.02, "settle_dwell_seconds": 0.1, "settle_timeout_seconds": 2.0}, "joint_count": 2, "frequency_hertz": 100.0, "loop_deadline_seconds": 0.1,
-  "lower_limits": [-2.0, -2.0], "upper_limits": [2.0, 2.0],
-  "joint_effort_limits": [10.0, 10.0], "tracking_following_lag_seconds": 0.05, "tracking_static_margin_radians": 1.5,
-  "max_joint_speed": 3.0, "default_joint_speed": 1.5,
-  "stream_goal_timeout_seconds": 5.0,
-  "joint_limit_recovery_tolerance_radians": 0.0349, "jaw_closing_axis": "x"
-}"#;
+const CONFIG: &str = include_str!("../../executor/tests/support/two_joint_config.json");
 
 struct FailingPlant {
     inner: SimulatedPlant,
@@ -37,6 +33,10 @@ struct FailingPlant {
     releases: Arc<AtomicU32>,
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "This test adapter forwards operations to its simulated plant."
+)]
 impl Plant for FailingPlant {
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         anyhow::ensure!(!self.failed.load(Ordering::Relaxed), "bus unavailable");
@@ -97,7 +97,6 @@ impl Plant for FailingPlant {
     }
 }
 
-/// Status code and body of one request.
 fn request(address: SocketAddr, method: &str, path: &str, body: Option<&Value>) -> (u16, String) {
     static HTTP_RUNTIME_AND_CLIENT: OnceLock<(tokio::runtime::Runtime, reqwest::Client)> =
         OnceLock::new();
@@ -119,7 +118,7 @@ fn request(address: SocketAddr, method: &str, path: &str, body: Option<&Value>) 
         if let Some(body) = body {
             request = request.json(body);
         }
-        // Read the framed HTTP body, rather than waiting for TCP EOF: macOS
+        // WHY: Read the framed HTTP body, rather than waiting for TCP EOF: macOS
         // can report a reset after a complete response closes the connection.
         let response = request.send().await.unwrap();
         let status = response.status().as_u16();
@@ -155,7 +154,6 @@ fn viewer_directory() -> PathBuf {
     directory
 }
 
-/// A stand-in for `hebbian-robot-use-media` that records until it is stopped.
 fn media_executable(directory: &Path) -> PathBuf {
     let path = directory.join("hebbian-robot-use-media");
     std::fs::write(&path, "#!/bin/sh\nexec sleep 30\n").unwrap();
@@ -244,6 +242,8 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let config = ExecutorConfig::try_from(config).unwrap();
     let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
     let scratch = scratch_directory("station");
+    let media_status = hebbian_station::media_status::MediaStatus::default();
+    media_status.record_camera_problem("wrist", "camera backend: Device is null");
     let settings = WebSettings {
         recordings_directory: scratch.join("recordings"),
         enable_recording: true,
@@ -252,7 +252,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         room: Some("station-test".into()),
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
         manual_control: false,
-        media_status: hebbian_station::media_status::MediaStatus::default(),
+        media_status: media_status.clone(),
     };
     let mut mounted = None;
     let live_run = std::sync::Arc::new(hebbian_station::run_telemetry::LiveRunStore::default());
@@ -305,7 +305,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let address = server.local_address();
     let started = Instant::now();
 
-    // The viewer.
     let (status, page) = get(address, "/viewer/");
     assert_eq!((status, page.as_str()), (200, "<title>viewer</title>"));
     assert_eq!(get(address, "/viewer/missing.js").0, 404);
@@ -323,7 +322,14 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         json!([])
     );
 
-    // Tokens and phone invites are signed here, with no call to LiveKit.
+    let media = get_json(address, "/viewer/api/media-status");
+    assert_eq!(
+        media["cameras"]["wrist"]["detail"],
+        "camera backend: Device is null"
+    );
+    assert_eq!(media["programs"]["serve"]["state"], "unavailable");
+
+    // WHY: Tokens and phone invites are signed here, with no call to LiveKit.
     let access = get_json(address, "/viewer/api/token");
     assert_eq!(access["server_url"], "wss://10.255.255.1:7880");
     assert!(
@@ -349,15 +355,13 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     assert_eq!(status, 400, "{refusal}");
     assert!(refusal["detail"].is_string());
 
-    // The room announcement goes to an address that never answers, off the request path.
+    // WHY: The room announcement goes to an address that never answers, off the request path.
     let (status, recording) = post_json(address, "/viewer/api/recording/start", &json!({}));
     assert_eq!(status, 200, "{recording}");
 
-    // Control and state remain available while the announcement is pending.
     let (status, state) = get(address, "/state");
     assert_eq!(status, 200);
     assert!(state.contains("\"arms\""), "{state}");
-    // Telemetry submitted over HTTP is visible in the live run.
     for event in [
         json!({"type": "run_started", "task": "stack"}),
         json!({"type": "notes_update", "notes": ["red first"]}),
@@ -387,11 +391,10 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    // No interlock yet: revision 0 is current, and a command expecting it is accepted.
     let arm = wait_for_arm(address, no_interlocks);
     assert_eq!(arm["revision"], 0);
 
-    // An agent requiring a camera the media server does not list: the station
+    // WHY: An agent requiring a camera the media server does not list: the station
     // raises its interlock, which bumps the revision and refuses the agent's motion.
     let granted = acquire_lease(address, "agent", &["front"]);
     let agent_token = granted["lease_token"].as_str().unwrap();
@@ -408,7 +411,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         Some(0),
     );
     assert_eq!(stale_answer["reason"], "stale_revision", "{stale_answer}");
-    // Only the holder can report a required camera.
     assert_eq!(
         post_json(
             address,
@@ -429,7 +431,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         recording
     );
 
-    // Returning the lease ends its camera interlock; recording is independent of it.
     assert_eq!(
         post_json(
             address,
@@ -519,7 +520,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     });
     assert!(!has_interlock(&arm, "arm_disconnected"), "{arm}");
     assert_eq!(recovery_enables.load(Ordering::Relaxed), 0);
-    // The operator approves, whoever holds the lease.
     let approved = submit_command(
         address,
         Some(manual_token),
@@ -531,7 +531,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     assert_eq!(recovery_enables.load(Ordering::Relaxed), 1);
     assert_eq!(releases.load(Ordering::Relaxed), 0);
 
-    // A fault powers the arm off; nothing stops the recording implicitly.
     plant_failed.store(true, Ordering::Relaxed);
     wait_for_arm(address, |arm| arm["mode"] == "faulted");
     plant_failed.store(false, Ordering::Relaxed);

@@ -1,6 +1,3 @@
-//! "Could the arm reach this pose?": the read-only answer a viewer draws as the
-//! ghost arm, from the measured joints, checked as a motion would be.
-
 use std::time::Instant;
 
 use nalgebra::{UnitQuaternion, Vector3};
@@ -14,7 +11,6 @@ use hebbian_contracts::{
     RequestedOrientation,
 };
 
-/// The pieces of the arc from `start` to `end` degrees, each inside 0 to 360.
 fn pieces_in_full_turn(start: f64, end: f64) -> Vec<(f64, f64)> {
     let (start, end) = if start >= 360.0 {
         (start - 360.0, end - 360.0)
@@ -47,12 +43,7 @@ impl Planner {
         }
     }
 
-    /// Which jaw yaws the arm can take at the approach and position of `joints`.
-    ///
-    /// Turning the wrist roll swings the jaws about the approach, positive roll
-    /// toward positive yaw, and leaves the rest of the arm where it is. So the
-    /// yaws the arm can take are the arc its roll limits sweep out, from the yaw
-    /// at the lower limit; the rest say which limit stops them.
+    // CONSTRAINT: Only wrist roll changes jaw yaw: its limit arc uses positive roll toward positive yaw while other joints stay fixed.
     pub(super) fn jaw_yaw_ranges(&self, joints: &[f64]) -> Vec<JawYawRange> {
         let Some(roll) = self.wrist_roll else {
             return Vec::new();
@@ -89,9 +80,6 @@ impl Planner {
         ranges
     }
 
-    /// Where the arm can take the tool toward the target from the measured
-    /// `joints`, checked as a motion would be: the solve, then the straight joint
-    /// line to its answer, with the jaw at `gripper_angle`.
     #[must_use]
     pub fn project(
         &self,
@@ -142,14 +130,7 @@ impl Planner {
         finish(outcome, described, ranges)
     }
 
-    /// Where the learned policy would take the arm toward the target.
-    ///
-    /// The ghost follows the arm's controller: `rehearse` runs the policy against
-    /// a model of the arm from the measured joints, given the goal exactly as a
-    /// reach would carry it, orientation included. The solver only says which jaw
-    /// yaws the arm can take, and, when the target leaves the orientation free,
-    /// which orientation the goal takes: the one position-only solving lands on,
-    /// or the one the arm holds when that finds nothing.
+    // INVARIANT: The ghost rehearses the same controller and goal as live motion. IK supplies yaw bounds and an orientation only when the goal leaves it free.
     pub fn project_by_policy(
         &self,
         joints: &[f64],
@@ -170,7 +151,7 @@ impl Planner {
                 return finish(ProjectionOutcome::Unavailable { reason }, None, Vec::new());
             }
         };
-        // A requested orientation is the goal as given; only a free one needs the
+        // WHY: A requested orientation is the goal as given; only a free one needs the
         // solver to pick it. The jaw yaw ranges are then read where the policy
         // ends, which is the pose the ghost shows.
         let (goal, solved_joints) = match requested {
@@ -223,12 +204,12 @@ fn policy_outcome(
         },
         PreviewOutcome::TimedOut => {
             let reason = format!(
-                "{}; the policy would stop about {:.1} cm short of the goal, shown here",
+                "{}; the policy would stop about {:.1} mm short of the goal, shown here",
                 rehearsal
                     .reason
                     .as_deref()
                     .unwrap_or("The policy did not settle"),
-                position_error * 100.0
+                position_error * 1000.0
             );
             ProjectionOutcome::Projected {
                 pose: pose(rehearsal),

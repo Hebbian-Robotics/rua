@@ -1,14 +1,14 @@
-//! The loop: each cycle reads the plant, checks the feedback, carries out the
-//! arm state machine's next guarded setpoint, commands the
-//! plant and publishes the state. A failed check is a trip: the arm holds where
-//! it is and the command that was running ends tripped. The state machine
-//! (`arm::ArmCore`) decides what is admitted; this decides what the servos do.
+#![allow(
+    clippy::disallowed_methods,
+    reason = "The control loop owns writable plants and performs admitted motor operations."
+)]
 
 mod activity;
 mod group;
 mod guards;
 mod learned;
 mod lifecycle;
+mod recovery;
 mod runner;
 mod tool_pose;
 mod trajectory;
@@ -30,6 +30,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use anyhow::{Context, ensure};
 use hdrhistogram::Histogram;
 
 use crate::arm::{ArmCore, Now};
@@ -41,26 +42,24 @@ use crate::plant::{Feedback, Pacing, Plant};
 use crate::trace::{TraceSummary, TraceWriter};
 use hebbian_contracts::Command;
 
-/// Cycle times are recorded in microseconds up to a minute, to three
-/// significant digits: a fixed few kilobytes however long the loop runs.
+// CONSTRAINT: Cycle times are recorded in microseconds up to a minute, to three
+// significant digits: a fixed few kilobytes however long the loop runs.
 pub(super) const LONGEST_RECORDED_CYCLE_MICROSECONDS: u64 = 60_000_000;
 const CYCLE_TIME_SIGNIFICANT_DIGITS: u8 = 3;
-/// After SIGINT or SIGTERM, how long the arms get to return to rest and
-/// release before the loop ends anyway.
 const SIGNAL_SHUTDOWN_SECONDS: f64 = 20.0;
 
 pub struct Report {
     pub cycle_microseconds: Histogram<u64>,
-    /// The first trip or plant failure, if any. A trip leaves the loop running;
-    /// a plant failure ends the arm's run.
     pub trip: Option<String>,
-    /// Cycles longer than two periods.
     pub overruns: u64,
-    /// Where the cycle trace went and whether it kept up.
     pub trace: Option<TraceSummary>,
 }
 
 impl Report {
+    #[expect(
+        clippy::expect_used,
+        reason = "Histogram bounds and precision are fixed valid constants."
+    )]
     fn empty() -> Self {
         Self {
             cycle_microseconds: Histogram::new_with_bounds(
@@ -76,7 +75,6 @@ impl Report {
     }
 }
 
-/// The host's 1, 5 and 15 minute load averages, when the platform reports them.
 fn host_load_averages() -> Option<[f64; 3]> {
     let mut averages = [0.0_f64; 3];
     // SAFETY: getloadavg writes at most 3 doubles into the buffer it is given.
@@ -84,8 +82,6 @@ fn host_load_averages() -> Option<[f64; 3]> {
     (written == 3).then_some(averages)
 }
 
-/// What the operator sees when a cycle is late; the load says whether the
-/// host, not the arm, was busy.
 fn deadline_missed_message(cycle: Duration, load: Option<[f64; 3]>) -> String {
     match load {
         Some([one, five, fifteen]) => format!(
@@ -95,11 +91,10 @@ fn deadline_missed_message(cycle: Duration, load: Option<[f64; 3]>) -> String {
     }
 }
 
-/// Run until `run_for` elapses, or until `shutdown_requested` is set; without a
-/// `run_for`, only the latter ends it. The arm starts disabled and a client
-/// enables it; without a link, the arm is enabled at once and follows a slow
-/// sine on every joint, for timing runs. A shutdown command (return to rest,
-/// release) ends the run too, once it has finished.
+#[expect(
+    clippy::expect_used,
+    reason = "run_runners returns one report per runner; this call supplies exactly one runner."
+)]
 pub fn run(
     plant: &mut impl Plant,
     link: Option<&Link>,
@@ -121,20 +116,70 @@ pub fn run(
     }
 }
 
-/// One arm of a station: its name, limits, plant and the socket its clients use.
 pub struct ArmSetup<P: Plant> {
     pub name: String,
     pub config: ExecutorConfig,
-    pub plant: P,
+    plant: P,
     pub link: Option<Link>,
 }
 
-/// Run every arm in one loop, in lockstep: each cycle reads all the arms, steps
-/// the grouped motions' shared trajectories once from those readings, then
-/// commands all the arms. The arms share one cycle timer, so they must share a
-/// frequency. With more than one arm, each writes its cycle trace to a
-/// subdirectory of its config's trace directory named for the arm. Ends as
-/// [`run`] does, once every arm has finished its shutdown.
+impl<P: Plant> ArmSetup<P> {
+    pub fn new(name: String, config: ExecutorConfig, plant: P, link: Option<Link>) -> Self {
+        Self {
+            name,
+            config,
+            plant,
+            link,
+        }
+    }
+
+    pub fn plant(&self) -> &P {
+        &self.plant
+    }
+
+    pub fn verify_disabled(&mut self, verify_torque: bool) -> anyhow::Result<()> {
+        self.plant
+            .preflight()
+            .with_context(|| format!("{}: preflight failed", self.name))?;
+        let feedback = if verify_torque {
+            let observation = self
+                .plant
+                .observe_recovery()
+                .with_context(|| format!("{}: cannot confirm torque", self.name))?;
+            let expected_motors =
+                self.config.joint_count + usize::from(self.config.gripper.is_some());
+            ensure!(
+                observation.motor_torque.len() == expected_motors
+                    && observation.motor_torque.iter().all(|(_, enabled)| !enabled),
+                "{}: motor torque is not confirmed off",
+                self.name
+            );
+            if let Some(issue) = observation.health_issue {
+                anyhow::bail!("{}: {issue}", self.name);
+            }
+            observation.feedback
+        } else {
+            self.plant
+                .read_feedback()
+                .with_context(|| format!("{}: cannot read feedback", self.name))?
+        };
+        ensure!(
+            feedback.positions.len() == self.config.joint_count
+                && feedback
+                    .positions
+                    .iter()
+                    .all(|position| position.is_finite()),
+            "{}: invalid joint feedback",
+            self.name
+        );
+        if let Some(fault) = feedback.fault {
+            anyhow::bail!("{}: {fault}", self.name);
+        }
+        Ok(())
+    }
+}
+
+// INVARIANT: Read every arm before stepping shared group trajectories once, then command every arm. All members must share a frequency and compatible pacing.
 pub fn run_arms<P: Plant>(
     arms: &mut [ArmSetup<P>],
     run_for: Option<Duration>,
@@ -192,8 +237,6 @@ pub fn run_arms<P: Plant>(
         .collect()
 }
 
-/// An arm's runner, or the report that says why it cannot start. Nothing runs
-/// without its trace.
 fn runner_for<'a, P: Plant>(
     name: &str,
     plant: &'a mut P,
@@ -230,6 +273,7 @@ fn runner_for<'a, P: Plant>(
         inbox,
         samples,
         feedback: Feedback::default(),
+        feedback_scratch: Feedback::default(),
         config,
         state,
         trace,
@@ -245,8 +289,6 @@ fn runner_for<'a, P: Plant>(
     })
 }
 
-/// Arms whose plants set the pace and arms whose plants do not cannot run in one
-/// loop: every arm ends with that as its trip.
 fn refuse_mixed_pacing<P: Plant>(runners: Vec<Runner<'_, P>>) -> Vec<Report> {
     runners
         .into_iter()
@@ -261,11 +303,11 @@ fn refuse_mixed_pacing<P: Plant>(runners: Vec<Runner<'_, P>>) -> Vec<Report> {
         .collect()
 }
 
-/// Apply what the arms' readers have asked since the last cycle, answering each.
-/// Missing requests wait for the next cycle. The batch yields after one control
-/// period or 64 requests per arm, whichever comes first. Round-robin admission
-/// resumes at the next arm so one busy inbox cannot starve another. An individual
-/// request is not preemptible; its work must still fit the control budget.
+// CONSTRAINT: Apply what the arms' readers have asked since the last cycle, answering each.
+// Missing requests wait for the next cycle. The batch yields at its time budget
+// or 64 requests per arm, whichever comes first. Round-robin admission
+// resumes at the next arm so one busy inbox cannot starve another. An individual
+// request is not preemptible; its work must still fit the control budget.
 fn serve_requests<P: Plant>(
     runners: &mut [Runner<'_, P>],
     budget: Duration,
@@ -298,16 +340,16 @@ fn serve_requests<P: Plant>(
     }
 }
 
-/// Ask every arm to shut down, as the Shutdown command does.
 fn shutdown_every_arm<P: Plant>(runners: &mut [Runner<'_, P>]) {
     for runner in runners {
         let _ = runner.state.arm().submit(Command::Shutdown, Now::current());
     }
 }
 
-/// The loop over every arm's runner. Group handling sits between each cycle's
-/// two halves.
-#[allow(clippy::too_many_lines)] // Keep the shared timer and the two cycle halves together.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the shared timer and the two cycle halves together."
+)]
 fn run_runners<P: Plant>(
     mut runners: Vec<Runner<'_, P>>,
     run_for: Option<Duration>,
@@ -327,7 +369,7 @@ fn run_runners<P: Plant>(
         }
     }
     let started = Instant::now();
-    // Simulators set the pace themselves: with them the loop does not sleep, each
+    // CONSTRAINT: Simulators set the pace themselves: with them the loop does not sleep, each
     // cycle lasts the nominal period, and wall time cannot miss a deadline.
     let plant_paced = runners
         .iter()
@@ -344,13 +386,13 @@ fn run_runners<P: Plant>(
     let mut groups: Vec<ActiveGroup> = Vec::new();
     let mut next_request_arm = 0;
     let mut ended = vec![false; runners.len()];
-    // Kept across cycles so a cycle allocates nothing for them.
+    // WHY: Kept across cycles so a cycle allocates nothing for them.
     let mut begun: Vec<Option<PendingCycle>> = Vec::with_capacity(runners.len());
     let mut group_steps = Vec::with_capacity(runners.len());
     if !plant_paced {
         crate::cycle::request_realtime_scheduling();
     }
-    // A signal runs the same shutdown as the Shutdown command (return to rest,
+    // WHY: A signal runs the same shutdown as the Shutdown command (return to rest,
     // release), given this long before the loop ends anyway.
     let mut signal_deadline: Option<Instant> = None;
     while run_for.is_none_or(|duration| started.elapsed() < duration)
@@ -358,7 +400,8 @@ fn run_runners<P: Plant>(
         && ended.contains(&false)
     {
         let requests_began = Instant::now();
-        serve_requests(&mut runners, nominal_cycle, &mut next_request_arm);
+        // WHY: Reserve the bulk of the cycle for feedback, safety checks and writes.
+        serve_requests(&mut runners, nominal_cycle / 10, &mut next_request_arm);
         let requests_seconds = requests_began.elapsed().as_secs_f64();
         if signal_deadline.is_none() && shutdown_requested.load(Ordering::Relaxed) {
             signal_deadline =
@@ -371,7 +414,7 @@ fn run_runners<P: Plant>(
                 .iter()
                 .all(|runner| runner.plant.pacing() == Pacing::RepliesAtClockSpeed)
             {
-                // Simulated time follows the clock; a simulator slower than that
+                // CONSTRAINT: Simulated time follows the clock; a simulator slower than that
                 // simply makes the cycles late, which no deadline judges.
                 let _ = timer.tick();
             }
@@ -398,7 +441,7 @@ fn run_runners<P: Plant>(
         begun.clear();
         for (index, runner) in runners.iter_mut().enumerate() {
             if ended[index] {
-                // A simulator shared with arms still running waits for this
+                // CONSTRAINT: A simulator shared with arms still running waits for this
                 // arm's step too; an arm that is done keeps time moving.
                 let _ = runner.plant.advance(nominal_cycle.as_secs_f64());
                 begun.push(None);
@@ -413,7 +456,7 @@ fn run_runners<P: Plant>(
                 Begun::Pending(pending) => begun.push(Some(pending)),
             }
         }
-        form_groups(&runners, &mut groups);
+        form_groups(&mut runners, &mut groups);
         step_groups(&runners, &mut groups, &begun, &mut group_steps);
         for (index, pending) in begun.drain(..).enumerate() {
             if let Some(pending) = pending {

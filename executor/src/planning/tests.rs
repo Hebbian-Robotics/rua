@@ -1,7 +1,3 @@
-//! The planner's own rules, on arms whose geometry is known in advance: a
-//! seven-joint chain for the limits, the bundled SO-101 for
-//! the wrist, the guards and the policy's ghost.
-
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
@@ -15,7 +11,6 @@ use hebbian_contracts::{
     Approach, JawClosingAxis, NamedApproach, PoseOrientation, RejectionReason,
 };
 
-/// A config for an arm of `joints` in `urdf`, with the tool at `tool_link`.
 fn config(urdf: &Path, joints: &[&str], tool_link: &str, settings: &Value) -> ExecutorConfig {
     let mut text: Value = serde_json::from_str(crate::config::TEST_CONFIG).unwrap();
     text["urdf"] = json!(urdf);
@@ -27,7 +22,6 @@ fn config(urdf: &Path, joints: &[&str], tool_link: &str, settings: &Value) -> Ex
     ExecutorConfig::parse(&text.to_string()).unwrap()
 }
 
-/// Seven joints about z, each a metre from the last, limited to ±1 rad.
 fn seven_joint_planner(name: &str) -> Planner {
     let links: Vec<String> = (0..=7).map(|index| format!("link{index}")).collect();
     let mut urdf = String::from(r#"<robot name="chain">"#);
@@ -75,7 +69,7 @@ fn joints(values: &[f64]) -> Waypoint {
 }
 
 fn planned(planner: &Planner, waypoints: &[Waypoint]) -> PlannedMotion {
-    planner.plan(&[0.0; 7], waypoints, Some(0.5)).unwrap()
+    planner.plan(&[0.0; 7], waypoints, Some(0.5), None).unwrap()
 }
 
 fn last_corner(motion: &PlannedMotion) -> &[f64] {
@@ -91,7 +85,7 @@ fn close(found: &[f64], expected: &[f64]) -> bool {
 }
 
 fn refused(planner: &Planner, start: &[f64], waypoint: Waypoint) -> PlanRefusal {
-    planner.plan(start, &[waypoint], None).unwrap_err()
+    planner.plan(start, &[waypoint], None, None).unwrap_err()
 }
 
 #[test]
@@ -108,8 +102,10 @@ fn a_target_on_each_bound_is_kept_and_one_past_it_is_clamped_onto_it() {
                 }],
             );
             assert_eq!(last_corner(&motion)[joint], bound);
-            // From the bound too, as a plan starts where the last one ended.
-            planner.plan(&on_bound, &[joints(&[0.0])], None).unwrap();
+            // WHY: From the bound too, as a plan starts where the last one ended.
+            planner
+                .plan(&on_bound, &[joints(&[0.0])], None, None)
+                .unwrap();
         }
     }
     for past in [1.0 + 1e-12, 5.0] {
@@ -129,7 +125,7 @@ fn a_target_on_each_bound_is_kept_and_one_past_it_is_clamped_onto_it() {
 
 #[test]
 fn a_base_pose_moves_and_turns_the_whole_arm_in_the_world() {
-    // One z joint at the base and a tool a metre along x from it.
+    // CONSTRAINT: One z joint at the base and a tool a metre along x from it.
     let path = std::env::temp_dir().join(format!("base-pose-{}.urdf", std::process::id()));
     std::fs::write(
         &path,
@@ -154,7 +150,7 @@ fn a_base_pose_moves_and_turns_the_whole_arm_in_the_world() {
     .unwrap()
     .unwrap();
     let _ = std::fs::remove_file(path);
-    // Turned a quarter about z: the tool's metre along x now points along +y.
+    // INVARIANT: Turned a quarter about z: the tool's metre along x now points along +y.
     let at_zero = planner.describe(&[0.0]).unwrap().position;
     let turned = planner.describe(&[0.3]).unwrap().position;
     assert!(close(&at_zero, &[0.5, 0.8, 0.1]), "{at_zero:?}");
@@ -174,7 +170,6 @@ const SO101_JOINTS: [&str; 6] = [
 ];
 const SO101_LOWER: [f64; 5] = [-1.91986, -1.74533, -1.69, -1.65806, -2.74385];
 const SO101_UPPER: [f64; 5] = [1.91986, 1.74533, 1.69, 1.65806, 2.84121];
-/// A pose over the table that every SO-101 test starts from.
 const OVER_THE_TABLE: [f64; 5] = [0.0, -0.5, 0.8, 0.6, 0.0];
 
 fn bundled_so101() -> PathBuf {
@@ -206,14 +201,14 @@ fn so101_planner(settings: &Value) -> Planner {
 
 #[test]
 fn turning_the_so101_wrist_roll_turns_the_jaw_yaw_by_as_much_and_nothing_else() {
-    // The jaw yaw ranges rest on this: the wrist roll turns about minus the
+    // INVARIANT: The jaw yaw ranges rest on this: the wrist roll turns about minus the
     // approach, positive roll toward positive yaw.
     let planner = so101_planner(&json!({}));
     let mut rolled = OVER_THE_TABLE;
     rolled[4] = 0.3;
     let before = planner.describe(&OVER_THE_TABLE).unwrap();
     let after = planner.describe(&rolled).unwrap();
-    // The tool frame sits a few millimetres off the roll axis.
+    // CONSTRAINT: The tool frame sits a few millimetres off the roll axis.
     let moved: f64 = before
         .position
         .iter()
@@ -249,7 +244,6 @@ fn planner_home() -> hebbian_contracts::OrientationSummary {
         .orientation
 }
 
-/// The tool pose at `joints`, as a target.
 fn pose_at(planner: &Planner, joints: &[f64]) -> ([f64; 3], [f64; 4]) {
     let description = planner.describe(joints).unwrap();
     (description.position, description.quaternion)
@@ -274,7 +268,7 @@ fn the_ghost_of_a_reachable_pose_lists_the_jaw_yaws_the_wrist_can_take() {
     ));
     let ranges = &projection.jaw_yaw_ranges;
     assert!(ranges.iter().any(|span| span.reachable));
-    // The wrist roll's range is under a full turn, so some yaws are out of reach.
+    // CONSTRAINT: The wrist roll's range is under a full turn, so some yaws are out of reach.
     assert!(ranges.iter().any(|span| !span.reachable));
     for span in ranges {
         assert!(span.from_degrees < span.to_degrees);
@@ -282,7 +276,6 @@ fn the_ghost_of_a_reachable_pose_lists_the_jaw_yaws_the_wrist_can_take() {
     }
     assert!(ranges[0].from_degrees.abs() < 1e-9);
     assert!((ranges.last().unwrap().to_degrees - 360.0).abs() < 1e-9);
-    // A raw quaternion comes back as the approach and jaw yaw it stands for.
     let requested = projection.requested.unwrap();
     let again = grasp_rotation(
         Approach::Direction(requested.orientation.approach),
@@ -346,7 +339,6 @@ fn leaving_the_orientation_free_reaches_a_position_a_fixed_one_cannot() {
     assert!(pose.orientation_error_radians.is_none());
     assert!(free.requested.is_none());
     assert_ne!(free.jaw_yaw_ranges.len(), 0);
-    // The orientation it chose, sent back, is the one it landed on.
     let chosen = grasp_rotation(
         Approach::Direction(pose.orientation.approach),
         pose.orientation.jaw_yaw_degrees,
@@ -377,11 +369,19 @@ fn a_yaw_the_wrist_cannot_take_runs_to_the_ghosts_pose_and_advises_one_that_work
                 orientation,
             }],
             None,
+            None,
         )
         .unwrap();
     let limited = motion.pose_limited.clone().unwrap();
     assert!(limited.position_shortfall_meters > 0.0);
-    // The move ends where the preview's ghost does.
+    assert!(
+        limited.advice.starts_with(&format!(
+            "The solver did not reach the target: the closest pose it found is {:.1} mm",
+            limited.position_shortfall_meters * 1000.0
+        )),
+        "{}",
+        limited.advice
+    );
     let ProjectionOutcome::Projected {
         pose,
         within_tolerance: false,
@@ -406,7 +406,6 @@ fn a_yaw_the_wrist_cannot_take_runs_to_the_ghosts_pose_and_advises_one_that_work
     assert_eq!(suggestion["approach"], json!([0.0, 0.0, -1.0]));
     let yaw = suggestion["jaw_yaw_degrees"].as_f64().unwrap();
     assert!(yaw.abs() > 5.0);
-    // Sent back as asked, the suggestion is reached exactly.
     let exact = planner
         .plan(
             &OVER_THE_TABLE,
@@ -417,6 +416,7 @@ fn a_yaw_the_wrist_cannot_take_runs_to_the_ghosts_pose_and_advises_one_that_work
                     jaw_yaw_degrees: yaw,
                 },
             }],
+            None,
             None,
         )
         .unwrap();
@@ -465,8 +465,7 @@ fn the_policy_ghost_is_where_the_rehearsal_ended() {
     else {
         panic!("not constrained: {unsettled:?}");
     };
-    assert!(reason.contains("Did not settle") && reason.contains("cm short of the goal"));
-    // The goal stays what was asked.
+    assert!(reason.contains("Did not settle") && reason.contains("mm short of the goal"));
     let requested = unsettled.requested.unwrap().quaternion;
     let alignment: f64 = requested.iter().zip(quaternion).map(|(a, b)| a * b).sum();
     assert!(1.0 - alignment.abs() < 1e-12);
@@ -505,7 +504,7 @@ fn the_policy_is_given_the_goal_a_move_would_send() {
     assert!((requested.jaw_yaw_degrees - 90.0).abs() < 1e-9);
     assert_ne!(ghost.jaw_yaw_ranges.len(), 0);
 
-    // Position alone: the goal takes the orientation position-only solving chose,
+    // WHY: Position alone: the goal takes the orientation position-only solving chose,
     // reported as requested so a move can send the same.
     let mut chosen = Vec::new();
     let free = planner.project_by_policy(&OVER_THE_TABLE, [0.2, 0.0, 0.15], None, |p, q| {
@@ -527,10 +526,9 @@ const CLIPPED: [f64; 5] = [
     0.913_803_100_9,
     -0.966_982_146_8,
 ];
-/// The arm alone is clear here, but the open jaw swings into the base.
+// CONSTRAINT: The arm alone is clear here, but the open jaw swings into the base.
 const JAW_ONLY_COLLISION: [f64; 5] = [-1.367, 1.5004, 0.343, 1.2259, 2.7595];
 
-/// The SO-101 with its self-collision check and no table, as these poses graze it.
 fn so101_self_collision() -> Planner {
     so101_planner(&json!({"self_collision": {"penetration_tolerance_meters": 0.01}}))
 }
@@ -542,11 +540,10 @@ fn plan_to(planner: &Planner, start: &[f64], goal: &[f64]) -> Result<PlannedMoti
             joints: goal.to_vec(),
         }],
         None,
+        None,
     )
 }
 
-/// Why the straight joint path from `start` to `goal` does not run whole: the
-/// reason it was cut short, or refused when the arm cannot leave `start`.
 fn path_refusal(planner: &Planner, start: &[f64], goal: &[f64]) -> Option<String> {
     match plan_to(planner, start, goal) {
         Ok(motion) => motion.path_limited.map(|limited| limited.reason),
@@ -576,12 +573,10 @@ fn a_move_into_a_collision_runs_to_the_last_clear_sample_and_says_why() {
     );
     let segment = motion.plan.segments.last().unwrap();
     let stop = segment.corners.last().unwrap();
-    // Short of the target, on the same joint line, and itself clear: the plan
-    // a client gets back runs whole.
     assert!(!close(stop, &CLIPPED));
     assert_eq!(segment.target_position, None);
     assert_eq!(path_refusal(&planner, &NOMINAL, stop), None);
-    // The next sample on toward the target is the one the guard stops.
+    // WHY: The next sample on toward the target is the one the guard stops.
     let toward: Vec<f64> = stop
         .iter()
         .zip(&CLIPPED)
@@ -617,7 +612,7 @@ fn the_ghost_checks_the_jaw_at_its_measured_opening() {
     let planner = so101_self_collision();
     let (position, quaternion) = pose_at(&planner, &JAW_ONLY_COLLISION);
     let orientation = Some(PoseOrientation::Quaternion { quaternion });
-    // From the target itself the solve stays put, so only the jaw decides.
+    // WHY: From the target itself the solve stays put, so only the jaw decides.
     let closed = planner.project(&JAW_ONLY_COLLISION, position, orientation, Some(0.0));
     assert!(
         matches!(
@@ -634,6 +629,23 @@ fn the_ghost_checks_the_jaw_at_its_measured_opening() {
         panic!("the open jaw was not checked: {open:?}");
     };
     assert!(reason.contains("moving_jaw"), "{reason}");
+    let waypoint = Waypoint::Joints {
+        joints: JAW_ONLY_COLLISION.to_vec(),
+    };
+    assert!(
+        planner
+            .plan(
+                &JAW_ONLY_COLLISION,
+                std::slice::from_ref(&waypoint),
+                None,
+                Some(0.0)
+            )
+            .is_ok()
+    );
+    let refused = planner
+        .plan(&JAW_ONLY_COLLISION, &[waypoint], None, Some(1.659))
+        .unwrap_err();
+    assert!(refused.detail.contains("moving_jaw"), "{}", refused.detail);
 }
 
 #[test]
@@ -649,7 +661,6 @@ fn the_table_stops_a_descent_into_it_and_lets_the_arm_climb_out() {
         path_refusal(&planner, &plunging_into_it, &reaching_over_the_table),
         None
     );
-    // A solve that lands below the table is cut where the guard stops it.
     let below = planner.describe(&plunging_into_it).unwrap().position;
     let ghost = planner.project(&reaching_over_the_table, below, None, None);
     let ProjectionOutcome::Projected {

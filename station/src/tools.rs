@@ -1,6 +1,8 @@
-//! The commands besides `run`: inspecting and releasing servos, comparing the
-//! kinematics and the policy against their references, the guard process, and
-//! the schemas.
+#![allow(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "Explicit maintenance commands inspect registers and release hardware independently of station motion."
+)]
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -36,9 +38,6 @@ pub(crate) fn feetech_servos(config: &ExecutorConfig) -> anyhow::Result<Servos<S
     Servos::open(bus)
 }
 
-/// The servo registers `check-arm` reads and shows, never writes: the gains the
-/// profile pins, and the startup, dead-zone, torque and speed settings that shape
-/// how a servo starts to move. All are in the STS3215 table.
 const SERVO_TUNING_REGISTERS: &[&str] = &[
     "p_coefficient",
     "i_coefficient",
@@ -125,8 +124,6 @@ struct RobotProbe {
     samples: Vec<Vec<f64>>,
 }
 
-/// Print the lowest point of the moving geometry for each sample, for comparing
-/// the table guard's model of the arm with another one.
 pub(crate) fn probe_robot(trace_path: &Path) -> anyhow::Result<()> {
     let probe: RobotProbe = read_json(trace_path)?;
     let robot = Robot::load(&probe.urdf, &probe.driven_joints)?;
@@ -159,8 +156,6 @@ struct PolicyReplay {
     steps: Vec<PolicyReplayStep>,
 }
 
-/// Run recorded observations through the policy and print each step's action and
-/// joint target, for comparing against a reference implementation.
 pub(crate) fn replay_policy(trace_path: &Path) -> anyhow::Result<()> {
     let replay: PolicyReplay = read_json(trace_path)?;
     let robot = Robot::load(&replay.urdf, &replay.arm_joints)?;
@@ -189,19 +184,17 @@ pub(crate) fn replay_policy(trace_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Turn torque off on the arm in this config, which drops it.
 pub(crate) fn disable_arm(config_path: &Path) -> anyhow::Result<()> {
     feetech_servos(&load_config(config_path)?)?.release()
 }
 
-/// Check that a config file parses and is consistent.
 pub(crate) fn check_config(config_path: &Path) -> anyhow::Result<()> {
     load_config(config_path).map(drop)
 }
 
 pub(crate) fn print_profile_config(
     profile_name: Option<&str>,
-    selection: &crate::so101::SelectionArguments,
+    selection: &crate::commands::SelectionArguments,
     arm: &str,
     profile_directory: Option<&Path>,
     urdf_limits: bool,
@@ -232,7 +225,6 @@ pub(crate) fn print_profile_config(
     Ok(())
 }
 
-/// Watch an enabled arm for the executor that started this process.
 pub(crate) fn run_guard(config_path: &Path, executor_pid: u32) -> anyhow::Result<()> {
     let config = load_config(config_path)?;
     let feetech = config
@@ -243,7 +235,6 @@ pub(crate) fn run_guard(config_path: &Path, executor_pid: u32) -> anyhow::Result
         hebbian_robot_use_server::guard::guard(&config, executor_pid, std::io::stdin(), || {
             Servos::open(feetech.clone())
         })?;
-    // stderr reaches the operator's terminal, like the guard's other reports.
     let _ = writeln!(
         std::io::stderr().lock(),
         "{}",
@@ -252,14 +243,12 @@ pub(crate) fn run_guard(config_path: &Path, executor_pid: u32) -> anyhow::Result
     Ok(())
 }
 
-/// Which document `schema` writes.
 pub(crate) enum SchemaKind {
     Contract,
     SimPlant,
     OpenApi,
 }
 
-/// Write a JSON Schema or the `OpenAPI` document to stdout.
 pub(crate) fn print_schema(kind: SchemaKind) {
     let schema = match kind {
         SchemaKind::SimPlant => hebbian_robot_use_server::sim_plant::schema_json(),

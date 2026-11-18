@@ -77,6 +77,84 @@ fn profiles() -> PathBuf {
 }
 
 #[test]
+fn native_setup_selects_model_and_preserves_arm_settings() {
+    let fixture = RegistryFixture::new();
+    let entry = fixture.register("ARM_A");
+    std::fs::remove_file(entry.join("profile.toml")).unwrap();
+    std::fs::write(
+        entry.join("setup.toml"),
+        r#"
+serial = "ARM_A"
+model_variant = "soft-gripper-camera"
+[alignment]
+joint_signs = [1, -1, 1, 1, 1]
+joint_offsets_radians = [0.1, 0.2, 0.3, 0.4, 0.5]
+gripper_sign = -1
+gripper_offset_radians = 0.6
+[gripper]
+closed_position_radians = -0.7
+open_position_radians = 1.2
+[servos]
+expected_position_gains = [16, 0, 32]
+expected_return_delay_time = 0
+[servos.expected_position_gains_by_motor]
+2 = [32, 0, 32]
+"#,
+    )
+    .unwrap();
+    let matches = match_controllers(&[port("/dev/a", Some("ARM_A"))], &fixture.0).unwrap();
+    let selected = select_controller(&matches, None).unwrap();
+    let profile = selected.load_profile(&profiles()).unwrap();
+    let settings = profile.feetech().unwrap();
+    assert_eq!(settings.ports["follower"], "/dev/a");
+    assert_eq!(settings.calibration_ids["follower"], "so101_ARM_A");
+    assert_eq!(settings.joint_signs[1].as_integer(), -1);
+    assert_eq!(settings.joint_offsets_radians[4], 0.5);
+    assert_eq!(settings.expected_gains(2), [32, 0, 32]);
+    assert_eq!(profile.gripper.unwrap().closed_position_radians, -0.7);
+    assert!(
+        profile
+            .urdf
+            .to_string_lossy()
+            .contains("soft-gripper-camera")
+    );
+    std::fs::write(entry.join("rua.toml"), "extends = \"so101-soft-gripper-camera-manual\"\n[tracking]\nstatic_margin_radians = 0.12\n").unwrap();
+    let profile = selected.load_profile(&profiles()).unwrap();
+    assert_eq!(profile.tracking.static_margin_radians, 0.12);
+    assert_eq!(profile.feetech().unwrap().expected_gains(2), [32, 0, 32]);
+    std::fs::write(entry.join("rua.toml"), "extends = \"so101-manual\"\n").unwrap();
+    assert!(selected.load_profile(&profiles()).is_err());
+    std::fs::remove_file(entry.join("rua.toml")).unwrap();
+    let setup_path = entry.join("setup.toml");
+    let setup = std::fs::read_to_string(&setup_path)
+        .unwrap()
+        .replace("ARM_A", "WRONG");
+    std::fs::write(&setup_path, setup).unwrap();
+    assert!(selected.load_profile(&profiles()).is_err());
+    std::fs::write(&setup_path, "serial = \"ARM_A\"\n").unwrap();
+    std::fs::write(entry.join("profile.toml"), "extends = \"so101-manual\"\n").unwrap();
+    assert!(selected.load_profile(&profiles()).is_err());
+}
+
+#[test]
+fn native_setup_uses_standalone_defaults_for_omitted_fields() {
+    let fixture = RegistryFixture::new();
+    let entry = fixture.register("ARM_A");
+    std::fs::remove_file(entry.join("profile.toml")).unwrap();
+    std::fs::write(entry.join("setup.toml"), "serial = \"ARM_A\"\n").unwrap();
+    let matches = match_controllers(&[port("/dev/a", Some("ARM_A"))], &fixture.0).unwrap();
+    let profile = select_controller(&matches, None)
+        .unwrap()
+        .load_profile(&profiles())
+        .unwrap();
+    let settings = profile.feetech().unwrap();
+    assert_eq!(settings.joint_offsets_radians, [0.0; 5]);
+    assert_eq!(settings.expected_gains(2), [16, 0, 32]);
+    assert_eq!(settings.expected_return_delay_time, Some(0));
+    assert_eq!(profile.gripper.unwrap().open_position_radians, 1.5);
+}
+
+#[test]
 fn registry_selection_produces_the_arm_config_without_manual_port_or_calibration_copying() {
     let fixture = RegistryFixture::new();
     let entry = fixture.register("ARM_A");

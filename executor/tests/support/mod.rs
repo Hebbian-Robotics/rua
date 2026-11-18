@@ -1,6 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 #![allow(dead_code, reason = "each test crate uses part of this")]
-//! A client of an arm's in-process link: requests go in as lines and the arm's
-//! frames come back on a queue.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +20,6 @@ use serde_json::{Value, json};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::error::TryRecvError;
 
-/// Lines a client may leave unread before it counts as not reading.
 const QUEUE_CAPACITY: usize = 10_000;
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -35,13 +39,11 @@ impl LinkClient {
         }
     }
 
-    /// Send one raw line. The arm answers it at the start of its next cycle, so
-    /// its loop must be running.
+    // CONSTRAINT: The control loop must be running to answer requests.
     pub fn send_line(&self, line: &str) {
         self.handle.request(self.client, line);
     }
 
-    /// Send a request, with a request id when given.
     pub fn send_request(&self, request_id: Option<&str>, request: &Value) {
         let mut envelope = json!({"request": request});
         if let Some(id) = request_id {
@@ -50,7 +52,6 @@ impl LinkClient {
         self.send_line(&envelope.to_string());
     }
 
-    /// Send a command, with a request id when given.
     pub fn send_command(&self, request_id: Option<&str>, command: &Value) {
         self.send_request(request_id, &json!({"kind": "command", "command": command}));
     }
@@ -69,7 +70,6 @@ impl LinkClient {
         }
     }
 
-    /// Everything the arm sent that has not been read, once its link is closed.
     pub fn drain_events(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
         while let Ok(line) = self.lines.try_recv() {
@@ -90,7 +90,7 @@ impl LinkClient {
     }
 }
 
-/// Stop simulated arms as soon as the test finishes, including after a panic.
+// SAFETY: Stop simulated arms as soon as the test finishes, including after a panic.
 pub struct RunningArms {
     shutdown_requested: Arc<AtomicBool>,
     loop_thread: Option<JoinHandle<()>>,

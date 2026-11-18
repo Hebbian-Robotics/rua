@@ -1,12 +1,4 @@
-//! Grasp orientations: the approach direction and jaw yaw a client names a tool
-//! orientation by, and the rotation they stand for.
-//!
-//! Local +Z of every supported tool frame points from palm to fingertips. The
-//! jaws close along the gripper's jaw closing axis, local X or Y. Jaw yaw is a
-//! right-handed rotation about minus the approach direction; its zero is world
-//! +X projected onto the plane across the approach, or world +Y when the
-//! approach is within `JAW_REFERENCE_SWITCH_APPROACH_X` of world X. So down at 0
-//! closes along world X and down at 90 along world Y.
+// CONSTRAINT: Tool +Z points palm-to-fingertips. Jaw yaw turns right-handed about minus approach; zero projects world +X, switching to +Y near parallel. See the public orientation contract.
 
 use hebbian_contracts::{
     Approach, JawClosingAxis, JawYawReference, NamedApproach, OrientationSummary, PoseOrientation,
@@ -15,13 +7,12 @@ use hebbian_contracts::{
 use nalgebra::{Matrix3, Quaternion, Rotation3, Unit, UnitQuaternion, Vector3};
 
 pub use hebbian_contracts::JAW_REFERENCE_SWITCH_APPROACH_X;
-/// How far from unit length a client's quaternion may be.
-pub const UNIT_QUATERNION_TOLERANCE: f64 = 1e-5;
+pub use hebbian_robot_geometry::kinematics::UNIT_QUATERNION_TOLERANCE;
 
-/// Why an orientation cannot be used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrientationRefusal {
     ZeroApproach,
+    NonFiniteYaw,
     NotAUnitQuaternion,
 }
 
@@ -34,6 +25,7 @@ impl std::fmt::Display for OrientationRefusal {
                     "The approach must be a finite, nonzero world direction"
                 )
             }
+            Self::NonFiniteYaw => write!(formatter, "The jaw yaw must be finite"),
             Self::NotAUnitQuaternion => write!(formatter, "The quaternion must be normalized"),
         }
     }
@@ -47,7 +39,7 @@ fn approach_direction(approach: Approach) -> Result<Unit<Vector3<f64>>, Orientat
         Approach::Named(NamedApproach::Forward) => Ok(Vector3::x_axis()),
         Approach::Direction(direction) => {
             let direction = Vector3::from(direction);
-            // Scaling by the largest component first keeps extreme but finite
+            // WHY: Scaling by the largest component first keeps extreme but finite
             // inputs from overflowing or underflowing the norm.
             let largest = direction.amax();
             if !largest.is_finite() || largest == 0.0 {
@@ -77,7 +69,6 @@ fn closing_column(rotation: &Matrix3<f64>, axis: JawClosingAxis) -> Vector3<f64>
         .into_owned()
 }
 
-/// The jaw yaw of a tool rotation about minus its approach, in (-180, 180].
 fn jaw_yaw_degrees(rotation: &Matrix3<f64>, axis: JawClosingAxis) -> f64 {
     let direction = rotation.column(2).into_owned();
     let (_, reference) = jaw_reference(&direction);
@@ -88,15 +79,14 @@ fn jaw_yaw_degrees(rotation: &Matrix3<f64>, axis: JawClosingAxis) -> f64 {
         .to_degrees()
 }
 
-/// The rotation for an approach and a jaw yaw.
-///
-/// # Errors
-/// The approach is zero or not finite.
 pub fn grasp_rotation(
     approach: Approach,
     jaw_yaw_degrees: f64,
     axis: JawClosingAxis,
 ) -> Result<UnitQuaternion<f64>, OrientationRefusal> {
+    if !jaw_yaw_degrees.is_finite() {
+        return Err(OrientationRefusal::NonFiniteYaw);
+    }
     let direction = approach_direction(approach)?.into_inner();
     let (_, reference) = jaw_reference(&direction);
     let yaw = jaw_yaw_degrees.rem_euclid(360.0).to_radians();
@@ -110,10 +100,6 @@ pub fn grasp_rotation(
     ))
 }
 
-/// The rotation a client's quaternion `[x, y, z, w]` stands for.
-///
-/// # Errors
-/// It is not finite or not of unit length.
 pub fn quaternion_rotation(
     quaternion: [f64; 4],
 ) -> Result<UnitQuaternion<f64>, OrientationRefusal> {
@@ -127,10 +113,6 @@ pub fn quaternion_rotation(
     Ok(UnitQuaternion::new_normalize(raw))
 }
 
-/// The rotation an orientation names for a gripper closing along `axis`.
-///
-/// # Errors
-/// The approach is zero, or the quaternion is not a unit quaternion.
 pub fn pose_orientation_rotation(
     orientation: PoseOrientation,
     axis: JawClosingAxis,
@@ -144,11 +126,7 @@ pub fn pose_orientation_rotation(
     }
 }
 
-/// The quaternion `[x, y, z, w]`: as given when it is one, so a client's
-/// own quaternion comes back unchanged.
-///
-/// # Errors
-/// As for [`pose_orientation_rotation`].
+// INVARIANT: Return client-supplied quaternions unchanged rather than introducing rounding through a rotation conversion.
 pub fn pose_orientation_quaternion(
     orientation: PoseOrientation,
     axis: JawClosingAxis,
@@ -163,33 +141,28 @@ pub fn pose_orientation_quaternion(
     }
 }
 
-/// The rotation of a quaternion `[x, y, z, w]` the executor computed itself,
-/// normalized against rounding.
 #[must_use]
 pub fn from_xyzw(quaternion: [f64; 4]) -> UnitQuaternion<f64> {
     let [x, y, z, w] = quaternion;
     UnitQuaternion::new_normalize(Quaternion::new(w, x, y, z))
 }
 
-/// A rotation as `[x, y, z, w]`.
 #[must_use]
 pub fn xyzw(rotation: &UnitQuaternion<f64>) -> [f64; 4] {
     [rotation.i, rotation.j, rotation.k, rotation.w]
 }
 
-/// The approach and jaw yaw a rotation stands for, at full precision.
 #[must_use]
 pub fn tool_orientation(rotation: &UnitQuaternion<f64>, axis: JawClosingAxis) -> ToolOrientation {
     let matrix = rotation.to_rotation_matrix().into_inner();
     let yaw = jaw_yaw_degrees(&matrix, axis).rem_euclid(360.0);
     ToolOrientation {
         approach: matrix.column(2).into_owned().into(),
-        // A negative yaw just under a full turn can come out as 360 itself.
+        // CONSTRAINT: A negative yaw just under a full turn can come out as 360 itself.
         jaw_yaw_degrees: if yaw >= 360.0 { 0.0 } else { yaw },
     }
 }
 
-/// `value` rounded to `digits` decimal places.
 #[must_use]
 pub fn rounded(value: f64, digits: i32) -> f64 {
     let scale = 10_f64.powi(digits);
@@ -197,7 +170,7 @@ pub fn rounded(value: f64, digits: i32) -> f64 {
 }
 
 fn rounded_in_full_turn(degrees: f64) -> f64 {
-    // The second remainder maps a value that rounds up to 360 back to 0.
+    // CONSTRAINT: The second remainder maps a value that rounds up to 360 back to 0.
     rounded(degrees.rem_euclid(360.0), 1).rem_euclid(360.0)
 }
 
@@ -205,7 +178,6 @@ fn degrees_between(first: &Vector3<f64>, second: &Vector3<f64>) -> f64 {
     first.dot(second).clamp(-1.0, 1.0).acos().to_degrees()
 }
 
-/// A rotation in grasp terms, compared with `target` when there is one.
 #[must_use]
 pub fn orientation_summary(
     rotation: &UnitQuaternion<f64>,
@@ -319,7 +291,7 @@ mod tests {
 
     #[test]
     fn a_summary_tells_a_tilt_from_a_jaw_yaw() {
-        // Down at 0, yawed 87 degrees about world z, then tilted 12 about y.
+        // CONSTRAINT: Down at 0, yawed 87 degrees about world z, then tilted 12 about y.
         let down =
             grasp_rotation(Approach::Named(NamedApproach::Down), 0.0, JawClosingAxis::Y).unwrap();
         let rotation = UnitQuaternion::from_euler_angles(0.0, 12_f64.to_radians(), 0.0)
@@ -377,7 +349,35 @@ mod tests {
     }
 
     #[test]
+    fn rounded_preview_quaternions_are_normalized_for_motion() {
+        for quaternion in [
+            [-0.9099, 0.2167, -0.2759, 0.2215],
+            [0.5000, 0.5000, 0.5000, 0.5001],
+        ] {
+            let rotation = quaternion_rotation(quaternion).unwrap();
+            assert!((rotation.quaternion().norm() - 1.0).abs() < 1e-12);
+        }
+        for quaternion in [
+            [0.0; 4],
+            [0.0, 0.0, 0.0, 1.001],
+            [f64::NAN, 0.0, 0.0, 1.0],
+            [f64::INFINITY, 0.0, 0.0, 1.0],
+        ] {
+            assert_eq!(
+                quaternion_rotation(quaternion),
+                Err(OrientationRefusal::NotAUnitQuaternion)
+            );
+        }
+    }
+
+    #[test]
     fn a_zero_approach_and_a_long_quaternion_are_refused() {
+        for yaw in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                grasp_rotation(Approach::Named(NamedApproach::Down), yaw, JawClosingAxis::X),
+                Err(OrientationRefusal::NonFiniteYaw)
+            );
+        }
         assert_eq!(
             grasp_rotation(Approach::Direction([0.0; 3]), 0.0, JawClosingAxis::X),
             Err(OrientationRefusal::ZeroApproach)

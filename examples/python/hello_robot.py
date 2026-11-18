@@ -1,15 +1,3 @@
-"""The smallest script that moves a robot: connect, move, open the gripper.
-
-    # Start a station first (see the README), then:
-    uv run --project examples/python python examples/python/hello_robot.py
-
-Poses are tool positions in metres, in the robot's frame. Every move returns an
-outcome: "completed" means the planned motion finished; the plan may be limited. To control how the gripper points,
-pass an orientation:
-`lease.arm("follower").move_to_pose(target, GraspOrientation(approach="down", jaw_yaw_degrees=180))`.
-Motion exists only on the lease; power, stop and reads are on `station.arm(...)`.
-"""
-
 import asyncio
 import os
 

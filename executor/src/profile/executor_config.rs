@@ -1,5 +1,3 @@
-//! One arm's `ExecutorConfig`, built from its robot profile.
-
 use std::path::Path;
 
 use anyhow::{Context, bail, ensure};
@@ -14,23 +12,14 @@ use crate::so101::calibration::calibrated_joint_limits;
 use crate::so101::executor_config::feetech_bus;
 use hebbian_contracts::SurfaceGuardConfig;
 
-/// A joint stream whose client sends no goal for this long ends, and the arm holds.
 const STREAM_GOAL_TIMEOUT_SECONDS: f64 = 0.5;
 
-/// Where an arm's joint limits come from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JointLimitSource {
-    /// The arm's `LeRobot` calibration when it has Feetech motors, else the URDF:
-    /// what a real arm runs with.
     Calibration,
-    /// The URDF's, as in simulation.
     Urdf,
 }
 
-/// Each named joint's lower and upper position limit in the URDF, in order.
-///
-/// # Errors
-/// The URDF cannot be read or lacks a named joint.
 pub fn urdf_joint_limits(urdf: &Path, joint_names: &[String]) -> anyhow::Result<Vec<(f64, f64)>> {
     let robot = urdf_rs::read_file(urdf)
         .with_context(|| format!("Cannot read the URDF {}", urdf.display()))?;
@@ -57,8 +46,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
         })
 }
 
-/// A URDF's hash with its mesh paths blanked, so copies that differ only in
-/// where the meshes live compare equal.
+// WHY: Blank mesh paths before hashing so relocated copies and trailing whitespace do not invalidate the tool fixture.
 fn urdf_fingerprint(urdf: &Path) -> anyhow::Result<String> {
     const MARKER: &str = "filename=\"";
     let text = std::fs::read_to_string(urdf)
@@ -75,11 +63,16 @@ fn urdf_fingerprint(urdf: &Path) -> anyhow::Result<String> {
         rest = &after_marker[end + 1..];
     }
     blanked.push_str(rest);
-    Ok(sha256_hex(blanked.as_bytes()))
+    let normalized = blanked
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(sha256_hex(normalized.as_bytes()))
 }
 
-/// Refuse a URDF other than the one the tool-frame fixture was fitted to: the
-/// fixture records its URDF's hash, and that file ships beside it.
+// SAFETY: Refuse a URDF other than the one the tool-frame fixture was fitted to: the
+// fixture records its URDF's hash, and that file ships beside it.
 fn require_urdf_behind_tool_frame_fixture(urdf: &Path, fixture: &Path) -> anyhow::Result<()> {
     let fixture_text = std::fs::read_to_string(fixture)
         .with_context(|| format!("Cannot read {}", fixture.display()))?;
@@ -143,21 +136,13 @@ fn policy_config(
             .display()
             .to_string(),
         checkpoint_sha256: policy.checkpoint_sha256.clone(),
+        max_target_lead_radians: policy.max_target_lead_radians,
         tool_link: profile.arm_tool_frame(arm),
         position_tolerance_meters: policy.position_tolerance_meters,
         orientation_tolerance_radians: policy.orientation_tolerance_radians,
     })
 }
 
-/// The executor's config for one arm of `profile`. A Feetech arm reads its
-/// `LeRobot` calibration under `calibration_root` (normally
-/// `lerobot_calibration_root()`). A policy profile loads its exported model,
-/// which must exist. The caller sets `sim_plant` and `trace_directory` when it
-/// needs them.
-///
-/// # Errors
-/// The arm is not the profile's, or its calibration, URDF or policy files are
-/// missing or inconsistent.
 pub fn executor_config(
     profile: &RobotProfile,
     arm: &str,
@@ -173,10 +158,6 @@ pub fn executor_config(
     .with_context(|| format!("The config for arm {arm} of {}", profile.name))
 }
 
-/// Build the configurable input for one arm before final validation.
-///
-/// # Errors
-/// The arm or its required profile files are invalid.
 pub fn executor_config_input(
     profile: &RobotProfile,
     arm: &str,
@@ -216,6 +197,7 @@ pub fn executor_config_input(
         self_collision: profile.self_collision_penetration_tolerance_meters.map(
             |penetration_tolerance_meters| SelfCollisionConfig {
                 penetration_tolerance_meters,
+                allowed_collision_pairs: profile.allowed_collision_pairs.clone(),
             },
         ),
         feetech,
@@ -297,6 +279,10 @@ mod tests {
         let moved_meshes = models.join("moved.urdf");
         std::fs::write(&moved_meshes, fitted.replace("/original/", "assets/")).unwrap();
         require_urdf_behind_tool_frame_fixture(&moved_meshes, &fixture).unwrap();
+
+        let trailing_whitespace = models.join("trailing-whitespace.urdf");
+        std::fs::write(&trailing_whitespace, format!("{fitted}  \n")).unwrap();
+        require_urdf_behind_tool_frame_fixture(&trailing_whitespace, &fixture).unwrap();
 
         let other = models.join("other.urdf");
         std::fs::write(

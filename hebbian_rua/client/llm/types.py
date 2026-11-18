@@ -7,6 +7,27 @@ from typing import Any, Literal
 
 
 @dataclass(frozen=True)
+class SequenceImage:
+    """A JPEG with client retrieval timing, rather than synchronized robot state."""
+
+    camera: str
+    jpeg: bytes
+    retrieved_between_unix_seconds: tuple[float, float]
+    elapsed_seconds: float
+    boundary: Literal["start", "motion", "step", "end"]
+
+
+@dataclass
+class SequenceImageHistory:
+    """Visual evidence for one model call, including gaps and retention loss."""
+
+    call_id: str
+    images: list[SequenceImage] = field(default_factory=list)
+    missed_samples: int = 0
+    truncated: bool = False
+
+
+@dataclass(frozen=True)
 class RobotToolSpec:
     """A tool as every function-calling API describes one: a name, a description
     written for the model, and a JSON schema for its arguments."""
@@ -36,10 +57,13 @@ class ModelContent:
 
 @dataclass(frozen=True)
 class RobotOutput:
-    """Full, unrounded station data supplied to an output formatter.
+    """Station data and context passed through transforms before rendering.
 
-    Tool results carry their call; observations carry the selected arm, notes,
-    camera JPEGs and retrieval intervals. Formatters must not mutate this data.
+    Payloads stay in original SI units until the final renderer.
+
+    Tool results carry their call and requested images or sequence history;
+    observations carry the selected arm, notes, camera JPEGs and retrieval
+    intervals. Formatters must not mutate this data.
     """
 
     kind: Literal["result", "observation"]
@@ -50,6 +74,7 @@ class RobotOutput:
     notes: tuple[str, ...] = ()
     missing_optional_cameras: tuple[str, ...] = ()
     camera_intervals: dict[str, tuple[float, float]] = field(default_factory=dict)
+    sequence_images: SequenceImageHistory | None = None
 
 
 type OutputFormatter = Callable[[RobotOutput], ModelContent]
@@ -68,12 +93,10 @@ class RobotToolResult:
     halt: bool = False
     interrupted: bool = False
 
-    raw_data: object | None = None
-
-    @property
-    def data(self) -> object:
-        """Full station payload in original units, or the original error text."""
-        return self.raw_data if self.raw_data is not None else self.model_data
+    # Full station payload in original units, or the original error text.
+    data: object = field(kw_only=True)
+    cameras: dict[str, bytes] = field(default_factory=dict, kw_only=True)
+    sequence_images: SequenceImageHistory | None = field(default=None, kw_only=True)
 
     @property
     def model_data(self) -> object:
@@ -90,4 +113,5 @@ class RobotObservation:
 
     text: str
     cameras: dict[str, bytes] = field(default_factory=dict)
-    data: object | None = None
+    data: object = field(kw_only=True)
+    revisions: dict[str, int] = field(default_factory=dict)

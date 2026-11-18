@@ -1,0 +1,93 @@
+id: explanatory-comment-typescript
+language: TypeScript
+severity: info
+message: 'Explanatory comment candidate for paragraph classification.'
+ignores:
+  - '**/contracts/**'
+  - '**/packages/**'
+  - '**/typings/**'
+  - '**/examples/**'
+  - '**/typescript-client/**'
+  - '**/hebbian_rua/**'
+  - '**/sdk/**'
+  - '**/generated/**'
+  - '**/station_api.py'
+  - '**/http_routes.py'
+  - '**/arm_commands.py'
+  - '**/generated_robot_tools.py'
+rule:
+  kind: comment
+  not:
+    any:
+      - regex: '(?s)^(/\*\*|(?://|/\*)\s*(biome-ignore|eslint-|@ts-|istanbul|c8|v8|SPDX-License-Identifier:|Copyright\b|copyright\b))'
+---
+id: explanatory-comment-tsx
+language: Tsx
+severity: info
+message: 'Explanatory comment candidate for paragraph classification.'
+ignores:
+  - '**/contracts/**'
+  - '**/packages/**'
+  - '**/typings/**'
+  - '**/examples/**'
+  - '**/typescript-client/**'
+  - '**/hebbian_rua/**'
+  - '**/sdk/**'
+  - '**/generated/**'
+  - '**/station_api.py'
+  - '**/http_routes.py'
+  - '**/arm_commands.py'
+  - '**/generated_robot_tools.py'
+rule:
+  kind: comment
+  not:
+    any:
+      - regex: '(?s)^(/\*\*|(?://|/\*)\s*(biome-ignore|eslint-|@ts-|istanbul|c8|v8|SPDX-License-Identifier:|Copyright\b|copyright\b))'
+---
+id: explanatory-comment-python
+language: Python
+severity: info
+message: 'Explanatory comment candidate for paragraph classification.'
+ignores:
+  - '**/contracts/**'
+  - '**/packages/**'
+  - '**/typings/**'
+  - '**/examples/**'
+  - '**/typescript-client/**'
+  - '**/hebbian_rua/**'
+  - '**/sdk/**'
+  - '**/generated/**'
+  - '**/station_api.py'
+  - '**/http_routes.py'
+  - '**/arm_commands.py'
+  - '**/generated_robot_tools.py'
+rule:
+  kind: comment
+  not:
+    any:
+      - regex: '^#\s*(!|noqa\b|type:\s*ignore\b|ty:\s*ignore\b|ruff:|fmt:|pragma:|coding[:=]|SPDX-License-Identifier:|Copyright\b|copyright\b)'
+---
+id: explanatory-comment-rust
+language: Rust
+severity: info
+message: 'Explanatory comment candidate for paragraph classification.'
+ignores:
+  - '**/contracts/**'
+  - '**/packages/**'
+  - '**/typings/**'
+  - '**/examples/**'
+  - '**/typescript-client/**'
+  - '**/hebbian_rua/**'
+  - '**/sdk/**'
+  - '**/generated/**'
+  - '**/station_api.py'
+  - '**/http_routes.py'
+  - '**/arm_commands.py'
+  - '**/generated_robot_tools.py'
+rule:
+  any:
+    - kind: line_comment
+    - kind: block_comment
+  not:
+    any:
+      - regex: '(?s)^(///|//!|/\*\*|/\*!|(?://|/\*)\s*(SPDX-License-Identifier:|Copyright\b|copyright\b))'

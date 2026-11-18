@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 hebbian-robot-geometry = { path = "../robot-geometry" }
-hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "9f49365f21703c1c898f4b587cd169697a6aa62d", features = ["schema"] }
+hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "b07c114b2917fd550fa4c74360f6ee4bd8730f23", features = ["schema"] }
 hebbian-contracts = { path = "../contracts" }
 anyhow = "1.0.104"
 async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }
@@ -38,6 +38,7 @@ uuid = { version = "1", features = ["v4"] }
 serialport = { version = "4.10.1", default-features = false }
 flate2 = "1.1.11"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

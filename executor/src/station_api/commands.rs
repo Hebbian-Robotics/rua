@@ -1,15 +1,9 @@
-//! Client-level commands turned into the arm's own: motions planned from where
-//! the arm holds now, openings turned into jaw angles, pose commands handed to
-//! the policy on a policy arm. Each call waits for the loop, so callers run it
-//! off the async runtime.
-
 use std::collections::BTreeMap;
-use std::sync::{Arc, atomic::AtomicU64};
 
 use crate::control_link::LinkHandle;
 use hebbian_contracts::{
-    ArmMode, ArmMove, ArmRecord, Command, CommandAnswer, MoveArmsCommand, PoseProjection,
-    PreviewPose, RejectionReason, Sample, StationCommand, TraceContext, Waypoint,
+    ArmMode, ArmMove, Command, MoveArmsCommand, PlannedMotion, PoseProjection, PreviewPose,
+    RejectionReason, Sample, StationCommand, Waypoint,
 };
 
 type Refusal = (RejectionReason, String);
@@ -18,17 +12,8 @@ fn refused(reason: RejectionReason, detail: impl Into<String>) -> Refusal {
     (reason, detail.into())
 }
 
-fn answer_of(result: Result<Vec<ArmRecord>, Refusal>) -> CommandAnswer {
-    match result {
-        Ok(records) => CommandAnswer::Accepted { records },
-        Err((reason, detail)) => CommandAnswer::Refused { reason, detail },
-    }
-}
-
-/// How long a command waits for the arm's first sample after startup.
 const FIRST_SAMPLE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// The arm's newest sample, waiting briefly for the first one.
 fn latest_sample(link: &LinkHandle) -> Result<Sample, Refusal> {
     let deadline = std::time::Instant::now() + FIRST_SAMPLE_WAIT;
     loop {
@@ -45,9 +30,7 @@ fn latest_sample(link: &LinkHandle) -> Result<Sample, Refusal> {
     }
 }
 
-/// Where the arm holds, which a plan starts from; refused unless it holds.
-fn hold_pose(link: &LinkHandle) -> Result<Vec<f64>, Refusal> {
-    let sample = latest_sample(link)?;
+fn hold_pose(sample: Sample) -> Result<Vec<f64>, Refusal> {
     match (sample.mode, sample.hold_pose) {
         (ArmMode::Holding, Some(pose)) => Ok(pose),
         (ArmMode::Disabled, _) => Err(refused(
@@ -72,7 +55,6 @@ fn jaw_angle(link: &LinkHandle, arm: &str, opening: f64) -> Result<f64, Refusal>
             "A gripper opening must be a finite number from 0 (closed) to 1 (open)",
         ));
     }
-    // Past either end means that end.
     let opening = opening.clamp(0.0, 1.0);
     link.gripper()
         .map(|gripper| gripper.angle(opening))
@@ -84,36 +66,38 @@ fn jaw_angle(link: &LinkHandle, arm: &str, opening: f64) -> Result<f64, Refusal>
         })
 }
 
-/// The arm's move along these waypoints, planned from where it holds.
 fn planned_move(
     link: &LinkHandle,
-    label: &str,
     waypoints: &[Waypoint],
     max_joint_speed: Option<f64>,
-) -> Result<Command, Refusal> {
+) -> Result<PlannedMotion, Refusal> {
     let planner = link.planner().ok_or_else(|| {
         refused(
             RejectionReason::InvalidTarget,
             "This arm has no tool link to plan for",
         )
     })?;
-    let start = hold_pose(link)?;
-    let motion = planner
-        .plan(&start, waypoints, max_joint_speed)
-        .map_err(|refusal| (refusal.reason, refusal.detail))?;
-    Ok(Command::Move {
+    let sample = latest_sample(link)?;
+    let gripper_angle = sample.gripper_angle;
+    let start = hold_pose(sample)?;
+    planner
+        .plan(&start, waypoints, max_joint_speed, gripper_angle)
+        .map_err(|refusal| (refusal.reason, refusal.detail))
+}
+
+fn move_command(label: &str, motion: PlannedMotion) -> Command {
+    Command::Move {
         label: label.to_owned(),
         joint_speed: motion.plan.peak_speed,
         plan: motion.plan,
         path_limited: motion.path_limited,
         pose_limited: motion.pose_limited,
-    })
+    }
 }
 
 const POLICY_POSES_ONLY: &str =
     "The policy controller takes one pose at a time; send move_to_pose, not joints or a path";
 
-/// The arm's own command for a client's.
 pub(crate) fn arm_command(
     link: &LinkHandle,
     arm: &str,
@@ -133,12 +117,8 @@ pub(crate) fn arm_command(
             if policy {
                 return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
             }
-            planned_move(
-                link,
-                "move_to_joints",
-                &[Waypoint::Joints { joints }],
-                max_joint_speed,
-            )
+            planned_move(link, &[Waypoint::Joints { joints }], max_joint_speed)
+                .map(|motion| move_command("move_to_joints", motion))
         }
         StationCommand::MoveToPose {
             position,
@@ -146,7 +126,7 @@ pub(crate) fn arm_command(
             max_joint_speed,
         } => {
             if policy {
-                hold_pose(link)?;
+                hold_pose(latest_sample(link)?)?;
                 return Ok(Command::ReachPose {
                     label: "move_to_pose".to_owned(),
                     position,
@@ -155,13 +135,13 @@ pub(crate) fn arm_command(
             }
             planned_move(
                 link,
-                "move_to_pose",
                 &[Waypoint::Pose {
                     position,
                     orientation,
                 }],
                 max_joint_speed,
             )
+            .map(|motion| move_command("move_to_pose", motion))
         }
         StationCommand::FollowPath {
             waypoints,
@@ -170,7 +150,8 @@ pub(crate) fn arm_command(
             if policy {
                 return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
             }
-            planned_move(link, "follow_path", &waypoints, max_joint_speed)
+            planned_move(link, &waypoints, max_joint_speed)
+                .map(|motion| move_command("follow_path", motion))
         }
         StationCommand::StreamJoints {
             joints,
@@ -201,40 +182,6 @@ pub(crate) fn arm_command(
     }
 }
 
-/// Carry out one client command on one arm as the holder of `token`.
-#[must_use]
-pub fn answer_command(
-    links: &BTreeMap<String, LinkHandle>,
-    arm: &str,
-    command: StationCommand,
-    token: Option<&str>,
-    trace_context: Option<TraceContext>,
-    expected_revision: Option<u64>,
-    generation: Vec<(Arc<AtomicU64>, u64)>,
-) -> CommandAnswer {
-    answer_of((|| {
-        let link = links.get(arm).ok_or_else(|| {
-            refused(
-                RejectionReason::InvalidTarget,
-                format!("No arm named {arm}"),
-            )
-        })?;
-        let command = arm_command(link, arm, command)?;
-        let record = link.submit_command_fenced(
-            command,
-            token,
-            trace_context,
-            expected_revision,
-            generation,
-        )?;
-        Ok(vec![ArmRecord {
-            arm: arm.to_owned(),
-            record,
-        }])
-    })())
-}
-
-/// Plan a coordinated move without admitting it to the control loop.
 pub(crate) fn plan_group_move<'a>(
     links: &'a BTreeMap<String, LinkHandle>,
     command: &MoveArmsCommand,
@@ -257,22 +204,18 @@ pub(crate) fn plan_group_move<'a>(
             ));
         }
         let prefixed = |(reason, detail): Refusal| (reason, format!("{arm}: {detail}"));
-        let Command::Move {
-            plan,
-            joint_speed,
-            path_limited,
-            pose_limited,
-            ..
-        } = planned_move(
+        let motion = planned_move(
             link,
-            "move_arms",
             std::slice::from_ref(waypoint),
             command.max_joint_speed,
         )
-        .map_err(prefixed)?
-        else {
-            unreachable!("planned_move makes a move");
-        };
+        .map_err(prefixed)?;
+        let joint_speed = motion.plan.peak_speed;
+        let PlannedMotion {
+            plan,
+            path_limited,
+            pose_limited,
+        } = motion;
         gates.push(link.gate(expected_revisions.get(arm).copied()));
         moves.push(ArmMove {
             arm: arm.clone(),
@@ -288,10 +231,6 @@ pub(crate) fn plan_group_move<'a>(
     Ok((link, moves, gates))
 }
 
-/// Where the arm would take the tool toward a pose from its measured joints.
-///
-/// # Errors
-/// The arm is unknown, has not reported yet, or has no tool link.
 pub fn answer_preview(
     links: &BTreeMap<String, LinkHandle>,
     arm: &str,

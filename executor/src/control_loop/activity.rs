@@ -1,5 +1,3 @@
-//! What the arm is doing between holds, and the loop's state across cycles.
-
 use std::time::Duration;
 
 use super::tool_pose::ToolPose;
@@ -16,15 +14,11 @@ use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
 use hebbian_contracts::CommandOutcome;
 
-/// A stream being followed.
 pub(super) struct ActiveStream {
     pub(super) command_id: String,
-    /// Whether the last cycle followed a pose goal; a new stream starts the
-    /// policy's history afresh.
     pub(super) policy_engaged: bool,
 }
 
-/// What the arm is doing between holds.
 pub(super) enum Activity {
     Idle,
     Motion(Box<ActiveMotion>),
@@ -33,13 +27,9 @@ pub(super) enum Activity {
     Reach(Box<ActiveReach>),
 }
 
-/// The loop's own state between cycles.
 pub(super) struct Loop<'a> {
     pub(super) config: &'a ExecutorConfig,
-    /// The arm's state machine: this thread owns it, and readers reach it only
-    /// through the arm's inbox.
     pub(super) core: ArmCore,
-    /// Torque is on and the arm is commanded; otherwise nothing is.
     pub(super) powered: bool,
     pub(super) filter: ReferenceFilter,
     pub(super) guard: Option<SurfaceGuard>,
@@ -48,20 +38,15 @@ pub(super) struct Loop<'a> {
     pub(super) tool: Option<ToolPose>,
     pub(super) activity: Activity,
     pub(super) previous_command: Vec<f64>,
-    /// How fast `previous_command` moved from the command sent before it.
     pub(super) commanded_velocities: Vec<f64>,
-    /// The command being computed this cycle; it becomes `previous_command` once sent.
     pub(super) next_command: Vec<f64>,
-    /// The reference being followed this cycle, kept so a cycle reuses its buffers.
     pub(super) reference: Reference,
     pub(super) hold_at: Option<Vec<f64>>,
-    /// Why the arm last tripped, while the check that tripped it still fails.
-    /// A tripped arm already holds; tripping again would move that hold point
-    /// and repeat the event. It also refuses new motion until the check passes.
+    // INVARIANT: Why the arm last tripped, while the check that tripped it still fails.
+    // A tripped arm already holds; tripping again would move that hold point
+    // and repeat the event. It also refuses new motion until the check passes.
     pub(super) tripped: Option<String>,
-    /// The return to rest at shutdown has been attempted once.
     pub(super) shutdown_return_attempted: bool,
-    /// The jaw while the arm is enabled, and the command it is working on.
     pub(super) gripper: Option<GripperController>,
     pub(super) gripper_command: Option<String>,
 }
@@ -71,7 +56,6 @@ impl Loop<'_> {
         &mut self.core
     }
 
-    /// The arm's torque is on, holding these positions.
     pub(super) fn power_up(&mut self, positions: &[f64], gripper_angle: Option<f64>) {
         self.gripper = self
             .config
@@ -89,8 +73,8 @@ impl Loop<'_> {
         self.powered = true;
     }
 
-    /// Torque is off: no goal, hold or trip survives it. The state machine ends
-    /// the command that was running.
+    // INVARIANT: Torque is off: no goal, hold or trip survives it. The state machine ends
+    // the command that was running.
     pub(super) fn power_down(&mut self) {
         self.activity = Activity::Idle;
         self.powered = false;
@@ -100,7 +84,6 @@ impl Loop<'_> {
         self.tripped = None;
     }
 
-    /// What this cycle's feedback or timing says is wrong, if anything.
     pub(super) fn cycle_failure(
         &self,
         feedback: &Feedback,
@@ -121,8 +104,6 @@ impl Loop<'_> {
         })
     }
 
-    /// A check failed: the running command ends tripped and the arm holds where
-    /// it is.
     pub(super) fn hold_after_trip(&mut self, reason: &str, feedback: &Feedback, now: Now) {
         self.filter.reset(&feedback.positions);
         self.hold_at = Some(feedback.positions.clone());
@@ -136,8 +117,6 @@ impl Loop<'_> {
         );
     }
 
-    /// Why the jaw may not move at this arm pose: the self-collision or surface
-    /// check refuses `angle`.
     fn jaw_angle_refusal(
         &self,
         previous_angle: f64,
@@ -158,13 +137,7 @@ impl Loop<'_> {
         Ok(None)
     }
 
-    /// The jaw angle to drive toward: `requested`, or the last angle on the way
-    /// from `measured` that the self-collision and surface checks pass at the
-    /// arm's current pose.
-    ///
-    /// # Errors
-    /// The arm is tripped, or a check cannot run (it refuses rather than letting
-    /// the jaw move unchecked).
+    // SAFETY: Refuse jaw motion if the arm is tripped or geometry checks cannot run; never substitute an unchecked target.
     pub(super) fn safe_jaw_target(
         &self,
         requested: f64,
@@ -185,8 +158,6 @@ impl Loop<'_> {
         Ok(last_safe)
     }
 
-    /// Another arm of the group ended without completing: stop this arm's part
-    /// where the arm is, and hold.
     pub(super) fn cancel_group_member(&mut self, detail: &str, now: Now) {
         self.end_activity(CommandOutcome::Stopped, Some(detail.to_owned()), None, now);
     }
@@ -199,8 +170,6 @@ impl Loop<'_> {
         });
     }
 
-    /// End the motion or stream and hold: at `hold`, or where braking from the
-    /// commanded velocity comes to rest.
     pub(super) fn end_activity(
         &mut self,
         outcome: CommandOutcome,
@@ -217,13 +186,13 @@ impl Loop<'_> {
         self.reference.set_at_rest(hold, None);
     }
 
-    /// End the command as stopped, braking to rest from the commanded velocity.
+    // SAFETY: End the command as stopped, braking to rest from the commanded velocity.
     pub(super) fn end_stopped(&mut self, now: Now) {
         self.end_activity(CommandOutcome::Stopped, Some("Stopped".into()), None, now);
     }
 
-    /// End the command as timed out. As after any trip, the arm holds where it
-    /// is, not where it was going.
+    // SAFETY: End the command as timed out. As after any trip, the arm holds where it
+    // is, not where it was going.
     pub(super) fn end_timed_out(&mut self, feedback: &Feedback, now: Now) {
         self.filter.reset(&feedback.positions);
         self.end_activity(
@@ -234,7 +203,6 @@ impl Loop<'_> {
         );
     }
 
-    /// The reference for this cycle of a running stream.
     pub(super) fn stream_reference(
         &mut self,
         feedback: &Feedback,
@@ -292,8 +260,6 @@ impl Loop<'_> {
         self.policy_stream_reference(feedback, position, quaternion)
     }
 
-    /// The command for this cycle, left in `self.next_command`: follow the
-    /// motion or stream, or hold.
     pub(super) fn command(
         &mut self,
         interval: f64,
@@ -302,6 +268,9 @@ impl Loop<'_> {
         group: Option<&Result<GroupReference, Trip>>,
         now: Now,
     ) -> Result<(), Trip> {
+        if let Some(runtime) = &mut self.policy {
+            runtime.begin_cycle();
+        }
         let policy_reach = matches!(self.activity, Activity::Reach(_));
         match self.activity {
             Activity::Motion(_) => self.motion_reference(interval, feedback, stop, now)?,
@@ -317,7 +286,7 @@ impl Loop<'_> {
         }
         let policy_command = policy_reach
             || matches!(&self.activity, Activity::Stream(stream) if stream.policy_engaged);
-        // A motion that ended this cycle is Idle now: its stop or hold is smoothed
+        // WHY: A motion that ended this cycle is Idle now: its stop or hold is smoothed
         // from the commanded velocity, so a stop brakes instead of freezing.
         let smooth_destination = matches!(self.activity, Activity::Stream(_) | Activity::Idle);
         if smooth_destination && !policy_command {
@@ -339,8 +308,6 @@ impl Loop<'_> {
     }
 }
 
-/// The loop's state at the plant's first reading, or why it cannot start. The
-/// arm starts disabled: nothing is commanded until it is enabled.
 pub(super) fn start<'a>(
     plant: &mut impl Plant,
     config: &'a ExecutorConfig,

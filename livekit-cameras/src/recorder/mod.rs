@@ -134,11 +134,11 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     } else {
         json!({"status": "complete"})
     };
-    // Written last, so a reader sees how the recording ended; a file without it was killed.
+    // INVARIANT: Written last, so a reader sees how the recording ended; a file without it was killed.
     let status_result = archive.json("/recording/status", &status, unix_nanoseconds());
     let finish_result = archive.finish();
     if lost_supervisor {
-        // Distinct from a requested stop, so the exit status says it ended early.
+        // WHY: Distinct from a requested stop, so the exit status says it ended early.
         finish_result?;
         status_result?;
         return Err(RecorderError::SupervisorLost);

@@ -26,7 +26,7 @@ Start the station with your profile and camera, then the app:
 
 ```sh
 uv run rua serve --profile ~/.config/rua/so101.toml --camera table=0
-uv run --project examples/python examples/applications/image-qa/image_qa.py --model <openai-model>
+uv run --project examples/python examples/applications/image-qa/image_qa.py
 ```
 
 The arm stays at the viewing pose between questions. Type a question and press

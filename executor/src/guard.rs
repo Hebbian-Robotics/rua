@@ -1,11 +1,10 @@
-//! The guard: a separate process that watches an enabled arm for as long as the
-//! executor might not be. The executor starts it before torque goes on and
-//! writes a heartbeat byte to its stdin every cycle. If the heartbeats stop, or
-//! the executor dies with the motors still enabled, the guard takes over the bus
-//! (killing an executor that is stalled and still holding the serial port) and
-//! supervises the holding arm: a held arm stays powered rather than dropping
-//! under gravity, but only while it keeps holding. A motor fault, an effort
-//! spike, drift, or the hold time limit ends the hold and releases the arm.
+#![allow(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "The independent guard must read and release hardware after controller failure."
+)]
+
+// SAFETY: Start the separate guard before torque goes on. If heartbeats stop it takes over the bus and supervises the hold; faults, effort, drift or the hold deadline release the arm.
 
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -24,10 +23,8 @@ use crate::so101::driver::{SerialBus, Servos};
 const EXECUTOR_EXIT: Duration = Duration::from_secs(2);
 const SUPERVISOR_START: Duration = Duration::from_secs(10);
 const DETACH_WAIT: Duration = Duration::from_secs(3);
-/// Heartbeats are drained and discarded; this only bounds each read.
 const HEARTBEAT_READ_BUFFER_BYTES: usize = 4096;
 
-/// Guard-side checks while the executor is silent.
 pub(crate) struct HoldSupervisor<'a> {
     config: &'a ExecutorConfig,
     guard: &'a GuardConfig,
@@ -51,7 +48,6 @@ impl<'a> HoldSupervisor<'a> {
         }
     }
 
-    /// Why the hold must end now, if it must.
     #[must_use]
     pub(crate) fn disable_reason(
         &self,
@@ -85,15 +81,8 @@ impl<'a> HoldSupervisor<'a> {
     }
 }
 
-/// What the guard reads from and does to the arm once it has the bus.
 pub trait GuardedArm {
-    /// A reading, and whether torque is on for each driven motor.
-    ///
-    /// # Errors
-    /// The bus did not answer.
     fn read(&mut self) -> anyhow::Result<(Feedback, Vec<bool>)>;
-    /// # Errors
-    /// The motors did not release.
     fn release(&mut self) -> anyhow::Result<()>;
 }
 
@@ -106,6 +95,25 @@ impl GuardedArm for Servos<SerialBus> {
 
     fn release(&mut self) -> anyhow::Result<()> {
         Plant::release(self)
+    }
+}
+
+struct GuardReading {
+    feedback: Feedback,
+    torque: Vec<bool>,
+}
+
+impl GuardReading {
+    fn read(arm: &mut impl GuardedArm, config: &ExecutorConfig) -> anyhow::Result<Self> {
+        let (feedback, torque) = arm.read()?;
+        feedback
+            .measured_positions(config)
+            .context("Guard received malformed feedback; releasing the arm")?;
+        anyhow::ensure!(
+            !torque.is_empty(),
+            "Motor torque state is unavailable; the arm may still be powered"
+        );
+        Ok(Self { feedback, torque })
     }
 }
 
@@ -123,7 +131,7 @@ fn release_and_confirm<A: GuardedArm>(arm: &mut A) -> anyhow::Result<()> {
 }
 
 fn report(message: &str) {
-    // The station may have died and closed the report pipe. Reporting must
+    // INVARIANT: The station may have died and closed the report pipe. Reporting must
     // never prevent the independent guard from taking over the arm.
     let _ = writeln!(
         std::io::stderr().lock(),
@@ -132,8 +140,7 @@ fn report(message: &str) {
     );
 }
 
-/// Whether the executor that started this guard still exists; a guard is its
-/// executor's child, so it is reparented the moment the executor exits.
+// WHY: The guard is reparented when its executor exits, so the parent ID detects that loss.
 fn executor_alive(executor_pid: u32) -> bool {
     std::os::unix::process::parent_id() == executor_pid
 }
@@ -147,7 +154,7 @@ fn kill_executor(executor_pid: u32) -> anyhow::Result<()> {
     // SAFETY: kill only reads its plain arguments.
     if unsafe { libc::kill(process_id, libc::SIGKILL) } != 0 {
         let error = std::io::Error::last_os_error();
-        // An executor that exited in the meantime is what was wanted.
+        // CONSTRAINT: An executor that exited in the meantime is what was wanted.
         if error.raw_os_error() != Some(libc::ESRCH) {
             return Err(error).context("Cannot kill the executor");
         }
@@ -162,14 +169,10 @@ fn kill_executor(executor_pid: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// How a guard's watch ended, for the operator and the tests.
 #[derive(Debug, PartialEq, Eq)]
 pub enum GuardOutcome {
-    /// The executor released the motors and closed the heartbeat pipe; the guard never touched the bus.
     ExecutorDetached,
-    /// The guard took over the bus and found the motors already off, so it released nothing it held.
     TookOverMotorsAlreadyOff,
-    /// The guard took over a powered arm, held it, and then released it for this reason.
     HeldThenReleased { reason: String },
 }
 
@@ -188,7 +191,7 @@ impl std::fmt::Display for GuardOutcome {
     }
 }
 
-/// Read the heartbeat pipe on its own thread, so the guard can time its silence.
+// WHY: Read the heartbeat pipe on its own thread, so the guard can time its silence.
 fn listen_for_heartbeats(mut heartbeats: impl Read + Send + 'static) -> Receiver<Beat> {
     let (beats, listener) = channel();
     std::thread::spawn(move || {
@@ -210,19 +213,12 @@ fn listen_for_heartbeats(mut heartbeats: impl Read + Send + 'static) -> Receiver
     listener
 }
 
-/// What arrived on the heartbeat pipe.
 enum Beat {
     Heartbeat,
     Closed,
 }
 
-/// Run the guard until the arm is safe: the executor released it, or the guard
-/// did. `open_arm` opens the bus, which only one process can hold at a time, so
-/// it is called only when the executor has stopped heartbeating.
-///
-/// # Errors
-/// The executor could not be stopped, the bus could not be opened or read, or
-/// the arm could not be released (it may still be powered; the message says so).
+// SAFETY: Open the exclusive bus only after executor heartbeats stop. Failure to take over or release may leave the arm powered and must be reported.
 pub fn guard<A: GuardedArm>(
     config: &ExecutorConfig,
     executor_pid: u32,
@@ -264,7 +260,7 @@ pub fn guard<A: GuardedArm>(
                 Ok(Beat::Closed) | Err(RecvTimeoutError::Disconnected) => {
                     executor_attached = false;
                     if arm.is_none() && executor_alive(executor_pid) {
-                        // A live executor closes the pipe only after releasing
+                        // INVARIANT: A live executor closes the pipe only after releasing
                         // the motors, and it still holds the bus.
                         return Ok(GuardOutcome::ExecutorDetached);
                     }
@@ -287,11 +283,12 @@ pub fn guard<A: GuardedArm>(
                     "Could not open the bus to take over; the arm may still be powered and is unsupervised",
                 )?);
             }
-            let (feedback, torque) = arm.as_mut().expect("opened above").read()?;
-            anyhow::ensure!(
-                !torque.is_empty(),
-                "Motor torque state is unavailable; the arm may still be powered"
-            );
+            let GuardReading { feedback, torque } = GuardReading::read(
+                arm.as_mut().context(
+                    "Guard lost its arm handle; the arm may still be powered and is unsupervised",
+                )?,
+                config,
+            )?;
             if torque.iter().all(|enabled| !enabled) {
                 if !executor_attached {
                     return Ok(GuardOutcome::TookOverMotorsAlreadyOff);
@@ -323,12 +320,11 @@ pub fn guard<A: GuardedArm>(
         }
     })();
     if let Some(arm) = arm.as_mut() {
-        if let Err(error) = release_and_confirm(arm) {
+        release_and_confirm(arm).inspect_err(|error| {
             report(&format!(
                 "Release failed; the arm may still be powered: {error:#}"
             ));
-            return Err(error);
-        }
+        })?;
         report("Arm released");
     }
     result
@@ -346,24 +342,18 @@ fn make_heartbeat_nonblocking(pipe: &impl AsRawFd) -> std::io::Result<()> {
 }
 
 fn write_heartbeat(pipe: &mut impl Write) -> anyhow::Result<()> {
-    // A full pipe means the guard stopped consuming heartbeats. Report that
+    // INVARIANT: A full pipe means the guard stopped consuming heartbeats. Report that
     // failure immediately rather than blocking the motor loop behind it.
     pipe.write_all(b".")
         .context("The safety guard heartbeat could not be delivered")
 }
 
-/// The executor's handle on its guard process.
 pub(crate) struct GuardProcess {
     child: Child,
     heartbeats: Option<ChildStdin>,
 }
 
 impl GuardProcess {
-    /// Start a guard for the executor running with this config file, and wait
-    /// until it says it is ready.
-    ///
-    /// # Errors
-    /// The guard did not start or did not become ready.
     pub fn start(config_path: &Path) -> anyhow::Result<Self> {
         let mut child = Command::new(std::env::current_exe()?)
             .arg("guard")
@@ -393,14 +383,18 @@ impl GuardProcess {
         }
     }
 
-    /// # Errors
-    /// The guard is gone, which leaves the arm unwatched.
     pub(crate) fn heartbeat(&mut self) -> anyhow::Result<()> {
+        if let Some(status) = self
+            .child
+            .try_wait()
+            .context("Cannot check whether the safety guard is alive")?
+        {
+            bail!("The safety guard exited with {status}");
+        }
         let pipe = self.heartbeats.as_mut().context("The guard was detached")?;
         write_heartbeat(pipe)
     }
 
-    /// Close the heartbeat pipe and wait for the guard to see the motors off.
     #[must_use]
     pub(crate) fn detach(mut self) -> Vec<String> {
         let mut cleanup_errors = Vec::new();
@@ -430,11 +424,10 @@ impl GuardProcess {
     }
 }
 
-/// A plant with a guard process behind it: the guard starts before torque goes
-/// on, hears every cycle, and is let go once the motors are off.
+// SAFETY: A plant with a guard process behind it: the guard starts before torque goes
+// on, hears every cycle, and is let go once the motors are off.
 pub struct GuardedPlant<P: Plant> {
     inner: P,
-    /// The config the guard is started with; none for a plant with no guard.
     config_path: Option<std::path::PathBuf>,
     guard: Option<GuardProcess>,
 }
@@ -496,7 +489,7 @@ impl<P: Plant> Plant for GuardedPlant<P> {
     }
 
     fn release(&mut self) -> anyhow::Result<()> {
-        // A guard is let go only once the motors are off; after a failed
+        // INVARIANT: A guard is let go only once the motors are off; after a failed
         // release it is kept, and with the heartbeats stopped it takes over
         // and supervises the hold.
         self.inner.release()?;
@@ -541,8 +534,6 @@ mod tests {
 
     #[test]
     fn a_guard_that_stops_reading_cannot_block_the_heartbeat() {
-        // Close-on-exec prevents child processes from other tests from retaining
-        // the reader and masking a broken heartbeat pipe after it is dropped.
         let (mut reader, mut writer) = std::io::pipe().unwrap();
         make_heartbeat_nonblocking(&writer).unwrap();
         write_heartbeat(&mut writer).unwrap();
@@ -563,13 +554,30 @@ mod tests {
             std::io::ErrorKind::WouldBlock
         );
         reader.read_exact(&mut byte).unwrap();
-        // Drain enough to make room even on pipes that reserve space in pages.
+        // CONSTRAINT: Drain enough to make room even on pipes that reserve space in pages.
         let mut drained = [0; 4095];
         reader.read_exact(&mut drained).unwrap();
         write_heartbeat(&mut writer).unwrap();
-        drop(reader);
-        assert!(write_heartbeat(&mut writer).is_err());
     }
+
+    #[test]
+    fn an_exited_guard_is_detected_even_if_its_heartbeat_pipe_stays_open() {
+        let (reader, writer) = std::io::pipe().unwrap();
+        let mut child = Command::new("true")
+            .stdin(Stdio::from(reader.try_clone().unwrap()))
+            .spawn()
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+        let heartbeat_descriptor: std::os::fd::OwnedFd = writer.into();
+        let mut guard = GuardProcess {
+            child,
+            heartbeats: Some(ChildStdin::from(heartbeat_descriptor)),
+        };
+        let failure = guard.heartbeat().unwrap_err();
+        assert!(failure.to_string().contains("safety guard exited"));
+        drop(reader);
+    }
+
     use crate::config::TEST_CONFIG;
 
     fn config() -> ExecutorConfig {
@@ -652,7 +660,6 @@ mod tests {
         );
     }
 
-    /// An arm whose readings come from a script, and that records its release.
     struct ScriptedArm {
         readings: Vec<(Feedback, Vec<bool>)>,
         released: Arc<Mutex<bool>>,
@@ -676,7 +683,6 @@ mod tests {
         }
     }
 
-    /// A plant whose torque may refuse to turn off.
     struct StuckPlant {
         release_works: bool,
     }
@@ -750,7 +756,7 @@ mod tests {
             ],
             released: Arc::clone(&released),
         })));
-        // The heartbeat pipe is already closed, and the executor (the real parent
+        // CONSTRAINT: The heartbeat pipe is already closed, and the executor (the real parent
         // of this test process is not it) counts as gone.
         let silent: &[u8] = &[];
         let outcome = guard(&config, u32::MAX, silent, || {
@@ -784,7 +790,6 @@ mod tests {
         assert_eq!(outcome, GuardOutcome::TookOverMotorsAlreadyOff);
     }
 
-    /// An arm whose release fails, as a bus that dropped during the takeover would.
     struct UnreleasableArm;
 
     impl GuardedArm for UnreleasableArm {
@@ -849,5 +854,24 @@ mod tests {
         let message = format!("{error:#}");
         assert!(message.contains("unsupervised"), "{message}");
         assert!(message.contains("port busy"), "{message}");
+    }
+
+    #[test]
+    fn malformed_guard_feedback_releases_instead_of_establishing_a_hold() {
+        for positions in [vec![f64::NAN, 0.0], vec![0.0]] {
+            let config = config();
+            let released = Arc::new(Mutex::new(false));
+            let mut arm = Some(ScriptedArm {
+                readings: vec![(feedback(&positions), vec![true; config.joint_count])],
+                released: Arc::clone(&released),
+            });
+            let error = guard(&config, u32::MAX, &[] as &[u8], || {
+                arm.take()
+                    .ok_or_else(|| anyhow::anyhow!("Arm already opened"))
+            })
+            .unwrap_err();
+            assert!(format!("{error:#}").contains("malformed feedback"));
+            assert!(*released.lock().unwrap());
+        }
     }
 }

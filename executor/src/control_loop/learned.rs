@@ -1,7 +1,4 @@
-//! Live-loop adaptation for learned reaches and pose streams.
-//! The policy module owns inference and settling, shared with preview. This
-//! adapter updates command lifecycle and produces references; it never writes
-//! hardware or bypasses the common setpoint guards.
+// INVARIANT: Learned-policy adaptation produces references and updates lifecycle; hardware writes and setpoint guards remain in the common loop.
 
 use super::activity::{Activity, Loop};
 use crate::arm::{Now, ReachGoal};
@@ -30,8 +27,6 @@ impl Loop<'_> {
         Ok(())
     }
 
-    /// The reference for this cycle of a reach-and-finish command: the policy's
-    /// step toward the pose, until the tool has settled within tolerance.
     pub(super) fn reach_reference(
         &mut self,
         interval: f64,
@@ -52,23 +47,23 @@ impl Loop<'_> {
             .as_mut()
             .ok_or_else(|| Trip("No policy is loaded".into()))?;
         let goal = active.goal().clone();
-        let status = active
-            .assess(runtime, feedback, interval)
-            .map_err(policy_failed)?;
-        let settled = status == ReachStatus::Settled;
-        if status != ReachStatus::Running {
-            if !settled {
+        let tool = runtime.tool_pose(feedback).map_err(policy_failed)?;
+        match active.assess(&tool, &feedback.velocities, interval) {
+            ReachStatus::Running => {}
+            ReachStatus::TimedOut => {
                 self.end_timed_out(feedback, now);
                 return Ok(());
             }
-            self.filter.reset(&feedback.positions);
-            self.end_activity(
-                CommandOutcome::Completed,
-                None,
-                Some(feedback.positions.clone()),
-                now,
-            );
-            return Ok(());
+            ReachStatus::Settled => {
+                self.filter.reset(&feedback.positions);
+                self.end_activity(
+                    CommandOutcome::Completed,
+                    None,
+                    Some(feedback.positions.clone()),
+                    now,
+                );
+                return Ok(());
+            }
         }
         let target = pose_from_xyzw(goal.position, goal.quaternion).map_err(policy_failed)?;
         let joint_goal = runtime
@@ -79,7 +74,6 @@ impl Loop<'_> {
         Ok(())
     }
 
-    /// Produce the next reference for a live learned-policy pose stream.
     pub(super) fn policy_stream_reference(
         &mut self,
         feedback: &Feedback,

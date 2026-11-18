@@ -1,11 +1,13 @@
 """Robot tools for Anthropic Messages. Install the anthropic extra."""
 
+from collections.abc import Mapping
+
 from anthropic.types import Message, MessageParam, ToolParam, ToolResultBlockParam
 from anthropic.types.content_block_param import ContentBlockParam
 from pydantic import TypeAdapter
 
-from hebbian_rua._tool_turn import RobotToolTurn, encode_camera
 from hebbian_rua.client.llm.robot_tools import RobotTools
+from hebbian_rua.client.llm.tool_turn import RobotToolTurn, encode_camera
 from hebbian_rua.client.llm.types import RobotToolCall
 
 _ASSISTANT_CONTENT = TypeAdapter(list[ContentBlockParam])
@@ -34,19 +36,7 @@ class AnthropicRobotTools:
 
     async def observe(self) -> MessageParam:
         observation = await self.robot.observe()
-        content: list[ContentBlockParam] = [{"type": "text", "text": observation.text}]
-        content.extend(
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": encode_camera(jpeg),
-                },
-            }
-            for jpeg in observation.cameras.values()
-        )
-        return {"role": "user", "content": content}
+        return _image_message(observation.text, observation.cameras)
 
     async def execute(self, response: Message) -> RobotToolTurn[MessageParam]:
         if response.stop_reason not in {"tool_use", "end_turn", "stop_sequence"}:
@@ -78,4 +68,29 @@ class AnthropicRobotTools:
                 for result in results
             ]
             messages.append({"role": "user", "content": outputs})
+        messages.extend(
+            _image_message(
+                f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                result.cameras,
+            )
+            for result in results
+            if result.cameras
+        )
         return RobotToolTurn(messages, results)
+
+
+def _image_message(text: str, cameras: Mapping[str, bytes]) -> MessageParam:
+    content: list[ContentBlockParam] = [{"type": "text", "text": text}]
+    for name, jpeg in cameras.items():
+        content.append({"type": "text", "text": f"Camera: {name}"})
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": encode_camera(jpeg),
+                },
+            }
+        )
+    return {"role": "user", "content": content}

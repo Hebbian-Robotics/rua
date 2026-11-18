@@ -1,8 +1,9 @@
-//! The ghost's rehearsal of a reach: the same policy, arrival check
-//! and guards that carry out a real `reach_pose` command, run against a
-//! modelled arm as fast as the processor allows. It touches no arm: it starts from
-//! joints the client supplies, commands nothing and writes no record, so a viewer
-//! can ask while the real arm holds or moves.
+#![allow(
+    clippy::disallowed_methods,
+    reason = "Preview commands only its private SimulatedPlant and never opens physical hardware."
+)]
+
+// SAFETY: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
 
 use std::time::{Duration, Instant};
 
@@ -20,44 +21,37 @@ use crate::policy::{ActiveReach, PolicyRuntime, ReachStatus};
 use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
 
-/// A rehearsal that has run this long stops, so a drag never waits on one.
+// CONSTRAINT: Bound rehearsal wall time so a viewer drag cannot wait indefinitely.
 const WALL_LIMIT: Duration = Duration::from_millis(1500);
 
-/// How a rehearsed reach ended.
+// WHY: A rehearsal whose tool has stayed this still, for this long, short of the
+// pose has stopped closing on it: rehearsing on to the deadline would end at
+// the same joints.
+const STALL_SECONDS: f64 = 0.5;
+const STALL_TRANSLATION_METERS: f64 = 0.0005;
+const STALL_ROTATION_RADIANS: f64 = 0.005;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewOutcome {
-    /// The tool settled within both tolerances, as a real command would end.
     Settled,
-    /// It did not settle before the command's deadline (or this rehearsal's
-    /// time limit), or it stopped closing on the pose; the joints are where it
-    /// had got to.
     TimedOut,
-    /// A guard refused the next command; the joints are where the arm would
-    /// have stopped.
     Blocked,
 }
 
-/// Where a rehearsed reach ended.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ReachPreview {
     pub outcome: PreviewOutcome,
-    /// The arm joints where the rehearsal ended.
     pub joints: Vec<f64>,
-    /// The tool pose at `joints`.
     pub position: [f64; 3],
     pub quaternion: [f64; 4],
     pub position_error_meters: f64,
     pub orientation_error_radians: f64,
-    /// Control cycles rehearsed, and the time they stand for.
     pub steps: u32,
     pub simulated_seconds: f64,
-    /// Why it did not settle.
     pub reason: Option<String>,
 }
 
-/// What to rehearse: the goal as a real command would carry it, and where the
-/// arm starts.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewRequest {
     pub goal: ReachGoal,
@@ -65,8 +59,6 @@ pub struct PreviewRequest {
     pub gripper_angle: Option<f64>,
 }
 
-/// An arm's rehearsal machinery: its own copy of the policy and guards, so a
-/// rehearsal never shares state with the control loop.
 pub struct Preview {
     config: ExecutorConfig,
     runtime: PolicyRuntime,
@@ -75,10 +67,6 @@ pub struct Preview {
 }
 
 impl Preview {
-    /// The rehearsal machinery for this config; `None` when it has no policy.
-    ///
-    /// # Errors
-    /// The policy or the robot model could not be loaded.
     pub fn new(config: &ExecutorConfig) -> anyhow::Result<Option<Self>> {
         let robot = load_shared_robot(config)?;
         let Some(runtime) = PolicyRuntime::new(config, robot.as_ref())? else {
@@ -92,11 +80,6 @@ impl Preview {
         }))
     }
 
-    /// Rehearse the reach from the joints given.
-    ///
-    /// # Errors
-    /// The request is not usable (wrong joint count, a malformed pose), or the
-    /// policy failed.
     pub fn reach(&mut self, request: &PreviewRequest) -> anyhow::Result<ReachPreview> {
         let config = &self.config;
         ensure!(
@@ -120,10 +103,25 @@ impl Preview {
         let mut reach = ActiveReach::new(request.goal.clone(), settings);
         let started = Instant::now();
         let mut steps = 0_u32;
+        let mut still_since: Option<(nalgebra::Isometry3<f64>, f64)> = None;
         loop {
             let feedback = plant.read_feedback()?;
             let tool = self.runtime.tool_pose(&feedback)?;
-            let mut ending = match reach.assess_pose(&tool, &feedback, interval) {
+            let still_seconds = match &mut still_since {
+                Some((anchor, seconds))
+                    if (tool.translation.vector - anchor.translation.vector).norm()
+                        <= STALL_TRANSLATION_METERS
+                        && tool.rotation.angle_to(&anchor.rotation) <= STALL_ROTATION_RADIANS =>
+                {
+                    *seconds += interval;
+                    *seconds
+                }
+                _ => {
+                    still_since = Some((tool, 0.0));
+                    0.0
+                }
+            };
+            let mut ending = match reach.assess(&tool, &feedback.velocities, interval) {
                 ReachStatus::Settled => Some((PreviewOutcome::Settled, None)),
                 ReachStatus::TimedOut => Some((
                     PreviewOutcome::TimedOut,
@@ -131,6 +129,12 @@ impl Preview {
                 )),
                 ReachStatus::Running => None,
             };
+            if ending.is_none() && still_seconds >= STALL_SECONDS {
+                ending = Some((
+                    PreviewOutcome::TimedOut,
+                    Some("The policy stopped short of the pose".to_owned()),
+                ));
+            }
             if ending.is_none() && started.elapsed() > WALL_LIMIT {
                 ending = Some((
                     PreviewOutcome::TimedOut,
@@ -198,8 +202,6 @@ impl Preview {
     }
 }
 
-/// The tool's distance from the goal position and the angle between its
-/// orientation and the goal's.
 fn pose_errors(tool: &nalgebra::Isometry3<f64>, goal: &ReachGoal) -> (f64, f64) {
     let rotation = tool.rotation;
     let alignment = [rotation.i, rotation.j, rotation.k, rotation.w]

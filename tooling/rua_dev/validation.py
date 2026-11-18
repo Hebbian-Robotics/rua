@@ -1,7 +1,6 @@
-"""Validation lanes shared by local development and CI."""
-
 import os
 import subprocess
+import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -34,11 +33,51 @@ def prepare_executor() -> None:
     os.environ["HEBBIAN_ROBOT_USE_SERVER"] = str(build_executor())
 
 
+def check_rust_architecture() -> None:
+    manifests = [
+        ("executor/Cargo.toml", "server"),
+        ("station/Cargo.toml", "server"),
+        *(
+            (manifest, "client")
+            for manifest in ("sdk/Cargo.toml", "cli/Cargo.toml")
+            if Path(manifest).is_file()
+        ),
+    ]
+    for manifest, policy in manifests:
+        subprocess.run(
+            [
+                "cargo",
+                "deny",
+                "--manifest-path",
+                manifest,
+                "--config",
+                f"tooling/architecture/{policy}.toml",
+                "--all-features",
+                "--exclude-dev",
+                "--locked",
+                "check",
+                "bans",
+            ],
+            check=True,
+        )
+
+
 def check_rust() -> None:
+    check_rust_architecture()
     for arguments in (
         ["cargo", "fmt", "--check"],
-        ["cargo", "clippy", "--all-targets", "--all-features"],
-        ["cargo", "test", "--locked"],
+        ["cargo", "machete", "--with-metadata", "--skip-target-dir"],
+        [
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--",
+            "-D",
+            "warnings",
+        ],
+        ["cargo", "test", "--locked", "--workspace", "--all-features"],
     ):
         subprocess.run(arguments, check=True)
 
@@ -61,13 +100,9 @@ def check_python_tests(lane: ValidationLane, *, executor: bool) -> None:
     report_directory = Path(".cache/validation")
     report_directory.mkdir(parents=True, exist_ok=True)
     test_lane = "executor" if executor else "fast"
-    # Public checkouts do not require xdist; only override workers when the
-    # workspace's pytest configuration actually enables them.
-    parallel_tests = "-n" in configuration.get("addopts", "")
     subprocess.run(
         [
             "pytest",
-            *(["-n", "0"] if executor and parallel_tests else []),
             *(["-m", " and ".join(selection)] if selection else []),
             "--durations=25",
             "--durations-min=0.1",
@@ -84,6 +119,10 @@ def validate(
 ) -> None:
     if lane == ValidationLane.VIEWER and viewer is None:
         raise ValueError("This checkout does not include viewer validation")
+    subprocess.run(
+        [sys.executable, "tooling/comment-policy/check.py"],
+        check=True,
+    )
     prepare_robot_assets(Path.cwd())
     if lane in {ValidationLane.PYTHON, ValidationLane.FAST, ValidationLane.FULL}:
         check_python_static()

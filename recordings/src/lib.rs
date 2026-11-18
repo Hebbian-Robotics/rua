@@ -1,10 +1,8 @@
-//! Recordings and a mountable HTTP API that lists and serves their files.
 mod library;
 mod routes;
-mod types;
+pub use hebbian_contracts::{Recording, Recordings};
 pub use library::RecordingLibrary;
 pub use routes::router;
-pub use types::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -1,17 +1,4 @@
-//! The command and feedback boundary shared by station and controller.
-//!
-//! Clients enter through a [`LinkHandle`]. The control loop never blocks on it: commands go
-//! to the control loop through a channel (`handoff`), which answers them at the
-//! start of its next cycle, and
-//! everything the executor says leaves through a queue to one writer thread,
-//! which owns the sequenced event log and every client connection.
-//!
-//! Two kinds of output. A sample (the cycle's state) is dropped when the writer
-//! falls behind. A log event (a command's record changed, a trip, ...) is never
-//! dropped: it gets the next sequence number, is kept in a bounded retained
-//! window and is sent to every client, so a client that reconnects asks for what
-//! it missed. A client that stops reading is disconnected rather than allowed to
-//! stall the others; it reconnects and resumes from its last number.
+// INVARIANT: The control loop hands output to one writer thread. Samples may be dropped under backpressure, but log events retain sequence order; slow clients disconnect and resume from the retained log.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -36,19 +23,14 @@ use hebbian_contracts::{
     RejectionReason, Request, Sample, Waypoint,
 };
 
-/// Samples waiting for the writer; more than this are dropped.
 const MAXIMUM_PENDING_SAMPLES: usize = 64;
-/// Log events kept for clients that reconnect; older ones are lost to them.
 const RETAINED_LOG_LENGTH: usize = 4096;
-/// Request ids remembered, so a resent request is answered, not acted on twice.
+// INVARIANT: Remember request replies so retransmission cannot execute a command twice.
 const REMEMBERED_REQUESTS: usize = 1024;
-/// Records a snapshot carries, as the log has told them.
 const SNAPSHOT_RECORDS: usize = 200;
-/// Records kept by command id for lookups, newest; a few megabytes at most.
 const REMEMBERED_RECORDS: usize = 10_000;
 const WRITER_POLL: Duration = Duration::from_millis(20);
 
-/// What the readers ask the writer thread to do, in order.
 enum Outgoing {
     Sample(Sample),
     Log(Event),
@@ -64,12 +46,9 @@ enum Outgoing {
     View(tokio::sync::oneshot::Sender<ArmView>),
 }
 
-/// Where the writer sends one client's lines: a queue its connection
-/// drains. A queue that is full is a client that stopped reading, and is
-/// disconnected.
+// CONSTRAINT: Disconnect clients whose output queue is full so one slow reader cannot stall other clients.
 type ClientSink = tokio::sync::mpsc::Sender<String>;
 
-/// How a request was answered.
 #[derive(Clone)]
 struct Answer {
     record: Option<CommandRecord>,
@@ -83,7 +62,6 @@ struct Answer {
 }
 
 impl Answer {
-    /// Accepted, with nothing to report.
     fn nothing() -> Self {
         Self {
             record: None,
@@ -153,7 +131,6 @@ impl Answer {
         }
     }
 
-    /// An acquire that someone else's lease turned away.
     fn held_by(status: LeaseStatus) -> Self {
         let detail = format!("The lease is held by '{}'", status.label);
         Self {
@@ -165,7 +142,6 @@ impl Answer {
     }
 }
 
-/// The answers already given to request ids.
 #[derive(Default)]
 struct RememberedAnswers {
     by_id: HashMap<String, Answer>,
@@ -184,77 +160,54 @@ impl RememberedAnswers {
     }
 }
 
-/// Samples the writer has sent, returned to the loop so it refills their
-/// buffers instead of allocating new ones.
+// WHY: Recycle sample buffers after the writer sends them to avoid allocations in the control loop.
 pub(crate) struct SampleRecycler {
     returned: Receiver<Sample>,
 }
 
 impl SampleRecycler {
-    /// A sample to fill: one the writer has finished with, or a new one while
-    /// the first samples are still queued.
     pub(crate) fn checkout(&self) -> Sample {
         self.returned.try_recv().unwrap_or_else(|_| Sample::blank())
     }
 }
 
-/// The loop's two ends of a link: what the readers ask of it, and the samples
-/// it can reuse.
 pub(crate) struct LoopEnd {
     pub(crate) inbox: ArmInbox,
     pub(crate) samples: SampleRecycler,
 }
 
-/// What every reader thread shares.
 #[derive(Clone)]
 struct Shared {
     arm: ArmHandle,
     generation: Arc<AtomicU64>,
-    /// Who may command the arms; shared by every arm of the executor.
     lease: Arc<Lease>,
-    /// This arm's own interlocks and revision.
     interlocks: SharedInterlocks,
     outgoing: Sender<Outgoing>,
     remembered: Arc<Mutex<RememberedAnswers>>,
-    /// The ghost's rehearsal of a reach; present when the arm has a policy.
     preview: Option<Arc<Mutex<Preview>>>,
-    /// Planning and inverse kinematics for the arm's tool; present when the
-    /// config names one.
     planner: Option<Arc<Planner>>,
-    /// When a rehearsed reach counts as arrived; present with the preview.
     reach_settings: Option<PoseGoalSettings>,
-    /// The jaw, for turning openings into angles; none without a gripper.
     gripper: Option<crate::config::GripperLimits>,
-    /// Whether a learned policy turns pose commands into motion.
     has_policy: bool,
-    /// The arm's config, for what clients are told about it.
     config: Arc<ExecutorConfig>,
-    /// Client numbers, one per connected client.
     next_client: Arc<AtomicU64>,
-    /// Ticks when the arm's mode or active command changes or a record is logged.
     changes: Arc<tokio::sync::watch::Sender<()>>,
 }
 
-/// What one arm last reported, as its writer knows it.
 #[derive(Debug, Clone)]
 pub struct ArmView {
     pub sample: Option<Sample>,
-    /// How long ago that sample arrived.
     pub sample_age: Option<Duration>,
     pub active_record: Option<CommandRecord>,
-    /// The last finished command whose resting sample has been handled.
     pub last_record: Option<CommandRecord>,
 }
 
-/// A way into one arm's link from elsewhere in the process, such as the
-/// HTTP server: send requests through the link and read its updates.
 #[derive(Clone)]
 pub struct LinkHandle {
     shared: Shared,
 }
 
 impl LinkHandle {
-    /// Publish a controller loss and interrupt outstanding command records.
     pub fn controller_unavailable(&self, reason: String) {
         let _ = self
             .shared
@@ -262,13 +215,11 @@ impl LinkHandle {
             .send(Outgoing::ControllerUnavailable(reason));
     }
 
-    /// Deliver already-admitted controller requests to this link's local loop.
     #[must_use]
     pub fn controller_loop_arm(&self) -> crate::controller_bridge::LoopArm {
         crate::controller_bridge::LoopArm::new(self.shared.arm.clone())
     }
 
-    /// Queue an arm stop only while the specified lease is current.
     #[must_use]
     pub fn stop_if_leased(&self, token: Option<&str>) -> hebbian_contracts::LeasedStopOutcome {
         let mut submitted = false;
@@ -308,21 +259,15 @@ impl LinkHandle {
             .stop_leased_motion_for_submission(token, generations, cancel_sequence)
     }
 
-    /// The lease holder's token and the cameras it requires.
     #[must_use]
     pub fn camera_requirements(&self) -> Option<crate::lease::CameraRequirements> {
         self.shared.lease.camera_requirements()
     }
 
-    /// The lease holder reports whether a camera it requires gives frames.
-    ///
-    /// # Errors
-    /// The token does not hold the lease, or the lease does not require the camera.
     pub fn report_camera(&self, token: &str, camera: &str, available: bool) -> Result<(), String> {
         self.shared.lease.report_camera(token, camera, available)
     }
 
-    /// This arm's active interlocks and its revision.
     #[must_use]
     pub fn interlocks(&self) -> (Vec<Interlock>, u64) {
         self.shared.lease.interlocks(&self.shared.interlocks)
@@ -343,8 +288,6 @@ impl LinkHandle {
         }
     }
 
-    /// Connect a client whose lines arrive on the returned queue, which holds
-    /// up to `capacity` lines before the client counts as not reading.
     #[must_use]
     pub fn connect(&self, capacity: usize) -> (u64, tokio::sync::mpsc::Receiver<String>) {
         let client = self.shared.next_client.fetch_add(1, Ordering::Relaxed);
@@ -356,13 +299,11 @@ impl LinkHandle {
         (client, receiver)
     }
 
-    /// Answer one request line from `client`, from an in-process client.
-    /// Blocks until the arm answers; call it off any async runtime thread.
+    // CONSTRAINT: This waits for control-loop admission; call it outside async runtime workers.
     pub fn request(&self, client: u64, line: &str) {
         answer_line(line, client, &self.shared);
     }
 
-    /// Send `client` the log after `after`, or a snapshot when that is gone.
     pub fn subscribe(&self, client: u64, after: Option<u64>) {
         let _ = self
             .shared
@@ -370,7 +311,6 @@ impl LinkHandle {
             .send(Outgoing::Subscribe(client, after));
     }
 
-    /// The record of a command, among the last few thousand this arm logged.
     pub async fn find_record(&self, command_id: String) -> Option<CommandRecord> {
         let (answer, answered) = tokio::sync::oneshot::channel();
         self.shared
@@ -380,7 +320,6 @@ impl LinkHandle {
         answered.await.ok().flatten()
     }
 
-    /// Send `client` a snapshot of the arm.
     pub fn snapshot(&self, client: u64) {
         let _ = self.shared.outgoing.send(Outgoing::Snapshot(client));
     }
@@ -389,15 +328,12 @@ impl LinkHandle {
         let _ = self.shared.outgoing.send(Outgoing::Disconnected(client));
     }
 
-    /// Wakes when the arm's mode or active command changes or an event is
-    /// logged, such as a command's record; read the state after waking.
     #[must_use]
     pub fn changes(&self) -> tokio::sync::watch::Receiver<()> {
         self.shared.changes.subscribe()
     }
 
-    /// The newest state sample, waiting for the writer; call it off the async
-    /// runtime.
+    // CONSTRAINT: Waiting for the writer blocks; call this outside the async runtime.
     #[must_use]
     pub fn latest_sample_blocking(&self) -> Option<Sample> {
         let (answer, answered) = tokio::sync::oneshot::channel();
@@ -408,7 +344,6 @@ impl LinkHandle {
         answered.blocking_recv().ok().flatten()
     }
 
-    /// What the arm last reported, with its active and newest records.
     pub async fn view(&self) -> Option<ArmView> {
         let (answer, answered) = tokio::sync::oneshot::channel();
         self.shared.outgoing.send(Outgoing::View(answer)).ok()?;
@@ -420,7 +355,6 @@ impl LinkHandle {
         &self.shared.config
     }
 
-    /// Who holds the lease on the executor's arms, if anyone.
     #[must_use]
     pub fn lease_status(&self) -> Option<LeaseStatus> {
         self.shared.lease.status(Instant::now())
@@ -447,18 +381,12 @@ impl LinkHandle {
         (generation, current)
     }
 
-    /// Invalidate earlier pending submissions before reserving the arm for an action sequence.
     pub(crate) fn fence_prior_submissions(&self) -> (Arc<AtomicU64>, u64) {
         let generation = Arc::clone(&self.shared.generation);
         let current = generation.fetch_add(1, Ordering::AcqRel) + 1;
         (generation, current)
     }
 
-    /// Submit a command as the holder of `token` (stop and shutdown as anyone),
-    /// waiting for the loop to admit or refuse it; refused if `generation` has moved.
-    ///
-    /// # Errors
-    /// The arm or the lease refused it.
     pub fn submit_command_fenced(
         &self,
         command: hebbian_contracts::Command,
@@ -478,7 +406,6 @@ impl LinkHandle {
         command_record(answer)
     }
 
-    /// Admit a planned command and return an asynchronously awaitable reply.
     pub(crate) fn submit_command_async(
         &self,
         command: hebbian_contracts::Command,
@@ -515,7 +442,29 @@ impl LinkHandle {
         )
     }
 
-    /// Admit a coordinated move and return an asynchronously awaitable reply.
+    pub(crate) fn action_step_async(
+        &self,
+        actions: Vec<crate::action_step::PreparedArmAction>,
+        token: Option<&str>,
+        gates: &[ArmGate],
+        generation: &[(Arc<AtomicU64>, u64)],
+    ) -> Result<
+        tokio::sync::oneshot::Receiver<
+            Result<Vec<hebbian_contracts::ArmRecord>, crate::arm::Rejection>,
+        >,
+        crate::arm::Rejection,
+    > {
+        enqueue_admitted(
+            &self.shared,
+            token,
+            false,
+            AdmissionOptions::default(),
+            gates,
+            generation,
+            || self.shared.arm.action_step_async(actions, None),
+        )
+    }
+
     pub(crate) fn move_arms_async(
         &self,
         moves: Vec<ArmMove>,
@@ -567,10 +516,6 @@ impl LinkHandle {
         })
     }
 
-    /// Where the arm would take the tool toward a pose from these joints.
-    ///
-    /// # Errors
-    /// The arm has no tool link to plan for.
     pub fn project(
         &self,
         position: [f64; 3],
@@ -586,14 +531,13 @@ impl LinkHandle {
         }
     }
 
-    /// Stop the arm, which then holds; anyone may.
     pub fn stop(&self) {
         if let Ok(answer) = self.interrupt(None) {
             let _ = answer.recv();
         }
     }
 
-    /// End a disconnected holder and queue stops before another holder can command.
+    // INVARIANT: End a disconnected holder and queue stops before another holder can command.
     pub fn disconnect_lease(&self, token: &str, links: &[Self]) {
         self.shared.lease.return_after(token, Instant::now(), || {
             for link in links {
@@ -606,10 +550,6 @@ impl LinkHandle {
         });
     }
 
-    /// Acquire (or with `take`, take) the lease on every arm of the executor.
-    ///
-    /// # Errors
-    /// Someone else holds the lease, or the arms could not be stopped to take it.
     pub fn acquire_lease(
         &self,
         request: LeaseRequest,
@@ -618,13 +558,12 @@ impl LinkHandle {
         self.shared.lease.acquire_stopping_arms(request, take)
     }
 
-    /// Keep the lease `token` holds; false when it lapsed or was taken.
     #[must_use]
     pub fn retain_lease(&self, token: &str) -> bool {
         self.shared.lease.retain(Some(token), Instant::now())
     }
 
-    /// Release a current lease and cancel its action sequences under the lease lock.
+    // INVARIANT: Release a current lease and cancel its action sequences under the lease lock.
     pub(crate) fn release_lease_with(
         &self,
         token: &str,
@@ -633,7 +572,6 @@ impl LinkHandle {
         self.shared.lease.release_with(token, cancel_sequence)
     }
 
-    /// Give up the lease `token` holds; nothing when it is not the holder's.
     pub fn return_lease(&self, token: &str) {
         self.shared.lease.return_lease(Some(token), Instant::now());
     }
@@ -644,40 +582,30 @@ pub struct Link {
     pending_samples: Arc<AtomicUsize>,
     closing: Arc<AtomicBool>,
     writer: Option<JoinHandle<()>>,
-    /// What the loop takes once, as it starts.
     loop_end: Mutex<Option<LoopEnd>>,
 }
 
 impl Link {
-    /// Preserve an accepted record before answering a station client.
+    // INVARIANT: Preserve an accepted record before answering a station client.
     pub fn ensure_controller_record(&self, record: CommandRecord) {
         let _ = self.shared.outgoing.send(Outgoing::EnsureRecord(record));
     }
 
-    /// End outstanding records and invalidate live feedback after losing the controller.
     pub fn controller_unavailable(&self, reason: String) {
         self.handle().controller_unavailable(reason);
     }
 
-    /// Give a controller bridge the requests normally consumed by the local loop.
-    /// This can be taken once, before a local loop takes it.
     #[must_use]
     pub fn take_controller_station_arm(&self) -> Option<crate::controller_bridge::StationArm> {
         self.take_loop_end()
             .map(|end| crate::controller_bridge::StationArm::new(end.inbox))
     }
 
-    /// Deliver already-admitted controller requests to this link's local loop.
     #[must_use]
     pub fn controller_loop_arm(&self) -> crate::controller_bridge::LoopArm {
         crate::controller_bridge::LoopArm::new(self.shared.arm.clone())
     }
 
-    /// A link for the arm that `config` describes, whose clients command it as
-    /// `lease` allows.
-    ///
-    /// # Errors
-    /// The arm's preview or planner could not be built from `config`.
     pub fn new(config: &ExecutorConfig, lease: Arc<Lease>) -> anyhow::Result<Self> {
         let (outgoing, queue) = channel::<Outgoing>();
         let pending_samples = Arc::new(AtomicUsize::new(0));
@@ -745,9 +673,6 @@ impl Link {
         })
     }
 
-    /// The loop's ends of this link, once: the loop that drives it takes them as
-    /// it starts.
-    /// A handle for clients inside this process.
     #[must_use]
     pub fn handle(&self) -> LinkHandle {
         LinkHandle {
@@ -759,8 +684,6 @@ impl Link {
         self.loop_end.lock_unpoisoned().take()
     }
 
-    /// Where the state machine sends the events it logs, in the order they
-    /// happened.
     pub(crate) fn log_publisher(&self) -> impl Fn(Event) + Send + 'static + use<> {
         let log_sender = self.shared.outgoing.clone();
         move |event| {
@@ -768,11 +691,10 @@ impl Link {
         }
     }
 
-    /// Tell the clients: a state sample is dropped when the writer is behind,
-    /// any other event is logged and never dropped.
-    ///
-    /// # Panics
-    /// With an event that is neither a sample nor a log event.
+    #[expect(
+        clippy::unreachable,
+        reason = "Only state samples and logged events enter this loop publisher; protocol replies use separate paths."
+    )]
     pub fn publish(&self, event: Event) {
         match event {
             Event::State(sample) => {
@@ -788,7 +710,6 @@ impl Link {
         }
     }
 
-    /// Send what is queued and stop the writer.
     pub fn close(mut self) {
         self.closing.store(true, Ordering::Relaxed);
         if let Some(writer) = self.writer.take() {
@@ -797,25 +718,20 @@ impl Link {
     }
 }
 
-/// The writer thread's state: every client, the retained log, the latest
-/// sample, and the commands' latest records as the log has told them.
 #[derive(Default)]
 struct Hub {
     clients: HashMap<u64, ClientSink>,
     log: VecDeque<Frame>,
-    /// The sequence number the next log event gets; the first is 1.
     next_seq: u64,
     latest_sample: Option<Sample>,
     latest_sample_at: Option<Instant>,
     records: HashMap<String, CommandRecord>,
     record_order: VecDeque<String>,
-    /// The command that finished latest and still awaits the resting sample that
-    /// follows its completion, with its finish time. Commands can be logged out of
-    /// finish order (a release logs the motion it interrupted after its own record),
-    /// so the latest finish time wins, not the last record logged.
+    // INVARIANT: The command that finished latest and still awaits the resting sample that
+    // follows its completion, with its finish time. Commands can be logged out of
+    // finish order (a release logs the motion it interrupted after its own record),
+    // so the latest finish time wins, not the last record logged.
     pending_finished: Option<(String, f64)>,
-    /// The command that finished latest among those whose resting sample has been
-    /// handled, with its finish time.
     settled_last: Option<(String, f64)>,
     mode: Option<(ArmMode, Option<String>)>,
     recycle_sample: Option<SyncSender<Sample>>,
@@ -833,6 +749,7 @@ impl Hub {
                 let changed = self.latest_sample.as_ref().is_none_or(|previous| {
                     previous.mode != sample.mode
                         || previous.active_command != sample.active_command
+                        || previous.active_trip != sample.active_trip
                         || previous.recovery_issue != sample.recovery_issue
                 });
                 if let Some(finished) = self.pending_finished.take()
@@ -848,10 +765,10 @@ impl Hub {
                 let frame = Frame::emitted_now(None, Event::State(sample));
                 self.broadcast(&frame);
                 if let (Event::State(sample), Some(recycle)) = (frame.event, &self.recycle_sample) {
-                    // A full return queue only costs the loop an allocation.
+                    // WHY: A full return queue only costs the loop an allocation.
                     let _ = recycle.try_send(sample);
                 }
-                // Released only once the sample is back with the loop.
+                // INVARIANT: Released only once the sample is back with the loop.
                 pending_samples.fetch_sub(1, Ordering::Release);
                 if changed {
                     self.announce_change();
@@ -891,6 +808,7 @@ impl Hub {
                         detail: Some(format!(
                             "Controller lost; command outcome and arm torque are unknown: {reason}"
                         )),
+                        gripper: None,
                     });
                     self.log_event(Event::Record(record));
                 }
@@ -993,8 +911,11 @@ impl Hub {
         self.send(client, &frame);
     }
 
-    /// Send the log after `after`; a client whose cursor the log no longer
-    /// reaches (or is ahead of it, as after an executor restart) gets a snapshot.
+    // CONSTRAINT: A cursor outside the retained log, including one ahead after restart, must resynchronize from a snapshot.
+    #[expect(
+        clippy::expect_used,
+        reason = "Only log_event inserts retained frames, and it always assigns their sequence."
+    )]
     fn replay(&mut self, client: u64, after: u64) {
         let oldest_retained = self.log.front().map_or(self.next_seq.max(1), |frame| {
             frame.seq.expect("logged frames are sequenced")
@@ -1038,13 +959,16 @@ impl Hub {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "Frames contain only JSON-compatible contract fields; serialization cannot fail."
+)]
 fn encode(frame: &Frame) -> String {
     let mut line = serde_json::to_string(frame).expect("a frame is always serializable");
     line.push('\n');
     line
 }
 
-/// What a request asks of the writer once it has been answered.
 enum Followup {
     Nothing,
     Snapshot,
@@ -1058,7 +982,7 @@ fn answer_line(line: &str, client: u64, shared: &Shared) {
         .and_then(|value| value.get("request_id"))
         .and_then(|id| id.as_str())
         .map(str::to_owned);
-    // A resent request is answered again, not acted on again.
+    // INVARIANT: A resent request is answered again, not acted on again.
     if let Some(id) = &request_id {
         let remembered = shared.remembered.lock_unpoisoned().by_id.get(id).cloned();
         if let Some(answer) = remembered {
@@ -1124,7 +1048,6 @@ fn send_reply(shared: &Shared, client: u64, id: &str, answer: &Answer) {
     ));
 }
 
-/// The refusal for an arm without a tool link to plan for.
 fn without_planner() -> Answer {
     Answer::refused(
         RejectionReason::InvalidTarget,
@@ -1132,24 +1055,22 @@ fn without_planner() -> Answer {
     )
 }
 
-/// Plan a move without touching the arm.
 fn plan_answer(
     shared: &Shared,
     start: &[f64],
     waypoints: &[Waypoint],
     joint_speed: Option<f64>,
+    gripper_angle: Option<f64>,
 ) -> Answer {
     let Some(planner) = shared.planner.as_deref() else {
         return without_planner();
     };
-    match planner.plan(start, waypoints, joint_speed) {
+    match planner.plan(start, waypoints, joint_speed, gripper_angle) {
         Ok(plan) => Answer::planned(plan),
         Err(refused) => Answer::refused(refused.reason, refused.detail),
     }
 }
 
-/// Where the arm could take the tool toward a pose, without touching the arm:
-/// the policy's rehearsal on a policy arm, the solve and checks otherwise.
 fn projection_answer(
     shared: &Shared,
     position: [f64; 3],
@@ -1184,7 +1105,6 @@ fn projection_answer(
     Answer::projected(projection)
 }
 
-/// The tool's pose at some joints.
 fn description_answer(shared: &Shared, joints: &[f64]) -> Answer {
     let Some(planner) = shared.planner.as_deref() else {
         return without_planner();
@@ -1195,7 +1115,6 @@ fn description_answer(shared: &Shared, joints: &[f64]) -> Answer {
     }
 }
 
-/// Extend the holder's lease, or refuse a token that is not the holder's.
 fn retain_answer(shared: &Shared, token: Option<&str>) -> Answer {
     if shared.lease.retain(token, Instant::now()) {
         Answer::nothing()
@@ -1207,7 +1126,6 @@ fn retain_answer(shared: &Shared, token: Option<&str>) -> Answer {
     }
 }
 
-/// Solve for the tool's pose without touching the arm.
 fn solve_answer(
     shared: &Shared,
     position: [f64; 3],
@@ -1234,7 +1152,6 @@ fn command_record(answer: Answer) -> Result<CommandRecord, (RejectionReason, Str
     }
 }
 
-/// Admit the handoff under the lease and return its reply receiver.
 fn enqueue_admitted<R>(
     shared: &Shared,
     token: Option<&str>,
@@ -1261,7 +1178,7 @@ fn enqueue_admitted<R>(
     Ok(answer)
 }
 
-/// Wait for an already admitted handoff without holding the lease lock.
+// INVARIANT: Wait for an already admitted handoff without holding the lease lock.
 fn admitted<T>(
     shared: &Shared,
     token: Option<&str>,
@@ -1358,7 +1275,10 @@ fn submit_group_move(
     }
 }
 
-/// Act on one request: the arm's answer, and what the writer owes the client.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep exhaustive protocol dispatch together; individual handlers own the operations."
+)]
 fn apply(request: Request, shared: &Shared) -> (Answer, Followup) {
     match request {
         Request::Command {
@@ -1389,9 +1309,42 @@ fn apply(request: Request, shared: &Shared) -> (Answer, Followup) {
             );
             (answer, Followup::Nothing)
         }
-        request @ (Request::AcquireLease { .. } | Request::TakeLease { .. }) => {
-            (acquire_answer(shared, request), Followup::Nothing)
-        }
+        Request::AcquireLease {
+            holder,
+            label,
+            required_cameras,
+            on_interruption,
+        } => (
+            acquire_answer(
+                shared,
+                LeaseRequest {
+                    holder,
+                    label,
+                    required_cameras,
+                    on_interruption,
+                },
+                false,
+            ),
+            Followup::Nothing,
+        ),
+        Request::TakeLease {
+            holder,
+            label,
+            required_cameras,
+            on_interruption,
+        } => (
+            acquire_answer(
+                shared,
+                LeaseRequest {
+                    holder,
+                    label,
+                    required_cameras,
+                    on_interruption,
+                },
+                true,
+            ),
+            Followup::Nothing,
+        ),
         Request::RetainLease { lease_token } => (
             retain_answer(shared, lease_token.as_deref()),
             Followup::Nothing,
@@ -1424,8 +1377,9 @@ fn apply(request: Request, shared: &Shared) -> (Answer, Followup) {
             start,
             waypoints,
             joint_speed,
+            gripper_angle,
         } => (
-            plan_answer(shared, &start, &waypoints, joint_speed),
+            plan_answer(shared, &start, &waypoints, joint_speed, gripper_angle),
             Followup::Nothing,
         ),
         Request::ProjectPose {
@@ -1453,41 +1407,14 @@ fn apply(request: Request, shared: &Shared) -> (Answer, Followup) {
     }
 }
 
-fn acquire_answer(shared: &Shared, request: Request) -> Answer {
-    let (request, take) = match request {
-        Request::AcquireLease {
-            holder,
-            label,
-            required_cameras,
-            on_interruption,
-        } => (
-            LeaseRequest {
-                holder,
-                label,
-                required_cameras,
-                on_interruption,
-            },
-            false,
-        ),
-        Request::TakeLease {
-            holder,
-            label,
-            required_cameras,
-            on_interruption,
-        } => (
-            LeaseRequest {
-                holder,
-                label,
-                required_cameras,
-                on_interruption,
-            },
-            true,
-        ),
-        _ => unreachable!("only lease requests are acquired"),
-    };
+fn acquire_answer(shared: &Shared, request: LeaseRequest, take: bool) -> Answer {
     match shared.lease.acquire_stopping_arms(request, take) {
         Ok(grant) => Answer::leased(LeaseAnswer::Granted(grant)),
         Err(AcquireError::Held(holder)) => Answer::held_by(holder),
+        Err(AcquireError::Unavailable(error)) => Answer::refused(
+            RejectionReason::Faulted,
+            format!("Could not generate a secure lease token: {error}"),
+        ),
         Err(AcquireError::StopFailed { reason, detail }) => Answer::refused(reason, detail),
     }
 }

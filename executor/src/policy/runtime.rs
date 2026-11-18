@@ -1,5 +1,3 @@
-//! Learned-policy execution shared by the live loop and offline preview.
-
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,7 +10,6 @@ use crate::plant::Feedback;
 use crate::robot::Robot;
 use crate::so101::policy::Policy;
 
-/// The policy and what it needs to see the arm: its forward kinematics.
 pub(crate) struct PolicyRuntime {
     policy: Policy,
     robot: Arc<Robot>,
@@ -28,30 +25,36 @@ impl PolicyRuntime {
             return Ok(None);
         };
         crate::so101::policy::validate_execution(config)?;
+        let policy = Policy::load(
+            Path::new(&settings.onnx),
+            Path::new(&settings.tool_frame_fixture),
+            &settings.checkpoint_sha256,
+        )?;
+        policy.validate_target_lead(settings.max_target_lead_radians)?;
         Ok(Some(Self {
-            policy: Policy::load(
-                Path::new(&settings.onnx),
-                Path::new(&settings.tool_frame_fixture),
-                &settings.checkpoint_sha256,
-            )?,
+            policy,
             robot: Arc::clone(robot.context("A policy needs the robot model")?),
             tool_link: settings.tool_link.clone(),
         }))
     }
 
-    /// Begin an independent reach or pose stream without carrying old history.
+    pub(crate) fn begin_cycle(&mut self) {
+        self.policy.inference_seconds = 0.0;
+    }
+
+    pub(crate) fn inference_seconds(&self) -> f64 {
+        self.policy.inference_seconds
+    }
+
     pub(crate) fn reset(&mut self) {
         self.policy.reset();
     }
 
-    /// The tool's pose at the measured joints.
     pub(crate) fn tool_pose(&self, feedback: &Feedback) -> anyhow::Result<Isometry3<f64>> {
         self.robot
             .pose_at(&self.tool_link, &feedback.positions, feedback.gripper_angle)
     }
 
-    /// The joint goal one policy step takes from the measured state toward the
-    /// pose, held inside the joint limits (the common guards still follow).
     pub(crate) fn joint_goal(
         &mut self,
         config: &ExecutorConfig,

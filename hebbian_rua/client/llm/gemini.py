@@ -1,9 +1,11 @@
 """Robot tools for google-genai generate_content. Install the gemini extra."""
 
+from collections.abc import Mapping
+
 from google.genai import types
 
-from hebbian_rua._tool_turn import RobotToolTurn
 from hebbian_rua.client.llm.robot_tools import RobotTools
+from hebbian_rua.client.llm.tool_turn import RobotToolTurn
 from hebbian_rua.client.llm.types import RobotToolCall
 
 
@@ -35,16 +37,7 @@ class GeminiRobotTools:
 
     async def observe(self) -> types.Content:
         observation = await self.robot.observe()
-        return types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text=observation.text),
-                *(
-                    types.Part.from_bytes(data=jpeg, mime_type="image/jpeg")
-                    for jpeg in observation.cameras.values()
-                ),
-            ],
-        )
+        return _image_message(observation.text, observation.cameras)
 
     async def execute(
         self, response: types.GenerateContentResponse
@@ -105,4 +98,20 @@ class GeminiRobotTools:
                     ],
                 )
             )
+        messages.extend(
+            _image_message(
+                f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                result.cameras,
+            )
+            for result in results
+            if result.cameras
+        )
         return RobotToolTurn(messages, results)
+
+
+def _image_message(text: str, cameras: Mapping[str, bytes]) -> types.Content:
+    parts = [types.Part.from_text(text=text)]
+    for name, jpeg in cameras.items():
+        parts.append(types.Part.from_text(text=f"Camera: {name}"))
+        parts.append(types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"))
+    return types.Content(role="user", parts=parts)

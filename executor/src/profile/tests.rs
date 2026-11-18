@@ -19,22 +19,18 @@ fn an_external_profile_inherits_bundled_defaults_and_resolves_its_own_assets() {
         r#"extends = "so101-sim"
 name = "my-arm"
 urdf = "custom.urdf"
-driver = "mujoco"
-[mujoco]
-arm_model = "custom.xml"
-start_pose_radians = [0.0, -1.0, 1.0, 0.5, 0.0]
-target_block_position_meters = [0.25, 0.0, 0.015]
-rated_actuator_force = 3.35
+allowed_collision_pairs = [["first_link", "second_link"]]
 "#,
     )
     .unwrap();
     let profile = load_robot_profile(&bundled_profiles(), path.to_str().unwrap()).unwrap();
     assert_eq!(profile.name, "my-arm");
     assert_eq!(profile.urdf, directory.join("custom.urdf"));
-    match profile.driver {
-        Driver::Mujoco(settings) => assert_eq!(settings.arm_model, directory.join("custom.xml")),
-        Driver::Feetech(_) | Driver::Simulator => panic!("Expected a MuJoCo profile"),
-    }
+    assert!(matches!(profile.driver, Driver::Simulator));
+    assert_eq!(
+        profile.allowed_collision_pairs,
+        [["first_link", "second_link"]]
+    );
 }
 
 #[test]
@@ -70,7 +66,6 @@ fn scratch_directory() -> PathBuf {
     directory
 }
 
-/// A profile directory holding the bundled SO-101 profiles and one more.
 fn profiles_with(name: &str, text: &str) -> PathBuf {
     let directory = scratch_directory().join("profiles");
     std::fs::create_dir_all(&directory).unwrap();
@@ -120,7 +115,6 @@ fn an_extending_profile_replaces_values_inside_merged_tables() {
     assert_eq!(profile.arms, ["left", "right"]);
     let ports: Vec<&String> = profile.feetech().unwrap().ports.keys().collect();
     assert_eq!(ports, ["left", "right"]);
-    // The base's tracking table survives the merge.
     assert!((profile.tracking.static_margin_radians - 0.1).abs() < 1e-12);
     assert!(profile.urdf.is_absolute());
 }
@@ -145,7 +139,7 @@ fn a_feetech_arm_takes_its_limits_and_motors_from_its_calibration() {
         &calibration_root,
     )
     .unwrap();
-    // Steps 1023..3071 around the 2047 homing pose are -1/4 .. +1/4 turn.
+    // INVARIANT: Steps 1023..3071 around the 2047 homing pose are -1/4 .. +1/4 turn.
     let quarter_turn = std::f64::consts::FRAC_PI_2;
     assert!((config.lower_limits[0] + quarter_turn).abs() < 1e-3);
     assert!((config.upper_limits[0] - quarter_turn).abs() < 1e-3);

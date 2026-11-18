@@ -2,9 +2,8 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from math import radians
 from typing import assert_never
-
-from pydantic import ValidationError
 
 from hebbian_rua.client.contract.station_api import (
     CommandOutcome,
@@ -12,6 +11,10 @@ from hebbian_rua.client.contract.station_api import (
     CommandRefused,
 )
 from hebbian_rua.client.llm.response_format import result_from_data
+from hebbian_rua.client.llm.tool_catalog import (
+    RobotToolConfiguration,
+    parse_sequence_arguments,
+)
 from hebbian_rua.client.llm.tools import (
     ROBOT_TOOL_INPUTS,
     RobotToolInput,
@@ -21,7 +24,7 @@ from hebbian_rua.client.llm.types import (
     RobotToolCall,
     RobotToolResult,
 )
-from hebbian_rua.client.station_client import (
+from hebbian_rua.client.station_types import (
     CameraJpeg,
     CommandResult,
     command_record_was_limited,
@@ -160,25 +163,71 @@ def command_results(
     return records_result(call, records, grouped=grouped)
 
 
+def convert_model_arguments_to_station_units(value: object) -> object:
+    """Convert model millimeters/degrees to station meters/radians."""
+    if isinstance(value, list):
+        return [convert_model_arguments_to_station_units(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    fields = {
+        "position_mm": ("position", 0.001),
+        "joints_degrees": ("joints", radians(1)),
+        "max_joint_speed_degrees_per_second": ("max_joint_speed", radians(1)),
+    }
+
+    def scale_model_input_numbers(item: object, factor: float) -> object:
+        if isinstance(item, list):
+            return [scale_model_input_numbers(element, factor) for element in item]
+        return (
+            item * factor
+            if isinstance(item, (int, float)) and not isinstance(item, bool)
+            else item
+        )
+
+    converted = {}
+    for key, item in value.items():
+        if key in {"position", "joints", "max_joint_speed"}:
+            raise ValueError(f"Use explicit model units for {key}")
+        if key in fields:
+            station_field, factor = fields[key]
+            converted[station_field] = scale_model_input_numbers(item, factor)
+        else:
+            converted[key] = convert_model_arguments_to_station_units(item)
+    return converted
+
+
 class RobotToolRules:
     """Parsing and resource rules shared by station adapters."""
 
     arm: str
+    configuration: RobotToolConfiguration
 
     def parse(self, call: RobotToolCall) -> RobotToolInput | RobotToolResult:
         """The call's validated input, or the error result to send back instead."""
         model = ROBOT_TOOL_INPUTS.get(call.name)
         if model is None:
-            return RobotToolResult(call, f"Unknown tool {call.name}", is_error=True)
+            return result_from_data(call, f"Unknown tool {call.name}", is_error=True)
+        if call.name not in self.configuration.tools:
+            return result_from_data(
+                call, f"Tool {call.name} is not available", is_error=True
+            )
         if (
             call.name in {"set_arm_gripper", "stop"}
             and isinstance(call.arguments, dict)
             and "kind" in call.arguments
         ):
-            return RobotToolResult(
+            return result_from_data(
                 call, "Invalid input: kind is supplied by the tool name", is_error=True
             )
         try:
-            return model.model_validate(call.arguments)
-        except ValidationError as error:
-            return RobotToolResult(call, f"Invalid input: {error}", is_error=True)
+            if call.name == "action_sequence":
+                return parse_sequence_arguments(
+                    convert_model_arguments_to_station_units(call.arguments),
+                    self.configuration,
+                    self.arm,
+                )
+            return model.model_validate(
+                convert_model_arguments_to_station_units(call.arguments)
+            )
+        except ValueError as error:
+            return result_from_data(call, f"Invalid input: {error}", is_error=True)

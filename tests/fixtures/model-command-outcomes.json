@@ -9,7 +9,8 @@
       "completion": {
         "outcome": "completed",
         "finished_at": 2.0,
-        "detail": null
+        "detail": null,
+        "gripper": null
       },
       "checkpoints": [],
       "goal_joints": null,
@@ -36,7 +37,8 @@
       "completion": {
         "outcome": "completed",
         "finished_at": 2.0,
-        "detail": null
+        "detail": null,
+        "gripper": null
       },
       "checkpoints": [],
       "goal_joints": null,
@@ -65,7 +67,8 @@
       "completion": {
         "outcome": "stopped_short",
         "finished_at": 2.0,
-        "detail": null
+        "detail": null,
+        "gripper": null
       },
       "checkpoints": [],
       "goal_joints": null,

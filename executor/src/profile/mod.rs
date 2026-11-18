@@ -1,11 +1,3 @@
-//! A robot's profile, read from `profiles/<name>.toml`: its joints, limits and
-//! wiring. A profile may `extend` others (a name or a list, later ones winning);
-//! its tables merge over theirs, so shared limits live in one file.
-//!
-//! `executor_config` turns a profile and one arm into the loop's
-//! `ExecutorConfig`. Relative paths in a profile are relative to the repository
-//! root, the directory that holds `profiles/`.
-
 mod executor_config;
 
 use std::collections::BTreeMap;
@@ -26,7 +18,7 @@ pub use executor_config::{
     JointLimitSource, executor_config, executor_config_input, urdf_joint_limits,
 };
 
-/// A descriptive per-joint reference; it never commands motion or proves support.
+// SAFETY: A descriptive per-joint reference; it never commands motion or proves support.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestReference {
@@ -35,7 +27,7 @@ pub struct RestReference {
 }
 
 impl RestReference {
-    /// Compare joint feedback only; this cannot establish physical support.
+    // SAFETY: Compare joint feedback only; this cannot establish physical support.
     #[must_use]
     pub fn matches(&self, positions: &[f64]) -> bool {
         positions.len() == self.joint_positions_radians.len()
@@ -60,8 +52,6 @@ pub struct ControlTiming {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrackingLimits {
-    /// Allowed tracking error = commanded speed * `following_lag_seconds` +
-    /// `static_margin_radians`, per joint.
     pub following_lag_seconds: f64,
     pub static_margin_radians: f64,
     pub settled_error_radians: f64,
@@ -108,19 +98,15 @@ pub enum EffortUnit {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EffortLimits {
-    /// The unit of the effort signal the driver reports and these limits use.
     pub unit: EffortUnit,
     pub joint_effort_limits: Vec<f64>,
 }
 
-/// One gripper per arm; openings run from 0 (closed) to 1 (open) between these
-/// motor angles.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GripperSettings {
     pub closed_position_radians: f64,
     pub open_position_radians: f64,
-    /// Grip force cap as a fraction of the motor's rated torque or current.
     pub force_fraction: f64,
     pub position_tolerance_radians: f64,
     pub contact_dwell_seconds: f64,
@@ -128,41 +114,11 @@ pub struct GripperSettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MujocoIntegrator {
-    Euler,
-    Implicitfast,
-}
-
-/// A `MuJoCo` scene standing in for the hardware. The executor only checks it;
-/// engine-specific adapters read it from the profile itself.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MujocoSettings {
-    pub arm_model: PathBuf,
-    #[serde(default)]
-    pub environment: Option<PathBuf>,
-    pub start_pose_radians: Vec<f64>,
-    pub target_block_position_meters: [f64; 3],
-    pub rated_actuator_force: f64,
-    #[serde(default)]
-    pub timestep_seconds: Option<f64>,
-    #[serde(default)]
-    pub integrator: Option<MujocoIntegrator>,
-    #[serde(default)]
-    pub servo_stiffness_scale: Option<f64>,
-    #[serde(default)]
-    pub gripper_joint: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum UrdfNaming {
-    /// URDF joint and frame names carry the arm's name, as `<arm>_<joint>`.
     ArmPrefixed,
     Plain,
 }
 
-/// Where an arm's URDF base sits in the station's world frame.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BasePose {
@@ -191,8 +147,10 @@ pub struct PolicySettings {
     pub settled_velocity_radians_per_second: f64,
     pub preview_lag_seconds: f64,
     pub checkpoint_sha256: String,
+    // CONSTRAINT: The furthest ahead of a measured joint the model may set its target each cycle
+    // (the model's action step must not exceed it). A lead the servo chases, not a speed.
+    pub max_target_lead_radians: f64,
     pub tool_frame_fixture: PathBuf,
-    /// The checkpoint exported to ONNX, which the policy controller runs.
     #[serde(default)]
     pub onnx: Option<PathBuf>,
     #[serde(default = "default_policy_max_joint_speed")]
@@ -211,8 +169,6 @@ fn default_surface_leeway() -> f64 {
     0.01
 }
 
-/// A backup that stops the arm being driven down through its table: a
-/// horizontal plane in the arm's base frame. On unless a profile turns it off.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SurfaceGuardSettings {
@@ -238,15 +194,12 @@ impl Default for SurfaceGuardSettings {
 #[serde(rename_all = "snake_case")]
 pub enum DriverKind {
     Feetech,
-    Mujoco,
     Simulator,
 }
 
-/// The hardware or simulator behind the arms, with its settings.
 #[derive(Debug, Clone)]
 pub enum Driver {
-    Feetech(FeetechSettings),
-    Mujoco(MujocoSettings),
+    Feetech(Box<FeetechSettings>),
     Simulator,
 }
 
@@ -262,7 +215,6 @@ fn arm_prefixed() -> UrdfNaming {
     UrdfNaming::ArmPrefixed
 }
 
-/// The profile file as written, after its bases are merged in.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProfileTables {
@@ -275,6 +227,8 @@ struct ProfileTables {
     self_collision_check: bool,
     #[serde(default = "default_self_collision_tolerance")]
     self_collision_penetration_tolerance_meters: f64,
+    #[serde(default)]
+    allowed_collision_pairs: Vec<[String; 2]>,
     #[serde(default = "ik_controller")]
     controller: ControllerKind,
     #[serde(default)]
@@ -306,30 +260,20 @@ struct ProfileTables {
     gripper: Option<GripperSettings>,
     #[serde(default)]
     feetech: Option<FeetechSettings>,
-    #[serde(default)]
-    mujoco: Option<MujocoSettings>,
 }
 
-/// A validated robot profile. With the policy controller selected, the motion
-/// speed and loop rate are already the policy's.
 #[derive(Debug, Clone)]
 pub struct RobotProfile {
     pub name: String,
-    /// What an LLM is told about this robot beyond its state.
     pub description: String,
-    /// How far outside a calibrated endpoint a measured joint may rest and still
-    /// be commanded back in.
     pub joint_limit_recovery_tolerance_radians: f64,
-    /// `Some` when the self-collision check is on.
     pub self_collision_penetration_tolerance_meters: Option<f64>,
-    /// `Some` when the profile selects the policy controller.
+    pub allowed_collision_pairs: Vec<[String; 2]>,
     pub policy: Option<PolicySettings>,
     pub driver: Driver,
     pub arms: Vec<String>,
-    /// Absolute.
     pub urdf: PathBuf,
     pub urdf_naming: UrdfNaming,
-    /// USB cameras: camera name to a video device path or an `OpenCV` index.
     pub cameras: BTreeMap<String, String>,
     pub base_poses: BTreeMap<String, BasePose>,
     pub joint_names: Vec<String>,
@@ -361,7 +305,6 @@ impl RobotProfile {
         }
     }
 
-    /// Joint names as they appear in the URDF for one arm.
     #[must_use]
     pub fn arm_joint_names(&self, arm: &str) -> Vec<String> {
         self.joint_names
@@ -379,24 +322,18 @@ impl RobotProfile {
     pub fn feetech(&self) -> Option<&FeetechSettings> {
         match &self.driver {
             Driver::Feetech(settings) => Some(settings),
-            Driver::Mujoco(_) | Driver::Simulator => None,
+            Driver::Simulator => None,
         }
     }
 }
 
-/// Where profiles live: `$HEBBIAN_PROFILE_DIRECTORY`, else the nearest
-/// installed `share/hebbian-robot-use/profiles` or a checkout's `profiles/`
-/// above the running binary, else above the working directory.
-///
-/// # Errors
-/// None of those exists.
 pub fn default_profile_directory() -> anyhow::Result<PathBuf> {
     if let Some(directory) =
         std::env::var_os(PROFILE_DIRECTORY_VARIABLE).filter(|value| !value.is_empty())
     {
         return Ok(PathBuf::from(directory));
     }
-    // A build in target/<profile>/ and an installed copy beside a checkout both
+    // WHY: A build in target/<profile>/ and an installed copy beside a checkout both
     // find it above the binary; a run from a checkout finds it above the cwd.
     let mut starts = Vec::new();
     if let Ok(binary) = std::env::current_exe() {
@@ -423,12 +360,11 @@ pub fn default_profile_directory() -> anyhow::Result<PathBuf> {
         })
 }
 
-/// Overrides where profiles are looked up.
 pub const PROFILE_DIRECTORY_VARIABLE: &str = "HEBBIAN_PROFILE_DIRECTORY";
 
-/// Override's values win; a table in both keeps the base's other keys. Only
-/// top-level tables merge: a value inside one, such as the per-arm ports, is
-/// replaced whole, so an extending profile can drop the base's arms.
+// CONSTRAINT: Override's values win; a table in both keeps the base's other keys. Only
+// top-level tables merge: a value inside one, such as the per-arm ports, is
+// replaced whole, so an extending profile can drop the base's arms.
 fn merge_tables(base: &mut toml::Table, overrides: toml::Table) {
     for (key, value) in overrides {
         match (base.get_mut(&key), value) {
@@ -451,7 +387,6 @@ fn resolve_local_asset(table: &mut toml::Table, key: &str, directory: &Path) {
     }
 }
 
-/// A profile's tables, after those of the profiles it extends.
 fn profile_tables(directory: &Path, name: &str, depth: usize) -> anyhow::Result<toml::Table> {
     ensure!(depth < 16, "Profile {name} extends itself");
     let requested_path = Path::new(name);
@@ -469,10 +404,6 @@ fn profile_tables(directory: &Path, name: &str, depth: usize) -> anyhow::Result<
             .parent()
             .context("Profile file has no parent directory")?;
         resolve_local_asset(&mut tables, "urdf", local_directory);
-        if let Some(toml::Value::Table(mujoco)) = tables.get_mut("mujoco") {
-            resolve_local_asset(mujoco, "arm_model", local_directory);
-            resolve_local_asset(mujoco, "environment", local_directory);
-        }
         if let Some(toml::Value::Table(policy)) = tables.get_mut("policy") {
             resolve_local_asset(policy, "onnx", local_directory);
             resolve_local_asset(policy, "tool_frame_fixture", local_directory);
@@ -501,10 +432,6 @@ fn profile_tables(directory: &Path, name: &str, depth: usize) -> anyhow::Result<
     Ok(merged)
 }
 
-/// Load and validate a bundled profile name or an absolute local profile file.
-///
-/// # Errors
-/// The profile or one it extends is missing, malformed or inconsistent.
 pub fn load_robot_profile(directory: &Path, name: &str) -> anyhow::Result<RobotProfile> {
     let tables = profile_tables(directory, name, 0)?;
     let parsed: ProfileTables = toml::Value::Table(tables)
@@ -515,12 +442,6 @@ pub fn load_robot_profile(directory: &Path, name: &str) -> anyhow::Result<RobotP
     Ok(profile)
 }
 
-/// Validate a profile given as JSON with the TOML file's keys and no
-/// `extends`, such as the station's parsed copy. Relative paths resolve
-/// against `relative_to`.
-///
-/// # Errors
-/// The JSON does not match the profile schema or is inconsistent.
 pub fn parse_robot_profile_json(text: &str, relative_to: &Path) -> anyhow::Result<RobotProfile> {
     let parsed: ProfileTables =
         serde_json::from_str(text).context("The profile JSON does not match the profile schema")?;
@@ -647,27 +568,15 @@ fn validated(tables: ProfileTables, repository_root: &Path) -> anyhow::Result<Ro
         bail!("Base pose for unknown arm {arm}");
     }
     check_limits(&tables)?;
-    let driver = match (tables.driver, &tables.feetech, &tables.mujoco) {
-        (DriverKind::Simulator, None, None) => Driver::Simulator,
-        (DriverKind::Feetech, Some(settings), None) => {
+    let driver = match (tables.driver, &tables.feetech) {
+        (DriverKind::Simulator, None) => Driver::Simulator,
+        (DriverKind::Feetech, Some(settings)) => {
             check_feetech(&tables, settings)?;
-            Driver::Feetech(settings.clone())
+            Driver::Feetech(Box::new(settings.clone()))
         }
-        (DriverKind::Mujoco, None, Some(settings)) => {
-            ensure!(
-                settings.start_pose_radians.len() == joint_count,
-                "The MuJoCo start pose needs one angle per joint"
-            );
-            Driver::Mujoco(settings.clone())
-        }
-        (DriverKind::Feetech, ..) => {
-            bail!("A Feetech profile needs a [feetech] section and no [mujoco] one")
-        }
-        (DriverKind::Simulator, ..) => {
-            bail!("A simulator profile must not contain [feetech] or [mujoco] settings")
-        }
-        (DriverKind::Mujoco, ..) => {
-            bail!("A MuJoCo profile needs a [mujoco] section and no [feetech] one")
+        (DriverKind::Feetech, None) => bail!("A Feetech profile needs a [feetech] section"),
+        (DriverKind::Simulator, Some(_)) => {
+            bail!("A simulator profile must not contain [feetech] settings")
         }
     };
     let mut motion = tables.motion;
@@ -680,7 +589,7 @@ fn validated(tables: ProfileTables, repository_root: &Path) -> anyhow::Result<Ro
                 &tables.joint_names,
                 !tables.base_poses.is_empty(),
             )?;
-            // The policy runs the SO-101's five joints at its own rate and speed.
+            // CONSTRAINT: The policy runs the SO-101's five joints at its own rate and speed.
             motion.max_joint_speed = policy.max_joint_speed;
             control.frequency_hertz = POLICY_CONTROL_HERTZ;
             Some(PolicySettings {
@@ -698,6 +607,7 @@ fn validated(tables: ProfileTables, repository_root: &Path) -> anyhow::Result<Ro
         self_collision_penetration_tolerance_meters: tables
             .self_collision_check
             .then_some(tables.self_collision_penetration_tolerance_meters),
+        allowed_collision_pairs: tables.allowed_collision_pairs,
         policy,
         driver,
         arms: tables.arms,

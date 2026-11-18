@@ -1,5 +1,3 @@
-"""Prepare checksum-pinned SO-101 assets for a source checkout."""
-
 from __future__ import annotations
 
 import hashlib
@@ -59,13 +57,11 @@ class RobotAssetSource:
         for filename, digest in file_digests.items():
             if (
                 not isinstance(filename, str)
-                or "/" in filename
                 or "\\" in filename
-                or filename in {".", ".."}
-                or not (
-                    filename in {"robot.urdf", "LICENSE.txt", "README.md"}
-                    or filename.endswith(".stl")
-                )
+                or PurePosixPath(filename).is_absolute()
+                or any(part in {"", ".", ".."} for part in filename.split("/"))
+                or PurePosixPath(filename).suffix
+                not in {".urdf", ".stl", ".txt", ".md"}
             ):
                 raise ValueError(f"Unsupported robot asset filename: {filename}")
             files[filename] = parse_digest(digest)
@@ -75,16 +71,25 @@ class RobotAssetSource:
 
     def matches(self, directory: Path) -> bool:
         return all(
-            (directory / filename).is_file()
-            and not (directory / filename).is_symlink()
-            and hashlib.sha256((directory / filename).read_bytes()).hexdigest()
+            asset_path(directory, filename).is_file()
+            and hashlib.sha256(asset_path(directory, filename).read_bytes()).hexdigest()
             == digest
             for filename, digest in self.files.items()
         )
 
 
+def asset_path(directory: Path, filename: str) -> Path:
+    path = directory
+    for part in PurePosixPath(filename).parts:
+        path = path / part
+        # CONSTRAINT: Nested symlinks must not redirect generated assets outside
+        # their intended directory.
+        if path.is_symlink():
+            raise ValueError(f"Generated asset path must not contain a symlink: {path}")
+    return path
+
+
 def prepare_robot_assets(repository: Path) -> tuple[Path, ...]:
-    """Materialize only pinned assets; a complete checkout needs no network access."""
     repository = repository.resolve()
     source = RobotAssetSource.load(repository / "robots/so101-assets.toml")
     destination = repository / "robots/so101"
@@ -93,6 +98,7 @@ def prepare_robot_assets(repository: Path) -> tuple[Path, ...]:
             f"Generated asset directory must not be a symlink: {destination}"
         )
     if source.matches(destination):
+        # WHY: A complete pinned checkout does not need network access.
         return tuple(destination / filename for filename in sorted(source.files))
     cache = repository / ".cache/so101"
     cache.mkdir(parents=True, exist_ok=True)
@@ -138,13 +144,16 @@ def prepare_robot_assets(repository: Path) -> tuple[Path, ...]:
                     raise ValueError(
                         f"Robot asset checksum does not match the pin: {filename}"
                     )
-                (extracted / filename).write_bytes(content)
-        # Verify everything before touching the runtime directory. Each replacement is
+                staged_asset = extracted / filename
+                staged_asset.parent.mkdir(parents=True, exist_ok=True)
+                staged_asset.write_bytes(content)
+        # INVARIANT: Verify everything before touching the runtime directory. Each replacement is
         # atomic; a failed preparation is detected and repaired on the next run.
         destination.mkdir(parents=True, exist_ok=True)
         for filename in source.files:
-            if (destination / filename).is_symlink():
-                raise ValueError(f"Generated asset must not be a symlink: {filename}")
+            asset_path(destination, filename)
         for filename in source.files:
-            (extracted / filename).replace(destination / filename)
+            destination_asset = asset_path(destination, filename)
+            destination_asset.parent.mkdir(parents=True, exist_ok=True)
+            (extracted / filename).replace(destination_asset)
     return tuple(destination / filename for filename in sorted(source.files))

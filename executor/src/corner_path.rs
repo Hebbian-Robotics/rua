@@ -1,8 +1,3 @@
-//! One online Ruckig generator follows each straight joint-space section.
-//! Each section targets its real endpoint, preserving commanded velocity and
-//! acceleration between cycles. The tracking guard, run every cycle by the
-//! control loop, is the check that an arm commanded to move follows.
-
 use anyhow::{Context, bail, ensure};
 use rsruckig::prelude::{
     InputParameter, OutputParameter, Ruckig, RuckigResult, Synchronization, ThrowErrorHandler,
@@ -13,21 +8,15 @@ use serde::Serialize;
 use crate::config::MotionLimits;
 use crate::limits::{Trip, max_joint_deviation};
 use crate::reference_filter::Reference;
-use hebbian_contracts::{Checkpoint, CornerPlan};
+use hebbian_contracts::{Checkpoint, CornerPlan, Segment};
 
-/// Corners closer than this are one corner.
 const SAME_CORNER_RADIANS: f64 = 1e-12;
-/// The plan's first corner and the arm must agree to this, as in the station.
 pub(crate) const CONTINUITY_RADIANS: f64 = 1e-8;
 
-/// Validation only calculates trajectories. Online sections replace this initial
-/// constructor period with the actual cycle interval before updating.
+// CONSTRAINT: Validation only calculates trajectories. Online sections replace this initial
+// constructor period with the actual cycle interval before updating.
 const INITIAL_PERIOD_SECONDS: f64 = 0.01;
 
-/// The pose the plan starts from: its first corner.
-///
-/// # Errors
-/// The plan has no corners.
 pub(crate) fn plan_initial_corner(plan: &CornerPlan) -> anyhow::Result<&[f64]> {
     plan.segments
         .first()
@@ -36,9 +25,8 @@ pub(crate) fn plan_initial_corner(plan: &CornerPlan) -> anyhow::Result<&[f64]> {
         .context("An empty motion path")
 }
 
-/// # Errors
-/// The plan is empty, not continuous, or not finite, or its speed is not positive.
 pub fn validate_plan(plan: &CornerPlan, joint_count: usize) -> anyhow::Result<()> {
+    ensure!(joint_count > 0, "A motion path needs joints");
     ensure!(!plan.segments.is_empty(), "An empty motion path");
     ensure!(
         plan.peak_speed.is_finite() && plan.peak_speed > 0.0,
@@ -64,22 +52,51 @@ pub fn validate_plan(plan: &CornerPlan, joint_count: usize) -> anyhow::Result<()
             segment.minimum_duration_seconds.is_none() || segment.corners.len() == 2,
             "A minimum duration needs a single straight section"
         );
+        ensure!(
+            segment
+                .minimum_duration_seconds
+                .is_none_or(|duration| duration.is_finite() && duration >= 0.0),
+            "A minimum duration must be finite and not negative"
+        );
         previous = &segment.corners[segment.corners.len() - 1];
     }
     Ok(())
 }
 
-/// A motion plan checked for the joint count of the arm that will execute it.
-struct MotionPlan(CornerPlan);
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ValidatedPlan(CornerPlan);
 
-impl MotionPlan {
-    fn new(plan: CornerPlan, joint_count: usize) -> anyhow::Result<Self> {
+impl ValidatedPlan {
+    pub(crate) fn new(plan: CornerPlan, joint_count: usize) -> anyhow::Result<Self> {
         validate_plan(&plan, joint_count)?;
         Ok(Self(plan))
     }
+
+    pub(crate) fn initial_corner(&self) -> &[f64] {
+        &self.0.segments[0].corners[0]
+    }
+
+    pub(crate) fn final_segment(&self) -> &Segment {
+        &self.0.segments[self.0.segments.len() - 1]
+    }
+
+    pub(crate) fn final_corner(&self) -> &[f64] {
+        let segment = self.final_segment();
+        &segment.corners[segment.corners.len() - 1]
+    }
+
+    pub(crate) fn rebase(&mut self, initial: Vec<f64>) -> anyhow::Result<()> {
+        ensure!(
+            initial.len() == self.initial_corner().len()
+                && initial.iter().all(|value| value.is_finite()),
+            "A motion start must have the plan's joint count and finite positions"
+        );
+        self.0.segments[0].corners[0] = initial;
+        Ok(())
+    }
 }
 
-impl std::ops::Deref for MotionPlan {
+impl std::ops::Deref for ValidatedPlan {
     type Target = CornerPlan;
 
     fn deref(&self) -> &Self::Target {
@@ -87,9 +104,7 @@ impl std::ops::Deref for MotionPlan {
     }
 }
 
-/// Straight joint-space sections between corner waypoints, at rest at each.
 struct SmoothTrajectory {
-    /// Section `i` runs from `waypoints[i]` to `waypoints[i + 1]`.
     waypoints: Vec<Vec<f64>>,
 }
 
@@ -128,7 +143,7 @@ impl SmoothTrajectory {
         }
         let mut generator =
             Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
-        // Each section is computed once here so a plan Ruckig cannot follow is
+        // WHY: Each section is computed once here so a plan Ruckig cannot follow is
         // refused before it starts.
         for pair in waypoints.windows(2) {
             let mut input = InputParameter::<0>::new(Some(joint_count));
@@ -139,7 +154,7 @@ impl SmoothTrajectory {
                 input.max_acceleration[joint] = acceleration;
                 input.max_jerk[joint] = jerk;
             }
-            // Phase synchronization keeps every joint on the straight line.
+            // WHY: Phase synchronization keeps every joint on the straight line.
             input.synchronization = Synchronization::Phase;
             input.minimum_duration = minimum_duration;
             let mut trajectory = Trajectory::<0>::new(Some(joint_count));
@@ -161,15 +176,14 @@ impl SmoothTrajectory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
-    /// Holding a rest point until the supervisor confirms the arm settled there.
     Settling,
     Moving,
     Done,
 }
 
-/// One persistent scalar generator owns a collision-checked straight section.
-/// The scalar is measured in radians of the largest-travelling joint, avoiding
-/// ill-conditioned normalization as a target is approached.
+// WHY: One persistent scalar generator owns a collision-checked straight section.
+// The scalar is measured in radians of the largest-travelling joint, avoiding
+// ill-conditioned normalization as a target is approached.
 pub(crate) struct OnlineSection {
     start: Vec<f64>,
     target: Vec<f64>,
@@ -186,15 +200,43 @@ impl OnlineSection {
         speed: f64,
         limits: &MotionLimits,
         minimum_duration: Option<f64>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        let joint_count = target.len();
+        ensure!(
+            joint_count > 0
+                && [
+                    &reference.positions,
+                    &reference.velocities,
+                    &reference.accelerations
+                ]
+                .iter()
+                .all(|values| values.len() == joint_count
+                    && values.iter().all(|value| value.is_finite()))
+                && target.iter().all(|value| value.is_finite()),
+            "A section needs matching nonempty finite reference and target joints"
+        );
+        ensure!(
+            [speed, limits.acceleration_limit, limits.jerk_limit]
+                .iter()
+                .all(|value| value.is_finite() && *value > 0.0),
+            "A section needs positive finite motion limits"
+        );
+        ensure!(
+            minimum_duration.is_none_or(|duration| duration.is_finite() && duration >= 0.0),
+            "A section duration must be finite and not negative"
+        );
         let (joint, distance) = reference
             .positions
             .iter()
             .zip(target)
             .enumerate()
             .map(|(joint, (start, end))| (joint, (end - start).abs()))
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .expect("a path has joints");
+            .max_by(|left, right| left.1.total_cmp(&right.1))
+            .context("A section needs joints")?;
+        ensure!(
+            distance.is_finite() && distance > 0.0,
+            "A section needs positive finite travel"
+        );
         let direction = (target[joint] - reference.positions[joint]).signum();
         let mut input = InputParameter::<1>::new(None);
         input.target_position[0] = distance;
@@ -204,21 +246,25 @@ impl OnlineSection {
         input.max_jerk[0] = limits.jerk_limit;
         input.current_velocity[0] = reference.velocities[joint] * direction;
         input.current_acceleration[0] = reference.accelerations[joint] * direction;
-        // Even this one scalar must synchronize to a requested minimum duration.
+        // CONSTRAINT: Even this one scalar must synchronize to a requested minimum duration.
         input.synchronization = Synchronization::Time;
-        Self {
+        Ok(Self {
             start: reference.positions.clone(),
             target: target.to_vec(),
             distance,
             generator: Ruckig::new(None, INITIAL_PERIOD_SECONDS),
             input,
             output: OutputParameter::new(None),
-        }
+        })
     }
 
     pub(crate) fn step(&mut self, interval: f64, reference: &mut Reference) -> anyhow::Result<()> {
-        // The section owns a fixed endpoint and duration. Feed back Ruckig's
+        // CONSTRAINT: The section owns a fixed endpoint and duration. Feed back Ruckig's
         // emitted state so it can keep sampling the same trajectory.
+        ensure!(
+            interval.is_finite() && interval > 0.0,
+            "A section interval must be positive and finite"
+        );
         self.generator.delta_time = interval;
         match self.generator.update(&self.input, &mut self.output) {
             Ok(RuckigResult::Working | RuckigResult::Finished) => {}
@@ -244,7 +290,7 @@ impl OnlineSection {
 }
 
 struct CornerPathTracker {
-    plan: MotionPlan,
+    plan: ValidatedPlan,
     limits: MotionLimits,
     stage: Stage,
     reference: Reference,
@@ -253,12 +299,11 @@ struct CornerPathTracker {
     corner_index: usize,
     section: Option<OnlineSection>,
     checkpoints: Vec<Checkpoint>,
-    /// The last rest point was accepted outside tolerance after the settle timeout.
     stopped_short: bool,
 }
 
 impl CornerPathTracker {
-    fn new(plan: MotionPlan, limits: MotionLimits) -> anyhow::Result<Self> {
+    fn new(plan: ValidatedPlan, limits: MotionLimits) -> anyhow::Result<Self> {
         let trajectories = plan
             .segments
             .iter()
@@ -272,7 +317,7 @@ impl CornerPathTracker {
                 )
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let reference = Reference::at_rest(plan_initial_corner(&plan)?, None);
+        let reference = Reference::at_rest(plan.initial_corner(), None);
         Ok(Self {
             plan,
             limits,
@@ -304,16 +349,18 @@ impl CornerPathTracker {
         {
             self.reference.set_at_rest(target, None);
         } else {
-            let section = self.section.get_or_insert_with(|| {
-                OnlineSection::new(
+            if self.section.is_none() {
+                self.section = Some(OnlineSection::new(
                     &self.reference,
                     target,
                     self.plan.peak_speed,
                     &self.limits,
                     self.plan.segments[self.segment_index].minimum_duration_seconds,
-                )
-            });
-            section.step(interval, &mut self.reference)?;
+                )?);
+            }
+            if let Some(section) = &mut self.section {
+                section.step(interval, &mut self.reference)?;
+            }
         }
         if max_joint_deviation(&self.reference.positions, target) <= SAME_CORNER_RADIANS
             && self.reference.velocities.iter().all(|v| v.abs() < 1e-8)
@@ -353,8 +400,6 @@ impl CornerPathTracker {
     }
 }
 
-/// Feedback-aware path execution: each rest point settles, or is accepted where
-/// the arm was not within tolerance after the settle timeout.
 pub struct MotionSupervisor {
     tracker: CornerPathTracker,
     limits: MotionLimits,
@@ -363,14 +408,18 @@ pub struct MotionSupervisor {
 }
 
 impl MotionSupervisor {
-    /// # Errors
-    /// The plan is malformed or a trajectory cannot be computed.
     pub fn new(
         plan: CornerPlan,
         limits: &MotionLimits,
         joint_count: usize,
     ) -> anyhow::Result<Self> {
-        let plan = MotionPlan::new(plan, joint_count)?;
+        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits)
+    }
+
+    pub(crate) fn from_validated(
+        plan: ValidatedPlan,
+        limits: &MotionLimits,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             tracker: CornerPathTracker::new(plan, limits.clone())?,
             limits: limits.clone(),
@@ -384,15 +433,11 @@ impl MotionSupervisor {
         self.tracker.stage == Stage::Done
     }
 
-    /// The motion ended with the arm not within the settled tolerance of its
-    /// final rest point after the settle timeout.
     #[must_use]
     pub fn stopped_short(&self) -> bool {
         self.tracker.stopped_short
     }
 
-    /// The motion has finished its path and is only waiting for the arm to settle
-    /// at its final rest point.
     #[must_use]
     pub fn settling_at_end(&self) -> bool {
         let tracker = &self.tracker;
@@ -416,12 +461,10 @@ impl MotionSupervisor {
 
     #[must_use]
     pub(crate) fn final_pose(&self) -> &[f64] {
-        let last = &self.tracker.plan.segments[self.tracker.plan.segments.len() - 1];
-        &last.corners[last.corners.len() - 1]
+        self.tracker.plan.final_corner()
     }
 
-    /// Take the checkpoints reached since the last call.
-    pub(crate) fn take_new_checkpoints(&mut self, already_taken: usize) -> Vec<Checkpoint> {
+    pub(crate) fn take_new_checkpoints(&self, already_taken: usize) -> Vec<Checkpoint> {
         self.tracker.checkpoints[already_taken.min(self.tracker.checkpoints.len())..].to_vec()
     }
 
@@ -434,18 +477,13 @@ impl MotionSupervisor {
         Trip(format!("{error:#}"))
     }
 
-    /// The reference for this cycle, given the measured joints. Tracking error is
-    /// the control loop's check, made every cycle whatever is running.
-    ///
-    /// # Errors
-    /// An internal `Trip` when the plan cannot be followed.
+    // SAFETY: Tracking remains the control loop’s per-cycle check regardless of which trajectory is running.
     pub fn step(&mut self, measured: &[f64], interval: f64) -> Result<Reference, Trip> {
         self.advance(measured, interval)?;
         Ok(self.tracker.reference.clone())
     }
 
-    /// Update the retained reference; control-loop callers copy it into their own
-    /// existing buffers instead of requesting an owned snapshot each cycle.
+    // WHY: Reuse the retained reference and caller buffers rather than allocating a snapshot every cycle.
     pub(crate) fn advance(&mut self, measured: &[f64], interval: f64) -> Result<(), Trip> {
         if self.tracker.stage == Stage::Settling {
             let endpoint_error = max_joint_deviation(measured, &self.tracker.reference.positions);
@@ -454,7 +492,7 @@ impl MotionSupervisor {
             } else {
                 0.0
             };
-            // An arm that stops short (servo deadband, a load) carries on from
+            // WHY: An arm that stops short (servo deadband, a load) carries on from
             // where it is once the settle timeout passes outside the tolerance;
             // the checkpoint records the measured joints.
             self.settling_seconds += interval;

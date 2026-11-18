@@ -1,19 +1,18 @@
-//! Fixed-rate cycles against absolute deadlines, so a late cycle does not push
-//! every later one back.
+// WHY: Fixed-rate cycles against absolute deadlines, so a late cycle does not push
+// every later one back.
 
 use std::time::{Duration, Instant};
 
-/// How much of each wait is spent spinning instead of sleeping, to land on the
-/// deadline despite the operating system's timer granularity.
+// WHY: How much of each wait is spent spinning instead of sleeping, to land on the
+// deadline despite the operating system's timer granularity.
 const SPIN_MARGIN: Duration = Duration::from_micros(200);
 
-/// The real-time priority asked of the loop thread.
 #[cfg(target_os = "linux")]
 const REALTIME_PRIORITY: libc::c_int = 50;
 
-/// Best effort: run the calling thread at real-time priority and lock the
-/// whole process's memory resident, so the scheduler and paging do not make cycles late. Not being
-/// permitted only costs a warning.
+// WHY: Best effort: run the calling thread at real-time priority and lock the
+// whole process's memory resident, so the scheduler and paging do not make cycles late. Not being
+// permitted only costs a warning.
 #[cfg(target_os = "linux")]
 pub(crate) fn request_realtime_scheduling() {
     let parameters = libc::sched_param {
@@ -52,8 +51,6 @@ pub(crate) struct CycleTimer {
 }
 
 impl CycleTimer {
-    /// Begin timing afresh, for after a pause that was not a late cycle (a
-    /// preflight or an enable).
     pub(crate) fn restart(&mut self) {
         let now = Instant::now();
         self.next_tick = now;
@@ -71,11 +68,6 @@ impl CycleTimer {
         }
     }
 
-    /// Wait out the rest of the cycle; the time since the previous tick, or the
-    /// deadline miss that the loop must treat as a trip.
-    ///
-    /// # Errors
-    /// `DeadlineMissed` when the cycle took longer than the loop deadline.
     pub(crate) fn tick(&mut self) -> Result<Duration, DeadlineMissed> {
         self.next_tick += self.period;
         let now = Instant::now();
@@ -95,7 +87,7 @@ impl CycleTimer {
     fn record_tick(&mut self, now: Instant) -> Result<Duration, DeadlineMissed> {
         let cycle = now - self.previous_tick;
         self.previous_tick = now;
-        // A late cycle does not owe the missed ticks: restart from now.
+        // WHY: A late cycle does not owe the missed ticks: restart from now.
         if now > self.next_tick + self.period {
             self.next_tick = now;
         }

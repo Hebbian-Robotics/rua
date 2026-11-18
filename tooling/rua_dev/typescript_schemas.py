@@ -1,5 +1,3 @@
-"""Generate Zod schemas through the shared TypeScript schema toolchain."""
-
 import subprocess
 import tempfile
 from pathlib import Path

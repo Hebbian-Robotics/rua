@@ -1,6 +1,16 @@
-//! The ghost's rehearsal of a reach answers from the policy without touching the
-//! arm. It needs the SO-101 policy export and its model, which live outside the
-//! repository (`.cache/so101-policy-assets`), so these tests skip without them.
+#![allow(
+    clippy::disallowed_methods,
+    reason = "Preview tests command only local simulated plants."
+)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
+
+// SAFETY: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,37 +37,39 @@ const JOINTS: [&str; 6] = [
     "gripper",
 ];
 const START: [f64; 5] = [0.0, -0.5, 0.8, 0.6, 0.0];
-const CHECKPOINT_SHA256: &str = "54ff132307f3c582f0886d82c0592d573452c7c526a9521921e08225beefd51d";
+const CHECKPOINT_SHA256: &str = "89f9f5a47866d4e2761373e6036adde6277c400f1942ff7f74bd26fda6f7eb63";
+const MAX_TARGET_LEAD_RADIANS: f64 = 0.12;
 const TOOL_LINK: &str = "gripper_frame_link";
 
-/// The bundled SO-101 model, whose kinematics match the one the policy's
-/// tool-frame fixture was fitted against (the fixture's own copy ships without meshes).
 fn bundled_urdf() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("robots/so101/robot.urdf")
+        .join("robots/so101/robot-soft-gripper-camera.urdf")
 }
 
 fn assets() -> Option<PathBuf> {
-    // These optional tests require an explicitly selected ONNX runtime as well
+    // CONSTRAINT: These optional tests require an explicitly selected ONNX runtime as well
     // as the private policy assets; the standard build does not bundle one.
     std::env::var_os("ORT_DYLIB_PATH")?;
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()?
         .join(".cache/so101-policy-assets");
-    ["policy.onnx", "so101-station-tool-frame.json"]
+    ["policy.onnx", "tool-frame.json"]
         .iter()
         .all(|name| directory.join(name).is_file())
         .then_some(directory)
 }
 
-/// A lease for one executor.
 fn control() -> Arc<Lease> {
     Arc::new(Lease::new(LEASE))
 }
 
 fn config(assets: &Path) -> ExecutorConfig {
+    config_accepting_target_lead(assets, MAX_TARGET_LEAD_RADIANS)
+}
+
+fn config_accepting_target_lead(assets: &Path, max_target_lead_radians: f64) -> ExecutorConfig {
     let text = json!({
         "urdf": bundled_urdf(),
         "driven_joints": JOINTS,
@@ -69,10 +81,11 @@ fn config(assets: &Path) -> ExecutorConfig {
             "reach_deadline_seconds":8.0,"settle_dwell_seconds":0.1,
             "settled_velocity_radians_per_second":0.15,"preview_lag_seconds":0.05,
             "onnx": assets.join("policy.onnx"),
-            "tool_frame_fixture": assets.join("so101-station-tool-frame.json"),
+            "tool_frame_fixture": assets.join("tool-frame.json"),
             "checkpoint_sha256": std::env::var("SO101_POLICY_TEST_CHECKPOINT_SHA256")
                 .unwrap_or_else(|_| CHECKPOINT_SHA256.to_owned()),
             "tool_link": TOOL_LINK,
+            "max_target_lead_radians": max_target_lead_radians,
             "position_tolerance_meters": 0.02, "orientation_tolerance_radians": 0.1,
         },
         "trace_directory": std::env::temp_dir().join("hebbian-robot-use-server-preview-traces"),
@@ -94,7 +107,6 @@ fn config(assets: &Path) -> ExecutorConfig {
     ExecutorConfig::parse(&text).unwrap()
 }
 
-/// The tool pose at the start joints, and a goal offset from it.
 fn goal_near_start(offset: [f64; 3]) -> ReachGoal {
     let joints: Vec<String> = JOINTS.iter().map(|name| (*name).to_owned()).collect();
     let robot = Robot::load(&bundled_urdf(), &joints).unwrap();
@@ -141,13 +153,26 @@ fn a_reachable_pose_settles_and_the_same_question_gets_the_same_answer() {
     );
     assert_eq!(first.outcome, PreviewOutcome::Settled, "{first:?}");
     assert!(first.position_error_meters <= 0.02, "{first:?}");
-    // The policy's history is reset each time, so a rehearsal depends only on
-    // what it was asked.
     assert_eq!(preview.reach(&asked).unwrap(), first);
 }
 
 #[test]
-fn a_pose_beyond_reach_stops_at_the_deadline_with_the_arm_where_it_got_to() {
+fn a_model_whose_action_step_exceeds_the_accepted_target_lead_is_refused() {
+    let Some(assets) = assets() else {
+        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
+        return;
+    };
+    let error = Preview::new(&config_accepting_target_lead(&assets, 0.04))
+        .err()
+        .unwrap();
+    assert!(
+        error.to_string().contains("max_target_lead_radians"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn a_pose_beyond_reach_ends_once_the_arm_stops_closing_on_it() {
     let Some(assets) = assets() else {
         eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
         return;
@@ -165,8 +190,9 @@ fn a_pose_beyond_reach_stops_at_the_deadline_with_the_arm_where_it_got_to() {
     );
     assert_eq!(ended.outcome, PreviewOutcome::TimedOut);
     assert!(ended.reason.is_some());
-    // The command's deadline is 8 s of cycles; the wall-clock cap may end it sooner.
-    assert!(ended.simulated_seconds <= 8.0 + 0.02, "{ended:?}");
+    // WHY: Once the arm rests short of the pose, the rest of the 8 s deadline would end at
+    // the same joints, and a drag waits on every rehearsal.
+    assert!(ended.simulated_seconds < 4.0, "{ended:?}");
 }
 
 #[test]
@@ -245,9 +271,9 @@ fn an_arm_without_a_policy_refuses_to_rehearse() {
     assert!(Preview::new(&without_policy).unwrap().is_none());
 }
 
-/// Not a regression test: prints how the policy treats a goal rotated about the
-/// tool axis, for deciding how the viewer's wrist-roll slider reaches it.
-/// `cargo test --test preview orientation_study -- --ignored --nocapture`
+// WHY: Not a regression test: prints how the policy treats a goal rotated about the
+// tool axis, for deciding how the viewer's wrist-roll slider reaches it.
+// `cargo test --test preview orientation_study -- --ignored --nocapture`
 #[test]
 #[ignore = "a study, run by hand"]
 fn orientation_study() {
@@ -268,7 +294,7 @@ fn orientation_study() {
     ];
     for (which, start) in starts.iter().enumerate() {
         let here = pose_at(start);
-        // The roll joint's axis in the tool frame.
+        // CONSTRAINT: The roll joint's axis in the tool frame.
         let mut rolled = *start;
         rolled[4] += 0.1;
         let axis_local = (here.rotation.inverse() * pose_at(&rolled).rotation).scaled_axis() / 0.1;
@@ -307,9 +333,9 @@ fn orientation_study() {
     }
 }
 
-/// Not a regression test: prints how the policy treats a goal whose orientation
-/// the arm cannot take, with orientation not counted toward settling.
-/// `cargo test --test preview orientation_ignored_study -- --ignored --nocapture`
+// WHY: Not a regression test: prints how the policy treats a goal whose orientation
+// the arm cannot take, with orientation not counted toward settling.
+// `cargo test --test preview orientation_ignored_study -- --ignored --nocapture`
 #[test]
 #[ignore = "a study, run by hand"]
 fn orientation_ignored_study() {
@@ -446,7 +472,7 @@ fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation()
             })
             .fold(0.0_f64, f64::max);
         assert!(
-            max_step <= 0.040_001,
+            max_step <= MAX_TARGET_LEAD_RADIANS + 1e-6,
             "policy action exceeded its trained step: {max_step}"
         );
         if max_step > 0.001 {

@@ -1,5 +1,10 @@
-//! The HTTP server answers health, lists traces and serves one gzip-compressed,
-//! and nothing outside the trace directory.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -18,7 +23,6 @@ fn scratch_directory(label: &str) -> PathBuf {
     directory
 }
 
-/// Status code and body of a GET.
 fn get(address: SocketAddr, path: &str) -> (u16, Vec<u8>) {
     let mut stream = TcpStream::connect(address).unwrap();
     write!(

@@ -1,0 +1,32 @@
+# Test assertions may stop immediately when their setup or outcome is wrong.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+
+# Clippy also counts modules, impls and async task blocks toward nesting.
+excessive-nesting-threshold = 7
+
+disallowed-types = [
+    { path = "hebbian_so101::driver::Servos", reason = "Raw hardware handles belong in hardware adapters, controller setup and maintenance tools." },
+    { path = "hebbian_so101::driver::SerialBus", reason = "Serial buses belong in hardware adapters and maintenance tools." },
+]
+
+disallowed-methods = [
+    { path = "hebbian_so101::driver::Servos::new", reason = "Hardware handles are constructed only by hardware adapters and maintenance tools." },
+    { path = "hebbian_so101::driver::Servos::hold_recovery", reason = "Recovery writes belong in the control-loop hardware adapter." },
+    { path = "hebbian_so101::driver::Servos::enable_recovery", reason = "Recovery writes belong in the control-loop hardware adapter." },
+    { path = "hebbian_so101::driver::ServoBus::write", reason = "Raw register writes belong in hardware adapters and maintenance tools." },
+    { path = "hebbian_so101::driver::ServoBus::set_torque", reason = "Raw torque writes belong in hardware adapters and maintenance tools." },
+    { path = "hebbian_so101::driver::Servos::open", reason = "Open physical arms only in hardware setup and maintenance adapters." },
+    { path = "hebbian_so101::driver::SerialBus::open", reason = "Open serial buses only in hardware adapters." },
+    { path = "hebbian_so101::driver::Servos::command", reason = "Send setpoints through the controller's Plant adapter." },
+    { path = "hebbian_so101::driver::Servos::command_gripper", reason = "Send gripper setpoints through the controller's Plant adapter." },
+    { path = "hebbian_so101::driver::Servos::enable", reason = "Torque changes belong in the control loop and explicit maintenance tools." },
+    { path = "hebbian_so101::driver::Servos::release", reason = "Torque changes belong in the control loop, independent guard and maintenance tools." },
+    { path = "hebbian_robot_use_server::plant::Plant::command", reason = "Plant writes belong in the control loop or simulated preview." },
+    { path = "hebbian_robot_use_server::plant::Plant::command_gripper", reason = "Plant writes belong in the control loop or simulated preview." },
+    { path = "hebbian_robot_use_server::plant::Plant::enable", reason = "Plant torque changes belong in the control loop." },
+    { path = "hebbian_robot_use_server::plant::Plant::release", reason = "Plant release belongs in the control loop and independent guard." },
+    { path = "hebbian_robot_use_server::plant::Plant::hold_recovery", reason = "Recovery writes belong in the control loop." },
+    { path = "hebbian_robot_use_server::plant::Plant::enable_recovery", reason = "Recovery torque changes belong in the control loop." },
+]

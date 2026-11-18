@@ -1,9 +1,3 @@
-"""Generate the per-command wrapper methods of the Rust, Python and TypeScript SDKs.
-
-Reads the `StationCommand` variants from schemas/openapi.json, whose `ClientMessage` component
-holds the Rust type in contracts/src/station_api.rs, so the three SDKs cannot drift.
-"""
-
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,7 +6,7 @@ from rua_dev.models import SdkTarget
 RUST_PATH = Path("sdk/src/generated/station_commands.rs")
 PYTHON_PATH = Path("hebbian_rua/client/contract/arm_commands.py")
 TYPESCRIPT_PATH = Path("typescript-client/src/generated/arm-commands.ts")
-# The one place that says which commands need no lease: power, fault recovery and stop. Every
+# WHY: The one place that says which commands need no lease: power, fault recovery and stop. Every
 # other StationCommand moves the arm, so the SDKs put it on the lease handle only; a new motion
 # command lands there without being listed.
 LEASE_FREE_COMMANDS = frozenset(
@@ -87,7 +81,6 @@ def load_variants(definitions: dict) -> list[Variant]:
 
 
 def scalar_type(schema: dict) -> str:
-    """The JSON type of a schema once `null` is dropped."""
     declared = schema["type"]
     if isinstance(declared, list):
         declared = next(name for name in declared if name != "null")
@@ -132,7 +125,6 @@ def python_type(schema: dict, definitions: dict) -> str:
 
 
 def python_names(schema: dict, definitions: dict) -> set[str]:
-    """The contract classes a Python annotation uses."""
     if "$ref" in schema:
         return {alt["title"] for alt in definitions[reference_name(schema)]["oneOf"]}
     if scalar_type(schema) == "array":

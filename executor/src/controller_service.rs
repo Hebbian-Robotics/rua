@@ -1,5 +1,3 @@
-//! The controller-side transport worker. None of its I/O runs on the motor loop.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::net::Shutdown;
@@ -102,13 +100,7 @@ fn close_subscriptions(
     }
 }
 
-/// Bridge a verified controller to the station until it disconnects.
-/// `on_disconnect` invalidates the station lease after the handoff is fenced.
-/// The controller must have exclusive bus ownership before connecting. The
-/// readiness message confirms its startup checks before new commands are admitted.
-///
-/// # Errors
-/// The connection fails, the peer violates the protocol, or activation fails.
+// SAFETY: The controller must exclusively own the bus and complete startup checks before admitting commands. Fence handoffs before invalidating the station lease on disconnect.
 pub fn serve_station_connection(
     socket: UnixStream,
     instance: ControllerInstanceId,
@@ -229,7 +221,7 @@ fn forward_events(
             };
             match messages.try_send(message) {
                 Ok(()) => {}
-                // Samples may be skipped, but losing a logged outcome would make
+                // INVARIANT: Samples may be skipped, but losing a logged outcome would make
                 // the station's command history unreliable.
                 Err(TrySendError::Full(ControllerMessage::Event { event, .. }))
                     if matches!(*event, Event::State(_)) => {}
@@ -334,11 +326,7 @@ fn write_controller_messages(
     Ok(())
 }
 
-/// Serve one controller instance until its station disconnects or the protocol
-/// fails. The caller must stop the control loop when this returns.
-///
-/// # Errors
-/// The socket fails, a message is invalid, or a request ID is repeated.
+// SAFETY: Stop the control loop when the controller transport returns, including on protocol failure.
 pub fn serve_controller(
     socket: UnixStream,
     instance: ControllerInstanceId,
@@ -441,7 +429,7 @@ pub fn serve_controller(
     };
     close_subscriptions(&socket, &stopped, subscriptions);
     drop(outbound);
-    // Pending loop requests can remain blocked while the loop is stalled. The
+    // CONSTRAINT: Pending loop requests can remain blocked while the loop is stalled. The
     // process supervisor is responsible for ending this process in that case.
     drop(writer);
     result

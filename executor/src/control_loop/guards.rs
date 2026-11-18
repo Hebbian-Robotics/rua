@@ -1,5 +1,3 @@
-//! The checks every servo setpoint passes before it is sent.
-
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,11 +10,11 @@ use crate::robot::Robot;
 use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
 
-/// The servo setpoint clamped into the joint limits: the one place a setpoint's
-/// limits are applied, at the write, whatever produced it (a hold at a measured
-/// pose that overshot a limit, a filter braking past one). A setpoint that was
-/// already outside, as after enabling just past a limit, may stay there or move
-/// inward, never farther out.
+// SAFETY: The servo setpoint clamped into the joint limits: the one place a setpoint's
+// limits are applied, at the write, whatever produced it (a hold at a measured
+// pose that overshot a limit, a filter braking past one). A setpoint that was
+// already outside, as after enabling just past a limit, may stay there or move
+// inward, never farther out.
 pub(crate) fn clamp_setpoint(config: &ExecutorConfig, command: &mut [f64], previous: &[f64]) {
     for (joint, value) in command.iter_mut().enumerate() {
         let lower = config.lower_limits[joint].min(previous[joint]);
@@ -25,8 +23,6 @@ pub(crate) fn clamp_setpoint(config: &ExecutorConfig, command: &mut [f64], previ
     }
 }
 
-/// Validate a ready servo setpoint and its path; it is sent as it is. Planned trajectories and policy
-/// actions arrive directly; changing destinations are smoothed before this boundary.
 pub(crate) fn guard_command(
     config: &ExecutorConfig,
     guard: Option<&SurfaceGuard>,
@@ -60,11 +56,6 @@ pub(crate) fn guard_command(
     Ok(())
 }
 
-/// The robot model, loaded once for everything on this arm that reads it: the
-/// guards, the policy and the tool pose. None when none of them is configured.
-///
-/// # Errors
-/// The URDF cannot be loaded.
 pub(crate) fn load_shared_robot(config: &ExecutorConfig) -> anyhow::Result<Option<Arc<Robot>>> {
     let needed = config.surface_guard.is_some()
         || config.self_collision.is_some()
@@ -87,7 +78,12 @@ pub(crate) fn build_self_collision(
         return Ok(None);
     };
     let robot = robot.context("The self-collision check needs the robot model")?;
-    SelfCollisionGuard::new(Arc::clone(robot), settings.penetration_tolerance_meters).map(Some)
+    SelfCollisionGuard::new(
+        Arc::clone(robot),
+        settings.penetration_tolerance_meters,
+        &settings.allowed_collision_pairs,
+    )
+    .map(Some)
 }
 
 pub(crate) fn build_guard(

@@ -1,33 +1,31 @@
-//! HTTP control behavior spanning lease handoff and both arm control loops.
-//! These integration checks use a simulated plant and are not hardware validation.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use hebbian_robot_use_server::config::ExecutorConfig;
 use hebbian_robot_use_server::control_link::Link;
 use hebbian_robot_use_server::control_loop::ArmSetup;
 use hebbian_robot_use_server::lease::{LEASE, Lease};
-use hebbian_robot_use_server::plant::SimulatedPlant;
+use hebbian_robot_use_server::plant::{Feedback, Plant, SimulatedPlant};
 use hebbian_robot_use_server::station_api::DiscardTelemetry;
 use hebbian_robot_use_server::station_api::HttpServer;
 use serde_json::{Value, json};
 
 mod support;
-use support::RunningArms;
+use support::{LinkClient, RunningArms};
 
-const CONFIG: &str = r#"{
-  "urdf":"unused.urdf", "driven_joints":["a","b"], "surface_guard":null,
-  "motion":{"acceleration_limit":20.0,"jerk_limit":200.0,"settled_error_radians":0.02,"settle_dwell_seconds":0.1,"settle_timeout_seconds":2.0},
-  "joint_count":2,"frequency_hertz":100.0,"loop_deadline_seconds":0.1,
-  "lower_limits":[-2.0,-2.0],"upper_limits":[2.0,2.0],"joint_effort_limits":[10.0,10.0],
-  "tracking_following_lag_seconds":0.05,"tracking_static_margin_radians":1.5,
-  "max_joint_speed":3.0,"default_joint_speed":1.5,"stream_goal_timeout_seconds":5.0,
-  "joint_limit_recovery_tolerance_radians":0.0349,"jaw_closing_axis":"x"
-}"#;
+const CONFIG: &str = include_str!("support/two_joint_config.json");
 
 fn request(address: SocketAddr, method: &str, path: &str, body: Option<&Value>) -> (u16, Value) {
     let body = body.map(Value::to_string).unwrap_or_default();
@@ -86,6 +84,92 @@ fn submit(address: SocketAddr, instance: &str, token: &str, arm: &str, command: 
     answer
 }
 
+struct OverloadedPlant {
+    inner: SimulatedPlant,
+    overloaded: Arc<AtomicBool>,
+}
+
+#[allow(
+    clippy::disallowed_methods,
+    reason = "This adapter supplies controllable feedback to the simulated plant."
+)]
+impl Plant for OverloadedPlant {
+    fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
+        self.inner.read_feedback_into(feedback)?;
+        if self.overloaded.load(Ordering::Relaxed) {
+            feedback.efforts[0] = 1000.0;
+        }
+        Ok(())
+    }
+
+    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
+        self.inner.command(positions, seconds)
+    }
+
+    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(angle)
+    }
+
+    fn preflight(&mut self) -> anyhow::Result<()> {
+        self.inner.preflight()
+    }
+
+    fn enable(&mut self) -> anyhow::Result<()> {
+        self.inner.enable()
+    }
+
+    fn release(&mut self) -> anyhow::Result<()> {
+        self.inner.release()
+    }
+}
+
+#[test]
+fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
+    let config = ExecutorConfig::parse(CONFIG).unwrap();
+    let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let handle = link.handle();
+    let mut client = LinkClient::connect(&handle);
+    let server = HttpServer::start(
+        "127.0.0.1:0",
+        vec![],
+        None,
+        Arc::new(DiscardTelemetry),
+        |_, _| Ok(axum::Router::new()),
+    )
+    .unwrap();
+    server.attach_arms(BTreeMap::from([("arm".into(), handle)]));
+    let overloaded = Arc::new(AtomicBool::new(false));
+    let _arms = RunningArms::start(vec![ArmSetup::new(
+        "arm".into(),
+        config,
+        OverloadedPlant {
+            inner: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
+            overloaded: Arc::clone(&overloaded),
+        },
+        Some(link),
+    )]);
+    client.send_command(None, &json!({"kind": "enable"}));
+    client.read_until(|event| {
+        matches!(event, hebbian_contracts::Event::State(sample) if sample.mode == hebbian_contracts::ArmMode::Holding)
+    });
+
+    let address = server.local_address();
+    overloaded.store(true, Ordering::Relaxed);
+    wait_for_state(address, |state| {
+        let arm = &state["arms"][0];
+        arm["fault"].is_null()
+            && arm["active_trip"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty())
+            && arm["status"] == arm["active_trip"]
+    });
+    overloaded.store(false, Ordering::Relaxed);
+    wait_for_state(address, |state| {
+        let arm = &state["arms"][0];
+        arm["mode"] == "holding" && arm["active_trip"].is_null()
+    });
+}
+
 #[test]
 fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let config = ExecutorConfig::parse(CONFIG).unwrap();
@@ -105,18 +189,18 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
         ("second".into(), second.handle()),
     ]));
     let _arms = RunningArms::start(vec![
-        ArmSetup {
-            name: "first".into(),
-            config: config.clone(),
-            plant: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
-            link: Some(first),
-        },
-        ArmSetup {
-            name: "second".into(),
+        ArmSetup::new(
+            "first".into(),
+            config.clone(),
+            SimulatedPlant::at(vec![0.0, 0.0], 0.02),
+            Some(first),
+        ),
+        ArmSetup::new(
+            "second".into(),
             config,
-            plant: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
-            link: Some(second),
-        },
+            SimulatedPlant::at(vec![0.0, 0.0], 0.02),
+            Some(second),
+        ),
     ]);
     let address = server.local_address();
     wait_for_state(address, |state| {

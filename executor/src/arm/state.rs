@@ -1,5 +1,3 @@
-//! The state machine's state, and how it is read.
-
 use std::collections::{HashMap, VecDeque};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,17 +19,14 @@ pub struct ArmCore {
     pub(super) last_finished: Option<String>,
     pub(super) stream: Option<HeldStreamGoal>,
     pub(super) gripper_command: Option<GripperCommand>,
-    // Stop asks the jaw to hold where it is; the loop acts on it once.
+    // INVARIANT: Stop asks the jaw to hold where it is; the loop acts on it once.
     pub(super) gripper_stop_requested: bool,
     pub(super) shutdown: ShutdownState,
-    /// The trace context of the request being admitted, copied onto its records.
     pub(super) trace_context: Option<TraceContext>,
     pub(super) observation: Option<Observation>,
     pub(super) segment: Option<String>,
 }
 
-/// A command or group id, unique within the process and across restarts: the
-/// process's start time then its running count, in hex.
 pub(crate) fn new_identifier() -> String {
     static START_SECONDS: OnceLock<u64> = OnceLock::new();
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -44,8 +39,6 @@ pub(crate) fn new_identifier() -> String {
 }
 
 impl ArmCore {
-    /// A disabled arm; `publish` is called, on the thread that owns the core, with every
-    /// logged event the core raises.
     #[must_use]
     pub fn new(limits: Limits, publish: impl Fn(Event) + Send + 'static) -> Self {
         Self {
@@ -66,8 +59,6 @@ impl ArmCore {
         }
     }
 
-    // ----- reading -----------------------------------------------------------
-
     #[must_use]
     pub fn mode(&self) -> ArmMode {
         self.power.mode()
@@ -84,10 +75,7 @@ impl ArmCore {
         }
     }
 
-    /// Whether a stopped arm can be handed to another controller.
-    ///
-    /// A stop record completes when the request is accepted, before an active
-    /// motion or the jaw has necessarily reached its hold target.
+    // SAFETY: A stop record completes at acceptance, before motion or the jaw necessarily reaches its hold target. Handoff must also check physical readiness.
     pub(crate) fn ready_for_control_handoff(&self) -> Result<bool, Rejection> {
         if self.mode().refuses_everything() {
             return Err(self.faulted_rejection());
@@ -117,7 +105,6 @@ impl ArmCore {
         self.records.get(command_id)
     }
 
-    /// The command being carried out, if any.
     #[must_use]
     pub(crate) fn active_command_id(&self) -> Option<&str> {
         match &self.lifecycle {
@@ -140,7 +127,6 @@ impl ArmCore {
         self.segment.as_deref()
     }
 
-    /// The trace context to put on the records of the requests admitted next.
     pub fn set_trace_context(&mut self, trace_context: Option<TraceContext>) {
         self.trace_context = trace_context;
     }
@@ -150,15 +136,11 @@ impl ArmCore {
         self.shutdown != ShutdownState::NotRequested
     }
 
-    /// Whether a stop was asked of the active command, or shutdown has begun
-    /// (except while the shutdown return to rest is running).
     #[must_use]
     pub(crate) fn stop_requested(&self) -> bool {
         self.shutdown == ShutdownState::Stopping || matches!(self.lifecycle, Lifecycle::Stopping(_))
     }
 
-    /// Whether shutdown was asked for and has run its course: the motors are off
-    /// and nothing is left to carry out.
     #[must_use]
     pub(crate) fn shutdown_finished(&self) -> bool {
         self.shutdown_requested()
@@ -166,7 +148,6 @@ impl ArmCore {
             && !self.busy()
     }
 
-    /// The goal the active stream follows, and when it last changed.
     #[must_use]
     pub(crate) fn stream_goal(&self, command_id: &str) -> Option<(&StreamGoal, Instant)> {
         self.stream

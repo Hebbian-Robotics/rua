@@ -5,10 +5,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import NewType, Self
+from typing import NewType, Self, assert_never
 
 from hebbian_rua.client.contract.station_api import (
     ApproveRecoveryCommand,
+    CameraListing,
     ClearFaultCommand,
     CommandOutcome,
     CommandRecord,
@@ -87,10 +88,35 @@ class ResultOutcome(StrEnum):
     SUPERSEDED = CommandOutcome.superseded.value
     FAULTED = CommandOutcome.faulted.value
     FAILED = CommandOutcome.failed.value
+    INTERRUPTED = CommandOutcome.interrupted.value
     # The station refused the command: the arm never moved.
     REJECTED = "rejected"
     # The station has not reported an outcome.
     UNFINISHED = "unfinished"
+
+    @classmethod
+    def from_command_outcome(cls, outcome: CommandOutcome) -> "ResultOutcome":
+        match outcome:
+            case CommandOutcome.completed:
+                return cls.COMPLETED
+            case CommandOutcome.stopped:
+                return cls.STOPPED
+            case CommandOutcome.tripped:
+                return cls.TRIPPED
+            case CommandOutcome.timed_out:
+                return cls.TIMED_OUT
+            case CommandOutcome.stopped_short:
+                return cls.STOPPED_SHORT
+            case CommandOutcome.superseded:
+                return cls.SUPERSEDED
+            case CommandOutcome.faulted:
+                return cls.FAULTED
+            case CommandOutcome.failed:
+                return cls.FAILED
+            case CommandOutcome.interrupted:
+                return cls.INTERRUPTED
+            case _ as unreachable:
+                assert_never(unreachable)
 
 
 def command_record_was_limited(record: CommandRecord) -> bool:
@@ -122,7 +148,7 @@ class CommandResult:
         outcome = (
             ResultOutcome.UNFINISHED
             if answer.completion is None
-            else ResultOutcome(answer.completion.outcome.value)
+            else ResultOutcome.from_command_outcome(answer.completion.outcome)
         )
         return cls(
             outcome, answer.completion.detail if answer.completion else None, answer
@@ -148,6 +174,39 @@ class CameraJpeg:
     retrieved_between_unix_seconds: tuple[float, float]
     # None when the station did not say; frames from LiveKit cameras carry it.
     captured_at_unix_ns: int | None
+
+
+class CameraUnavailable(Exception):
+    """The media service has no fresh frame for this camera.
+
+    `listed` is what the media service reports. A camera missing from it was never
+    published or the name is wrong; one listed as unavailable stopped streaming.
+    `last_error` is the latest failure the station saw in the media programs' output for
+    it, when the station could be asked.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        listed: list[CameraListing],
+        last_error: str | None = None,
+    ) -> None:
+        known = (
+            ", ".join(
+                f"{camera.name} ({'streaming' if camera.available else 'unavailable'})"
+                for camera in listed
+            )
+            if listed
+            else "no cameras; check that the media service is running and the "
+            "station's --camera device ids are current"
+        )
+        super().__init__(
+            f"camera '{name}' is not streaming (the media service lists {known})"
+            + ("" if last_error is None else f"; last error: {last_error}")
+        )
+        self.name = name
+        self.listed = listed
+        self.last_error = last_error
 
 
 class LeaseLost(Exception):

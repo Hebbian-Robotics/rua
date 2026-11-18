@@ -1,5 +1,3 @@
-"""Launch the RUA station; simulators are separate processes."""
-
 import os
 import shutil
 import sys

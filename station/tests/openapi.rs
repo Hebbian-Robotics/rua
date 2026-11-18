@@ -1,6 +1,10 @@
-//! `schemas/openapi.json` lists exactly the routes the routers serve: every documented
-//! path answers the documented methods and nothing else, and no router registers a path
-//! the document lacks.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
@@ -13,8 +17,6 @@ use hebbian_robot_use_server::station_api::HttpServer;
 use hebbian_station::openapi::{Server, routes};
 use hebbian_station::web::{self, WebSettings};
 
-/// Status and `Allow` header of a `PATCH`, which no route accepts, so a matched path
-/// answers 405 with the methods it does accept.
 fn probe(address: SocketAddr, path: &str) -> (u16, Option<String>) {
     let mut stream = TcpStream::connect(address).unwrap();
     stream
@@ -44,7 +46,7 @@ fn registered_paths(source: &str, prefix: &str) -> BTreeSet<String> {
         .filter_map(|call| {
             let literal = call.trim_start().strip_prefix('"')?;
             let path = &literal[..literal.find('"')?];
-            Some(format!("{prefix}{path}").replace("{*path}", "{path}"))
+            Some(format!("{prefix}{path}").replace("{*", "{"))
         })
         .collect()
 }
@@ -103,7 +105,7 @@ fn the_openapi_document_matches_the_routers() {
             .map(|method| method.trim().to_owned())
             .filter(|method| !method.is_empty())
             .collect();
-        // Axum answers HEAD wherever it answers GET.
+        // CONSTRAINT: Axum answers HEAD wherever it answers GET.
         if routed_methods.contains("GET") {
             routed_methods.remove("HEAD");
         }

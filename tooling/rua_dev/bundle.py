@@ -1,5 +1,3 @@
-"""Assemble the single public distribution from internal native build artifacts."""
-
 import shutil
 import subprocess
 import tempfile
@@ -47,7 +45,9 @@ def assemble_bundle(
     robot_assets = {
         f"robots/so101/{filename}" for filename in robot_asset_pin["files"]
     } | {"robots/so101-assets.toml"}
-    with tempfile.TemporaryDirectory(prefix="rua-bundle-") as temporary:
+    output.mkdir(parents=True, exist_ok=True)
+    # WHY: Keep staging on the output filesystem so publication is one atomic rename.
+    with tempfile.TemporaryDirectory(prefix=".rua-bundle-", dir=output) as temporary:
         staging = Path(temporary)
         shutil.copytree(
             repository / "hebbian_rua",
@@ -89,11 +89,11 @@ def assemble_bundle(
             check=True,
         )
         python_wheel = next((staging / "wheels").glob("*.whl"))
-        output.mkdir(parents=True, exist_ok=True)
         destination = output / f"hebbian_rua-{version}-py3-none-{platform_tag}.whl"
         distribution = f"hebbian_rua-{version}"
         included: set[str] = set()
-        with WheelFile(destination, "w") as bundle:
+        staged_wheel = staging / destination.name
+        with WheelFile(staged_wheel, "w") as bundle:
             for artifact in (python_wheel, server_wheel, media_wheel):
                 with ZipFile(artifact) as source:
                     for entry in source.infolist():
@@ -106,20 +106,10 @@ def assemble_bundle(
                         if parts[0].endswith(".data"):
                             target = f"{distribution}.data/" + "/".join(parts[1:])
                             asset = target.split("/data/share/hebbian-robot-use/", 1)
-                            if len(asset) == 2:
-                                relative = asset[1]
-                                if relative.startswith("dist/"):
-                                    continue
-                                if (
-                                    relative.startswith("robots/")
-                                    and relative not in robot_assets
-                                ):
-                                    continue
-                                if (
-                                    relative.startswith("profiles/")
-                                    and relative not in public_profiles
-                                ):
-                                    continue
+                            if len(asset) == 2 and not include_bundle_asset(
+                                asset[1], public_profiles, robot_assets
+                            ):
+                                continue
                         if target in included:
                             raise ValueError(
                                 f"Conflicting bundled wheel file: {target}"
@@ -147,7 +137,20 @@ def assemble_bundle(
                         copied_entry.external_attr = entry.external_attr
                         copied_entry.compress_type = entry.compress_type
                         bundle.writestr(copied_entry, content)
+        staged_wheel.replace(destination)
     return destination
+
+
+def include_bundle_asset(
+    relative_path: str, public_profiles: set[str], robot_assets: set[str]
+) -> bool:
+    if relative_path.startswith("dist/"):
+        return False
+    if relative_path.startswith("robots/"):
+        return relative_path in robot_assets
+    if relative_path.startswith("profiles/"):
+        return relative_path in public_profiles
+    return True
 
 
 def build_rua_bundle(
@@ -157,22 +160,32 @@ def build_rua_bundle(
     server_wheel: Path | None = None,
     media_wheel: Path | None = None,
 ) -> Path:
-    """Build native components and assemble the release from its source checkout."""
     from rua_dev.models import BuildPlatform
-    from rua_dev.packaging import build_packages
+    from rua_dev.packaging import build_packages, built_wheel
 
     if (server_wheel is None) != (media_wheel is None):
         raise ValueError("Supply both --server-wheel and --media-wheel, or neither")
     if server_wheel is None or media_wheel is None:
-        build_packages(
-            repository, BuildPlatform.LOCAL, include_viewer=False, include_media=True
-        )
-        version = tomllib.loads((repository / "pyproject.toml").read_text())["project"][
-            "version"
-        ]
-        directory = repository / "target/local-wheels"
-        server_wheel = next(directory.glob(f"hebbian_robot_use_server-{version}-*.whl"))
-        media_wheel = next(directory.glob(f"hebbian_robot_use_media-{version}-*.whl"))
+        with tempfile.TemporaryDirectory(prefix="rua-native-wheels-") as temporary:
+            directory = Path(temporary)
+            build_packages(
+                repository,
+                BuildPlatform.LOCAL,
+                include_viewer=False,
+                include_media=True,
+                output_directory=directory,
+            )
+            version = tomllib.loads((repository / "pyproject.toml").read_text())[
+                "project"
+            ]["version"]
+            server_wheel = built_wheel(directory, "hebbian_robot_use_server", version)
+            media_wheel = built_wheel(directory, "hebbian_robot_use_media", version)
+            return assemble_bundle(
+                source_directory or repository,
+                server_wheel,
+                media_wheel,
+                repository / "dist",
+            )
     return assemble_bundle(
         source_directory or repository,
         server_wheel.resolve(),

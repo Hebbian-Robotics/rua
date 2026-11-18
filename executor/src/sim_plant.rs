@@ -1,21 +1,4 @@
-//! A plant that is somebody else's simulator, reached over a Unix socket.
-//!
-//! The executor listens; the simulator connects and says hello with the joints it
-//! serves and where they are. From then on the simulator drives time: each cycle
-//! the executor sends one [`SimStep`] (the commanded joint targets and how long
-//! the step lasts), the simulator advances its physics by that long and answers
-//! with one [`SimState`]. The executor never sleeps while waiting, so a simulator
-//! may run faster or slower than real time, and a run is as deterministic as the
-//! simulator is. A simulator that disconnects, or does not answer within the
-//! configured time, stops the arm's loop like any plant that cannot be read.
-//!
-//! Replies are read at the start of the next cycle, not right after the step is
-//! sent, so that several arms sharing one scene can all send their step before the
-//! simulator advances the shared physics once and answers every arm.
-//!
-//! Messages are one JSON object per line. These types are the contract:
-//! `hebbian-robot-use-server schema --sim-plant` writes their JSON Schema, and the Python
-//! models in `hebbian_rua.client` are generated from it.
+// INVARIANT: Read step replies at the next cycle’s start so every arm sharing a scene can submit its step before the simulator advances the common physics.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -23,71 +6,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail, ensure};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use hebbian_contracts::{SimHello, SimPlantContract, SimState, SimStep};
+use serde::Deserialize;
 
 use crate::plant::{Feedback, Pacing, Plant};
 
-/// Bumped when the messages change in a way an old simulator cannot follow.
 pub(crate) const PROTOCOL_VERSION: u32 = 1;
 
-/// What the simulator measures after a step. Efforts are in the profile's effort
-/// unit (percent of rated for the SO-101 profiles).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SimState {
-    /// The arm's joints, in the order of the hello's `joint_names`.
-    pub positions: Vec<f64>,
-    pub velocities: Vec<f64>,
-    pub efforts: Vec<f64>,
-    /// The jaw's angle in the URDF's gripper joint; present when the arm has one.
-    #[serde(default)]
-    pub gripper_angle: Option<f64>,
-}
-
-/// The simulator's first line: who it is, and where the arm starts.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SimHello {
-    pub protocol_version: u32,
-    /// The URDF joint names the simulator serves: the arm's, then the gripper's
-    /// when it has one. They must equal the executor's driven joints.
-    pub joint_names: Vec<String>,
-    pub state: SimState,
-}
-
-/// What the executor sends each cycle.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SimStep {
-    /// Position targets for the arm's joints.
-    pub positions: Vec<f64>,
-    /// The jaw's target angle, when the arm has a gripper.
-    #[serde(default)]
-    pub gripper_angle: Option<f64>,
-    /// How much simulated time this step lasts.
-    pub seconds: f64,
-    /// Whether the arm has torque. When it does not, the targets are the arm's
-    /// own positions and the simulator should let it rest where it is.
-    pub powered: bool,
-}
-
-/// The messages of the simulator socket, as one type for the schema.
-#[derive(JsonSchema)]
-pub struct SimPlantContract {
-    /// The simulator's first line.
-    pub hello: SimHello,
-    /// The simulator's reply to each step.
-    pub state: SimState,
-    /// The executor's line each cycle.
-    pub step: SimStep,
-}
-
-/// The sim-plant contract's JSON Schema, pretty-printed with a trailing newline.
-///
-/// # Panics
-/// Never in practice: a schema is always serializable.
 #[must_use]
+#[expect(
+    clippy::expect_used,
+    reason = "Schemars schemas contain only JSON-compatible data and cannot fail JSON serialization."
+)]
 pub fn schema_json() -> String {
     let schema = schemars::schema_for!(SimPlantContract);
     let mut text = serde_json::to_string_pretty(&schema).expect("a schema serializes");
@@ -95,13 +25,10 @@ pub fn schema_json() -> String {
     text
 }
 
-/// How long the executor waits for a simulator to connect, and for each reply.
 #[derive(Debug, Clone, Copy)]
 pub struct SimTimeouts {
     pub connect: Duration,
     pub reply: Duration,
-    /// Whether cycles wait out the wall-clock period (the default), or run as fast
-    /// as the simulator replies.
     pub real_time: bool,
 }
 
@@ -110,19 +37,13 @@ pub struct SocketPlant {
     writer: UnixStream,
     joint_count: usize,
     state: SimState,
-    /// The jaw target sent with each step, the last one commanded.
     gripper_target: Option<f64>,
     powered: bool,
-    /// A step was sent and its reply has not been read.
     awaiting_reply: bool,
     real_time: bool,
 }
 
 impl SocketPlant {
-    /// Listen on `path` and wait for the simulator to connect and say hello.
-    ///
-    /// # Errors
-    /// No simulator connected in time, or its hello does not match the arm.
     pub fn accept(
         listener: &UnixListener,
         driven_joints: &[String],
@@ -307,7 +228,7 @@ impl Plant for SocketPlant {
     }
 
     fn advance(&mut self, seconds: f64) -> anyhow::Result<()> {
-        // An arm whose loop has ended is not read any more; take its last reply
+        // WHY: An arm whose loop has ended is not read any more; take its last reply
         // before the next step so the simulator is not left waiting.
         if self.awaiting_reply {
             self.read_feedback()?;
@@ -318,6 +239,10 @@ impl Plant for SocketPlant {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "These tests command only a simulated plant over local sockets."
+)]
 mod tests {
     use std::os::unix::net::UnixStream;
 

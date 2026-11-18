@@ -1,5 +1,3 @@
-//! Tool feedback shared by all motion paths, in the station world frame.
-
 use crate::config::ExecutorConfig;
 use crate::plant::Feedback;
 use crate::robot::Robot;
@@ -7,12 +5,9 @@ use anyhow::Context;
 use nalgebra::Isometry3;
 use std::sync::Arc;
 
-/// The tool's pose from joint readings, for the arm's records, in the station's
-/// world frame, which targets are given in.
 pub(crate) struct ToolPose {
     robot: Arc<Robot>,
     link: String,
-    /// Where the URDF root sits in the world.
     base: Isometry3<f64>,
 }
 
@@ -30,11 +25,10 @@ impl ToolPose {
             base: config
                 .base_pose
                 .as_ref()
-                .map_or_else(Isometry3::identity, crate::config::BasePose::isometry),
+                .map_or_else(Isometry3::identity, crate::kinematics::base_pose_isometry),
         }))
     }
 
-    /// Position and quaternion (xyzw); none where the model cannot say.
     pub(crate) fn pose(&self, feedback: &Feedback) -> Option<([f64; 3], [f64; 4])> {
         let pose = self.base
             * self

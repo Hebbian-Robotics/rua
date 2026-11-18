@@ -1,11 +1,6 @@
-//! The arm's kinematic tree and collision geometry, read from the robot's URDF.
-//!
-//! Shared forward kinematics for tool poses, lowest-point queries and collision
-//! geometry. The executor applies its own table and path admission policy using
-//! these queries; the model has no station configuration or hardware I/O.
-
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, anyhow, bail, ensure};
 use nalgebra::{Isometry3, Point3, Translation3, Unit, UnitQuaternion, Vector3};
@@ -13,7 +8,6 @@ use urdf_rs::{Geometry, JointType, Pose};
 
 use crate::kinematics::{ChainJoint, SerialChain};
 
-/// A URDF pose: translation, then rotation by roll, pitch, yaw about fixed axes.
 fn isometry(pose: &Pose) -> Isometry3<f64> {
     Isometry3::from_parts(
         Translation3::new(pose.xyz[0], pose.xyz[1], pose.xyz[2]),
@@ -26,41 +20,42 @@ struct JointNode {
     child: usize,
     origin: Isometry3<f64>,
     axis: Vector3<f64>,
-    /// Which entry of the joint-value vector drives it; `None` when fixed or unlisted.
     slot: Option<usize>,
 }
 
-/// Points that bound a collision shape, in the link frame.
 pub(crate) struct CollisionShape {
     pub link: usize,
-    /// The movable joint the shape rides on; `None` for the fixed base.
     pub joint: Option<usize>,
-    /// The points are the shape's own vertices; cylinders, capsules and spheres
-    /// are only bounded by a box, which is too coarse for collision checks.
+    // CONSTRAINT: Cylinder, capsule and sphere box bounds are too coarse for collision admission;
+    // only mesh/box vertices are exact here.
     pub exact: bool,
     pub points: Vec<Point3<f64>>,
+    centre: Point3<f64>,
+    radius: f64,
 }
+
+// INVARIANT: Cache keys use exact configurations; tracking tolerances and rounding must not
+// reuse geometry for another pose.
+struct CachedConfiguration {
+    joints: Vec<f64>,
+    poses: Arc<[Isometry3<f64>]>,
+    lowest_point: Option<f64>,
+}
+
+const MAXIMUM_CACHED_CONFIGURATIONS: usize = 8;
 
 pub struct Robot {
     links: Vec<String>,
     nodes: Vec<JointNode>,
     shapes: Vec<CollisionShape>,
-    /// Links that move with one of the driven joints, whose geometry and frame
-    /// origin count toward the arm's lowest point.
     moving_links: Vec<usize>,
     slot_count: usize,
     link_index: HashMap<String, usize>,
-    /// Each movable joint's name, and the movable joint it hangs from.
     joint_parents: Vec<Option<usize>>,
+    configurations: Mutex<VecDeque<CachedConfiguration>>,
 }
 
 impl Robot {
-    /// Load the URDF, driving `driven_joints` in order (the arm's joints, then
-    /// the gripper when it has one). Any other movable joint stays at zero.
-    ///
-    /// # Errors
-    /// The URDF is unreadable, lacks a driven joint, drives a joint that is not
-    /// revolute, or references a missing mesh.
     pub fn load(urdf: &Path, driven_joints: &[String]) -> anyhow::Result<Self> {
         let description = urdf_rs::read_file(urdf)
             .with_context(|| format!("Cannot read the URDF {}", urdf.display()))?;
@@ -107,7 +102,6 @@ impl Robot {
             ));
         }
 
-        // Parents before children, from the one link nothing is a child of.
         let mut ordered: Vec<(JointNode, String, bool)> = Vec::new();
         let mut reached = vec![false; links.len()];
         let root = (0..links.len())
@@ -124,7 +118,6 @@ impl Robot {
             ordered.push(entry);
         }
 
-        // The movable joint each link rides on, walking up through fixed joints.
         let mut rides_on: Vec<Option<usize>> = vec![None; links.len()];
         for (index, (node, _, movable)) in ordered.iter().enumerate() {
             rides_on[node.child] = if *movable {
@@ -152,11 +145,17 @@ impl Robot {
             moving_links,
             slot_count: driven_joints.len(),
             link_index,
+            configurations: Mutex::new(VecDeque::with_capacity(MAXIMUM_CACHED_CONFIGURATIONS)),
         })
     }
 
-    /// Each link's pose in the URDF's root frame for these joint values.
-    pub(crate) fn link_poses(&self, joints: &[f64]) -> Vec<Isometry3<f64>> {
+    pub(crate) fn link_poses(&self, joints: &[f64]) -> Arc<[Isometry3<f64>]> {
+        // INVARIANT: A shared preview or preparation worker must never make control wait.
+        if let Ok(configurations) = self.configurations.try_lock()
+            && let Some(cached) = configurations.iter().find(|cached| cached.joints == joints)
+        {
+            return Arc::clone(&cached.poses);
+        }
         let mut poses = vec![Isometry3::identity(); self.links.len()];
         for node in &self.nodes {
             let motion = match node.slot {
@@ -168,16 +167,22 @@ impl Robot {
             };
             poses[node.child] = poses[node.parent] * node.origin * motion;
         }
+        let poses: Arc<[Isometry3<f64>]> = poses.into();
+        if let Ok(mut configurations) = self.configurations.try_lock()
+            && !configurations.iter().any(|cached| cached.joints == joints)
+        {
+            if configurations.len() == MAXIMUM_CACHED_CONFIGURATIONS {
+                configurations.pop_front();
+            }
+            configurations.push_back(CachedConfiguration {
+                joints: joints.to_vec(),
+                poses: Arc::clone(&poses),
+                lowest_point: None,
+            });
+        }
         poses
     }
 
-    /// The serial chain from the URDF root to `tool_link` through the arm's
-    /// first `arm_joint_count` driven joints, which must be the chain's movable
-    /// joints in order.
-    ///
-    /// # Errors
-    /// The link is unknown, or the movable joints on the way to it are not the
-    /// arm's driven joints in order.
     pub fn serial_chain(
         &self,
         tool_link: &str,
@@ -220,7 +225,6 @@ impl Robot {
         &self.shapes
     }
 
-    /// The movable joint that `joint` hangs from, `None` for the base.
     #[must_use]
     pub(crate) fn joint_parent(&self, joint: usize) -> Option<usize> {
         self.joint_parents[joint]
@@ -231,22 +235,16 @@ impl Robot {
         &self.links[link]
     }
 
-    /// Whether the values are one finite number per driven joint.
     #[must_use]
     pub(crate) fn accepts(&self, joints: &[f64]) -> bool {
         joints.len() == self.slot_count && joints.iter().all(|value| value.is_finite())
     }
 
-    /// Number of driven joints expected by pose and collision queries.
     #[must_use]
     pub fn driven_joint_count(&self) -> usize {
         self.slot_count
     }
 
-    /// The pose of a link in the root frame.
-    ///
-    /// # Errors
-    /// The joint values do not match the driven joints, or the link is unknown.
     pub fn link_pose(&self, link: &str, joints: &[f64]) -> anyhow::Result<Isometry3<f64>> {
         if joints.len() != self.slot_count {
             bail!("Wrong number of joint values");
@@ -258,14 +256,17 @@ impl Robot {
         Ok(self.link_poses(joints)[index])
     }
 
-    /// Height of the lowest moving part: collision-geometry points and the origins
-    /// of the moving links, in the root frame.
-    ///
-    /// # Errors
-    /// The joint values do not match the driven joints.
     pub fn lowest_point(&self, joints: &[f64]) -> anyhow::Result<f64> {
         if joints.len() != self.slot_count || joints.iter().any(|value| !value.is_finite()) {
             bail!("Expected finite values for every driven joint");
+        }
+        if let Ok(configurations) = self.configurations.try_lock()
+            && let Some(lowest) = configurations
+                .iter()
+                .find(|cached| cached.joints == joints)
+                .and_then(|cached| cached.lowest_point)
+        {
+            return Ok(lowest);
         }
         let poses = self.link_poses(joints);
         let mut lowest = self
@@ -273,11 +274,22 @@ impl Robot {
             .iter()
             .map(|link| poses[*link].translation.vector.z)
             .fold(f64::INFINITY, f64::min);
-        for shape in &self.shapes {
-            if !self.moving_links.contains(&shape.link) {
+        let moving_shapes = || {
+            self.shapes
+                .iter()
+                .filter(|shape| self.moving_links.contains(&shape.link))
+        };
+        // INVARIANT: A shape's lowest corner is no higher than its centre and no lower
+        // than its sphere's bottom, so a shape whose sphere clears the lowest height
+        // found so far cannot lower it and its corners are skipped.
+        for shape in moving_shapes() {
+            lowest = lowest.min((poses[shape.link] * shape.centre).z);
+        }
+        for shape in moving_shapes() {
+            let pose = &poses[shape.link];
+            if (pose * shape.centre).z - shape.radius >= lowest {
                 continue;
             }
-            let pose = &poses[shape.link];
             let row = pose
                 .rotation
                 .to_rotation_matrix()
@@ -290,13 +302,19 @@ impl Robot {
                     lowest.min(row[0] * point.x + row[1] * point.y + row[2] * point.z + offset);
             }
         }
+        if let Ok(mut configurations) = self.configurations.try_lock()
+            && let Some(cached) = configurations
+                .iter_mut()
+                .find(|cached| cached.joints == joints)
+        {
+            cached.lowest_point = Some(lowest);
+        }
         Ok(lowest)
     }
 }
 
-/// Every driven joint exists and rotates. Only rotation is modelled: a driven
-/// prismatic or fixed joint would otherwise be posed as fixed, and the table
-/// guard would check the wrong pose.
+// SAFETY: A driven prismatic or fixed joint would be posed as stationary and make the
+// table guard check the wrong geometry.
 fn ensure_driven_joints_rotate(
     joints: &[urdf_rs::Joint],
     driven_joints: &[String],
@@ -318,7 +336,6 @@ fn ensure_driven_joints_rotate(
     Ok(())
 }
 
-/// Every collision shape of every link, with the movable joint it rides on.
 fn collision_shapes(
     links: &[urdf_rs::Link],
     rides_on: &[Option<usize>],
@@ -329,6 +346,17 @@ fn collision_shapes(
         for collision in &description_link.collision {
             let placement = isometry(&collision.origin);
             let points = shape_points(&collision.geometry, directory)?;
+            let points = hull_vertices(points.iter().map(|point| placement * point).collect());
+            let centre = Point3::from(
+                points
+                    .iter()
+                    .fold(Vector3::zeros(), |sum, point| sum + point.coords)
+                    / crate::numeric::count(points.len().max(1)),
+            );
+            let radius = points
+                .iter()
+                .map(|point| (point - centre).norm())
+                .fold(0.0, f64::max);
             shapes.push(CollisionShape {
                 link,
                 joint: rides_on[link],
@@ -336,16 +364,17 @@ fn collision_shapes(
                     collision.geometry,
                     Geometry::Mesh { .. } | Geometry::Box { .. }
                 ),
-                points: hull_vertices(points.iter().map(|point| placement * point).collect()),
+                points,
+                centre,
+                radius,
             });
         }
     }
     Ok(shapes)
 }
 
-/// The corners of the points' convex hull, which bound them exactly as all of
-/// them do: the lowest point and the self-collision hull are the same, from far
-/// fewer points. Points with no hull of their own (a flat mesh) stay as they are.
+// WHY: Convex-hull vertices preserve the lowest point and collision hull with fewer
+// points; flat meshes without a hull retain their original points.
 fn hull_vertices(points: Vec<Point3<f64>>) -> Vec<Point3<f64>> {
     let as_parry: Vec<parry3d_f64::math::Vec3> = points
         .iter()
@@ -361,7 +390,6 @@ fn hull_vertices(points: Vec<Point3<f64>>) -> Vec<Point3<f64>> {
     }
 }
 
-/// Points that bound a collision shape: a mesh's vertices, else its box corners.
 fn shape_points(geometry: &Geometry, directory: &Path) -> anyhow::Result<Vec<Point3<f64>>> {
     let corners = |half: [f64; 3]| -> Vec<Point3<f64>> {
         let mut points = Vec::new();
@@ -428,13 +456,20 @@ mod tests {
         let _ = std::fs::remove_file(path);
         let robot = robot.unwrap();
         let chain = robot.serial_chain("tool", 2).unwrap();
-        for joints in [[0.0, 0.0], [0.7, -0.4], [-1.3, 1.1]] {
+        for joints in [
+            [0.0, 0.0],
+            [0.7, -0.4],
+            [-1.3, 1.1],
+            [0.0, 0.0],
+            [0.0, 1e-8],
+            [1e-8, 0.0],
+            [0.0, 0.0],
+        ] {
             let expected = robot.link_pose("tool", &joints).unwrap();
             let found = chain.tool_pose(&joints);
             assert!((expected.translation.vector - found.translation.vector).norm() < 1e-12);
             assert!(expected.rotation.angle_to(&found.rotation) < 1e-12);
         }
-        // Asking for more arm joints than lie on the way to the tool is refused.
         assert!(robot.serial_chain("tool", 3).is_err());
     }
 

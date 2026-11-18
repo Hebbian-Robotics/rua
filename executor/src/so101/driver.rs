@@ -1,7 +1,8 @@
-//! Adapt the independent SO-101 driver to the station's plant interface.
-//!
-//! Hardware checks and register operations live in `hebbian_so101`. This module
-//! translates telemetry and communication failures without changing control policy.
+#![allow(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = "This adapter translates control-loop operations to the standalone hardware driver."
+)]
 
 use crate::plant::{CommunicationFailure, Feedback, Plant, Reconnection, RecoveryObservation};
 pub use hebbian_so101::driver::{BusTiming, SerialBus, ServoBus, Servos, StateBlock};
@@ -58,7 +59,7 @@ impl From<hardware::RecoveryObservation> for RecoveryObservation {
 
 impl<B: ServoBus> Plant for Servos<B> {
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
-        // Move buffers across the boundary and return them even when a read fails.
+        // INVARIANT: Move buffers across the boundary and return them even when a read fails.
         // No telemetry cloning or additional per-cycle allocation is introduced.
         let mut hardware_feedback = std::mem::take(feedback).into();
         let result =

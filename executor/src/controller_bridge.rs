@@ -1,12 +1,7 @@
-//! Adapt the station's admitted arm requests to the controller wire protocol.
-//!
-//! The station keeps its lease checks. The controller receives only requests
-//! that passed them and still admits grouped moves in one control-loop cycle.
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 
-use hebbian_contracts::{CommandRecord, RejectionReason};
+use hebbian_contracts::{ArmRecord, CommandRecord, RejectionReason};
 
 use crate::arm::Rejection;
 use crate::controller_transport::{
@@ -15,7 +10,6 @@ use crate::controller_transport::{
 };
 use crate::handoff::{ArmHandle, ArmInbox, ArmRequest};
 
-/// The station side of one arm's handoff. Dropping it drops queued requests.
 pub struct StationArm {
     inbox: ArmInbox,
 }
@@ -25,8 +19,8 @@ impl StationArm {
         Self { inbox }
     }
 
-    /// Stop admitting requests and reject all requests not yet sent to the controller.
-    /// This fence is atomic with enqueue, so a queued request cannot cross reconnect.
+    // INVARIANT: Stop admitting requests and reject all requests not yet sent to the controller.
+    // This fence is atomic with enqueue, so a queued request cannot cross reconnect.
     pub fn suspend(&self) {
         self.inbox.set_available(false);
         while let Some((_, answer)) = self.next_request() {
@@ -37,12 +31,10 @@ impl StationArm {
         }
     }
 
-    /// Accept new requests after a fresh controller has completed its startup checks.
     pub fn resume(&self) {
         self.inbox.set_available(true);
     }
 
-    /// Take one request without blocking the station or the motor loop.
     #[must_use]
     pub fn next_request(&self) -> Option<(ControllerRequest, PendingStationAnswer)> {
         self.inbox.next().map(|request| match request {
@@ -61,6 +53,18 @@ impl StationArm {
                     trace_context,
                 },
                 PendingStationAnswer(PendingStationAnswerKind::Submit(reply)),
+            ),
+            ArmRequest::ActionStep {
+                actions,
+                trace_context,
+                reply,
+                ..
+            } => (
+                ControllerRequest::ActionStep {
+                    actions,
+                    trace_context,
+                },
+                PendingStationAnswer(PendingStationAnswerKind::ActionStep(reply)),
             ),
             ArmRequest::MoveArms {
                 label,
@@ -82,8 +86,8 @@ impl StationArm {
 
 const MAXIMUM_IN_FLIGHT_REQUESTS: usize = 128;
 
-/// The station's handoffs persist across controller instances. Only a fresh,
-/// verified controller may activate them; disconnect fences and drains them.
+// INVARIANT: The station's handoffs persist across controller instances. Only a fresh,
+// verified controller may activate them; disconnect fences and drains them.
 pub struct StationSession {
     arms: BTreeMap<String, StationArm>,
     active: Option<ActiveStationSession>,
@@ -114,10 +118,6 @@ impl StationSession {
         }
     }
 
-    /// Activate only after the controller has completed its startup checks.
-    ///
-    /// # Errors
-    /// A controller session is already active or this instance has been used.
     pub fn activate(&mut self, instance: ControllerInstanceId) -> Result<(), &'static str> {
         if self.active.is_some() {
             return Err("A controller session is already active");
@@ -136,9 +136,13 @@ impl StationSession {
         Ok(())
     }
 
-    /// Take one request to send. Once taken, losing the connection makes its
-    /// execution outcome unknown, even if the transport write did not complete.
+    // CONSTRAINT: Take one request to send. Once taken, losing the connection makes its
+    // execution outcome unknown, even if the transport write did not complete.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "A u64 session counter cannot exhaust in practice; wrapping could alias an in-flight request."
+    )]
     pub fn next_message(&mut self) -> Option<ControllerMessage> {
         let active = self.active.as_mut()?;
         if active.pending.len() >= MAXIMUM_IN_FLIGHT_REQUESTS {
@@ -154,6 +158,16 @@ impl StationSession {
             .checked_add(1)
             .expect("controller request IDs exhausted");
         let record_arms = match &request {
+            ControllerRequest::ActionStep { actions, .. } => actions
+                .iter()
+                .flat_map(|action| {
+                    std::iter::repeat_n(
+                        action.arm.clone(),
+                        usize::from(action.movement.is_some())
+                            + usize::from(action.gripper.is_some()),
+                    )
+                })
+                .collect(),
             ControllerRequest::MoveArms { moves, .. } => {
                 moves.iter().map(|part| part.arm.clone()).collect()
             }
@@ -173,8 +187,6 @@ impl StationSession {
         })
     }
 
-    /// Route an answer to its waiter. Returns false for unknown request IDs or
-    /// messages that are not answers, so the connection can be treated as invalid.
     pub fn answer(
         &mut self,
         instance: ControllerInstanceId,
@@ -195,6 +207,17 @@ impl StationSession {
                 if waiter.arms.len() == 1 =>
             {
                 remember_record(&waiter.arms[0], record);
+            }
+            (PendingStationAnswerKind::ActionStep(_), ControllerAnswer::ActionStep(records))
+                if records.len() == waiter.arms.len()
+                    && records
+                        .iter()
+                        .zip(&waiter.arms)
+                        .all(|(record, arm)| &record.arm == arm) =>
+            {
+                for record in records {
+                    remember_record(&record.arm, &record.record);
+                }
             }
             (PendingStationAnswerKind::MoveArms(_), ControllerAnswer::MovedArms(records))
                 if records.len() == waiter.arms.len() =>
@@ -220,7 +243,6 @@ impl StationSession {
         true
     }
 
-    /// Fence the handoffs, reject unsent work, and report sent work as unknown.
     pub fn disconnect(&mut self) {
         for arm in self.arms.values() {
             arm.suspend();
@@ -243,19 +265,18 @@ impl Drop for StationSession {
     }
 }
 
-/// The local waiter corresponding to a request sent over the process boundary.
-/// Dropping this value wakes the waiter with the existing disconnected outcome.
 pub struct PendingStationAnswer(PendingStationAnswerKind);
 
 enum PendingStationAnswerKind {
     Readiness(Sender<Result<bool, Rejection>>),
     Submit(crate::handoff::CommandReply<Result<CommandRecord, Rejection>>),
     MoveArms(crate::handoff::CommandReply<Result<Vec<CommandRecord>, Rejection>>),
+    ActionStep(crate::handoff::CommandReply<Result<Vec<ArmRecord>, Rejection>>),
 }
 
 impl PendingStationAnswer {
-    /// Deliver an answer to the waiting station request. An answer of the wrong
-    /// kind is refused instead of being attributed to a different operation.
+    // INVARIANT: Deliver an answer to the waiting station request. An answer of the wrong
+    // kind is refused instead of being attributed to a different operation.
     pub fn answer(self, answer: ControllerAnswer) {
         let refusal = |reason, detail| Rejection { reason, detail };
         match (self.0, answer) {
@@ -268,6 +289,10 @@ impl PendingStationAnswer {
             (PendingStationAnswerKind::Submit(reply), ControllerAnswer::Submitted(record)) => {
                 reply.send(Ok(*record));
             }
+            (
+                PendingStationAnswerKind::ActionStep(reply),
+                ControllerAnswer::ActionStep(records),
+            ) => reply.send(Ok(records)),
             (PendingStationAnswerKind::MoveArms(reply), ControllerAnswer::MovedArms(records)) => {
                 reply.send(Ok(records));
             }
@@ -294,11 +319,13 @@ impl PendingStationAnswerKind {
             Self::MoveArms(reply) => {
                 reply.send(Err(refusal));
             }
+            Self::ActionStep(reply) => {
+                reply.send(Err(refusal));
+            }
         }
     }
 }
 
-/// The controller side of the handoff, connected directly to its control loop.
 #[derive(Clone)]
 pub struct LoopArm {
     handle: ArmHandle,
@@ -309,11 +336,7 @@ impl LoopArm {
         Self { handle }
     }
 
-    /// Queue one station-admitted request. The returned waiter is for a
-    /// transport thread; the control loop must never block on it.
-    ///
-    /// # Errors
-    /// The local loop no longer accepts requests.
+    // CONSTRAINT: Wait for transport replies off the control loop; that loop must never block on the reply channel.
     pub fn submit(
         &self,
         request: ControllerRequest,
@@ -330,6 +353,13 @@ impl LoopArm {
                 .handle
                 .submit_unawaited(command, trace_context)
                 .map(PendingLoopAnswerKind::Submit),
+            ControllerRequest::ActionStep {
+                actions,
+                trace_context,
+            } => self
+                .handle
+                .action_step_unawaited(actions, trace_context)
+                .map(PendingLoopAnswerKind::ActionStep),
             ControllerRequest::MoveArms {
                 label,
                 moves,
@@ -348,17 +378,16 @@ impl LoopArm {
     }
 }
 
-/// A controller request awaiting the loop's decision.
 pub struct PendingLoopAnswer(PendingLoopAnswerKind);
 
 enum PendingLoopAnswerKind {
     Readiness(Receiver<Result<bool, Rejection>>),
     Submit(Receiver<Result<CommandRecord, Rejection>>),
     MoveArms(Receiver<Result<Vec<CommandRecord>, Rejection>>),
+    ActionStep(Receiver<Result<Vec<ArmRecord>, Rejection>>),
 }
 
 impl PendingLoopAnswer {
-    /// Wait for the loop on a transport thread.
     #[must_use]
     pub fn wait(self) -> ControllerAnswer {
         fn convert<T>(
@@ -386,6 +415,9 @@ impl PendingLoopAnswer {
             PendingLoopAnswerKind::Submit(receiver) => convert(receiver.recv(), |record| {
                 ControllerAnswer::Submitted(Box::new(record))
             }),
+            PendingLoopAnswerKind::ActionStep(receiver) => {
+                convert(receiver.recv(), ControllerAnswer::ActionStep)
+            }
             PendingLoopAnswerKind::MoveArms(receiver) => {
                 convert(receiver.recv(), ControllerAnswer::MovedArms)
             }

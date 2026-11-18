@@ -1,5 +1,3 @@
-//! Adapt host gripper settings to the independent SO-101 configuration loader.
-
 use super::settings::FeetechSettings;
 use crate::config::FeetechConfig;
 use crate::profile::GripperSettings;

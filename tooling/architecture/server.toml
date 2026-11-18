@@ -1,0 +1,12 @@
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+deny = [
+    { crate = "libwebrtc", reason = "Native media belongs in the supervised media process." },
+    "webrtc-sys",
+    "livekit",
+    "livekit-cameras",
+    "cameras",
+    { crate = "hebbian-robot-use-sdk", reason = "Server implementations must not depend on client SDKs." },
+    "hebbian-robot-use-cli",
+]

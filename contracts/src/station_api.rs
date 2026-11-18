@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ArmRecord, CommandRecord, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
+use crate::{ArmRecord, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
 
 /// A command for one arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -107,7 +107,7 @@ pub enum ActionSequenceMovement {
 /// A movement and gripper target in the same step start together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ActionSequenceStep {
+pub struct ActionSequenceArmAction {
     #[serde(default)]
     pub movement: Option<ActionSequenceMovement>,
     #[serde(default)]
@@ -115,6 +115,22 @@ pub struct ActionSequenceStep {
     /// Speed for both resources in rad/s; overrides the movement speed when provided.
     #[serde(default)]
     pub max_joint_speed: Option<f64>,
+}
+
+/// One synchronized step; a single-arm action is a map with one entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionSequenceStep {
+    pub arms: BTreeMap<String, ActionSequenceArmAction>,
+}
+
+impl ActionSequenceStep {
+    #[must_use]
+    pub fn single(arm: impl Into<String>, action: ActionSequenceArmAction) -> Self {
+        Self {
+            arms: BTreeMap::from([(arm.into(), action)]),
+        }
+    }
 }
 
 /// Identifies one station process for retry and event-cursor fencing.
@@ -181,18 +197,18 @@ pub struct CommandCancellationRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ActionSequenceRequest {
-    pub arm: String,
     pub steps: Vec<ActionSequenceStep>,
-    /// Refuse the action sequence (and stop it between steps) once the arm's revision
-    /// moves past this; see `ArmState::revision`.
+    /// Revisions fence every participating arm throughout the sequence.
     #[serde(default)]
-    pub expected_revision: Option<u64>,
+    pub expected_revisions: BTreeMap<String, u64>,
 }
 
 /// Start an action sequence under an explicit station lease.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ActionSequenceStartRequest {
+    pub request_id: String,
+    pub station_instance_id: String,
     pub lease_token: String,
     pub action_sequence: ActionSequenceRequest,
 }
@@ -206,19 +222,21 @@ pub enum ActionSequencePhase {
     #[schemars(title = "ActionSequenceCompleted")]
     Completed,
     #[schemars(title = "ActionSequenceStopped")]
-    Stopped { detail: String },
+    Stopped { failure: crate::ExecutionFailure },
 }
 
 /// The station's retained action sequence state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActionSequenceRecord {
+    pub continuation: Option<crate::ProgramContinuation>,
     pub id: String,
-    pub arm: String,
+    pub compilation_id: String,
+    pub arms: Vec<String>,
     /// The submitted steps, including those not yet executed.
     pub requested_steps: Vec<ActionSequenceStep>,
     pub phase: ActionSequencePhase,
     /// Command records for steps that have finished or been interrupted.
-    pub steps: Vec<Vec<CommandRecord>>,
+    pub steps: Vec<Vec<ArmRecord>>,
 }
 
 /// Move several arms together: every target is planned before any arm moves,

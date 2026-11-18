@@ -9,6 +9,46 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use std::{fs, process::Command};
 
+/// Wait for durable recorder output rather than assuming startup or delivery
+/// completes within a fixed sleep. An active MCAP can end partway through a
+/// record; final archive checks below still require a completely readable file.
+async fn wait_for_recorded_message(
+    process: &mut tokio::process::Child,
+    recording: &std::path::Path,
+    topic: &str,
+    message_matches: impl Fn(u64, &serde_json::Value) -> bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            assert!(
+                process.try_wait()?.is_none(),
+                "recording process exited before {topic}"
+            );
+            let archive_path = recording.join("recording.mcap");
+            match fs::read(&archive_path) {
+                Ok(data) => {
+                    let messages = mcap::MessageStream::new(&data)?;
+                    for message in messages.map_while(Result::ok) {
+                        if message.channel.topic == topic
+                            && message_matches(
+                                message.log_time,
+                                &serde_json::from_slice(&message.data)?,
+                            )
+                        {
+                            return Ok::<(), Box<dyn std::error::Error>>(());
+                        }
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .map_err(|_| format!("recorder did not write {topic} within 15 seconds"))?
+}
+
 #[tokio::test]
 async fn recorder_marks_controller_loss_even_if_telemetry_was_not_received()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -23,8 +63,13 @@ async fn recorder_marks_controller_loss_even_if_telemetry_was_not_received()
         .env("LIVEKIT_API_SECRET", "test-secret")
         .kill_on_drop(true)
         .spawn()?;
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    assert!(child.try_wait()?.is_none(), "recorder started");
+    wait_for_recorded_message(
+        &mut child,
+        &recording,
+        "/station/recording_errors",
+        |_, _| true,
+    )
+    .await?;
     fs::write(
         recording.join(hebbian_contracts::CONTROLLER_INTERRUPTION_MARKER),
         "controller unavailable",
@@ -59,28 +104,12 @@ async fn recorder_marks_controller_loss_even_if_telemetry_was_not_received()
 async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomplete()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
-    let config = ExecutorConfig::parse(
-        r#"{
-      "urdf":"unused.urdf","driven_joints":["a","b"],"surface_guard":null,
-      "motion":{"acceleration_limit":20.0,"jerk_limit":200.0,"settled_error_radians":0.02,"settle_dwell_seconds":0.1,"settle_timeout_seconds":2.0},
-      "joint_count":2,"frequency_hertz":100.0,"loop_deadline_seconds":0.1,
-      "lower_limits":[-2.0,-2.0],"upper_limits":[2.0,2.0],"joint_effort_limits":[10.0,10.0],
-      "tracking_following_lag_seconds":0.05,"tracking_static_margin_radians":1.5,"max_joint_speed":3.0,"default_joint_speed":1.5,
-      "stream_goal_timeout_seconds":5.0,"joint_limit_recovery_tolerance_radians":0.0349,"jaw_closing_axis":"x"
-    }"#,
-    )?;
+    let config = ExecutorConfig::parse(include_str!(
+        "../../executor/tests/support/two_joint_config.json"
+    ))?;
     let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
     link.publish(hebbian_contracts::Event::ControllerAvailable);
-    let server = tokio::task::spawn_blocking(|| {
-        HttpServer::start(
-            "127.0.0.1:0",
-            vec![],
-            None,
-            Arc::new(LiveRunStore::default()),
-            |_, _| Ok(axum::Router::new()),
-        )
-    })
-    .await??;
+    let server = start_station("127.0.0.1:0".into()).await?;
     server.attach_arms(BTreeMap::from([("left".into(), link.handle())]));
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-media"))
         .args(["record", "--room", "test", "--directory"])
@@ -94,15 +123,30 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
         .env("LIVEKIT_API_SECRET", "test-secret")
         .kill_on_drop(true)
         .spawn()?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    let recording = directory.path().join("recording");
+    wait_for_recorded_message(&mut child, &recording, "/station/controller", |_, event| {
+        event["state"] == "available"
+    })
+    .await?;
     link.controller_unavailable("Controller exited".into());
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    wait_for_recorded_message(&mut child, &recording, "/station/controller", |_, event| {
+        event["state"] == "unavailable"
+    })
+    .await?;
     assert!(
         child.try_wait()?.is_none(),
         "recording continues after controller loss"
     );
+    // WHY: Distinguish the new recovery event from the initial available event.
+    let recovered_after = hebbian_contracts::unix_nanoseconds();
     link.publish(hebbian_contracts::Event::ControllerAvailable);
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    wait_for_recorded_message(
+        &mut child,
+        &recording,
+        "/station/controller",
+        |timestamp, event| event["state"] == "available" && timestamp >= recovered_after,
+    )
+    .await?;
     let status = Command::new("kill")
         .args(["-TERM", &child.id().ok_or("recorder exited")?.to_string()])
         .status()?;
@@ -150,16 +194,10 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
 async fn unreachable_livekit_and_station_reconnect_preserve_recording()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
-    let mut config = ExecutorConfig::parse(
-        r#"{
-      "urdf":"unused.urdf","driven_joints":["a","b"],"surface_guard":null,
-      "motion":{"acceleration_limit":20.0,"jerk_limit":200.0,"settled_error_radians":0.02,"settle_dwell_seconds":0.1,"settle_timeout_seconds":2.0},
-      "joint_count":2,"frequency_hertz":100.0,"loop_deadline_seconds":0.1,
-      "lower_limits":[-2.0,-2.0],"upper_limits":[2.0,2.0],"joint_effort_limits":[10.0,10.0],
-      "tracking_following_lag_seconds":0.05,"tracking_static_margin_radians":1.5,"max_joint_speed":3.0,"default_joint_speed":1.5,
-      "stream_goal_timeout_seconds":5.0,"joint_limit_recovery_tolerance_radians":0.0349,"jaw_closing_axis":"x"
-    }"#,
-    )?.into_input();
+    let mut config = ExecutorConfig::parse(include_str!(
+        "../../executor/tests/support/two_joint_config.json"
+    ))?
+    .into_input();
     config.trace_directory = directory
         .path()
         .join("traces")
@@ -167,16 +205,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .into_owned();
     let config = ExecutorConfig::try_from(config)?;
     let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
-    let server = tokio::task::spawn_blocking(|| {
-        HttpServer::start(
-            "127.0.0.1:0",
-            vec![],
-            None,
-            Arc::new(LiveRunStore::default()),
-            |_, _| Ok(axum::Router::new()),
-        )
-    })
-    .await??;
+    let server = start_station("127.0.0.1:0".into()).await?;
     let arm_links = BTreeMap::from([("left".into(), link.handle())]);
     server.attach_arms(arm_links.clone());
     let shutdown_requested = Arc::new(AtomicBool::new(false));
@@ -187,15 +216,16 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
             &mut plant,
             Some(&link),
             &config,
-            Some(Duration::from_secs(8)),
+            Some(Duration::from_secs(30)),
             &loop_shutdown_requested,
         );
         link.close();
     });
     let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-media");
+    let recording = directory.path().join("recording");
     let mut child = tokio::process::Command::new(executable)
         .args(["record", "--room", "test", "--directory"])
-        .arg(directory.path().join("recording"))
+        .arg(&recording)
         .args([
             "--executor-url",
             &format!("http://{}", server.local_address()),
@@ -205,28 +235,35 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .env("LIVEKIT_API_SECRET", "test-secret")
         .kill_on_drop(true)
         .spawn()?;
-    tokio::time::sleep(Duration::from_secs(1)).await;
     send_run_history(server.local_address()).await?;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    wait_for_recorded_message(&mut child, &recording, "/trace/spans", |_, span| {
+        span["endTimeUnixNano"] == "1500000000"
+    })
+    .await?;
+    wait_for_recorded_message(&mut child, &recording, "/station/state", |_, state| {
+        state["arms"][0]["sampled_at_unix_seconds"].is_number()
+    })
+    .await?;
+    wait_for_recorded_message(
+        &mut child,
+        &recording,
+        "/station/recording_errors",
+        |_, error| {
+            error["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("cameras unavailable"))
+        },
+    )
+    .await?;
     let address = server.local_address().to_string();
     tokio::task::spawn_blocking(move || server.close()).await?;
-    let server = tokio::task::spawn_blocking(move || {
-        HttpServer::start(
-            &address,
-            vec![],
-            None,
-            Arc::new(LiveRunStore::default()),
-            |_, _| Ok(axum::Router::new()),
-        )
-    })
-    .await??;
+    let restarted_at = hebbian_contracts::unix_nanoseconds();
+    let server = start_station(address).await?;
     server.attach_arms(arm_links);
-    let restarted_at = u64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos(),
-    )?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    wait_for_recorded_message(&mut child, &recording, "/station/state", |timestamp, _| {
+        timestamp > restarted_at
+    })
+    .await?;
     let status = Command::new("kill")
         .args(["-TERM", &child.id().ok_or("recorder exited")?.to_string()])
         .status()?;
@@ -245,18 +282,23 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
     Ok(())
 }
 
+async fn start_station(address: String) -> Result<HttpServer, Box<dyn std::error::Error>> {
+    Ok(tokio::task::spawn_blocking(move || {
+        HttpServer::start(
+            &address,
+            vec![],
+            None,
+            Arc::new(LiveRunStore::default()),
+            |_, _| Ok(axum::Router::new()),
+        )
+    })
+    .await??)
+}
+
 fn verify_recording(
     messages: &[mcap::Message<'_>],
     restarted_at: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    assert!(
-        messages
-            .iter()
-            .filter(|message| message.channel.topic == "/station/state")
-            .count()
-            >= 5
-    );
-    // Each state sample also writes the arm's joints as a ROS 2 JointState.
     let joint_state = messages
         .iter()
         .find(|message| message.channel.topic.ends_with("/joint_states"))
@@ -270,7 +312,7 @@ fn verify_recording(
             .map(|schema| schema.name.as_str()),
         Some("sensor_msgs/msg/JointState")
     );
-    // The message ends with the velocity and effort arrays: each a count, padding
+    // CONSTRAINT: The message ends with the velocity and effort arrays: each a count, padding
     // to eight bytes and one double for each of the two joints.
     let per_joint_array_bytes = 4 + 4 + 2 * 8;
     let payload = &joint_state.data;
@@ -372,32 +414,39 @@ async fn send_run_history(address: std::net::SocketAddr) -> Result<(), Box<dyn s
 #[tokio::test]
 async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
 -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::{BufRead, BufReader};
+    use tokio::io::{AsyncBufReadExt, BufReader};
     let directory = tempfile::tempdir()?;
     let recording = directory.path().join("recording");
     let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-media");
-    // The shell stands in for the station: it starts the recorder, names itself
+    // WHY: The shell stands in for the station: it starts the recorder, names itself
     // as supervisor, prints the recorder's pid and then idles until killed.
     let script = format!(
         "\"{executable}\" record --room test --directory \"{}\" \
          --executor-url http://127.0.0.1:1 --supervisor-pid $$ & echo $!; wait",
         recording.display()
     );
-    let mut supervisor = Command::new("sh")
+    let mut supervisor = tokio::process::Command::new("sh")
         .args(["-c", &script])
         .env("LIVEKIT_URL", "ws://127.0.0.1:1")
         .env("LIVEKIT_API_KEY", "test-key")
         .env("LIVEKIT_API_SECRET", "test-secret")
         .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
     let mut line = String::new();
-    BufReader::new(supervisor.stdout.take().ok_or("no stdout")?).read_line(&mut line)?;
+    BufReader::new(supervisor.stdout.take().ok_or("no stdout")?)
+        .read_line(&mut line)
+        .await?;
     let recorder_pid: i32 = line.trim().parse()?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    supervisor.kill()?;
-    supervisor.wait()?;
+    wait_for_recorded_message(
+        &mut supervisor,
+        &recording,
+        "/station/recording_errors",
+        |_, error| error["source"] == "station",
+    )
+    .await?;
+    supervisor.kill().await?;
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    // `kill -0` fails once the recorder has exited.
     while Command::new("kill")
         .args(["-0", &recorder_pid.to_string()])
         .stderr(std::process::Stdio::null())

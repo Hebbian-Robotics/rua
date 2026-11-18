@@ -1,10 +1,6 @@
-//! The arm's records and the values the state machine trades in.
-
 use std::time::Instant;
 
-use hebbian_contracts::{
-    ArmMode, CornerPlan, JawClosingAxis, PathLimited, PoseLimited, RejectionReason,
-};
+use hebbian_contracts::{ArmMode, JawClosingAxis, PathLimited, PoseLimited, RejectionReason};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -21,40 +17,32 @@ pub(super) fn rejection(reason: RejectionReason, detail: impl Into<String>) -> R
     }
 }
 
-/// Why a planned move stops short of what was asked for, if it does.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ShortOfTarget {
     pub path_limited: Option<PathLimited>,
     pub pose_limited: Option<PoseLimited>,
 }
 
-/// When a pose goal counts as reached.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PoseGoalSettings {
     pub position_tolerance_meters: f64,
     pub orientation_tolerance_radians: f64,
 }
 
-/// What the arm's admission rules need from the executor's config.
 #[derive(Debug, Clone)]
 pub struct Limits {
     pub joint_count: usize,
     pub lower: Vec<f64>,
     pub upper: Vec<f64>,
     pub joint_limit_recovery_tolerance_radians: f64,
-    /// The jaw's angle range; none when the arm has no gripper.
     pub gripper: Option<(f64, f64)>,
-    /// How a pose goal counts as reached; none when the arm has no policy to
-    /// reach one with.
     pub pose_goals: Option<PoseGoalSettings>,
-    /// The tool-frame axis the jaws close along, which jaw yaw is measured by.
     pub jaw_closing_axis: JawClosingAxis,
     pub default_joint_speed: f64,
     pub max_joint_speed: f64,
 }
 
-/// When a call happens: wall-clock seconds for records, a monotonic instant for
-/// deadlines. The caller supplies both so tests can control them.
+// CONSTRAINT: Use wall time for records and monotonic time for deadlines; callers supply both.
 #[derive(Debug, Clone, Copy)]
 pub struct Now {
     pub unix_seconds: f64,
@@ -73,7 +61,6 @@ impl Now {
     }
 }
 
-/// What the loop should do next, in the order commands were accepted.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Job {
     Enable {
@@ -87,8 +74,7 @@ pub(crate) enum Job {
     },
     Move {
         command_id: String,
-        plan: CornerPlan,
-        /// Set for one arm's part of a grouped motion.
+        plan: super::AdmittedPlan,
         group: Option<GroupMembership>,
     },
     Reach {
@@ -114,15 +100,12 @@ impl Job {
     }
 }
 
-/// The arms moving together in one grouped motion, in the order their joints are
-/// combined into the shared trajectory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GroupMembership {
-    pub id: String,
+    pub id: crate::motion_values::GroupId,
     pub arms: Vec<String>,
 }
 
-/// Where a reach-and-finish command is going, and how close counts.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReachGoal {
     pub position: [f64; 3],
@@ -131,7 +114,6 @@ pub struct ReachGoal {
     pub orientation_tolerance_radians: f64,
 }
 
-/// The goal a stream follows now.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum StreamGoal {
     Joints {
@@ -144,6 +126,29 @@ pub(crate) enum StreamGoal {
     },
 }
 
+impl StreamGoal {
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            Self::Joints { .. } => "stream_joints",
+            Self::Pose { .. } => "stream_pose",
+        }
+    }
+
+    pub(super) fn joints(&self) -> Option<&[f64]> {
+        match self {
+            Self::Joints { positions, .. } => Some(positions),
+            Self::Pose { .. } => None,
+        }
+    }
+
+    pub(super) fn joint_speed(&self) -> Option<f64> {
+        match self {
+            Self::Joints { joint_speed, .. } => Some(*joint_speed),
+            Self::Pose { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct HeldStreamGoal {
     pub(super) command_id: String,
@@ -153,8 +158,8 @@ pub(super) struct HeldStreamGoal {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct GripperTarget {
-    pub(crate) angle_radians: f64,
-    pub(crate) max_speed_radians_per_second: f64,
+    pub(crate) angle: crate::motion_values::JointAngle,
+    pub(crate) speed: crate::motion_values::JointSpeed,
 }
 
 pub(super) struct GripperCommand {
@@ -196,37 +201,29 @@ impl PowerState {
     }
 }
 
-/// The one command occupying the arm's motion channel.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Lifecycle {
     Idle,
     Queued(Job),
-    /// The previous motion has been superseded, but the loop still owns it.
-    /// The replacement can be cancelled before the loop lets go.
+    // INVARIANT: The previous motion has been superseded, but the loop still owns it.
+    // The replacement can be cancelled before the loop lets go.
     Superseding(Option<Job>),
     Starting(String),
-    Executing {
-        command_id: String,
-        settling: bool,
-    },
+    Executing { command_id: String, settling: bool },
     Stopping(String),
 }
 
-/// Poses that exist only while the motors are enabled.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct Poses {
-    /// Where the arm rested unpowered; shutdown returns there before releasing.
+    // SAFETY: Where the arm rested unpowered; shutdown returns there before releasing.
     pub rest: Vec<f64>,
-    /// Where the arm holds between motions; plans start here.
     pub hold: Vec<f64>,
 }
 
-/// What the loop last saw, for finishing records and for `clear_fault`.
 #[derive(Debug, Clone)]
 pub(crate) struct Observation {
     pub sampled_at: f64,
     pub positions: Vec<f64>,
     pub tool_pose: Option<([f64; 3], [f64; 4])>,
-    /// A fault the plant reports; clear while every motor is healthy.
     pub fault: Option<String>,
 }

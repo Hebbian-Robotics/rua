@@ -74,3 +74,22 @@ that page yourself.
   Allow camera access for your terminal in macOS System Settings when prompted.
   RUA finds the media binary beside the server in `target/debug`.
   Recording additionally needs [FFmpeg](recording.md).
+
+## Compare native publishing codecs
+
+Set `LIVEKIT_CAMERA_CODEC=h264` before starting the station to request H.264
+instead of the default VP8. Set `LIVEKIT_CAMERA_DIAGNOSTICS=true` to report
+publishing statistics every five seconds; omit it for normal operation. These
+variables apply to native USB publishers, not phone cameras or simulation views.
+The media child inherits them from the station environment.
+
+The publisher reports its negotiated codec and encoder once, even with diagnostics
+off. H.264 is a request, not a guarantee of hardware encoding. Compare the same
+camera setup under similar load and inspect the actual encoder and mean encoding
+time. Submission age measures host receipt to WebRTC submission, not the complete
+camera-to-display delay. A running station must restart to use changed variables;
+follow the [hardware restart precautions](hardware.md) for a physical arm.
+
+When invoking `hebbian-robot-use-media publish` directly, the equivalent flags are
+`--video-codec h264 --camera-diagnostics`. The implementation and measurement
+limitations are documented in the [native publisher guide](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/native/publisher/README.md#codec-selection-and-diagnostics).

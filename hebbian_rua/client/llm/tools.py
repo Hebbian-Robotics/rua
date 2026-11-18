@@ -4,12 +4,14 @@ Model-facing definitions are generated from the Rust catalog; these models
 adapt the inputs the existing station client consumes.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceStep,
     MoveArmsCommand,
-    PosePreviewCandidate,
+    PreviewPose,
     StationSetGripperCommand,
     StopCommand,
 )
@@ -17,11 +19,18 @@ from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_CATALOG
 from hebbian_rua.client.llm.types import RobotToolSpec
 
 
+class ModelPreviewCandidate(BaseModel):
+    """A model-facing candidate without transport identifiers."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    pose: PreviewPose
+
+
 class PreviewPoseInput(BaseModel):
     """Independent pose candidates for the selected arm."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    poses: list[PosePreviewCandidate] = Field(min_length=1)
+    poses: list[ModelPreviewCandidate] = Field(min_length=1)
 
 
 class MoveArmsInput(MoveArmsCommand):
@@ -45,14 +54,11 @@ class RehomeInput(BaseModel):
 
 
 class ObserveInput(BaseModel):
-    """Get fresh camera views and the arms' states without commanding motion.
-
-    Optionally wait up to 10 seconds before capturing, for objects to settle.
-    The fresh observation is supplied after this tool returns.
-    """
+    """Request a fresh view or retained images from the latest action sequence."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    source: Literal["current", "last_sequence"] = "current"
     wait_seconds: float = Field(default=0.0, ge=0.0, le=10.0, allow_inf_nan=False)
 
 

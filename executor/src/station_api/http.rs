@@ -1,14 +1,3 @@
-//! Station HTTP routes, client sessions and event delivery.
-//!
-//! Commands cross [`crate::control_link`] to reach the controller. Routes,
-//! preview workers, event replay and file serving run on the HTTP runtime,
-//! outside the motor control cycle.
-//!
-//! Trace downloads are restricted to files directly inside the configured trace
-//! directories. Viewer assets are read from disk at `/viewer/`, not embedded;
-//! packaged installs provide them under the share directory or through
-//! `$HEBBIAN_VIEWER_DIRECTORY`.
-
 use hebbian_contracts::TraceFile;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -34,11 +23,8 @@ use tower_http::set_header::SetResponseHeader;
 
 use crate::control_link::LinkHandle;
 
-/// Threads for the HTTP runtime: enough for a few clients, none taken from the loop.
 const WORKER_THREADS: usize = 2;
-/// Bound concurrently active preview workers per HTTP request.
 const PREVIEW_WORKERS: usize = 4;
-/// How long open connections get to finish when the server closes.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Serialize)]
@@ -46,38 +32,55 @@ struct Health {
     status: &'static str,
 }
 
-pub(crate) struct Served {
+pub(crate) struct StationState {
+    pub(crate) program_submissions: super::submissions::ProgramSubmissions,
+    pub(crate) compiler: crate::station_api::programs::ProgramStore,
+    compilation_targets:
+        OnceLock<Result<BTreeMap<String, hebbian_contracts::CompilationTarget>, String>>,
     trace_directories: Vec<PathBuf>,
-    /// Each arm's link, by name, once the arms are set up; until then the
-    /// HTTP routes report unavailable.
     pub(crate) arms: OnceLock<BTreeMap<String, LinkHandle>>,
-    /// Where a model loop's live telemetry is kept; see `RunTelemetry`.
     pub(crate) telemetry: Arc<dyn crate::station_api::telemetry::RunTelemetry>,
-    pub(crate) action_sequences: crate::station_api::action_sequences::ActionSequenceRegistry,
+    pub(crate) executions: crate::station_api::runtime::ExecutionRegistry,
     pub(crate) instance_id: String,
     pub(crate) command_submissions: crate::station_api::submissions::CommandSubmissions,
     pub(crate) lease_submissions: crate::station_api::submissions::LeaseSubmissions,
     pub(crate) events: Arc<crate::station_api::events::EventJournal>,
 }
 
-/// A running HTTP server; `close` stops it.
+impl StationState {
+    pub(crate) fn compilation_targets(
+        &self,
+    ) -> Result<&BTreeMap<String, hebbian_contracts::CompilationTarget>, String> {
+        let arms = self.arms.get().ok_or("Station arms are not ready")?;
+        self.compilation_targets
+            .get_or_init(|| {
+                super::programs::station_targets(arms).map_err(|error| error.to_string())
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    // INVARIANT: Every arm shares the station lease; any ready arm can handle lease operations.
+    fn lease_link(&self) -> Result<&LinkHandle, (StatusCode, String)> {
+        self.arms
+            .get()
+            .and_then(|arms| arms.values().next())
+            .ok_or((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Station arms are not ready".to_owned(),
+            ))
+    }
+}
+
 pub struct HttpServer {
-    served: Arc<Served>,
+    station_state: Arc<StationState>,
     runtime: Option<tokio::runtime::Runtime>,
     shutdown: Option<oneshot::Sender<()>>,
     address: SocketAddr,
 }
 
 impl HttpServer {
-    /// Bind `address` and serve on new runtime threads, the viewer from
-    /// `viewer_directory` when there is one. `telemetry` keeps what a model loop reports over HTTP.
-    /// `extra_routes` is given the
-    /// runtime and the bound address and returns the routes of whatever else
-    /// this process serves, such as run telemetry and `LiveKit` access; those routes must
-    /// never make the control path wait on the network.
-    ///
-    /// # Errors
-    /// The runtime cannot start, the address cannot be bound, or `extra_routes` fails.
+    // CONSTRAINT: Extra HTTP routes run outside the motor loop and must never make the control path wait on network I/O.
     pub fn start(
         address: &str,
         trace_directories: Vec<PathBuf>,
@@ -95,47 +98,49 @@ impl HttpServer {
             .block_on(tokio::net::TcpListener::bind(address))
             .with_context(|| format!("Cannot listen for HTTP on {address}"))?;
         let bound = listener.local_addr()?;
-        let served = Arc::new(Served {
+        let station_state = Arc::new(StationState {
+            program_submissions: crate::station_api::submissions::ProgramSubmissions::default(),
+            compiler: crate::station_api::programs::ProgramStore::default(),
+            compilation_targets: OnceLock::new(),
             trace_directories,
             arms: OnceLock::new(),
             telemetry,
-            action_sequences: crate::station_api::action_sequences::ActionSequenceRegistry::default(
-            ),
+            executions: crate::station_api::runtime::ExecutionRegistry::default(),
             instance_id: uuid::Uuid::new_v4().to_string(),
             command_submissions: crate::station_api::submissions::CommandSubmissions::default(),
             lease_submissions: crate::station_api::submissions::LeaseSubmissions::default(),
             events: Arc::new(crate::station_api::events::EventJournal::default()),
         });
         let extra = extra_routes(runtime.handle(), bound)?;
-        let router = router(Arc::clone(&served), viewer_directory).merge(extra);
+        let router = router(Arc::clone(&station_state), viewer_directory).merge(extra);
+        runtime.spawn_blocking(super::artifact_workspace::clean_expired_workspaces);
         let (shutdown, shutdown_requested) = oneshot::channel::<()>();
         runtime.spawn(async move {
-            let served = axum::serve(listener, router).with_graceful_shutdown(async {
+            let http_server = axum::serve(listener, router).with_graceful_shutdown(async {
                 let _ = shutdown_requested.await;
             });
-            if let Err(error) = served.await {
+            if let Err(error) = http_server.await {
                 eprintln!("The HTTP server stopped: {error}");
             }
         });
         Ok(Self {
-            served,
+            station_state,
             runtime: Some(runtime),
             shutdown: Some(shutdown),
             address: bound,
         })
     }
 
-    /// The address it listens on, with the port the system chose for port 0.
     #[must_use]
     pub fn local_address(&self) -> SocketAddr {
         self.address
     }
 
-    /// The server's runtime, for work that belongs beside it.
-    ///
-    /// # Panics
-    /// Never: the runtime lives until the server closes.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "Only consuming close or Drop removes the runtime, so every borrowed server still has one."
+    )]
     pub fn runtime_handle(&self) -> tokio::runtime::Handle {
         self.runtime
             .as_ref()
@@ -144,100 +149,99 @@ impl HttpServer {
             .clone()
     }
 
-    /// Serve these arms over HTTP and follow their interlocks; only
-    /// the first call counts.
     pub fn attach_arms(&self, arms: BTreeMap<String, LinkHandle>) {
-        if self.served.arms.set(arms.clone()).is_ok()
-            && let Some(runtime) = &self.runtime
-        {
-            let snapshot_arms = arms.clone();
-            let snapshot_journal = Arc::clone(&self.served.events);
-            runtime.spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(100));
-                loop {
-                    interval.tick().await;
-                    if let Ok(Some(state)) = tokio::time::timeout(
-                        Duration::from_secs(3),
-                        crate::station_api::state::station_state(&snapshot_arms),
-                    )
-                    .await
-                    {
-                        snapshot_journal
-                            .publish(serde_json::json!({"kind": "state", "state": state}));
-                    } else {
-                        snapshot_journal.invalidate_station_state();
-                    }
+        if self.station_state.arms.set(arms.clone()).is_err() {
+            return;
+        }
+        let Some(runtime) = &self.runtime else {
+            return;
+        };
+        let snapshot_arms = arms.clone();
+        let snapshot_journal = Arc::clone(&self.station_state.events);
+        runtime.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            loop {
+                interval.tick().await;
+                if let Ok(Some(state)) = tokio::time::timeout(
+                    Duration::from_secs(3),
+                    crate::station_api::state::station_state(&snapshot_arms),
+                )
+                .await
+                {
+                    snapshot_journal.publish(serde_json::json!({"kind": "state", "state": state}));
+                } else {
+                    snapshot_journal.invalidate_station_state();
                 }
-            });
-            let sequence_station = Arc::clone(&self.served);
-            runtime.spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(100));
-                let mut previous = BTreeMap::new();
-                loop {
-                    interval.tick().await;
-                    let records = sequence_station.action_sequences.snapshots();
-                    let mut current = BTreeMap::new();
-                    for record in records {
-                        if previous.get(&record.id) != Some(&record) {
-                            sequence_station.events.publish(serde_json::json!({"kind": "action_sequence_state", "action_sequence": record}));
-                        }
-                        current.insert(record.id.clone(), record);
+            }
+        });
+        let sequence_station = Arc::clone(&self.station_state);
+        runtime.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            let mut previous = BTreeMap::new();
+            loop {
+                interval.tick().await;
+                let records = sequence_station.executions.snapshots();
+                let mut current = BTreeMap::new();
+                for record in records {
+                    if previous.get(&record.id) != Some(&record) {
+                        sequence_station.events.publish(serde_json::json!({"kind": "action_sequence_state", "action_sequence": record}));
                     }
-                    previous = current;
+                    current.insert(record.id.clone(), record);
                 }
-            });
-            let telemetry = Arc::clone(&self.served.telemetry);
-            let journal = Arc::clone(&self.served.events);
-            runtime.spawn(async move {
-                let mut cursor = telemetry.newest_seq();
-                let mut revision = None;
-                let mut interval = tokio::time::interval(Duration::from_millis(100));
-                loop {
-                    interval.tick().await;
-                    let updates = telemetry.updates(&mut cursor, &mut revision);
-                    for record in updates.records {
-                        if let Ok(payload) = serde_json::to_value(record) {
-                            journal.publish(payload);
-                        }
-                    }
-                    if let Some(run) = updates.snapshot
-                        && let Ok(payload) =
-                            serde_json::to_value(hebbian_contracts::ServerMessage::Run {
-                                run: Box::new(run),
-                            })
-                    {
+                previous = current;
+            }
+        });
+        let telemetry = Arc::clone(&self.station_state.telemetry);
+        let journal = Arc::clone(&self.station_state.events);
+        runtime.spawn(async move {
+            let mut cursor = telemetry.newest_seq();
+            let mut revision = None;
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            loop {
+                interval.tick().await;
+                let updates = telemetry.updates(&mut cursor, &mut revision);
+                for record in updates.records {
+                    if let Ok(payload) = serde_json::to_value(record) {
                         journal.publish(payload);
                     }
                 }
+                if let Some(run) = updates.snapshot
+                    && let Ok(payload) =
+                        serde_json::to_value(hebbian_contracts::ServerMessage::Run {
+                            run: Box::new(run),
+                        })
+                {
+                    journal.publish(payload);
+                }
+            }
+        });
+        if let Some(lease_link) = arms.values().next().cloned() {
+            runtime.spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
+                loop {
+                    interval.tick().await;
+                    let _ = lease_link.lease_status();
+                }
             });
-            if let Some(lease_link) = arms.values().next().cloned() {
-                runtime.spawn(async move {
-                    let mut interval = tokio::time::interval(Duration::from_millis(100));
-                    loop {
-                        interval.tick().await;
-                        let _ = lease_link.lease_status();
-                    }
-                });
-            }
-            for (arm_name, link) in arms {
-                let journal = Arc::clone(&self.served.events);
-                let event_link = link.clone();
-                runtime.spawn(async move {
-                    loop {
-                        let (client, mut lines) = event_link.connect(4096);
-                        event_link.snapshot(client);
-                        while let Some(line) = lines.recv().await {
-                            if let Ok(frame) = serde_json::from_str::<serde_json::Value>(&line) {
-                                journal.publish(serde_json::json!({"kind": "frame", "arm": arm_name, "frame": frame}));
-                            }
+        }
+        for (arm_name, link) in arms {
+            let journal = Arc::clone(&self.station_state.events);
+            let event_link = link.clone();
+            runtime.spawn(async move {
+                loop {
+                    let (client, mut lines) = event_link.connect(4096);
+                    event_link.snapshot(client);
+                    while let Some(line) = lines.recv().await {
+                        if let Ok(frame) = serde_json::from_str::<serde_json::Value>(&line) {
+                            journal.publish(serde_json::json!({"kind": "frame", "arm": arm_name, "frame": frame}));
                         }
-                        event_link.disconnect(client);
-                        journal.publish(serde_json::json!({"kind": "resync_required", "arm": arm_name}));
-                        tokio::time::sleep(Duration::from_millis(100)).await;
                     }
-                });
-                runtime.spawn(crate::station_api::interlocks::watch_arm(link));
-            }
+                    event_link.disconnect(client);
+                    journal.publish(serde_json::json!({"kind": "resync_required", "arm": arm_name}));
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            });
+            runtime.spawn(crate::station_api::interlocks::watch_arm(link));
         }
     }
 
@@ -261,9 +265,13 @@ impl Drop for HttpServer {
     }
 }
 
-fn router(served: Arc<Served>, viewer_directory: Option<PathBuf>) -> Router {
+fn router(station_state: Arc<StationState>, viewer_directory: Option<PathBuf>) -> Router {
     let router = Router::new()
         .route("/health", get(|| async { Json(Health { status: "ok" }) }))
+        .route(
+            "/model/{arm}/{*asset}",
+            get(super::model_assets::read_model_asset),
+        )
         .route("/instance", get(station_instance))
         .route("/events", get(stream_events))
         .route("/run/events", post(record_run_event))
@@ -280,19 +288,35 @@ fn router(served: Arc<Served>, viewer_directory: Option<PathBuf>) -> Router {
         .route("/leases/release", post(release_lease))
         .route("/leases/camera", post(report_lease_camera))
         .route("/arms/{arm}/stop", post(stop_leased_arm))
-        .route("/action_sequence", post(start_action_sequence))
+        .route(
+            "/action_sequence",
+            post(super::program_http::execute_source),
+        )
+        .route(
+            "/compilations/compile",
+            post(super::program_http::compile_action_sequence),
+        )
+        .route("/compilations/run", post(super::program_http::run_program))
+        .route(
+            "/compilations/import",
+            post(super::program_http::import_compilation),
+        )
+        .route(
+            "/compilations/{id}",
+            get(super::program_http::inspect_compilation),
+        )
         .route("/action_sequence/{id}/cancel", post(cancel_action_sequence))
         .route("/state", get(read_state))
         .route("/action_sequence", get(read_action_sequence))
         .route("/action_sequence/{id}", get(read_action_sequence_by_id))
         .route("/commands/{id}", get(read_command))
-        .with_state(served);
+        .with_state(station_state);
     match viewer_directory {
         Some(directory) => router
             .route("/", get(|| async { Redirect::temporary("/viewer/") }))
             .nest_service(
                 "/viewer",
-                // A rebuilt viewer keeps its file names, so revalidate each time.
+                // WHY: A rebuilt viewer keeps its file names, so revalidate each time.
                 SetResponseHeader::overriding(
                     ServeDir::new(directory),
                     header::CACHE_CONTROL,
@@ -311,8 +335,8 @@ fn arms_not_set_up() -> Response {
         .into_response()
 }
 
-async fn read_state(State(served): State<Arc<Served>>) -> Response {
-    let Some(arms) = served.arms.get() else {
+async fn read_state(State(station_state): State<Arc<StationState>>) -> Response {
+    let Some(arms) = station_state.arms.get() else {
         return arms_not_set_up();
     };
     match crate::station_api::state::station_state(arms).await {
@@ -321,29 +345,29 @@ async fn read_state(State(served): State<Arc<Served>>) -> Response {
     }
 }
 
-async fn read_action_sequence(State(served): State<Arc<Served>>) -> Response {
-    let current = served
-        .action_sequences
+async fn read_action_sequence(State(station_state): State<Arc<StationState>>) -> Response {
+    let current = station_state
+        .executions
         .current()
         .map(|receiver| receiver.borrow().clone());
     Json(current).into_response()
 }
 
 async fn read_action_sequence_by_id(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Response {
-    match served.action_sequences.lookup(&id) {
+    match station_state.executions.lookup(&id) {
         Some(action_sequence) => Json(action_sequence).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 async fn read_command(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     UrlPath(command_id): UrlPath<String>,
 ) -> Response {
-    let Some(arms) = served.arms.get() else {
+    let Some(arms) = station_state.arms.get() else {
         return arms_not_set_up();
     };
     for (arm, link) in arms {
@@ -363,10 +387,10 @@ async fn read_command(
 }
 
 async fn preview_poses(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(request): Json<hebbian_contracts::PosePreviewBatchRequest>,
 ) -> Result<Json<hebbian_contracts::PosePreviewBatchResponse>, (StatusCode, String)> {
-    execute_pose_previews(served, request)
+    execute_pose_previews(station_state, request)
         .await
         .map(Json)
         .map_err(|error| {
@@ -400,37 +424,15 @@ impl std::fmt::Display for PosePreviewBatchError {
     }
 }
 
-async fn start_action_sequence(
-    State(served): State<Arc<Served>>,
-    Json(input): Json<hebbian_contracts::ActionSequenceStartRequest>,
-) -> Result<Json<String>, (axum::http::StatusCode, String)> {
-    let links = served.arms.get().ok_or((
-        axum::http::StatusCode::SERVICE_UNAVAILABLE,
-        "Station arms are not ready".to_owned(),
-    ))?;
-    crate::station_api::action_sequences::start_action_sequence(
-        &served,
-        links,
-        Some(input.lease_token),
-        input.action_sequence,
-    )
-    .map(Json)
-    .map_err(|detail| (axum::http::StatusCode::CONFLICT, detail))
-}
-
 async fn cancel_action_sequence(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let links = served.arms.get().ok_or((
+    let links = station_state.arms.get().ok_or((
         axum::http::StatusCode::SERVICE_UNAVAILABLE,
         "Station arms are not ready".to_owned(),
     ))?;
-    if crate::station_api::action_sequences::cancel_action_sequence(
-        &served.action_sequences,
-        links,
-        &id,
-    ) {
+    if crate::station_api::runtime::cancel_action_sequence(&station_state.executions, links, &id) {
         Ok(axum::http::StatusCode::NO_CONTENT)
     } else {
         Err((
@@ -441,17 +443,10 @@ async fn cancel_action_sequence(
 }
 
 async fn report_lease_camera(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseCameraReport>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let link = served
-        .arms
-        .get()
-        .and_then(|arms| arms.values().next())
-        .ok_or((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "Station arms are not ready".to_owned(),
-        ))?;
+    let link = station_state.lease_link()?;
     link.report_camera(&input.lease_token, &input.camera, input.available)
         .map(|()| axum::http::StatusCode::NO_CONTENT)
         .map_err(|detail| {
@@ -468,11 +463,11 @@ async fn report_lease_camera(
 }
 
 async fn stop_leased_arm(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     UrlPath(arm): UrlPath<String>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let link = served
+    let link = station_state
         .arms
         .get()
         .ok_or((
@@ -494,19 +489,12 @@ async fn stop_leased_arm(
 }
 
 async fn release_lease(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let link = served
-        .arms
-        .get()
-        .and_then(|arms| arms.values().next())
-        .ok_or((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "Station arms are not ready".to_owned(),
-        ))?;
+    let link = station_state.lease_link()?;
     if link.release_lease_with(&input.lease_token, || {
-        served.action_sequences.cancel_owner(&input.lease_token)
+        station_state.executions.cancel_owner(&input.lease_token)
     }) {
         Ok(axum::http::StatusCode::NO_CONTENT)
     } else {
@@ -518,17 +506,10 @@ async fn release_lease(
 }
 
 async fn renew_lease(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let link = served
-        .arms
-        .get()
-        .and_then(|arms| arms.values().next())
-        .ok_or((
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "Station arms are not ready".to_owned(),
-        ))?;
+    let link = station_state.lease_link()?;
     if link.retain_lease(&input.lease_token) {
         Ok(axum::http::StatusCode::NO_CONTENT)
     } else {
@@ -560,11 +541,11 @@ async fn wait_for_submission(
 }
 
 fn validate_submission_id(
-    served: &Served,
+    station_state: &StationState,
     station_instance_id: &str,
     request_id: &str,
 ) -> Result<uuid::Uuid, (axum::http::StatusCode, String)> {
-    if station_instance_id != served.instance_id {
+    if station_instance_id != station_state.instance_id {
         return Err((
             axum::http::StatusCode::CONFLICT,
             "Station instance changed; request outcome is unknown".to_owned(),
@@ -586,14 +567,18 @@ fn validate_submission_id(
 }
 
 async fn cancel_command_submission(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::CommandCancellationRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     use crate::station_api::submissions::CancellationResult;
     use hebbian_contracts::LeasedStopOutcome;
 
-    let id = validate_submission_id(&served, &input.station_instance_id, &input.request_id)?;
-    let arms = served.arms.get().ok_or((
+    let id = validate_submission_id(
+        &station_state,
+        &input.station_instance_id,
+        &input.request_id,
+    )?;
+    let arms = station_state.arms.get().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "Station arms are not ready".to_owned(),
     ))?;
@@ -607,19 +592,20 @@ async fn cancel_command_submission(
         .map(|arm| arms.get(arm))
         .collect::<Option<Vec<_>>>()
         .ok_or((StatusCode::BAD_REQUEST, "Unknown arm".to_owned()))?;
-    let result = served
-        .command_submissions
-        .cancel(id, &input.lease_token, &input.arms, || {
-            let mut result = LeasedStopOutcome::Submitted;
-            for link in links {
-                match link.stop_if_leased(Some(&input.lease_token)) {
-                    LeasedStopOutcome::Submitted => {}
-                    LeasedStopOutcome::LeaseLost => return LeasedStopOutcome::LeaseLost,
-                    LeasedStopOutcome::Unavailable => result = LeasedStopOutcome::Unavailable,
+    let result =
+        station_state
+            .command_submissions
+            .cancel(id, &input.lease_token, &input.arms, || {
+                let mut result = LeasedStopOutcome::Submitted;
+                for link in links {
+                    match link.stop_if_leased(Some(&input.lease_token)) {
+                        LeasedStopOutcome::Submitted => {}
+                        LeasedStopOutcome::LeaseLost => return LeasedStopOutcome::LeaseLost,
+                        LeasedStopOutcome::Unavailable => result = LeasedStopOutcome::Unavailable,
+                    }
                 }
-            }
-            result
-        });
+                result
+            });
     match result {
         CancellationResult::Stopped(LeasedStopOutcome::Submitted) => Ok(StatusCode::NO_CONTENT),
         CancellationResult::Stopped(LeasedStopOutcome::LeaseLost) => {
@@ -636,13 +622,87 @@ async fn cancel_command_submission(
     }
 }
 
+type CommandSubmissionOutcome = Option<Result<hebbian_contracts::CommandAnswer, String>>;
+
+fn follow_or_start_submission(
+    reservation: crate::station_api::submissions::SubmissionReservation,
+    start: impl FnOnce(tokio::sync::watch::Sender<CommandSubmissionOutcome>),
+) -> Result<tokio::sync::watch::Receiver<CommandSubmissionOutcome>, (StatusCode, String)> {
+    use crate::station_api::submissions::SubmissionReservation;
+    match reservation {
+        SubmissionReservation::Conflict => Err((
+            axum::http::StatusCode::CONFLICT,
+            "Request ID already used for a different command".to_owned(),
+        )),
+        SubmissionReservation::Expired => Err((
+            axum::http::StatusCode::GONE,
+            "Request outcome is no longer retained".to_owned(),
+        )),
+        SubmissionReservation::Full => Err((
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "Too many command submissions are still in flight".to_owned(),
+        )),
+        SubmissionReservation::Existing(response) => Ok(response),
+        SubmissionReservation::Cancelled => {
+            let (_, response) =
+                tokio::sync::watch::channel(Some(Ok(hebbian_contracts::CommandAnswer::Refused {
+                    reason: hebbian_contracts::RejectionReason::ArmBusy,
+                    detail: "Command submission was cancelled".to_owned(),
+                })));
+            Ok(response)
+        }
+        SubmissionReservation::New(sender) => {
+            let response = sender.subscribe();
+            start(sender);
+            Ok(response)
+        }
+    }
+}
+
+type CommandAdmission<ReplyContext, ReplyRecords> = Result<
+    (
+        ReplyContext,
+        oneshot::Receiver<Result<ReplyRecords, crate::arm::Rejection>>,
+    ),
+    (hebbian_contracts::RejectionReason, String),
+>;
+
+async fn command_submission_outcome<ReplyContext, ReplyRecords>(
+    admitted: Result<CommandAdmission<ReplyContext, ReplyRecords>, tokio::task::JoinError>,
+    into_arm_records: impl FnOnce(
+        ReplyContext,
+        ReplyRecords,
+    ) -> Result<Vec<hebbian_contracts::ArmRecord>, String>,
+) -> Result<hebbian_contracts::CommandAnswer, String> {
+    let (context, reply) = match admitted {
+        Err(_) => return Err("Command worker failed; outcome is unknown".to_owned()),
+        Ok(Err((reason, detail))) => {
+            return Ok(hebbian_contracts::CommandAnswer::Refused { reason, detail });
+        }
+        Ok(Ok(pending)) => pending,
+    };
+    match reply.await {
+        Ok(Ok(records)) => into_arm_records(context, records)
+            .map(|records| hebbian_contracts::CommandAnswer::Accepted { records }),
+        Ok(Err(error)) => Ok(hebbian_contracts::CommandAnswer::Refused {
+            reason: error.reason,
+            detail: error.detail,
+        }),
+        Err(_) => Err("Control loop reply lost; command outcome is unknown".to_owned()),
+    }
+}
+
 async fn submit_group_command(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::GroupCommandSubmissionRequest>,
 ) -> Result<Json<hebbian_contracts::CommandAnswer>, (axum::http::StatusCode, String)> {
-    use crate::station_api::submissions::{SubmissionRequest, SubmissionReservation};
-    let id = validate_submission_id(&served, &input.station_instance_id, &input.request_id)?;
-    let links = served
+    use crate::station_api::submissions::SubmissionRequest;
+    let id = validate_submission_id(
+        &station_state,
+        &input.station_instance_id,
+        &input.request_id,
+    )?;
+    let links = station_state
         .arms
         .get()
         .ok_or((
@@ -657,38 +717,12 @@ async fn submit_group_command(
         .filter_map(|arm| links.get(arm))
         .map(crate::control_link::LinkHandle::submission_generation)
         .collect::<Vec<_>>();
-    let response = match served
-        .command_submissions
-        .reserve(id, SubmissionRequest::Group(input.clone()))
-    {
-        SubmissionReservation::Conflict => {
-            return Err((
-                axum::http::StatusCode::CONFLICT,
-                "Request ID already used for a different command".to_owned(),
-            ));
-        }
-        SubmissionReservation::Expired => {
-            return Err((
-                axum::http::StatusCode::GONE,
-                "Request outcome is no longer retained".to_owned(),
-            ));
-        }
-        SubmissionReservation::Full => {
-            return Err((
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "Too many command submissions are still in flight".to_owned(),
-            ));
-        }
-        SubmissionReservation::Existing(response) => response,
-        SubmissionReservation::Cancelled => {
-            return Ok(Json(hebbian_contracts::CommandAnswer::Refused {
-                reason: hebbian_contracts::RejectionReason::ArmBusy,
-                detail: "Command submission was cancelled".to_owned(),
-            }));
-        }
-        SubmissionReservation::New(sender) => {
-            let response = sender.subscribe();
-            let station = Arc::clone(&served);
+    let response = follow_or_start_submission(
+        station_state
+            .command_submissions
+            .reserve(id, SubmissionRequest::Group(input.clone())),
+        |sender| {
+            let station = Arc::clone(&station_state);
             tokio::spawn(async move {
                 let admitted = tokio::task::spawn_blocking(move || {
                     let token = input.lease_token.as_deref();
@@ -699,7 +733,7 @@ async fn submit_group_command(
                         .map(String::as_str)
                         .collect::<Vec<_>>();
                     station
-                        .action_sequences
+                        .executions
                         .check_command_conflict(token, &targets)
                         .map_err(|detail| {
                             (
@@ -722,51 +756,36 @@ async fn submit_group_command(
                     Ok::<_, (hebbian_contracts::RejectionReason, String)>((arms, reply))
                 })
                 .await;
-                let outcome = match admitted {
-                    Err(_) => Err("Command worker failed; outcome is unknown".to_owned()),
-                    Ok(Err((reason, detail))) => {
-                        Ok(hebbian_contracts::CommandAnswer::Refused { reason, detail })
+                let outcome = command_submission_outcome(admitted, |arms, records| {
+                    if arms.len() != records.len() {
+                        return Err(
+                            "Control loop returned an unexpected number of records".to_owned()
+                        );
                     }
-                    Ok(Ok((arms, reply))) => match reply.await {
-                        Ok(Ok(records)) if arms.len() == records.len() => {
-                            Ok(hebbian_contracts::CommandAnswer::Accepted {
-                                records: arms
-                                    .into_iter()
-                                    .zip(records)
-                                    .map(|(arm, record)| hebbian_contracts::ArmRecord {
-                                        arm,
-                                        record,
-                                    })
-                                    .collect(),
-                            })
-                        }
-                        Ok(Ok(_)) => {
-                            Err("Control loop returned an unexpected number of records".to_owned())
-                        }
-                        Ok(Err(error)) => Ok(hebbian_contracts::CommandAnswer::Refused {
-                            reason: error.reason,
-                            detail: error.detail,
-                        }),
-                        Err(_) => {
-                            Err("Control loop reply lost; command outcome is unknown".to_owned())
-                        }
-                    },
-                };
+                    Ok(arms
+                        .into_iter()
+                        .zip(records)
+                        .map(|(arm, record)| hebbian_contracts::ArmRecord { arm, record })
+                        .collect())
+                })
+                .await;
                 sender.send_replace(Some(outcome));
             });
-            response
-        }
-    };
+        },
+    )?;
     wait_for_submission(response).await
 }
 
 async fn submit_command(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::CommandSubmissionRequest>,
 ) -> Result<Json<hebbian_contracts::CommandAnswer>, (axum::http::StatusCode, String)> {
-    use crate::station_api::submissions::SubmissionReservation;
-    let id = validate_submission_id(&served, &input.station_instance_id, &input.request_id)?;
-    let links = served
+    let id = validate_submission_id(
+        &station_state,
+        &input.station_instance_id,
+        &input.request_id,
+    )?;
+    let links = station_state
         .arms
         .get()
         .ok_or((
@@ -779,38 +798,13 @@ async fn submit_command(
         .map(crate::control_link::LinkHandle::submission_generation)
         .into_iter()
         .collect::<Vec<_>>();
-    let response = match served.command_submissions.reserve(
-        id,
-        crate::station_api::submissions::SubmissionRequest::Single(input.clone()),
-    ) {
-        SubmissionReservation::Conflict => {
-            return Err((
-                axum::http::StatusCode::CONFLICT,
-                "Request ID already used for a different command".to_owned(),
-            ));
-        }
-        SubmissionReservation::Expired => {
-            return Err((
-                axum::http::StatusCode::GONE,
-                "Request outcome is no longer retained".to_owned(),
-            ));
-        }
-        SubmissionReservation::Full => {
-            return Err((
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "Too many command submissions are still in flight".to_owned(),
-            ));
-        }
-        SubmissionReservation::Existing(response) => response,
-        SubmissionReservation::Cancelled => {
-            return Ok(Json(hebbian_contracts::CommandAnswer::Refused {
-                reason: hebbian_contracts::RejectionReason::ArmBusy,
-                detail: "Command submission was cancelled".to_owned(),
-            }));
-        }
-        SubmissionReservation::New(sender) => {
-            let response = sender.subscribe();
-            let station = Arc::clone(&served);
+    let response = follow_or_start_submission(
+        station_state.command_submissions.reserve(
+            id,
+            crate::station_api::submissions::SubmissionRequest::Single(input.clone()),
+        ),
+        |sender| {
+            let station = Arc::clone(&station_state);
             tokio::spawn(async move {
                 let arm = input.arm.clone();
                 let admitted = tokio::task::spawn_blocking(move || {
@@ -828,12 +822,12 @@ async fn submit_command(
                     if matches!(input.command, hebbian_contracts::StationCommand::Disable) {
                         if let Some(token) = token {
                             link.stop_leased_motion_for_submission(token, &mut generation, || {
-                                station.action_sequences.cancel_owner(token)
+                                station.executions.cancel_owner(token)
                             })
                             .map_err(|error| (error.reason, error.detail))?;
                         }
                     } else if let Err(detail) = station
-                        .action_sequences
+                        .executions
                         .check_command_conflict(token, &[&input.arm])
                     {
                         return Err((
@@ -853,37 +847,23 @@ async fn submit_command(
                     .map_err(|error| (error.reason, error.detail))
                 })
                 .await;
-                let outcome = match admitted {
-                    Err(_) => Err("Command worker failed; outcome is unknown".to_owned()),
-                    Ok(Err((reason, detail))) => {
-                        Ok(hebbian_contracts::CommandAnswer::Refused { reason, detail })
-                    }
-                    Ok(Ok(reply)) => match reply.await {
-                        Ok(Ok(record)) => Ok(hebbian_contracts::CommandAnswer::Accepted {
-                            records: vec![hebbian_contracts::ArmRecord { arm, record }],
-                        }),
-                        Ok(Err(error)) => Ok(hebbian_contracts::CommandAnswer::Refused {
-                            reason: error.reason,
-                            detail: error.detail,
-                        }),
-                        Err(_) => {
-                            Err("Control loop reply lost; command outcome is unknown".to_owned())
-                        }
-                    },
-                };
+                let outcome = command_submission_outcome(
+                    admitted.map(|admission| admission.map(|reply| (arm, reply))),
+                    |arm, record| Ok(vec![hebbian_contracts::ArmRecord { arm, record }]),
+                )
+                .await;
                 sender.send_replace(Some(outcome));
             });
-            response
-        }
-    };
+        },
+    )?;
     wait_for_submission(response).await
 }
 
 async fn record_run_event(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(event): Json<hebbian_contracts::RunEvent>,
 ) -> axum::http::StatusCode {
-    served.telemetry.record_event(event);
+    station_state.telemetry.record_event(event);
     axum::http::StatusCode::NO_CONTENT
 }
 
@@ -893,29 +873,26 @@ struct RunReplayQuery {
 }
 
 async fn replay_run_records(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Query(query): Query<RunReplayQuery>,
 ) -> Json<Vec<hebbian_contracts::ServerMessage>> {
     let mut cursor = query.after;
-    let updates = served.telemetry.updates(&mut cursor, &mut None);
+    let updates = station_state.telemetry.updates(&mut cursor, &mut None);
     Json(updates.records)
 }
 
 async fn record_run_spans(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(request): Json<hebbian_contracts::RunSpansRequest>,
 ) -> axum::http::StatusCode {
-    served.telemetry.record_spans(request.spans);
+    station_state.telemetry.record_spans(request.spans);
     axum::http::StatusCode::NO_CONTENT
 }
 
-async fn stream_events(
-    State(served): State<Arc<Served>>,
-    headers: axum::http::HeaderMap,
-) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
-    use crate::station_api::events::EventSubscription;
-    use axum::response::sse::Event;
-    let cursor = headers
+fn parse_event_cursor(
+    headers: &axum::http::HeaderMap,
+) -> Result<Option<(String, u64)>, (StatusCode, String)> {
+    headers
         .get("last-event-id")
         .map(|value| {
             value
@@ -934,10 +911,19 @@ async fn stream_events(
                 axum::http::StatusCode::BAD_REQUEST,
                 "Invalid event cursor".to_owned(),
             ))
-        })?;
+        })
+}
+
+async fn stream_events(
+    State(station_state): State<Arc<StationState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
+    use crate::station_api::events::EventSubscription;
+    use axum::response::sse::Event;
+    let cursor = parse_event_cursor(&headers)?;
     let (initial, mut updates) = match cursor {
         None => {
-            let (sequence, snapshot, updates) = served.events.subscribe_with_snapshot();
+            let (sequence, snapshot, updates) = station_state.events.subscribe_with_snapshot();
             if !snapshot
                 .iter()
                 .any(|event| event.get("kind").and_then(serde_json::Value::as_str) == Some("state"))
@@ -947,18 +933,18 @@ async fn stream_events(
                     "Station snapshot is not ready".to_owned(),
                 ));
             }
-            let event = Event::default().event("snapshot").id(format!("{}:{sequence}", served.instance_id)).data(serde_json::json!({"station_instance_id": served.instance_id, "sequence": sequence, "run_sequence": served.telemetry.newest_seq(), "items": snapshot}).to_string());
+            let event = Event::default().event("snapshot").id(format!("{}:{sequence}", station_state.instance_id)).data(serde_json::json!({"station_instance_id": station_state.instance_id, "sequence": sequence, "run_sequence": station_state.telemetry.newest_seq(), "items": snapshot}).to_string());
             (vec![event], updates)
         }
-        Some((instance, sequence)) if instance == served.instance_id => {
-            match served.events.subscribe_after(sequence) {
+        Some((instance, sequence)) if instance == station_state.instance_id => {
+            match station_state.events.subscribe_after(sequence) {
                 EventSubscription::Replay { events, updates } => (
                     events
                         .into_iter()
                         .map(|event| {
                             Event::default()
                                 .event("station")
-                                .id(format!("{}:{}", served.instance_id, event.sequence))
+                                .id(format!("{}:{}", station_state.instance_id, event.sequence))
                                 .data(event.payload.to_string())
                         })
                         .collect(),
@@ -981,7 +967,7 @@ async fn stream_events(
     };
     let (sender, receiver) =
         tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(64);
-    let instance_id = served.instance_id.clone();
+    let instance_id = station_state.instance_id.clone();
     tokio::spawn(async move {
         for event in initial {
             if sender.send(Ok(event)).await.is_err() {
@@ -989,7 +975,11 @@ async fn stream_events(
             }
         }
         loop {
-            match updates.recv().await {
+            let update = tokio::select! {
+                () = sender.closed() => return,
+                update = updates.recv() => update,
+            };
+            match update {
                 Ok(event) => {
                     let event = Event::default()
                         .event("station")
@@ -1018,21 +1008,25 @@ async fn stream_events(
 }
 
 async fn station_instance(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
 ) -> Json<hebbian_contracts::StationInstance> {
     Json(hebbian_contracts::StationInstance {
-        id: served.instance_id.clone(),
+        id: station_state.instance_id.clone(),
     })
 }
 
 async fn acquire_lease(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseAcquireRequest>,
 ) -> Result<Json<hebbian_contracts::LeaseGrant>, (StatusCode, String)> {
     use crate::station_api::submissions::LeaseReservation;
 
-    let id = validate_submission_id(&served, &input.station_instance_id, &input.request_id)?;
-    let links = served
+    let id = validate_submission_id(
+        &station_state,
+        &input.station_instance_id,
+        &input.request_id,
+    )?;
+    let links = station_state
         .arms
         .get()
         .ok_or((
@@ -1046,7 +1040,7 @@ async fn acquire_lease(
         StatusCode::SERVICE_UNAVAILABLE,
         "Station arms are not ready".to_owned(),
     ))?;
-    let mut response = match served.lease_submissions.reserve(id, input.clone()) {
+    let mut response = match station_state.lease_submissions.reserve(id, input.clone()) {
         LeaseReservation::Conflict => {
             return Err((
                 StatusCode::CONFLICT,
@@ -1099,7 +1093,7 @@ async fn acquire_lease(
 }
 
 pub(crate) async fn execute_pose_previews(
-    served: Arc<Served>,
+    station_state: Arc<StationState>,
     request: hebbian_contracts::PosePreviewBatchRequest,
 ) -> Result<hebbian_contracts::PosePreviewBatchResponse, PosePreviewBatchError> {
     let mut identifiers = std::collections::HashSet::new();
@@ -1116,7 +1110,7 @@ pub(crate) async fn execute_pose_previews(
             return Err(PosePreviewBatchError::InvalidIdentifiers);
         }
     }
-    let arms = served
+    let arms = station_state
         .arms
         .get()
         .ok_or(PosePreviewBatchError::StationUnavailable)?
@@ -1155,12 +1149,8 @@ pub(crate) async fn execute_pose_previews(
     })
 }
 
-/// Overrides where the built viewer is read from.
 pub const VIEWER_DIRECTORY_VARIABLE: &str = "HEBBIAN_VIEWER_DIRECTORY";
 
-/// Where the built viewer is: `$HEBBIAN_VIEWER_DIRECTORY`, else the nearest
-/// installed `share/hebbian-robot-use/dist/viewer` or a checkout's `dist/viewer`
-/// above the running binary or working directory; none when no build exists.
 #[must_use]
 pub fn default_viewer_directory() -> Option<PathBuf> {
     if let Some(directory) =
@@ -1182,7 +1172,6 @@ pub fn default_viewer_directory() -> Option<PathBuf> {
         .find(|candidate| candidate.join("index.html").is_file())
 }
 
-/// Every regular file directly inside the trace directories, newest first.
 fn trace_files(directories: &[PathBuf]) -> Vec<(TraceFile, PathBuf)> {
     let mut files = Vec::new();
     for directory in directories {
@@ -1223,8 +1212,8 @@ fn trace_files(directories: &[PathBuf]) -> Vec<(TraceFile, PathBuf)> {
     files
 }
 
-async fn list_traces(State(served): State<Arc<Served>>) -> Response {
-    let directories = served.trace_directories.clone();
+async fn list_traces(State(station_state): State<Arc<StationState>>) -> Response {
+    let directories = station_state.trace_directories.clone();
     match tokio::task::spawn_blocking(move || trace_files(&directories)).await {
         Ok(files) => {
             Json(files.into_iter().map(|(file, _)| file).collect::<Vec<_>>()).into_response()
@@ -1233,7 +1222,7 @@ async fn list_traces(State(served): State<Arc<Served>>) -> Response {
     }
 }
 
-/// The trace called `name`, found by listing, never by joining the name to a path.
+// SAFETY: Resolve trace names from the directory listing, never by joining untrusted names to a path.
 fn find_trace(directories: &[PathBuf], name: &str) -> Option<PathBuf> {
     trace_files(directories)
         .into_iter()
@@ -1242,10 +1231,10 @@ fn find_trace(directories: &[PathBuf], name: &str) -> Option<PathBuf> {
 }
 
 async fn download_trace(
-    State(served): State<Arc<Served>>,
+    State(station_state): State<Arc<StationState>>,
     UrlPath(name): UrlPath<String>,
 ) -> Response {
-    let directories = served.trace_directories.clone();
+    let directories = station_state.trace_directories.clone();
     let lookup_name = name.clone();
     let Ok(Some(path)) =
         tokio::task::spawn_blocking(move || find_trace(&directories, &lookup_name)).await
@@ -1271,7 +1260,6 @@ async fn download_trace(
     }
 }
 
-/// The distinct trace directories of these arms' configs.
 #[must_use]
 pub fn trace_directories<'a>(directories: impl IntoIterator<Item = &'a Path>) -> Vec<PathBuf> {
     let mut distinct: Vec<PathBuf> = Vec::new();
@@ -1285,18 +1273,20 @@ pub fn trace_directories<'a>(directories: impl IntoIterator<Item = &'a Path>) ->
 
 #[cfg(test)]
 mod event_stream_tests {
-    use super::{HttpServer, Served, stream_events};
+    use super::{HttpServer, StationState, stream_events};
     use axum::extract::State;
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use std::sync::{Arc, OnceLock};
 
-    fn station() -> Arc<Served> {
-        Arc::new(Served {
+    fn station() -> Arc<StationState> {
+        Arc::new(StationState {
+            program_submissions: crate::station_api::submissions::ProgramSubmissions::default(),
+            compiler: crate::station_api::programs::ProgramStore::default(),
+            compilation_targets: OnceLock::new(),
             trace_directories: vec![],
             arms: OnceLock::new(),
             telemetry: Arc::new(crate::station_api::telemetry::DiscardTelemetry),
-            action_sequences: crate::station_api::action_sequences::ActionSequenceRegistry::default(
-            ),
+            executions: crate::station_api::runtime::ExecutionRegistry::default(),
             instance_id: "instance-a".into(),
             command_submissions: crate::station_api::submissions::CommandSubmissions::default(),
             lease_submissions: crate::station_api::submissions::LeaseSubmissions::default(),
@@ -1315,7 +1305,7 @@ mod event_stream_tests {
         )
         .unwrap();
         server
-            .served
+            .station_state
             .events
             .publish(serde_json::json!({"kind": "state", "state": {}}));
         let url = format!("http://{}/events", server.local_address());
@@ -1356,7 +1346,7 @@ mod event_stream_tests {
             let cursor = cursor.to_owned();
             drop(response);
             server
-                .served
+                .station_state
                 .events
                 .publish(serde_json::json!({"kind": "run", "test_marker": "replayed"}));
             let mut resumed = client
@@ -1375,29 +1365,32 @@ mod event_stream_tests {
 
     #[tokio::test]
     async fn initial_stream_requires_state_and_old_instances_require_resync() {
-        let served = station();
-        let error = stream_events(State(Arc::clone(&served)), HeaderMap::new())
+        let station_state = station();
+        let error = stream_events(State(Arc::clone(&station_state)), HeaderMap::new())
             .await
             .err()
             .unwrap();
         assert_eq!(error.0, StatusCode::SERVICE_UNAVAILABLE);
-        served
+        station_state
             .events
             .publish(serde_json::json!({"kind":"state", "state":{}}));
         assert!(
-            stream_events(State(Arc::clone(&served)), HeaderMap::new())
+            stream_events(State(Arc::clone(&station_state)), HeaderMap::new())
                 .await
                 .is_ok()
         );
-        served.events.invalidate_station_state();
-        let error = stream_events(State(Arc::clone(&served)), HeaderMap::new())
+        station_state.events.invalidate_station_state();
+        let error = stream_events(State(Arc::clone(&station_state)), HeaderMap::new())
             .await
             .err()
             .unwrap();
         assert_eq!(error.0, StatusCode::SERVICE_UNAVAILABLE);
         let mut headers = HeaderMap::new();
         headers.insert("last-event-id", HeaderValue::from_static("old-instance:1"));
-        let error = stream_events(State(served), headers).await.err().unwrap();
+        let error = stream_events(State(station_state), headers)
+            .await
+            .err()
+            .unwrap();
         assert_eq!(error.0, StatusCode::CONFLICT);
     }
 }

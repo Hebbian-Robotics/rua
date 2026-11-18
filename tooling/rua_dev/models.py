@@ -1,5 +1,3 @@
-"""Finite choices shared by the CLI and its operations."""
-
 from enum import StrEnum
 
 

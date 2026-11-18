@@ -1,9 +1,5 @@
-"""Verify an installed release with an independently connected socket peer.
-
-Run with the Python from the temporary wheel-only environment. This verifies
-transport and packaging, not physics or physical hardware.
-"""
-
+# CONSTRAINT: This release smoke check verifies transport and packaging, not
+# physical robot behavior or simulator physics.
 import asyncio
 import hashlib
 import importlib.metadata
@@ -22,6 +18,17 @@ import tomllib
 from pathlib import Path
 
 from hebbian_rua import StationClient
+from hebbian_rua.client.contract.station_api import (
+    ActionSequenceArmAction,
+    ActionSequenceJointsMovement,
+    ActionSequenceRequest,
+    ActionSequenceStep,
+    ActionSequenceStopped,
+    CompilationArtifact,
+    PreparationFailure,
+    ProgramCompiled,
+    RejectionReason,
+)
 
 
 def available_port() -> int:
@@ -64,6 +71,45 @@ def simulator_peer(socket_path: Path, stopped: threading.Event) -> None:
                     return
 
 
+async def check_compiler(station: StationClient, joints: list[float]) -> None:
+    source = ActionSequenceRequest(
+        steps=[
+            ActionSequenceStep(
+                arms={
+                    "follower": ActionSequenceArmAction(
+                        movement=ActionSequenceJointsMovement(joints=joints)
+                    )
+                }
+            )
+        ],
+    )
+    outcome = await station.compile_action_sequence(source)
+    if not isinstance(outcome, ProgramCompiled):
+        raise RuntimeError(f"Installed compiler rejected valid source: {outcome}")
+    exported = CompilationArtifact.model_validate_json(
+        outcome.artifact.model_dump_json()
+    )
+    imported = await station.import_compilation(exported)
+    if not isinstance(imported, ProgramCompiled):
+        raise RuntimeError(f"Installed compiler rejected its export: {imported}")
+    if imported.artifact.compilation_id == exported.compilation_id:
+        raise RuntimeError("Imported source reused a foreign compilation identity")
+    async with station.holding_lease("installed compiler check") as lease:
+        execution_id = await lease.start_compiled_sequence(
+            imported.artifact.compilation_id
+        )
+        execution = await station.wait_for_action_sequence(execution_id)
+        if not (
+            isinstance(execution.phase, ActionSequenceStopped)
+            and isinstance(execution.phase.failure, PreparationFailure)
+            and execution.phase.failure.reason == RejectionReason.not_enabled
+        ):
+            raise RuntimeError("Compiled execution bypassed disabled-arm preparation")
+    print(
+        "Installed SDK and native compiler agree on import, identity and live preparation"
+    )
+
+
 async def check_client(address: str) -> None:
     async with StationClient(address) as station:
         deadline = time.monotonic() + 20
@@ -73,6 +119,7 @@ async def check_client(address: str) -> None:
                 print(
                     "Installed SDK received arm feedback from a user-owned socket connection"
                 )
+                await check_compiler(station, list(state.measured_joints))
                 return
             await asyncio.sleep(0.05)
         raise RuntimeError("No simulator feedback reached the Python client")

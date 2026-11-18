@@ -1,5 +1,3 @@
-"""Generate SDK catalog modules from the Rust-owned JSON catalog."""
-
 import json
 from pathlib import Path
 

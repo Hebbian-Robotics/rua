@@ -243,5 +243,3 @@ pub struct PoseProjection {
     pub jaw_yaw_ranges: Vec<JawYawRange>,
     pub calculation_milliseconds: f64,
 }
-
-pub use hebbian_robot_geometry::outcomes::{IkPose, IkResult, OrientationGoal};

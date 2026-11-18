@@ -1,18 +1,11 @@
-//! Raise and clear each arm's own interlocks from its reported mode: the bus
-//! stopping (`arm_disconnected`), and a reconnection that needs an operator's
-//! approval (`recovery_approval_required`). A required camera's interlock
-//! belongs to the lease (see [`crate::lease`]).
-
 use std::time::Duration;
 
 use hebbian_contracts::{ArmMode, Interlock};
 
 use crate::control_link::LinkHandle;
 
-/// A sample older than this says nothing about the arm now.
 const FRESH_SAMPLE: Duration = Duration::from_secs(1);
 
-/// Follow one arm's mode for as long as its link lives.
 pub async fn watch_arm(link: LinkHandle) {
     let mut changes = link.changes();
     loop {
@@ -32,9 +25,8 @@ async fn update(link: &LinkHandle) {
     }
     let Some(sample) = view.sample else { return };
     match sample.mode {
-        ArmMode::Disconnected => match sample.recovery_issue {
-            Some(issue) => {
-                link.clear_interlocks(|interlock| *interlock == Interlock::ArmDisconnected);
+        ArmMode::Disconnected => {
+            if let Some(issue) = sample.recovery_issue {
                 link.raise_interlock(Interlock::RecoveryApprovalRequired {
                     motors: issue
                         .motors_without_torque
@@ -42,10 +34,14 @@ async fn update(link: &LinkHandle) {
                         .map(ToString::to_string)
                         .collect(),
                 });
+                link.clear_interlocks(|interlock| *interlock == Interlock::ArmDisconnected);
+            } else {
+                link.raise_interlock(Interlock::ArmDisconnected);
+                link.clear_interlocks(|interlock| {
+                    matches!(interlock, Interlock::RecoveryApprovalRequired { .. })
+                });
             }
-            None => link.raise_interlock(Interlock::ArmDisconnected),
-        },
-        // Holding again, or powered off on purpose: nothing left to approve.
+        }
         ArmMode::Holding | ArmMode::Disabled | ArmMode::Faulted => {
             link.clear_interlocks(|interlock| {
                 matches!(
@@ -55,5 +51,47 @@ async fn update(link: &LinkHandle) {
             });
         }
         ArmMode::Moving | ArmMode::Reconnected => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use hebbian_contracts::{ArmRecoveryIssue, Event, Sample};
+
+    use super::*;
+    use crate::config::ExecutorConfig;
+    use crate::control_link::Link;
+    use crate::lease::{LEASE, Lease};
+
+    #[tokio::test]
+    async fn reconnection_replaces_an_obsolete_recovery_approval_interlock() {
+        let config =
+            ExecutorConfig::parse(include_str!("../../tests/support/two_joint_config.json"))
+                .unwrap();
+        let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+        let handle = link.handle();
+        let mut sample = Sample::blank();
+        sample.mode = ArmMode::Disconnected;
+        sample.recovery_issue = Some(ArmRecoveryIssue {
+            motors_without_torque: vec![2],
+            detail: "Motor lost torque".into(),
+        });
+        link.publish(Event::State(sample.clone()));
+        update(&handle).await;
+        assert_eq!(
+            handle.interlocks().0,
+            vec![Interlock::RecoveryApprovalRequired {
+                motors: vec!["2".into()]
+            }]
+        );
+
+        sample.recovery_issue = None;
+        sample.cycle = 1;
+        link.publish(Event::State(sample));
+        update(&handle).await;
+        assert_eq!(handle.interlocks().0, vec![Interlock::ArmDisconnected]);
+        link.close();
     }
 }

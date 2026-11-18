@@ -1,5 +1,3 @@
-"""Development tooling follows the SDK components available in a checkout."""
-
 from pathlib import Path
 
 import pytest

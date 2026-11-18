@@ -12,12 +12,20 @@ Use [uv](https://docs.astral.sh/uv/) for your agent project:
 uv init my-robot-agent
 cd my-robot-agent
 uv add "hebbian-rua[openai,anthropic,gemini]"
-uv run rua serve --profile ./robot.toml
 ```
 
 In an existing uv project, start with `uv add`. This adds RUA to `pyproject.toml`
 and resolves its dependencies into `uv.lock`. Run your agent with `uv run` too.
 Choose only the provider extras you need, such as `hebbian-rua[anthropic]`.
+
+Create your own calibrated profile using [per-arm setup](hardware.md), then start
+the station with that file:
+
+```sh
+uv run rua serve --profile ./robot.toml
+```
+
+`robot.toml` is your profile path, not a generated or bundled configuration.
 
 Use `from hebbian_rua import StationClient` in your Python program. See the
 [Python examples](../examples/python/README.md). Physical robots need

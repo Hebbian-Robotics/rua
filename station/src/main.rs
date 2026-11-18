@@ -1,6 +1,4 @@
-//! The executor's command line. `hebbian-robot-use-server --help` lists the commands.
-
-mod cli;
+mod commands;
 mod media;
 mod run;
 mod serve;
@@ -9,10 +7,9 @@ mod tools;
 
 use clap::Parser;
 
-use crate::cli::{Arguments, Command};
+use crate::commands::{Arguments, Command};
 
 fn main() -> anyhow::Result<()> {
-    // LiveKit credentials may sit in a .env file; an exported variable wins.
     let _ = dotenvy::dotenv();
     match Arguments::parse().command {
         Command::Serve { arguments, web } => serve::serve(arguments, web.settings()?),

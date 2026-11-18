@@ -22,7 +22,7 @@ jaw_closing_axis = "x"
 # This is a comparison reference, not proof of physical support or a move target.
 # The wide wrist-roll tolerance permits gripper rotation without affecting support.
 [rest_reference]
-joint_positions_radians = [0.0, -1.8377089838869982, 1.6582332317043782, 1.2916118233997098, -1.5201749607946704]
+joint_positions_radians = [-0.0037, -1.8435, 1.5765, 1.3296, -1.5536]
 joint_tolerances_radians = [0.15, 0.10, 0.10, 0.10, 6.3]
 
 [control]
@@ -30,6 +30,13 @@ frequency_hertz = 50
 # A stalled control cycle is stopped after 200 ms; a longer window delays
 # detection of missed feedback and is not a substitute for reliable timing.
 loop_deadline_seconds = 0.2
+
+# Nominal tabletop for an SO-101 standing directly on the same surface as its workspace.
+# The model's base has horizontal contact faces at Z=0. Adjust for a raised mount
+# or measured alignment; leeway accounts for model/calibration differences.
+[surface_guard]
+surface_height_meters = 0.0
+leeway_meters = 0.01
 
 [tracking]
 # A joint may trail its command by commanded speed * following_lag_seconds +

@@ -69,7 +69,7 @@ fn recording_preserves_irregular_timestamps_and_rotates_segments()
 }
 
 fn assert_chunks_are_grouped(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    // Video and telemetry never share a chunk, so a reader fetches only what it wants.
+    // WHY: Video and telemetry never share a chunk, so a reader fetches only what it wants.
     let summary = mcap::Summary::read(data)?.ok_or("missing summary")?;
     let (mut video_chunks, mut telemetry_chunks) = (0, 0);
     for chunk in &summary.chunk_indexes {
@@ -131,7 +131,6 @@ fn check_archive(directory: &Path, first_at: u64) -> Result<(), Box<dyn std::err
             }
         }
     }
-    // Each picture change starts a segment, and every received frame was encoded.
     let starts: Vec<&Value> = segments
         .iter()
         .filter(|entry| entry.get("started_unix_nano").is_some())

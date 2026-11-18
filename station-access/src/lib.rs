@@ -1,13 +1,10 @@
-//! Scoped `LiveKit` access for station cameras, viewers and recorders.
 use std::time::Duration;
 
-use hebbian_contracts::PhoneInvite;
+use hebbian_contracts::{PhoneInvite, RoomAccess};
 use livekit_api::{
     access_token::{AccessToken, VideoGrants},
     services::room::{CreateRoomOptions, RoomClient},
 };
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
 const VARIABLES: [&str; 3] = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"];
 
@@ -27,22 +24,20 @@ pub enum AccessError {
     Invite(#[from] livekit_camera_invite::InviteError),
 }
 
-/// Secrets deliberately do not implement `Debug`, `Serialize` or `JsonSchema`.
+// INVARIANT: Secrets deliberately do not implement `Debug`, `Serialize` or `JsonSchema`.
 pub struct Credentials {
     pub url: String,
     api_key: String,
     api_secret: String,
 }
 
-/// The server can distinguish an intentionally unconfigured station from a partial setup.
+// WHY: The server can distinguish an intentionally unconfigured station from a partial setup.
 pub enum CameraConfiguration {
     Off { reason: AccessError },
     Enabled(Credentials),
 }
 
 impl CameraConfiguration {
-    /// # Errors
-    /// Returns every missing variable when only some credentials are configured.
     pub fn from_environment() -> Result<Self, AccessError> {
         Self::from_values(VARIABLES.map(|name| std::env::var(name).ok()))
     }
@@ -58,12 +53,6 @@ impl CameraConfiguration {
             other => other.map(Self::Enabled),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RoomAccess {
-    pub server_url: String,
-    pub token: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -110,15 +99,10 @@ pub fn new_room_name() -> String {
 }
 
 impl Credentials {
-    /// # Errors
-    /// Returns every missing or empty credential variable.
     pub fn from_environment() -> Result<Self, AccessError> {
         Self::from_values(VARIABLES.map(|name| std::env::var(name).ok()))
     }
 
-    /// Parses supplied environment values without changing the process environment.
-    /// # Errors
-    /// Returns every missing or empty variable, in URL/key/secret order.
     pub fn from_values(values: [Option<String>; 3]) -> Result<Self, AccessError> {
         let missing: Vec<_> = VARIABLES
             .into_iter()
@@ -136,8 +120,6 @@ impl Credentials {
         })
     }
 
-    /// # Errors
-    /// Rejects invalid camera names and signing failures.
     pub fn camera_access(
         &self,
         room: &str,
@@ -159,8 +141,6 @@ impl Credentials {
         )
     }
 
-    /// # Errors
-    /// Returns a token-signing error.
     pub fn watcher_access(&self, room: &str, role: WatcherRole) -> Result<RoomAccess, AccessError> {
         let identity = format!(
             "{}-{}",
@@ -201,8 +181,6 @@ impl Credentials {
         })
     }
 
-    /// # Errors
-    /// Rejects an invalid camera label, phone URL, signing failure or oversized QR payload.
     pub fn phone_invite(
         &self,
         room: &str,
@@ -223,9 +201,7 @@ impl Credentials {
         })
     }
 
-    /// Creates the room before announcing recording state, including for phones joining later.
-    /// # Errors
-    /// Returns a service error or a timeout covering both requests together.
+    // WHY: The room exists before recording state is announced, which also covers phones joining later.
     pub async fn announce_recording(&self, room: &str, recording: bool) -> Result<(), AccessError> {
         let client = RoomClient::with_api_key(&self.url, &self.api_key, &self.api_secret);
         tokio::time::timeout(Duration::from_secs(10), async {

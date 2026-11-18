@@ -1,5 +1,7 @@
-//! The `run` command: one loop over every arm, on a simulator's socket, the
-//! Feetech servos, or the lag simulator, and the timing each arm reports.
+#![allow(
+    clippy::disallowed_types,
+    reason = "Controller setup constructs hardware plants and transfers ownership to the control loop."
+)]
 
 use std::collections::BTreeMap;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -27,14 +29,12 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 use crate::tools::{feetech_servos, load_config};
 
-/// The HTTP server and its mounted viewer routes.
 struct Serving {
     server: HttpServer,
     mounted: Mounted,
 }
 
 impl Serving {
-    /// Stop any recording, then stop the server.
     fn close(self) {
         let handle = self.server.runtime_handle();
         handle.block_on(self.mounted.recording.shutdown());
@@ -42,8 +42,6 @@ impl Serving {
     }
 }
 
-/// The median, tail and longest of durations recorded in microseconds, in
-/// milliseconds; empty when nothing was recorded.
 fn millisecond_percentiles(
     microseconds: &Histogram<u64>,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -62,8 +60,6 @@ fn millisecond_percentiles(
     .collect()
 }
 
-/// What the serial bus answered: the round trips of answered requests, and the
-/// retries and failures, for choosing the serial timeout on a real arm.
 pub(crate) fn bus_timing_json(timing: &BusTiming) -> serde_json::Value {
     let mut summary = millisecond_percentiles(&timing.answered_round_trip_microseconds);
     summary.insert(
@@ -98,8 +94,8 @@ fn print_timing(arm: &str, report: &Report, bus: Option<&BusTiming>) {
     println!("{}", serde_json::Value::Object(timing));
 }
 
-/// Set on the first SIGINT or SIGTERM so the loop ends cleanly; a second one
-/// ends the process at once, for a loop that does not stop.
+// CONSTRAINT: The first termination signal requests clean shutdown; a second exits immediately
+// if the loop cannot stop.
 fn shutdown_flag() -> anyhow::Result<Arc<AtomicBool>> {
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     for signal in [SIGINT, SIGTERM] {
@@ -113,7 +109,6 @@ fn shutdown_flag() -> anyhow::Result<Arc<AtomicBool>> {
     Ok(shutdown_requested)
 }
 
-/// A validated arm configuration and the file needed by its hardware guard.
 pub(crate) struct ConfiguredArm {
     pub name: String,
     pub config: ExecutorConfig,
@@ -132,7 +127,6 @@ pub(crate) fn load_arms(arms: &[(String, PathBuf)]) -> anyhow::Result<Vec<Config
         .collect()
 }
 
-/// One configured arm, its plant, and its link when served.
 fn arm_setup<P: Plant>(
     name: &str,
     config: ExecutorConfig,
@@ -143,12 +137,7 @@ fn arm_setup<P: Plant>(
     let link = with_link
         .then(|| Link::new(&config, Arc::clone(control)))
         .transpose()?;
-    Ok(ArmSetup {
-        name: name.to_owned(),
-        config,
-        plant,
-        link,
-    })
+    Ok(ArmSetup::new(name.to_owned(), config, plant, link))
 }
 
 fn close_links<P: Plant>(setups: &mut [ArmSetup<P>]) {
@@ -158,8 +147,6 @@ fn close_links<P: Plant>(setups: &mut [ArmSetup<P>]) {
         }
     }
 }
-/// Run every arm's loop to its end, then close the links and print each arm's
-/// timing; `bus_timing` reads what the plant's serial bus answered, if it has one.
 fn run_and_report<P: Plant>(
     mut setups: Vec<ArmSetup<P>>,
     run_for: Option<Duration>,
@@ -185,11 +172,10 @@ fn run_and_report<P: Plant>(
     let reports = run_arms(&mut setups, run_for, shutdown_requested);
     close_links(&mut setups);
     for (setup, (name, report)) in setups.iter().zip(&reports) {
-        print_timing(name, report, bus_timing(&setup.plant));
+        print_timing(name, report, bus_timing(setup.plant()));
     }
 }
 
-/// Arms whose plants are external simulators, each connected on its plant socket.
 fn simulator_setups(
     arms: &[ConfiguredArm],
     directory: &Path,
@@ -197,7 +183,7 @@ fn simulator_setups(
     shutdown_requested: &AtomicBool,
     control: &Arc<Lease>,
 ) -> anyhow::Result<Vec<ArmSetup<SocketPlant>>> {
-    // Every arm's plant socket exists before the first accept, so a
+    // INVARIANT: Every arm's plant socket exists before the first accept, so a
     // simulator serving several arms can connect to all of them at once.
     let mut listeners = Vec::new();
     for arm in arms {
@@ -233,8 +219,6 @@ fn simulator_setups(
     Ok(setups)
 }
 
-/// Arms on their Feetech servos. With a guard section, a guard process watches
-/// each arm if this one stops.
 fn hardware_setups(
     arms: &[ConfiguredArm],
     with_link: bool,
@@ -270,7 +254,6 @@ fn hardware_setups(
     Ok(setups)
 }
 
-/// Arms on the lag simulator, starting at zero within their limits.
 fn lag_setups(
     arms: &[ConfiguredArm],
     plant_lag_seconds: f64,
@@ -297,7 +280,6 @@ fn lag_setups(
     Ok(setups)
 }
 
-/// Keep the station alive while a separately supervised process owns the loop.
 pub(crate) fn run_supervised(
     arms: &[ConfiguredArm],
     directory: &Path,
@@ -403,55 +385,6 @@ pub(crate) fn run_supervised(
     Ok(())
 }
 
-/// Verify fresh feedback and faults before announcing a controller as ready.
-fn verify_controller_start<P: Plant>(
-    setups: &mut [ArmSetup<P>],
-    verify_torque: bool,
-) -> anyhow::Result<()> {
-    for setup in setups {
-        setup
-            .plant
-            .preflight()
-            .with_context(|| format!("{}: preflight failed", setup.name))?;
-        let feedback = if verify_torque {
-            let observation = setup
-                .plant
-                .observe_recovery()
-                .with_context(|| format!("{}: cannot confirm torque", setup.name))?;
-            let expected_motors =
-                setup.config.joint_count + usize::from(setup.config.gripper.is_some());
-            ensure!(
-                observation.motor_torque.len() == expected_motors
-                    && observation.motor_torque.iter().all(|(_, enabled)| !enabled),
-                "{}: motor torque is not confirmed off",
-                setup.name
-            );
-            if let Some(issue) = observation.health_issue {
-                anyhow::bail!("{}: {issue}", setup.name);
-            }
-            observation.feedback
-        } else {
-            setup
-                .plant
-                .read_feedback()
-                .with_context(|| format!("{}: cannot read feedback", setup.name))?
-        };
-        ensure!(
-            feedback.positions.len() == setup.config.joint_count
-                && feedback
-                    .positions
-                    .iter()
-                    .all(|position| position.is_finite()),
-            "{}: invalid joint feedback",
-            setup.name
-        );
-        if let Some(fault) = feedback.fault {
-            anyhow::bail!("{}: {fault}", setup.name);
-        }
-    }
-    Ok(())
-}
-
 fn run_controller_setups<P: Plant>(
     mut setups: Vec<ArmSetup<P>>,
     socket_path: &Path,
@@ -460,7 +393,9 @@ fn run_controller_setups<P: Plant>(
     verify_torque: bool,
     bus_timing: impl Fn(&P) -> Option<&BusTiming>,
 ) -> anyhow::Result<()> {
-    verify_controller_start(&mut setups, verify_torque)?;
+    for setup in &mut setups {
+        setup.verify_disabled(verify_torque)?;
+    }
     let socket =
         UnixStream::connect(socket_path).context("Cannot connect to the supervising station")?;
     let stop_socket = socket.try_clone()?;
@@ -485,7 +420,7 @@ fn run_controller_setups<P: Plant>(
         );
         if !service_shutting_down.load(Ordering::Acquire) {
             eprintln!("Station connection lost: {result:?}");
-            // The guard, when present, takes over after the controller exits.
+            // INVARIANT: The guard, when present, takes over after the controller exits.
             // Do not run the normal return-to-rest shutdown without the station.
             std::process::exit(1);
         }
@@ -496,12 +431,11 @@ fn run_controller_setups<P: Plant>(
     let _ = service.join();
     close_links(&mut setups);
     for (setup, (name, report)) in setups.iter().zip(&reports) {
-        print_timing(name, report, bus_timing(&setup.plant));
+        print_timing(name, report, bus_timing(setup.plant()));
     }
     Ok(())
 }
 
-/// Run a controller as a station child; it never serves HTTP itself.
 pub(crate) fn run_controller(
     arms: &[ConfiguredArm],
     station_socket: &Path,
@@ -581,14 +515,14 @@ pub(crate) fn run_loop(
         "Each --arm needs its own name"
     );
     let shutdown_requested = shutdown_flag()?;
-    // One lease for every arm of this executor.
+    // INVARIANT: One lease for every arm of this executor.
     let control = Arc::new(Lease::new(LEASE));
     let configs = arms.iter().map(|arm| &arm.config).collect::<Vec<_>>();
     let simulator_configs: Vec<bool> = configs
         .iter()
         .map(|config| config.sim_plant.is_some())
         .collect();
-    // Started before the loop and closed after it, on its own threads.
+    // WHY: Started before the loop and closed after it, on its own threads.
     let serving = http_address
         .map(|address| {
             let directories = station_api::trace_directories(
@@ -640,7 +574,7 @@ pub(crate) fn run_loop(
             |_| None,
         );
     } else if hardware {
-        // Every arm starts disabled; the station enables each (preflight, then
+        // INVARIANT: Every arm starts disabled; the station enables each (preflight, then
         // torque on holding the present pose), or a run without a station enables
         // all at once. Torque stays on when the loop ends: the servos keep holding
         // their last goal, and `disable` is how an arm is let go.

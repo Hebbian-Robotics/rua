@@ -8,7 +8,18 @@ default-members = ["robot-geometry", "contracts", "executor", "station", "statio
 pedantic = { level = "warn", priority = -1 }
 needless_pass_by_value = "allow"
 unnecessary_wraps = "allow"
+missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# Keep runtime failures explicit; reviewed invariants have local explanations.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+needless_pass_by_ref_mut = "warn"
+disallowed_types = "deny"
+disallowed_methods = "deny"
+todo = "deny"
+unimplemented = "deny"
 
 # Line tables alone keep stack traces and panic locations and cut target/ size.
 [profile.dev]
@@ -21,6 +32,21 @@ opt-level = 3
 
 [profile.dev.package.image]
 opt-level = 2
+
+# WHY: The collision guards run every control cycle and every rehearsed cycle of a policy
+# preview. Unoptimized, they take about 11 ms a cycle (55% of a 50 Hz cycle), and a preview
+# of a few hundred cycles runs into its 1.5 s limit.
+[profile.dev.package.hebbian-robot-geometry]
+opt-level = 3
+
+[profile.dev.package.parry3d-f64]
+opt-level = 3
+
+[profile.dev.package.nalgebra]
+opt-level = 3
+
+[profile.dev.package.simba]
+opt-level = 3
 
 [profile.dev.package.livekit-cameras]
 opt-level = 2

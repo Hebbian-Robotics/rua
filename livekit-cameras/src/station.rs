@@ -80,51 +80,29 @@ async fn connection(
         ));
     }
     response.error_for_status_ref()?;
-    let mut buffer = Vec::new();
-    let mut kind = String::new();
-    let mut identifier: Option<String> = None;
-    let mut data = Vec::<String>::new();
+    let mut decoder = hebbian_contracts::server_sent_events::ServerSentEventDecoder::default();
     loop {
         let chunk = tokio::select! { () = stopped.cancelled() => return Ok(()), result = response.chunk() => result? };
         let Some(chunk) = chunk else {
             return Ok(());
         };
-        buffer.extend_from_slice(&chunk);
-        while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
-            let mut bytes = buffer.drain(..=newline).collect::<Vec<_>>();
-            bytes.pop();
-            if bytes.last() == Some(&b'\r') {
-                bytes.pop();
-            }
-            let line = std::str::from_utf8(&bytes)
-                .map_err(|error| RecorderError::InvalidData(error.to_string()))?;
-            if line.is_empty() {
-                if !data.is_empty() {
-                    apply_event(
-                        &client,
-                        &base,
-                        (&kind, &data.join("\n")),
-                        archive,
-                        arm_cursors,
-                        run_after,
-                        event_cursor,
-                    )
-                    .await?;
-                    if let Some(identifier) = identifier.as_deref().filter(|id| !id.is_empty()) {
-                        *event_cursor = Some(identifier.to_owned());
-                    }
-                }
-                kind.clear();
-                data.clear();
-            } else if !line.starts_with(':') {
-                let (field, value) = line.split_once(':').unwrap_or((line, ""));
-                let value = value.strip_prefix(' ').unwrap_or(value);
-                match field {
-                    "event" => kind = value.to_owned(),
-                    "id" if !value.contains('\0') => identifier = Some(value.to_owned()),
-                    "data" => data.push(value.to_owned()),
-                    _ => {}
-                }
+        decoder.push(&chunk);
+        while let Some(event) = decoder
+            .next_event()
+            .map_err(|error| RecorderError::InvalidData(error.to_string()))?
+        {
+            apply_event(
+                &client,
+                &base,
+                (&event.kind, &event.data),
+                archive,
+                arm_cursors,
+                run_after,
+                event_cursor,
+            )
+            .await?;
+            if let Some(identifier) = event.identifier.filter(|identifier| !identifier.is_empty()) {
+                *event_cursor = Some(identifier);
             }
         }
     }
@@ -324,7 +302,7 @@ fn record_frame(
     Ok(())
 }
 
-// MCAP stores spans in the viewer's OpenTelemetry JSON format.
+// CONSTRAINT: MCAP stores spans in the viewer's OpenTelemetry JSON format.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RecordedSpan {
@@ -381,7 +359,7 @@ fn record_command(
     )
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // Executor command times are Unix seconds; span timestamps are nanoseconds.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // CONSTRAINT: Executor command times are Unix seconds; span timestamps are nanoseconds.
 fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> RecordedSpan {
     use sha2::{Digest, Sha256};
     let digest = format!(
@@ -525,6 +503,7 @@ mod tests {
                     finished_at: 2.5,
                     outcome: hebbian_contracts::CommandOutcome::Completed,
                     detail: None,
+                    gripper: None,
                 });
             }
             record_frame(

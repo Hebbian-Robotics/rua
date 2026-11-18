@@ -1,6 +1,4 @@
-//! The station as clients see it, built from each arm's last report. An arm
-//! whose reports have stopped is never shown as live: it reads as faulted,
-//! with the reason.
+// SAFETY: Expired feedback must be presented as unavailable or faulted, never as a live arm.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -8,8 +6,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::control_link::LinkHandle;
 use hebbian_contracts::{ArmMode, ArmState, ControllerKind, StationState};
 
-/// An arm sends a sample every cycle, enabled or not; this long without one,
-/// its state is not live.
 const STALE_AFTER: Duration = Duration::from_secs(1);
 
 async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
@@ -39,6 +35,7 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
             sample
                 .fault
                 .clone()
+                .or_else(|| sample.active_trip.clone())
                 .unwrap_or_else(|| format!("{:?}", sample.mode).to_lowercase())
         })
     });
@@ -77,6 +74,9 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
         tool,
         controller,
         fault: stale.or_else(|| sample.as_ref().and_then(|sample| sample.fault.clone())),
+        active_trip: sample
+            .as_ref()
+            .and_then(|sample| sample.active_trip.clone()),
         recovery_issue: sample
             .as_ref()
             .and_then(|sample| sample.recovery_issue.clone()),
@@ -95,7 +95,6 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
     }
 }
 
-/// Every arm's state and what clients are told about the robot.
 pub async fn station_state(links: &BTreeMap<String, LinkHandle>) -> Option<StationState> {
     let first = links.values().next()?;
     let mut arms = Vec::new();

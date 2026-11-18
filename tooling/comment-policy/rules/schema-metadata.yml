@@ -1,0 +1,84 @@
+id: schema-python-candidate
+language: Python
+severity: info
+message: 'Potential Pydantic schema description.'
+ignores: ['livekit-cameras/**']
+rule:
+  kind: call
+  regex: 'description|json_schema_extra'
+---
+id: schema-rust-description
+language: Rust
+severity: info
+message: 'Schemars schema description.'
+ignores: ['livekit-cameras/**']
+rule:
+  pattern: '#[schemars($$$BEFORE description = $TEXT $$$AFTER)]'
+---
+id: schema-ts-import
+language: TypeScript
+severity: info
+message: 'Schema import binding.'
+ignores: ['livekit-cameras/**']
+rule:
+  kind: import_statement
+  has:
+    kind: string
+    regex: "^['\"]zod(?:/v[34])?['\"]$"
+---
+id: schema-ts-binding
+language: TypeScript
+severity: info
+message: 'Potential schema binding.'
+ignores: ['livekit-cameras/**']
+rule:
+  pattern:
+    context: 'const $NAME = $VALUE;'
+    selector: variable_declarator
+---
+id: schema-ts-description
+language: TypeScript
+severity: info
+message: 'Potential Zod schema description.'
+ignores: ['livekit-cameras/**']
+rule:
+  any:
+    - pattern: '$RECEIVER.describe($$$ARGUMENTS)'
+    - pattern: '$RECEIVER.meta({ description: $TEXT })'
+    - pattern: '$RECEIVER.meta({ $$$BEFORE description: $TEXT, $$$AFTER })'
+    - pattern: '$RECEIVER.meta({ "description": $TEXT })'
+    - pattern: '$RECEIVER.meta({ $$$BEFORE "description": $TEXT, $$$AFTER })'
+---
+id: schema-tsx-import
+language: Tsx
+severity: info
+message: 'Schema import binding.'
+ignores: ['livekit-cameras/**']
+rule:
+  kind: import_statement
+  has:
+    kind: string
+    regex: "^['\"]zod(?:/v[34])?['\"]$"
+---
+id: schema-tsx-binding
+language: Tsx
+severity: info
+message: 'Potential schema binding.'
+ignores: ['livekit-cameras/**']
+rule:
+  pattern:
+    context: 'const $NAME = $VALUE;'
+    selector: variable_declarator
+---
+id: schema-tsx-description
+language: Tsx
+severity: info
+message: 'Potential Zod schema description.'
+ignores: ['livekit-cameras/**']
+rule:
+  any:
+    - pattern: '$RECEIVER.describe($$$ARGUMENTS)'
+    - pattern: '$RECEIVER.meta({ description: $TEXT })'
+    - pattern: '$RECEIVER.meta({ $$$BEFORE description: $TEXT, $$$AFTER })'
+    - pattern: '$RECEIVER.meta({ "description": $TEXT })'
+    - pattern: '$RECEIVER.meta({ $$$BEFORE "description": $TEXT, $$$AFTER })'

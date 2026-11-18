@@ -1,11 +1,6 @@
-//! Arrival and deadline state shared by learned-policy execution and preview.
-
-use super::PolicyRuntime;
 use crate::arm::ReachGoal;
-use crate::plant::Feedback;
 use nalgebra::Isometry3;
 
-/// A reach-and-finish command being followed by the policy.
 pub(crate) struct ActiveReach {
     goal: ReachGoal,
     settled_seconds: f64,
@@ -15,7 +10,6 @@ pub(crate) struct ActiveReach {
     settled_velocity_radians_per_second: f64,
 }
 
-/// Where a reach-and-finish command stands after a cycle's check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReachStatus {
     Running,
@@ -39,23 +33,10 @@ impl ActiveReach {
         &self.goal
     }
 
-    /// One cycle of the arrival check, shared by the real command and the
-    /// ghost's rehearsal of it: the tool must have stayed within both
-    /// tolerances for the settle time with the arm at rest, before the deadline.
     pub(crate) fn assess(
         &mut self,
-        runtime: &PolicyRuntime,
-        feedback: &Feedback,
-        interval: f64,
-    ) -> anyhow::Result<ReachStatus> {
-        let tool = runtime.tool_pose(feedback)?;
-        Ok(self.assess_pose(&tool, feedback, interval))
-    }
-
-    pub(crate) fn assess_pose(
-        &mut self,
         tool: &Isometry3<f64>,
-        feedback: &Feedback,
+        velocities: &[f64],
         interval: f64,
     ) -> ReachStatus {
         self.elapsed += interval;
@@ -70,8 +51,7 @@ impl ActiveReach {
             .min(1.0);
         let reached = distance <= self.goal.position_tolerance_meters
             && 2.0 * alignment.acos() <= self.goal.orientation_tolerance_radians;
-        let at_rest = feedback
-            .velocities
+        let at_rest = velocities
             .iter()
             .all(|velocity| velocity.abs() <= self.settled_velocity_radians_per_second);
         self.settled_seconds = if reached && at_rest {

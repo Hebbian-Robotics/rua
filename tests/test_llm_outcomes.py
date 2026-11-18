@@ -1,5 +1,3 @@
-"""What an LLM caller is told when a move ends: reached and stopped short differ."""
-
 import json
 from pathlib import Path
 

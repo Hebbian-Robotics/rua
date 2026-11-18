@@ -1,5 +1,10 @@
-//! What a link answers by itself, without a control loop: control requests and
-//! unreadable lines.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    reason = "This integration-test target may abort on failed setup or unexpected outcomes."
+)]
 
 use std::sync::Arc;
 
@@ -15,15 +20,7 @@ use hebbian_contracts::{
 use hebbian_robot_use_server::lease::LeaseRequest;
 use support::LinkClient;
 
-const CONFIG: &str = r#"{
-  "urdf": "unused.urdf", "driven_joints": ["a", "b"], "surface_guard": null,
-  "motion": {"acceleration_limit": 20.0, "jerk_limit": 200.0, "settled_error_radians": 0.02, "settle_dwell_seconds": 0.1, "settle_timeout_seconds": 2.0}, "joint_count": 2, "frequency_hertz": 100.0, "loop_deadline_seconds": 0.1,
-  "lower_limits": [-2.0, -2.0], "upper_limits": [2.0, 2.0],
-  "joint_effort_limits": [10.0, 10.0], "tracking_following_lag_seconds": 0.05, "tracking_static_margin_radians": 1.5,
-  "max_joint_speed": 3.0, "default_joint_speed": 1.5,
-  "stream_goal_timeout_seconds": 5.0,
-  "joint_limit_recovery_tolerance_radians": 0.0349, "jaw_closing_axis": "x"
-}"#;
+const CONFIG: &str = include_str!("support/two_joint_config.json");
 
 fn link() -> Link {
     let config = ExecutorConfig::parse(CONFIG).unwrap();
@@ -50,7 +47,7 @@ fn a_resent_request_id_is_answered_again_not_acted_on_again() {
             ..
         } if matches!(**answer, LeaseAnswer::Granted(_))
     ));
-    // Acted on again, the claim would be refused: control is already held.
+    // WHY: Acted on again, the claim would be refused: control is already held.
     client.send_request(Some("a"), &claim);
     assert_eq!(reply(&mut client), first);
     link.close();
@@ -85,7 +82,7 @@ fn a_waiting_arm_does_not_block_control_claims() {
         command_link.submit_command_fenced(Command::Enable, None, None, None, Vec::new())
     });
     starting.recv().unwrap();
-    // The link has no control loop; its command remains unanswered.
+    // WHY: The link has no control loop; its command remains unanswered.
     let claim_link = link.handle();
     let (claimed, result) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

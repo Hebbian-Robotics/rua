@@ -16,10 +16,11 @@ Start a project with [uv](https://docs.astral.sh/uv/):
 uv init my-robot-agent
 cd my-robot-agent
 uv add "hebbian-rua[openai,anthropic,gemini]"
-uv run rua serve --profile ./robot.toml
 ```
 
 Already have a uv project? Start with `uv add`. Choose just the extras you need.
+Create a [calibrated robot profile](docs/hardware.md), then start the station with
+`uv run rua serve --profile ./robot.toml`, replacing the path with your file.
 Prebuilt wheels support Linux x86-64 (glibc 2.39+) and macOS 14+ on Apple Silicon. On Windows, use [WSL2](docs/windows-wsl.md).
 
 See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it,
@@ -37,7 +38,7 @@ Here's an example agent loop. The [complete example](examples/python/agent_quick
 includes the connection, lease and arm setup, plus loops for Claude and Gemini:
 
 ```python
-from hebbian_rua.openai import OpenAIRobotTools
+from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
 robot_tools = OpenAIRobotTools(robot)
 messages = [{"role": "user", "content": "Wave hello"}]
@@ -57,10 +58,16 @@ while True:
 
 The model chooses tools, RUA executes them, and fresh camera frames and robot
 state come back for the next turn. You can change the prompt, model and loop.
-Use `AnthropicRobotTools` from `hebbian_rua.anthropic` or `GeminiRobotTools` from
-`hebbian_rua.gemini` with the corresponding SDK. See the
+Use `AnthropicRobotTools` from `hebbian_rua.client.llm.anthropic` or `GeminiRobotTools` from
+`hebbian_rua.client.llm.gemini` with the corresponding SDK. See the
 [Python examples](examples/python/README.md).
 Choose what reaches the model with [output formatters](docs/model-output.md).
+
+RUA compiles action sequences automatically. The Robot Use Compiler checks and
+translates the requested actions. The Robot Use Runtime prepares each step
+against live robot state and admits it for execution. Advanced users can
+[compile and inspect before running](docs/control-model.md#compile-before-running).
+See [how execution works](docs/architecture.md#robot-use-compiler-and-runtime).
 
 Hardware setup, camera tools and recording utilities have their own guides:
 [SO-101](https://github.com/Hebbian-Robotics/so101),

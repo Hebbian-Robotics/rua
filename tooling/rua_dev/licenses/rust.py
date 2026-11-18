@@ -1,5 +1,3 @@
-"""Collect Rust dependency license metadata and available license files."""
-
 import json
 import shutil
 import subprocess

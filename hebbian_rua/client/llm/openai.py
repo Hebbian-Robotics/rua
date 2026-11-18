@@ -1,13 +1,19 @@
 """Robot tools for the OpenAI Responses API. Install the openai extra."""
 
+from collections.abc import Mapping
+
 from openai.types.responses import Response, ResponseInputItemParam, ToolParam
 from openai.types.responses.response_input_content_param import (
     ResponseInputContentParam,
 )
 from pydantic import TypeAdapter
 
-from hebbian_rua._tool_turn import RobotToolTurn, decode_arguments, encode_camera
 from hebbian_rua.client.llm.robot_tools import RobotTools
+from hebbian_rua.client.llm.tool_turn import (
+    RobotToolTurn,
+    decode_arguments,
+    encode_camera,
+)
 from hebbian_rua.client.llm.types import RobotToolCall
 
 _RESPONSE_INPUT = TypeAdapter(list[ResponseInputItemParam])
@@ -38,18 +44,7 @@ class OpenAIRobotTools:
 
     async def observe(self) -> ResponseInputItemParam:
         observation = await self.robot.observe()
-        content: list[ResponseInputContentParam] = [
-            {"type": "input_text", "text": observation.text}
-        ]
-        content.extend(
-            {
-                "type": "input_image",
-                "image_url": f"data:image/jpeg;base64,{encode_camera(jpeg)}",
-                "detail": "auto",
-            }
-            for jpeg in observation.cameras.values()
-        )
-        return {"role": "user", "content": content}
+        return _image_message(observation.text, observation.cameras)
 
     async def execute(
         self, response: Response
@@ -84,4 +79,26 @@ class OpenAIRobotTools:
             }
             for result in results
         )
+        messages.extend(
+            _image_message(
+                f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                result.cameras,
+            )
+            for result in results
+            if result.cameras
+        )
         return RobotToolTurn(messages, results)
+
+
+def _image_message(text: str, cameras: Mapping[str, bytes]) -> ResponseInputItemParam:
+    content: list[ResponseInputContentParam] = [{"type": "input_text", "text": text}]
+    for name, jpeg in cameras.items():
+        content.append({"type": "input_text", "text": f"Camera: {name}"})
+        content.append(
+            {
+                "type": "input_image",
+                "image_url": f"data:image/jpeg;base64,{encode_camera(jpeg)}",
+                "detail": "auto",
+            }
+        )
+    return {"role": "user", "content": content}
