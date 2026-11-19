@@ -10,7 +10,10 @@ parts of our stack that make that loop easy to build. More coming soon.
 - Python SDK and a small agent loop
 - [LiveKit camera preview](docs/cameras.md)
 
-Start a project with [uv](https://docs.astral.sh/uv/):
+For a physical SO-101, follow the [source quickstart](docs/getting-started.md#set-up-a-physical-so-101)
+to calibrate the arm with `so101-calibrate` and start RUA with `--profile auto`.
+
+Start an agent project with [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv init my-robot-agent
@@ -19,8 +22,8 @@ uv add "hebbian-rua[openai,anthropic,gemini]"
 ```
 
 Already have a uv project? Start with `uv add`. Choose just the extras you need.
-Create a [calibrated robot profile](docs/hardware.md), then start the station with
-`uv run rua serve --profile ./robot.toml`, replacing the path with your file.
+With the published RUA 0.1.2 wheel, use an
+[explicit profile and LeRobot calibration](docs/hardware.md) to connect a physical arm.
 Prebuilt wheels support Linux x86-64 (glibc 2.39+) and macOS 14+ on Apple Silicon. On Windows, use [WSL2](docs/windows-wsl.md).
 
 See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it,

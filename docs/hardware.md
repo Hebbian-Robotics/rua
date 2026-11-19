@@ -1,21 +1,19 @@
-# Set up each SO-101
+# Use an existing LeRobot calibration
 
-[SO-101](https://github.com/Hebbian-Robotics/so101) owns the driver, calibration
-tool and model assets. Its [setup guide](https://github.com/Hebbian-Robotics/so101/tree/main/setup)
-covers calibration; the steps below connect a calibrated arm to RUA profiles.
-RUA reads LeRobot calibration JSON; the standalone tool's `setup.toml` is not a
-RUA profile.
+If you already calibrated your SO-101 with LeRobot, point a local RUA profile
+at its calibration ID and serial port. For a new arm, follow the
+[SO-101 calibration guide](so101-calibration.md).
 
 Every physical arm needs its own serial port, LeRobot calibration and verified
 model mapping. The bundled profile provides starting values, not a calibration
 or universal servo tune. Keep the arm supported with torque off during setup,
 and keep a physical power cutoff accessible.
 
-1. Follow [LeRobot's SO-101 setup](https://huggingface.co/docs/lerobot/en/so101)
-   to identify the port and calibrate with a unique robot ID. The station reads
-   `~/.cache/huggingface/lerobot/calibration/robots/so_follower/<id>.json`.
-   Prefer a stable `/dev/serial/by-id/` path on Linux; on macOS, use the arm's
-   `/dev/cu.*` serial device.
+1. Find the robot ID you used in [LeRobot's SO-101 setup](https://huggingface.co/docs/lerobot/en/so101).
+   By default, the station reads
+   `~/.cache/huggingface/lerobot/calibration/robots/so_follower/<id>.json`
+   using that ID. Identify the arm's serial port. Prefer a stable
+   `/dev/serial/by-id/` path on Linux. On macOS, use the arm's `/dev/cu.*` device.
 2. Create a private profile such as `$HOME/.config/rua/so101.toml`:
 
    ```toml

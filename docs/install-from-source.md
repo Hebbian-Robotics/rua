@@ -6,6 +6,8 @@ is exercised on Ubuntu 24.04 x86-64 and macOS 14+ (Apple Silicon).
 Native Windows is not validated for RUA.
 For Windows setup considerations, see [Windows with WSL2](windows-wsl.md).
 
+## Prepare the checkout
+
 Install [uv](https://docs.astral.sh/uv/), the pinned Rust toolchain and, on Ubuntu,
 `build-essential`, `pkg-config`, `libudev-dev` and `mold`. On macOS, install
 Xcode Command Line Tools (`xcode-select --install`) and use the default Apple
@@ -20,17 +22,20 @@ Setup prepares the checksum-pinned SO-101 models in ignored `robots/so101` and
 caches their release archive under `.cache/so101`. Once prepared, model assets
 need no network access for builds or runs. Installed wheels need no setup step.
 
-Run the station with your calibrated profile or simulator connected:
+## Start the station
+
+For a physical SO-101, [calibrate your arm](so101-calibration.md), then start the
+station from the checkout root:
 
 ```sh
-uv run cargo run -p hebbian-station -- serve --profile ./robot.toml
+uv run cargo run -p hebbian-station -- serve --profile auto
 ```
 
 This source command checks and rebuilds the station before starting it.
 `uv run rua serve` launches an existing binary and does not rebuild it; reserve
 that command for installed wheels or explicitly selected builds.
 
-See [hardware setup](hardware.md), [simulator integration](simulators.md) and
+See [simulator integration](simulators.md) and
 [cameras](cameras.md) for the RUA connection steps. `uv run rua-dev --help` lists
 checks and commands for the components included in your checkout.
 
