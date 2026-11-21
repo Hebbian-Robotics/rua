@@ -309,6 +309,7 @@ def result_from_data(
     interrupted: bool = False,
     cameras: dict[str, bytes] | None = None,
     sequence_images: SequenceImageHistory | None = None,
+    observed_revisions: dict[str, int] | None = None,
 ) -> RobotToolResult:
     """Retain a full result alongside its default model view and control flags."""
     content = default_formatter(
@@ -329,4 +330,5 @@ def result_from_data(
         data=data,
         cameras=content.cameras,
         sequence_images=sequence_images,
+        observed_revisions=observed_revisions,
     )

@@ -123,6 +123,12 @@ impl MoveDecision {
             ));
         }
         let plan = ValidatedPlan::new(plan, core.limits.joint_count).map_err(invalid)?;
+        if plan.peak_speed.to_bits() != speed.radians_per_second().to_bits() {
+            return Err(rejection(
+                RejectionReason::InvalidTarget,
+                "Move speed must match path peak speed",
+            ));
+        }
         if matches!(scope, MotionScope::Grouped)
             && (plan.segments.len() != 1 || plan.segments[0].corners.len() != 2)
         {

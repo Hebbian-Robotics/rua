@@ -7,7 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -21,13 +21,18 @@ use station_access::{CameraConfiguration, Credentials, WatcherRole, new_room_nam
 
 pub const DEFAULT_PHONE_PAGE_URL: &str = "https://hebbian-robotics.github.io/livekit-cameras/";
 
-fn local_media_address(address: SocketAddr) -> SocketAddr {
+fn connectable_local_address(address: SocketAddr) -> SocketAddr {
     let ip = match address.ip() {
         IpAddr::V4(ip) if ip.is_unspecified() => Ipv4Addr::LOCALHOST.into(),
         IpAddr::V6(ip) if ip.is_unspecified() => Ipv6Addr::LOCALHOST.into(),
         ip => ip,
     };
     SocketAddr::new(ip, address.port())
+}
+
+#[must_use]
+pub fn local_http_url(address: SocketAddr) -> String {
+    format!("http://{}", connectable_local_address(address))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -91,12 +96,23 @@ async fn create_token(State(access): State<Arc<Access>>) -> Result<Response, Ref
 
 async fn create_phone_invite(
     State(access): State<Arc<Access>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(request): Json<PhoneInviteRequest>,
-) -> Result<Json<PhoneInvite>, Refusal> {
-    credentials(&access)?
+) -> Result<Response, Refusal> {
+    if !peer.ip().to_canonical().is_loopback() {
+        return Err(Refusal(
+            StatusCode::FORBIDDEN,
+            "Create phone camera invites from the station itself".to_owned(),
+        ));
+    }
+    let invite: PhoneInvite = credentials(&access)?
         .phone_invite(&access.room, &request.label, &access.phone_page_url)
-        .map(Json)
-        .map_err(|error| Refusal(StatusCode::BAD_REQUEST, error.to_string()))
+        .map_err(|error| Refusal(StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok((
+        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+        Json(invite),
+    )
+        .into_response())
 }
 
 fn camera_access() -> Cameras {
@@ -104,7 +120,7 @@ fn camera_access() -> Cameras {
         Ok(CameraConfiguration::Enabled(credentials)) => Cameras::On(credentials),
         Ok(CameraConfiguration::Off { reason }) => Cameras::Off(reason.to_string()),
         Err(error) => {
-            eprintln!("LiveKit is not fully configured, so cameras are off: {error}");
+            tracing::warn!(%error, "LiveKit is not fully configured; cameras are off");
             Cameras::Off(error.to_string())
         }
     }
@@ -148,14 +164,14 @@ pub fn mount(
             {
                 Ok(output) if output.status.success() => Some(credentials),
                 _ => {
-                    eprintln!(
+                    tracing::warn!(
                         "Recording disabled: install ffmpeg and put it on PATH (docs/recording.md)"
                     );
                     None
                 }
             },
             Err(error) => {
-                eprintln!("Recording disabled: LiveKit credentials are unavailable: {error}");
+                tracing::warn!(%error, "Recording disabled: LiveKit credentials are unavailable");
                 None
             }
         }
@@ -169,8 +185,8 @@ pub fn mount(
         executable: settings.media_executable,
     });
     let recording_enabled = recording.is_some();
-    let station_url = format!("http://127.0.0.1:{}", address.port());
-    let media_connect_address = settings.media_address.map(local_media_address);
+    let station_url = local_http_url(address);
+    let media_connect_address = settings.media_address.map(connectable_local_address);
     // WHY: The manager spawns its recording announcer, so it needs the server's runtime.
     let _runtime = runtime.enter();
     let manager = RecordingManager::new(recording, station_url);

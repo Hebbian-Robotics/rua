@@ -201,7 +201,11 @@ def create_robot_tool_catalog(
                 properties.pop("movement", None)
             if "gripper" not in configuration.sequence_actions:
                 properties.pop("gripper_opening", None)
-            action.pop("anyOf", None)
+            action["anyOf"] = [
+                requirement
+                for requirement in action["anyOf"]
+                if all(name in properties for name in requirement["required"])
+            ]
             if isinstance(configuration.sequence_scope, NamedArmSequence):
                 steps["items"] = {
                     "type": "object",
@@ -219,12 +223,7 @@ def create_robot_tool_catalog(
                         }
                     },
                 }
-        description = tool.description
-        if tool.name == "action_sequence" and isinstance(
-            configuration.sequence_scope, NamedArmSequence
-        ):
-            description = "Steps run in order; arms, movement and gripper commands in the same step start together. A refusal or incomplete/limited target stops the sequence."
-        catalog.append(RobotToolSpec(tool.name, description, schema))
+        catalog.append(RobotToolSpec(tool.name, tool.description, schema))
     return catalog
 
 

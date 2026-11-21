@@ -76,7 +76,7 @@ def generate_contracts(targets: frozenset[SdkTarget], *, check: bool = False) ->
                 "run",
                 "--quiet",
                 "--package",
-                "hebbian-contracts",
+                "hebbian-rua-contracts",
                 "--example",
                 "robot_tool_catalog",
                 *arguments,

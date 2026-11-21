@@ -1,5 +1,6 @@
 // Station requests use HTTP; observations use a resumable event stream.
 
+import pRetry from "p-retry";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
 import { apiSchemas } from "./generated/api-schemas.js";
@@ -38,7 +39,6 @@ import {
   type TraceContext,
 } from "./station-types.js";
 
-/** The first retry is immediate, then 100 ms doubling up to the cap. */
 const RECONNECT_CAP_MILLISECONDS = 1000;
 const RECONNECT_FIRST_BACKOFF_MILLISECONDS = 100;
 /** How long to wait for a connection, or for the first state. */
@@ -49,6 +49,8 @@ const REPLY_TIMEOUT_MILLISECONDS = 30_000;
 /** How long a command's outcome is awaited across a lost connection. */
 const DISCONNECT_PATIENCE_MILLISECONDS = 30_000;
 const RETAINED_RECORDS = 10_000;
+
+class StationReplayGap extends StationConnectionError {}
 
 type ArmRecord = Extract<
   CommandAnswer,
@@ -234,6 +236,11 @@ export interface StationConnection {
    */
   waitForState(
     predicate: (state: StationState) => boolean,
+    options?: {
+      fresh?: boolean;
+      signal?: AbortSignal;
+      timeoutMilliseconds?: number;
+    },
   ): Promise<StationState>;
   onState(listener: (state: StationState) => void): () => void;
   /** The live view of a model loop's run: a snapshot after each change. */
@@ -294,14 +301,11 @@ export function createStationConnection(
   const records = new Map<string, ArmRecord>();
   const resumeAfter = new Map<string, number>();
   let runAfter = options.runAfter;
-  let eventStream: AbortController | null = null;
+  let connectionLoop: AbortController | null = null;
   let eventCursor: string | null = null;
   let closed = false;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let ready = false;
   let connectionGeneration = 0;
-  let failuresInARow = 0;
-  let attemptStartedAt = 0;
   let disconnectedSince: number | null = null;
   let lastError: string | null = null;
   let leaseState:
@@ -319,20 +323,6 @@ export function createStationConnection(
     telemetryTail = telemetryTail.then(send).catch((error: unknown) => {
       console.warn("Run telemetry unavailable", error);
     });
-  }
-
-  /** The wait after an attempt that failed having run for `attemptMilliseconds`. */
-  function reconnectDelay(attemptMilliseconds: number): number {
-    // An attempt that lasted as long as the cap starts the backoff over.
-    if (attemptMilliseconds >= RECONNECT_CAP_MILLISECONDS) failuresInARow = 0;
-    const failuresBefore = failuresInARow;
-    failuresInARow += 1;
-    return failuresBefore === 0
-      ? 0
-      : Math.min(
-          RECONNECT_CAP_MILLISECONDS,
-          RECONNECT_FIRST_BACKOFF_MILLISECONDS * 2 ** (failuresBefore - 1),
-        );
   }
 
   function notify(): void {
@@ -610,10 +600,7 @@ export function createStationConnection(
     signal: AbortSignal,
   ): Promise<void> {
     if (event.kind === "resync_required") {
-      eventCursor = null;
-      throw new StationConnectionError(
-        "Station event replay requires a snapshot",
-      );
+      throw new StationReplayGap("Station event replay requires a snapshot");
     }
     const payload: unknown = JSON.parse(event.data);
     if (
@@ -622,10 +609,7 @@ export function createStationConnection(
       "kind" in payload &&
       payload.kind === "resync_required"
     ) {
-      eventCursor = null;
-      throw new StationConnectionError(
-        "Station event replay requires a snapshot",
-      );
+      throw new StationReplayGap("Station event replay requires a snapshot");
     }
     if (event.kind === "snapshot") {
       if (
@@ -665,76 +649,120 @@ export function createStationConnection(
     if (!ready) setReady(true);
   }
 
-  function connect(): void {
-    if (eventStream !== null || closed) return;
-    if (reconnectTimer !== null) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    attemptStartedAt = Date.now();
-    const connecting = new AbortController();
-    eventStream = connecting;
-    void (async () => {
-      const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
+  async function consumeEventStream(
+    url: URL,
+    attempt: AbortController,
+    signal: AbortSignal,
+  ): Promise<never> {
+    while (true) {
+      const cursor = eventCursor;
       const handshake = setTimeout(
         () =>
-          connecting.abort(
+          attempt.abort(
             new StationTimeoutError("Station event handshake timed out"),
           ),
         CONNECT_TIMEOUT_MILLISECONDS,
       );
-      const response = await fetch(new URL("/events", base), {
-        signal: connecting.signal,
-        headers: eventCursor === null ? {} : { "Last-Event-ID": eventCursor },
+      const response = await fetch(url, {
+        signal,
+        headers: cursor === null ? {} : { "Last-Event-ID": cursor },
       }).finally(() => clearTimeout(handshake));
-      if (response.status === 409 && eventCursor !== null) {
+      signal.throwIfAborted();
+      if (response.status === 409 && cursor !== null) {
         eventCursor = null;
-        throw new StationConnectionError("Station event cursor expired");
+        await response.body?.cancel();
+        continue;
       }
       if (!response.ok)
         throw new StationConnectionError(
           `Station event stream returned ${response.status}`,
         );
-      await readStationEvents(
-        response,
-        (event) => applyStationEvent(event, connecting.signal),
-        {
-          milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
-          abort: () =>
-            connecting.abort(
-              new StationTimeoutError("Station event stream went silent"),
-            ),
-        },
-      );
-      throw new StationConnectionError("Station event stream ended");
+      try {
+        await readStationEvents(
+          response,
+          (event) => applyStationEvent(event, signal),
+          {
+            milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
+            abort: () =>
+              attempt.abort(
+                new StationTimeoutError("Station event stream went silent"),
+              ),
+          },
+        );
+        throw new StationConnectionError("Station event stream ended");
+      } catch (error) {
+        signal.throwIfAborted();
+        if (!(error instanceof StationReplayGap)) throw error;
+        const retryWithoutCursor = eventCursor !== null && !ready;
+        eventCursor = null;
+        if (!retryWithoutCursor) throw error;
+        await response.body?.cancel();
+      }
+    }
+  }
+
+  function connect(): void {
+    if (connectionLoop !== null || closed) return;
+    const lifetime = new AbortController();
+    connectionLoop = lifetime;
+    void (async () => {
+      // WHY: Ending a healthy session starts a fresh retry budget. Opening HTTP
+      // successfully is insufficient until we have applied a station event.
+      while (!lifetime.signal.aborted) {
+        await pRetry(
+          async () => {
+            const attempt = new AbortController();
+            const signal = AbortSignal.any([lifetime.signal, attempt.signal]);
+            try {
+              const base =
+                typeof stationUrl === "string" ? stationUrl : stationUrl();
+              await consumeEventStream(
+                new URL("/events", base),
+                attempt,
+                signal,
+              );
+            } catch (error) {
+              lifetime.signal.throwIfAborted();
+              if (!attempt.signal.aborted)
+                console.warn("Station event stream ended", error);
+              const wasReady = ready;
+              latestState = null;
+              if (!wasReady) lastError = "The station refused the connection";
+              disconnectedSince ??= Date.now();
+              loseLease();
+              setReady(false);
+              if (!wasReady)
+                throw new StationConnectionError(
+                  "The station refused the connection",
+                  { cause: error },
+                );
+            } finally {
+              attempt.abort();
+            }
+          },
+          {
+            signal: lifetime.signal,
+            retries: Number.POSITIVE_INFINITY,
+            minTimeout: RECONNECT_FIRST_BACKOFF_MILLISECONDS,
+            maxTimeout: RECONNECT_CAP_MILLISECONDS,
+            randomize: true,
+          },
+        );
+      }
     })()
       .catch((error: unknown) => {
-        if (!connecting.signal.aborted)
-          console.warn("Station event stream ended", error);
+        if (!lifetime.signal.aborted)
+          console.warn("Station event reconnect stopped", error);
       })
       .finally(() => {
-        if (eventStream !== connecting) return;
-        connecting.abort();
-        eventStream = null;
-        latestState = null;
-        if (!ready) lastError = "The station refused the connection";
-        disconnectedSince ??= Date.now();
-        loseLease();
-        setReady(false);
-        reconnectTimer = setTimeout(
-          () => {
-            reconnectTimer = null;
-            connect();
-          },
-          reconnectDelay(Date.now() - attemptStartedAt),
-        );
+        if (connectionLoop === lifetime) connectionLoop = null;
       });
   }
 
   function ensureConnecting(): void {
     if (closed)
       throw new StationConnectionError("The station connection is closed");
-    if (eventStream === null) connect();
+    if (connectionLoop === null) connect();
   }
 
   function noConnection(): StationConnectionError {
@@ -945,7 +973,8 @@ export function createStationConnection(
 
   async function waitForState(
     predicate: (state: StationState) => boolean,
-    afterFrameCount?: number,
+    options: NonNullable<Parameters<StationConnection["waitForState"]>[1]> = {},
+    afterFrameCount = options.fresh ? stateFrameCount : undefined,
   ): Promise<StationState> {
     ensureConnecting();
     return waitFor(
@@ -956,8 +985,10 @@ export function createStationConnection(
           ? latestState
           : undefined,
       {
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
         timeout: {
-          milliseconds: REPLY_TIMEOUT_MILLISECONDS,
+          milliseconds:
+            options.timeoutMilliseconds ?? REPLY_TIMEOUT_MILLISECONDS,
           error: () =>
             new StationTimeoutError(
               "Timed out waiting for the awaited station state",
@@ -1302,17 +1333,15 @@ export function createStationConnection(
     baseUrl,
     start() {
       closed = false;
-      if (eventStream === null) connect();
+      if (connectionLoop === null) connect();
     },
     close() {
       closed = true;
       void returnLease(true).catch((error: unknown) =>
         console.warn("Could not release lease", error),
       );
-      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-      const previous = eventStream;
-      eventStream = null;
+      const previous = connectionLoop;
+      connectionLoop = null;
       latestState = null;
       loseLease();
       setReady(false);
@@ -1419,6 +1448,7 @@ export function createStationConnection(
       await returnLease();
       await waitForState(
         (current) => current.lease === null,
+        {},
         framesBeforeReturn,
       );
     },

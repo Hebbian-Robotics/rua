@@ -455,7 +455,7 @@ pub struct ArmState {
     pub gripper_opening: Option<f64>,
     /// Conditions refusing motion on this arm until they clear.
     pub interlocks: Vec<Interlock>,
-    /// Bumped each time an interlock is raised; commands may carry it as
+    /// Advanced when an interlock is raised or its details change. Commands may carry it as
     /// `expected_revision`.
     pub revision: u64,
 }

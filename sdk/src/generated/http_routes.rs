@@ -357,7 +357,7 @@ impl Station {
             .await
     }
 
-    /// An invite to stream a phone as camera `phone_<label>`.
+    /// Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.
     ///
     /// # Errors
     /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].

@@ -149,7 +149,7 @@ fn simulator_setups(
         let timeouts = config
             .simulator_timeouts()
             .context("An arm on a simulator needs a sim_plant section")?;
-        eprintln!("Waiting for a simulator to connect for arm {name}...");
+        tracing::info!(arm = name, "Waiting for the simulator to connect");
         let plant = SocketPlant::accept(
             &listener,
             &config.driven_joints,
@@ -225,6 +225,7 @@ pub(crate) fn run_supervised(
     plant: PlantSelection,
     http_address: &str,
     web: WebSettings,
+    media: crate::media::MediaPlan,
 ) -> anyhow::Result<()> {
     validate_arms(arms)?;
     let shutdown_requested = shutdown_flag()?;
@@ -260,6 +261,7 @@ pub(crate) fn run_supervised(
             .map(|arm| Path::new(arm.config.trace_directory.as_str())),
     );
     let mut mounted = None;
+    let media_status = web.media_status.clone();
     let live_run = Arc::new(LiveRunStore::default());
     let server = HttpServer::start(
         http_address,
@@ -291,6 +293,12 @@ pub(crate) fn run_supervised(
         .collect();
     mounted.attach_arms(&server.runtime_handle(), &handles);
     server.attach_arms(handles);
+    let media = crate::media::MediaSupervisor::start(
+        &media,
+        &web::local_http_url(server.local_address()),
+        &media_status,
+    );
+    // CONSTRAINT: Launchers read the bound address from this startup announcement.
     eprintln!("HTTP on http://{}", server.local_address());
     while !shutdown_requested.load(Ordering::Acquire) {
         std::thread::sleep(Duration::from_millis(50));
@@ -299,6 +307,7 @@ pub(crate) fn run_supervised(
     server
         .runtime_handle()
         .block_on(mounted.recording.shutdown());
+    drop(media);
     server.close();
     for link in links.into_values() {
         if let Ok(link) = Arc::try_unwrap(link) {
@@ -340,7 +349,7 @@ fn run_connected<P: Plant>(
         if !service_shutting_down.load(Ordering::Acquire)
             && !service_shutdown_requested.load(Ordering::Acquire)
         {
-            eprintln!("Station connection lost: {result:?}");
+            tracing::error!(?result, "Station connection lost");
             // INVARIANT: The guard, when present, takes over after the controller exits.
             // Do not run the normal return-to-rest shutdown without the station.
             std::process::exit(1);

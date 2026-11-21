@@ -121,8 +121,10 @@ everything the model needs; the loop and the SDK call are yours.
 
 For OpenAI, Anthropic and Gemini, use the adapters from `hebbian_rua.client.llm.openai`,
 `hebbian_rua.client.llm.anthropic` and `hebbian_rua.client.llm.gemini`. They supply native `.tools`,
-`.observe()` messages and `.execute(response)` results. Append `turn.messages`
-to your conversation and stop on `turn.should_stop` or empty `turn.results`.
+`.observe(wait_for_recovery=True)` returns a native message with its arm
+revisions. Send `observation.message` to the model and pass
+`expected_revisions=observation.revisions` to `.execute(response, ...)`.
+Append `turn.messages` and stop on `turn.should_stop` or empty `turn.results`.
 See the [three-provider example](../examples/python/agent_quickstart.py).
 For other SDKs or mixed toolsets, use the provider-neutral types above and route
 calls yourself. Stop on a result's `halt` or `interrupted` flag.

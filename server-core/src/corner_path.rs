@@ -258,11 +258,24 @@ impl OnlineSection {
         })
     }
 
-    fn set_speed_limit(&mut self, speed: f64) {
-        // CONSTRAINT: A requested minimum duration belongs to the original timed section.
-        if self.input.minimum_duration.is_none() {
-            self.input.max_velocity[0] = speed;
+    fn step_with_speed_limit(
+        &mut self,
+        interval: f64,
+        reference: &mut Reference,
+        speed_limit: f64,
+    ) -> anyhow::Result<()> {
+        let timed = self.input.minimum_duration.is_some();
+        if !timed {
+            self.input.max_velocity[0] = speed_limit;
         }
+        self.step(interval, reference)?;
+        // SAFETY: Replanning a timed section would reset its duration. Trip
+        // before sending a sample above the lag-adjusted speed cap.
+        ensure!(
+            !timed || self.output.new_velocity[0].abs() <= speed_limit + 1e-9,
+            "Tracking lag requires slowing down a timed trajectory"
+        );
+        Ok(())
     }
 
     pub(crate) fn step(&mut self, interval: f64, reference: &mut Reference) -> anyhow::Result<()> {
@@ -366,8 +379,11 @@ impl CornerPathTracker {
                 )?);
             }
             if let Some(section) = &mut self.section {
-                section.set_speed_limit(self.plan.peak_speed * speed_fraction);
-                section.step(interval, &mut self.reference)?;
+                section.step_with_speed_limit(
+                    interval,
+                    &mut self.reference,
+                    self.plan.peak_speed * speed_fraction,
+                )?;
             }
         }
         if max_joint_deviation(&self.reference.positions, target) <= SAME_CORNER_RADIANS

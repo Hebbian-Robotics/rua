@@ -70,13 +70,13 @@ Use `sim_wrist` for a single-arm wrist view or `sim_left_wrist` and
 
 ## Run a model loop
 
-For a single simulated arm, set `OPENAI_API_KEY` and `OPENAI_MODEL` in your
-environment. The example supplies the model with robot tools and captures images
+For a single simulated arm, set `OPENAI_API_KEY` in your environment. The
+example supplies the model with robot tools and captures images
 if you pass a camera name:
 
 ```sh
 uv run --project examples/python --locked python examples/python/agent_quickstart.py \
-  "Wave hello" --model "$OPENAI_MODEL" --camera sim_overview
+  "Wave hello" --camera sim_overview
 ```
 
 Omit `--camera` for a state-only run. See the

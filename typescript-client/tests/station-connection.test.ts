@@ -30,19 +30,28 @@ test("a cancelled acceptance-only command rejects with its abort reason", async 
   }
 });
 
-test("a silent event stream reconnects with its last cursor", async () => {
+test("a silent event stream reconnects and refreshes an expired cursor immediately", async () => {
   const cursor = "11111111-1111-4111-8111-111111111111:1";
-  let resumed: (cursor: string | null) => void = () => {};
-  const resumedWith = new Promise<string | null>((resolve) => {
-    resumed = resolve;
+  const requestedCursors: (string | string[] | undefined)[] = [];
+  let onFreshSnapshotRequest: () => void = () => {};
+  const freshSnapshotRequested = new Promise<void>((resolve) => {
+    onFreshSnapshotRequest = resolve;
   });
   const server = createServer((request, response) => {
-    const previous = request.headers["last-event-id"];
+    if (request.url?.startsWith("/run/records?")) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end("[]");
+      return;
+    }
+    requestedCursors.push(request.headers["last-event-id"]);
+    if (requestedCursors.length === 2) {
+      response.writeHead(409).end();
+      return;
+    }
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.write(
       `id: ${cursor}\nevent: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{}])] })}\n\n`,
     );
-    if (typeof previous === "string") resumed(previous);
+    if (requestedCursors.length === 3) onFreshSnapshotRequest();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address() as AddressInfo;
@@ -54,9 +63,89 @@ test("a silent event stream reconnects with its last cursor", async () => {
   try {
     connection.start();
     await connection.waitUntilConnected();
-    await vi.advanceTimersByTimeAsync(30_001);
-    await expect(resumedWith).resolves.toBe(cursor);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await freshSnapshotRequested;
+    expect(requestedCursors).toEqual([undefined, cursor, undefined]);
+    await connection.waitUntilConnected();
   } finally {
+    connection.close();
+    vi.useRealTimers();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("a handshake timeout backs off even when a listener asks to reconnect", async () => {
+  let signalFirstRequest: () => void = () => {};
+  let signalRetry: (startedAt: number) => void = () => {};
+  let signalDisconnect: () => void = () => {};
+  let signalSecondDisconnect: () => void = () => {};
+  const firstRequest = new Promise<void>((resolve) => {
+    signalFirstRequest = resolve;
+  });
+  const retryStarted = new Promise<number>((resolve) => {
+    signalRetry = resolve;
+  });
+  const disconnected = new Promise<void>((resolve) => {
+    signalDisconnect = resolve;
+  });
+  const disconnectedAgain = new Promise<void>((resolve) => {
+    signalSecondDisconnect = resolve;
+  });
+  let requests = 0;
+  let disconnects = 0;
+  const server = createServer((request, response) => {
+    if (request.url !== "/events") {
+      response.writeHead(404).end();
+      return;
+    }
+    requests += 1;
+    if (requests === 1) {
+      signalFirstRequest();
+    } else {
+      signalRetry(Date.now());
+      response.writeHead(503).end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const unsubscribe = connection.onConnectionChange((connected) => {
+    if (connected) return;
+    connection.start();
+    disconnects += 1;
+    if (disconnects === 1) signalDisconnect();
+    else signalSecondDisconnect();
+  });
+  try {
+    connection.start();
+    await firstRequest;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await disconnected;
+    const timedOutAt = Date.now();
+    await vi.advanceTimersByTimeAsync(99);
+    const earlyRequest = await Promise.race([
+      retryStarted,
+      setImmediate().then(() => undefined),
+    ]);
+    expect(earlyRequest).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(101);
+    await expect(retryStarted).resolves.toBeGreaterThanOrEqual(
+      timedOutAt + 100,
+    );
+    await disconnectedAgain;
+    unsubscribe();
+    connection.close();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(requests).toBe(2);
+  } finally {
+    unsubscribe();
     connection.close();
     vi.useRealTimers();
     server.closeAllConnections();
@@ -373,10 +462,7 @@ test.each(["reconnection", "close"] as const)(
 
 async function startLeaseStation(
   leaseSeconds: number,
-  handleLeaseRequest: (
-    request: IncomingMessage,
-    response: ServerResponse,
-  ) => void,
+  handleRequest: (request: IncomingMessage, response: ServerResponse) => void,
 ) {
   const instance = "11111111-1111-4111-8111-111111111111";
   const server = createServer((request, response) => {
@@ -403,14 +489,9 @@ async function startLeaseStation(
           },
         }),
       );
-    } else if (
-      request.url === "/leases/renew" ||
-      request.url === "/leases/release"
-    ) {
-      handleLeaseRequest(request, response);
     } else if (request.url?.startsWith("/run/records")) {
       response.writeHead(200, { "Content-Type": "application/json" }).end("[]");
-    } else response.writeHead(404).end();
+    } else handleRequest(request, response);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address() as AddressInfo;
@@ -429,6 +510,66 @@ async function startLeaseStation(
     },
   };
 }
+
+test("aborting an accepted leased command cancels the original submission", async () => {
+  const controller = new AbortController();
+  let receiveCancellation: (body: unknown) => void = () => {};
+  const cancelling = new Promise<unknown>((resolve) => {
+    receiveCancellation = resolve;
+  });
+  let acceptedRequest: unknown;
+  const { connection, close } = await startLeaseStation(
+    15,
+    (request, response) => {
+      if (request.url === "/commands" || request.url === "/commands/cancel") {
+        request.setEncoding("utf8");
+        let body = "";
+        request.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          const payload: unknown = JSON.parse(body);
+          if (request.url === "/commands/cancel") {
+            receiveCancellation(payload);
+            response.writeHead(204).end();
+          } else {
+            acceptedRequest = payload;
+            response.writeHead(200, { "Content-Type": "application/json" }).end(
+              JSON.stringify({
+                status: "accepted",
+                records: [{ arm: "follower", record: commandRecord("motion") }],
+              }),
+            );
+          }
+        });
+      } else response.writeHead(204).end();
+    },
+  );
+  try {
+    const lease = await connection.acquireLease("test");
+    const answer = await lease
+      .arm("follower", {
+        waitForOutcome: false,
+        signal: controller.signal,
+      })
+      .streamJoints([0, 0, 0, 0, 0]);
+    expect(answer.status).toBe("accepted");
+    assert.ok(acceptedRequest !== null && typeof acceptedRequest === "object");
+    assert.ok(
+      "request_id" in acceptedRequest &&
+        "station_instance_id" in acceptedRequest,
+    );
+    controller.abort();
+    await expect(cancelling).resolves.toEqual({
+      request_id: acceptedRequest.request_id,
+      station_instance_id: acceptedRequest.station_instance_id,
+      lease_token: "token",
+      arms: ["follower"],
+    });
+  } finally {
+    await close();
+  }
+});
 
 test("a lease grant is released when its initial renewal fails", async () => {
   let releaseLease: (() => void) | undefined;

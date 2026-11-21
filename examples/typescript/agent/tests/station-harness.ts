@@ -1,6 +1,6 @@
 // A scripted HTTP station and event stream for loop lifecycle tests.
 
-import type { RobotToolCall, RobotToolResult } from "@hebbian/robot-use-client";
+import type { RobotToolCall, RobotToolResult } from "hebbian-rua";
 import { vi } from "vitest";
 import {
   commandRecord,
@@ -24,6 +24,7 @@ export interface SentCommand {
 }
 
 export class ScriptedStation {
+  armNames = ["follower"];
   revision = 0;
   armMode = "holding";
   events: Record<string, unknown>[] = [];
@@ -58,19 +59,20 @@ export class ScriptedStation {
     }
   }
 
-  emitState(): void {
-    this.emit(
-      "station",
-      stateMessage([
-        {
-          arm: "follower",
-          mode: this.armMode,
-          sampledAt: 1,
-          revision: this.revision,
-          ...(this.lastCommandId ? { lastCommandId: this.lastCommandId } : {}),
-        },
-      ]),
+  private stationStateMessage() {
+    return stateMessage(
+      this.armNames.map((arm) => ({
+        arm,
+        mode: this.armMode,
+        sampledAt: 1,
+        revision: this.revision,
+        ...(this.lastCommandId ? { lastCommandId: this.lastCommandId } : {}),
+      })),
     );
+  }
+
+  emitState(): void {
+    this.emit("station", this.stationStateMessage());
   }
 
   loseLease(): void {
@@ -115,16 +117,7 @@ export class ScriptedStation {
             station_instance_id: "11111111-1111-4111-8111-111111111111",
             sequence: 0,
             run_sequence: 0,
-            items: [
-              stateMessage([
-                {
-                  arm: "follower",
-                  mode: this.armMode,
-                  sampledAt: 1,
-                  revision: this.revision,
-                },
-              ]),
-            ],
+            items: [this.stationStateMessage()],
           });
         },
         cancel: () => {

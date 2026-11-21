@@ -35,9 +35,10 @@ curl --fail http://127.0.0.1:8792/viewer/api/token
 
 ## Add a phone
 
-With LiveKit configured, request an invite and open its private `url` on your
-phone. If you have the RUA station viewer installed, you can also select
-**Add a phone camera** in **Workspace** and scan its QR code.
+With LiveKit configured, create an invite from the station machine and open
+its private `url` on your phone. The station accepts invite requests over
+loopback. From the local viewer, select **Add a phone camera** in **Workspace**
+and scan its QR code. A phone has one hour to join using the invite.
 
 ```sh
 curl --fail http://127.0.0.1:8792/viewer/api/phone-invites \

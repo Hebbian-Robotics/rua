@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { parseCommandLine } from "../src/cli.js";
 import type { LoopConfig } from "../src/loop.js";
 import {
   type AgentConfig,
@@ -40,14 +41,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("a finished run is completed, with its output and usage", async () => {
+test("a task with no arm name uses the station's sole arm", async () => {
+  const commandLine = parseCommandLine(
+    ["--provider", "anthropic", "--", "Touch the block"],
+    {},
+  );
+  if (commandLine === "help") throw new Error("expected a task");
   const lines: string[] = [];
   const outcome = await station.run(
-    runAgent(config, {
-      openConversation: () =>
-        new ScriptedConversation([turn(["finish", { reason: "done" }])]),
-      onEvent: (event) => lines.push(event.line),
-    }),
+    runAgent(
+      {
+        ...commandLine.config,
+        stationUrl: commandLine.server,
+        mediaUrl: commandLine.mediaServer,
+        apiKey: config.apiKey,
+      },
+      {
+        openConversation: () =>
+          new ScriptedConversation([turn(["finish", { reason: "done" }])]),
+        onEvent: (event) => lines.push(event.line),
+      },
+    ),
   );
   expect(outcome).toMatchObject({
     kind: "completed",
@@ -55,6 +69,20 @@ test("a finished run is completed, with its output and usage", async () => {
     usage: { turns: 1, input_tokens: 10 },
   });
   expect(lines.length).toBeGreaterThan(0);
+  expect(station.eventsOfType("run_started")).toMatchObject([
+    { arm: "follower", task: "Touch the block", model: "claude-fable-5-2" },
+  ]);
+});
+
+test("a task with no arm name on a multi-arm station requires selection", async () => {
+  station.armNames = ["left", "right"];
+  const { arm: _arm, ...unnamedConfig } = config;
+  const outcome = await station.run(runAgent(unnamedConfig));
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    reason: "Select an arm from: left, right",
+  });
+  expect(station.requests).not.toContain("POST /leases");
 });
 
 test("a lost lease is an incomplete run, not a completed one", async () => {

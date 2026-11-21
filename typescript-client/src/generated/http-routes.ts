@@ -228,7 +228,7 @@ export function createStationApi(
         jsonRequestInit("GET"),
       );
     },
-    /** An invite to stream a phone as camera `phone_<label>`. */
+    /** Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. */
     async phoneInvite(body: ApiSchemas["PhoneInviteRequest"]) {
       return apiSchemas.shape.PhoneInvite.parse(
         await stationRequest(

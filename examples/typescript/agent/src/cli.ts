@@ -1,7 +1,7 @@
 #!/usr/bin/env -S pnpm exec tsx --conditions=development
 // Let a model perform a task with the station's arm.
 //
-//   pnpm --filter @hebbian/agent start --provider openai -- arm "Describe the robot state."
+//   pnpm --filter @hebbian/agent start --provider openai -- "Describe the robot state."
 //
 // A thin wrapper over runAgent for terminal use; the agent server calls runAgent in-process.
 // API keys come from the environment or a .env file in the directory the command was run from.
@@ -10,10 +10,7 @@ import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import {
-  DEFAULT_STATION_URL,
-  type OnInterruption,
-} from "@hebbian/robot-use-client";
+import { DEFAULT_STATION_URL, type OnInterruption } from "hebbian-rua";
 import { type LoopConfig, requirePositiveModelTurnLimit } from "./loop.js";
 import { cameraNames } from "./observation.js";
 import {
@@ -24,16 +21,20 @@ import {
   type ReasoningEffort,
   unsupportedReasoningEffort,
 } from "./providers/types.js";
-import { apiKeyFromEnvironment, runAgent } from "./run.js";
+import { apiKeyFromEnvironment, configuredApiKey, runAgent } from "./run.js";
 
-export const USAGE = `Usage: hebbian-agent --provider NAME [options] [--] <arm> <task>
+const PROVIDER_PRIORITY = ["openai", "gemini", "anthropic"] as const;
+
+export const USAGE = `Usage: hebbian-agent [options] [--] [<arm>] <task>
+
+  --arm NAME              Arm name; defaults to the station's sole arm
 
   --server URL            The station's HTTP URL (default $HEBBIAN_STATION_URL or ${DEFAULT_STATION_URL})
   --media-server URL      Direct camera service (default $HEBBIAN_MEDIA_SERVER or the station URL)
   --camera NAMES          Comma-separated cameras to show the model; omitted sends state only
   --optional-camera NAMES Comma-separated cameras that may be unavailable
-  --provider NAME         ${PROVIDERS.join(", ")} (required)
-  --model ID              Model id; defaults to the provider's flagship
+  --provider NAME         ${PROVIDERS.join(", ")} (default: first configured key in order OpenAI, Gemini, Anthropic)
+  --model ID              Model ID (default: provider's *_MODEL variable or example model)
   --max-turns COUNT       Optional maximum number of model turns
   --reasoning-effort LVL  ${REASONING_EFFORTS.join(", ")} (default ${DEFAULT_REASONING_EFFORT}); most Gemini models refuse xhigh
   --on-interruption WHAT  wait_for_approval (default) or return_lease when the arm needs recovery
@@ -67,6 +68,7 @@ export function parseCommandLine(
     args: argv,
     allowPositionals: true,
     options: {
+      arm: { type: "string" },
       server: { type: "string" },
       "media-server": { type: "string" },
       camera: { type: "string" },
@@ -81,16 +83,28 @@ export function parseCommandLine(
     },
   });
   if (values.help) return "help";
-  const [arm, task, ...extra] = positionals;
-  if (arm === undefined || task === undefined || extra.length > 0)
-    throw new Error("Pass exactly <arm> and <task>");
-  if (values.provider === undefined) throw new Error("Pass --provider NAME");
+  const [armOrTask, taskForNamedArm, ...extra] = positionals;
+  if (armOrTask === undefined || extra.length > 0)
+    throw new Error("Pass <task> or <arm> <task>");
+  if (values.arm !== undefined && taskForNamedArm !== undefined)
+    throw new Error("Choose the arm either with --arm or before the task");
+  const arm =
+    values.arm ?? (taskForNamedArm === undefined ? undefined : armOrTask);
   const required = cameraNames(values.camera);
   const optional = cameraNames(values["optional-camera"]);
   if (required.some((name) => optional.includes(name)))
     throw new Error("Camera names must be unique");
-  const provider = oneOf<Provider>("provider", values.provider, PROVIDERS);
-  const model = values.model ?? null;
+  const provider =
+    values.provider === undefined
+      ? (PROVIDER_PRIORITY.find(
+          (candidate) => configuredApiKey(candidate, environment) !== undefined,
+        ) ?? PROVIDER_PRIORITY[0])
+      : oneOf<Provider>("provider", values.provider, PROVIDERS);
+  const environmentModel = environment[`${provider.toUpperCase()}_MODEL`];
+  const model =
+    values.model ?? (environmentModel?.trim() ? environmentModel : null);
+  if (model !== null && !model.trim())
+    throw new Error("Pass a nonempty model ID with --model");
   const maxModelTurns =
     values["max-turns"] === undefined
       ? undefined
@@ -113,8 +127,8 @@ export function parseCommandLine(
     mediaServer:
       values["media-server"] ?? environment["HEBBIAN_MEDIA_SERVER"] ?? server,
     config: {
-      arm,
-      task,
+      ...(arm === undefined ? {} : { arm }),
+      task: taskForNamedArm ?? armOrTask,
       cameras: required,
       optionalCameras: optional,
       provider,

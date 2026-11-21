@@ -1,7 +1,8 @@
-# hebbian-robot-use-sdk
+# hebbian-rua
 
 Use this SDK when writing a Rust program that controls a running station.
-The crate is unpublished. Add it as a local path dependency from a checkout:
+Install a released version with `cargo add hebbian-rua`. To use a local source
+checkout, add it as a path dependency.
 
 ```sh
 cargo add --path /path/to/rua/sdk
@@ -13,13 +14,13 @@ they do not require implementing a model loop or custom formatter.
 
 Async Rust client for a station: acquire the lease, run commands and action sequences, read
 state, preview poses, follow run telemetry, and use the station's HTTP routes
-(cameras, recordings, traces, phone invites). It depends on `hebbian-contracts`
+(cameras, recordings, traces, phone invites). It depends on `hebbian-rua-contracts`
 and light networking crates only (tokio and reqwest), never on the
 controller, station, `LiveKit` or axum. Wire types are re-exported as
-`hebbian_robot_use_sdk::contracts`.
+`hebbian_rua::contracts`.
 
 ```rust
-use hebbian_robot_use_sdk::{LeaseRequest, Station, contracts::LeaseHolder};
+use hebbian_rua::{LeaseRequest, Station, contracts::LeaseHolder};
 
 let station = Station::connect("http://127.0.0.1:8792").await?;
 let lease = station
@@ -85,7 +86,7 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   `download_trace` (gzip bytes as served) are thin HTTP helpers.
 
 ```sh
-cargo test -p hebbian-robot-use-sdk   # against an in-process controller on the simulated SO-101
+cargo test -p hebbian-rua   # against an in-process controller on the simulated SO-101
 ```
 
 ## Model-facing tools
@@ -126,7 +127,7 @@ For an existing `lease`, a framework can adapt the definitions and submit a call
 
 ```rust,ignore
 use std::collections::BTreeMap;
-use hebbian_robot_use_sdk::{CommandOptions, RobotToolCall, RobotTools};
+use hebbian_rua::{CommandOptions, RobotToolCall, RobotTools};
 use serde_json::json;
 
 let tools = RobotTools::new(&lease, "arm").with_descriptions(BTreeMap::from([
@@ -147,7 +148,7 @@ Keep those defaults unless your application needs a different tool set. To custo
 it, transform typed capability definitions before schema generation and parsing:
 
 ```rust,ignore
-use hebbian_robot_use_sdk::contracts::{filter_sequence_actions, SequenceAction};
+use hebbian_rua::contracts::{filter_sequence_actions, SequenceAction};
 
 let tools = RobotTools::new(&lease, "arm")
     .map_tools(filter_sequence_actions(|action| action != SequenceAction::Joints))?;
@@ -173,7 +174,7 @@ accessors and composition examples.
 For a custom model view, compose payload transformations before serializing:
 
 ```rust,ignore
-use hebbian_robot_use_sdk::{ConciseOptions, concise_output, model_response};
+use hebbian_rua::{ConciseOptions, concise_output, model_response};
 
 let selected = concise_output(result.data(), ConciseOptions::default());
 let model_payload = model_response(selected);

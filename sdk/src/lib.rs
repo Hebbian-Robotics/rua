@@ -4,7 +4,7 @@
 //! over HTTP with request identifiers. Acquire
 //! the lease with [`Station::acquire_lease`]; the [`LeaseGuard`] it returns carries every
 //! command that moves an arm, while power, stop and reads stay on [`Station`].
-//! Wire types come from `hebbian-contracts`, re-exported as [`contracts`].
+//! Wire types come from `hebbian-rua-contracts`, re-exported as [`contracts`].
 
 mod connection;
 mod error;

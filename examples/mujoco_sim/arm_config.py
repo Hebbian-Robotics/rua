@@ -27,6 +27,10 @@ class StationDescription(BaseModel):
     joint_names: list[str]
 
 
+class PlantTimeouts(BaseModel):
+    reply_timeout_seconds: Annotated[FiniteFloat, Field(gt=0)]
+
+
 class ArmConfig(BaseModel):
     # The fixture consumes the station's resolved fields alongside other controller settings.
     model_config = ConfigDict(extra="ignore")
@@ -40,6 +44,7 @@ class ArmConfig(BaseModel):
     joint_effort_limits: list[FiniteFloat]
     station: StationDescription
     simulation_model: SimulationModel
+    sim_plant: PlantTimeouts | None = None
 
 
 def load_station_arms(socket_directory: Path) -> dict[str, ArmConfig]:

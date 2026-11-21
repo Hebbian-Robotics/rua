@@ -37,7 +37,6 @@ const JOINTS: [&str; 6] = [
     "gripper",
 ];
 const START: [f64; 5] = [0.0, -0.5, 0.8, 0.6, 0.0];
-const CHECKPOINT_SHA256: &str = "89f9f5a47866d4e2761373e6036adde6277c400f1942ff7f74bd26fda6f7eb63";
 const MAX_TARGET_LEAD_RADIANS: f64 = 0.12;
 const TOOL_LINK: &str = "gripper_frame_link";
 
@@ -78,8 +77,6 @@ fn config_accepting_target_lead(assets: &Path, max_target_lead_radians: f64) -> 
             "reach_deadline_seconds":8.0,"settle_dwell_seconds":0.1,
             "settled_velocity_radians_per_second":0.15,"preview_lag_seconds":0.05,
             "onnx": assets.join("policy.onnx"),
-            "checkpoint_sha256": std::env::var("SO101_POLICY_TEST_CHECKPOINT_SHA256")
-                .unwrap_or_else(|_| CHECKPOINT_SHA256.to_owned()),
             "tool_link": TOOL_LINK,
             "max_target_lead_radians": max_target_lead_radians,
             "position_tolerance_meters": 0.02, "orientation_tolerance_radians": 0.1,

@@ -4,8 +4,9 @@ from collections.abc import Mapping
 
 from google.genai import types
 
+from hebbian_rua.client.llm.recovery import capture_when_ready
 from hebbian_rua.client.llm.robot_tools import RobotTools
-from hebbian_rua.client.llm.tool_turn import RobotToolTurn
+from hebbian_rua.client.llm.tool_turn import ModelObservation, RobotToolTurn
 from hebbian_rua.client.llm.types import RobotToolCall
 
 
@@ -35,12 +36,23 @@ class GeminiRobotTools:
             )
         ]
 
-    async def observe(self) -> types.Content:
-        observation = await self.robot.observe()
-        return _image_message(observation.text, observation.cameras)
+    async def observe(
+        self, *, wait_for_recovery: bool = False
+    ) -> ModelObservation[types.Content]:
+        if wait_for_recovery:
+            captured, _ = await capture_when_ready(self.robot)
+            observation = captured.observation
+        else:
+            observation = await self.robot.observe()
+        return ModelObservation(
+            _image_message(observation.text, observation.cameras), observation.revisions
+        )
 
     async def execute(
-        self, response: types.GenerateContentResponse
+        self,
+        response: types.GenerateContentResponse,
+        *,
+        expected_revisions: Mapping[str, int],
     ) -> RobotToolTurn[types.Content]:
         if not response.candidates or len(response.candidates) != 1:
             raise ValueError("Expected exactly one Gemini candidate")
@@ -73,7 +85,7 @@ class GeminiRobotTools:
                     arguments=function_call.args or {},
                 )
             )
-        results = await self.robot.execute(calls)
+        results = await self.robot.execute(calls, expected_revisions=expected_revisions)
         # Return the original content intact: thought signatures may be on any part.
         messages = [candidate.content]
         if results:

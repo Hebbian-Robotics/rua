@@ -9,7 +9,7 @@ use hebbian_robot_use_server::controller_process::PlantSelection;
 use hebbian_robot_use_server::web::WebSettings;
 use station_access::new_room_name;
 
-use crate::media::{MediaPlan, MediaSupervisor, SIMULATOR_CAMERA_SOCKET};
+use crate::media::{MediaPlan, SIMULATOR_CAMERA_SOCKET};
 use crate::run::{ConfiguredArm, DEFAULT_STAND_IN_LAG_SECONDS, run_supervised};
 
 use crate::commands::ServeArguments;
@@ -87,10 +87,10 @@ fn publish_simulator_arms(directory: &Path, arms: &[ConfiguredArm]) -> anyhow::R
     let mut manifest = tempfile::NamedTempFile::new_in(directory)?;
     serde_json::to_writer(&mut manifest, &names)?;
     manifest.persist(directory.join(SIMULATOR_ARMS_FILE))?;
-    eprintln!(
-        "Plant sockets: {}/<arm>.plant.sock for {}",
-        directory.display(),
-        names.join(", ")
+    tracing::info!(
+        socket_directory = %directory.display(),
+        arms = ?names,
+        "Simulator plant sockets are ready"
     );
     Ok(())
 }
@@ -192,17 +192,13 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
             None => cameras.remove(&name),
         };
     }
-    let _media = MediaSupervisor::start(
-        &MediaPlan {
-            executable: web.media_executable.clone(),
-            address: arguments.media_address,
-            room,
-            station_url: format!("http://{}", arguments.http_address),
-            cameras,
-            simulator_camera_socket: matches!(plant, PlantSelection::Simulator { .. })
-                .then(|| directory.join(SIMULATOR_CAMERA_SOCKET)),
-        },
-        &web.media_status,
-    );
-    run_supervised(&arms, directory, plant, &arguments.http_address, web)
+    let media = MediaPlan {
+        executable: web.media_executable.clone(),
+        address: arguments.media_address,
+        room,
+        cameras,
+        simulator_camera_socket: matches!(plant, PlantSelection::Simulator { .. })
+            .then(|| directory.join(SIMULATOR_CAMERA_SOCKET)),
+    };
+    run_supervised(&arms, directory, plant, &arguments.http_address, web, media)
 }

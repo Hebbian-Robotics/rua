@@ -112,7 +112,7 @@ impl<P: Plant> Runner<'_, P> {
             BusRecovery::Disabled
         };
         self.state.power_down();
-        eprintln!("{}: bus disconnected, retrying: {reason}", self.name);
+        tracing::warn!(arm = %self.name, %reason, "Bus disconnected; retrying");
         self.state.arm().bus_lost(&reason, &[], now);
     }
 
@@ -141,7 +141,7 @@ impl<P: Plant> Runner<'_, P> {
             Reconnection::Failed(failure) => {
                 let reason = format!("{failure:#}");
                 if self.last_reconnect_failure.as_deref() != Some(reason.as_str()) {
-                    eprintln!("{}: bus still disconnected: {reason}", self.name);
+                    tracing::warn!(arm = %self.name, %reason, "Bus still disconnected");
                     self.last_reconnect_failure = Some(reason);
                 }
             }
@@ -316,7 +316,7 @@ impl<P: Plant> Runner<'_, P> {
                             .as_ref()
                             .and_then(|tool| tool.pose(feedback));
                         self.state.core.observe(
-                            now.unix_seconds,
+                            now,
                             &feedback.positions,
                             tool_pose,
                             feedback.fault.as_deref(),
@@ -324,7 +324,7 @@ impl<P: Plant> Runner<'_, P> {
                         self.failed_cycles = 0;
                         self.last_reconnect_failure = None;
                         self.recovery = BusRecovery::Disabled;
-                        eprintln!("{}: recovered at a measured hold", self.name);
+                        tracing::info!(arm = %self.name, "Recovered at a measured hold");
                     }
                     RecoveryHold::Refused(issue) => {
                         self.state
@@ -573,7 +573,7 @@ impl<P: Plant> Runner<'_, P> {
             .and_then(|tool| tool.pose(feedback));
         self.timings.tool_pose_seconds = tool_pose_began.elapsed().as_secs_f64();
         self.state.core.observe(
-            now.unix_seconds,
+            now,
             positions.as_slice(),
             tool_pose,
             feedback.fault.as_deref(),

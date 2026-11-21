@@ -155,10 +155,7 @@ impl ProgramStore {
             && let Err(error) = std::fs::remove_dir_all(directory)
             && error.kind() != std::io::ErrorKind::NotFound
         {
-            eprintln!(
-                "Cannot remove expired compilation artifact {}: {error}",
-                directory.display()
-            );
+            tracing::warn!(path = %directory.display(), %error, "Cannot remove expired compilation artifact");
         }
         Ok(ProgramCompilation::Ready(artifact))
     }
@@ -252,8 +249,10 @@ impl ProgramArtifact {
                 match tokio::task::spawn_blocking(move || artifact.save_execution(&execution)).await
                 {
                     Ok(Ok(())) => {}
-                    Ok(Err(error)) => eprintln!("Cannot persist execution outcome: {error:#}"),
-                    Err(error) => eprintln!("Execution artifact worker failed: {error}"),
+                    Ok(Err(error)) => {
+                        tracing::warn!(error = %format_args!("{error:#}"), "Cannot persist execution outcome");
+                    }
+                    Err(error) => tracing::error!(%error, "Execution artifact worker failed"),
                 }
                 if finished || updates.changed().await.is_err() {
                     break;
@@ -339,9 +338,10 @@ impl ProgramArtifact {
                 .and_then(|()| std::fs::write(&temporary, contents))
                 .and_then(|()| std::fs::rename(&temporary, &destination));
             if let Err(error) = saved {
-                eprintln!(
-                    "Cannot persist step inspection for compilation {}: {error}",
-                    artifact.compilation.compilation_id
+                tracing::warn!(
+                    compilation_id = %artifact.compilation.compilation_id,
+                    %error,
+                    "Cannot persist compilation step inspection"
                 );
             }
         });

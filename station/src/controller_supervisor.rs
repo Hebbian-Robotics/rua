@@ -52,9 +52,6 @@ impl ControllerSupervisor {
     }
 
     fn set_status(&self, status: ControllerStatus) {
-        if let ControllerStatus::Unavailable { reason, .. } = &status {
-            eprintln!("Motor controller unavailable: {reason}");
-        }
         let mut current = self
             .status
             .lock()
@@ -164,7 +161,7 @@ fn refresh_guard_status(
     supervisor: &ControllerSupervisor,
     process: &mut ControllerProcess,
 ) -> bool {
-    let released = matches!(process.try_wait(), Ok(Some(_))) && process.report_pipe_closed();
+    let released = process.guard_released();
     let updated_reports = process.take_updated_reports();
     let mut status = supervisor
         .status
@@ -247,13 +244,17 @@ fn finish_controller(process: &mut ControllerProcess, result: Result<(), String>
         Err(error) => Err(format!("Controller shutdown failed: {error:#}")),
     });
     match result {
-        Ok(()) => "Controller shut down cleanly".into(),
+        Ok(()) => {
+            tracing::info!("Controller shut down cleanly");
+            "Controller shut down cleanly".into()
+        }
         Err(reason) => {
+            tracing::warn!(%reason, "Motor controller unavailable");
             if let Err(error) = process
                 .stop_controller()
                 .and_then(|()| wait_for_exit(process))
             {
-                eprintln!("Could not stop the controller: {error:#}");
+                tracing::error!(error = %format_args!("{error:#}"), "Could not stop the controller");
             }
             reason
         }
@@ -303,6 +304,7 @@ fn run(
         let mut process = match ControllerProcess::start(&configuration) {
             Ok(process) => process,
             Err(error) => {
+                tracing::warn!(error = %format_args!("{error:#}"), "Cannot start controller");
                 supervisor.set_status(ControllerStatus::Unavailable {
                     reason: format!("Cannot start controller: {error:#}"),
                     guard_released: true,
@@ -339,8 +341,7 @@ fn run(
         for link in links.values() {
             link.controller_unavailable(reason.clone());
         }
-        let guard_released =
-            matches!(process.try_wait(), Ok(Some(_))) && process.report_pipe_closed();
+        let guard_released = process.guard_released();
         // INVARIANT: Publish the recoverable status once so a queued reconnect stays visible.
         supervisor.set_status(ControllerStatus::Unavailable {
             reason,

@@ -83,7 +83,9 @@ export const apiSchemas = z.object({
     .describe("Where the arm was, measured, when a command ended."),
   ActionSequenceArmAction: z
     .object({
-      gripper_opening: z.union([z.number(), z.null()]).default(null),
+      gripper_opening: z
+        .union([z.number().gte(0).lte(1), z.null()])
+        .default(null),
       max_joint_speed: z
         .union([
           z
@@ -406,7 +408,7 @@ export const apiSchemas = z.object({
                 z
                   .object({
                     gripper_opening: z
-                      .union([z.number(), z.null()])
+                      .union([z.number().gte(0).lte(1), z.null()])
                       .default(null),
                     max_joint_speed: z
                       .union([
@@ -876,7 +878,7 @@ export const apiSchemas = z.object({
               z
                 .object({
                   gripper_opening: z
-                    .union([z.number(), z.null()])
+                    .union([z.number().gte(0).lte(1), z.null()])
                     .default(null),
                   max_joint_speed: z
                     .union([
@@ -1001,7 +1003,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       gripper_opening: z
-                        .union([z.number(), z.null()])
+                        .union([z.number().gte(0).lte(1), z.null()])
                         .default(null),
                       max_joint_speed: z
                         .union([
@@ -1122,7 +1124,9 @@ export const apiSchemas = z.object({
         z.string(),
         z
           .object({
-            gripper_opening: z.union([z.number(), z.null()]).default(null),
+            gripper_opening: z
+              .union([z.number().gte(0).lte(1), z.null()])
+              .default(null),
             max_joint_speed: z
               .union([
                 z
@@ -2451,7 +2455,7 @@ export const apiSchemas = z.object({
         .int()
         .gte(0)
         .describe(
-          "Bumped each time an interlock is raised; commands may carry it as\n`expected_revision`.",
+          "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
         ),
       sampled_at_unix_seconds: z
         .union([
@@ -2584,7 +2588,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           gripper_opening: z
-                            .union([z.number(), z.null()])
+                            .union([z.number().gte(0).lte(1), z.null()])
                             .default(null),
                           max_joint_speed: z
                             .union([
@@ -3004,6 +3008,8 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .number()
+                        .gte(0)
+                        .lte(1)
                         .describe(
                           "The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
                         ),
@@ -3050,7 +3056,7 @@ export const apiSchemas = z.object({
                       "Peak gripper speed in rad/s; uses the arm default and maximum.",
                     )
                     .default(null),
-                  opening: z.number(),
+                  opening: z.number().gte(0).lte(1),
                 })
                 .strict()
                 .describe(
@@ -4273,6 +4279,8 @@ export const apiSchemas = z.object({
                 .union([
                   z
                     .number()
+                    .gte(0)
+                    .lte(1)
                     .describe(
                       "The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
                     ),
@@ -4315,7 +4323,7 @@ export const apiSchemas = z.object({
                   "Peak gripper speed in rad/s; uses the arm default and maximum.",
                 )
                 .default(null),
-              opening: z.number(),
+              opening: z.number().gte(0).lte(1),
             })
             .strict()
             .describe(
@@ -4497,7 +4505,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       gripper_opening: z
-                        .union([z.number(), z.null()])
+                        .union([z.number().gte(0).lte(1), z.null()])
                         .default(null),
                       max_joint_speed: z
                         .union([
@@ -4763,7 +4771,7 @@ export const apiSchemas = z.object({
                         z
                           .object({
                             gripper_opening: z
-                              .union([z.number(), z.null()])
+                              .union([z.number().gte(0).lte(1), z.null()])
                               .default(null),
                             max_joint_speed: z
                               .union([
@@ -16574,7 +16582,7 @@ export const apiSchemas = z.object({
                       .int()
                       .gte(0)
                       .describe(
-                        "Bumped each time an interlock is raised; commands may carry it as\n`expected_revision`.",
+                        "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
                       ),
                     sampled_at_unix_seconds: z
                       .union([
@@ -16865,7 +16873,7 @@ export const apiSchemas = z.object({
                           z
                             .object({
                               gripper_opening: z
-                                .union([z.number(), z.null()])
+                                .union([z.number().gte(0).lte(1), z.null()])
                                 .default(null),
                               max_joint_speed: z
                                 .union([
@@ -17698,6 +17706,8 @@ export const apiSchemas = z.object({
             .union([
               z
                 .number()
+                .gte(0)
+                .lte(1)
                 .describe(
                   "The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
                 ),
@@ -17740,7 +17750,7 @@ export const apiSchemas = z.object({
               "Peak gripper speed in rad/s; uses the arm default and maximum.",
             )
             .default(null),
-          opening: z.number(),
+          opening: z.number().gte(0).lte(1),
         })
         .strict()
         .describe(
@@ -18595,7 +18605,7 @@ export const apiSchemas = z.object({
               .int()
               .gte(0)
               .describe(
-                "Bumped each time an interlock is raised; commands may carry it as\n`expected_revision`.",
+                "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
               ),
             sampled_at_unix_seconds: z
               .union([

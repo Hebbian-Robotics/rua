@@ -11,7 +11,7 @@ Choose checks for the component you are changing:
 | --- | --- |
 | Documentation | Local link check below |
 | Python SDK or tooling | `uv run rua-dev validate --lane python` |
-| TypeScript SDK | `pnpm check` and `pnpm --filter @hebbian/robot-use-client test` |
+| TypeScript SDK | `pnpm check` and `pnpm --filter hebbian-rua test` |
 | TypeScript example applications | `uv run rua-dev validate --lane viewer` in the full checkout |
 | Rust control or station behavior | A focused Cargo test, such as `cargo test --locked -p hebbian-robot-use-server --bin hebbian-robot-use-server so101` after setup |
 | Shared wire types | Regenerate from the owning Rust types with `uv run rua-dev contracts` |

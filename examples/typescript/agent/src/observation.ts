@@ -1,6 +1,6 @@
 // What the model sees each turn, traced and recorded for the viewer.
 
-import type { RobotObservation } from "@hebbian/robot-use-client";
+import type { RobotObservation } from "hebbian-rua";
 import { type RunEnvironment, reportEvent } from "./environment.js";
 import type { Observation } from "./providers/types.js";
 import { KIND_ATTRIBUTE } from "./tracing.js";

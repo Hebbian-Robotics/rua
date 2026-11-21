@@ -10,6 +10,11 @@ use hebbian_contracts::{
 };
 use tokio::sync::{broadcast, watch};
 
+enum StreamUpdate {
+    Continue,
+    SnapshotRequired,
+}
+
 const RECONNECT_DELAY_CAP: Duration = Duration::from_secs(1);
 const EVENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -229,10 +234,10 @@ impl Shared {
     pub(crate) async fn keep_connected(&self) {
         let mut backoff = hebbian_contracts::Backoff::new(RECONNECT_DELAY_CAP);
         loop {
-            let attempt_started = tokio::time::Instant::now();
             let ended = self.serve().await;
-            self.update(|inner| {
-                if inner.connected {
+            let was_connected = self.update(|inner| {
+                let was_connected = inner.connected;
+                if was_connected {
                     inner.connection_generation = inner.connection_generation.wrapping_add(1);
                 }
                 inner.connected = false;
@@ -246,8 +251,13 @@ impl Shared {
                 if inner.lease_state.lose() {
                     self.lease_lost.send_replace(true);
                 }
+                was_connected
             });
-            tokio::time::sleep(backoff.next_delay(attempt_started.elapsed())).await;
+            if was_connected {
+                backoff.reset();
+            } else {
+                tokio::time::sleep(backoff.next_delay()).await;
+            }
         }
     }
 
@@ -257,36 +267,49 @@ impl Shared {
             .build()
             .map_err(|error| error.to_string())?;
         let url = format!("{}/events", self.url.trim_end_matches('/'));
-        let cursor = self.read(|inner| inner.event_cursor.clone());
-        let mut request = client.get(&url);
-        if let Some(cursor) = &cursor {
-            request = request.header("Last-Event-ID", cursor);
-        }
-        let mut response = tokio::time::timeout(HANDSHAKE_TIMEOUT, request.send())
-            .await
-            .map_err(|error| error.to_string())?
-            .map_err(|error| error.to_string())?;
-        if response.status() == reqwest::StatusCode::CONFLICT && cursor.is_some() {
-            self.update(|inner| inner.event_cursor = None);
-            return Err("Station event cursor expired".into());
-        }
-        response
-            .error_for_status_ref()
-            .map_err(|error| error.to_string())?;
-        let mut decoder = hebbian_contracts::server_sent_events::ServerSentEventDecoder::default();
-        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
-            decoder.push(&chunk);
-            while let Some(event) = decoder.next_event().map_err(|error| error.to_string())? {
-                self.apply_event(
-                    &client,
-                    &event.kind,
-                    event.identifier.as_deref(),
-                    &event.data,
-                )
-                .await?;
+        'snapshot: loop {
+            let cursor = self.read(|inner| inner.event_cursor.clone());
+            let mut request = client.get(&url);
+            if let Some(cursor) = &cursor {
+                request = request.header("Last-Event-ID", cursor);
             }
+            let response = tokio::time::timeout(HANDSHAKE_TIMEOUT, request.send())
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+            if response.status() == reqwest::StatusCode::CONFLICT && cursor.is_some() {
+                self.update(|inner| inner.event_cursor = None);
+                continue;
+            }
+            let mut response = response
+                .error_for_status()
+                .map_err(|error| error.to_string())?;
+            let mut decoder =
+                hebbian_contracts::server_sent_events::ServerSentEventDecoder::default();
+            while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+                decoder.push(&chunk);
+                while let Some(event) = decoder.next_event().map_err(|error| error.to_string())? {
+                    let update = self
+                        .apply_event(
+                            &client,
+                            &event.kind,
+                            event.identifier.as_deref(),
+                            &event.data,
+                        )
+                        .await?;
+                    if matches!(update, StreamUpdate::SnapshotRequired) {
+                        let retry_without_cursor = self.update(|inner| {
+                            inner.event_cursor.take().is_some() && !inner.connected
+                        });
+                        if retry_without_cursor {
+                            continue 'snapshot;
+                        }
+                        return Err("Station event replay requires a snapshot".into());
+                    }
+                }
+            }
+            return Err("station event stream ended".into());
         }
-        Err("station event stream ended".into())
     }
 
     async fn apply_event(
@@ -295,16 +318,14 @@ impl Shared {
         kind: &str,
         event_id: Option<&str>,
         data: &str,
-    ) -> Result<(), String> {
+    ) -> Result<StreamUpdate, String> {
         if kind == "resync_required" {
-            self.update(|inner| inner.event_cursor = None);
-            return Err("station event replay requires a snapshot".into());
+            return Ok(StreamUpdate::SnapshotRequired);
         }
         let payload: serde_json::Value =
             serde_json::from_str(data).map_err(|error| error.to_string())?;
         if payload.get("kind").and_then(serde_json::Value::as_str) == Some("resync_required") {
-            self.update(|inner| inner.event_cursor = None);
-            return Err("station event replay requires a snapshot".into());
+            return Ok(StreamUpdate::SnapshotRequired);
         }
         if kind == "snapshot" {
             let items = payload
@@ -350,7 +371,7 @@ impl Shared {
         } else if kind == "station" {
             self.receive(data);
         } else {
-            return Ok(());
+            return Ok(StreamUpdate::Continue);
         }
         self.update(|inner| {
             if let Some(event_id) = event_id.filter(|id| !id.is_empty()) {
@@ -360,7 +381,7 @@ impl Shared {
             inner.disconnected_since = None;
             inner.last_error = None;
         });
-        Ok(())
+        Ok(StreamUpdate::Continue)
     }
 
     fn receive(&self, text: &str) {

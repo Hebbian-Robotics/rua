@@ -25,11 +25,7 @@ impl PolicyRuntime {
             return Ok(None);
         };
         crate::so101::policy::validate_execution(config)?;
-        let policy = Policy::load(
-            Path::new(&settings.onnx),
-            Path::new(&config.urdf),
-            &settings.checkpoint_sha256,
-        )?;
+        let policy = Policy::load(Path::new(&settings.onnx), Path::new(&config.urdf))?;
         policy.validate_target_lead(settings.max_target_lead_radians)?;
         Ok(Some(Self {
             policy,

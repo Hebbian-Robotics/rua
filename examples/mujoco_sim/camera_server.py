@@ -4,6 +4,7 @@
 import json
 import socket
 import threading
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ class CameraServer:
         self._render = render
         self._pending: list[_Request] = []
         self._lock = threading.Lock()
+        self._last_step: float | None = None
         path.unlink(missing_ok=True)
         self._listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._listener.bind(str(path))
@@ -38,6 +40,7 @@ class CameraServer:
         # WHY: Render at most one pending frame per physics step: software rendering can take
         # hundreds of milliseconds, so draining the queue would starve control replies.
         with self._lock:
+            self._last_step = time.monotonic()
             if not self._pending:
                 return
             request = self._pending.pop(0)
@@ -65,7 +68,16 @@ class CameraServer:
             for line in stream:
                 request = json.loads(line)
                 if request.get("list"):
-                    reply: dict[str, Any] = {"names": self.names}
+                    with self._lock:
+                        last_step = self._last_step
+                    available = (
+                        last_step is not None
+                        and time.monotonic() - last_step <= FRAME_TIMEOUT_SECONDS
+                    )
+                    reply: dict[str, Any] = {
+                        "names": self.names,
+                        "available": self.names if available else [],
+                    }
                     stream.write(json.dumps(reply).encode() + b"\n")
                     stream.flush()
                     continue
@@ -79,6 +91,9 @@ class CameraServer:
                 with self._lock:
                     self._pending.append(pending)
                 if not pending.done.wait(FRAME_TIMEOUT_SECONDS):
+                    with self._lock:
+                        if pending in self._pending:
+                            self._pending.remove(pending)
                     reply = {"error": "The simulation did not render a frame"}
                 elif pending.error is not None:
                     reply = {"error": pending.error}

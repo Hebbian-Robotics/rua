@@ -21,7 +21,10 @@ fn tokens_enforce_roles_room_identity_and_lifetime() -> Result<(), Box<dyn std::
     let before = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-    for lifetime in [CameraLifetime::PhoneInvite, CameraLifetime::Station] {
+    for (lifetime, seconds) in [
+        (CameraLifetime::PhoneInvite, 3600),
+        (CameraLifetime::Station, 43_200),
+    ] {
         let claims = claims(
             &credentials
                 .camera_access("station-test", "phone_front", lifetime)?
@@ -36,7 +39,7 @@ fn tokens_enforce_roles_room_identity_and_lifetime() -> Result<(), Box<dyn std::
         assert_eq!(
             claims["exp"].as_u64().ok_or("expiration missing")?
                 - claims["nbf"].as_u64().ok_or("start missing")?,
-            43_200
+            seconds
         );
         assert!(claims["nbf"].as_u64().ok_or("start missing")? >= before);
     }

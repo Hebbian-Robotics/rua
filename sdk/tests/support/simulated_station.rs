@@ -11,8 +11,8 @@ use hebbian_robot_use_core::lease::{LEASE, Lease};
 use hebbian_robot_use_core::plant::Plant;
 use hebbian_robot_use_core::profile::{JointLimitSource, controller_config, load_robot_profile};
 use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_sdk::{Error, Station};
 use hebbian_robot_use_server::run_telemetry::LiveRunStore;
+use hebbian_rua::{Error, Station};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -74,7 +74,7 @@ impl SimulatedStation {
             .map(|(position, name)| {
                 let mut config = config.clone();
                 if arm_names.len() > 1 {
-                    config.base_pose = Some(hebbian_robot_use_sdk::contracts::BasePose {
+                    config.base_pose = Some(hebbian_rua::contracts::BasePose {
                         position_meters: [0.0, f64::from(u32::try_from(position)?), 0.0],
                         yaw_radians: 0.0,
                     });

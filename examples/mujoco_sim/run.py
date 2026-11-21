@@ -71,6 +71,8 @@ def main(socket_directory: Path, *, timestep_seconds: float | None = None) -> No
     )
     arms = {}
     for arm, config in configs.items():
+        if config.sim_plant is None:
+            raise ValueError(f"{arm}: station did not configure a simulator plant")
         scene_joints = [scene_name(arm, name) for name in config.station.joint_names]
         gripper = (
             scene_name(arm, settings.gripper_joint)
@@ -87,6 +89,7 @@ def main(socket_directory: Path, *, timestep_seconds: float | None = None) -> No
                 settings.rated_actuator_force
             ),
             command_delay_seconds=command_delay_seconds(model, arm),
+            step_timeout_seconds=config.sim_plant.reply_timeout_seconds,
         )
     try:
         serve_plants(

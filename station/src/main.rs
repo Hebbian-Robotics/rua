@@ -11,6 +11,17 @@ use crate::commands::{Arguments, Command};
 
 fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new(
+                    "warn,hebbian_robot_use_server=info,hebbian_robot_use_core=info",
+                )
+            }),
+        )
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
     match Arguments::parse().command {
         Command::Serve { arguments, web } => serve::serve(arguments, web.settings()?),
         Command::Controller {

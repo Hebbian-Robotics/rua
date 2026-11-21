@@ -6,8 +6,13 @@ from anthropic.types import Message, MessageParam, ToolParam, ToolResultBlockPar
 from anthropic.types.content_block_param import ContentBlockParam
 from pydantic import TypeAdapter
 
+from hebbian_rua.client.llm.recovery import capture_when_ready
 from hebbian_rua.client.llm.robot_tools import RobotTools
-from hebbian_rua.client.llm.tool_turn import RobotToolTurn, encode_camera
+from hebbian_rua.client.llm.tool_turn import (
+    ModelObservation,
+    RobotToolTurn,
+    encode_camera,
+)
 from hebbian_rua.client.llm.types import RobotToolCall
 
 _ASSISTANT_CONTENT = TypeAdapter(list[ContentBlockParam])
@@ -34,11 +39,21 @@ class AnthropicRobotTools:
             for tool in self.robot.tools
         ]
 
-    async def observe(self) -> MessageParam:
-        observation = await self.robot.observe()
-        return _image_message(observation.text, observation.cameras)
+    async def observe(
+        self, *, wait_for_recovery: bool = False
+    ) -> ModelObservation[MessageParam]:
+        if wait_for_recovery:
+            captured, _ = await capture_when_ready(self.robot)
+            observation = captured.observation
+        else:
+            observation = await self.robot.observe()
+        return ModelObservation(
+            _image_message(observation.text, observation.cameras), observation.revisions
+        )
 
-    async def execute(self, response: Message) -> RobotToolTurn[MessageParam]:
+    async def execute(
+        self, response: Message, *, expected_revisions: Mapping[str, int]
+    ) -> RobotToolTurn[MessageParam]:
         if response.stop_reason not in {"tool_use", "end_turn", "stop_sequence"}:
             raise ValueError(
                 f"Cannot execute an incomplete model response: {response.stop_reason}"
@@ -56,7 +71,7 @@ class AnthropicRobotTools:
             mode="json",
         )
         messages: list[MessageParam] = [{"role": "assistant", "content": content}]
-        results = await self.robot.execute(calls)
+        results = await self.robot.execute(calls, expected_revisions=expected_revisions)
         if results:
             outputs: list[ToolResultBlockParam] = [
                 {

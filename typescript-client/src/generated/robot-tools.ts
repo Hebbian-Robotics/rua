@@ -2,7 +2,7 @@
 export const robotToolSpecifications = [
   {
     description:
-      "Steps run in order; movement and gripper commands in the same step start together. A refusal or incomplete/limited target stops the sequence.",
+      "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.",
     name: "action_sequence",
     operation: "start_action_sequence",
     parameters: {
@@ -11,10 +11,30 @@ export const robotToolSpecifications = [
         steps: {
           items: {
             additionalProperties: false,
+            anyOf: [
+              {
+                properties: {
+                  movement: {
+                    type: "object",
+                  },
+                },
+                required: ["movement"],
+              },
+              {
+                properties: {
+                  gripper_opening: {
+                    type: "number",
+                  },
+                },
+                required: ["gripper_opening"],
+              },
+            ],
             description:
               "A movement and gripper target in the same step start together.",
             properties: {
               gripper_opening: {
+                maximum: 1.0,
+                minimum: 0.0,
                 type: "number",
               },
               max_joint_speed_degrees_per_second: {
@@ -296,7 +316,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Model guards do not detect collisions between arms or with workspace objects.",
+      "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
     name: "move_arms",
     operation: "move_arms",
     parameters: {
@@ -429,6 +449,7 @@ export const robotToolSpecifications = [
           additionalProperties: {
             $ref: "#/$defs/Waypoint",
           },
+          minProperties: 1,
           type: "object",
         },
       },
@@ -463,6 +484,8 @@ export const robotToolSpecifications = [
             "Peak speed in degrees per second; clamped to the profile maximum.",
         },
         opening: {
+          maximum: 1.0,
+          minimum: 0.0,
           type: "number",
         },
       },

@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import type { RobotToolResult } from "@hebbian/robot-use-client";
+import type { RobotToolResult } from "hebbian-rua";
 import { GeminiInteractionError } from "./errors.js";
 import {
   type ConversationSettings,

@@ -7,7 +7,7 @@ Follow the [SO-101 calibration guide](so101-calibration.md) to save the arm's
 `setup.toml` and `calibration.json`. From the checkout root, start the station:
 
 ```sh
-uv run cargo run -p hebbian-robot-use-server -- serve --profile auto
+uv run cargo run -p hebbian-robot-use-server -- serve
 ```
 
 With torque off, move each joint and the gripper by hand and check that the

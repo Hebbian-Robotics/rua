@@ -1,11 +1,11 @@
 [project]
 name = "rua-dev"
-version = "0.1.2"
+version = "0.1.3"
 description = "Development and release commands for the RUA source checkout"
 requires-python = ">=3.12"
 dependencies = [
     "cyclopts>=5.3.2",
-    "hebbian-rua==0.1.2",
+    "hebbian-rua==0.1.3",
     "packaging>=26.3",
     "pydantic>=2.11",
     "wheel>=0.45",

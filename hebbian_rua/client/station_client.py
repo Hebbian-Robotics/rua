@@ -73,6 +73,7 @@ from hebbian_rua.client.station_types import (
     CAMERA_TIMEOUT_SECONDS,
     DEFAULT_SERVER,
     RUNS_TIMEOUT_SECONDS,
+    ActionSequenceUnavailable,
     CameraJpeg,
     CameraUnavailable,
     CommandResult,
@@ -671,7 +672,12 @@ class StationClient:
         self, action_sequence_id: str
     ) -> ActionSequenceRecord:
         """Get a running or recently completed action_sequence by identifier."""
-        return await self._api.get_action_sequence(action_sequence_id)
+        try:
+            return await self._api.get_action_sequence(action_sequence_id)
+        except httpx2.HTTPStatusError as error:
+            if error.response.status_code != 404:
+                raise
+            raise ActionSequenceUnavailable(action_sequence_id) from error
 
     async def wait_for_action_sequence(
         self, action_sequence_id: str
@@ -684,7 +690,7 @@ class StationClient:
                 and action_sequence.phase.state != "running"
             ):
                 return action_sequence
-            if action_sequence is not None and action_sequence.id != action_sequence_id:
+            if action_sequence is None or action_sequence.id != action_sequence_id:
                 previous = await self.get_action_sequence(action_sequence_id)
                 if previous.phase.state != "running":
                     return previous

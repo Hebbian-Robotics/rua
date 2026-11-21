@@ -11,8 +11,8 @@ use std::process::Output;
 use std::time::Duration;
 
 use hebbian_robot_use_core::plant::NoPhysicsStandIn;
-use hebbian_robot_use_sdk::LeaseRequest;
-use hebbian_robot_use_sdk::contracts::LeaseHolder;
+use hebbian_rua::LeaseRequest;
+use hebbian_rua::contracts::LeaseHolder;
 use serde_json::Value;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;

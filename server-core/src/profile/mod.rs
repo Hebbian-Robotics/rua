@@ -132,7 +132,6 @@ pub struct PolicySettings {
     pub settle_dwell_seconds: f64,
     pub settled_velocity_radians_per_second: f64,
     pub preview_lag_seconds: f64,
-    pub checkpoint_sha256: String,
     // CONSTRAINT: The furthest ahead of a measured joint the model may set its target each cycle
     // (the model's action step must not exceed it). A lead the servo chases, not a speed.
     pub max_target_lead_radians: f64,

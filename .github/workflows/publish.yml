@@ -37,10 +37,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          package_version="$(uv version --short)"
-          if [ "${GITHUB_EVENT_NAME}" = release ] && [ "${RELEASE_TAG}" != "v${package_version}" ]; then
-            echo "Release tag ${RELEASE_TAG} must equal v${package_version}." >&2
-            exit 1
+          if [ "${GITHUB_EVENT_NAME}" = release ]; then
+            uv run --locked rua-dev check-release-versions --tag "${RELEASE_TAG}"
+          else
+            uv run --locked rua-dev check-release-versions
           fi
       - name: Install Linux build tools
         if: runner.os == 'Linux'
@@ -118,9 +118,132 @@ jobs:
             uv run --locked rua-dev package check "${wheel_path}"
           done
 
+  sdk-packages:
+    if: github.repository == 'Hebbian-Robotics/rua'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Build and check the npm tarball
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm --filter hebbian-rua test
+          version="$(node -p 'require("./typescript-client/package.json").version')"
+          mkdir -p dist/sdk
+          tarball="${PWD}/dist/sdk/hebbian-rua-${version}.tgz"
+          pnpm --dir typescript-client pack --out "${tarball}"
+          pnpm test:package "${tarball}"
+      - name: Build and check crates.io packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold
+          cargo package --locked -p hebbian-rua-contracts -p hebbian-rua
+          cp target/package/hebbian-rua-*.crate dist/sdk/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rua-sdk-packages
+          path: dist/sdk/
+          if-no-files-found: error
+
+  publish-sdks:
+    if: github.repository == 'Hebbian-Robotics/rua' && github.event_name == 'release'
+    needs: [installed-wheel, sdk-packages]
+    runs-on: ubuntu-24.04
+    environment: sdk-release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Determine which SDK versions still need publishing
+        id: registry
+        run: |
+          version="${RELEASE_TAG#v}"
+          response="${RUNNER_TEMP}/registry-version.json"
+
+          registry_status() {
+            curl --silent --show-error --retry 3 --max-time 15 \
+              --user-agent 'Hebbian RUA release validation (https://github.com/Hebbian-Robotics/rua)' \
+              --output "${response}" --write-out '%{http_code}' "$1"
+          }
+
+          check_package() {
+            local output_name="$1" package_url="$2" version_check="$3"
+            local version_status package_status
+            version_status="$(registry_status "${package_url}/${version}")"
+            case "${version_status}" in
+              200)
+                jq -e --arg version "${version}" "(${version_check}) == \$version" "${response}" > /dev/null
+                printf '%s=false\n' "${output_name}" >> "${GITHUB_OUTPUT}"
+                ;;
+              404)
+                package_status="$(registry_status "${package_url}")"
+                if [ "${package_status}" = 404 ]; then
+                  printf 'Publish the first version manually and configure Trusted Publishing for %s\n' "${package_url}" >&2
+                  return 1
+                fi
+                if [ "${package_status}" != 200 ]; then
+                  printf 'Package lookup failed with HTTP %s for %s\n' "${package_status}" "${package_url}" >&2
+                  return 1
+                fi
+                printf '%s=true\n' "${output_name}" >> "${GITHUB_OUTPUT}"
+                ;;
+              *)
+                printf 'Version lookup failed with HTTP %s for %s\n' "${version_status}" "${package_url}" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          check_package contracts 'https://crates.io/api/v1/crates/hebbian-rua-contracts' \
+            'select(.version.yanked == false) | .version.num'
+          check_package rust 'https://crates.io/api/v1/crates/hebbian-rua' \
+            'select(.version.yanked == false) | .version.num'
+          check_package npm 'https://registry.npmjs.org/hebbian-rua' '.version'
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        if: steps.registry.outputs.contracts == 'true' || steps.registry.outputs.rust == 'true' || steps.registry.outputs.npm == 'true'
+        with:
+          persist-credentials: false
+      - name: Get a crates.io publishing credential
+        id: crates-auth
+        if: steps.registry.outputs.contracts == 'true' || steps.registry.outputs.rust == 'true'
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish the contracts crate
+        if: steps.registry.outputs.contracts == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+        run: cargo publish --locked --no-verify -p hebbian-rua-contracts
+      - name: Publish the Rust SDK
+        if: steps.registry.outputs.rust == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+        run: cargo publish --locked --no-verify -p hebbian-rua
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: steps.registry.outputs.npm == 'true'
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.registry.outputs.npm == 'true'
+        with:
+          name: rua-sdk-packages
+          path: dist/sdk
+      - name: Publish the tested npm tarball
+        if: steps.registry.outputs.npm == 'true'
+        run: npm publish "./dist/sdk/hebbian-rua-${RELEASE_TAG#v}.tgz" --access public
+
   publish:
     if: github.repository == 'Hebbian-Robotics/rua' && github.event_name == 'release'
-    needs: installed-wheel
+    needs: publish-sdks
     runs-on: ubuntu-24.04
     environment:
       name: pypi
@@ -135,14 +258,19 @@ jobs:
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
-      - name: Attach release wheels and checksums
+          skip-existing: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: rua-sdk-packages
+          path: dist
+      - name: Attach release packages and checksums
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           cd dist
-          sha256sum ./*.whl > SHA256SUMS
-          gh release upload "${RELEASE_TAG}" ./*.whl SHA256SUMS --clobber
+          sha256sum ./*.whl ./*.crate ./*.tgz > SHA256SUMS
+          gh release upload "${RELEASE_TAG}" ./*.whl ./*.crate ./*.tgz SHA256SUMS --clobber
     permissions:
       contents: write

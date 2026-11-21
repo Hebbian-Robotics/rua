@@ -401,7 +401,7 @@ pub fn serve_controller(
         if let Err(error) =
             write_controller_messages(transport, messages, &writer_arms, &writer_ready)
         {
-            eprintln!("Controller output failed: {error}");
+            tracing::error!(%error, "Controller output failed");
             close_connection(&writer_failure_socket, &writer_stop);
         }
     });

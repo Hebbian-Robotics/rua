@@ -33,9 +33,11 @@ from hebbian_rua.client.llm.types import (
     SequenceImageHistory,
 )
 from hebbian_rua.client.station_client import StationClient
+from hebbian_rua.client.station_types import ActionSequenceUnavailable
 
 __all__ = [
     "ActionSequenceTool",
+    "ActionSequenceUnavailable",
     "ModelContent",
     "NamedArmSequence",
     "OutputFormatter",

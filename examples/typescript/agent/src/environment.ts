@@ -1,11 +1,7 @@
 // What a running loop shares between its modules.
 
-import type {
-  createRobotTools,
-  Lease,
-  StationConnection,
-} from "@hebbian/robot-use-client";
-import { StationConnectionError } from "@hebbian/robot-use-client";
+import type { createRobotTools, Lease, StationConnection } from "hebbian-rua";
+import { StationConnectionError } from "hebbian-rua";
 import type { TaskMemory } from "./tools.js";
 import type { Tracer } from "./tracing.js";
 

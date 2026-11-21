@@ -26,15 +26,17 @@ pub(crate) fn request_realtime_scheduling() {
         )
     };
     if !scheduled || !locked {
-        eprintln!(
-            "Warning: real-time scheduling not fully available (SCHED_FIFO {scheduled}, mlockall {locked}); cycles may run late"
+        tracing::warn!(
+            sched_fifo = scheduled,
+            mlockall = locked,
+            "Real-time scheduling is not fully available; cycles may run late"
         );
     }
 }
 
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn request_realtime_scheduling() {
-    eprintln!("Warning: real-time scheduling is only supported on Linux; cycles may run late");
+    tracing::warn!("Real-time scheduling is only supported on Linux; cycles may run late");
 }
 
 #[derive(Debug, PartialEq)]

@@ -38,15 +38,14 @@ PYTHON
 
 The [agent example](agent_quickstart.py) supports OpenAI, Claude and Gemini.
 
-Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` for your provider.
-
-Set `OPENAI_MODEL`, `ANTHROPIC_MODEL` or `GEMINI_MODEL` to an ID from your account
-and pass it with `--model`:
+Set `OPENAI_API_KEY`, `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` in your
+environment or `.env`. The example uses the first configured provider in that
+order and selects its default model. Pass `--provider` to choose a provider.
+To choose a model, set that provider's `OPENAI_MODEL`, `GEMINI_MODEL` or
+`ANTHROPIC_MODEL` variable, or pass `--model` for a one-run override.
 
 ```sh
-uv run agent_quickstart.py "Describe the robot state. Keep the arm still." --provider openai --model "$OPENAI_MODEL"
-uv run agent_quickstart.py "Describe the robot state. Keep the arm still." --provider anthropic --model "$ANTHROPIC_MODEL"
-uv run agent_quickstart.py "Describe the robot state. Keep the arm still." --provider gemini --model "$GEMINI_MODEL"
+uv run agent_quickstart.py "Describe the robot state. Keep the arm still."
 ```
 
 The agent uses the robot model selected by the station. With `--profile auto`,

@@ -1,6 +1,7 @@
 # TypeScript client
 
 Use the TypeScript client to control a running station from a browser or Node.js.
+Install a released version with `pnpm add hebbian-rua`.
 
 ## Use the workspace package
 
@@ -13,7 +14,7 @@ To read state without moving the robot, start a station
 Save the following as `read-state.ts` in the checkout root:
 
 ```ts
-import { createStationConnection } from "@hebbian/robot-use-client";
+import { createStationConnection } from "hebbian-rua";
 
 const connection = createStationConnection("http://127.0.0.1:8792", "agent");
 connection.start();
@@ -33,7 +34,7 @@ Run it with `pnpm exec tsx --conditions=development read-state.ts`.
 Start the station and enable the arm before running this example. See the [getting started guide](../docs/getting-started.md).
 
 ```ts
-import { createStationConnection } from "@hebbian/robot-use-client";
+import { createStationConnection } from "hebbian-rua";
 
 const server = "http://127.0.0.1:8792";
 const connection = createStationConnection(server, "agent");
@@ -245,7 +246,7 @@ import {
   renderOutput,
   selectOutputCameras,
   summarizeOutput,
-} from "@hebbian/robot-use-client";
+} from "hebbian-rua";
 
 const taskView = robot.withOutputFormatter((output) =>
   renderOutput(selectOutputCameras(summarizeOutput(output), ["wrist"])),
@@ -259,7 +260,7 @@ exports `conciseOutput`, `modelResponse` and `conciseResponse`.
 ## Package builds
 
 The package exports compiled JavaScript and declarations from `dist/`.
-Build with `pnpm --filter @hebbian/robot-use-client build`, or pack the SDK
+Build with `pnpm --filter hebbian-rua build`, or pack the SDK
 from the checkout root. Packing runs the build automatically:
 
 ```sh
@@ -267,7 +268,7 @@ from the checkout root. Packing runs the build automatically:
 ```
 
 From your Node.js project, install the archive with
-`pnpm add /tmp/rua-client.tgz` and import `@hebbian/robot-use-client`. The
+`pnpm add /tmp/rua-client.tgz` and import `hebbian-rua`. The
 archive uses the compiled entry point. The SDK is available from source.
 
 Repository commands, Vite and TypeScript enable the `development` condition to

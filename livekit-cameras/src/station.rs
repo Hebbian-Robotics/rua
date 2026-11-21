@@ -1,6 +1,6 @@
 //! Station telemetry, independent of camera and `LiveKit` connections.
 use crate::recorder::{RecorderError, archive::RecordingArchive};
-use hebbian_contracts::{Event, Frame, ServerMessage, unix_nanoseconds};
+use hebbian_contracts::{Backoff, Event, Frame, ServerMessage, unix_nanoseconds};
 use std::{collections::BTreeMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -11,26 +11,25 @@ enum IncomingMessage {
     Unknown(serde_json::Value),
 }
 
+struct StationReplay {
+    arm_cursors: BTreeMap<String, u64>,
+    event_cursor: Option<String>,
+    run_after: Option<u64>,
+}
+
 pub(crate) async fn subscribe(
     url: &str,
     archive: Option<&RecordingArchive>,
     stopped: CancellationToken,
 ) -> Result<(), RecorderError> {
-    let mut arm_cursors = BTreeMap::new();
-    let mut event_cursor = None;
-    let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(1));
-    let mut run_after = Some(0);
+    let mut replay = StationReplay {
+        arm_cursors: BTreeMap::new(),
+        event_cursor: None,
+        run_after: Some(0),
+    };
+    let mut backoff = Backoff::new(Duration::from_secs(1));
     loop {
-        let attempt_started = std::time::Instant::now();
-        let result = connection(
-            url,
-            archive,
-            &mut arm_cursors,
-            &mut run_after,
-            &mut event_cursor,
-            &stopped,
-        )
-        .await;
+        let result = connection(url, archive, &mut replay, &mut backoff, &stopped).await;
         if stopped.is_cancelled() {
             return Ok(());
         }
@@ -38,7 +37,7 @@ pub(crate) async fn subscribe(
             Ok(()) => "station event stream closed".to_owned(),
             Err(error) => error.to_string(),
         };
-        eprintln!("Station disconnected; reconnecting with resume: {detail}");
+        tracing::warn!(%detail, "Station disconnected; reconnecting with resume");
         if let Some(archive) = archive {
             archive.json(
                 "/station/recording_errors",
@@ -46,16 +45,15 @@ pub(crate) async fn subscribe(
                 unix_nanoseconds(),
             )?;
         }
-        tokio::select! { () = stopped.cancelled() => return Ok(()), () = tokio::time::sleep(backoff.next_delay(attempt_started.elapsed())) => {} }
+        tokio::select! { () = stopped.cancelled() => return Ok(()), () = tokio::time::sleep(backoff.next_delay()) => {} }
     }
 }
 
 async fn connection(
     base_url: &str,
     archive: Option<&RecordingArchive>,
-    arm_cursors: &mut BTreeMap<String, u64>,
-    run_after: &mut Option<u64>,
-    event_cursor: &mut Option<String>,
+    replay: &mut StationReplay,
+    backoff: &mut Backoff,
     stopped: &CancellationToken,
 ) -> Result<(), RecorderError> {
     let client = reqwest::Client::new();
@@ -68,18 +66,19 @@ async fn connection(
     base.set_path("/events");
     base.set_query(None);
     let mut request = client.get(base.clone());
-    if let Some(cursor) = event_cursor.as_deref() {
+    if let Some(cursor) = replay.event_cursor.as_deref() {
         request = request.header("Last-Event-ID", cursor);
     }
     let mut response = tokio::select! { () = stopped.cancelled() => return Ok(()), result = request.send() => result? };
-    if response.status() == reqwest::StatusCode::CONFLICT && event_cursor.is_some() {
-        *event_cursor = None;
-        arm_cursors.clear();
+    if response.status() == reqwest::StatusCode::CONFLICT && replay.event_cursor.is_some() {
+        replay.event_cursor = None;
+        replay.arm_cursors.clear();
         return Err(RecorderError::InvalidData(
             "station event history has a gap".into(),
         ));
     }
     response.error_for_status_ref()?;
+    let mut applied_station_event = false;
     let mut decoder = hebbian_contracts::server_sent_events::ServerSentEventDecoder::default();
     loop {
         let chunk = tokio::select! { () = stopped.cancelled() => return Ok(()), result = response.chunk() => result? };
@@ -96,13 +95,17 @@ async fn connection(
                 &base,
                 (&event.kind, &event.data),
                 archive,
-                arm_cursors,
-                run_after,
-                event_cursor,
+                &mut replay.arm_cursors,
+                &mut replay.run_after,
+                &mut replay.event_cursor,
             )
             .await?;
+            if !applied_station_event && matches!(event.kind.as_str(), "snapshot" | "station") {
+                applied_station_event = true;
+                backoff.reset();
+            }
             if let Some(identifier) = event.identifier.filter(|identifier| !identifier.is_empty()) {
-                *event_cursor = Some(identifier);
+                replay.event_cursor = Some(identifier);
             }
         }
     }
@@ -385,9 +388,9 @@ fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> Recorde
             .then(|| (parts[1].to_owned(), parts[2].to_owned()))
     });
     if record.trace_context.is_some() && parent.is_none() {
-        eprintln!(
-            "Command {} has an invalid traceparent; retaining its context and using a root span",
-            record.command_id
+        tracing::warn!(
+            command_id = %record.command_id,
+            "Invalid traceparent; retaining its context and using a root span"
         );
     }
     RecordedSpan {

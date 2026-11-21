@@ -120,7 +120,9 @@ test("observe exposes retained images only when history is requested", async () 
     "agent",
   );
   const state = apiSchemas.shape.StationState.parse(stateMessage([{}]).state);
-  const stateSpy = vi.spyOn(connection, "getState").mockReturnValue(state);
+  const stateSpy = vi
+    .spyOn(connection, "waitForState")
+    .mockResolvedValue(state);
   const sequenceSpy = vi
     .spyOn(connection, "waitForActionSequence")
     .mockResolvedValue(

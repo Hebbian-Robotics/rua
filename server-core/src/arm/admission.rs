@@ -200,7 +200,7 @@ impl ArmCore {
                 (Some(position), Some(quaternion))
             });
         Some(Achieved {
-            sampled_at: observed.sampled_at,
+            sampled_at: observed.sampled_at.unix_seconds,
             joint_error_radians: record.target_joints.as_ref().map(|target| {
                 joints
                     .iter()
@@ -464,9 +464,9 @@ impl ArmCore {
         }
         if self.mode() == ArmMode::Faulted {
             let fresh = self.observation.as_ref().is_some_and(|observed| {
-                matches!(&self.power, PowerState::Faulted(fault) if observed.sampled_at > fault.entered_at)
-                    && (0.0..=FAULT_RECOVERY_FEEDBACK_MAX_AGE_SECONDS)
-                        .contains(&(now.unix_seconds - observed.sampled_at))
+                matches!(&self.power, PowerState::Faulted(fault) if observed.sampled_at.instant > fault.entered_at)
+                    && now.instant.checked_duration_since(observed.sampled_at.instant)
+                        .is_some_and(|age| age.as_secs_f64() <= FAULT_RECOVERY_FEEDBACK_MAX_AGE_SECONDS)
             });
             if !fresh {
                 return Err(rejection(
@@ -643,12 +643,21 @@ impl ArmCore {
                 ),
             ));
         }
-        let speed = motion_speed(
+        let requested_speed = motion_speed(
             joint_speed,
             self.limits.default_joint_speed,
             self.limits.max_joint_speed,
         )
         .map_err(|invalid| rejection(RejectionReason::InvalidTarget, invalid.to_string()))?;
+        let speed = stream_command_id
+            .as_ref()
+            .and_then(|id| {
+                self.stream
+                    .as_ref()
+                    .filter(|stream| &stream.command_id == id)
+            })
+            .and_then(|stream| stream.goal.joint_speed())
+            .unwrap_or(requested_speed);
         if let Some(detail) = crate::joint_limits::joint_target_limit_error(
             &positions,
             &self.limits.lower,

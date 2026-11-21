@@ -26,6 +26,7 @@ import {
   ArmRecoveryEndedError,
   LeaseLostError,
   StationRefusedError,
+  StationTimeoutError,
 } from "./station-errors.js";
 import { DEFAULT_MEDIA_URL } from "./station-http.js";
 import type { ArmState, CommandAnswer, StationState } from "./station-types.js";
@@ -133,6 +134,7 @@ export type RobotToolsOptions = {
   readonly mediaUrl?: string;
   readonly cameras?: readonly string[];
   readonly optionalCameras?: readonly string[];
+  readonly signal?: AbortSignal;
   readonly descriptions?: Readonly<Record<string, string>>;
 } & RobotToolCatalogConfiguration;
 
@@ -205,6 +207,21 @@ function createRobotToolsCore(
   formatter: OutputFormatter,
 ) {
   const { connection, lease, arm } = options;
+  function delay(milliseconds: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      signal?.throwIfAborted();
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve();
+      }, milliseconds);
+      function abort(): void {
+        clearTimeout(timer);
+        reject(signal?.reason);
+      }
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+
   const availableToolNames = new Map(
     catalog.tools.map(({ name }) => [name, name]),
   );
@@ -218,19 +235,14 @@ function createRobotToolsCore(
   const mediaUrl = () =>
     options.mediaUrl ?? connection.baseUrl?.() ?? DEFAULT_MEDIA_URL;
 
-  async function stationState(fresh = false): Promise<StationState> {
-    const current = connection.getState();
-    if (current && !fresh) return current;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        unsubscribe();
-        reject(new Error("Timed out waiting for station state"));
-      }, 10_000);
-      const unsubscribe = connection.onState((state) => {
-        clearTimeout(timer);
-        unsubscribe();
-        resolve(state);
-      });
+  const signal = options.signal;
+  const waitOptions = signal === undefined ? {} : { signal };
+
+  function stationState(fresh = false): Promise<StationState> {
+    return connection.waitForState(() => true, {
+      ...waitOptions,
+      fresh,
+      timeoutMilliseconds: 10_000,
     });
   }
 
@@ -266,33 +278,46 @@ function createRobotToolsCore(
     if (selected.mode === "disconnected" || selected.mode === "reconnected")
       throw new Error(`Arm ${arm} is disconnected`);
     requireNoInterlock(selected, allowCameraInterlock);
-    async function readCamera(name: string): Promise<Uint8Array> {
+    async function readCamera(
+      name: string,
+      timeoutMilliseconds: number,
+    ): Promise<Uint8Array> {
+      const deadline = AbortSignal.timeout(timeoutMilliseconds);
       const response = await fetch(
         new URL(`/cameras/${encodeURIComponent(name)}`, mediaUrl()),
-        { signal: AbortSignal.timeout(5000) },
+        {
+          signal:
+            signal === undefined
+              ? deadline
+              : AbortSignal.any([signal, deadline]),
+        },
       );
       if (!response.ok)
         throw new Error(`Camera ${name}: HTTP ${response.status}`);
       return new Uint8Array(await response.arrayBuffer());
     }
-    const required = await Promise.all(
-      cameras.map(async (name) => {
-        try {
-          return [name, await readCamera(name)] as const;
-        } catch {
-          throw new RequiredCameraUnavailable(name);
-        }
-      }),
-    );
-    const optionalResults = await Promise.all(
-      optionalCameras.map(async (name) => {
-        try {
-          return [name, await readCamera(name)] as const;
-        } catch {
-          return [name, null] as const;
-        }
-      }),
-    );
+    const [required, optionalResults] = await Promise.all([
+      Promise.all(
+        cameras.map(async (name) => {
+          try {
+            return [name, await readCamera(name, 5000)] as const;
+          } catch {
+            signal?.throwIfAborted();
+            throw new RequiredCameraUnavailable(name);
+          }
+        }),
+      ),
+      Promise.all(
+        optionalCameras.map(async (name) => {
+          try {
+            return [name, await readCamera(name, 500)] as const;
+          } catch {
+            signal?.throwIfAborted();
+            return [name, null] as const;
+          }
+        }),
+      ),
+    ]);
     const optional = optionalResults.flatMap(([name, jpeg]) =>
       jpeg === null ? [] : [[name, jpeg] as const],
     );
@@ -381,6 +406,7 @@ function createRobotToolsCore(
         )
           return observation;
       } catch (error) {
+        signal?.throwIfAborted();
         if (error instanceof RequiredCameraUnavailable)
           await lease.reportCamera(error.camera, false);
         else if (tracking.isLost()) throw new LeaseLostError();
@@ -390,9 +416,7 @@ function createRobotToolsCore(
             throw error;
         }
       }
-      await new Promise((resolve) =>
-        setTimeout(resolve, cameraRetryMilliseconds),
-      );
+      await delay(cameraRetryMilliseconds);
       cameraRetryMilliseconds = Math.min(1000, cameraRetryMilliseconds * 2);
     }
   }
@@ -431,6 +455,7 @@ function createRobotToolsCore(
         revisions,
       }),
     );
+    signal?.throwIfAborted();
     const outcomes = await Promise.allSettled(
       parsed.map(async (item) => {
         let started = false;
@@ -468,9 +493,7 @@ function createRobotToolsCore(
                 });
               })
               .with({ kind: "observe" }, async (item) => {
-                await new Promise((resolve) =>
-                  setTimeout(resolve, item.wait * 1000),
-                );
+                await delay(item.wait * 1000);
                 if (item.source === "last_sequence") {
                   const history = tracking.sequenceImages.snapshot();
                   if (!history)
@@ -607,6 +630,7 @@ function createRobotToolsCore(
         return outcome;
       }),
     );
+    signal?.throwIfAborted();
     const results = outcomes.map((outcome, index) => {
       if (outcome.status === "fulfilled") return outcome.value;
       const call = calls[index];
@@ -660,16 +684,17 @@ function createRobotToolsCore(
   }
 
   /** Wake on the next state frame; the 1 s timer is only a liveness backstop. */
-  function nextStateOrBackstop(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const backstop = setTimeout(done, 1000);
-      const unsubscribe = connection.onState(done);
-      function done(): void {
-        clearTimeout(backstop);
-        unsubscribe();
-        resolve();
-      }
-    });
+  async function nextStateOrBackstop(): Promise<void> {
+    try {
+      await connection.waitForState(() => true, {
+        ...waitOptions,
+        fresh: true,
+        timeoutMilliseconds: 1000,
+      });
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (!(error instanceof StationTimeoutError)) throw error;
+    }
   }
 
   return {

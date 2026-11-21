@@ -54,7 +54,7 @@ impl ArtifactWorkspace {
 
 fn clean_expired_workspaces() {
     if let Err(error) = cleanup_inactive_sessions(&std::env::temp_dir(), SystemTime::now()) {
-        eprintln!("Cannot inspect inactive compilation workspaces: {error:#}");
+        tracing::warn!(error = %format_args!("{error:#}"), "Cannot inspect inactive compilation workspaces");
     }
 }
 
@@ -93,7 +93,7 @@ fn cleanup_inactive_sessions(parent: &Path, now: SystemTime) -> anyhow::Result<(
             continue;
         }
         if let Err(error) = std::fs::remove_dir_all(entry.path()) {
-            eprintln!("Cannot clean inactive compilation workspace: {error}");
+            tracing::warn!(%error, "Cannot clean inactive compilation workspace");
         }
     }
     Ok(())

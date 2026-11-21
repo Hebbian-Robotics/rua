@@ -151,14 +151,13 @@ struct PolicyReplay {
     arm_joints: Vec<String>,
     tool_link: String,
     onnx: PathBuf,
-    checkpoint_sha256: String,
     steps: Vec<PolicyReplayStep>,
 }
 
 pub(crate) fn replay_policy(trace_path: &Path) -> anyhow::Result<()> {
     let replay: PolicyReplay = read_json(trace_path)?;
     let robot = Robot::load(&replay.urdf, &replay.arm_joints)?;
-    let mut network = Policy::load(&replay.onnx, &replay.urdf, &replay.checkpoint_sha256)?;
+    let mut network = Policy::load(&replay.onnx, &replay.urdf)?;
     let results = replay
         .steps
         .iter()

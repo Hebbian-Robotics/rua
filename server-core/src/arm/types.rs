@@ -177,7 +177,7 @@ pub(super) enum ShutdownState {
 
 pub(super) struct ArmFault {
     pub(super) detail: String,
-    pub(super) entered_at: f64,
+    pub(super) entered_at: Instant,
 }
 
 pub(super) enum PowerState {
@@ -223,7 +223,7 @@ pub(crate) struct Poses {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Observation {
-    pub sampled_at: f64,
+    pub sampled_at: Now,
     pub positions: Vec<f64>,
     pub tool_pose: Option<([f64; 3], [f64; 4])>,
     pub fault: Option<String>,

@@ -99,8 +99,6 @@ pub struct PolicyConfig {
     pub settled_velocity_radians_per_second: f64,
     pub preview_lag_seconds: f64,
     pub onnx: String,
-    /// The checkpoint the model must have been exported from.
-    pub checkpoint_sha256: String,
     /// The furthest ahead of a measured joint the model may set its target each cycle.
     pub max_target_lead_radians: f64,
     /// The URDF link whose pose the policy tracks.

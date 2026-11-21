@@ -14,7 +14,7 @@
     "test:package": "tsx scripts/check-client-package.ts"
   },
   "dependencies": {
-    "@hebbian/robot-use-client": "workspace:*"
+    "hebbian-rua": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",

@@ -1,39 +1,37 @@
+use backon::{BackoffBuilder, ExponentialBackoff, ExponentialBuilder};
 use std::time::Duration;
 
-const FIRST_RETRY_DELAY: Duration = Duration::from_millis(100);
-
-/// How long to wait before retrying something that keeps failing: no wait for
-/// the first retry, then a delay that doubles from 100 ms up to a cap.
-#[derive(Debug, Clone)]
+/// Capped retry delays for long-running station clients and workers.
+/// Callers reset the delay when their operation has recovered.
+#[derive(Debug)]
 pub struct Backoff {
     cap: Duration,
-    failures_in_a_row: u32,
+    builder: ExponentialBuilder,
+    delays: ExponentialBackoff,
 }
 
 impl Backoff {
     #[must_use]
     pub fn new(cap: Duration) -> Self {
+        let builder = ExponentialBuilder::default()
+            .with_min_delay(Duration::from_millis(100).min(cap))
+            .with_max_delay(cap)
+            .with_jitter()
+            .without_max_times();
         Self {
             cap,
-            failures_in_a_row: 0,
+            builder,
+            delays: builder.build(),
         }
     }
 
-    /// The wait after an attempt that failed having run for `attempt_lasted`.
-    /// An attempt that ran at least as long as the cap counts as a fresh
-    /// failure, so a long-lived connection that drops is retried at once.
-    pub fn next_delay(&mut self, attempt_lasted: Duration) -> Duration {
-        if attempt_lasted >= self.cap {
-            self.failures_in_a_row = 0;
-        }
-        let failures_before = self.failures_in_a_row;
-        self.failures_in_a_row = failures_before.saturating_add(1);
-        match failures_before {
-            0 => Duration::ZERO,
-            earlier => FIRST_RETRY_DELAY
-                .saturating_mul(2_u32.saturating_pow(earlier - 1))
-                .min(self.cap),
-        }
+    pub fn reset(&mut self) {
+        self.delays = self.builder.build();
+    }
+
+    pub fn next_delay(&mut self) -> Duration {
+        // CONSTRAINT: Backon adds jitter after applying the configured cap.
+        self.delays.next().unwrap_or(self.cap).min(self.cap)
     }
 }
 
@@ -42,19 +40,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn retries_at_once_then_doubles_up_to_the_cap() {
-        let mut backoff = Backoff::new(Duration::from_secs(1));
-        let delays: Vec<_> = (0..6)
-            .map(|_| backoff.next_delay(Duration::ZERO).as_millis())
-            .collect();
-        assert_eq!(delays, [0, 100, 200, 400, 800, 1000]);
-    }
+    fn background_retries_keep_their_cap_and_start_over_after_recovery() {
+        let cap = Duration::from_secs(1);
+        let mut backoff = Backoff::new(cap);
+        let initial_retry = Duration::from_millis(100)..=Duration::from_millis(200);
 
-    #[test]
-    fn a_long_attempt_starts_over() {
-        let mut backoff = Backoff::new(Duration::from_secs(1));
-        backoff.next_delay(Duration::ZERO);
-        backoff.next_delay(Duration::ZERO);
-        assert_eq!(backoff.next_delay(Duration::from_secs(5)), Duration::ZERO);
+        assert!(initial_retry.contains(&backoff.next_delay()));
+        for _ in 0..16 {
+            assert!(backoff.next_delay() <= cap);
+        }
+        assert!(backoff.next_delay() > *initial_retry.end());
+
+        backoff.reset();
+        assert!(initial_retry.contains(&backoff.next_delay()));
     }
 }

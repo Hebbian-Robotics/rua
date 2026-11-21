@@ -62,7 +62,7 @@ async fn publish(arguments: Arguments) -> Result<(), PublisherError> {
         if let Err(error) =
             livekit_cameras::follow_station(&arguments.station_url, telemetry_stopped).await
         {
-            eprintln!("Station telemetry: {error}");
+            tracing::warn!(%error, "Station telemetry stopped");
         }
     });
     let mut publishers = tokio::task::JoinSet::new();
@@ -117,12 +117,13 @@ async fn publish(arguments: Arguments) -> Result<(), PublisherError> {
 }
 
 fn report_camera_result(result: Result<CameraExit, tokio::task::JoinError>) {
+    // PROTOCOL: The station reads per-camera status from the unprefixed lines.
     match result {
         Ok(CameraExit {
             name,
             result: Err(error),
         }) => eprintln!("Camera {name}: {error}"),
-        Err(error) => eprintln!("Camera publisher task failed: {error}"),
+        Err(error) => tracing::error!(%error, "Camera publisher task failed"),
         Ok(CameraExit {
             name,
             result: Ok(()),
@@ -131,6 +132,15 @@ fn report_camera_result(result: Result<CameraExit, tokio::task::JoinError>) {
 }
 
 fn main() -> std::process::ExitCode {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("warn,livekit_cameras=info")
+            }),
+        )
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .init();
     let result = if std::env::args_os()
         .nth(1)
         .is_some_and(|argument| argument == "__capture")
@@ -176,7 +186,7 @@ async fn run() -> Result<(), PublisherError> {
                 .with_graceful_shutdown(async {
                     match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
                         Ok(mut termination) => { tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = termination.recv() => {} } },
-                        Err(error) => eprintln!("Could not listen for SIGTERM: {error}"),
+                        Err(error) => tracing::warn!(%error, "Could not listen for SIGTERM"),
                     }
                 }).await?;
             Ok(())

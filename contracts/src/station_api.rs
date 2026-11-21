@@ -72,12 +72,14 @@ pub enum StationCommand {
         max_joint_speed: Option<f64>,
         /// The gripper's newest target, 0 closed to 1 open, if the stream drives it.
         #[serde(default)]
+        #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
     },
     /// Open or close the gripper, 0 closed to 1 open, whether the arm is holding
     /// or moving. It completes on arrival or on contact.
     #[schemars(title = "StationSetGripperCommand")]
     SetGripper {
+        #[schemars(range(min = 0.0, max = 1.0))]
         opening: f64,
         /// Peak gripper speed in rad/s; uses the arm default and maximum.
         #[serde(default)]
@@ -111,6 +113,7 @@ pub struct ActionSequenceArmAction {
     #[serde(default)]
     pub movement: Option<ActionSequenceMovement>,
     #[serde(default)]
+    #[schemars(range(min = 0.0, max = 1.0))]
     pub gripper_opening: Option<f64>,
     /// Speed for both resources in rad/s; overrides the movement speed when provided.
     #[serde(default)]
@@ -245,9 +248,16 @@ pub struct ActionSequenceRecord {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveArmsCommand {
+    #[schemars(schema_with = "nonempty_arm_targets")]
     pub targets: BTreeMap<String, Waypoint>,
     #[serde(default)]
     pub max_joint_speed: Option<f64>,
+}
+
+fn nonempty_arm_targets(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <BTreeMap<String, Waypoint>>::json_schema(generator);
+    schema.insert("minProperties".into(), 1.into());
+    schema
 }
 
 /// Where the arm's controller would take the tool toward a pose, without moving.

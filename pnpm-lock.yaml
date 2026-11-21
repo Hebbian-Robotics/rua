@@ -166,7 +166,7 @@ importers:
 
   .:
     dependencies:
-      '@hebbian/robot-use-client':
+      hebbian-rua:
         specifier: workspace:*
         version: link:typescript-client
     devDependencies:
@@ -200,12 +200,12 @@ importers:
       '@google/genai':
         specifier: 2.32.0
         version: 2.32.0
-      '@hebbian/robot-use-client':
-        specifier: workspace:*
-        version: link:../../../typescript-client
       '@pydantic/genai-prices':
         specifier: ^0.2.3
         version: 0.2.3
+      hebbian-rua:
+        specifier: workspace:*
+        version: link:../../../typescript-client
       openai:
         specifier: 7.55.0
         version: 7.55.0(google-auth-library@10.9.1)(undici@7.30.2)(ws@8.22.2)(zod@4.6.7)
@@ -222,6 +222,9 @@ importers:
       eventsource-parser:
         specifier: ^4.1.3
         version: 4.1.3
+      p-retry:
+        specifier: ^9.0.0
+        version: 9.0.0
       ts-pattern:
         specifier: ^5.9.2
         version: 5.9.2
@@ -938,6 +941,10 @@ packages:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
 
+  is-network-error@1.3.2:
+    resolution: {integrity: sha512-PhBY86zaxNZUuWP6h13Vu5oFe0XY6/UlKzQnYFELzGVHygP3MxmvTfYSG7GN3aIab/iWudSMgjSnG9Dq+nHrgA==}
+    engines: {node: '>=16'}
+
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
@@ -1090,6 +1097,10 @@ packages:
   p-retry@4.6.2:
     resolution: {integrity: sha512-312Id396EbJdvRONlngUx0NydfrIQ5lsYu0znKVUzVvArzEIt08V1qhtyESbGVd1FGX7UKtiFp5uwKZdM8wIuQ==}
     engines: {node: '>=8'}
+
+  p-retry@9.0.0:
+    resolution: {integrity: sha512-HuEats8gYn/UUYa5uyveyQGv75mQmwdFtuMgnZlS12dj/7bdnJSO6keaTjgcZUhvkANTj5EO3lACUmV3xmgj0Q==}
+    engines: {node: '>=22'}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -1738,6 +1749,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  is-network-error@1.3.2: {}
+
   jiti@2.7.0:
     optional: true
 
@@ -1843,6 +1856,10 @@ snapshots:
     dependencies:
       '@types/retry': 0.12.0
       retry: 0.13.1
+
+  p-retry@9.0.0:
+    dependencies:
+      is-network-error: 1.3.2
 
   picocolors@1.1.1: {}
 

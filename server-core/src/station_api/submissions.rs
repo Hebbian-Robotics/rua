@@ -177,6 +177,7 @@ enum Submission {
     Command {
         tracked: TrackedRequest<SubmissionRequest, CommandAnswer>,
         cancelled: watch::Sender<bool>,
+        motion_finished: bool,
     },
     Cancelled,
 }
@@ -184,7 +185,20 @@ enum Submission {
 impl Submission {
     fn is_evictable(&self) -> bool {
         match self {
-            Self::Command { tracked, .. } => tracked.outcome.borrow().is_some(),
+            Self::Command {
+                tracked,
+                motion_finished,
+                ..
+            } => match &*tracked.outcome.borrow() {
+                None => false,
+                Some(Ok(CommandAnswer::Accepted { records })) => {
+                    *motion_finished
+                        || records
+                            .iter()
+                            .all(|entry| entry.record.completion.is_some())
+                }
+                Some(Ok(CommandAnswer::Refused { .. }) | Err(_)) => true,
+            },
             Self::Cancelled => true,
         }
     }
@@ -214,7 +228,38 @@ pub enum CancellationResult {
     Conflict,
 }
 
+impl SubmissionRequest {
+    pub(super) fn owns_cancellation(&self) -> bool {
+        match self {
+            Self::Single(request) => {
+                request.lease_token.is_some()
+                    && !matches!(
+                        request.command,
+                        hebbian_contracts::StationCommand::StreamJoints {
+                            stream_command_id: Some(_),
+                            ..
+                        }
+                    )
+            }
+            Self::Group(request) => request.lease_token.is_some(),
+        }
+    }
+}
+
 impl CommandSubmissions {
+    pub(super) fn motion_finished(&self, id: Uuid) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(Submission::Command {
+            motion_finished, ..
+        }) = entries.retained.get_mut(&id)
+        {
+            *motion_finished = true;
+        }
+    }
+
     pub fn reserve(&self, id: Uuid, request: SubmissionRequest) -> SubmissionReservation {
         let mut entries = self
             .entries
@@ -240,6 +285,7 @@ impl CommandSubmissions {
         entries.insert(
             id,
             Submission::Command {
+                motion_finished: !request.owns_cancellation(),
                 tracked: TrackedRequest {
                     request,
                     outcome: outcome.clone(),
@@ -257,7 +303,10 @@ impl CommandSubmissions {
             .entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(Submission::Command { tracked, cancelled }) = entries.retained.get(&id) {
+        if let Some(Submission::Command {
+            tracked, cancelled, ..
+        }) = entries.retained.get(&id)
+        {
             let matches = match &tracked.request {
                 SubmissionRequest::Single(request) => {
                     request.lease_token.as_deref() == Some(token)
@@ -468,6 +517,74 @@ mod tests {
             submissions.reserve(id, SubmissionRequest::Single(request)),
             SubmissionReservation::Expired
         )));
+    }
+
+    #[test]
+    fn an_active_stream_start_remains_cancellable_when_updates_fill_history() {
+        let submissions = CommandSubmissions::default();
+        let start_id = Uuid::new_v4();
+        let command_id = "the-stream".to_owned();
+        let request = |id: Uuid, stream_command_id| {
+            SubmissionRequest::Single(CommandSubmissionRequest {
+                request_id: id.to_string(),
+                station_instance_id: Uuid::nil().to_string(),
+                arm: "left".into(),
+                command: StationCommand::StreamJoints {
+                    joints: vec![0.2],
+                    stream_command_id,
+                    max_joint_speed: None,
+                    gripper_opening: None,
+                },
+                lease_token: Some("lease".into()),
+                expected_revision: None,
+                trace_context: None,
+            })
+        };
+        let reserve = |id, stream_command_id| {
+            let SubmissionReservation::New(sender, _) =
+                submissions.reserve(id, request(id, stream_command_id))
+            else {
+                panic!("stream updates must be admitted when retention has room");
+            };
+            sender
+        };
+        let accepted = || {
+            Some(Ok(CommandAnswer::Accepted {
+                records: vec![hebbian_contracts::ArmRecord {
+                    arm: "left".into(),
+                    record: hebbian_contracts::CommandRecord::new(
+                        command_id.clone(),
+                        "stream_joints",
+                        0.0,
+                        None,
+                    ),
+                }],
+            }))
+        };
+        reserve(start_id, None).send_replace(accepted());
+        let pending: Vec<_> = (1..super::MAX_RETAINED_SUBMISSIONS)
+            .map(|_| reserve(Uuid::new_v4(), Some(command_id.clone())))
+            .collect();
+        // INVARIANT: With every update still pending, the active stream start
+        // would be the only eviction candidate if acceptance made it evictable.
+        let next_id = Uuid::new_v4();
+        assert!(matches!(
+            submissions.reserve(next_id, request(next_id, Some(command_id.clone()))),
+            SubmissionReservation::Full
+        ));
+        for sender in pending {
+            sender.send_replace(accepted());
+        }
+        reserve(next_id, Some(command_id.clone())).send_replace(accepted());
+        let CancellationResult::Pending(answer) =
+            submissions.cancel(start_id, "lease", &["left".into()])
+        else {
+            panic!("the original request must still resolve to the active stream");
+        };
+        assert!(
+            matches!(&*answer.borrow(), Some(Ok(CommandAnswer::Accepted { records }))
+            if records[0].record.command_id == command_id)
+        );
     }
 
     #[test]

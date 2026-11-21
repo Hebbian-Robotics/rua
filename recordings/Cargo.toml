@@ -11,7 +11,7 @@ name = "hebbian-robot-use-recordings"
 path = "src/main.rs"
 
 [dependencies]
-hebbian-contracts = { path = "../contracts" }
+hebbian-contracts = { package = "hebbian-rua-contracts", path = "../contracts" }
 axum = "0.8.9"
 clap = { version = "4.6.7", features = ["derive"] }
 serde_json = "1"

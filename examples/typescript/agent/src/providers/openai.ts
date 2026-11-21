@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { RobotToolResult } from "@hebbian/robot-use-client";
+import type { RobotToolResult } from "hebbian-rua";
 import OpenAI from "openai";
 import type {
   FunctionTool,

@@ -3,7 +3,7 @@ import {
   type RobotToolCall,
   type RobotToolResult,
   type ToolCallWrapper,
-} from "@hebbian/robot-use-client";
+} from "hebbian-rua";
 import { z } from "zod";
 import { type RunEnvironment, reportEvent } from "./environment.js";
 import {

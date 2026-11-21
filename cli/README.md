@@ -1,9 +1,9 @@
 # hebbian-robot-use-cli
 
-The `hebbian-robot-use` command line for a station, built on `hebbian-robot-use-sdk`.
-It is for coding agents that test-control the robot from bash: every invocation opens
-one connection, runs one command and prints one JSON value on stdout. There is no
-interactive mode, daemon, prompt or pretty output; chain commands in the shell.
+The `hebbian-robot-use` command line for a station, built on the `hebbian-rua` Rust SDK.
+Coding agents can chain these commands in the shell. Each invocation opens a
+connection and runs one command. Commands print JSON to stdout, with plain-text
+output for the phone invite URL.
 
 ```sh
 cargo install --locked --path cli            # installs `hebbian-robot-use`
@@ -38,7 +38,7 @@ rounded, nulls omitted, and history and diagnostics left out. `state` also keeps
 arm's revision has moved on; `--take-lease` takes the lease from its holder (operator only);
 `action-sequence run <file|->` / `cancel <id>` / `get <id>` (JSON `ActionSequenceRequest`);
 `lease status|revoke`; `record start|stop|status`; `phone-invite <label>` (prints the
-invite URL); `camera list` (name and availability) / `camera snapshot <name> --out <path>` (an unavailable
+invite URL, or the full response with `--raw`); `camera list` (name and availability) / `camera snapshot <name> --out <path>` (an unavailable
 camera fails with `camera_unavailable`, naming the cameras known and the station's `last_error`);
 `traces list` / `traces pull [names...] --output <dir>` (files are written exactly as
 served, gzip-compressed).

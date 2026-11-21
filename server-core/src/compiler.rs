@@ -280,9 +280,9 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
     }
     if action
         .gripper_opening
-        .is_some_and(|opening| !opening.is_finite())
+        .is_some_and(|opening| !(0.0..=1.0).contains(&opening))
     {
-        return Err("A gripper opening must be finite");
+        return Err("A gripper opening must be finite and between 0 and 1");
     }
     match (action.movement, action.gripper_opening) {
         (Some(movement), gripper_opening) => {
