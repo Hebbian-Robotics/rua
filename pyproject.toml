@@ -145,6 +145,42 @@ testpaths = [
     "tests",
 ]
 addopts = "-q"
+markers = [
+    "server: requires the Rust station binary",
+    "typescript: requires Node.js and pnpm for TypeScript integration tests",
+]
+
+[tool.importlinter]
+root_packages = [
+    "hebbian_rua",
+]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "client transformations are independent of live station and provider adapters"
+type = "forbidden"
+source_modules = [
+    "hebbian_rua.client.llm.tool_catalog",
+    "hebbian_rua.client.llm.robot_tool_rules",
+    "hebbian_rua.client.llm.response_format",
+    "hebbian_rua.client.llm.tools",
+    "hebbian_rua.client.llm.types",
+    "hebbian_rua.client.rotations",
+]
+forbidden_modules = [
+    "hebbian_rua.client.station_client",
+    "hebbian_rua.client.station_connection",
+    "hebbian_rua.client.environment",
+    "hebbian_rua.client.llm.robot_tools",
+    "hebbian_rua.client.llm.openai",
+    "hebbian_rua.client.llm.anthropic",
+    "hebbian_rua.client.llm.gemini",
+    "asyncio",
+    "httpx2",
+    "socket",
+    "subprocess",
+    "urllib",
+]
 
 [dependency-groups]
 dev = [
@@ -155,6 +191,7 @@ dev = [
     "datamodel-code-generator>=0.89.0",
     "mujoco>=3.17.0",
     "pillow>=12.3.0",
+    "import-linter>=2.15",
     "numpy>=2",
     "pytest>=9.2.0",
     "ruff",

@@ -1,0 +1,43 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If a robot arm moved unexpectedly, stop it first. Never report a security
+        problem here; see SECURITY.md.
+  - type: textarea
+    id: what-you-ran
+    attributes:
+      label: What you ran
+      description: The exact commands, profile and arguments, and what you expected.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS and version, Python, Rust and Node versions.
+      placeholder: Ubuntu 24.04, Python 3.12, rustc 1.9x, Node 24
+    validations:
+      required: true
+  - type: dropdown
+    id: robot-or-sim
+    attributes:
+      label: Robot or simulation
+      options:
+        - Simulation
+        - Real SO-101 (single arm)
+        - Real SO-101 (bimanual)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Station and controller output, and the command outcome or error text. Remove API keys, access tokens and other private information before posting.
+      render: text
+    validations:
+      required: true

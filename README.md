@@ -100,5 +100,8 @@ Some reading and projects around robot-use agents:
 
 ## Contributing and license
 
+See [Documentation](docs/README.md) and the [development reference](docs/development.md)
+for the station, integration tests, and packaging commands.
+
 See [contributing](CONTRIBUTING.md). Code is [MIT](LICENSE); models and dependencies
 keep their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).

@@ -54,6 +54,34 @@ For two arms, restart the station with
 `single.toml` and use the same MuJoCo command. Pass `--arm left` or
 `--arm right` to `hello_robot.py` to select one.
 
+## Run an ONNX policy
+
+The [policy profile](../examples/mujoco_sim/profiles/policy.toml) selects the
+single-arm fixture and the [SO-101 policy adapter](hardware.md#learned-policies).
+Supply a compatible ONNX model and an ONNX Runtime shared library. Create a
+local profile that extends the example and points at your model:
+
+```sh
+policy_directory="$(mktemp -d)"
+cat > "$policy_directory/policy.toml" <<EOF
+extends = ["$PWD/examples/mujoco_sim/profiles/policy.toml"]
+
+[policy]
+onnx = "/absolute/path/to/policy.onnx"
+EOF
+
+ORT_DYLIB_PATH=/absolute/path/to/libonnxruntime.so \
+  uv run cargo run --locked -p hebbian-robot-use-server -- serve \
+  --profile "$policy_directory/policy.toml" \
+  --profile-directory "$PWD/profiles" \
+  --work-directory /tmp/hebbian-station
+```
+
+Use the library for your platform, such as `libonnxruntime.dylib` on macOS.
+Start MuJoCo in the second terminal as above. Use pose goals to exercise the
+policy adapter. The example profile supplies controller settings; you supply the
+model.
+
 ## Camera snapshots
 
 Build the [media companion](cameras.md#rua-configuration) before starting the

@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from rua_dev.models import SdkTarget, ValidationLane
+from rua_dev.models import BuildPlatform, SdkTarget, ValidationLane
 
 
 def setup() -> None:
@@ -73,6 +73,31 @@ def package_rua(
     )
 
 
+def package_server(
+    *,
+    platform: BuildPlatform = BuildPlatform.LOCAL,
+    without_viewer: Annotated[bool, Parameter(negative=False)] = False,
+    with_media: bool = False,
+) -> None:
+    from rua_dev.packaging import build_packages
+
+    if with_media and platform != BuildPlatform.LOCAL:
+        raise ValueError("--with-media is only supported for --platform local")
+    repository = Path.cwd()
+    build_packages(
+        repository,
+        platform,
+        include_viewer=not without_viewer and (repository / "vite.config.ts").is_file(),
+        include_media=with_media,
+    )
+
+
+def package_media() -> None:
+    from rua_dev.media_archive import build_ubuntu_media_archive
+
+    print(build_ubuntu_media_archive(Path.cwd()))
+
+
 def create_app() -> App:
     app = App(help="Development commands for a RUA source checkout.")
     package_app = App(name="package", help="Wheel distribution commands.")
@@ -80,6 +105,16 @@ def create_app() -> App:
         package_check,
         name="check",
         help="Install a release wheel in an empty environment and check real commands.",
+    )
+    package_app.command(
+        package_server,
+        name="server",
+        help="Build a server wheel, optionally including a local media wheel.",
+    )
+    package_app.command(
+        package_media,
+        name="media",
+        help="Package a locally built media wheel as an Ubuntu binary archive.",
     )
     app.command(package_app)
     app.command(setup, help="Prepare pinned robot assets for source development.")

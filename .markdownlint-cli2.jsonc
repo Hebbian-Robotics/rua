@@ -1,0 +1,40 @@
+{
+  "ignores": [
+    "**/node_modules/**",
+    "**/.venv/**",
+    "target/**",
+    "licenses/**",
+    ".cache/**",
+    ".pytest_cache/**",
+    "robots/so101/**"
+  ],
+  "config": {
+    "default": false,
+    "MD001": true,
+    "MD005": true,
+    "MD011": true,
+    "MD018": true,
+    "MD019": true,
+    "MD020": true,
+    "MD021": true,
+    "MD022": true,
+    "MD023": true,
+    "MD024": { "siblings_only": true },
+    "MD028": true,
+    "MD031": true,
+    "MD032": true,
+    "MD037": true,
+    "MD038": true,
+    "MD039": true,
+    "MD040": true,
+    "MD042": true,
+    "MD045": true,
+    "MD047": true,
+    "MD051": true,
+    "MD052": true,
+    "MD053": true,
+    "MD056": true,
+    "MD058": true,
+    "MD059": true
+  }
+}
