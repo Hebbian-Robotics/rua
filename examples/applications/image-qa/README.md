@@ -15,18 +15,18 @@ least one search is required.
 - One SO-101 with [per-arm setup](https://github.com/Hebbian-Robotics/rua/blob/main/docs/hardware.md) done, resting on its
   table. Quitting rehomes the arm and disables it, and disabling drops it, so the
   start pose must be supported.
-- A camera named `table` mounted on the wrist ([cameras](https://github.com/Hebbian-Robotics/rua/blob/main/docs/cameras.md)).
+- A wrist-mounted [camera registered with the station](../../../docs/cameras.md#connect-a-usb-camera).
 - A display in front of the arm, roughly at eye level for a raised gripper.
 - `OPENAI_API_KEY` in your environment or `.env`, and a model that supports web
   search.
 
 ## Run
 
-Start the station with your profile and camera, then the app:
+Start the station with your profile and camera. Pass its registered name to
+the app. The command below assumes you registered it as `wrist`.
 
 ```sh
-uv run rua serve --profile ~/.config/rua/so101.toml --camera table=0
-uv run --project examples/python examples/applications/image-qa/image_qa.py
+uv run --project examples/python examples/applications/image-qa/image_qa.py --camera wrist
 ```
 
 The arm stays at the viewing pose between questions. Type a question and press

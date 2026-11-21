@@ -7,7 +7,7 @@ import tomllib
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 MAXIMUM_ARCHIVE_BYTES = 64 * 1024 * 1024
 
@@ -20,33 +20,52 @@ def parse_digest(value: object) -> str:
 
 @dataclass(frozen=True)
 class RobotAssetSource:
-    archive_url: str
-    archive_sha256: str
-    archive_prefix: str
+    repository: str
+    revision: str
+    asset_directory: str
     files: dict[str, str]
+
+    @property
+    def archive_url(self) -> str:
+        return f"https://codeload.github.com/{self.repository}/zip/{self.revision}"
+
+    @property
+    def archive_stem(self) -> str:
+        return f"{self.repository.split('/')[1]}-{self.revision}"
 
     @classmethod
     def load(cls, manifest_path: Path) -> RobotAssetSource:
         manifest = tomllib.loads(manifest_path.read_text())
         if set(manifest) != {
-            "archive_url",
-            "archive_sha256",
-            "archive_prefix",
+            "repository",
+            "revision",
+            "asset_directory",
             "files",
         }:
             raise ValueError(f"Unexpected asset manifest fields: {manifest_path}")
-        archive_url = manifest["archive_url"]
-        archive_prefix = manifest["archive_prefix"]
+        repository = manifest["repository"]
+        revision = manifest["revision"]
+        asset_directory = manifest["asset_directory"]
         file_digests = manifest["files"]
-        if not isinstance(archive_url, str) or not archive_url.startswith("https://"):
-            raise ValueError("Robot asset archives require an HTTPS URL")
         if (
-            not isinstance(archive_prefix, str)
-            or not archive_prefix.endswith("/")
-            or PurePosixPath(archive_prefix).is_absolute()
-            or ".." in PurePosixPath(archive_prefix).parts
+            not isinstance(repository, str)
+            or re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repository) is None
+            or repository.split("/")[1] in {".", ".."}
         ):
-            raise ValueError("Robot asset archive prefix must be a relative directory")
+            raise ValueError(
+                "Robot asset repository must be a GitHub owner and repository"
+            )
+        if (
+            not isinstance(revision, str)
+            or re.fullmatch(r"[0-9a-f]{40}", revision) is None
+        ):
+            raise ValueError("Robot asset revision must be a full Git commit")
+        if (
+            not isinstance(asset_directory, str)
+            or "\\" in asset_directory
+            or any(part in {"", ".", ".."} for part in asset_directory.split("/"))
+        ):
+            raise ValueError("Robot asset directory must be a relative path")
         if not isinstance(file_digests, dict) or not {
             "robot.urdf",
             "LICENSE.txt",
@@ -61,13 +80,11 @@ class RobotAssetSource:
                 or PurePosixPath(filename).is_absolute()
                 or any(part in {"", ".", ".."} for part in filename.split("/"))
                 or PurePosixPath(filename).suffix
-                not in {".urdf", ".stl", ".txt", ".md"}
+                not in {".urdf", ".stl", ".txt", ".md", ".toml"}
             ):
                 raise ValueError(f"Unsupported robot asset filename: {filename}")
             files[filename] = parse_digest(digest)
-        return cls(
-            archive_url, parse_digest(manifest["archive_sha256"]), archive_prefix, files
-        )
+        return cls(repository, revision, asset_directory, files)
 
     def matches(self, directory: Path) -> bool:
         return all(
@@ -89,6 +106,39 @@ def asset_path(directory: Path, filename: str) -> Path:
     return path
 
 
+def extract_assets(source: RobotAssetSource, archive: Path, destination: Path) -> None:
+    with ZipFile(archive) as source_archive:
+        for filename, digest in source.files.items():
+            entry = source_archive.getinfo(
+                f"{source.archive_stem}/{source.asset_directory}/{filename}"
+            )
+            if entry.file_size > MAXIMUM_ARCHIVE_BYTES:
+                raise ValueError(
+                    f"Robot asset exceeds the extraction size limit: {filename}"
+                )
+            content = source_archive.read(entry)
+            if hashlib.sha256(content).hexdigest() != digest:
+                raise ValueError(
+                    f"Robot asset checksum does not match the pin: {filename}"
+                )
+            staged_asset = destination / filename
+            staged_asset.parent.mkdir(parents=True, exist_ok=True)
+            staged_asset.write_bytes(content)
+
+
+def download_archive(url: str, destination: Path) -> None:
+    with (
+        urllib.request.urlopen(url, timeout=60) as response,
+        destination.open("wb") as output,
+    ):
+        remaining_bytes = MAXIMUM_ARCHIVE_BYTES
+        while chunk := response.read(min(1024 * 1024, remaining_bytes + 1)):
+            remaining_bytes -= len(chunk)
+            if remaining_bytes < 0:
+                raise ValueError("Robot asset archive exceeds the download size limit")
+            output.write(chunk)
+
+
 def prepare_robot_assets(repository: Path) -> tuple[Path, ...]:
     repository = repository.resolve()
     source = RobotAssetSource.load(repository / "robots/so101-assets.toml")
@@ -102,51 +152,22 @@ def prepare_robot_assets(repository: Path) -> tuple[Path, ...]:
         return tuple(destination / filename for filename in sorted(source.files))
     cache = repository / ".cache/so101"
     cache.mkdir(parents=True, exist_ok=True)
-    archive = cache / f"{source.archive_sha256}.whl"
+    archive = cache / f"{source.archive_stem}.zip"
     with tempfile.TemporaryDirectory(prefix="prepare-", dir=cache) as temporary:
         staging = Path(temporary)
-        if (
-            not archive.is_file()
-            or hashlib.sha256(archive.read_bytes()).hexdigest() != source.archive_sha256
-        ):
-            downloaded_archive = staging / "download.whl"
-            with (
-                urllib.request.urlopen(source.archive_url, timeout=60) as response,
-                downloaded_archive.open("wb") as output,
-            ):
-                remaining_bytes = MAXIMUM_ARCHIVE_BYTES
-                while chunk := response.read(min(1024 * 1024, remaining_bytes + 1)):
-                    remaining_bytes -= len(chunk)
-                    if remaining_bytes < 0:
-                        raise ValueError(
-                            "Robot asset archive exceeds the download size limit"
-                        )
-                    output.write(chunk)
-            if (
-                hashlib.sha256(downloaded_archive.read_bytes()).hexdigest()
-                != source.archive_sha256
-            ):
-                raise ValueError(
-                    "Robot asset archive checksum does not match the pinned release"
-                )
-            downloaded_archive.replace(archive)
         extracted = staging / "assets"
-        extracted.mkdir()
-        with ZipFile(archive) as wheel:
-            for filename, digest in source.files.items():
-                entry = wheel.getinfo(source.archive_prefix + filename)
-                if entry.file_size > MAXIMUM_ARCHIVE_BYTES:
-                    raise ValueError(
-                        f"Robot asset exceeds the extraction size limit: {filename}"
-                    )
-                content = wheel.read(entry)
-                if hashlib.sha256(content).hexdigest() != digest:
-                    raise ValueError(
-                        f"Robot asset checksum does not match the pin: {filename}"
-                    )
-                staged_asset = extracted / filename
-                staged_asset.parent.mkdir(parents=True, exist_ok=True)
-                staged_asset.write_bytes(content)
+        try:
+            extract_assets(source, archive, extracted)
+        except (FileNotFoundError, BadZipFile, KeyError, ValueError):
+            downloaded_archive = staging / "download.zip"
+            download_archive(source.archive_url, downloaded_archive)
+            try:
+                extract_assets(source, downloaded_archive, extracted)
+            except (BadZipFile, KeyError) as error:
+                raise ValueError(
+                    "Invalid robot asset archive for the pinned Git revision"
+                ) from error
+            downloaded_archive.replace(archive)
         # INVARIANT: Verify everything before touching the runtime directory. Each replacement is
         # atomic; a failed preparation is detected and repaired on the next run.
         destination.mkdir(parents=True, exist_ok=True)

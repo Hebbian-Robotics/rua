@@ -6,13 +6,24 @@ No simulator, scene or renderer is included in `hebbian-rua`.
 Start the station with the bundled socket profile, or a profile for your robot:
 
 ```sh
-uv run rua serve --profile so101-socket --work-directory /tmp/rua-station
+uv run rua serve --profile so101-sim --work-directory /tmp/rua-station
 ```
 
-Then start your simulator integration before the station's connection timeout.
-For the bundled SO-101 profile it connects to `/tmp/rua-station/follower.plant.sock`.
+Then start your simulator integration before the station's connection timeout,
+30 seconds by default (`--simulator-connect-seconds`).
+For the bundled SO-101 profile it connects to `/tmp/rua-station/arm.plant.sock`.
+The `so101-sim` preset and the hardware profile share the SO-101 control
+defaults in [`so101-common.toml`](../profiles/so101-common.toml). The simulator
+adapter supplies plant feedback and uses its own physics and transport settings.
 Each arm has its own Unix-domain stream socket, named `<arm>.plant.sock`.
-This transport currently requires a Unix-like OS; Windows is not supported.
+Arm names in profiles must be unique and use ASCII letters, digits,
+underscores or hyphens.
+Use a separate work directory for each running station. The socket transport
+runs on Unix-like systems. On Windows, run both processes inside WSL2.
+
+For two simulated arms, create a local profile with
+`extends = ["so101-sim", "so101-bimanual-layout"]` and give it a `name`.
+Override the base poses to match your scene.
 
 ## Adapter contract
 
@@ -68,6 +79,6 @@ that duration, then reply to each arm.
 
 Start RUA with a simulator profile and run your application separately. Your
 application owns actuator gains, initial pose, rendering and its run loop.
-The full development checkout includes a MuJoCo integration in
-`examples/mujoco_sim/` which uses the shared connection. The fixture itself is
-excluded from the public source export and wheel.
+The full source checkout includes a MuJoCo integration in `examples/mujoco_sim/`
+which uses the shared connection. The wheel provides the Python connection
+API for users who run their own simulator.

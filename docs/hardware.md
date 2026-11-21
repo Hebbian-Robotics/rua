@@ -4,6 +4,9 @@ If you already calibrated your SO-101 with LeRobot, point a local RUA profile
 at its calibration ID and serial port. For a new arm, follow the
 [SO-101 calibration guide](so101-calibration.md).
 
+The profile below uses the current source tree. For the published 0.1.2 wheel,
+use the [0.1.2 profile format](https://github.com/Hebbian-Robotics/rua/blob/v0.1.2/docs/hardware.md).
+
 Every physical arm needs its own serial port, LeRobot calibration and verified
 model mapping. The bundled profile provides starting values, not a calibration
 or universal servo tune. Keep the arm supported with torque off during setup,
@@ -17,27 +20,31 @@ and keep a physical power cutoff accessible.
 2. Create a private profile such as `$HOME/.config/rua/so101.toml`:
 
    ```toml
-   extends = "so101-soft-gripper-camera"
+   extends = ["so101", "so101-soft-gripper-camera-assembly"]
    name = "my-so101"
+   arms = ["arm"]
 
    [feetech]
-   ports = { follower = "/dev/serial/by-id/your-arm" }
-   calibration_ids = { follower = "your-calibration-id" }
+   ports = { arm = "/dev/serial/by-id/your-arm" }
+   calibration_ids = { arm = "your-calibration-id" }
    joint_signs = [1, 1, 1, 1, 1]
    joint_offsets_radians = [0.0, 0.0, 0.0, 0.0, 0.0]
    ```
 
-   This default models the original-scale TPU gripper, camera bracket and
+   The key `arm` is the station name you will see in state and use in clients.
+   Use the same name in `arms`, `ports` and `calibration_ids`.
+   This example models the original-scale TPU gripper, camera bracket and
    HBVCAM-W20217 V22 wrist camera supplied with our setup. For the stock rigid
    gripper without that camera assembly, use `extends = "so101"`.
 
-3. With the station stopped and torque off, apply and verify the profile's expected
-   servo gains using your hardware setup tools. Station startup verifies the gains
+3. With the station stopped and torque off, apply and verify the servo gains
+   using your hardware setup tools. The pinned so101 runtime defines the gains
+   by joint, not the station profile. Station startup verifies the gains
    but does not write them. Recheck them after calibration.
 4. From a source checkout, start the current station code:
 
    ```sh
-   uv run cargo run -p hebbian-station -- serve --profile "$HOME/.config/rua/so101.toml"
+   uv run cargo run -p hebbian-robot-use-server -- serve --profile "$HOME/.config/rua/so101.toml"
    ```
 
    With an installed wheel, use `uv run rua serve` with the same profile argument.
@@ -53,14 +60,18 @@ Back up profiles and calibration privately; never include them in the public rep
 
 Before increasing speed, assess target versus measured joint angles, command
 outcomes, effort/load, temperature, voltage and clearance. Compare actual PID
-registers with the per-arm profile. Do not copy another arm's gains or relax
+registers with the gains the so101 runtime defines for each joint. Do not copy another arm's gains or relax
 limits to conceal poor tracking. The controller is soft real time and its
 collision checks only cover configured geometry, not unknown workspace objects.
 
-To estimate following lag from executor cycle traces, use completed runs:
+To estimate following lag, run the trace analyzer on a completed run's JSONL
+file. Single-arm stations write `executor-*-trace.jsonl` files under
+`traces/executor/` by default. Substitute the path to the completed run below.
+If you set `--trace-directory`, look there. Multi-arm runs use per-arm
+subdirectories.
 
 ```sh
-uv run python scripts/estimate_following_lag.py diagnostics/executor-*-trace.jsonl
+uv run --with numpy python scripts/estimate_following_lag.py "$TRACE_PATH"
 ```
 
 For each joint, the script reports `following_lag_seconds` from the slope of

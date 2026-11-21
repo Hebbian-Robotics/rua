@@ -12,12 +12,14 @@ pub(crate) struct ServeArguments {
     #[arg(long = "arm")]
     pub(crate) arms: Vec<String>,
     /// Defaults to `$HEBBIAN_PROFILE_DIRECTORY`, else installed or checkout
-    /// profiles above the executor or the working directory.
+    /// profiles above the server binary or the working directory.
     #[arg(long)]
     pub(crate) profile_directory: Option<PathBuf>,
-    /// Drive the lag simulator instead of the profile's hardware or external simulator.
+    /// Drive a stand-in with no physics instead of the profile's hardware or simulator: joints ease
+    /// toward their commands with no contacts, table, gravity or loads. For exercising the station,
+    /// not for judging motion.
     #[arg(long)]
-    pub(crate) simulate: bool,
+    pub(crate) no_physics_stand_in: bool,
     /// Serve the station HTTP API, event stream and viewer on this address.
     #[arg(long, default_value = "127.0.0.1:8792")]
     pub(crate) http_address: String,

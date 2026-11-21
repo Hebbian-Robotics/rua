@@ -1,0 +1,40 @@
+reason = """
+Code is the primary documentation. Prefer clear names, types and structure over
+comments that repeat the code. Keep comments that explain a non-obvious decision,
+invariant, external constraint, safety argument or unfinished work. Begin the
+paragraph with WHY:, INVARIANT:, CONSTRAINT:, SAFETY: or TODO: and explain why.
+
+Docstrings, doc comments and schema descriptions are reserved for the public
+interface directories below. Keep useful internal rationale in a classified
+comment beside the code. Put consumer-facing descriptions in the owning public schema.
+"""
+
+exclude = ["livekit-cameras/**", "**/target/**", "**/node_modules/**", "**/.venv/**"]
+
+[classification]
+labels = ["WHY", "INVARIANT", "CONSTRAINT", "TODO", "SAFETY"]
+exclude = [
+    "**/contracts/**",
+    "**/packages/**",
+    "**/typings/**",
+    "**/examples/**",
+    "**/typescript-client/**",
+    "**/hebbian_rua/**",
+    "**/sdk/**",
+    "**/generated/**",
+    "**/station_api.py",
+    "**/http_routes.py",
+    "**/arm_commands.py",
+    "**/generated_robot_tools.py",
+]
+
+[public_interface]
+directories = [
+    "hebbian_rua/client",
+    "hebbian_rua/simulator",
+    "typescript-client",
+    "sdk",
+    "contracts",
+    "cli/src/commands",
+    "station/src/commands",
+]

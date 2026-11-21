@@ -6,7 +6,7 @@ from pathlib import Path
 from rua_dev.generated import check_generated_files
 from rua_dev.generators import catalog, commands, routes
 from rua_dev.models import SdkTarget
-from rua_dev.native_build import build_executor
+from rua_dev.native_build import build_server
 from rua_dev.robot_assets import prepare_robot_assets
 
 SIM_SCHEMA_PATH = Path("schemas/sim-plant.schema.json")
@@ -52,15 +52,15 @@ def generate_contracts(targets: frozenset[SdkTarget], *, check: bool = False) ->
             + ", ".join(sorted(unavailable_targets))
         )
     prepare_robot_assets(Path.cwd())
-    executor_binary = os.environ.get("HEBBIAN_ROBOT_USE_SERVER")
-    if executor_binary is None:
-        executor_binary = str(build_executor())
+    server_binary = os.environ.get("HEBBIAN_ROBOT_USE_SERVER")
+    if server_binary is None:
+        server_binary = str(build_server())
     for schema_argument, destination in (
         ("--sim-plant", SIM_SCHEMA_PATH),
         ("--openapi", OPENAPI_PATH),
     ):
         result = subprocess.run(
-            [executor_binary, "schema", schema_argument],
+            [server_binary, "schema", schema_argument],
             capture_output=True,
             text=True,
             check=True,

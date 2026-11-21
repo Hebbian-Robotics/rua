@@ -38,7 +38,9 @@ impl RecordingLibrary {
             if !directory.is_dir() {
                 continue;
             }
-            let name = file_name(&directory)?;
+            let Some(name) = directory.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
             let mcap_path = format!("{name}/recording.mcap");
             let size_bytes = self
                 .safe_file(&mcap_path)
@@ -47,11 +49,11 @@ impl RecordingLibrary {
                 .map(|metadata| metadata.len());
             // INVARIANT: An unrelated directory must never become a deletable recording.
             // The active recorder may not have created its archive yet.
-            if size_bytes.is_none() && active.as_deref() != Some(name.as_str()) {
+            if size_bytes.is_none() && active.as_deref() != Some(name) {
                 continue;
             }
             recordings.push(Recording {
-                name,
+                name: name.to_owned(),
                 mcap_path: size_bytes.map(|_| mcap_path),
                 size_bytes: size_bytes.unwrap_or(0),
             });
@@ -119,10 +121,4 @@ fn visible_entries(directory: &Path) -> Result<Vec<PathBuf>, Error> {
     }
     paths.sort();
     Ok(paths)
-}
-fn file_name(path: &Path) -> Result<String, Error> {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(str::to_owned)
-        .ok_or(Error::NotFound)
 }

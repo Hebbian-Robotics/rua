@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import os
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
@@ -17,7 +18,6 @@ from hebbian_rua import (
 from hebbian_rua.client.contract.station_api import ArmMode
 from hebbian_rua.client.environment import load_environment
 from hebbian_rua.client.llm.robot_tools import CallWrapper
-from hebbian_rua.client.station_client import DEFAULT_MEDIA_SERVER, DEFAULT_SERVER
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
@@ -26,6 +26,8 @@ The adapters translate tools, camera frames and results. You own the model loop.
 """
 
 type Provider = Literal["openai", "anthropic", "gemini"]
+
+DEFAULT_MAX_TURNS = 20
 
 
 class FinishArguments(BaseModel):
@@ -83,7 +85,7 @@ class AgentRobotTools(RobotTools):
 
 
 async def run_openai(
-    robot: AgentRobotTools, task: str, model: str, instructions: str
+    robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from openai import AsyncOpenAI
     from openai.types.responses import ResponseInputItemParam
@@ -94,7 +96,7 @@ async def run_openai(
     messages: list[ResponseInputItemParam] = [{"role": "user", "content": task}]
     async with AsyncOpenAI() as client:
         capture_current_view = True
-        while True:
+        for _ in range(max_turns):
             if capture_current_view:
                 messages.append(await robot_tools.observe())
             response = await client.responses.create(
@@ -110,15 +112,16 @@ async def run_openai(
             )
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
-                break
+                return
             if turn.should_stop or not turn.results:
                 print(response.output_text)
                 report_stop(turn.should_stop)
-                break
+                return
+    raise SystemExit(f"No task outcome after {max_turns} model turns")
 
 
 async def run_anthropic(
-    robot: AgentRobotTools, task: str, model: str, instructions: str
+    robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from anthropic import AsyncAnthropic
     from anthropic.types import MessageParam
@@ -129,7 +132,7 @@ async def run_anthropic(
     messages: list[MessageParam] = [{"role": "user", "content": task}]
     async with AsyncAnthropic() as client:
         capture_current_view = True
-        while True:
+        for _ in range(max_turns):
             if capture_current_view:
                 messages.append(await robot_tools.observe())
             response = await client.messages.create(
@@ -146,7 +149,7 @@ async def run_anthropic(
             )
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
-                break
+                return
             if turn.should_stop or not turn.results:
                 print(
                     "\n".join(
@@ -154,11 +157,12 @@ async def run_anthropic(
                     )
                 )
                 report_stop(turn.should_stop)
-                break
+                return
+    raise SystemExit(f"No task outcome after {max_turns} model turns")
 
 
 async def run_gemini(
-    robot: AgentRobotTools, task: str, model: str, instructions: str
+    robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from google import genai
     from google.genai import types
@@ -174,7 +178,7 @@ async def run_gemini(
     )
     async with genai.Client().aio as client:
         capture_current_view = True
-        while True:
+        for _ in range(max_turns):
             if capture_current_view:
                 messages.append(await robot_tools.observe())
             response = await client.models.generate_content(
@@ -189,11 +193,12 @@ async def run_gemini(
             )
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
-                break
+                return
             if turn.should_stop or not turn.results:
                 print(response.text or "")
                 report_stop(turn.should_stop)
-                break
+                return
+    raise SystemExit(f"No task outcome after {max_turns} model turns")
 
 
 def report_stop(should_stop: bool) -> None:
@@ -208,6 +213,7 @@ async def run_task(
     task: str,
     arm_name: str,
     cameras: list[str],
+    max_turns: int = DEFAULT_MAX_TURNS,
 ) -> None:
     async with station.holding_lease(task, required_cameras=cameras) as lease:
         robot = AgentRobotTools(station, lease, arm_name, cameras).map_tools(
@@ -236,11 +242,18 @@ async def run_task(
                 raise SystemExit(f"Could not enable the arm: {enabled}")
         match provider:
             case "openai":
-                await run_openai(robot, task, model, instructions)
+                await run_openai(robot, task, model, instructions, max_turns)
             case "anthropic":
-                await run_anthropic(robot, task, model, instructions)
+                await run_anthropic(robot, task, model, instructions, max_turns)
             case "gemini":
-                await run_gemini(robot, task, model, instructions)
+                await run_gemini(robot, task, model, instructions, max_turns)
+
+
+def positive_turn_limit(value: str) -> int:
+    turns = int(value)
+    if turns < 1:
+        raise argparse.ArgumentTypeError("expected a positive turn limit")
+    return turns
 
 
 if __name__ == "__main__":
@@ -249,30 +262,44 @@ if __name__ == "__main__":
     parser.add_argument(
         "--provider", choices=["openai", "anthropic", "gemini"], default="openai"
     )
-    parser.add_argument("--model", help="Model ID from your provider")
-    parser.add_argument("--arm", default="follower")
+    parser.add_argument("--model", required=True, help="Model ID from your provider")
+    parser.add_argument(
+        "--max-turns",
+        type=positive_turn_limit,
+        default=DEFAULT_MAX_TURNS,
+        help=f"Maximum number of model turns (default: {DEFAULT_MAX_TURNS})",
+    )
+    parser.add_argument("--arm", help="Arm name. Defaults to the station's sole arm.")
     parser.add_argument("--camera", action="append", default=[])
-    parser.add_argument("--server", default=DEFAULT_SERVER)
-    parser.add_argument("--media-server", default=DEFAULT_MEDIA_SERVER)
+    parser.add_argument("--server", help="Station URL (overrides HEBBIAN_STATION_URL)")
+    parser.add_argument(
+        "--media-server", help="Media URL (overrides HEBBIAN_MEDIA_SERVER)"
+    )
     arguments = parser.parse_args()
-    model = arguments.model
-    if model is None:
-        if arguments.provider != "openai":
-            parser.error("--model is required for Anthropic and Gemini")
-        model = "gpt-6.2-astra"
     load_environment()
+    api_key_variable = f"{arguments.provider.upper()}_API_KEY"
+    api_key_configured = os.environ.get(api_key_variable) or (
+        arguments.provider == "gemini" and os.environ.get("GOOGLE_API_KEY")
+    )
+    if not api_key_configured:
+        parser.error(f"Set {api_key_variable} before running the agent")
 
-    async def main(model: str) -> None:
+    async def main() -> None:
         async with StationClient(
             arguments.server, media_server=arguments.media_server
         ) as station:
+            try:
+                arm_name = await station.resolve_arm_name(arguments.arm)
+            except ValueError as error:
+                parser.error(str(error))
             await run_task(
                 station,
                 arguments.provider,
-                model,
+                arguments.model,
                 arguments.task,
-                arguments.arm,
+                arm_name,
                 arguments.camera,
+                arguments.max_turns,
             )
 
-    asyncio.run(main(model))
+    asyncio.run(main())

@@ -41,7 +41,7 @@ from hebbian_rua import (
 
 def task_formatter(output: RobotOutput) -> ModelContent:
     output = summarize_output(output)
-    output = select_output_cameras(output, {"table"})
+    output = select_output_cameras(output, {"wrist"})
     return render_output(output)
 
 

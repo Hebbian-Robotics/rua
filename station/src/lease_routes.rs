@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::http::StatusCode;
-use hebbian_robot_use_server::control_link::LinkHandle;
+use hebbian_robot_use_core::control_link::LinkHandle;
 
 const CAMERA_POLL_INTERVAL: Duration = Duration::from_secs(1);
 

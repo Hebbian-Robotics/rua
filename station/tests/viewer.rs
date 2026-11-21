@@ -13,19 +13,19 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_server::config::ExecutorConfig;
-use hebbian_robot_use_server::control_link::Link;
-use hebbian_robot_use_server::control_loop::run;
-use hebbian_robot_use_server::lease::{LEASE, Lease};
-use hebbian_robot_use_server::plant::{Feedback, Plant, RecoveryObservation, SimulatedPlant};
-use hebbian_robot_use_server::station_api::HttpServer;
-use hebbian_station::web::{self, WebSettings};
+use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::control_link::Link;
+use hebbian_robot_use_core::control_loop::run;
+use hebbian_robot_use_core::lease::{LEASE, Lease};
+use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Plant, RecoveryObservation};
+use hebbian_robot_use_core::station_api::HttpServer;
+use hebbian_robot_use_server::web::{self, WebSettings};
 use serde_json::{Value, json};
 
-const CONFIG: &str = include_str!("../../executor/tests/support/two_joint_config.json");
+const CONFIG: &str = include_str!("../../server-core/tests/support/two_joint_config.json");
 
 struct FailingPlant {
-    inner: SimulatedPlant,
+    inner: NoPhysicsStandIn,
     failed: Arc<AtomicBool>,
     bus_down: Arc<AtomicBool>,
     torque_off: Arc<AtomicBool>,
@@ -242,7 +242,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let config = ExecutorConfig::try_from(config).unwrap();
     let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
     let scratch = scratch_directory("station");
-    let media_status = hebbian_station::media_status::MediaStatus::default();
+    let media_status = hebbian_robot_use_server::media_status::MediaStatus::default();
     media_status.record_camera_problem("wrist", "camera backend: Device is null");
     let settings = WebSettings {
         recordings_directory: scratch.join("recordings"),
@@ -255,16 +255,18 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         media_status: media_status.clone(),
     };
     let mut mounted = None;
-    let live_run = std::sync::Arc::new(hebbian_station::run_telemetry::LiveRunStore::default());
+    let live_run =
+        std::sync::Arc::new(hebbian_robot_use_server::run_telemetry::LiveRunStore::default());
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
         Some(viewer_directory()),
         live_run.clone(),
+        Arc::default(),
         |runtime, bound| {
             let (routes, opened) = web::mount(runtime, bound, settings);
             mounted = Some(opened);
-            Ok(routes.merge(hebbian_station::run_telemetry::routes(live_run)))
+            Ok(routes.merge(hebbian_robot_use_server::run_telemetry::routes(live_run)))
         },
     )
     .unwrap();
@@ -286,7 +288,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let loop_releases = Arc::clone(&releases);
     let loop_thread = std::thread::spawn(move || {
         let mut plant = FailingPlant {
-            inner: SimulatedPlant::at(vec![0.0, 0.0], 0.02),
+            inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
             failed: loop_plant_failed,
             bus_down: loop_bus_down,
             torque_off: loop_torque_off,

@@ -41,7 +41,7 @@ def validate(
     lane: Literal[
         ValidationLane.PYTHON,
         ValidationLane.FAST,
-        ValidationLane.EXECUTOR,
+        ValidationLane.SERVER,
         ValidationLane.CONTRACTS,
         ValidationLane.FULL,
     ] = ValidationLane.FULL,

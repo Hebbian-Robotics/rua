@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   documentation:
-    if: github.repository == 'Hebbian-Robotics/rua'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -28,19 +27,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.13.6"
-          python-version: "3.14"
-          enable-cache: true
-      - name: Install ast-grep
-        run: bash tooling/comment-policy/install-ci-ast-grep.sh
-      - run: uv sync --locked
-      - run: uv run python tooling/comment-policy/check.py
-      - run: uv run pytest -o addopts= tooling/comment-policy/tests/test_check.py
+      - name: Install source-doc-lint
+        run: bash tooling/source-doc-lint/install-ci.sh
+      - run: source-doc-lint --config source-doc-lint.toml
 
   python:
-    if: github.repository == 'Hebbian-Robotics/rua'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -51,11 +42,13 @@ jobs:
           version: "0.13.6"
           python-version: "3.14"
           enable-cache: true
-      - name: Install ast-grep
-        run: bash tooling/comment-policy/install-ci-ast-grep.sh
+      - name: Install source-doc-lint
+        run: bash tooling/source-doc-lint/install-ci.sh
       - run: uv sync --locked
       - run: uv run rua-dev validate --lane python
       - run: uv lock --check --project examples/python
+      - if: ${{ hashFiles('examples/mujoco_sim/pyproject.toml') != '' }}
+        run: uv lock --check --project examples/mujoco_sim
       - name: Check documented Python agent entry point
         run: uv run python examples/python/agent_quickstart.py --help
 
@@ -64,7 +57,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-    if: github.repository == 'Hebbian-Robotics/rua'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -115,4 +107,19 @@ jobs:
       - run: cargo machete --with-metadata --skip-target-dir
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked --workspace --all-features
-      - run: uv run rua-dev contracts --check
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: ${{ runner.os == 'Linux' && hashFiles('pnpm-workspace.yaml') != '' }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: ${{ runner.os == 'Linux' && hashFiles('pnpm-workspace.yaml') != '' }}
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: ${{ runner.os == 'Linux' && hashFiles('pnpm-workspace.yaml') != '' }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm test:viewer
+          pnpm build
+          uv run rua-dev contracts --check --with-viewer
+      - if: ${{ runner.os != 'Linux' || hashFiles('pnpm-workspace.yaml') == '' }}
+        run: uv run rua-dev contracts --check --targets python

@@ -4,8 +4,10 @@ import asyncio
 import logging
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
+from typing import Annotated, assert_never
 
 import httpx2
+from pydantic import Field, TypeAdapter, ValidationError
 
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
@@ -40,6 +42,12 @@ RETAINED_RECORDS = 10_000
 # What a model loop's run telemetry reports: events and spans in order, a
 # resync when the cursor fell out of the retained records, and the live snapshot.
 type RunUpdate = RunEventRecord | RunSpanRecord | RunResync | RunMessage
+
+_STATION_EVENT_MESSAGE = TypeAdapter(
+    Annotated[
+        StateMessage | ActionSequenceState | RunUpdate, Field(discriminator="kind")
+    ]
+)
 
 
 class MessageRefused(Exception):
@@ -408,36 +416,44 @@ class StationConnection:
         if not isinstance(kind, str):
             log.debug("Ignoring station message without a kind")
             return
-        if kind == "state":
-            state = StateMessage.model_validate(message).state
-            async with self._condition:
-                self._state = state
-                self._state_count += 1
-                self._condition.notify_all()
-        elif kind == "action_sequence_state":
-            async with self._condition:
-                self._action_sequence = ActionSequenceState.model_validate(
-                    message
-                ).action_sequence
-                self._action_sequence_revision += 1
-                self._condition.notify_all()
-        elif kind == "frame":
+        if kind == "frame":
+            # Only retained command records need validation on the frame fast path.
             async with self._condition:
                 self._keep_frame(str(message["arm"]), message.get("frame", {}))
                 self._condition.notify_all()
-        elif kind in ("run_event", "run_span"):
-            record = (
-                RunEventRecord if kind == "run_event" else RunSpanRecord
-            ).model_validate(message)
-            self._deliver_run_record(record)
-        elif kind == "run_resync":
-            resync = RunResync.model_validate(message)
-            self._run_after = resync.newest
-            self._publish_run(resync)
-        elif kind == "run":
-            self._publish_run(RunMessage.model_validate(message))
-        else:
-            log.debug("Ignoring station message kind %r", kind)
+            return
+        try:
+            update = _STATION_EVENT_MESSAGE.validate_python(message)
+        except ValidationError as error:
+            match error.errors(
+                include_url=False, include_context=False, include_input=False
+            ):
+                case [{"type": "union_tag_invalid", "loc": ()}]:
+                    log.debug("Ignoring station message kind %r", kind)
+                    return
+                case _:
+                    raise
+
+        match update:
+            case StateMessage(state=state):
+                async with self._condition:
+                    self._state = state
+                    self._state_count += 1
+                    self._condition.notify_all()
+            case ActionSequenceState(action_sequence=action_sequence):
+                async with self._condition:
+                    self._action_sequence = action_sequence
+                    self._action_sequence_revision += 1
+                    self._condition.notify_all()
+            case RunEventRecord() | RunSpanRecord() as record:
+                self._deliver_run_record(record)
+            case RunResync(newest=newest) as resync:
+                self._run_after = newest
+                self._publish_run(resync)
+            case RunMessage() as run:
+                self._publish_run(run)
+            case _ as unreachable:
+                assert_never(unreachable)
 
     def _publish_run(self, update: RunUpdate) -> None:
         for queue in self._run_subscribers:

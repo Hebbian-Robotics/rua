@@ -7,7 +7,7 @@ Follow the [SO-101 calibration guide](so101-calibration.md) to save the arm's
 `setup.toml` and `calibration.json`. From the checkout root, start the station:
 
 ```sh
-uv run cargo run -p hebbian-station -- serve --profile auto
+uv run cargo run -p hebbian-robot-use-server -- serve --profile auto
 ```
 
 With torque off, move each joint and the gripper by hand and check that the
@@ -16,6 +16,11 @@ the physical arm before enabling it.
 
 If you've already calibrated the arm with LeRobot, you can
 [reuse that calibration with an explicit profile](hardware.md).
+
+With the station running, [read your arm's state with the Python SDK](../examples/python/README.md#read-your-arms-state).
+Then [run the Python agent](../examples/python/README.md#run-an-agent). To give
+it images, [connect a camera](cameras.md#connect-a-usb-camera) and pass its
+label to the example.
 
 ## Install the published wheel
 
@@ -38,19 +43,20 @@ and resolves its dependencies into `uv.lock`. Run your agent with `uv run` too.
 Choose only the provider extras you need, such as `hebbian-rua[anthropic]`.
 
 The published RUA 0.1.2 wheel uses the
-[explicit-profile workflow](hardware.md) for LeRobot calibrations. To start
+[0.1.2 hardware profile format](https://github.com/Hebbian-Robotics/rua/blob/v0.1.2/docs/hardware.md) for LeRobot calibrations. To start
 the wheel's station with your profile, pass its path:
 
 ```sh
-uv run rua serve --profile "$PWD/robot.toml"
+uv run rua serve --profile "$HOME/.config/rua/so101.toml"
 ```
 
-`robot.toml` is your profile path, not a generated or bundled configuration.
+Use the path where you saved your profile if it differs from the example.
 
 Use `from hebbian_rua import StationClient` in your Python program. See the
-[Python examples](../examples/python/README.md). For simulation, run your own engine and
+[read-only state check](../examples/python/README.md#read-your-arms-state) and
+[Python agent example](../examples/python/README.md#run-an-agent). For simulation, run your own engine and
 [connect its adapter](simulators.md); no engine is included or started by RUA.
 
 ## Cameras
 
-For cameras and the web preview, see [cameras](cameras.md).
+For camera setup and the hosted LiveKit viewer, see [cameras](cameras.md).

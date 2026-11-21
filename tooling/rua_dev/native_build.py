@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 
 
-def build_executor() -> Path:
+def build_server() -> Path:
     subprocess.run(
         [
             "cargo",
@@ -11,7 +11,7 @@ def build_executor() -> Path:
             "--locked",
             "--quiet",
             "--package",
-            "hebbian-station",
+            "hebbian-robot-use-server",
             "--bin",
             "hebbian-robot-use-server",
         ],

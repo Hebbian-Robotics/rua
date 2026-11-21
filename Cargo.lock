@@ -953,7 +953,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1317,7 +1317,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "hebbian-robot-use-server"
+name = "hebbian-robot-use-core"
 version = "0.1.2"
 dependencies = [
  "anyhow",
@@ -1349,23 +1349,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "hebbian-so101"
-version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/so101?rev=b07c114b2917fd550fa4c74360f6ee4bd8730f23#b07c114b2917fd550fa4c74360f6ee4bd8730f23"
-dependencies = [
- "anyhow",
- "hdrhistogram",
- "rustypot",
- "schemars",
- "serde",
- "serde_json",
- "serialport",
- "toml",
- "uuid",
-]
-
-[[package]]
-name = "hebbian-station"
+name = "hebbian-robot-use-server"
 version = "0.1.2"
 dependencies = [
  "anyhow",
@@ -1374,7 +1358,7 @@ dependencies = [
  "dotenvy",
  "hdrhistogram",
  "hebbian-contracts",
- "hebbian-robot-use-server",
+ "hebbian-robot-use-core",
  "nix 0.31.3",
  "recordings",
  "reqwest 0.12.28",
@@ -1385,6 +1369,22 @@ dependencies = [
  "station-access",
  "tempfile",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "hebbian-so101"
+version = "0.1.0"
+source = "git+https://github.com/Hebbian-Robotics/so101?rev=e49063958d104bea803023e9afa67366eb281251#e49063958d104bea803023e9afa67366eb281251"
+dependencies = [
+ "anyhow",
+ "hdrhistogram",
+ "rustypot",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serialport",
+ "toml",
  "uuid",
 ]
 
@@ -1718,7 +1718,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2075,8 +2075,8 @@ dependencies = [
  "clap",
  "hebbian-contracts",
  "hebbian-mcap",
+ "hebbian-robot-use-core",
  "hebbian-robot-use-server",
- "hebbian-station",
  "livekit",
  "livekit-camera-frames",
  "livekit-camera-publisher",
@@ -3269,7 +3269,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3619,7 +3619,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3677,7 +3677,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4195,10 +4195,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4854,7 +4854,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

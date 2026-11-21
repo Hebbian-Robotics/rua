@@ -14,9 +14,9 @@ Before starting RUA:
 
 - Confirm the arm appears inside Ubuntu and your user can access its serial port.
   USB forwarding does not install missing kernel drivers or grant device permissions.
-- Follow [per-arm setup](hardware.md). Use the serial path visible **inside WSL**,
-  preferably `/dev/serial/by-id/`, rather than a Windows COM port. Check each
-  arm's identity after reconnecting; VID:PID identifies a device type, not an arm.
+- Run the [SO-101 calibration tool](so101-calibration.md) inside Ubuntu. With an
+  [explicit profile](hardware.md), use the serial path visible inside WSL,
+  preferably `/dev/serial/by-id/`. Check each arm's identity after reconnecting.
 - For cameras, see [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras)
   for browser capture options and [RUA camera setup](cameras.md) for connecting
   streams to the agent. A USB camera captured inside WSL also needs forwarding

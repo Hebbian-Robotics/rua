@@ -2,7 +2,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, RecordingStatus};
-use hebbian_station::recording::{RecordingConfiguration, RecordingManager};
+use hebbian_robot_use_server::recording::{RecordingConfiguration, RecordingManager};
 use station_access::Credentials;
 
 #[tokio::test]

@@ -1,7 +1,0 @@
-# Interactive controls for the assembly used by the reference agent examples.
-extends = "so101-soft-gripper-camera"
-name = "so101-soft-gripper-camera-manual"
-
-[guard]
-# Allow bounded serial fault cleanup before the independent guard takes over.
-heartbeat_timeout_seconds = 3.0

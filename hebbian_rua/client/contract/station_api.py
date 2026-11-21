@@ -79,6 +79,15 @@ class ArmRecoveryIssue(BaseModel):
     motors_without_torque: list[MotorsWithoutTorqueItem]
 
 
+class BasePose(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    position_meters: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
+    yaw_radians: StrictFloat = 0.0
+
+
 class CameraListing(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2033,6 +2042,12 @@ class ArmState(BaseModel):
         ),
     ] = None
     arm: str
+    base_pose: Annotated[
+        BasePose | None,
+        Field(
+            description="The arm's URDF root in the station world frame. None means the world origin."
+        ),
+    ] = None
     commanded_joints: Annotated[
         list[StrictFloat] | None,
         Field(

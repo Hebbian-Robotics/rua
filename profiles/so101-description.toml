@@ -1,4 +1,4 @@
-# What an LLM is told about an SO-101, shared by every SO-101 profile.
+# Model-facing description of the stock SO-101.
 description = """\
 SO-101: each arm has five arm joints (shoulder_pan, shoulder_lift,
 elbow_flex, wrist_flex, wrist_roll) and a gripper with one fixed and one

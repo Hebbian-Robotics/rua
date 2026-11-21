@@ -1,12 +1,12 @@
 [package]
-name = "hebbian-station"
+name = "hebbian-robot-use-server"
 version = "0.1.2"
 edition = "2024"
 rust-version = "1.92"
 authors = ["Hebbian Robotics"]
 license = "MIT"
-description = "The station binary, installed as `hebbian-robot-use-server`: the control loop and its HTTP server with recording, lease routes and LiveKit access."
-readme = "../executor/README.md"
+description = "Robot-use station and supervised motor controller, with HTTP, recordings, and LiveKit access."
+readme = "../server-core/README.md"
 publish = false
 
 [[bin]]
@@ -20,7 +20,7 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 hdrhistogram = { version = "7.6.0", default-features = false }
 dotenvy = "0.15"
 hebbian-contracts = { path = "../contracts" }
-hebbian-robot-use-server = { path = "../executor" }
+hebbian-robot-use-core = { path = "../server-core" }
 recordings = { path = "../recordings" }
 nix = { version = "0.31", features = ["signal", "process"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -30,10 +30,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 signal-hook = { version = "0.4.6", default-features = false }
 station-access = { path = "../station-access" }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros"] }
-
-[dev-dependencies]
 tempfile = "3"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros"] }
 
 [lints]
 workspace = true

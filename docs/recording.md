@@ -66,7 +66,7 @@ and disable a connected arm before restarting its station.
 See [LiveKit Cameras' recorder guide](https://github.com/Hebbian-Robotics/livekit-cameras/tree/main/native/recorder)
 for encoder requirements and [MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools)
 for file utilities and video export. RUA camera topics use
-`/cameras/<camera>/video`, for example `/cameras/table/video`.
+`/cameras/<camera>/video`, where `<camera>` is the registered name.
 
 Each arm's joints are recorded on `/arms/<arm>/joint_states` as ROS 2
 `sensor_msgs/msg/JointState`: positions in radians, velocities in radians per

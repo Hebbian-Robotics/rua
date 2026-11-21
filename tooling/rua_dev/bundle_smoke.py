@@ -76,7 +76,7 @@ async def check_compiler(station: StationClient, joints: list[float]) -> None:
         steps=[
             ActionSequenceStep(
                 arms={
-                    "follower": ActionSequenceArmAction(
+                    "arm": ActionSequenceArmAction(
                         movement=ActionSequenceJointsMovement(joints=joints)
                     )
                 }
@@ -114,7 +114,7 @@ async def check_client(address: str) -> None:
     async with StationClient(address) as station:
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
-            state = await station.arm("follower").state()
+            state = await station.arm("arm").state()
             if state.measured_joints:
                 print(
                     "Installed SDK received arm feedback from a user-owned socket connection"
@@ -144,8 +144,16 @@ def main() -> None:
     subprocess.run([media, "--help"], check=True, stdout=subprocess.DEVNULL)
     shared_assets = Path(sysconfig.get_path("data")) / "share/hebbian-robot-use"
     asset_pin = tomllib.loads((shared_assets / "robots/so101-assets.toml").read_text())
+    model_directory = shared_assets / "robots/so101"
+    installed_files = {
+        path.relative_to(model_directory).as_posix()
+        for path in model_directory.rglob("*")
+        if path.is_file()
+    }
+    if installed_files != asset_pin["files"].keys():
+        raise RuntimeError("Installed robot assets differ from the wheel allowlist")
     for filename, digest in asset_pin["files"].items():
-        asset = shared_assets / "robots/so101" / filename
+        asset = model_directory / filename
         if hashlib.sha256(asset.read_bytes()).hexdigest() != digest:
             raise RuntimeError(
                 f"Installed robot asset does not match its pin: {filename}"
@@ -168,7 +176,7 @@ def main() -> None:
                     command,
                     "serve",
                     "--profile",
-                    "so101-socket",
+                    "so101-sim",
                     "--work-directory",
                     temporary,
                     "--http-address",
@@ -184,7 +192,7 @@ def main() -> None:
             )
             peer: threading.Thread | None = None
             try:
-                socket_path = directory / "follower.plant.sock"
+                socket_path = directory / "arm.plant.sock"
                 deadline = time.monotonic() + 20
                 while not socket_path.exists():
                     if process.poll() is not None or time.monotonic() > deadline:

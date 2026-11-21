@@ -12,11 +12,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hebbian_contracts::{ArmMode, Command as ArmCommand, Event};
-use hebbian_robot_use_server::controller_transport::{
+use hebbian_robot_use_core::controller_transport::{
     ControllerAnswer, ControllerMessage, ControllerRequest, ControllerRequestId,
     ControllerTransport,
 };
-use hebbian_station::controller_process::{ControllerLaunch, ControllerProcess};
+use hebbian_robot_use_server::controller_process::{
+    ControllerLaunch, ControllerProcess, PlantSelection,
+};
 
 struct ControllerChild(ControllerProcess);
 
@@ -38,7 +40,7 @@ fn write_simulated_config(root: &Path, directory: &Path) -> PathBuf {
             "--profile",
             "so101-sim",
             "--arm",
-            "follower",
+            "arm",
             "--urdf-limits",
             "--profile-directory",
         ])
@@ -58,6 +60,23 @@ fn write_simulated_config(root: &Path, directory: &Path) -> PathBuf {
 }
 
 #[test]
+fn the_diagnostic_rejects_hardware_without_servo_configuration() {
+    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let temporary = tempfile::tempdir().unwrap();
+    let config_path = write_simulated_config(root, temporary.path());
+    let output = Command::new(executable)
+        .args(["run", "--arm"])
+        .arg(format!("arm={}", config_path.display()))
+        .arg("--hardware")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr.contains("needs a feetech section"), "{stderr}");
+}
+
+#[test]
 fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
     let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -65,11 +84,9 @@ fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
     let config_path = write_simulated_config(root, temporary.path());
     let child = ControllerProcess::start(&ControllerLaunch {
         executable: executable.into(),
-        arms: vec![("follower".into(), config_path)],
+        arms: vec![("arm".into(), config_path)],
         work_directory: temporary.path().into(),
-        simulator_socket_directory: None,
-        plant_lag_seconds: 0.05,
-        hardware: false,
+        plant: PlantSelection::NoPhysicsStandIn { lag_seconds: 0.05 },
     })
     .unwrap();
     let mut child = ControllerChild(child);
@@ -102,7 +119,7 @@ fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
     station
         .send(ControllerMessage::Request {
             request_id: ControllerRequestId(0),
-            arm: "follower".into(),
+            arm: "arm".into(),
             request: ControllerRequest::Submit {
                 command: ArmCommand::Enable,
                 trace_context: None,

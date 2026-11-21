@@ -1,9 +1,7 @@
-# The learned reaching policy's settings, shared by every SO-101 profile that uses it
-# (so101-policy.toml, so101-sim-policy.toml). The released model is for the arm with the TPU
-# gripper and wrist camera (so-supermimic so101-soft-gripper-camera/servo-fit-30000: trained
-# on a servo fitted to that arm; simulation-validated only), so a profile that extends this
-# uses that arm model. Asset paths are relative to the repository root; put the release's
-# files in .cache/so101-policy-assets/.
+# Settings for the learned reaching policy. The released model is for the arm with the TPU
+# gripper and wrist camera. The servo-fit-30000 checkpoint was trained with a servo model
+# fitted to that assembly and validated in simulation. Put the checkpoint assets in
+# .cache/so101-policy-assets/ relative to the repository root.
 controller = "policy"
 
 [policy]
@@ -16,7 +14,6 @@ checkpoint_sha256 = "89f9f5a47866d4e2761373e6036adde6277c400f1942ff7f74bd26fda6f
 # The model's action step: how far ahead of the measured joint it may set a target.
 # The tracking guard allows this much on top of the [tracking] margins.
 max_target_lead_radians = 0.12
-tool_frame_fixture = ".cache/so101-policy-assets/tool-frame.json"
 onnx = ".cache/so101-policy-assets/policy.onnx"
 max_joint_speed = 2.5
 position_tolerance_meters = 0.02

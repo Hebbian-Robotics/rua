@@ -9,14 +9,14 @@ Agent loops run in clients; the station does not call a model.
 
 | Owner | Location | Responsibility |
 | --- | --- | --- |
-| Shared contracts | `contracts/` and `schemas/` | Typed requests, outcomes and generated SDK contracts |
-| Robot Use Compiler | `executor/src/compiler.rs` | Structural analysis and typed robot operations |
-| Artifact store | `executor/src/station_api/programs.rs` | Saved compilations, validity, retention and inspection |
-| Robot Use Runtime | `executor/src/station_api/runtime.rs` | Live step preparation, coordinated admission and truthful outcomes |
-| Station host | `station/` | HTTP composition and process supervision |
-| Motor controller | `executor/src/control_loop/` | Feedback, setpoints, protective checks and plant commands |
-| Camera companion | `livekit-cameras/` | Capture, snapshots, publishing and recording video |
-| Recording library | `recordings/` | Retained recordings and playback access |
+| Shared contracts | [Rust contracts](../contracts/src/lib.rs) and [OpenAPI](../schemas/openapi.json) | Typed requests, outcomes and generated SDK contracts |
+| Robot Use Compiler | [`server-core/src/compiler.rs`](../server-core/src/compiler.rs) | Structural analysis and typed robot operations |
+| Artifact store | [`server-core/src/station_api/programs.rs`](../server-core/src/station_api/programs.rs) | Saved compilations, validity, retention and inspection |
+| Robot Use Runtime | [`server-core/src/station_api/runtime.rs`](../server-core/src/station_api/runtime.rs) | Live step preparation, coordinated admission and truthful outcomes |
+| Station host | [Station composition](../station/src/serve.rs) | HTTP composition and process supervision |
+| Motor controller | [Motor loop](../server-core/src/control_loop/mod.rs) | Feedback, setpoints, protective checks and plant commands |
+| Camera companion | [Media CLI](../livekit-cameras/src/main.rs) | Capture, snapshots, publishing and recording video |
+| Recording library | [Recording library](../recordings/src/library.rs) | Retained recordings and playback access |
 
 ## Robot Use Compiler and Runtime
 

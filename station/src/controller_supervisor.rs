@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::process::ExitStatus;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
@@ -10,18 +11,19 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use hebbian_robot_use_server::control_link::Link;
-use hebbian_robot_use_server::controller_bridge::StationSession;
-use hebbian_robot_use_server::controller_service::serve_station_connection;
-use hebbian_robot_use_server::lease::Lease;
+use hebbian_robot_use_core::control_link::Link;
+use hebbian_robot_use_core::controller_bridge::StationSession;
+use hebbian_robot_use_core::controller_service::serve_station_connection;
+use hebbian_robot_use_core::lease::Lease;
 
 use hebbian_contracts::{ControllerStatus, ReconnectRequest};
 
-use crate::controller_process::{ControllerLaunch, ControllerProcess};
+use crate::controller_process::{ControllerLaunch, ControllerProcess, PlantSelection};
 use crate::recording::RecordingManager;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+const CONTROLLER_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct ControllerSupervisor {
@@ -73,6 +75,17 @@ impl ControllerSupervisor {
             }
         }
         *current = status;
+    }
+
+    fn interrupt_recording(&self) {
+        if let Some(recording) = self
+            .recording
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            recording.controller_unavailable();
+        }
     }
 
     pub fn attach_recording(&self, recording: RecordingManager) {
@@ -158,6 +171,7 @@ fn refresh_guard_status(
     process: &mut ControllerProcess,
 ) -> bool {
     let released = matches!(process.try_wait(), Ok(Some(_))) && process.report_pipe_closed();
+    let updated_reports = process.take_updated_reports();
     let mut status = supervisor
         .status
         .lock()
@@ -169,9 +183,15 @@ fn refresh_guard_status(
             ..
         } => {
             *guard_released = released;
-            *reports = process.reports();
+            if let Some(updated_reports) = updated_reports {
+                *reports = updated_reports;
+            }
         }
-        ControllerStatus::WaitingForGuard { reports, .. } => *reports = process.reports(),
+        ControllerStatus::WaitingForGuard { reports, .. } => {
+            if let Some(updated_reports) = updated_reports {
+                *reports = updated_reports;
+            }
+        }
         ControllerStatus::Starting | ControllerStatus::Online | ControllerStatus::Unmanaged => {}
     }
     released
@@ -194,8 +214,9 @@ fn wait_for_release(
 fn start_connection(
     process: &mut ControllerProcess,
     shutdown: &AtomicBool,
+    startup_timeout: Duration,
 ) -> Result<std::os::unix::net::UnixStream, String> {
-    let deadline = Instant::now() + STARTUP_TIMEOUT;
+    let started = Instant::now();
     while !shutdown.load(Ordering::Acquire) {
         if let Some(socket) = process.try_accept().map_err(|error| format!("{error:#}"))? {
             return Ok(socket);
@@ -203,14 +224,43 @@ fn start_connection(
         if let Some(status) = process.try_wait().map_err(|error| format!("{error:#}"))? {
             return Err(format!("Controller exited during startup: {status}"));
         }
-        if Instant::now() >= deadline {
-            let _ = process.stop_controller();
+        if started.elapsed() >= startup_timeout {
             return Err("Controller startup timed out".into());
         }
         thread::sleep(POLL_INTERVAL);
     }
-    let _ = process.stop_controller();
     Err("Station is shutting down".into())
+}
+
+fn wait_for_exit(process: &mut ControllerProcess) -> anyhow::Result<ExitStatus> {
+    let deadline = Instant::now() + CONTROLLER_EXIT_TIMEOUT;
+    loop {
+        if let Some(status) = process.try_wait()? {
+            return Ok(status);
+        }
+        anyhow::ensure!(Instant::now() < deadline, "Controller did not exit");
+        thread::sleep(POLL_INTERVAL);
+    }
+}
+
+fn finish_controller(process: &mut ControllerProcess, result: Result<(), String>) -> String {
+    let result = result.and_then(|()| match wait_for_exit(process) {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("Controller exited during shutdown: {status}")),
+        Err(error) => Err(format!("Controller shutdown failed: {error:#}")),
+    });
+    match result {
+        Ok(()) => "Controller shut down cleanly".into(),
+        Err(reason) => {
+            if let Err(error) = process
+                .stop_controller()
+                .and_then(|()| wait_for_exit(process))
+            {
+                eprintln!("Could not stop the controller: {error:#}");
+            }
+            reason
+        }
+    }
 }
 
 fn run(
@@ -222,6 +272,18 @@ fn run(
     shutdown: Arc<AtomicBool>,
     incoming: mpsc::Receiver<()>,
 ) {
+    let mut startup_timeout = STARTUP_TIMEOUT;
+    if matches!(configuration.plant, PlantSelection::Simulator { .. }) {
+        // WHY: The child accepts each plant and reads its hello before connecting
+        // to the station. Allow those sequential waits on top of normal startup.
+        for link in links.values() {
+            if let Some(timeouts) = link.handle().config().simulator_timeouts() {
+                startup_timeout = startup_timeout
+                    .saturating_add(timeouts.connect)
+                    .saturating_add(timeouts.reply);
+            }
+        }
+    }
     let mut previous: Option<ControllerProcess> = None;
     let mut start_requested = true;
     while !shutdown.load(Ordering::Acquire) {
@@ -253,53 +315,40 @@ fn run(
                 continue;
             }
         };
-        let connection = start_connection(&mut process, &shutdown);
-        let reason = match connection {
-            Ok(socket) => {
-                let result = serve_station_connection(
-                    socket,
-                    process.instance(),
-                    &mut session,
-                    &links,
-                    &shutdown,
-                    || {
-                        lease.controller_ready();
-                        for link in links.values() {
-                            link.publish(hebbian_contracts::Event::ControllerAvailable);
-                        }
-                        supervisor.set_status(ControllerStatus::Online);
-                    },
-                    || {
-                        lease.controller_lost();
-                        supervisor.set_status(ControllerStatus::Unavailable {
-                            reason: "The controller connection was lost".into(),
-                            guard_released: false,
-                            reports: Vec::new(),
-                        });
-                    },
-                );
-                match result {
-                    Ok(()) => "Controller stopped".to_owned(),
-                    Err(error) => {
-                        if let Err(stop_error) = process.stop_controller() {
-                            eprintln!("Could not stop the unresponsive controller: {stop_error:#}");
-                        }
-                        format!("Controller connection lost: {error}")
+        let connection = start_connection(&mut process, &shutdown, startup_timeout);
+        let result = connection.and_then(|socket| {
+            serve_station_connection(
+                socket,
+                process.instance(),
+                &mut session,
+                &links,
+                &shutdown,
+                || {
+                    lease.controller_ready();
+                    for link in links.values() {
+                        link.publish(hebbian_contracts::Event::ControllerAvailable);
                     }
-                }
-            }
-            Err(reason) => reason,
-        };
+                    supervisor.set_status(ControllerStatus::Online);
+                },
+                || {
+                    lease.controller_lost();
+                    supervisor.interrupt_recording();
+                },
+            )
+            .map_err(|error| format!("Controller connection ended: {error}"))
+        });
+        let reason = finish_controller(&mut process, result);
         lease.controller_lost();
         for link in links.values() {
             link.controller_unavailable(reason.clone());
         }
         let guard_released =
             matches!(process.try_wait(), Ok(Some(_))) && process.report_pipe_closed();
+        // INVARIANT: Publish the recoverable status once so a queued reconnect stays visible.
         supervisor.set_status(ControllerStatus::Unavailable {
             reason,
             guard_released,
-            reports: process.reports(),
+            reports: process.take_updated_reports().unwrap_or_default(),
         });
         previous = Some(process);
         start_requested = false;
