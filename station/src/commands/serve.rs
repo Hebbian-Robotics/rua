@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(clap::Args)]
 pub(crate) struct ServeArguments {
     /// Bundled profile name, absolute local profile path, or auto for a registered SO-101.
-    #[arg(long)]
+    #[arg(long, default_value = "auto")]
     pub(crate) profile: String,
     #[command(flatten)]
     pub(crate) selection: super::SelectionArguments,

@@ -59,12 +59,10 @@ test.each([false, true])(
         arms: [{ arm: "follower", mode: "holding", interlocks, revision }],
       }) as ReturnType<typeof connection.getState>;
     vi.spyOn(connection, "getState").mockImplementation(state);
-    vi.spyOn(connection, "onState").mockImplementation((listener) => {
-      queueMicrotask(() => {
-        const current = state();
-        if (current) listener(current);
-      });
-      return () => {};
+    vi.spyOn(connection, "waitForState").mockImplementation(async () => {
+      const current = state();
+      if (current === null) throw new Error("Expected station state");
+      return current;
     });
     const reports: unknown[] = [];
     const lease = fakeLease({

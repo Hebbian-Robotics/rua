@@ -149,6 +149,37 @@ impl LinkHandle {
         .ok()
     }
 
+    pub(crate) async fn wait_for_execution_stop(&self) {
+        use std::sync::mpsc::TryRecvError;
+
+        let wait = async {
+            let poll_interval = Duration::from_millis(10);
+            let mut changes = self.changes();
+            loop {
+                let Ok(reply) = self.shared.arm.control_handoff_readiness() else {
+                    return;
+                };
+                let ready = loop {
+                    match reply.try_recv() {
+                        Ok(Ok(ready)) => break ready,
+                        Err(TryRecvError::Empty) => tokio::time::sleep(poll_interval).await,
+                        Ok(Err(_)) | Err(TryRecvError::Disconnected) => return,
+                    }
+                };
+                if ready {
+                    // INVARIANT: The core is stopped. Let the sample used to plan the next
+                    // command catch up before publishing the terminal sequence state.
+                    let _ = changes
+                        .wait_for(|mode| *mode != Some(ArmMode::Moving))
+                        .await;
+                    return;
+                }
+                tokio::time::sleep(poll_interval).await;
+            }
+        };
+        let _ = tokio::time::timeout(Duration::from_secs(5), wait).await;
+    }
+
     fn stop_with_lease<Reply>(
         &self,
         token: Option<&str>,
@@ -835,10 +866,17 @@ impl Hub {
                     .is_none()
                 {
                     self.record_order.push_back(record.command_id.clone());
-                    while self.record_order.len() > REMEMBERED_RECORDS {
-                        if let Some(oldest) = self.record_order.pop_front() {
-                            self.records.remove(&oldest);
-                        }
+                }
+                while self.record_order.len() > REMEMBERED_RECORDS {
+                    let Some(oldest_finished) = self.record_order.iter().position(|id| {
+                        self.records
+                            .get(id)
+                            .is_some_and(|record| record.completion.is_some())
+                    }) else {
+                        break;
+                    };
+                    if let Some(id) = self.record_order.remove(oldest_finished) {
+                        self.records.remove(&id);
                     }
                 }
             }

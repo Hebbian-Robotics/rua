@@ -7,6 +7,7 @@ from pathlib import Path
 from mujoco_runtime import mujoco
 
 from hebbian_rua.simulator import PlantConnection, PlantDisconnected, SimState, SimStep
+from hebbian_rua.simulator.connection import DEFAULT_STEP_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class PlantArm:
     # its step arrives. The actuators' own gains carry the servos' following lag.
     # Zero applies the command at once.
     command_delay_seconds: float = 0.0
+    step_timeout_seconds: float = DEFAULT_STEP_TIMEOUT_SECONDS
     gripper_actuator: str | None = None
     # Scale MuJoCo's actuator effort to the units expected by the station.
     effort_per_newton_metre: float = 1.0
@@ -39,7 +41,7 @@ class _Connection:
     joint_names: list[str]
     command_delay_seconds: float
     # Commanded targets not yet delivered, with the simulated time each is due.
-    pending: deque[tuple[float, list[float]]]
+    pending: deque[tuple[float, SimStep]]
 
 
 def _state(mujoco_data: mujoco.MjData, connection: _Connection) -> SimState:
@@ -124,7 +126,10 @@ def serve_plants(
                 arm,
                 stack.enter_context(
                     PlantConnection.connect(
-                        socket_directory, name, timeout_seconds=connect_timeout_seconds
+                        socket_directory,
+                        name,
+                        timeout_seconds=connect_timeout_seconds,
+                        step_timeout_seconds=arm.step_timeout_seconds,
                     )
                 ),
             )
@@ -159,28 +164,32 @@ def _apply(
             f"Step has {len(step.positions)} targets for {len(connection.actuator_ids)} actuators"
         )
     if step.powered:
-        connection.pending.append(
-            (now + connection.command_delay_seconds, list(step.positions))
-        )
+        connection.pending.append((now + connection.command_delay_seconds, step))
     else:
         connection.pending.clear()
         for actuator, address in zip(
             connection.actuator_ids, connection.joint_addresses, strict=True
         ):
             data.ctrl[actuator] = data.qpos[address]
+        _set_gripper(data, connection, None)
+
+
+def _set_gripper(
+    data: mujoco.MjData, connection: _Connection, target: float | None
+) -> None:
     if connection.gripper_actuator_id is not None:
         assert connection.gripper_address is not None
-        if step.powered and step.gripper_angle is not None:
-            data.ctrl[connection.gripper_actuator_id] = step.gripper_angle
-        else:
-            data.ctrl[connection.gripper_actuator_id] = data.qpos[
-                connection.gripper_address
-            ]
+        data.ctrl[connection.gripper_actuator_id] = (
+            data.qpos[connection.gripper_address] if target is None else target
+        )
 
 
 def _deliver(data: mujoco.MjData, connection: _Connection, now: float) -> None:
     # WHY: A nanosecond of slack keeps float rounding in the clock from holding a due target back.
     while connection.pending and connection.pending[0][0] <= now + 1e-9:
-        _, targets = connection.pending.popleft()
-        for actuator, target in zip(connection.actuator_ids, targets, strict=True):
+        _, step = connection.pending.popleft()
+        for actuator, target in zip(
+            connection.actuator_ids, step.positions, strict=True
+        ):
             data.ctrl[actuator] = target
+        _set_gripper(data, connection, step.gripper_angle)

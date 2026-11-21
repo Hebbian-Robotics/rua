@@ -9,6 +9,7 @@ from hebbian_rua.simulator.contract import SimHello, SimState, SimStep
 
 PROTOCOL_VERSION = 1
 SOCKET_POLL_SECONDS = 0.05
+DEFAULT_STEP_TIMEOUT_SECONDS = 5.0
 
 
 class PlantDisconnected(ConnectionError):
@@ -18,13 +19,24 @@ class PlantDisconnected(ConnectionError):
 class PlantConnection:
     """Exchange plant messages with one station arm over a Unix socket."""
 
-    def __init__(self, stream: socket.socket) -> None:
+    def __init__(
+        self,
+        stream: socket.socket,
+        *,
+        step_timeout_seconds: float = DEFAULT_STEP_TIMEOUT_SECONDS,
+    ) -> None:
+        stream.settimeout(step_timeout_seconds)
         self._stream = stream
         self._lines = stream.makefile("rwb")
 
     @classmethod
     def connect(
-        cls, socket_directory: Path, arm: str, *, timeout_seconds: float = 60.0
+        cls,
+        socket_directory: Path,
+        arm: str,
+        *,
+        timeout_seconds: float = 60.0,
+        step_timeout_seconds: float = DEFAULT_STEP_TIMEOUT_SECONDS,
     ) -> "PlantConnection":
         """Connect to an arm's plant socket, waiting for the station to listen."""
         if not arm or Path(arm).name != arm or arm in {".", ".."}:
@@ -35,7 +47,7 @@ class PlantConnection:
             stream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
                 stream.connect(str(path))
-                return cls(stream)
+                return cls(stream, step_timeout_seconds=step_timeout_seconds)
             except OSError as error:
                 stream.close()
                 if time.monotonic() >= deadline:
@@ -54,7 +66,12 @@ class PlantConnection:
 
     def read_step(self) -> SimStep:
         """Read the next target and simulation duration from the station."""
-        line = self._lines.readline()
+        try:
+            line = self._lines.readline()
+        except TimeoutError as error:
+            raise PlantDisconnected(
+                "Timed out waiting for the station's next plant step"
+            ) from error
         if not line:
             raise PlantDisconnected("The station closed the plant connection")
         return SimStep.model_validate_json(line)

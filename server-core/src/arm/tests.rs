@@ -32,10 +32,13 @@ fn core() -> (ArmCore, Arc<Mutex<Vec<Event>>>) {
     (core, events)
 }
 
+static TEST_EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
 fn at(seconds: f64) -> Now {
     Now {
         unix_seconds: seconds,
-        instant: Instant::now(),
+        instant: *TEST_EPOCH.get_or_init(Instant::now)
+            + std::time::Duration::from_secs_f64(seconds),
     }
 }
 
@@ -67,7 +70,7 @@ fn mv_planned(from: [f64; 2], to: [f64; 2]) -> Command {
 }
 
 fn observe(core: &mut ArmCore, seconds: f64, fault: Option<&str>) {
-    core.observe(seconds, &[0.0, 0.0], None, fault);
+    core.observe(at(seconds), &[0.0, 0.0], None, fault);
 }
 
 fn enabled_core() -> (ArmCore, Arc<Mutex<Vec<Event>>>) {
@@ -215,7 +218,7 @@ fn a_completed_move_records_how_close_the_arm_ended_to_its_target() {
     let record = core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
     core.next_job().unwrap();
     core.begin_moving();
-    core.observe(3.0, &[0.49, 0.0], None, None);
+    core.observe(at(3.0), &[0.49, 0.0], None, None);
     core.motion_ended(CommandOutcome::Completed, None, &[0.5, 0.0], at(3.0));
     let finished = core.record(&record.command_id).unwrap();
     assert_eq!(finished.target_status, Some(TargetStatus::Reached));
@@ -281,7 +284,7 @@ fn a_failed_move_only_reports_partial_when_feedback_showed_displacement() {
         let movement = core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
         core.next_job().unwrap();
         core.begin_moving();
-        core.observe(2.1, &measured, None, None);
+        core.observe(at(2.1), &measured, None, None);
         core.failed("The trajectory failed", at(2.2));
         let record = core.record(&movement.command_id).unwrap();
         assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
@@ -307,7 +310,7 @@ fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
             Command::StreamJoints {
                 gripper_angle: None,
                 positions: vec![0.1, 2.0],
-                joint_speed: None,
+                joint_speed: Some(0.5),
                 stream_command_id: None,
             },
             at(2.0),
@@ -324,20 +327,24 @@ fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
     );
     assert_eq!(reason(wrong_length), RejectionReason::InvalidTarget);
     assert_eq!(start.goal_joints, Some(vec![0.1, 2.0]));
-    assert_eq!(start.joint_speed, Some(1.0));
-    let update = core
-        .submit(
-            Command::StreamJoints {
-                gripper_angle: None,
-                positions: vec![0.2, 0.0],
-                joint_speed: Some(9.0),
-                stream_command_id: Some(start.command_id.clone()),
-            },
-            at(2.1),
-        )
-        .unwrap();
-    assert_eq!(update.command_id, start.command_id);
-    assert_eq!(update.goal_joints, Some(vec![0.2, 0.0]));
+    assert_eq!(start.joint_speed, Some(0.5));
+    for joint_speed in [Some(9.0), None] {
+        let update = core
+            .submit(
+                Command::StreamJoints {
+                    gripper_angle: None,
+                    positions: vec![0.2, 0.0],
+                    joint_speed,
+                    stream_command_id: Some(start.command_id.clone()),
+                },
+                at(2.1),
+            )
+            .unwrap();
+        assert_eq!(update.command_id, start.command_id);
+        assert_eq!(update.goal_joints, Some(vec![0.2, 0.0]));
+        let (stream_goal, _) = core.stream_goal(&start.command_id).unwrap();
+        assert_eq!(stream_goal.joint_speed(), start.joint_speed);
+    }
     core.next_job().unwrap();
     core.begin_moving();
     core.motion_ended(
@@ -409,8 +416,12 @@ fn a_hard_fault_releases_and_refuses_everything_until_cleared_on_fresh_healthy_f
             .contains("80C")
     );
     observe(&mut core, 3.4, None);
+    let stale_after_clock_step = Now {
+        unix_seconds: 3.5,
+        ..at(9.0)
+    };
     assert_eq!(
-        reason(core.submit(Command::ClearFault, at(9.0))),
+        reason(core.submit(Command::ClearFault, stale_after_clock_step)),
         RejectionReason::Faulted
     );
     observe(&mut core, 3.4, None);
@@ -576,7 +587,7 @@ fn a_move_replaces_a_settling_one_from_the_measured_joints_and_reports_it_supers
         reason(core.submit(mv([0.0, 0.0], [0.1, 0.0]), at(2.5))),
         RejectionReason::ArmBusy
     );
-    core.observe(3.0, &[0.45, 0.0], None, None);
+    core.observe(at(3.0), &[0.45, 0.0], None, None);
     core.set_settling(true);
     let replacement = core.submit(mv([0.5, 0.0], [0.0, 0.3]), at(3.0)).unwrap();
     let superseded = core.record(&settling.command_id).unwrap();
@@ -602,7 +613,7 @@ fn stopping_a_replacement_cancels_it_and_releases_the_superseded_motion() {
     let first = core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
     core.next_job().unwrap();
     core.begin_moving();
-    core.observe(3.0, &[0.45, 0.0], None, None);
+    core.observe(at(3.0), &[0.45, 0.0], None, None);
     core.set_settling(true);
     let replacement = core.submit(mv([0.5, 0.0], [0.0, 0.3]), at(3.0)).unwrap();
     core.submit(Command::Stop, at(3.1)).unwrap();
@@ -626,7 +637,7 @@ fn a_fault_finishes_a_replacement_that_has_not_started() {
     core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
     core.next_job().unwrap();
     core.begin_moving();
-    core.observe(3.0, &[0.45, 0.0], None, None);
+    core.observe(at(3.0), &[0.45, 0.0], None, None);
     core.set_settling(true);
     let replacement = core.submit(mv([0.5, 0.0], [0.0, 0.3]), at(3.0)).unwrap();
     core.enter_fault("lost torque", &[], at(3.1));
@@ -644,7 +655,7 @@ fn a_move_that_stopped_short_is_not_reported_reached() {
     let record = core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
     core.next_job().unwrap();
     core.begin_moving();
-    core.observe(3.0, &[0.449, 0.0], None, None);
+    core.observe(at(3.0), &[0.449, 0.0], None, None);
     core.motion_ended(CommandOutcome::StoppedShort, None, &[0.5, 0.0], at(3.0));
     let finished = core.record(&record.command_id).unwrap();
     assert_eq!(finished.target_status, Some(TargetStatus::StoppedShort));
@@ -665,7 +676,7 @@ fn stopped_short_detail(target_position: Option<[f64; 3]>) -> Option<String> {
     core.next_job().unwrap();
     core.begin_moving();
     core.observe(
-        3.0,
+        at(3.0),
         &[0.449, 0.0],
         Some(([0.2, 0.0, 0.0079], [0.0, 0.0, 0.0, 1.0])),
         None,
@@ -753,7 +764,7 @@ proptest::proptest! {
         for (step, (operation, target)) in operations.into_iter().enumerate() {
             let seconds = f64::from(u32::try_from(step).unwrap()) + 2.0;
             let now = at(seconds);
-            core.observe(seconds, &[0.0, 0.0], None, None);
+            core.observe(at(seconds), &[0.0, 0.0], None, None);
             let command = match operation {
                 0 => Some(mv([0.0, 0.0], [target, 0.0])),
                 1 => Some(Command::SetGripper { angle: target, joint_speed: None }),

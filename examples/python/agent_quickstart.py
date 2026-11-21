@@ -21,12 +21,18 @@ from hebbian_rua.client.llm.robot_tools import CallWrapper
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
-Set the provider's API key, start a station, then run with --provider and --model.
+Set a provider API key, then start a station and run the agent.
 The adapters translate tools, camera frames and results. You own the model loop.
 """
 
 type Provider = Literal["openai", "anthropic", "gemini"]
 
+PROVIDER_PRIORITY: tuple[Provider, ...] = ("openai", "gemini", "anthropic")
+DEFAULT_MODELS: Mapping[Provider, str] = {
+    "openai": "gpt-6.2-astra",
+    "gemini": "gemini-4-neon",
+    "anthropic": "claude-fable-5-2",
+}
 DEFAULT_MAX_TURNS = 20
 
 
@@ -95,21 +101,21 @@ async def run_openai(
     robot_tools = OpenAIRobotTools(robot)
     messages: list[ResponseInputItemParam] = [{"role": "user", "content": task}]
     async with AsyncOpenAI() as client:
-        capture_current_view = True
+        revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
-            if capture_current_view:
-                messages.append(await robot_tools.observe())
+            if revisions is None:
+                observation = await robot_tools.observe(wait_for_recovery=True)
+                messages.append(observation.message)
+                revisions = observation.revisions
             response = await client.responses.create(
                 model=model,
                 instructions=instructions,
                 tools=robot_tools.tools,
                 input=messages,
             )
-            turn = await robot_tools.execute(response)
+            turn = await robot_tools.execute(response, expected_revisions=revisions)
             messages.extend(turn.messages)
-            capture_current_view = any(
-                result.call.name != "observe" for result in turn.results
-            )
+            revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
@@ -131,10 +137,12 @@ async def run_anthropic(
     robot_tools = AnthropicRobotTools(robot)
     messages: list[MessageParam] = [{"role": "user", "content": task}]
     async with AsyncAnthropic() as client:
-        capture_current_view = True
+        revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
-            if capture_current_view:
-                messages.append(await robot_tools.observe())
+            if revisions is None:
+                observation = await robot_tools.observe(wait_for_recovery=True)
+                messages.append(observation.message)
+                revisions = observation.revisions
             response = await client.messages.create(
                 model=model,
                 max_tokens=4096,
@@ -142,11 +150,9 @@ async def run_anthropic(
                 tools=robot_tools.tools,
                 messages=messages,
             )
-            turn = await robot_tools.execute(response)
+            turn = await robot_tools.execute(response, expected_revisions=revisions)
             messages.extend(turn.messages)
-            capture_current_view = any(
-                result.call.name != "observe" for result in turn.results
-            )
+            revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
@@ -177,20 +183,20 @@ async def run_gemini(
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
     async with genai.Client().aio as client:
-        capture_current_view = True
+        revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
-            if capture_current_view:
-                messages.append(await robot_tools.observe())
+            if revisions is None:
+                observation = await robot_tools.observe(wait_for_recovery=True)
+                messages.append(observation.message)
+                revisions = observation.revisions
             response = await client.models.generate_content(
                 model=model,
                 config=configuration,
                 contents=messages,
             )
-            turn = await robot_tools.execute(response)
+            turn = await robot_tools.execute(response, expected_revisions=revisions)
             messages.extend(turn.messages)
-            capture_current_view = any(
-                result.call.name != "observe" for result in turn.results
-            )
+            revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
@@ -256,13 +262,63 @@ def positive_turn_limit(value: str) -> int:
     return turns
 
 
+def resolve_model(
+    provider: Provider, explicit_model: str | None, environment: Mapping[str, str]
+) -> str:
+    model_variable = f"{provider.upper()}_MODEL"
+    if explicit_model is not None:
+        if not explicit_model.strip():
+            raise ValueError("Pass a nonempty model ID with --model")
+        return explicit_model
+    environment_model = environment.get(model_variable)
+    return (
+        environment_model
+        if environment_model and environment_model.strip()
+        else DEFAULT_MODELS[provider]
+    )
+
+
+def configured_api_key(
+    provider: Provider, environment: Mapping[str, str]
+) -> str | None:
+    primary_key = environment.get(f"{provider.upper()}_API_KEY")
+    if primary_key and primary_key.strip():
+        return primary_key
+    google_key = environment.get("GOOGLE_API_KEY")
+    return (
+        google_key
+        if provider == "gemini" and google_key and google_key.strip()
+        else None
+    )
+
+
+def resolve_provider(
+    explicit_provider: Provider | None, environment: Mapping[str, str]
+) -> Provider:
+    if explicit_provider is not None:
+        return explicit_provider
+    return next(
+        (
+            provider
+            for provider in PROVIDER_PRIORITY
+            if configured_api_key(provider, environment)
+        ),
+        PROVIDER_PRIORITY[0],
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=CLI_HELP)
     parser.add_argument("task")
     parser.add_argument(
-        "--provider", choices=["openai", "anthropic", "gemini"], default="openai"
+        "--provider",
+        choices=PROVIDER_PRIORITY,
+        help="Default: first configured API key in order OpenAI, Gemini, Anthropic",
     )
-    parser.add_argument("--model", required=True, help="Model ID from your provider")
+    parser.add_argument(
+        "--model",
+        help="Model ID (overrides OPENAI_MODEL, ANTHROPIC_MODEL or GEMINI_MODEL)",
+    )
     parser.add_argument(
         "--max-turns",
         type=positive_turn_limit,
@@ -277,12 +333,13 @@ if __name__ == "__main__":
     )
     arguments = parser.parse_args()
     load_environment()
-    api_key_variable = f"{arguments.provider.upper()}_API_KEY"
-    api_key_configured = os.environ.get(api_key_variable) or (
-        arguments.provider == "gemini" and os.environ.get("GOOGLE_API_KEY")
-    )
-    if not api_key_configured:
-        parser.error(f"Set {api_key_variable} before running the agent")
+    provider = resolve_provider(arguments.provider, os.environ)
+    try:
+        model = resolve_model(provider, arguments.model, os.environ)
+    except ValueError as error:
+        parser.error(str(error))
+    if configured_api_key(provider, os.environ) is None:
+        parser.error(f"Set {provider.upper()}_API_KEY before running the agent")
 
     async def main() -> None:
         async with StationClient(
@@ -294,8 +351,8 @@ if __name__ == "__main__":
                 parser.error(str(error))
             await run_task(
                 station,
-                arguments.provider,
-                arguments.model,
+                provider,
+                model,
                 arguments.task,
                 arm_name,
                 arguments.camera,

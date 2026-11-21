@@ -1,7 +1,7 @@
 // The agent loop as a library: one typed config in, one typed outcome out. The CLI (cli.ts)
 // and the agent server (examples/typescript/viewer/server) both call runAgent.
 
-import { createStationConnection } from "@hebbian/robot-use-client";
+import { createStationConnection } from "hebbian-rua";
 import { type DriveOptions, drive, type LoopConfig } from "./loop.js";
 import { API_KEY_VARIABLES, type Provider } from "./providers/types.js";
 import type { UsageSnapshot } from "./usage.js";
@@ -33,11 +33,22 @@ export function apiKeyFromEnvironment(
   provider: Provider,
   environment: NodeJS.ProcessEnv,
 ): string {
-  const variable = API_KEY_VARIABLES[provider];
-  const apiKey = environment[variable];
-  if (!apiKey?.trim())
-    throw new Error(`Set ${variable} in the environment or a .env file`);
+  const apiKey = configuredApiKey(provider, environment);
+  if (apiKey === undefined)
+    throw new Error(
+      `Set ${API_KEY_VARIABLES[provider]} in the environment or a .env file`,
+    );
   return apiKey;
+}
+
+export function configuredApiKey(
+  provider: Provider,
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  const primaryKey = environment[API_KEY_VARIABLES[provider]];
+  if (primaryKey?.trim()) return primaryKey;
+  const googleKey = environment["GOOGLE_API_KEY"];
+  return provider === "gemini" && googleKey?.trim() ? googleKey : undefined;
 }
 
 export async function runAgent(

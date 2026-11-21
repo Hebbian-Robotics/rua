@@ -2,9 +2,18 @@
 
 import base64
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from hebbian_rua.client.llm.types import RobotToolResult
+
+
+@dataclass(frozen=True)
+class ModelObservation[Message]:
+    """Provider-native message paired with the revisions captured for that view."""
+
+    message: Message
+    revisions: Mapping[str, int]
 
 
 @dataclass(frozen=True)
@@ -17,6 +26,18 @@ class RobotToolTurn[Message]:
 
     messages: list[Message]
     results: list[RobotToolResult]
+
+    @property
+    def observed_revisions(self) -> Mapping[str, int] | None:
+        """Revisions of the newest current view in this turn, if it captured one."""
+        return next(
+            (
+                result.observed_revisions
+                for result in reversed(self.results)
+                if result.observed_revisions is not None
+            ),
+            None,
+        )
 
     @property
     def should_stop(self) -> bool:

@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
-use hebbian_robot_use_sdk::contracts::{LeaseStatus, RejectionReason};
-use hebbian_robot_use_sdk::{ConciseOptions, Error, concise_response_with};
+use hebbian_rua::contracts::{LeaseStatus, RejectionReason};
+use hebbian_rua::{ConciseOptions, Error, concise_response_with};
 use serde::Serialize;
 use serde_json::{Value, json};
 

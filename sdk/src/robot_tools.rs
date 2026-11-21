@@ -236,15 +236,17 @@ impl<'a> RobotTools<'a> {
             .into_iter()
             .map(|definition| (definition.operation, definition))
             .collect();
-        self.operations.iter()
-            .map(|operation| definitions_by_operation.remove(operation)
-                .expect("operations come from the shared tool catalog"))
+        self.operations
+            .iter()
+            .map(|operation| {
+                definitions_by_operation
+                    .remove(operation)
+                    .expect("operations come from the shared tool catalog")
+            })
             .map(|mut definition| {
                 if definition.name == "action_sequence" {
-                    definition.parameters = action_sequence_tool_schema(&self.sequence).expect("validated sequence configuration");
-                    if matches!(self.sequence.scope, hebbian_contracts::SequenceScope::NamedArms(_)) {
-                        definition.description = "Execute ordered steps. Arms within a step are admitted together; movement and gripper start together. Settle before the next step; stop on refusal or incomplete/limited targets.".into();
-                    }
+                    definition.parameters = action_sequence_tool_schema(&self.sequence)
+                        .expect("validated sequence configuration");
                 }
                 if let Some(description) = self.descriptions.get(definition.name) {
                     definition.description.clone_from(description);

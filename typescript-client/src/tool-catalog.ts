@@ -103,7 +103,23 @@ export function createRobotToolCatalog(
           available.length === 1 ? (available[0] ?? {}) : { oneOf: available };
       } else delete properties["movement"];
       if (!sequenceActions.has("gripper")) delete properties["gripper_opening"];
-      delete action["anyOf"];
+      const requirements = action["anyOf"];
+      if (Array.isArray(requirements))
+        action["anyOf"] = requirements.filter((requirement: unknown) => {
+          if (
+            requirement === null ||
+            typeof requirement !== "object" ||
+            !("required" in requirement)
+          )
+            return false;
+          const required = requirement.required;
+          return (
+            Array.isArray(required) &&
+            required.every(
+              (name: unknown) => typeof name === "string" && name in properties,
+            )
+          );
+        });
       if (sequenceScope.kind === "named") {
         steps["items"] = {
           type: "object",
@@ -126,10 +142,6 @@ export function createRobotToolCatalog(
       ...tool,
       name,
       parameters,
-      description:
-        tool.name === "action_sequence" && sequenceScope.kind === "named"
-          ? "Steps run in order; arms, movement and gripper commands in the same step start together. A refusal or incomplete/limited target stops the sequence."
-          : tool.description,
     };
   });
   const capabilities = robotToolCapabilities({

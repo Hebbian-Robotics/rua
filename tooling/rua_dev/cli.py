@@ -57,6 +57,12 @@ def package_check(wheel: Path) -> None:
     check_wheel(wheel.resolve())
 
 
+def check_release_versions(*, tag: str | None = None) -> None:
+    from rua_dev.versions import check_release_versions as verify_versions
+
+    verify_versions(Path.cwd(), tag=tag)
+
+
 def package_rua(
     *, server_wheel: Path | None = None, media_wheel: Path | None = None
 ) -> None:
@@ -78,6 +84,9 @@ def create_app() -> App:
     app.command(package_app)
     app.command(setup, help="Prepare pinned robot assets for source development.")
     app.command(check_architecture, help="Check Rust production dependency boundaries.")
+    app.command(
+        check_release_versions, help="Verify package versions and the release tag."
+    )
     app.command(
         contracts,
         help="Generate schemas and SDKs; default to the SDK components in this checkout.",

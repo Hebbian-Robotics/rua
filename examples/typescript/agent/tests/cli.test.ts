@@ -79,16 +79,64 @@ test("xhigh reasoning effort is opt-in and refused where the model lacks it", ()
   ).toThrow("xhigh is not supported by gemini-4-carbon");
 });
 
+test("provider priority and model environment defaults can be overridden", () => {
+  const anthropic = {
+    ANTHROPIC_API_KEY: "test-anthropic",
+    ANTHROPIC_MODEL: "claude-example",
+  };
+  const geminiAndAnthropic = {
+    ...anthropic,
+    GOOGLE_API_KEY: "test-gemini",
+    GEMINI_MODEL: "gemini-example",
+  };
+  const allKeys = {
+    ...geminiAndAnthropic,
+    OPENAI_API_KEY: "test-openai",
+    OPENAI_MODEL: "gpt-example",
+  };
+  expect(parseRun(["Wave"], allKeys).config).toMatchObject({
+    provider: "openai",
+    model: "gpt-example",
+  });
+  expect(parseRun(["Wave"], geminiAndAnthropic).config).toMatchObject({
+    provider: "gemini",
+    model: "gemini-example",
+  });
+  expect(parseRun(["Wave"], anthropic).config).toMatchObject({
+    provider: "anthropic",
+    model: "claude-example",
+  });
+  expect(
+    parseRun(
+      [
+        "--provider",
+        "anthropic",
+        "--model",
+        "explicit-model",
+        "--arm",
+        "left",
+        "Wave",
+      ],
+      allKeys,
+    ).config,
+  ).toMatchObject({
+    provider: "anthropic",
+    model: "explicit-model",
+    arm: "left",
+    task: "Wave",
+  });
+});
+
 test("bad input is refused with a message", () => {
   expect(() =>
     parseCommandLine(["--take-over", "follower", "Wave"], {}),
   ).toThrow("Unknown option");
-  expect(() => parseCommandLine(["follower"], {})).toThrow(
-    "exactly <arm> and <task>",
+  expect(() => parseCommandLine(["--provider", "openai"], {})).toThrow(
+    "Pass <task> or <arm> <task>",
   );
-  expect(() => parseCommandLine(["follower", "Wave"], {})).toThrow(
-    "Pass --provider NAME",
-  );
+  expect(() =>
+    parseCommandLine(["--arm", "left", "right", "Wave"], {}),
+  ).toThrow("Choose the arm either with --arm or before the task");
   expect(() =>
     parseCommandLine(["--provider", "mistral", "a", "t"], {}),
   ).toThrow("--provider must be one of");

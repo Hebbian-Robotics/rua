@@ -1,4 +1,4 @@
-import { createStationConnection } from "@hebbian/robot-use-client";
+import { createStationConnection } from "hebbian-rua";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { drive, type LoopConfig } from "../src/loop.js";
 import { OpenAIResponseError } from "../src/providers/errors.js";

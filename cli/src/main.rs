@@ -5,13 +5,11 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
-use hebbian_robot_use_sdk::contracts::{
+use hebbian_rua::contracts::{
     ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, LeaseHolder, MoveArmsCommand,
     PhoneInviteRequest, PreviewPose,
 };
-use hebbian_robot_use_sdk::{
-    CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station,
-};
+use hebbian_rua::{CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -40,9 +38,14 @@ macro_rules! with_motion_lease {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let raw = cli.raw;
+    let invite_url_only = matches!(cli.command, Command::PhoneInvite { .. }) && !raw;
     match execute(cli).await {
         Ok(value) => {
-            println!("{}", print_compactable(value, raw));
+            if invite_url_only && let Some(url) = value.get("url").and_then(Value::as_str) {
+                println!("{url}");
+            } else {
+                println!("{}", print_compactable(value, raw));
+            }
             ExitCode::SUCCESS
         }
         Err(failure) => {

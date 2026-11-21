@@ -8,7 +8,16 @@ from typing import Any
 
 def collect_viewer_licenses(repository_root: Path, destination: Path) -> None:
     listing = subprocess.run(
-        ["pnpm", "licenses", "list", "--prod", "--json"],
+        # WHY: pnpm's default listing omits dependencies of linked workspace packages.
+        [
+            "pnpm",
+            "--filter",
+            "hebbian-robot-use-viewer...",
+            "licenses",
+            "list",
+            "--prod",
+            "--json",
+        ],
         cwd=repository_root,
         capture_output=True,
         text=True,

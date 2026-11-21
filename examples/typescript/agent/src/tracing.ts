@@ -6,8 +6,8 @@ import type {
   ClientMessage,
   StationConnection,
   TraceContext,
-} from "@hebbian/robot-use-client";
-import { StationConnectionError } from "@hebbian/robot-use-client";
+} from "hebbian-rua";
+import { StationConnectionError } from "hebbian-rua";
 
 export const KIND_ATTRIBUTE = "hebbian.kind";
 

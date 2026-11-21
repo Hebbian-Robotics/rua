@@ -1155,7 +1155,9 @@ class StationStreamJointsCommand(BaseModel):
     gripper_opening: Annotated[
         StrictFloat | None,
         Field(
-            description="The gripper's newest target, 0 closed to 1 open, if the stream drives it."
+            description="The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
+            ge=0.0,
+            le=1.0,
         ),
     ] = None
     joints: list[StrictFloat]
@@ -1176,7 +1178,7 @@ class StationSetGripperCommand(BaseModel):
             description="Peak gripper speed in rad/s; uses the arm default and maximum."
         ),
     ] = None
-    opening: StrictFloat
+    opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
 
 
 class StationInstance(BaseModel):
@@ -1874,7 +1876,7 @@ class MoveArmsCommand(BaseModel):
         frozen=True,
     )
     max_joint_speed: StrictFloat | None = None
-    targets: dict[str, JointsWaypoint | PoseWaypoint]
+    targets: Annotated[dict[str, JointsWaypoint | PoseWaypoint], Field(min_length=1)]
 
 
 class PosePreviewCandidate(BaseModel):
@@ -2012,7 +2014,7 @@ class ActionSequenceArmAction(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    gripper_opening: StrictFloat | None = None
+    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
     max_joint_speed: Annotated[
         StrictFloat | None,
         Field(
@@ -2106,7 +2108,7 @@ class ArmState(BaseModel):
     revision: Annotated[
         int,
         Field(
-            description="Bumped each time an interlock is raised; commands may carry it as\n`expected_revision`.",
+            description="Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
             ge=0,
         ),
     ]

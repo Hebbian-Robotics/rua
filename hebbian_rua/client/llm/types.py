@@ -97,6 +97,7 @@ class RobotToolResult:
     data: object = field(kw_only=True)
     cameras: dict[str, bytes] = field(default_factory=dict, kw_only=True)
     sequence_images: SequenceImageHistory | None = field(default=None, kw_only=True)
+    observed_revisions: dict[str, int] | None = field(default=None, kw_only=True)
 
     @property
     def model_data(self) -> object:

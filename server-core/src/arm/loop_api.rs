@@ -15,7 +15,7 @@ enum FaultKind {
 impl ArmCore {
     pub(crate) fn observe(
         &mut self,
-        sampled_at: f64,
+        sampled_at: Now,
         positions: &[f64],
         tool_pose: Option<([f64; 3], [f64; 4])>,
         fault: Option<&str>,
@@ -253,7 +253,7 @@ impl ArmCore {
             .join("; ");
         let fault = ArmFault {
             detail: detail.clone(),
-            entered_at: now.unix_seconds,
+            entered_at: now.instant,
         };
         self.set_power(match kind {
             FaultKind::HardFault => PowerState::Faulted(fault),

@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, ensure};
@@ -31,13 +31,65 @@ pub struct ControllerProcess {
     socket_path: PathBuf,
     instance: Uuid,
     reports: Arc<Mutex<ControllerReports>>,
-    report_pipe_closed: Arc<AtomicBool>,
+}
+
+#[derive(Default, PartialEq, Eq)]
+enum ReportPipe {
+    #[default]
+    Reading,
+    Eof,
+    Failed,
 }
 
 #[derive(Default)]
 struct ControllerReports {
+    pipe: ReportPipe,
     lines: VecDeque<String>,
     changed: bool,
+}
+
+impl ControllerReports {
+    fn record(&mut self, line: String) {
+        if self.lines.len() == REMEMBERED_REPORTS {
+            self.lines.pop_front();
+        }
+        self.lines.push_back(line);
+        self.changed = true;
+    }
+}
+
+fn read_reports(stderr: impl Read, reports: &Mutex<ControllerReports>) {
+    let mut reader = BufReader::new(stderr);
+    let mut bytes = Vec::new();
+    let (pipe, failure) = loop {
+        match reader.read_until(b'\n', &mut bytes) {
+            Ok(0) => break (ReportPipe::Eof, None),
+            Ok(_) => {
+                let line = String::from_utf8_lossy(&bytes);
+                eprint!("{line}");
+                reports
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .record(line.trim_end().to_owned());
+                bytes.clear();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => {
+                break (
+                    ReportPipe::Failed,
+                    Some(format!("Controller report pipe failed: {error}")),
+                );
+            }
+        }
+    };
+    let mut reports = reports
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    reports.pipe = pipe;
+    if let Some(failure) = failure {
+        tracing::warn!("{failure}");
+        reports.record(failure);
+    }
 }
 
 impl ControllerProcess {
@@ -57,6 +109,7 @@ impl ControllerProcess {
             .arg(&socket_path)
             .arg("--instance")
             .arg(instance.to_string())
+            .process_group(0)
             .stdin(Stdio::null())
             .stderr(Stdio::piped());
         for (arm, config) in &configuration.arms {
@@ -85,45 +138,14 @@ impl ControllerProcess {
             .take()
             .context("The controller has no report pipe")?;
         let reports = Arc::new(Mutex::new(ControllerReports::default()));
-        let report_pipe_closed = Arc::new(AtomicBool::new(false));
         let received_reports = Arc::clone(&reports);
-        let pipe_closed = Arc::clone(&report_pipe_closed);
-        std::thread::spawn(move || {
-            let mut reader = BufReader::new(stderr);
-            loop {
-                let mut bytes = Vec::new();
-                match reader.read_until(b'\n', &mut bytes) {
-                    Ok(0) => {
-                        pipe_closed.store(true, Ordering::Release);
-                        break;
-                    }
-                    Ok(_) => {
-                        let line = String::from_utf8_lossy(&bytes);
-                        eprint!("{line}");
-                        let mut reports = received_reports
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        if reports.lines.len() == REMEMBERED_REPORTS {
-                            reports.lines.pop_front();
-                        }
-                        reports.lines.push_back(line.trim_end().to_owned());
-                        reports.changed = true;
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                    Err(error) => {
-                        eprintln!("Controller report pipe failed: {error}");
-                        break;
-                    }
-                }
-            }
-        });
+        std::thread::spawn(move || read_reports(stderr, &received_reports));
         Ok(Self {
             child,
             listener,
             socket_path,
             instance,
             reports,
-            report_pipe_closed,
         })
     }
 
@@ -170,7 +192,31 @@ impl ControllerProcess {
     // SAFETY: A closed stderr pipe confirms controller/guard process release, not motor torque.
     #[must_use]
     pub fn report_pipe_closed(&self) -> bool {
-        self.report_pipe_closed.load(Ordering::Acquire)
+        self.reports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pipe
+            == ReportPipe::Eof
+    }
+
+    // SAFETY: A failed reader proves nothing about the inherited writer.
+    // Only a gone process group permits reconnect in that case.
+    pub(crate) fn guard_released(&mut self) -> bool {
+        if !matches!(self.try_wait(), Ok(Some(_))) {
+            return false;
+        }
+        let reports = self
+            .reports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match reports.pipe {
+            ReportPipe::Reading => false,
+            ReportPipe::Eof => true,
+            ReportPipe::Failed => i32::try_from(self.child.id()).is_ok_and(|id| {
+                nix::sys::signal::killpg(nix::unistd::Pid::from_raw(id), None)
+                    == Err(nix::errno::Errno::ESRCH)
+            }),
+        }
     }
 
     #[must_use]
@@ -191,5 +237,29 @@ impl ControllerProcess {
 impl Drop for ControllerProcess {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket_path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FailedReportPipe;
+
+    impl Read for FailedReportPipe {
+        fn read(&mut self, _destination: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("report pipe I/O error"))
+        }
+    }
+
+    #[test]
+    fn report_pipe_failure_is_visible_and_distinct_from_guard_eof() {
+        let reports = Mutex::new(ControllerReports::default());
+        read_reports(FailedReportPipe, &reports);
+        let reports = reports
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(reports.pipe == ReportPipe::Failed);
+        assert!(reports.changed && reports.lines[0].contains("report pipe I/O error"));
     }
 }

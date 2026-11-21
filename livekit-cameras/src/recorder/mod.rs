@@ -51,8 +51,9 @@ async fn watch_supervisor(supervisor_pid: u32, lost: Arc<AtomicBool>, stopped: C
             () = tokio::time::sleep(SUPERVISOR_POLL) => {}
         }
         if !supervisor_alive(supervisor_pid) {
-            eprintln!(
-                "Supervising station (pid {supervisor_pid}) is gone; finalizing the recording"
+            tracing::warn!(
+                supervisor_pid,
+                "Supervising station is gone; finalizing recording"
             );
             lost.store(true, Ordering::SeqCst);
             stopped.cancel();
@@ -89,14 +90,12 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
         ))
     });
     let hardware = tokio::task::spawn_blocking(hardware_encoder_available).await?;
-    eprintln!(
-        "Recording encoder: {}",
-        if hardware {
-            "Intel VAAPI"
-        } else {
-            "software H.264"
-        }
-    );
+    let encoder = if hardware {
+        "Intel VAAPI"
+    } else {
+        "software H.264"
+    };
+    tracing::info!(encoder, "Selected recording encoder");
     let state_archive = archive.clone();
     let state_stopped = stopped.clone();
     let state_task = tokio::spawn(async move {
@@ -170,7 +169,6 @@ async fn record_cameras(
 ) -> Result<(), RecorderError> {
     let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
     loop {
-        let attempt_started = std::time::Instant::now();
         let result = async {
             let credentials = station_access::Credentials::from_environment()?;
             let access = credentials.watcher_access(room, station_access::WatcherRole::Recorder)?;
@@ -189,17 +187,20 @@ async fn record_cameras(
         if stopped.is_cancelled() {
             return Ok(());
         }
-        if let Err(error) = result {
-            eprintln!("cameras unavailable: {error}");
-            archive.json(
-                "/station/recording_errors",
-                &json!({"detail": format!("cameras unavailable: {error}")}),
-                unix_nanoseconds(),
-            )?;
+        match result {
+            Ok(()) => backoff.reset(),
+            Err(error) => {
+                tracing::warn!(%error, "Recording cameras unavailable");
+                archive.json(
+                    "/station/recording_errors",
+                    &json!({"detail": format!("cameras unavailable: {error}")}),
+                    unix_nanoseconds(),
+                )?;
+            }
         }
         tokio::select! {
             () = stopped.cancelled() => return Ok(()),
-            () = tokio::time::sleep(backoff.next_delay(attempt_started.elapsed())) => {},
+            () = tokio::time::sleep(backoff.next_delay()) => {},
         }
     }
 }

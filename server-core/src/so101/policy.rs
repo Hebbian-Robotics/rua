@@ -23,18 +23,74 @@ impl ActionStep {
         );
         Ok(Self(radians))
     }
+}
 
-    fn joint_target(&self, measured_position: f64, action: f64) -> f64 {
-        measured_position + self.0 * action.clamp(-1.0, 1.0)
+struct ActionRange {
+    lower: [f64; JOINT_COUNT],
+    upper: [f64; JOINT_COUNT],
+}
+
+impl ActionRange {
+    fn parse(metadata: &str) -> anyhow::Result<Self> {
+        #[derive(serde::Deserialize)]
+        struct Bounds {
+            lower: [f64; JOINT_COUNT],
+            upper: [f64; JOINT_COUNT],
+        }
+        let bounds: Bounds =
+            serde_json::from_str(metadata).context("Invalid `action_range_radians` metadata")?;
+        ensure!(
+            bounds
+                .lower
+                .iter()
+                .zip(&bounds.upper)
+                .all(|(lower, upper)| lower.is_finite() && upper.is_finite() && lower < upper),
+            "The policy's action range must be finite with each lower bound below its upper bound"
+        );
+        Ok(Self {
+            lower: bounds.lower,
+            upper: bounds.upper,
+        })
+    }
+}
+
+// CONSTRAINT: The trained model's action_mode metadata selects the target mapping.
+enum ActionMapping {
+    MeasuredIncrement(ActionStep),
+    // WHY: Clamping the lead lets a constant absolute action hold the same target as the arm moves.
+    LeadClampedPose {
+        step: ActionStep,
+        range: ActionRange,
+    },
+}
+
+impl ActionMapping {
+    fn step(&self) -> &ActionStep {
+        match self {
+            Self::MeasuredIncrement(step) | Self::LeadClampedPose { step, .. } => step,
+        }
+    }
+
+    fn joint_target(&self, joint: usize, measured_position: f64, action: f64) -> f64 {
+        let action = action.clamp(-1.0, 1.0);
+        match self {
+            Self::MeasuredIncrement(step) => measured_position + step.0 * action,
+            Self::LeadClampedPose { step, range } => {
+                let midpoint = f64::midpoint(range.lower[joint], range.upper[joint]);
+                let half_range = (range.upper[joint] - range.lower[joint]) / 2.0;
+                (midpoint + half_range * action)
+                    .clamp(measured_position - step.0, measured_position + step.0)
+            }
+        }
     }
 
     // CONSTRAINT: The step is how far ahead of the measured joint the policy may set its target. It is
     // a lead the servo chases, not a joint speed, so the profile accepts it as a distance.
     fn validate_target_lead(&self, max_target_lead_radians: f64) -> anyhow::Result<()> {
+        let step = self.step().0;
         ensure!(
-            self.0 <= max_target_lead_radians + 1e-12,
-            "The policy model sets targets up to {} rad ahead of the measured joints, but the profile accepts at most {max_target_lead_radians} rad ([policy] max_target_lead_radians)",
-            self.0
+            step <= max_target_lead_radians + 1e-12,
+            "The policy model sets targets up to {step} rad ahead of the measured joints, but the profile accepts at most {max_target_lead_radians} rad ([policy] max_target_lead_radians)"
         );
         Ok(())
     }
@@ -112,14 +168,14 @@ fn runtime_environment() -> anyhow::Result<ort::environment::Environment> {
 
 pub struct PolicyStep {
     pub action: [f64; JOINT_COUNT],
-    // SAFETY: Measured joints + the model's action step * clamp(action). The loop's guards and joint
-    // limits still apply to it.
+    // SAFETY: At most the model's action step from the measured joints (ActionMapping). The loop's
+    // guards and joint limits still apply to it.
     pub joint_target: [f64; JOINT_COUNT],
 }
 
 pub struct Policy {
     session: Session,
-    action_step: ActionStep,
+    action_mapping: ActionMapping,
     observation_joint_offset: [f64; JOINT_COUNT],
     previous_action: [f64; JOINT_COUNT],
     history: Option<Vec<f64>>,
@@ -150,17 +206,12 @@ impl Policy {
             .joint_target)
     }
 
-    pub fn load(
-        onnx_path: &Path,
-        arm_urdf: &Path,
-        expected_checkpoint_sha256: &str,
-    ) -> anyhow::Result<Self> {
+    pub fn load(onnx_path: &Path, arm_urdf: &Path) -> anyhow::Result<Self> {
         let environment = runtime_environment()?;
         let session = Session::builder(&environment)
             .and_then(|mut builder| builder.commit_from_file(onnx_path))
             .with_context(|| format!("Cannot load the policy model {}", onnx_path.display()))?;
-        let (action_step, observation_joint_offset) =
-            Self::check_metadata(&session, expected_checkpoint_sha256)?;
+        let (action_mapping, observation_joint_offset) = Self::check_metadata(&session)?;
         if let Some(binding) = Self::hardware_binding(&session)? {
             let arm_urdf_bytes = std::fs::read(arm_urdf)
                 .with_context(|| format!("Cannot read the URDF {}", arm_urdf.display()))?;
@@ -168,7 +219,7 @@ impl Policy {
         }
         Ok(Self {
             session,
-            action_step,
+            action_mapping,
             observation_joint_offset,
             previous_action: [0.0; JOINT_COUNT],
             history: None,
@@ -176,10 +227,7 @@ impl Policy {
         })
     }
 
-    fn check_metadata(
-        session: &Session,
-        expected_checkpoint_sha256: &str,
-    ) -> anyhow::Result<(ActionStep, [f64; JOINT_COUNT])> {
+    fn check_metadata(session: &Session) -> anyhow::Result<(ActionMapping, [f64; JOINT_COUNT])> {
         let metadata = session
             .metadata()
             .context("The policy model has no metadata")?;
@@ -192,22 +240,22 @@ impl Policy {
             custom("method")? == METHOD,
             "Unsupported SO-101 policy observation contract"
         );
-        ensure!(
-            custom("action_mode")? == "measured_increment",
-            "The SO-101 policy must use measured-increment actions"
-        );
         let action_step = ActionStep::parse(&custom("action_step")?)?;
-        ensure!(
-            custom("checkpoint_sha256")? == expected_checkpoint_sha256,
-            "The policy model comes from a different checkpoint than the config pins"
-        );
+        let action_mapping = match custom("action_mode")?.as_str() {
+            "measured_increment" => ActionMapping::MeasuredIncrement(action_step),
+            "lead_clamped_pose" => ActionMapping::LeadClampedPose {
+                step: action_step,
+                range: ActionRange::parse(&custom("action_range_radians")?)?,
+            },
+            other => anyhow::bail!("Unsupported SO-101 policy action mode `{other}`"),
+        };
         let offset: [f64; JOINT_COUNT] = serde_json::from_str(&custom("observation_joint_offset")?)
             .context("Invalid `observation_joint_offset` metadata")?;
         ensure!(
             offset.iter().all(|value| value.is_finite()),
             "The policy's joint offset must be finite"
         );
-        Ok((action_step, offset))
+        Ok((action_mapping, offset))
     }
 
     fn hardware_binding(session: &Session) -> anyhow::Result<Option<HardwareBinding>> {
@@ -229,7 +277,7 @@ impl Policy {
     }
 
     pub(crate) fn validate_target_lead(&self, max_target_lead_radians: f64) -> anyhow::Result<()> {
-        self.action_step
+        self.action_mapping
             .validate_target_lead(max_target_lead_radians)
     }
 
@@ -301,8 +349,13 @@ impl Policy {
         self.history = Some(history);
         self.previous_action = action;
         let mut joint_target = [0.0; JOINT_COUNT];
-        for ((target, position), raw) in joint_target.iter_mut().zip(positions).zip(&action) {
-            *target = self.action_step.joint_target(*position, *raw);
+        for (joint, ((target, position), raw)) in joint_target
+            .iter_mut()
+            .zip(positions)
+            .zip(&action)
+            .enumerate()
+        {
+            *target = self.action_mapping.joint_target(joint, *position, *raw);
         }
         Ok(PolicyStep {
             action,
@@ -382,13 +435,13 @@ pub(crate) fn validate_profile(
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionStep, HardwareBinding, sha256_hex};
+    use super::{ActionMapping, ActionRange, ActionStep, HardwareBinding, sha256_hex};
     use std::path::Path;
 
     #[test]
     fn checkpoint_step_scales_targets_and_must_fit_the_accepted_target_lead() {
-        let original_step = ActionStep::parse("0.04").unwrap();
-        let retrained_step = ActionStep::parse("0.12").unwrap();
+        let original_step = ActionMapping::MeasuredIncrement(ActionStep::parse("0.04").unwrap());
+        let retrained_step = ActionMapping::MeasuredIncrement(ActionStep::parse("0.12").unwrap());
         original_step.validate_target_lead(0.04).unwrap();
         assert!(retrained_step.validate_target_lead(0.04).is_err());
         retrained_step.validate_target_lead(0.12).unwrap();
@@ -398,11 +451,37 @@ mod tests {
             (0.5, 1.02, 1.06),
             (2.0, 1.04, 1.12),
         ] {
-            assert!((original_step.joint_target(1.0, action) - original_target).abs() < 1e-12);
-            assert!((retrained_step.joint_target(1.0, action) - retrained_target).abs() < 1e-12);
+            assert!((original_step.joint_target(0, 1.0, action) - original_target).abs() < 1e-12);
+            assert!((retrained_step.joint_target(0, 1.0, action) - retrained_target).abs() < 1e-12);
         }
         for invalid in ["", "not-a-number", "NaN", "inf", "-inf", "0", "-0.12"] {
             assert!(ActionStep::parse(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn lead_clamped_pose_holds_a_constant_target_and_leads_the_measured_joint_by_at_most_the_step()
+    {
+        let mapping = ActionMapping::LeadClampedPose {
+            step: ActionStep::parse("0.12").unwrap(),
+            range: ActionRange::parse(
+                r#"{"lower": [-2, -2, -2, -2, -2], "upper": [2, 2, 2, 2, 2]}"#,
+            )
+            .unwrap(),
+        };
+        for measured in [0.45, 0.5, 0.55] {
+            assert!((mapping.joint_target(0, measured, 0.25) - 0.5).abs() < 1e-12);
+        }
+        assert!((mapping.joint_target(0, 0.0, 1.0) - 0.12).abs() < 1e-12);
+        assert!((mapping.joint_target(0, 0.0, -5.0) + 0.12).abs() < 1e-12);
+        mapping.validate_target_lead(0.12).unwrap();
+        assert!(mapping.validate_target_lead(0.04).is_err());
+        for invalid in [
+            "",
+            r#"{"lower": [0, 0, 0, 0, 0], "upper": [0, 1, 1, 1, 1]}"#,
+            r#"{"lower": [0, 0, 0, 0], "upper": [1, 1, 1, 1]}"#,
+        ] {
+            assert!(ActionRange::parse(invalid).is_err(), "accepted {invalid}");
         }
     }
 

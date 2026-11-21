@@ -209,6 +209,16 @@ class CameraUnavailable(Exception):
         self.last_error = last_error
 
 
+class ActionSequenceUnavailable(LookupError):
+    """The sequence identifier is unknown or its outcome has expired."""
+
+    def __init__(self, action_sequence_id: str) -> None:
+        self.action_sequence_id = action_sequence_id
+        super().__init__(
+            f"Action sequence {action_sequence_id} is unknown or its result expired"
+        )
+
+
 class LeaseLost(Exception):
     """The client no longer holds the lease."""
 

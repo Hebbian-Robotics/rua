@@ -3,7 +3,7 @@ import type {
   BetaContentBlockParam,
   BetaMessage,
 } from "@anthropic-ai/sdk/resources/beta/messages";
-import type { RobotToolResult } from "@hebbian/robot-use-client";
+import type { RobotToolResult } from "hebbian-rua";
 import {
   ANTHROPIC_MAX_OUTPUT_TOKENS,
   type ConversationSettings,

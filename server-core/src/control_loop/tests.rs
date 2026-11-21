@@ -24,7 +24,6 @@ fn feedback(positions: Vec<f64>) -> Feedback {
 fn policy_settings() -> crate::config::PolicyConfig {
     crate::config::PolicyConfig {
         onnx: "unused.onnx".into(),
-        checkpoint_sha256: "unused".into(),
         max_target_lead_radians: 0.04,
         tool_link: "tool".into(),
         reach_deadline_seconds: 8.0,

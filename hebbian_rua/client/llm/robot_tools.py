@@ -434,9 +434,13 @@ class RobotTools(RobotToolRules):
                 ],
             }
             return result_from_data(call, data, is_error=False, sequence_images=history)
-        output, _captures, _revisions = await self._capture_output()
+        output, _captures, revisions = await self._capture_output()
         return result_from_data(
-            call, output.data, is_error=False, cameras=output.cameras
+            call,
+            output.data,
+            is_error=False,
+            cameras=output.cameras,
+            observed_revisions=revisions,
         )
 
     async def execute_one(

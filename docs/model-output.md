@@ -187,7 +187,7 @@ import {
   renderOutput,
   selectOutputCameras,
   summarizeOutput,
-} from "@hebbian/robot-use-client";
+} from "hebbian-rua";
 
 const detailed = robot.withOutputFormatter(fullFormatter);
 const taskView = robot.withOutputFormatter((output) =>
@@ -219,7 +219,7 @@ selects fields without changing SI units; `model_response` converts units and ro
 Keep serialization at the provider boundary:
 
 ```rust
-use hebbian_robot_use_sdk::{ConciseOptions, concise_output, model_response};
+use hebbian_rua::{ConciseOptions, concise_output, model_response};
 
 let selected = concise_output(result.data(), ConciseOptions::default());
 let model_payload = model_response(selected);

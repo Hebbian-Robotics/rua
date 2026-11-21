@@ -203,7 +203,7 @@ mod tests {
             "reach_deadline_seconds": 8.0, "settle_dwell_seconds": 0.1,
             "settled_velocity_radians_per_second": 0.15, "preview_lag_seconds": 0.05,
             "onnx": "unused.onnx",
-            "checkpoint_sha256": "", "max_target_lead_radians": lead, "tool_link": "tool",
+            "max_target_lead_radians": lead, "tool_link": "tool",
             "position_tolerance_meters": 0.02, "orientation_tolerance_radians": 0.1,
         });
         let with_policy = ControllerConfig::parse(&arm.to_string()).unwrap();

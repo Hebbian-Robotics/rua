@@ -14,13 +14,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant};
-use hebbian_robot_use_sdk::contracts::{
+use hebbian_rua::contracts::{
     ActionSequenceArmAction, ActionSequenceMovement, ActionSequencePhase, ActionSequenceRequest,
     ActionSequenceStep, CommandOutcome, CompilationOutcome, GripperResult, LeaseHolder,
     PoseOrientation, PosePreviewBatchRequest, PosePreviewCandidate, PreviewAnswer, PreviewPose,
     ProjectionOutcome, RejectionReason, RunEvent, TraceContext,
 };
-use hebbian_robot_use_sdk::{
+use hebbian_rua::{
     CommandOptions, ConnectOptions, Error, LeaseRequest, RobotToolCall, RobotToolOutcome,
     RobotTools, RunUpdate, Station,
 };
@@ -183,7 +183,7 @@ async fn the_lease_is_exclusive_revoked_and_returned() -> TestResult {
     let new_guard = within(first.acquire_lease(agent("again"))).await??;
     within(guard.lost()).await?;
     let stale_tools = RobotTools::new(&guard, ARM).with_operations(
-        [hebbian_robot_use_sdk::contracts::RobotToolOperation::SetGripper]
+        [hebbian_rua::contracts::RobotToolOperation::SetGripper]
             .into_iter()
             .collect(),
     );
@@ -400,7 +400,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert!(matches!(
         disabled.phase,
         ActionSequencePhase::Stopped {
-            failure: hebbian_robot_use_sdk::contracts::ExecutionFailure::Preparation {
+            failure: hebbian_rua::contracts::ExecutionFailure::Preparation {
                 step: 0,
                 reason: RejectionReason::NotEnabled,
                 ..
@@ -426,7 +426,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     else {
         return Err("appended program failed compilation".into());
     };
-    let continuation = hebbian_robot_use_sdk::contracts::ProgramContinuation {
+    let continuation = hebbian_rua::contracts::ProgramContinuation {
         prior_execution_id: explicit.id.clone(),
         next_step: 2,
     };
@@ -449,7 +449,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
         .continue_compiled_sequence(
             &revised.compilation_id,
             BTreeMap::new(),
-            hebbian_robot_use_sdk::contracts::ProgramContinuation {
+            hebbian_rua::contracts::ProgramContinuation {
                 prior_execution_id: explicit.id.clone(),
                 next_step: 1,
             },
@@ -495,7 +495,7 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
     assert_eq!(imported.compiled.steps.len(), 1);
     assert_eq!(
         imported.compiled.steps[0][ARM].action,
-        hebbian_robot_use_sdk::contracts::CompiledArmAction::Gripper {
+        hebbian_rua::contracts::CompiledArmAction::Gripper {
             opening: 0.8,
             max_joint_speed: None,
         }
@@ -531,7 +531,7 @@ async fn compiled_submission_retries_share_one_physical_execution() -> TestResul
     within(client.enable(ARM)).await??;
     let transport = reqwest::Client::new();
     let instance = client.get_station_instance().await?;
-    let grant: hebbian_robot_use_sdk::contracts::LeaseGrant = transport
+    let grant: hebbian_rua::contracts::LeaseGrant = transport
         .post(format!("{}/leases", station.url))
         .json(&json!({
             "request_id": uuid::Uuid::new_v4().to_string(),
@@ -549,7 +549,7 @@ async fn compiled_submission_retries_share_one_physical_execution() -> TestResul
         .error_for_status()?
         .json()
         .await?;
-    let submission = hebbian_robot_use_sdk::contracts::RunCompiledProgramRequest {
+    let submission = hebbian_rua::contracts::RunCompiledProgramRequest {
         continuation: None,
         request_id: uuid::Uuid::new_v4().to_string(),
         station_instance_id: instance.id,
@@ -1071,7 +1071,7 @@ async fn assert_constrained_tool_move(tools: &RobotTools<'_>, client: &Station) 
 
 async fn assert_model_pose_previews(
     client: &Station,
-    lease: &hebbian_robot_use_sdk::LeaseGuard,
+    lease: &hebbian_rua::LeaseGuard,
     tools: &RobotTools<'_>,
 ) -> TestResult {
     let call = |name: &str, arguments| RobotToolCall {
@@ -1122,7 +1122,7 @@ async fn assert_model_pose_previews(
         false
     );
     let absent_arm = RobotTools::new(lease, "not-an-arm").with_operations(
-        hebbian_robot_use_sdk::contracts::robot_tool_catalog()
+        hebbian_rua::contracts::robot_tool_catalog()
             .into_iter()
             .map(|tool| tool.operation)
             .collect(),
@@ -1150,11 +1150,11 @@ async fn assert_model_pose_previews(
 async fn assert_specialized_model_tools(tools: &RobotTools<'_>) -> TestResult {
     let specialized = tools
         .clone()
-        .map_tools(hebbian_robot_use_sdk::contracts::default_robot_tool_mapping)?
+        .map_tools(hebbian_rua::contracts::default_robot_tool_mapping)?
         .map_tools(|capabilities| capabilities.into_iter().rev().collect())?
-        .map_tools(hebbian_robot_use_sdk::contracts::filter_sequence_actions(
-            |action| action != hebbian_robot_use_sdk::contracts::SequenceAction::Joints,
-        ))?;
+        .map_tools(hebbian_rua::contracts::filter_sequence_actions(|action| {
+            action != hebbian_rua::contracts::SequenceAction::Joints
+        }))?;
     assert_eq!(
         specialized
             .definitions()
@@ -1202,7 +1202,7 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     within(client.enable(ARM)).await??;
     let tools = RobotTools::new(&lease, ARM)
         .with_operations(
-            hebbian_robot_use_sdk::contracts::robot_tool_catalog()
+            hebbian_rua::contracts::robot_tool_catalog()
                 .into_iter()
                 .map(|tool| tool.operation)
                 .collect(),
@@ -1342,7 +1342,7 @@ async fn a_camera_without_a_frame_reports_the_cameras_listed_and_the_latest_fail
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let media_server = format!("http://{}", listener.local_addr()?);
     let media_task = tokio::spawn(async move { axum::serve(listener, media).await });
-    let (client, _) = Station::connect_with(hebbian_robot_use_sdk::ConnectOptions {
+    let (client, _) = Station::connect_with(hebbian_rua::ConnectOptions {
         server: station.url.clone(),
         media_server,
         run_after: None,
@@ -1369,7 +1369,7 @@ async fn a_camera_without_a_frame_reports_the_cameras_listed_and_the_latest_fail
 #[tokio::test(flavor = "multi_thread")]
 async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_gripper()
 -> TestResult {
-    use hebbian_robot_use_sdk::contracts::ActionSequenceArmAction;
+    use hebbian_rua::contracts::ActionSequenceArmAction;
     let station = TestStation::start_with_arms(&["left", "right"], None).await?;
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
@@ -1500,7 +1500,7 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
         history
             .images
             .iter()
-            .any(|image| image.boundary == hebbian_robot_use_sdk::SequenceImageBoundary::End)
+            .any(|image| image.boundary == hebbian_rua::SequenceImageBoundary::End)
     );
     assert!(result.cameras.is_empty());
     let current = tools

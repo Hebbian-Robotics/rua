@@ -1,6 +1,6 @@
 [package]
 name = "hebbian-robot-use-server"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.92"
 authors = ["Hebbian Robotics"]
@@ -14,12 +14,14 @@ name = "hebbian-robot-use-server"
 path = "src/main.rs"
 
 [dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
 anyhow = "1.0.104"
 axum = "0.8.9"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 hdrhistogram = { version = "7.6.0", default-features = false }
 dotenvy = "0.15"
-hebbian-contracts = { path = "../contracts" }
+hebbian-contracts = { package = "hebbian-rua-contracts", path = "../contracts" }
 hebbian-robot-use-core = { path = "../server-core" }
 recordings = { path = "../recordings" }
 nix = { version = "0.31", features = ["signal", "process"] }

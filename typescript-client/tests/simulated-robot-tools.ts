@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
-  createRobotTools,
-  createStationConnection,
-} from "@hebbian/robot-use-client";
+import { createRobotTools, createStationConnection } from "hebbian-rua";
 
 const examples = JSON.parse(
   readFileSync(

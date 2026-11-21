@@ -1,5 +1,5 @@
 # ONNX policy settings for a single SO-101 with the TPU gripper and wrist camera.
-# Supply a compatible model at the configured path and match its checkpoint metadata.
+# Supply a compatible ONNX model at the configured path.
 controller = "policy"
 
 [policy]
@@ -8,7 +8,6 @@ reach_deadline_seconds = 8.0
 settle_dwell_seconds = 0.1
 settled_velocity_radians_per_second = 0.15
 preview_lag_seconds = 0.05
-checkpoint_sha256 = "89f9f5a47866d4e2761373e6036adde6277c400f1942ff7f74bd26fda6f7eb63"
 # The model's action step: how far ahead of the measured joint it may set a target.
 # The tracking guard allows this much on top of the [tracking] margins.
 max_target_lead_radians = 0.12

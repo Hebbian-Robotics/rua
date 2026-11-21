@@ -351,7 +351,7 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         RobotToolDefinition {
             name: "action_sequence",
             operation: RobotToolOperation::StartActionSequence,
-            description: "Steps run in order; movement and gripper commands in the same step start together. A refusal or incomplete/limited target stops the sequence.".into(),
+            description: "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.".into(),
             parameters: action_sequence_tool_schema(&SequenceToolConfiguration::default()).expect("default sequence configuration"),
         },
         RobotToolDefinition {
@@ -363,7 +363,7 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         RobotToolDefinition {
             name: "move_arms",
             operation: RobotToolOperation::MoveArms,
-            description: "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Model guards do not detect collisions between arms or with workspace objects.".into(),
+            description: "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.".into(),
             parameters: model_arguments::<MoveArmsCommand>(),
         },
         RobotToolDefinition {
@@ -475,10 +475,25 @@ pub fn action_sequence_tool_schema(
         let opening = properties
             .get_mut("gripper_opening")
             .expect("opening schema");
-        *opening = opening["anyOf"][0].clone();
+        if let Some(opening) = opening.as_object_mut() {
+            opening.remove("anyOf");
+            opening.remove("default");
+            opening.insert("type".into(), json!("number"));
+        }
     } else {
         properties.remove("gripper_opening");
     }
+    let required_actions: Vec<_> = [("movement", "object"), ("gripper_opening", "number")]
+        .into_iter()
+        .filter(|(name, _)| properties.contains_key(*name))
+        .map(|(name, kind)| {
+            json!({
+                "required": [name],
+                "properties": {name: {"type": kind}},
+            })
+        })
+        .collect();
+    action["anyOf"] = json!(required_actions);
     let step = match &configuration.scope {
         SequenceScope::SingleArm => action,
         SequenceScope::NamedArms(arms) => json!({

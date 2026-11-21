@@ -8,8 +8,10 @@ from openai.types.responses.response_input_content_param import (
 )
 from pydantic import TypeAdapter
 
+from hebbian_rua.client.llm.recovery import capture_when_ready
 from hebbian_rua.client.llm.robot_tools import RobotTools
 from hebbian_rua.client.llm.tool_turn import (
+    ModelObservation,
     RobotToolTurn,
     decode_arguments,
     encode_camera,
@@ -42,12 +44,20 @@ class OpenAIRobotTools:
             for tool in self.robot.tools
         ]
 
-    async def observe(self) -> ResponseInputItemParam:
-        observation = await self.robot.observe()
-        return _image_message(observation.text, observation.cameras)
+    async def observe(
+        self, *, wait_for_recovery: bool = False
+    ) -> ModelObservation[ResponseInputItemParam]:
+        if wait_for_recovery:
+            captured, _ = await capture_when_ready(self.robot)
+            observation = captured.observation
+        else:
+            observation = await self.robot.observe()
+        return ModelObservation(
+            _image_message(observation.text, observation.cameras), observation.revisions
+        )
 
     async def execute(
-        self, response: Response
+        self, response: Response, *, expected_revisions: Mapping[str, int]
     ) -> RobotToolTurn[ResponseInputItemParam]:
         if response.status != "completed":
             raise ValueError(
@@ -70,7 +80,7 @@ class OpenAIRobotTools:
             ),
             mode="json",
         )
-        results = await self.robot.execute(calls)
+        results = await self.robot.execute(calls, expected_revisions=expected_revisions)
         messages.extend(
             {
                 "type": "function_call_output",

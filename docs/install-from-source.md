@@ -30,7 +30,7 @@ For a physical SO-101, [calibrate your arm](so101-calibration.md), then start th
 station from the checkout root:
 
 ```sh
-uv run cargo run -p hebbian-robot-use-server -- serve --profile auto
+uv run cargo run -p hebbian-robot-use-server -- serve
 ```
 
 This source command checks and rebuilds the station before starting it.
@@ -63,7 +63,7 @@ Run commands from the repository root. After pulling dependency changes, run
 
 | What changed | Command | When the change takes effect |
 | --- | --- | --- |
-| Rust station or hardware profile | `uv run cargo run -p hebbian-robot-use-server -- serve --profile auto` | Support and disable the arm, then stop the station. This builds and starts the current source. If you use an explicit profile, pass its path instead of `auto`. |
+| Rust station or hardware profile | `uv run cargo run -p hebbian-robot-use-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
 | Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
 | TypeScript agent or client | `pnpm start:agent` | Restart the agent server to load current source. No client build is required. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and imported client source and restarts on changes. |

@@ -63,7 +63,8 @@ pub enum CameraLifetime {
 impl CameraLifetime {
     fn duration(self) -> Duration {
         match self {
-            Self::PhoneInvite | Self::Station => Duration::from_hours(12),
+            Self::PhoneInvite => Duration::from_hours(1),
+            Self::Station => Duration::from_hours(12),
         }
     }
 }

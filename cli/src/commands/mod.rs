@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
-use hebbian_robot_use_sdk::DEFAULT_SERVER;
-use hebbian_robot_use_sdk::contracts::{Approach, NamedApproach, PoseOrientation, PreviewPose};
+use hebbian_rua::DEFAULT_SERVER;
+use hebbian_rua::contracts::{Approach, NamedApproach, PoseOrientation, PreviewPose};
 
 fn default_station_url() -> String {
     std::env::var("HEBBIAN_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.to_owned())
@@ -25,8 +25,8 @@ macro_rules! action_sequence_request_example {
 
 const ABOUT: &str = "Drive a Hebbian robot-use station from bash.
 
-Every command opens one connection, does its job, prints exactly one JSON value on stdout
-and exits. Nothing stays running and nothing is prompted.
+Commands print one JSON value on stdout and exit. The phone-invite command prints its URL
+as plain text unless you pass --raw.
 
 Input units: joint angles in radians, positions in metres in the robot's world frame (x forward,
 z up), speeds in rad/s (the station clamps them), grippers 0 (closed) to 1 (open), jaw yaw in degrees.
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn the_action_sequence_example_in_the_help_is_a_valid_request() {
-        let request: hebbian_robot_use_sdk::contracts::ActionSequenceRequest =
+        let request: hebbian_rua::contracts::ActionSequenceRequest =
             serde_json::from_str(action_sequence_request_example!())
                 .expect("the help example parses");
         assert_eq!(request.steps.len(), 2);

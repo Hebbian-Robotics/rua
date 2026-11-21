@@ -246,7 +246,7 @@ class StationApi:
         )
 
     async def phone_invite(self, body: PhoneInviteRequest) -> PhoneInvite:
-        """An invite to stream a phone as camera `phone_<label>`."""
+        """Create an invite from a loopback connection to stream a phone as camera `phone_<label>`."""
         response = await self._send(
             self._station, "POST", "/viewer/api/phone-invites", body
         )

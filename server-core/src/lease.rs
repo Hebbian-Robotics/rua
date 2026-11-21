@@ -507,7 +507,9 @@ impl Lease {
             return Err(format!("The lease does not require camera {camera}"));
         }
         if available {
-            claim.unavailable_cameras.remove(camera);
+            if claim.unavailable_cameras.remove(camera) {
+                self.authority_changes.send_replace(());
+            }
         } else if claim.unavailable_cameras.insert(camera.to_owned()) {
             for arm in self.arms.lock_unpoisoned().iter() {
                 let mut interlocks = arm.interlocks.lock_unpoisoned();
@@ -551,7 +553,8 @@ impl Lease {
                 Some(index) if interlocks.active[index] == interlock => false,
                 Some(index) => {
                     interlocks.active[index] = interlock.clone();
-                    false
+                    interlocks.revision = interlocks.revision.saturating_add(1);
+                    true
                 }
                 None => {
                     interlocks.active.push(interlock.clone());
@@ -575,9 +578,12 @@ impl Lease {
     }
 
     pub fn clear(&self, arm: &SharedInterlocks, matches: impl Fn(&Interlock) -> bool) {
-        arm.lock_unpoisoned()
-            .active
-            .retain(|interlock| !matches(interlock));
+        let mut interlocks = arm.lock_unpoisoned();
+        let previous_count = interlocks.active.len();
+        interlocks.active.retain(|interlock| !matches(interlock));
+        if interlocks.active.len() != previous_count {
+            self.authority_changes.send_replace(());
+        }
     }
 
     fn acquire(&self, request: LeaseRequest, now: Instant) -> Result<LeaseGrant, AcquireError> {
@@ -799,7 +805,7 @@ impl Lease {
                 return Err(Rejection {
                     reason: RejectionReason::StaleRevision,
                     detail: format!(
-                        "An interlock was raised since revision {}; the arm is at revision {}. \
+                        "An interlock changed since revision {}; the arm is at revision {}. \
                          Read the state again and retry.",
                         gate.expected_revision.unwrap_or_default(),
                         interlocks.revision
@@ -970,7 +976,9 @@ mod tests {
             gated(&lease, None, &arm, None).unwrap_err().reason,
             RejectionReason::Interlocked
         );
+        let waiter = lease.authority_changes();
         lease.clear(&arm, |interlock| *interlock == Interlock::ArmDisconnected);
+        assert!(waiter.has_changed().unwrap());
         assert_eq!(lease.interlocks(&arm), (Vec::new(), 1));
         assert_eq!(
             gated(&lease, None, &arm, Some(0)).unwrap_err().reason,

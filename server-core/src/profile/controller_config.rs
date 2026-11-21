@@ -57,7 +57,6 @@ fn policy_config(
         settled_velocity_radians_per_second: policy.settled_velocity_radians_per_second,
         preview_lag_seconds: policy.preview_lag_seconds,
         onnx: std::fs::canonicalize(onnx)?.display().to_string(),
-        checkpoint_sha256: policy.checkpoint_sha256.clone(),
         max_target_lead_radians: policy.max_target_lead_radians,
         tool_link: profile.arm_tool_frame(arm),
         position_tolerance_meters: policy.position_tolerance_meters,

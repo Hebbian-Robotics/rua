@@ -5,7 +5,7 @@ import type {
   RobotObservation,
   RobotToolCall,
   RobotToolResult,
-} from "@hebbian/robot-use-client";
+} from "hebbian-rua";
 
 export const PROVIDERS = ["anthropic", "openai", "gemini"] as const;
 export type Provider = (typeof PROVIDERS)[number];

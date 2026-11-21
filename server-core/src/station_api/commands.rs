@@ -49,13 +49,12 @@ fn hold_pose(sample: Sample) -> Result<Vec<f64>, Refusal> {
 }
 
 fn jaw_angle(link: &LinkHandle, arm: &str, opening: f64) -> Result<f64, Refusal> {
-    if !opening.is_finite() {
+    if !(0.0..=1.0).contains(&opening) {
         return Err(refused(
             RejectionReason::InvalidTarget,
             "A gripper opening must be a finite number from 0 (closed) to 1 (open)",
         ));
     }
-    let opening = opening.clamp(0.0, 1.0);
     link.gripper()
         .map(|gripper| gripper.angle(opening))
         .ok_or_else(|| {

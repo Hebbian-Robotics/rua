@@ -75,7 +75,7 @@ impl RecordingManager {
                         .announce_recording(&configuration.room, announcement.enabled)
                         .await
                 {
-                    eprintln!("Recording announcement failed: {error}");
+                    tracing::warn!(%error, "Recording announcement failed");
                 }
                 completed.send_replace(announcement.revision);
             }
@@ -121,7 +121,7 @@ impl RecordingManager {
         {
             *controller_interrupted = true;
             if let Err(error) = self.mark_interruption_file(name) {
-                eprintln!("Could not mark the recording's controller interruption: {error}");
+                tracing::warn!(%error, "Could not mark the recording's controller interruption");
             }
         }
     }
@@ -284,7 +284,7 @@ impl RecordingManager {
             .await
             .is_err()
         {
-            eprintln!("Recording announcement worker stopped before shutdown completed");
+            tracing::warn!("Recording announcement worker stopped before shutdown completed");
         }
     }
 

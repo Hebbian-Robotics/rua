@@ -5,6 +5,7 @@ import {
   type Lease,
   LeaseLostError,
   type StationConnection,
+  type StationState,
 } from "../src/index.js";
 import { fakeLease } from "./station-fakes.js";
 
@@ -15,7 +16,7 @@ afterEach(() => {
 
 type Mode = "holding" | "disconnected" | "faulted";
 
-/** A connection whose state is whatever the test sets, and wakes `onState` listeners on demand. */
+/** A connection whose state is whatever the test sets, and wakes state waiters on demand. */
 function steerableConnection() {
   const connection: StationConnection = createStationConnection(
     "http://station",
@@ -23,23 +24,33 @@ function steerableConnection() {
   );
   let mode: Mode = "holding";
   let interlocks: { kind: string }[] = [];
-  const listeners = new Set<(state: never) => void>();
+  const listeners = new Set<(state: StationState) => void>();
   const currentState = () =>
     ({
       robot: "sim",
       arms: [{ arm: "follower", mode, interlocks, revision: 0 }],
-    }) as ReturnType<typeof connection.getState>;
+    }) as StationState;
   vi.spyOn(connection, "getState").mockImplementation(currentState);
-  vi.spyOn(connection, "onState").mockImplementation((listener) => {
-    listeners.add(listener as (state: never) => void);
-    return () => listeners.delete(listener as (state: never) => void);
-  });
+  vi.spyOn(connection, "waitForState").mockImplementation(
+    async (predicate, options) => {
+      const state = currentState();
+      if (!options?.fresh && predicate(state)) return state;
+      return new Promise((resolve) => {
+        const listener = (next: StationState) => {
+          if (!predicate(next)) return;
+          listeners.delete(listener);
+          resolve(next);
+        };
+        listeners.add(listener);
+      });
+    },
+  );
   return {
     connection,
     setMode(next: Mode, nextInterlocks: { kind: string }[] = []) {
       mode = next;
       interlocks = nextInterlocks;
-      for (const listener of listeners) listener(currentState() as never);
+      for (const listener of listeners) listener(currentState());
     },
   };
 }

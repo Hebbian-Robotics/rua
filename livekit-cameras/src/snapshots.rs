@@ -26,6 +26,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+const MAX_SIMULATOR_HEADER_BYTES: u64 = 16 * 1024;
+const MAX_SIMULATOR_FRAME_BYTES: usize = 8 * 1024 * 1024;
+
 #[derive(Clone, Default)]
 pub struct Snapshots {
     frames: CameraFrames,
@@ -35,6 +38,7 @@ pub struct Snapshots {
 #[derive(Deserialize)]
 struct SocketReply {
     names: Option<Vec<String>>,
+    available: Option<Vec<String>>,
     bytes: Option<usize>,
     error: Option<String>,
 }
@@ -68,7 +72,7 @@ impl Snapshots {
         if !cameras.is_empty()
             && let Err(error) = cameras::initialize()
         {
-            eprintln!("Camera initialization unavailable: {error}");
+            tracing::warn!(%error, "Camera initialization unavailable");
         }
         for (name, device) in cameras {
             snapshots.frames.register(TrackIdentity {
@@ -76,44 +80,24 @@ impl Snapshots {
                 track_sid: format!("local:{name}"),
             });
             let camera = CameraConfiguration::new(name.clone(), device)?;
-            let worker = match CaptureWorker::start(&camera) {
-                Ok(worker) => worker,
-                Err(error) => {
-                    eprintln!("Camera {name}: {error}");
-                    continue;
-                }
-            };
             let state = snapshots.clone();
             tokio::spawn(async move {
-                let mut worker = worker;
-                while worker.frames.changed().await.is_ok() {
-                    let frame = worker.frames.borrow_and_update().clone();
-                    if let Some(frame) = frame {
-                        let Ok(planes) = frame.i420.planes() else {
-                            continue;
-                        };
-                        let mut buffer = livekit::webrtc::video_frame::I420Buffer::with_strides(
-                            frame.i420.width,
-                            frame.i420.height,
-                            frame.i420.width,
-                            frame.i420.width.div_ceil(2),
-                            frame.i420.width.div_ceil(2),
-                        );
-                        let (y, u, v) = buffer.data_mut();
-                        y.copy_from_slice(planes.y);
-                        u.copy_from_slice(planes.u);
-                        v.copy_from_slice(planes.v);
-                        if let Ok(image) = camera_frame(
-                            &buffer,
-                            VideoRotation::VideoRotation0,
-                            frame.captured_at_unix_ns,
-                            Instant::now(),
-                        ) {
-                            state.frames.insert(&format!("local:{name}"), image);
+                let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
+                loop {
+                    // PROTOCOL: The station reads camera failures from this stderr format.
+                    match CaptureWorker::start(&camera) {
+                        Ok(mut worker) => {
+                            if state.forward_local_frames(&name, &mut worker).await {
+                                backoff.reset();
+                            }
+                            if let Err(error) = worker.stop().await {
+                                eprintln!("Camera {name}: {error}");
+                            }
                         }
+                        Err(error) => eprintln!("Camera {name}: {error}"),
                     }
+                    tokio::time::sleep(backoff.next_delay()).await;
                 }
-                let _ = worker.stop().await;
             });
         }
         if let Some(room) = room {
@@ -124,6 +108,40 @@ impl Snapshots {
         }
         Ok(snapshots)
     }
+    async fn forward_local_frames(&self, name: &str, worker: &mut CaptureWorker) -> bool {
+        let mut published_frame = false;
+        let track = format!("local:{name}");
+        while worker.frames.changed().await.is_ok() {
+            let Some(frame) = worker.frames.borrow_and_update().clone() else {
+                continue;
+            };
+            let Ok(planes) = frame.i420.planes() else {
+                continue;
+            };
+            let mut buffer = livekit::webrtc::video_frame::I420Buffer::with_strides(
+                frame.i420.width,
+                frame.i420.height,
+                frame.i420.width,
+                frame.i420.width.div_ceil(2),
+                frame.i420.width.div_ceil(2),
+            );
+            let (y, u, v) = buffer.data_mut();
+            y.copy_from_slice(planes.y);
+            u.copy_from_slice(planes.u);
+            v.copy_from_slice(planes.v);
+            if let Ok(image) = camera_frame(
+                &buffer,
+                VideoRotation::VideoRotation0,
+                frame.captured_at_unix_ns,
+                Instant::now(),
+            ) {
+                self.frames.insert(&track, image);
+                published_frame = true;
+            }
+        }
+        published_frame
+    }
+
     pub fn router(self) -> Router {
         Router::new()
             .route("/cameras", get(list))
@@ -144,11 +162,11 @@ impl Snapshots {
     async fn subscribe(&self, room_name: &str) {
         let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
         loop {
-            let attempt_started = Instant::now();
-            if let Err(error) = self.subscribe_once(room_name).await {
-                eprintln!("Camera subscription unavailable: {error}");
+            match self.subscribe_once(room_name).await {
+                Ok(()) => backoff.reset(),
+                Err(error) => tracing::warn!(%error, "Camera subscription unavailable"),
             }
-            tokio::time::sleep(backoff.next_delay(attempt_started.elapsed())).await;
+            tokio::time::sleep(backoff.next_delay()).await;
         }
     }
     async fn subscribe_once(&self, room_name: &str) -> Result<(), PublisherError> {
@@ -172,10 +190,21 @@ async fn ask_socket(path: &PathBuf, request: serde_json::Value) -> Option<(Socke
             .await
             .ok()?;
         let mut reader = BufReader::new(connection);
-        let mut line = String::new();
-        reader.read_line(&mut line).await.ok()?;
-        let reply: SocketReply = serde_json::from_str(&line).ok()?;
-        let mut body = vec![0; reply.bytes.unwrap_or(0)];
+        let mut header = Vec::new();
+        (&mut reader)
+            .take(MAX_SIMULATOR_HEADER_BYTES)
+            .read_until(b'\n', &mut header)
+            .await
+            .ok()?;
+        if header.last() != Some(&b'\n') {
+            return None;
+        }
+        let reply: SocketReply = serde_json::from_slice(&header).ok()?;
+        let frame_bytes = reply.bytes.unwrap_or(0);
+        if frame_bytes > MAX_SIMULATOR_FRAME_BYTES {
+            return None;
+        }
+        let mut body = vec![0; frame_bytes];
         reader.read_exact(&mut body).await.ok()?;
         Some((reply, body))
     })
@@ -199,8 +228,10 @@ async fn list(State(state): State<Snapshots>) -> Json<Vec<hebbian_contracts::Cam
     if let Some(path) = &state.socket
         && let Some((reply, _)) = ask_socket(path, serde_json::json!({"list":true})).await
     {
+        let available = reply.available.unwrap_or_default();
         for name in reply.names.unwrap_or_default() {
-            names.insert(format!("sim_{name}"), true);
+            let fresh = available.contains(&name);
+            names.insert(format!("sim_{name}"), fresh);
         }
     }
     Json(

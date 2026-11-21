@@ -11,7 +11,7 @@ import {
   StationConnectionError,
   StationHttpError,
   StationTimeoutError,
-} from "@hebbian/robot-use-client";
+} from "hebbian-rua";
 import { type RunEnvironment, reportEvent } from "./environment.js";
 import { createAgentToolResult, runToolBatch } from "./execution.js";
 import { observe, type RevisedObservation } from "./observation.js";
@@ -40,7 +40,7 @@ import { estimateModelCost, RunUsage, type UsageSnapshot } from "./usage.js";
 const MAXIMUM_LEASE_LABEL_CHARACTERS = 200;
 
 export interface LoopConfig {
-  arm: string;
+  arm?: string;
   task: string;
 
   runId?: string;
@@ -125,13 +125,25 @@ async function awaitModelTurn(
 
 const CANCELLED_RESULT = "Run cancelled; the arm was stopped";
 
-type ResolvedLoopConfig = LoopConfig & { model: string };
+type ResolvedLoopConfig = LoopConfig & { arm: string; model: string };
 
 export function requirePositiveModelTurnLimit(maxModelTurns: number): number {
   if (!Number.isSafeInteger(maxModelTurns) || maxModelTurns < 1) {
     throw new RangeError("The model turn limit must be a positive integer");
   }
   return maxModelTurns;
+}
+
+async function resolveSoleArm(connection: StationConnection): Promise<string> {
+  const { arms } = await connection.state();
+  const [soleArm, ...otherArms] = arms;
+  if (soleArm === undefined) throw new Error("The station reports no arms");
+  if (otherArms.length > 0) {
+    throw new Error(
+      `Select an arm from: ${arms.map(({ arm }) => arm).join(", ")}`,
+    );
+  }
+  return soleArm.arm;
 }
 
 export async function drive(
@@ -141,11 +153,12 @@ export async function drive(
 ): Promise<DriveResult> {
   if (requested.maxModelTurns !== undefined)
     requirePositiveModelTurnLimit(requested.maxModelTurns);
+  const { connection } = endpoints;
   const config: ResolvedLoopConfig = {
     ...requested,
+    arm: requested.arm ?? (await resolveSoleArm(connection)),
     model: requested.model ?? DEFAULT_MODELS[requested.provider],
   };
-  const { connection } = endpoints;
   const usage = new RunUsage(config.runId);
   const print = options.print ?? ((line: string) => console.log(line));
   const label = config.task.slice(0, MAXIMUM_LEASE_LABEL_CHARACTERS);
@@ -165,6 +178,7 @@ export async function drive(
     arm: config.arm,
     cameras: config.cameras,
     optionalCameras: config.optionalCameras,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   }).mapTools(filterSequenceActions((action) => action !== "joints"));
   let cancellationStop: Promise<void> | undefined;
   const stopOnAbort = (): void => {

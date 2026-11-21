@@ -131,7 +131,7 @@ async fn submit_step(
                 &source_operations,
                 &actions,
             ) {
-                eprintln!("Cannot serialize prepared step: {error}");
+                tracing::error!(%error, "Cannot serialize prepared step");
             }
         }
         let first = actions
@@ -182,7 +182,7 @@ async fn submit_step(
             admission_started.elapsed().as_secs_f64(),
         )
     {
-        eprintln!("Cannot serialize step timing: {error}");
+        tracing::error!(%error, "Cannot serialize step timing");
     }
     result
 }
@@ -199,7 +199,6 @@ async fn execute_program(
         expected_revisions,
     } = sequence;
     let links = &admission.links;
-    let token = &admission.token;
     let (notifications, updates) = watch::channel(());
     let mut watchers = tokio::task::JoinSet::new();
     for arm in expected_revisions.keys() {
@@ -273,17 +272,25 @@ async fn execute_program(
     }
     .await;
     if let Err(failure) = result {
-        let stop_replies: Vec<_> = arms
-            .iter()
-            .zip(&admission.generation)
-            .filter_map(|(arm, (_, generation))| links[arm].stop_execution(token, *generation))
-            .collect();
-        // INVARIANT: Keep these arms reserved until the controller has consumed their stops.
-        for reply in stop_replies {
-            let _ = reply.await;
-        }
+        stop_program_motion(&admission, arms).await;
         progress.update(|record| record.phase = ActionSequencePhase::Stopped { failure });
     }
+}
+
+async fn stop_program_motion(admission: &ExecutionAdmission, arms: &[String]) {
+    // INVARIANT: Keep these arms reserved while their stops settle.
+    let mut settling_arms = tokio::task::JoinSet::new();
+    for (arm, (_, generation)) in arms.iter().zip(&admission.generation) {
+        let link = admission.links[arm].clone();
+        if let Some(reply) = link.stop_execution(&admission.token, *generation) {
+            settling_arms.spawn(async move {
+                if matches!(reply.await, Ok(Ok(_))) {
+                    link.wait_for_execution_stop().await;
+                }
+            });
+        }
+    }
+    settling_arms.join_all().await;
 }
 
 struct ExecutionWait<'a> {

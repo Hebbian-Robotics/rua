@@ -848,11 +848,9 @@ mod tests {
         assert!(left.next_job().is_none() && right.next_job().is_none());
     }
 
-    #[test]
-    fn group_admission_allows_a_close_pass_and_light_contact_but_refuses_a_crossing() {
+    fn so101_collision_guard() -> std::sync::Arc<crate::self_collision::SelfCollisionGuard> {
         use crate::robot::Robot;
-        use crate::self_collision::{GroupCollisionArm, SelfCollisionGuard};
-        use nalgebra::Isometry3;
+        use crate::self_collision::SelfCollisionGuard;
         use std::sync::Arc;
 
         let names = [
@@ -867,49 +865,76 @@ mod tests {
         let urdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../robots/so101/robot-soft-gripper-camera.urdf");
         let robot = Arc::new(Robot::load(&urdf, &names).unwrap());
-        let guard = Arc::new(SelfCollisionGuard::new(robot, 0.01, &[]).unwrap());
-        let joints = |pan| vec![pan, -1.0, 1.0, 0.5, 0.0];
+        Arc::new(SelfCollisionGuard::new(robot, 0.01, &[]).unwrap())
+    }
+
+    fn so101_joints(pan: f64) -> Vec<f64> {
+        vec![pan, -1.0, 1.0, 0.5, 0.0]
+    }
+
+    fn so101_group_arm(
+        guard: std::sync::Arc<crate::self_collision::SelfCollisionGuard>,
+        direction: f64,
+        start: f64,
+        jaw: f64,
+    ) -> ArmCore {
+        let mut arm = ArmCore::new(
+            Limits {
+                joint_count: 5,
+                lower: vec![-1.5; 5],
+                upper: vec![1.5; 5],
+                joint_limit_recovery_tolerance_radians: 0.035,
+                gripper: Some((0.0, 1.5)),
+                pose_goals: Some(crate::arm::PoseGoalSettings {
+                    position_tolerance_meters: 0.01,
+                    orientation_tolerance_radians: 0.1,
+                }),
+                jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
+                default_joint_speed: 1.0,
+                max_joint_speed: 2.0,
+            },
+            |_| {},
+        );
+        arm.group_collision = Some(crate::self_collision::GroupCollisionArm {
+            guard,
+            base: nalgebra::Isometry3::translation(0.0, direction * 0.190_574_745, 0.0),
+            gripper_angle: Some(jaw),
+        });
+        let now = Now::current();
+        let joints = so101_joints(direction * start);
+        arm.observe(now, &joints, None, None);
+        arm.enabled(&joints, now);
+        arm
+    }
+
+    fn so101_group_move(name: &str, direction: f64, start: f64, target: f64) -> ArmMove {
+        let mut movement = part(name, [0.0, 0.0]);
+        movement.plan.segments[0].corners = vec![
+            so101_joints(direction * start),
+            so101_joints(direction * target),
+        ];
+        movement
+    }
+
+    #[test]
+    fn group_admission_allows_a_close_pass_and_light_contact_but_refuses_a_crossing() {
+        let guard = so101_collision_guard();
         for (start, target, jaw, accepted) in [
             (0.5, 0.8, 0.0, true),
             (0.8, 0.92, 0.0, true),
             (0.8, 1.05, 0.0, false),
             (0.8, 1.05, 1.5, false),
         ] {
-            let make_arm = |direction| {
-                let mut arm = ArmCore::new(
-                    Limits {
-                        joint_count: 5,
-                        lower: vec![-1.5; 5],
-                        upper: vec![1.5; 5],
-                        joint_limit_recovery_tolerance_radians: 0.035,
-                        gripper: None,
-                        pose_goals: None,
-                        jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
-                        default_joint_speed: 1.0,
-                        max_joint_speed: 2.0,
-                    },
-                    |_| {},
-                );
-                arm.group_collision = Some(GroupCollisionArm {
-                    guard: guard.clone(),
-                    base: Isometry3::translation(0.0, direction * 0.190_574_745, 0.0),
-                    gripper_angle: Some(jaw),
-                });
-                arm.enabled(&joints(direction * start), Now::current());
-                arm
-            };
-            let make_move = |name, direction| {
-                let mut movement = part(name, [0.0, 0.0]);
-                movement.plan.segments[0].corners =
-                    vec![joints(direction * start), joints(direction * target)];
-                movement
-            };
-            let (mut left, mut right) = (make_arm(1.0), make_arm(-1.0));
+            let mut left = so101_group_arm(guard.clone(), 1.0, start, jaw);
+            let mut right = so101_group_arm(guard.clone(), -1.0, start, jaw);
             let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
             let outcome = admit_group(
                 &mut cores,
                 "crossing",
-                vec![make_move("left", 1.0), make_move("right", -1.0)],
+                vec![
+                    so101_group_move("left", 1.0, start, target),
+                    so101_group_move("right", -1.0, start, target),
+                ],
                 Now::current(),
             );
             if accepted {
@@ -922,6 +947,61 @@ mod tests {
             }
             assert_eq!(left.next_job().is_some(), accepted);
             assert_eq!(right.next_job().is_some(), accepted);
+        }
+    }
+
+    #[test]
+    fn grouped_motion_refuses_independent_jaw_or_policy_motion_before_either_arm_starts() {
+        let guard = so101_collision_guard();
+        for (right_action, reason) in [
+            (
+                PreparedArmAction {
+                    arm: "right".into(),
+                    movement: Some(PreparedMovement::PolicyPose {
+                        label: "move_to_pose".into(),
+                        position: [0.2, 0.0, 0.2],
+                        orientation: hebbian_contracts::PoseOrientation::Quaternion {
+                            quaternion: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    }),
+                    gripper: None,
+                },
+                "cannot check policy motion",
+            ),
+            (
+                PreparedArmAction {
+                    arm: "right".into(),
+                    movement: None,
+                    gripper: Some(crate::action_step::PreparedGripper {
+                        angle: 0.2,
+                        joint_speed: None,
+                    }),
+                },
+                "separate steps",
+            ),
+        ] {
+            let mut left = so101_group_arm(guard.clone(), 1.0, 0.5, 0.0);
+            let mut right = so101_group_arm(guard.clone(), -1.0, 0.5, 0.0);
+            let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+            let movement = so101_group_move("left", 1.0, 0.5, 0.8);
+            let left_action = PreparedArmAction {
+                arm: movement.arm,
+                movement: Some(PreparedMovement::Trajectory {
+                    label: "move_to_joints".into(),
+                    plan: movement.plan,
+                    joint_speed: movement.joint_speed,
+                    path_limited: None,
+                    pose_limited: None,
+                }),
+                gripper: None,
+            };
+            let error =
+                admit_action_step(&mut cores, vec![left_action, right_action], Now::current())
+                    .unwrap_err();
+            assert!(error.detail.contains(reason), "{error:?}");
+            assert!(left.next_job().is_none());
+            assert!(right.next_job().is_none());
+            assert!(!right.gripper_command_pending());
         }
     }
 

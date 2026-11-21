@@ -353,7 +353,7 @@ pub fn routes() -> Vec<Route> {
             "phone_invite",
             "post",
             "/viewer/api/phone-invites",
-            "An invite to stream a phone as camera `phone_<label>`.",
+            "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.",
             Some(schema_of::<PhoneInviteRequest>),
             Reply::Json(schema_of::<PhoneInvite>),
             true,

@@ -17,18 +17,20 @@ the agent:
 cargo run --locked -p hebbian-robot-use-cli -- enable arm
 ```
 
-Set `ANTHROPIC_API_KEY` in the environment or a local `.env` file. From the
-checkout root, try a state-only task:
+Set `OPENAI_API_KEY`, `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` in the environment
+or `.env`. From the checkout root, try a state-only task:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm --filter @hebbian/agent start --provider anthropic --max-turns 3 -- arm "Describe the robot state. Keep the arm still."
+pnpm --filter @hebbian/agent start --max-turns 3 -- "Describe the robot state. Keep the arm still."
 ```
 
-Replace `arm` with the name reported by your station. For OpenAI or Gemini,
-select `--provider openai` or `--provider gemini` and set
-`OPENAI_API_KEY` or `GEMINI_API_KEY`. Use `--model` to select a model available
-to your account. The command loads the local SDK source directly.
+The agent selects the station's sole arm. If the station serves several arms,
+pass `--arm NAME` or put the arm name before the task. The agent uses the first
+configured provider in the order OpenAI, Gemini, Anthropic. Pass `--provider`
+to choose one. To override the provider's default model, set `OPENAI_MODEL`,
+`GEMINI_MODEL` or `ANTHROPIC_MODEL`, or pass `--model` for a one-run override.
+The command loads the local SDK source directly.
 
 Pass `--camera NAME` to attach images from a [configured camera](../../../docs/cameras.md)
 or the [MuJoCo snapshot service](../../../docs/simulation.md#camera-snapshots).
@@ -64,7 +66,7 @@ import {
   renderOutput,
   selectOutputCameras,
   summarizeOutput,
-} from "@hebbian/robot-use-client";
+} from "hebbian-rua";
 
 const taskView = robot.withOutputFormatter((output) =>
   renderOutput(selectOutputCameras(summarizeOutput(output), ["wrist"])),

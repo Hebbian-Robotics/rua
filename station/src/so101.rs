@@ -20,7 +20,7 @@ impl SelectionArguments {
     fn require_explicit_profile(&self) -> anyhow::Result<()> {
         ensure!(
             self.so101_config_directory.is_none() && self.so101_serial.is_none(),
-            "SO-101 selection options require --profile auto"
+            "SO-101 selection options require automatic profile selection"
         );
         Ok(())
     }

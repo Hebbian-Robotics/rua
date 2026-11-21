@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
@@ -14,11 +15,12 @@ use hebbian_contracts::Backoff;
 use hebbian_contracts::MediaState;
 use hebbian_robot_use_server::media_status::MediaStatus;
 #[cfg(unix)]
-use nix::sys::signal::{Signal, kill};
+use nix::sys::signal::{Signal, killpg};
 #[cfg(unix)]
 use nix::unistd::Pid;
 use station_access::CameraConfiguration;
 const RESTART_DELAY_CAP: Duration = Duration::from_secs(3);
+const STABLE_MEDIA_RUN: Duration = Duration::from_secs(3);
 
 const STOP_GRACE: Duration = Duration::from_secs(10);
 
@@ -58,7 +60,6 @@ pub(crate) struct MediaPlan {
     pub executable: PathBuf,
     pub address: SocketAddr,
     pub room: String,
-    pub station_url: String,
     pub cameras: BTreeMap<String, String>,
     pub simulator_camera_socket: Option<PathBuf>,
 }
@@ -88,13 +89,13 @@ impl MediaPlan {
         arguments
     }
 
-    fn publish_arguments(&self) -> Vec<String> {
+    fn publish_arguments(&self, station_url: &str) -> Vec<String> {
         let mut arguments = vec![
             "publish".to_owned(),
             "--room".to_owned(),
             self.room.clone(),
             "--station-url".to_owned(),
-            self.station_url.clone(),
+            station_url.to_owned(),
         ];
         for (name, device) in &self.cameras {
             arguments.extend(["--camera".to_owned(), format!("{name}={device}")]);
@@ -114,21 +115,21 @@ pub(crate) struct MediaSupervisor {
 }
 
 impl MediaSupervisor {
-    pub(crate) fn start(plan: &MediaPlan, status: &MediaStatus) -> Self {
+    pub(crate) fn start(plan: &MediaPlan, station_url: &str, status: &MediaStatus) -> Self {
         let livekit = match CameraConfiguration::from_environment() {
             Ok(CameraConfiguration::Enabled(_)) => true,
             Ok(CameraConfiguration::Off { reason }) => {
-                eprintln!("LiveKit is off ({reason}): cameras are local to the media service");
+                tracing::info!(%reason, "LiveKit is off; cameras are local to the media service");
                 false
             }
             Err(error) => {
-                eprintln!("LiveKit is not fully configured ({error}): cameras are local");
+                tracing::warn!(%error, "LiveKit is not fully configured; cameras are local");
                 false
             }
         };
         let mut programs = vec![("serve", plan.serve_arguments(livekit))];
         if livekit && !plan.cameras.is_empty() {
-            programs.push(("publish", plan.publish_arguments()));
+            programs.push(("publish", plan.publish_arguments(station_url)));
         } else {
             status.set("publish", MediaState::NotConfigured);
         }
@@ -145,7 +146,7 @@ impl MediaSupervisor {
                 (stop, thread)
             })
             .unzip();
-        eprintln!("Media: http://{}", plan.address);
+        tracing::info!(address = %plan.address, "Media HTTP endpoint");
         Self { stops, threads }
     }
 }
@@ -175,18 +176,18 @@ fn supervise(
     let mut reported_missing = false;
     let mut backoff = Backoff::new(RESTART_DELAY_CAP);
     loop {
-        let started = Instant::now();
         match Command::new(executable)
             .args(arguments)
+            .process_group(0)
             .stderr(Stdio::piped())
             .spawn()
         {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if !reported_missing {
-                    eprintln!(
-                        "Cameras unavailable: {} not found (build it with `CC=clang-21 \
-                         CXX=clang++-21 cargo build -p livekit-cameras` or set HEBBIAN_MEDIA)",
-                        executable.display()
+                    tracing::warn!(
+                        executable = %executable.display(),
+                        "Media executable not found; build it with `CC=clang-21 \
+                         CXX=clang++-21 cargo build -p livekit-cameras` or set HEBBIAN_MEDIA"
                     );
                     reported_missing = true;
                 }
@@ -195,34 +196,39 @@ fn supervise(
                 });
             }
             Err(error) => {
-                eprintln!("Cameras unavailable: cannot start media {label}: {error}");
+                tracing::warn!(%label, %error, "Cameras unavailable; cannot start media");
                 report(MediaState::Unavailable {
                     reason: error.to_string(),
                 });
             }
             Ok(mut child) => {
+                let running_since = Instant::now();
                 if let Some(stderr) = child.stderr.take() {
                     let status = status.clone();
                     std::thread::spawn(move || relay_output(stderr, &status));
                 }
                 report(MediaState::Running);
                 let Some(exit) = wait_or_stop(child, events, exits) else {
-                    report(MediaState::Unavailable {
-                        reason: "Media supervisor stopped".to_owned(),
-                    });
-                    return;
+                    break;
                 };
-                eprintln!("Media {label} exited ({exit})");
+                // WHY: Spawn alone does not establish that a media process can stay up.
+                if running_since.elapsed() >= STABLE_MEDIA_RUN {
+                    backoff.reset();
+                }
+                tracing::warn!(%label, %exit, "Media process exited");
                 report(MediaState::Restarting {
                     last_exit: exit.to_string(),
                 });
             }
         }
-        match events.recv_timeout(backoff.next_delay(started.elapsed())) {
+        match events.recv_timeout(backoff.next_delay()) {
             Err(RecvTimeoutError::Timeout) | Ok(Event::Exited(_)) => {}
-            Ok(Event::Stop) | Err(RecvTimeoutError::Disconnected) => return,
+            Ok(Event::Stop) | Err(RecvTimeoutError::Disconnected) => break,
         }
     }
+    report(MediaState::Unavailable {
+        reason: "Media supervisor stopped".to_owned(),
+    });
 }
 
 fn relay_output(output: impl std::io::Read, status: &MediaStatus) {
@@ -258,9 +264,13 @@ fn wait_or_stop(
         let _ = exits.send(Event::Exited(child.wait()));
     });
     match events.recv() {
-        Ok(Event::Exited(Ok(status))) => Some(status),
+        Ok(Event::Exited(Ok(status))) => {
+            signal_group(process_id, Signal::SIGKILL);
+            Some(status)
+        }
         Ok(Event::Exited(Err(error))) => {
-            eprintln!("Cannot wait for media: {error}");
+            tracing::warn!(%error, "Cannot wait for media");
+            signal_group(process_id, Signal::SIGKILL);
             None
         }
         Ok(Event::Stop) | Err(_) => {
@@ -270,25 +280,21 @@ fn wait_or_stop(
     }
 }
 
-// WHY: SIGTERM lets the child finalize files before forced termination; always reap
-// it after the grace period.
-fn terminate(process_id: u32, events: &Receiver<Event>) {
-    #[cfg(unix)]
-    {
-        let Ok(pid) = i32::try_from(process_id).map(Pid::from_raw) else {
-            return;
-        };
-        let _ = kill(pid, Signal::SIGTERM);
-        if matches!(
-            events.recv_timeout(STOP_GRACE),
-            Err(RecvTimeoutError::Timeout)
-        ) {
-            let _ = kill(pid, Signal::SIGKILL);
-            let _ = events.recv();
-        }
+fn signal_group(process_id: u32, signal: Signal) {
+    if let Ok(pid) = i32::try_from(process_id) {
+        let _ = killpg(Pid::from_raw(pid), signal);
     }
-    #[cfg(not(unix))]
-    let _ = (process_id, events);
+}
+
+// WHY: The leader can exit before its capture workers. Reap the leader and
+// check for remaining group members even when it exits within the grace period.
+fn terminate(process_id: u32, events: &Receiver<Event>) {
+    signal_group(process_id, Signal::SIGTERM);
+    let exit = events.recv_timeout(STOP_GRACE);
+    signal_group(process_id, Signal::SIGKILL);
+    if matches!(exit, Err(RecvTimeoutError::Timeout) | Ok(Event::Stop)) {
+        while matches!(events.recv(), Ok(Event::Stop)) {}
+    }
 }
 
 #[cfg(all(test, unix))]

@@ -124,7 +124,7 @@ pub(crate) fn router(media_address: Option<SocketAddr>) -> Router {
     let proxy = match media_address.map(CameraProxy::new).transpose() {
         Ok(proxy) => proxy.map(Arc::new),
         Err(error) => {
-            eprintln!("Camera forwarding unavailable: {error}");
+            tracing::warn!(%error, "Camera forwarding unavailable");
             None
         }
     };

@@ -3,8 +3,7 @@
 Use the `so101` setup CLI from [Hebbian-Robotics/so101](https://github.com/Hebbian-Robotics/so101)
 to set up a physical SO-101 arm for RUA. It saves `setup.toml` and
 `calibration.json` together under `arms/<USB-serial>/` and writes the standard
-servo registers. RUA uses both files when you start the station with
-`--profile auto`.
+servo registers. RUA uses both files when `serve` automatically selects the arm.
 
 Download the `so101` archive for your platform from
 [GitHub Releases](https://github.com/Hebbian-Robotics/so101/releases), extract it

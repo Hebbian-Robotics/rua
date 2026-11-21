@@ -11,12 +11,24 @@ before motion.
 
 For a single SO-101 arm, set `controller = "policy"` in the robot profile to
 run pose goals through the ONNX policy adapter. Supply a compatible model for
-the configured arm geometry, set `[policy].onnx` and
-`[policy].checkpoint_sha256`, and make ONNX Runtime available on the station
+the configured arm geometry, set `[policy].onnx` to its path, and make ONNX Runtime available on the station
 host. The adapter checks the model's observation, action and geometry contract.
 Use the [policy settings profile](../profiles/so101-policy-settings.toml) as a
 starting point and check the policy's behavior on your setup before powered
 operation.
+
+The station loads exported ONNX models. A model takes `goal` (1×21) and
+`history` (1×150) float inputs, returns `action` (1×5), and carries these
+metadata entries:
+
+| Key | Meaning |
+|---|---|
+| `method` | `supermimic_so101_reference_pose_v2`, the observation contract |
+| `action_mode` | `measured_increment` or `lead_clamped_pose` |
+| `action_step` | Furthest a target may lead the measured joint, in radians |
+| `action_range_radians` | `lead_clamped_pose` only: `{"lower": [5], "upper": [5]}` |
+| `observation_joint_offset` | JSON list of 5 joint offsets subtracted from observations |
+| `hardware`, `station_urdf_sha256` | Optional binding to one URDF; other arms are refused |
 
 ## Use an existing LeRobot calibration
 

@@ -127,11 +127,15 @@ impl HttpServer {
         let router = router(Arc::clone(&station_state), viewer_directory).merge(extra);
         let (shutdown, shutdown_requested) = oneshot::channel::<()>();
         runtime.spawn(async move {
-            let http_server = axum::serve(listener, router).with_graceful_shutdown(async {
+            let http_server = axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(async {
                 let _ = shutdown_requested.await;
             });
             if let Err(error) = http_server.await {
-                eprintln!("The HTTP server stopped: {error}");
+                tracing::error!(%error, "The HTTP server stopped");
             }
         });
         Ok(Self {
@@ -810,6 +814,7 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
         .filter_map(|arm| links.get(arm))
         .map(LinkHandle::submission_generation)
         .collect();
+    let owns_cancellation = request.owns_cancellation();
     let reservation = station.command_submissions.reserve(id, request);
     let response = follow_or_start_submission(reservation, |sender, cancellation| {
         SubmissionCompletion::start(
@@ -817,12 +822,31 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
             "Command worker failed; outcome is unknown".to_owned(),
             |completion| {
                 tokio::spawn(async move {
+                    let admission_station = Arc::clone(&station);
                     let admitted = tokio::task::spawn_blocking(move || {
-                        admit(&station, &links, generation, cancellation)
+                        admit(&admission_station, &links, generation, cancellation)
                     })
                     .await;
-                    completion
-                        .publish(command_submission_outcome(admitted, into_arm_records).await);
+                    let outcome = command_submission_outcome(admitted, into_arm_records).await;
+                    let unfinished = match &outcome {
+                        Ok(hebbian_contracts::CommandAnswer::Accepted { records })
+                            if owns_cancellation =>
+                        {
+                            records
+                                .iter()
+                                .filter(|entry| entry.record.completion.is_none())
+                                .cloned()
+                                .collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                    completion.publish(outcome);
+                    if !unfinished.is_empty()
+                        && let Some(links) = station.arms.get()
+                    {
+                        wait_for_retained_motion(links, unfinished).await;
+                        station.command_submissions.motion_finished(id);
+                    }
                 });
             },
         )
@@ -837,6 +861,26 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
         })?
         .map(Json)
         .map_err(|detail| (StatusCode::INTERNAL_SERVER_ERROR, detail))
+}
+
+async fn wait_for_retained_motion(
+    links: &BTreeMap<String, LinkHandle>,
+    records: Vec<hebbian_contracts::ArmRecord>,
+) {
+    for entry in records {
+        let Some(link) = links.get(&entry.arm) else {
+            continue;
+        };
+        // INVARIANT: The link retains unfinished records and marks them interrupted when
+        // the controller disconnects. A missing record is safe to forget.
+        while link
+            .find_record(entry.record.command_id.clone())
+            .await
+            .is_some_and(|record| record.completion.is_none())
+        {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
 }
 
 // INVARIANT: Hold the watch read lock through enqueue, so cancel either

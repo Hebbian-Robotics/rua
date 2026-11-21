@@ -74,8 +74,8 @@ async def inspect_and_decide(
     (run / "question.txt").write_text(question + "\n")
     for number in range(MAX_TURNS):
         observation = await robot_tools.observe()
-        messages.append(observation)
-        save_frames(observation, run / f"turn{number:02d}")
+        messages.append(observation.message)
+        save_frames(observation.message, run / f"turn{number:02d}")
         response = await client.responses.create(
             model=model,
             instructions=instructions,
@@ -87,7 +87,9 @@ async def inspect_and_decide(
                 if output.type == "function_call":
                     log.write(f"turn{number:02d} {output.name} {output.arguments}\n")
             log.write(f"turn{number:02d} text: {response.output_text}\n")
-        turn = await robot_tools.execute(response)
+        turn = await robot_tools.execute(
+            response, expected_revisions=observation.revisions
+        )
         messages.extend(turn.messages)
         if turn.should_stop:
             return None, "Robot execution stopped after a fault or uncertain outcome."

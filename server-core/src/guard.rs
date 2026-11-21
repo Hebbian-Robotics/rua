@@ -377,7 +377,10 @@ impl GuardProcess {
             let _ = ready.send(line);
         });
         match hearing.recv_timeout(SUPERVISOR_START) {
-            Ok(line) if line.trim() == "ready" => Ok(Self { child, heartbeats }),
+            Ok(line) if line.trim() == "ready" => {
+                tracing::debug!(pid = child.id(), "Safety guard ready");
+                Ok(Self { child, heartbeats })
+            }
             Ok(_) => bail!("The safety guard exited before it was ready; check the logs"),
             Err(_) => bail!("The safety guard did not start within 10 seconds; try enabling again"),
         }

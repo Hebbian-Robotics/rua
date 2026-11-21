@@ -51,14 +51,15 @@ from hebbian_rua.client.llm.openai import OpenAIRobotTools
 robot_tools = OpenAIRobotTools(robot)
 messages = [{"role": "user", "content": "Wave hello"}]
 for _ in range(20):
-    messages.append(await robot_tools.observe())
+    observation = await robot_tools.observe(wait_for_recovery=True)
+    messages.append(observation.message)
     response = await client.responses.create(
         model=model,
         instructions=instructions,
         tools=robot_tools.tools,
         input=messages,
     )
-    turn = await robot_tools.execute(response)
+    turn = await robot_tools.execute(response, expected_revisions=observation.revisions)
     messages.extend(turn.messages)
     if turn.should_stop or not turn.results:
         break
