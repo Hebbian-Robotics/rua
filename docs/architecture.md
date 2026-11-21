@@ -1,9 +1,58 @@
 # Architecture
 
-The station process owns the HTTP API, control leases, compilation artifacts
-and recording lifecycle. Its supervised controller owns the motor buses and
+RUA helps you build robot-use agents. An LLM observes robot state and camera
+images, chooses actions through robot tools, and uses the outcomes to decide
+what to do next. Your application owns the model loop. RUA provides the SDKs,
+compiler, runtime and motor control that execute its actions on the robot.
+
+## Robot Use Compiler and Runtime
+
+The station compiles action sequences automatically and prepares each step
+against live robot state. Scripts and other SDK clients can use the same
+commands and action sequences directly.
+
+```mermaid
+flowchart TB
+    Agent["Agent loop (LLM and robot tools)"] --> SDK["Python, TypeScript or Rust SDK"]
+    SDK -->|"HTTP requests"| API
+
+    subgraph Station["Station process"]
+        API["Station API"] -->|"Action sequence"| Compiler["Robot Use Compiler"]
+        Compiler --> Artifact["Compiled program"]
+        Artifact --> Runtime["Robot Use Runtime"]
+        Runtime -->|"Prepared step"| Handoff["Controller handoff"]
+        API -->|"Direct command"| Handoff
+    end
+
+    Handoff --> Controller["Motor controller process"]
+    Controller --> Robot["Robot"]
+    Controller -.->|"Arm feedback"| Runtime
+    Controller -.->|"State and command outcomes"| API
+    API -.->|"State and outcomes"| SDK
+    Media["Camera service"] -.->|"Camera snapshots"| SDK
+    SDK -.->|"Observations and tool results"| Agent
+```
+
+1. The **Robot Use Compiler** checks the sequence against the station’s
+   configured arm capabilities and translates it into typed operations,
+   preserving the ordered steps and their arm groups. This stage can run
+   before the client acquires a lease and can reuse unchanged operations.
+2. The **Robot Use Runtime** prepares each step from current arm feedback and
+   submits the participating commands for admission together. Execution checks
+   live authority and arm state, and records each step’s outcome.
+3. The **motor controller** applies final protective checks and drives the arms
+   through the coordinated control loop.
+
+Clients can also compile explicitly, inspect the artifact, and run it later by
+ID. The station retains recent artifacts and writes inspection files for explicit
+compilations. Each execution has its own outcome and uses fresh feedback. See the
+[compile-before-running workflow](control-model.md#compile-before-running).
+
+## Station and companion processes
+
+The station owns the HTTP API, control leases, compilation artifacts and
+recording lifecycle. Its supervised controller owns the motor buses and
 coordinated control loop. The media companion owns camera capture and publishing.
-Agent loops run in clients; the station does not call a model.
 
 ## Components
 
@@ -17,25 +66,6 @@ Agent loops run in clients; the station does not call a model.
 | Motor controller | [Motor loop](../server-core/src/control_loop/mod.rs) | Feedback, setpoints, protective checks and plant commands |
 | Camera companion | [Media CLI](../livekit-cameras/src/main.rs) | Capture, snapshots, publishing and recording video |
 | Recording library | [Recording library](../recordings/src/library.rs) | Retained recordings and playback access |
-
-## Robot Use Compiler and Runtime
-
-Ordinary action-sequence submissions compile automatically. The Robot Use
-Compiler validates the sequence against configured arm capabilities and
-translates it into typed operations. Unchanged operations can reuse structural
-work. Advanced users can compile and inspect a sequence before acquiring a lease.
-
-The Robot Use Runtime prepares each step from live robot state and admits its
-participating commands together. Admission checks the lease, revisions,
-interlocks and cancellation. The motor controller executes admitted commands
-and applies final protective checks. Compilation and step preparation happen in
-the station, outside the motor cycle.
-
-The station retains temporary compilation artifacts for inspection and reuse.
-Each execution has its own ID and outcome. See the
-[control model](control-model.md) and
-[compilation guide](control-model.md#compile-before-running) for execution,
-artifact and continuation semantics.
 
 ## Client SDKs
 

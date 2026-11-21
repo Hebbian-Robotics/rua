@@ -1,69 +1,84 @@
 # Simulate the SO-101 with MuJoCo
 
-Run a virtual SO-101 and control it over the same station API used for hardware.
-The example uses the [simulator adapter](simulators.md) to connect MuJoCo to RUA.
+Run the same station and SDK flow against a virtual SO-101. The fixture models
+the arm and table. For physics and model details, see the
+[MuJoCo fixture](../examples/mujoco_sim/README.md). To connect a different engine,
+use the [simulator interface](simulators.md).
 
 ## Prepare the checkout
 
 Follow the [source setup guide](install-from-source.md#prepare-the-checkout).
-From the checkout root, install the example dependencies:
+From the repository root, install the example dependencies:
 
 ```sh
 uv sync --project examples/mujoco_sim --locked
 uv sync --project examples/python --locked
 ```
 
-## Start the station and MuJoCo
+## 1. Run a simulated station
 
-In one terminal, start the station from the checkout root:
+Start the station from the repository root:
 
 ```sh
 uv run cargo run --locked -p hebbian-robot-use-server -- serve \
   --profile "$PWD/examples/mujoco_sim/profiles/single.toml" \
-  --work-directory /tmp/hebbian-station --simulator-connect-seconds 120
+  --work-directory /tmp/hebbian-station
 ```
 
-When the station prints `Plant sockets`, launch MuJoCo from the same checkout
-in a second terminal. The first run downloads the pinned SO-101 MuJoCo model.
+When the station prints `Plant sockets`, start MuJoCo in a second terminal:
 
 ```sh
 uv run --project examples/mujoco_sim --locked python examples/mujoco_sim/run.py \
   --socket-directory /tmp/hebbian-station
 ```
 
-## Read state and move the virtual arm
+The first run may download the pinned MJCF model. If the download needs more
+than the default 30 seconds, add `--simulator-connect-seconds 120` to the
+station command.
 
-In a third terminal, read the state with the [station CLI](../cli/README.md).
-Wait for populated `measured_joints` before sending motion commands.
+## 2. Run hello_robot
 
-```sh
-cargo run --locked -p hebbian-robot-use-cli -- state
-```
-
-Run the Python example to preview a target, move the arm and open the gripper:
+Wait for populated `measured_joints` in [station state](http://127.0.0.1:8792/state)
+or run `cargo run --locked -p hebbian-robot-use-cli -- state`. Then run the
+[Python example](../examples/python/hello_robot.py) in a third terminal:
 
 ```sh
 uv run --project examples/python --locked python examples/python/hello_robot.py
 ```
 
+The example enables the arm, previews a target 160 mm above the table, moves
+to it, and opens the gripper after the move completes.
+
 For two arms, restart the station with
 [`bimanual.toml`](../examples/mujoco_sim/profiles/bimanual.toml) in place of
-`single.toml` and run the same MuJoCo command. The CLI shows both arms. Pass
-`--arm left` or `--arm right` to `hello_robot.py` to select one.
+`single.toml` and use the same MuJoCo command. Pass `--arm left` or
+`--arm right` to `hello_robot.py` to select one.
 
 ## Camera snapshots
 
 Build the [media companion](cameras.md#rua-configuration) before starting the
-station to enable JPEG snapshots. On Linux, install OSMesa (`libosmesa6` on
-Ubuntu) for headless rendering, or set `MUJOCO_GL` to a backend for your system.
+station. For headless rendering on Linux, install OSMesa (`libosmesa6` on
+Ubuntu) or set `MUJOCO_GL` to a backend supported by your system.
 
 ```sh
 cargo run --locked -p hebbian-robot-use-cli -- camera list
 cargo run --locked -p hebbian-robot-use-cli -- camera snapshot sim_overview --out overview.jpg
 ```
 
-Use `sim_wrist` for the single-arm wrist view and `sim_left_wrist` or
-`sim_right_wrist` for the two-arm wrist views.
+Use `sim_wrist` for a single-arm wrist view or `sim_left_wrist` and
+`sim_right_wrist` for the bimanual fixture.
 
-See the [example README](../examples/mujoco_sim/README.md) for model and physics
-details.
+## Run a model loop
+
+For a single simulated arm, set `OPENAI_API_KEY` and `OPENAI_MODEL` in your
+environment. The example supplies the model with robot tools and captures images
+if you pass a camera name:
+
+```sh
+uv run --project examples/python --locked python examples/python/agent_quickstart.py \
+  "Wave hello" --model "$OPENAI_MODEL" --camera sim_overview
+```
+
+Omit `--camera` for a state-only run. See the
+[Python agent guide](../examples/python/README.md#run-an-agent) for other
+providers and options.
