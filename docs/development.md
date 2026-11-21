@@ -100,7 +100,7 @@ bounds merely because the lockfile selected a newer version.
 
 | Owned dependency | Pins to inspect when changing that integration |
 | --- | --- |
-| SO-101 | [Coordinated update guide](so101-dependency.md): runtime, setup wheel and model assets are separate pins |
+| SO-101 | [Dependency pins](so101-dependency.md) for the runtime and model assets |
 | LiveKit Cameras | Git dependencies in `livekit-cameras/Cargo.toml`; keep station access’s `livekit-api` compatible with the pinned LiveKit dependency graph |
 | MCAP Tools | Native dependencies in `livekit-cameras/Cargo.toml` |
 
