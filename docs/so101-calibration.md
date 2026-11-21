@@ -40,7 +40,7 @@ Recorded travel follows each physical motor when the mapping changes.
 
 ## Custom setup directory
 
-If you keep arm configs in a private repository or another local directory,
+If you keep arm configs in another directory,
 pass its path to `so101 setup` as `SO101_SETUP_DIRECTORY` and to RUA's
 `--so101-config-directory`, or set `HEBBIAN_SO101_CONFIG_DIRECTORY` for RUA.
 Keep both files together when backing up or sharing an arm's setup with your team.

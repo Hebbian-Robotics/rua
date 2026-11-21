@@ -63,14 +63,10 @@ def check_release_versions(*, tag: str | None = None) -> None:
     verify_versions(Path.cwd(), tag=tag)
 
 
-def package_rua(
-    *, server_wheel: Path | None = None, media_wheel: Path | None = None
-) -> None:
+def package_rua() -> None:
     from rua_dev.bundle import build_rua_bundle
 
-    print(
-        build_rua_bundle(Path.cwd(), server_wheel=server_wheel, media_wheel=media_wheel)
-    )
+    print(build_rua_bundle(Path.cwd()))
 
 
 def create_app() -> App:

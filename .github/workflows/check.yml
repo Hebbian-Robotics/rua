@@ -25,11 +25,7 @@ jobs:
           hebbian_rua/client/README.md livekit-cameras/README.md recordings/README.md
           robot-geometry/README.md sdk/README.md server-core/README.md station-access/README.md
           tooling/source-doc-lint/README.md typescript-client/README.md
-      - name: Check development documentation links and anchors
-        if: ${{ hashFiles('tooling/public_export/README.md') != '' }}
-        run: >-
-          lychee --offline --include-fragments --extensions md
-          tests/README.md tooling/public_export/README.md
+          CODE_OF_CONDUCT.md SECURITY.md
 
   comments:
     runs-on: ubuntu-24.04
@@ -129,6 +125,9 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm check
           uv run rua-dev contracts --check
+      - name: Run station integration tests
+        if: ${{ runner.os == 'Linux' && hashFiles('tests/conftest.py') != '' }}
+        run: uv run --locked pytest -m server
       - if: ${{ runner.os == 'Linux' && hashFiles('vite.config.ts') != '' }}
         run: |
           pnpm test:viewer

@@ -40,7 +40,6 @@ __pycache__/
 .claude/worktrees/
 
 # Local export provenance, not part of the release source.
-/EXPORT.json
 
 # Example application runs: camera frames and model moves
 /examples/applications/*/runs/

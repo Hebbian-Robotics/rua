@@ -153,42 +153,18 @@ def include_bundle_asset(
     return True
 
 
-def build_rua_bundle(
-    repository: Path,
-    *,
-    source_directory: Path | None = None,
-    server_wheel: Path | None = None,
-    media_wheel: Path | None = None,
-) -> Path:
-    from rua_dev.models import BuildPlatform
-    from rua_dev.packaging import build_packages, built_wheel
+def build_rua_bundle(repository: Path, *, source_directory: Path | None = None) -> Path:
+    from rua_dev.packaging import build_component_wheels, built_wheel
 
-    if (server_wheel is None) != (media_wheel is None):
-        raise ValueError("Supply both --server-wheel and --media-wheel, or neither")
-    if server_wheel is None or media_wheel is None:
-        with tempfile.TemporaryDirectory(prefix="rua-native-wheels-") as temporary:
-            directory = Path(temporary)
-            build_packages(
-                repository,
-                BuildPlatform.LOCAL,
-                include_viewer=False,
-                include_media=True,
-                output_directory=directory,
-            )
-            version = tomllib.loads((repository / "pyproject.toml").read_text())[
-                "project"
-            ]["version"]
-            server_wheel = built_wheel(directory, "hebbian_robot_use_server", version)
-            media_wheel = built_wheel(directory, "hebbian_robot_use_media", version)
-            return assemble_bundle(
-                source_directory or repository,
-                server_wheel,
-                media_wheel,
-                repository / "dist",
-            )
-    return assemble_bundle(
-        source_directory or repository,
-        server_wheel.resolve(),
-        media_wheel.resolve(),
-        repository / "dist",
-    )
+    with tempfile.TemporaryDirectory(prefix="rua-native-wheels-") as temporary:
+        directory = Path(temporary)
+        build_component_wheels(repository, directory)
+        version = tomllib.loads((repository / "pyproject.toml").read_text())["project"][
+            "version"
+        ]
+        return assemble_bundle(
+            source_directory or repository,
+            built_wheel(directory, "hebbian_robot_use_server", version),
+            built_wheel(directory, "hebbian_robot_use_media", version),
+            repository / "dist",
+        )
