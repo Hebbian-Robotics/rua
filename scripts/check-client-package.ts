@@ -25,7 +25,7 @@ try {
       dependencies: { "@hebbian/robot-use-client": "file:./client.tgz" },
     }),
   );
-  execFileSync("pnpm", ["install", "--offline", "--ignore-scripts"], {
+  execFileSync("pnpm", ["install", "--prefer-offline", "--ignore-scripts"], {
     cwd: consumerDirectory,
     stdio: "inherit",
   });
