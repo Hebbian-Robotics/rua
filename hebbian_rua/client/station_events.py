@@ -39,7 +39,7 @@ async def stream_station_events(
                 if response.status_code == 409 and cursor is not None:
                     cursor = None
                     yield StationStreamEvent(
-                        "resync_required", "Event cursor expired", None
+                        "resync_required", "Station event cursor expired", None
                     )
                     continue
                 response.raise_for_status()

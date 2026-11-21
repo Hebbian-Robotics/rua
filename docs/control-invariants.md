@@ -15,7 +15,7 @@ rebasing to the current hold or measured settling pose. Only the first corner
 may use the configured joint-limit recovery tolerance; subsequent corners must
 lie within nominal limits. Group members must contain one straight section.
 Arbitrary supplied paths are refused rather than clamped into different paths.
-The planner still clamps requested joint targets before constructing a path.
+Move and stream reject joint targets outside the configured limits.
 
 Admission is not a permanent collision or tracking certificate. Geometry checks
 belong to the planner; current feedback, tracking, collision and surface checks

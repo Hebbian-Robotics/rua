@@ -11,6 +11,7 @@ use hebbian_contracts::{
 use tokio::sync::{broadcast, watch};
 
 const RECONNECT_DELAY_CAP: Duration = Duration::from_secs(1);
+const EVENT_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const RETAINED_RECORDS: usize = 10_000;
 
@@ -251,7 +252,10 @@ impl Shared {
     }
 
     async fn serve(&self) -> Result<(), String> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .read_timeout(EVENT_READ_TIMEOUT)
+            .build()
+            .map_err(|error| error.to_string())?;
         let url = format!("{}/events", self.url.trim_end_matches('/'));
         let cursor = self.read(|inner| inner.event_cursor.clone());
         let mut request = client.get(&url);
@@ -264,7 +268,7 @@ impl Shared {
             .map_err(|error| error.to_string())?;
         if response.status() == reqwest::StatusCode::CONFLICT && cursor.is_some() {
             self.update(|inner| inner.event_cursor = None);
-            return Err("event cursor expired".into());
+            return Err("Station event cursor expired".into());
         }
         response
             .error_for_status_ref()

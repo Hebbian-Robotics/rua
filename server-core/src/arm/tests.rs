@@ -272,13 +272,41 @@ fn control_handoff_waits_for_the_running_motion_to_stop() {
 }
 
 #[test]
+fn a_failed_move_only_reports_partial_when_feedback_showed_displacement() {
+    for (measured, expected) in [
+        ([0.0, 0.0], TargetStatus::NotStarted),
+        ([0.1, 0.0], TargetStatus::Partial),
+    ] {
+        let (mut core, _) = enabled_core();
+        let movement = core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
+        core.next_job().unwrap();
+        core.begin_moving();
+        core.observe(2.1, &measured, None, None);
+        core.failed("The trajectory failed", at(2.2));
+        let record = core.record(&movement.command_id).unwrap();
+        assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
+        assert_eq!(record.target_status, Some(expected));
+    }
+}
+
+#[test]
 fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
     let (mut core, _) = enabled_core();
+    let outside_limits = core.submit(
+        Command::StreamJoints {
+            gripper_angle: None,
+            positions: vec![0.1, 3.0],
+            joint_speed: None,
+            stream_command_id: None,
+        },
+        at(2.0),
+    );
+    assert_eq!(reason(outside_limits), RejectionReason::InvalidTarget);
     let start = core
         .submit(
             Command::StreamJoints {
                 gripper_angle: None,
-                positions: vec![0.1, 3.0],
+                positions: vec![0.1, 2.0],
                 joint_speed: None,
                 stream_command_id: None,
             },

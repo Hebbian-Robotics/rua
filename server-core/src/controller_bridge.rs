@@ -42,6 +42,10 @@ impl StationArm {
                 ControllerRequest::ControlHandoffReadiness,
                 PendingStationAnswer(PendingStationAnswerKind::Readiness(reply)),
             ),
+            ArmRequest::Single(SingleArmRequest::CancelCommand { command_id, reply }) => (
+                ControllerRequest::CancelCommand { command_id },
+                PendingStationAnswer(PendingStationAnswerKind::CancelCommand(reply)),
+            ),
             ArmRequest::Single(SingleArmRequest::Submit {
                 command,
                 trace_context,
@@ -230,6 +234,7 @@ impl StationSession {
                 PendingStationAnswerKind::Readiness(_),
                 ControllerAnswer::ControlHandoffReadiness(_),
             )
+            | (PendingStationAnswerKind::CancelCommand(_), ControllerAnswer::CancelledCommand)
             | (_, ControllerAnswer::Refused { .. }) => {}
             _ => {
                 waiter.answer.answer(ControllerAnswer::Refused {
@@ -273,6 +278,7 @@ pub struct PendingStationAnswer(PendingStationAnswerKind);
 
 enum PendingStationAnswerKind {
     Readiness(Sender<Result<bool, Rejection>>),
+    CancelCommand(Sender<Result<(), Rejection>>),
     Submit(crate::handoff::CommandReply<Result<CommandRecord, Rejection>>),
     MoveArms(crate::handoff::CommandReply<Result<Vec<CommandRecord>, Rejection>>),
     ActionStep(crate::handoff::CommandReply<Result<Vec<ArmRecord>, Rejection>>),
@@ -289,6 +295,12 @@ impl PendingStationAnswer {
                 ControllerAnswer::ControlHandoffReadiness(ready),
             ) => {
                 let _ = reply.send(Ok(ready));
+            }
+            (
+                PendingStationAnswerKind::CancelCommand(reply),
+                ControllerAnswer::CancelledCommand,
+            ) => {
+                let _ = reply.send(Ok(()));
             }
             (PendingStationAnswerKind::Submit(reply), ControllerAnswer::Submitted(record)) => {
                 reply.send(Ok(*record));
@@ -315,6 +327,9 @@ impl PendingStationAnswerKind {
     fn refuse(self, refusal: Rejection) {
         match self {
             Self::Readiness(reply) => {
+                let _ = reply.send(Err(refusal));
+            }
+            Self::CancelCommand(reply) => {
                 let _ = reply.send(Err(refusal));
             }
             Self::Submit(reply) => {
@@ -350,6 +365,10 @@ impl LoopArm {
                 .handle
                 .control_handoff_readiness()
                 .map(PendingLoopAnswerKind::Readiness),
+            ControllerRequest::CancelCommand { command_id } => self
+                .handle
+                .cancel_command(command_id)
+                .map(PendingLoopAnswerKind::CancelCommand),
             ControllerRequest::Submit {
                 command,
                 trace_context,
@@ -386,6 +405,7 @@ pub struct PendingLoopAnswer(PendingLoopAnswerKind);
 
 enum PendingLoopAnswerKind {
     Readiness(Receiver<Result<bool, Rejection>>),
+    CancelCommand(Receiver<Result<(), Rejection>>),
     Submit(Receiver<Result<CommandRecord, Rejection>>),
     MoveArms(Receiver<Result<Vec<CommandRecord>, Rejection>>),
     ActionStep(Receiver<Result<Vec<ArmRecord>, Rejection>>),
@@ -415,6 +435,9 @@ impl PendingLoopAnswer {
         match self.0 {
             PendingLoopAnswerKind::Readiness(receiver) => {
                 convert(receiver.recv(), ControllerAnswer::ControlHandoffReadiness)
+            }
+            PendingLoopAnswerKind::CancelCommand(receiver) => {
+                convert(receiver.recv(), |()| ControllerAnswer::CancelledCommand)
             }
             PendingLoopAnswerKind::Submit(receiver) => convert(receiver.recv(), |record| {
                 ControllerAnswer::Submitted(Box::new(record))

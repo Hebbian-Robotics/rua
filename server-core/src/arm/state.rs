@@ -25,6 +25,8 @@ pub struct ArmCore {
     pub(super) shutdown: ShutdownState,
     pub(super) trace_context: Option<TraceContext>,
     pub(super) observation: Option<Observation>,
+    pub(super) motion_origin: Vec<f64>,
+    pub(super) motion_advanced: bool,
     pub(super) segment: Option<String>,
 }
 
@@ -43,6 +45,8 @@ impl ArmCore {
     #[must_use]
     pub fn new(limits: Limits, publish: impl Fn(Event) + Send + 'static) -> Self {
         Self {
+            motion_origin: Vec::with_capacity(limits.joint_count),
+            motion_advanced: false,
             group_collision: None,
             limits,
             publish: Box::new(publish),
@@ -89,6 +93,20 @@ impl ArmCore {
             && self.limits.gripper.is_some()
             && self.gripper_stop_requested;
         Ok(!self.busy() && !waiting_for_gripper_hold)
+    }
+
+    #[must_use]
+    pub(crate) fn gripper_command_pending(&self) -> bool {
+        self.gripper_command.is_some()
+    }
+
+    pub(crate) fn stationary_joints(&self) -> Option<&[f64]> {
+        if self.mode() != ArmMode::Holding || self.lifecycle != Lifecycle::Idle {
+            return None;
+        }
+        self.observation
+            .as_ref()
+            .map(|observed| observed.positions.as_slice())
     }
 
     #[must_use]

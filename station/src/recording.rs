@@ -115,7 +115,6 @@ impl RecordingManager {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let RecordingState::Active {
             name,
-            stopping: false,
             controller_interrupted,
             ..
         } = &mut *state

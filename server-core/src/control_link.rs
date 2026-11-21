@@ -116,6 +116,26 @@ impl LinkHandle {
         )
     }
 
+    pub(crate) fn cancel_leased_command(
+        &self,
+        token: &str,
+        command_id: String,
+    ) -> hebbian_contracts::LeasedStopOutcome {
+        use hebbian_contracts::LeasedStopOutcome;
+        let mut command_id = Some(command_id);
+        let mut outcome = LeasedStopOutcome::Unavailable;
+        if !self.with_lease(token, &mut || {
+            if let Some(id) = command_id.take()
+                && self.shared.arm.cancel_command(id).is_ok()
+            {
+                outcome = LeasedStopOutcome::Submitted;
+            }
+        }) {
+            return LeasedStopOutcome::LeaseLost;
+        }
+        outcome
+    }
+
     pub(crate) fn stop_execution(
         &self,
         token: &str,

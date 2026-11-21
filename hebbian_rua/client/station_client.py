@@ -708,6 +708,7 @@ class StationClient:
         *,
         expected_revision: int | None = None,
         expected_lease: str | None = None,
+        await_completion: bool = False,
     ) -> CommandAccepted | CommandRefused:
         if expected_lease is not None:
             self._check_lease(expected_lease)
@@ -737,6 +738,8 @@ class StationClient:
             station_instance_id=request.station_instance_id,
             lease_token=request.lease_token,
             arms=[arm],
+            await_completion=await_completion,
+            expected_record_count=1,
         )
 
     async def _submit_http_command(
@@ -747,6 +750,8 @@ class StationClient:
         station_instance_id: str,
         lease_token: str | None,
         arms: list[str],
+        await_completion: bool,
+        expected_record_count: int | None = None,
     ) -> CommandAccepted | CommandRefused:
         """Retry the same submission; fence it if its caller stops waiting."""
         try:
@@ -757,6 +762,32 @@ class StationClient:
                         break
                     except httpx2.TransportError:
                         await asyncio.sleep(0.1)
+            if isinstance(answer, CommandAccepted):
+                for arm_record in answer.records:
+                    await self._connection.remember(arm_record)
+                if await_completion:
+                    if (
+                        expected_record_count is not None
+                        and len(answer.records) != expected_record_count
+                    ):
+                        raise ValueError(
+                            f"Expected {expected_record_count} command records, got {len(answer.records)}"
+                        )
+                    answer = answer.model_copy(
+                        update={
+                            "records": [
+                                arm_record.model_copy(
+                                    update={
+                                        "record": await self._connection.wait_for_outcome(
+                                            arm_record.record.command_id
+                                        )
+                                    }
+                                )
+                                for arm_record in answer.records
+                            ]
+                        }
+                    )
+            return answer
         except (asyncio.CancelledError, TimeoutError):
             if lease_token is not None and arms:
                 cancellation = CommandCancellationRequest(
@@ -772,10 +803,6 @@ class StationClient:
                 except (httpx2.HTTPError, OSError) as error:
                     log.warning("Could not cancel command %s: %s", request_id, error)
             raise
-        if isinstance(answer, CommandAccepted):
-            for arm_record in answer.records:
-                await self._connection.remember(arm_record)
-        return answer
 
     async def _run(
         self,
@@ -785,34 +812,16 @@ class StationClient:
         expected_revision: int | None = None,
         expected_lease: str | None = None,
     ) -> CommandResult:
-        [result] = await self._run_for_arms(
-            [arm],
-            lambda: self._send(
-                arm,
-                command,
-                expected_revision=expected_revision,
-                expected_lease=expected_lease,
-            ),
+        answer = await self._send(
+            arm,
+            command,
+            expected_revision=expected_revision,
             expected_lease=expected_lease,
-            expected_record_count=1,
+            await_completion=True,
         )
-        return result
-
-    async def _stop_after_cancellation(self, arm: str, lease_token: str | None) -> None:
-        if lease_token is None:
-            return
-        try:
-            await asyncio.shield(
-                self._api.stop_leased_arm_http(arm, LeaseToken(lease_token=lease_token))
-            )
-        except (
-            MessageRefused,
-            ConnectionError,
-            OSError,
-            TimeoutError,
-            httpx2.HTTPError,
-        ) as error:
-            log.warning("Could not stop %s after cancellation: %s", arm, error)
+        if isinstance(answer, CommandRefused):
+            return CommandResult.of(answer)
+        return CommandResult.of(answer.records[0].record)
 
     async def _send_group(
         self,
@@ -820,6 +829,7 @@ class StationClient:
         *,
         expected_revisions: dict[str, int] | None = None,
         expected_lease: str | None = None,
+        await_completion: bool = False,
     ) -> CommandAccepted | CommandRefused:
         if expected_lease is not None:
             self._check_lease(expected_lease)
@@ -839,6 +849,7 @@ class StationClient:
             station_instance_id=request.station_instance_id,
             lease_token=request.lease_token,
             arms=list(command.targets),
+            await_completion=await_completion,
         )
 
     async def _run_group(
@@ -848,47 +859,15 @@ class StationClient:
         expected_revisions: dict[str, int] | None = None,
         expected_lease: str | None = None,
     ) -> list[CommandResult]:
-        return await self._run_for_arms(
-            list(command.targets),
-            lambda: self._send_group(
-                command,
-                expected_revisions=expected_revisions,
-                expected_lease=expected_lease,
-            ),
+        answer = await self._send_group(
+            command,
+            expected_revisions=expected_revisions,
             expected_lease=expected_lease,
+            await_completion=True,
         )
-
-    async def _run_for_arms(
-        self,
-        arms: list[str],
-        submit: Callable[[], Awaitable[CommandAccepted | CommandRefused]],
-        *,
-        expected_lease: str | None,
-        expected_record_count: int | None = None,
-    ) -> list[CommandResult]:
-        captured_lease = expected_lease or self._lease_token
-        try:
-            answer = await submit()
-            if isinstance(answer, CommandRefused):
-                return [CommandResult.of(answer)]
-            if (
-                expected_record_count is not None
-                and len(answer.records) != expected_record_count
-            ):
-                raise ValueError(
-                    f"Expected {expected_record_count} command records, got {len(answer.records)}"
-                )
-            return [
-                CommandResult.of(
-                    await self._connection.wait_for_outcome(record.record.command_id)
-                )
-                for record in answer.records
-            ]
-        except asyncio.CancelledError:
-            await asyncio.gather(
-                *(self._stop_after_cancellation(arm, captured_lease) for arm in arms)
-            )
-            raise
+        if isinstance(answer, CommandRefused):
+            return [CommandResult.of(answer)]
+        return [CommandResult.of(arm_record.record) for arm_record in answer.records]
 
     @asynccontextmanager
     async def holding_lease(

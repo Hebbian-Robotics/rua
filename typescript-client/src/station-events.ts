@@ -11,6 +11,7 @@ export interface StationEvent {
 export async function readStationEvents(
   response: Response,
   handleEvent: (event: StationEvent) => Promise<void>,
+  byteReadTimeout?: { milliseconds: number; abort: () => void },
 ): Promise<void> {
   if (!response.body) throw new Error("Station event stream has no body");
   const reader = response.body.getReader();
@@ -31,7 +32,10 @@ export async function readStationEvents(
   });
   try {
     while (true) {
-      const chunk = await reader.read();
+      const timeout = byteReadTimeout
+        ? setTimeout(byteReadTimeout.abort, byteReadTimeout.milliseconds)
+        : undefined;
+      const chunk = await reader.read().finally(() => clearTimeout(timeout));
       if (chunk.done) break;
       parser.feed(decoder.decode(chunk.value, { stream: true }));
       for (const event of pending) await handleEvent(event);

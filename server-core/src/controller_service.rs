@@ -24,7 +24,7 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 const STATION_POLL: Duration = Duration::from_millis(5);
 const INITIAL_FEEDBACK_TIMEOUT: Duration = Duration::from_secs(10);
 const UNGUARDED_FEEDBACK_TIMEOUT: Duration = Duration::from_secs(3);
-const CONTROLLER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+const CONTROLLER_READY_TIMEOUT: Duration = Duration::from_secs(60);
 const CONTROLLER_SHUTDOWN_TIMEOUT: Duration =
     crate::control_loop::SHUTDOWN_TIMEOUT.saturating_add(WRITE_TIMEOUT);
 
@@ -63,9 +63,15 @@ fn wait_for_controller_ready(
     messages: &Receiver<io::Result<ControllerMessage>>,
     shutdown: &AtomicBool,
 ) -> io::Result<()> {
-    let startup_deadline = Instant::now() + CONTROLLER_STARTUP_TIMEOUT;
+    let startup_deadline = Instant::now() + CONTROLLER_READY_TIMEOUT;
     loop {
-        if shutdown.load(Ordering::Acquire) || Instant::now() >= startup_deadline {
+        if shutdown.load(Ordering::Acquire) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Station is shutting down",
+            ));
+        }
+        if Instant::now() >= startup_deadline {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Controller did not report fresh disabled feedback",

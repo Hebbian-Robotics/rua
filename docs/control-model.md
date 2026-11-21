@@ -24,11 +24,13 @@ See [SO-101 calibration](so101-calibration.md) before operating a physical arm, 
 
 ## Coordinated arm clearance
 
-Before admitting a group move or sequence step, the station checks the
-synchronized joint paths when at least two arms have planned trajectories,
-configured base poses and collision geometry. It uses the measured jaw openings
-and allows up to 3 mm of modeled overlap. Each arm retains its self-collision
-settings. Verify clearance from stationary arms and objects in the workspace.
+Before admitting a step with two or more arms, the station checks the
+synchronized joint paths of its participating arms. Each needs a configured
+base pose, collision geometry and jaw feedback if it has a modeled gripper.
+Use planned trajectories for multi-arm steps and move each jaw in a separate
+step from the arm trajectories and other jaws. The check allows up to 3 mm of
+modeled overlap. Verify clearance from arms outside the step and objects in the
+workspace.
 
 ## Compile before running
 

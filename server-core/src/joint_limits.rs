@@ -18,6 +18,21 @@ pub(crate) fn motion_speed(
     }
 }
 
+pub(crate) fn joint_target_limit_error(
+    positions: &[f64],
+    lower_limits: &[f64],
+    upper_limits: &[f64],
+) -> Option<String> {
+    positions
+        .iter()
+        .zip(lower_limits.iter().zip(upper_limits))
+        .enumerate()
+        .find(|(_, (position, (lower, upper)))| position < lower || position > upper)
+        .map(|(index, (position, (lower, upper)))| {
+            format!("Joint {index} target {position} rad is outside [{lower}, {upper}] rad")
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

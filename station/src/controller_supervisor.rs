@@ -22,7 +22,7 @@ use crate::controller_process::{ControllerLaunch, ControllerProcess, PlantSelect
 use crate::recording::RecordingManager;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+const CONTROLLER_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const CONTROLLER_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
@@ -77,17 +77,6 @@ impl ControllerSupervisor {
         *current = status;
     }
 
-    fn interrupt_recording(&self) {
-        if let Some(recording) = self
-            .recording
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
-            recording.controller_unavailable();
-        }
-    }
-
     pub fn attach_recording(&self, recording: RecordingManager) {
         let status = self
             .status
@@ -117,7 +106,12 @@ impl ControllerSupervisor {
             reason, reports, ..
         } = &*status
         else {
-            return Err("The controller is online or recovery is already in progress");
+            return Err(match &*status {
+                ControllerStatus::Online => "The controller is already online",
+                ControllerStatus::Unmanaged => "The station does not supervise a controller",
+                ControllerStatus::Stopping => "The controller is stopping",
+                _ => "Controller startup or recovery is already in progress",
+            });
         };
         let previous = status.clone();
         *status = ControllerStatus::WaitingForGuard {
@@ -192,7 +186,10 @@ fn refresh_guard_status(
                 *reports = updated_reports;
             }
         }
-        ControllerStatus::Starting | ControllerStatus::Online | ControllerStatus::Unmanaged => {}
+        ControllerStatus::Starting
+        | ControllerStatus::Stopping
+        | ControllerStatus::Online
+        | ControllerStatus::Unmanaged => {}
     }
     released
 }
@@ -272,7 +269,7 @@ fn run(
     shutdown: Arc<AtomicBool>,
     incoming: mpsc::Receiver<()>,
 ) {
-    let mut startup_timeout = STARTUP_TIMEOUT;
+    let mut startup_timeout = CONTROLLER_CONNECT_TIMEOUT;
     if matches!(configuration.plant, PlantSelection::Simulator { .. }) {
         // WHY: The child accepts each plant and reads its hello before connecting
         // to the station. Allow those sequential waits on top of normal startup.
@@ -332,7 +329,7 @@ fn run(
                 },
                 || {
                     lease.controller_lost();
-                    supervisor.interrupt_recording();
+                    supervisor.set_status(ControllerStatus::Stopping);
                 },
             )
             .map_err(|error| format!("Controller connection ended: {error}"))

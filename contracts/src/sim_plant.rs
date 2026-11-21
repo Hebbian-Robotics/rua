@@ -1,5 +1,5 @@
 //! The messages of the simulator socket. `hebbian-robot-use-server schema --sim-plant` writes
-//! their JSON Schema, and the Python models in `hebbian_rua.client` are generated from it.
+//! their JSON Schema, and the Python models in `hebbian_rua.simulator` are generated from it.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

@@ -91,13 +91,14 @@ impl ControllerProcess {
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stderr);
             loop {
-                let mut line = String::new();
-                match reader.read_line(&mut line) {
+                let mut bytes = Vec::new();
+                match reader.read_until(b'\n', &mut bytes) {
                     Ok(0) => {
                         pipe_closed.store(true, Ordering::Release);
                         break;
                     }
                     Ok(_) => {
+                        let line = String::from_utf8_lossy(&bytes);
                         eprint!("{line}");
                         let mut reports = received_reports
                             .lock()
@@ -105,10 +106,10 @@ impl ControllerProcess {
                         if reports.lines.len() == REMEMBERED_REPORTS {
                             reports.lines.pop_front();
                         }
-                        line.truncate(line.trim_end().len());
-                        reports.lines.push_back(line);
+                        reports.lines.push_back(line.trim_end().to_owned());
                         reports.changed = true;
                     }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                     Err(error) => {
                         eprintln!("Controller report pipe failed: {error}");
                         break;

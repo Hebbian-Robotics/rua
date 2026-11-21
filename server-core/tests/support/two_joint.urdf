@@ -1,0 +1,28 @@
+<robot name="two_joint_test_arm">
+  <link name="base"/>
+  <link name="upper">
+    <collision>
+      <origin xyz="0.05 0 0"/>
+      <geometry><box size="0.1 0.02 0.02"/></geometry>
+    </collision>
+  </link>
+  <link name="lower">
+    <collision>
+      <origin xyz="0.05 0 0"/>
+      <geometry><box size="0.1 0.02 0.02"/></geometry>
+    </collision>
+  </link>
+  <joint name="a" type="revolute">
+    <parent link="base"/>
+    <child link="upper"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2" upper="2" effort="10" velocity="3"/>
+  </joint>
+  <joint name="b" type="revolute">
+    <parent link="upper"/>
+    <child link="lower"/>
+    <origin xyz="0.1 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2" upper="2" effort="10" velocity="3"/>
+  </joint>
+</robot>

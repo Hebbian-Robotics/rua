@@ -16,7 +16,4 @@ def check_release_versions(repository: Path) -> None:
     versions = {name: section["version"] for name, section in sections.items()}
     if len(set(versions.values())) != 1:
         raise SystemExit(f"Release package versions do not match: {versions}")
-    rua_requirement = f"hebbian-rua=={versions['rua']}"
-    if "tools" in sections and rua_requirement not in sections["tools"]["dependencies"]:
-        raise SystemExit(f"tools must depend on {rua_requirement}")
     print(f"RUA release packages agree on version {versions['rua']}")

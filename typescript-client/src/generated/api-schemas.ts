@@ -5183,6 +5183,7 @@ export const apiSchemas = z.object({
     z.object({ phase: z.literal("unmanaged") }),
     z.object({ phase: z.literal("starting") }),
     z.object({ phase: z.literal("online") }),
+    z.object({ phase: z.literal("stopping") }),
     z.object({
       guard_released: z.boolean(),
       phase: z.literal("unavailable"),

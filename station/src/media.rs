@@ -207,6 +207,9 @@ fn supervise(
                 }
                 report(MediaState::Running);
                 let Some(exit) = wait_or_stop(child, events, exits) else {
+                    report(MediaState::Unavailable {
+                        reason: "Media supervisor stopped".to_owned(),
+                    });
                     return;
                 };
                 eprintln!("Media {label} exited ({exit})");

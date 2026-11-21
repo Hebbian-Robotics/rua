@@ -20,6 +20,10 @@ impl ArmCore {
         tool_pose: Option<([f64; 3], [f64; 4])>,
         fault: Option<&str>,
     ) {
+        self.motion_advanced |= positions
+            .iter()
+            .zip(&self.motion_origin)
+            .any(|(position, initial)| (position - initial).abs() > 1e-6);
         let Some(observation) = &mut self.observation else {
             self.observation = Some(Observation {
                 sampled_at,
@@ -90,6 +94,8 @@ impl ArmCore {
             }
         };
         let id = job.command_id().to_owned();
+        self.motion_origin.clear();
+        self.motion_advanced = false;
         self.lifecycle = Lifecycle::Starting(id.clone());
         if let Some(record) = self.records.get(&id).cloned() {
             self.store(record);
@@ -99,6 +105,9 @@ impl ArmCore {
 
     pub(crate) fn begin_moving(&mut self) {
         if let Lifecycle::Starting(id) = &self.lifecycle {
+            if let Some(observed) = &self.observation {
+                self.motion_origin.extend_from_slice(&observed.positions);
+            }
             self.lifecycle = Lifecycle::Executing {
                 command_id: id.clone(),
                 settling: false,
@@ -258,6 +267,8 @@ impl ArmCore {
             self.finish(&id, outcome, detail, now);
         }
         self.lifecycle = Lifecycle::Idle;
+        self.motion_origin.clear();
+        self.motion_advanced = false;
         self.segment = None;
         self.stream = None;
     }

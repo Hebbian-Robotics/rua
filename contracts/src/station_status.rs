@@ -27,6 +27,7 @@ pub enum ControllerStatus {
     Unmanaged,
     Starting,
     Online,
+    Stopping,
     Unavailable {
         reason: String,
         guard_released: bool,

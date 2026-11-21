@@ -62,6 +62,7 @@ def check_rust() -> None:
         [
             "cargo",
             "clippy",
+            "--locked",
             "--workspace",
             "--all-targets",
             "--all-features",

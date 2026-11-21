@@ -618,19 +618,84 @@ async fn cancel_command_submission(
         .map(|arm| arms.get(arm))
         .collect::<Option<Vec<_>>>()
         .ok_or((StatusCode::BAD_REQUEST, "Unknown arm".to_owned()))?;
-    let result =
-        station_state
-            .command_submissions
-            .cancel(id, &input.lease_token, &input.arms, || {
-                stop_leased_arms(links, &input.lease_token)
-            });
-    match result {
-        CancellationResult::Stopped(outcome) => leased_stop_response(outcome, StatusCode::CONFLICT),
-        CancellationResult::Conflict => Err((
-            StatusCode::CONFLICT,
-            "Cancellation does not match the submission".to_owned(),
-        )),
+    let Some(lease_link) = links.first() else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Expected at least one arm".to_owned(),
+        ));
+    };
+    if !lease_link.with_lease(&input.lease_token, &mut || {}) {
+        return Err((StatusCode::CONFLICT, "Lease lost".to_owned()));
     }
+    let response =
+        match station_state
+            .command_submissions
+            .cancel(id, &input.lease_token, &input.arms)
+        {
+            CancellationResult::Fenced => return Ok(StatusCode::NO_CONTENT),
+            CancellationResult::Expired => {
+                return Err((
+                    StatusCode::GONE,
+                    "Request outcome is no longer retained".to_owned(),
+                ));
+            }
+            CancellationResult::Pending(response) => response,
+            CancellationResult::Conflict => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Cancellation does not match the submission".to_owned(),
+                ));
+            }
+        };
+    // INVARIANT: Once a cancellation is received, finish processing it even if
+    // the caller closes the HTTP connection while admission is still pending.
+    tokio::spawn(cancel_admitted_commands(
+        station_state,
+        input.lease_token,
+        response,
+    ))
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Cancellation outcome is unknown".to_owned(),
+        )
+    })?
+}
+
+async fn cancel_admitted_commands(
+    station_state: Arc<StationState>,
+    lease_token: String,
+    response: tokio::sync::watch::Receiver<CommandSubmissionOutcome>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let arms = station_state.arms.get().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Station arms are not ready".to_owned(),
+    ))?;
+    let outcome = wait_for_outcome(response)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Command outcome is unknown".to_owned(),
+            )
+        })?
+        .map_err(|detail| (StatusCode::SERVICE_UNAVAILABLE, detail))?;
+    if let hebbian_contracts::CommandAnswer::Accepted { records } = outcome {
+        for record in records
+            .into_iter()
+            .filter(|entry| entry.record.completion.is_none())
+        {
+            let Some(link) = arms.get(&record.arm) else {
+                continue;
+            };
+            leased_stop_response(
+                link.cancel_leased_command(&lease_token, record.record.command_id),
+                StatusCode::CONFLICT,
+            )?;
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 type CommandSubmissionOutcome = Option<Result<hebbian_contracts::CommandAnswer, String>>;
@@ -639,6 +704,7 @@ fn follow_or_start_submission(
     reservation: crate::station_api::submissions::SubmissionReservation,
     start: impl FnOnce(
         tokio::sync::watch::Sender<CommandSubmissionOutcome>,
+        tokio::sync::watch::Receiver<bool>,
     ) -> tokio::sync::watch::Receiver<CommandSubmissionOutcome>,
 ) -> Result<tokio::sync::watch::Receiver<CommandSubmissionOutcome>, (StatusCode, String)> {
     use crate::station_api::submissions::SubmissionReservation;
@@ -664,7 +730,7 @@ fn follow_or_start_submission(
                 })));
             Ok(response)
         }
-        SubmissionReservation::New(sender) => Ok(start(sender)),
+        SubmissionReservation::New(sender, cancellation) => Ok(start(sender, cancellation)),
     }
 }
 
@@ -710,6 +776,7 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
         &StationState,
         &BTreeMap<String, LinkHandle>,
         Vec<SubmissionGeneration>,
+        tokio::sync::watch::Receiver<bool>,
     ) -> CommandAdmission<ReplyContext, ReplyRecords>
     + Send
     + 'static,
@@ -744,15 +811,16 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
         .map(LinkHandle::submission_generation)
         .collect();
     let reservation = station.command_submissions.reserve(id, request);
-    let response = follow_or_start_submission(reservation, |sender| {
+    let response = follow_or_start_submission(reservation, |sender, cancellation| {
         SubmissionCompletion::start(
             sender,
             "Command worker failed; outcome is unknown".to_owned(),
             |completion| {
                 tokio::spawn(async move {
-                    let admitted =
-                        tokio::task::spawn_blocking(move || admit(&station, &links, generation))
-                            .await;
+                    let admitted = tokio::task::spawn_blocking(move || {
+                        admit(&station, &links, generation, cancellation)
+                    })
+                    .await;
                     completion
                         .publish(command_submission_outcome(admitted, into_arm_records).await);
                 });
@@ -771,6 +839,21 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
         .map_err(|detail| (StatusCode::INTERNAL_SERVER_ERROR, detail))
 }
 
+// INVARIANT: Hold the watch read lock through enqueue, so cancel either
+// prevents admission or waits for the exact command IDs from the controller.
+fn fence_cancelled_submission(
+    cancellation: &tokio::sync::watch::Receiver<bool>,
+) -> Result<tokio::sync::watch::Ref<'_, bool>, (hebbian_contracts::RejectionReason, String)> {
+    let cancelled = cancellation.borrow();
+    if *cancelled {
+        return Err((
+            hebbian_contracts::RejectionReason::ArmBusy,
+            "Command submission was cancelled".to_owned(),
+        ));
+    }
+    Ok(cancelled)
+}
+
 async fn submit_group_command(
     State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::GroupCommandSubmissionRequest>,
@@ -778,7 +861,7 @@ async fn submit_group_command(
     submit_station_command(
         station_state,
         super::submissions::SubmissionRequest::Group(input.clone()),
-        move |station, links, generation| {
+        move |station, links, generation, cancellation| {
             let token = input.lease_token.as_deref();
             let targets = input
                 .command
@@ -804,6 +887,7 @@ async fn submit_group_command(
                 .iter()
                 .map(|part| part.arm.clone())
                 .collect::<Vec<_>>();
+            let _admission = fence_cancelled_submission(&cancellation)?;
             let reply = link
                 .move_arms_async(moves, token, input.trace_context, &gates, &generation)
                 .map_err(|error| (error.reason, error.detail))?;
@@ -830,28 +914,24 @@ async fn submit_command(
     submit_station_command(
         station_state,
         super::submissions::SubmissionRequest::Single(input.clone()),
-        move |station, links, mut generation| {
+        move |station, links, mut generation, cancellation| {
             let token = input.lease_token.as_deref();
             let link = links.get(&input.arm).ok_or((
                 hebbian_contracts::RejectionReason::InvalidTarget,
                 "Unknown arm".to_owned(),
             ))?;
             if matches!(input.command, hebbian_contracts::StationCommand::Stop) {
+                let _admission = fence_cancelled_submission(&cancellation)?;
                 return link
                     .interrupt_async(input.trace_context)
                     .map(|reply| (input.arm, reply))
                     .map_err(|error| (error.reason, error.detail));
             }
-            if matches!(input.command, hebbian_contracts::StationCommand::Disable) {
-                if let Some(token) = token {
-                    link.stop_leased_motion_for_submission(token, &mut generation, || {
-                        station.executions.cancel_owner(token)
-                    })
-                    .map_err(|error| (error.reason, error.detail))?;
-                }
-            } else if let Err(detail) = station
-                .executions
-                .check_command_conflict(token, &[&input.arm])
+            let disabling = matches!(input.command, hebbian_contracts::StationCommand::Disable);
+            if !disabling
+                && let Err(detail) = station
+                    .executions
+                    .check_command_conflict(token, &[&input.arm])
             {
                 return Err((
                     hebbian_contracts::RejectionReason::ArmBusy,
@@ -860,6 +940,13 @@ async fn submit_command(
             }
             let command =
                 crate::station_api::commands::arm_command(link, &input.arm, input.command)?;
+            let _admission = fence_cancelled_submission(&cancellation)?;
+            if disabling && let Some(token) = token {
+                link.stop_leased_motion_for_submission(token, &mut generation, || {
+                    station.executions.cancel_owner(token)
+                })
+                .map_err(|error| (error.reason, error.detail))?;
+            }
             link.submit_command_async(
                 command,
                 token,

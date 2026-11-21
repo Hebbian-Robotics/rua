@@ -6,13 +6,20 @@ use std::sync::Arc;
 
 pub struct Robot {
     geometry: Arc<GeometryRobot>,
+    closed_gripper_angle: f64,
 }
 
 impl Robot {
     pub fn load(urdf: &Path, driven_joints: &[String]) -> anyhow::Result<Self> {
         Ok(Self {
             geometry: Arc::new(GeometryRobot::load(urdf, driven_joints)?),
+            closed_gripper_angle: 0.0,
         })
+    }
+
+    pub(crate) fn with_closed_gripper_angle(mut self, closed_gripper_angle: f64) -> Self {
+        self.closed_gripper_angle = closed_gripper_angle;
+        self
     }
 
     pub(crate) fn geometry(&self) -> Arc<GeometryRobot> {
@@ -26,7 +33,7 @@ impl Robot {
         let mut joints = Vec::with_capacity(arm.len() + usize::from(has_gripper));
         joints.extend_from_slice(arm);
         if has_gripper {
-            joints.push(gripper_angle.unwrap_or(0.0));
+            joints.push(gripper_angle.unwrap_or(self.closed_gripper_angle));
         }
         joints
     }

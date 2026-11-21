@@ -15,7 +15,6 @@ exclude = ["livekit-cameras/**", "**/target/**", "**/node_modules/**", "**/.venv
 labels = ["WHY", "INVARIANT", "CONSTRAINT", "TODO", "SAFETY"]
 exclude = [
     "**/contracts/**",
-    "**/packages/**",
     "**/typings/**",
     "**/examples/**",
     "**/typescript-client/**",

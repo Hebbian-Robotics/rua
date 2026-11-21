@@ -16,7 +16,7 @@ penetration allowance. These are discrete geometry queries, not continuous
 collision detection or a complete safety system.
 
 RUA keeps configuration adaptation, path sampling, table recovery, command
-admission and motion supervision in `controller`. Solver request/outcome types
+admission and motion supervision in `server-core`. Solver request/outcome types
 are owned here and reexported by `contracts`, preserving their serialized form.
 The `model` feature is enabled by default; contracts disable it to share only
 request/outcome types without pulling geometry dependencies into SDKs.
@@ -26,6 +26,6 @@ arm/gripper convention before calling the shared model.
 This package stays in the monorepo while its API evolves. Check it independently:
 
 ```sh
-cargo test -p hebbian-robot-geometry
-cargo clippy -p hebbian-robot-geometry --all-targets --all-features
+cargo test --locked -p hebbian-robot-geometry
+cargo clippy --locked -p hebbian-robot-geometry --all-targets --all-features
 ```

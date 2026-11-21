@@ -89,7 +89,7 @@ fn refused(planner: &Planner, start: &[f64], waypoint: Waypoint) -> PlanRefusal 
 }
 
 #[test]
-fn a_target_on_each_bound_is_kept_and_one_past_it_is_clamped_onto_it() {
+fn a_target_on_each_bound_is_kept_and_one_past_it_is_refused() {
     let planner = seven_joint_planner("limits");
     for joint in 0..7 {
         for bound in [-1.0, 1.0] {
@@ -109,8 +109,9 @@ fn a_target_on_each_bound_is_kept_and_one_past_it_is_clamped_onto_it() {
         }
     }
     for past in [1.0 + 1e-12, 5.0] {
-        let motion = planned(&planner, &[joints(&[past, -past])]);
-        assert_eq!(&last_corner(&motion)[..2], &[1.0, -1.0]);
+        let refusal = refused(&planner, &[0.0; 7], joints(&[past, -past]));
+        assert_eq!(refusal.reason, RejectionReason::InvalidTarget);
+        assert!(refusal.detail.contains("outside"));
     }
     let short = refused(
         &planner,

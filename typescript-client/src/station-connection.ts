@@ -16,6 +16,7 @@ import {
   StationTimeoutError,
 } from "./station-errors.js";
 import { readStationEvents, type StationEvent } from "./station-events.js";
+import { jsonRequestInit, stationFetch } from "./station-request.js";
 import {
   type ActionSequenceRecord,
   type ActionSequenceRequest,
@@ -42,6 +43,7 @@ const RECONNECT_CAP_MILLISECONDS = 1000;
 const RECONNECT_FIRST_BACKOFF_MILLISECONDS = 100;
 /** How long to wait for a connection, or for the first state. */
 const CONNECT_TIMEOUT_MILLISECONDS = 10_000;
+const EVENT_READ_TIMEOUT_MILLISECONDS = 30_000;
 /** How long a request, or an awaited state, waits before it is given up on. */
 const REPLY_TIMEOUT_MILLISECONDS = 30_000;
 /** How long a command's outcome is awaited across a lost connection. */
@@ -105,12 +107,13 @@ export interface Lease {
     /** Return to the enable-time pose and close the gripper at up to 2 rad/s; always waits for completion. */
     rehome(expectedRevision?: number): Promise<CommandAnswer>;
   };
-  /** Send one arm's command and resolve with the station's answer to it. */
+  /** Send a command and return its admission answer. Aborting cancels its motion until it completes. */
   sendCommand(
     arm: string,
     command: StationCommand,
     expectedRevision?: number,
     traceContext?: TraceContext,
+    signal?: AbortSignal,
   ): Promise<CommandAnswer>;
   /** As `sendCommand` for several arms together. */
   sendGroup(
@@ -120,7 +123,7 @@ export interface Lease {
   ): Promise<CommandAnswer>;
   /**
    * Run a command to its outcome, and until the station's state shows where the
-   * arm came to rest. Aborting `signal` stops the arm.
+   * arm came to rest. Aborting `signal` cancels the submitted command.
    */
   runCommand(
     arm: string,
@@ -129,7 +132,7 @@ export interface Lease {
     signal?: AbortSignal,
     traceContext?: TraceContext,
   ): Promise<CommandAnswer>;
-  /** As `runCommand` for several arms together; aborting stops the first arm. */
+  /** As `runCommand` for several arms together. */
   runGroup(
     command: MoveArmsCommand,
     expectedRevisions?: Record<string, number>,
@@ -248,9 +251,8 @@ export interface StationConnection {
   onLeaseLost(listener: () => void): () => void;
 }
 
-const stopCommand = armPowerCommands((command) => command).stop();
-
 interface Wait {
+  signal?: AbortSignal;
   /** Reject with this after the timeout. */
   timeout?: { milliseconds: number; error: () => Error };
   /** Reject once the connection has been down for the patience period. */
@@ -355,6 +357,7 @@ export function createStationConnection(
       let patienceTimer: ReturnType<typeof setTimeout> | undefined;
       const finish = () => {
         changeListeners.delete(evaluate);
+        wait.signal?.removeEventListener("abort", abort);
         clearTimeout(timeoutTimer);
         clearTimeout(patienceTimer);
       };
@@ -362,6 +365,12 @@ export function createStationConnection(
         finish();
         reject(error);
       };
+      const abort = () => fail(asError(wait.signal?.reason));
+      if (wait.signal?.aborted) {
+        abort();
+        return;
+      }
+      wait.signal?.addEventListener("abort", abort, { once: true });
       const unreachable = () =>
         new StationConnectionError(
           `${typeof stationUrl === "string" ? stationUrl : stationUrl()} has been unreachable for too long`,
@@ -482,38 +491,47 @@ export function createStationConnection(
     for (const listener of runRecordListeners) listener(record);
   }
 
-  async function finishedAnswer(answer: CommandAnswer): Promise<CommandAnswer> {
+  async function finishedAnswer(
+    answer: CommandAnswer,
+    signal?: AbortSignal,
+  ): Promise<CommandAnswer> {
     if (answer.status === "refused") return answer;
     const completed = await Promise.all(
       answer.records.map(async (entry) => ({
         arm: entry.arm,
-        record: await waitForOutcome(entry.record.command_id),
+        record: await waitForOutcome(entry.record.command_id, signal),
       })),
     );
     return { ...answer, records: completed };
   }
 
-  async function waitForOutcome(commandId: string): Promise<CommandRecord> {
+  async function waitForOutcome(
+    commandId: string,
+    signal?: AbortSignal,
+  ): Promise<CommandRecord> {
     const { arm: commandArm, record } = await waitFor(
       () => {
         const latest = records.get(commandId);
         return latest?.record.completion ? latest : undefined;
       },
-      { patient: true },
+      { patient: true, signal },
     );
-    await waitFor(() => {
-      if (!ready) return true;
-      if (latestState === null) return undefined;
-      const arm = latestState.arms.find((arm) => arm.arm === commandArm);
-      if (arm === undefined || arm.active_command?.command_id === commandId)
-        return undefined;
-      const finishedAt = record.completion?.finished_at ?? 0;
-      // Commands that finish in one cycle show only the latest on that arm.
-      return arm.last_command?.command_id === commandId ||
-        (arm.last_command?.completion?.finished_at ?? -1) >= finishedAt
-        ? true
-        : undefined;
-    });
+    await waitFor(
+      () => {
+        if (!ready) return true;
+        if (latestState === null) return undefined;
+        const arm = latestState.arms.find((arm) => arm.arm === commandArm);
+        if (arm === undefined || arm.active_command?.command_id === commandId)
+          return undefined;
+        const finishedAt = record.completion?.finished_at ?? 0;
+        // Commands that finish in one cycle show only the latest on that arm.
+        return arm.last_command?.command_id === commandId ||
+          (arm.last_command?.completion?.finished_at ?? -1) >= finishedAt
+          ? true
+          : undefined;
+      },
+      { signal },
+    );
     return record;
   }
 
@@ -656,10 +674,17 @@ export function createStationConnection(
     eventStream = connecting;
     void (async () => {
       const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
+      const handshake = setTimeout(
+        () =>
+          connecting.abort(
+            new StationTimeoutError("Station event handshake timed out"),
+          ),
+        CONNECT_TIMEOUT_MILLISECONDS,
+      );
       const response = await fetch(new URL("/events", base), {
         signal: connecting.signal,
         headers: eventCursor === null ? {} : { "Last-Event-ID": eventCursor },
-      });
+      }).finally(() => clearTimeout(handshake));
       if (response.status === 409 && eventCursor !== null) {
         eventCursor = null;
         throw new StationConnectionError("Station event cursor expired");
@@ -668,8 +693,16 @@ export function createStationConnection(
         throw new StationConnectionError(
           `Station event stream returned ${response.status}`,
         );
-      await readStationEvents(response, (event) =>
-        applyStationEvent(event, connecting.signal),
+      await readStationEvents(
+        response,
+        (event) => applyStationEvent(event, connecting.signal),
+        {
+          milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
+          abort: () =>
+            connecting.abort(
+              new StationTimeoutError("Station event stream went silent"),
+            ),
+        },
       );
       throw new StationConnectionError("Station event stream ended");
     })()
@@ -731,7 +764,9 @@ export function createStationConnection(
     expectedRevision?: number,
     traceContext?: TraceContext,
     signal?: AbortSignal,
+    awaitCompletion = false,
   ): Promise<CommandAnswer> {
+    if (signal?.aborted) throw asError(signal.reason);
     const token = heldLeaseToken();
     if (
       token === null &&
@@ -762,6 +797,7 @@ export function createStationConnection(
       () => stationApi().submitCommandHttp(submission),
       { request_id, station_instance_id, token, arms: [arm] },
       signal,
+      awaitCompletion,
     );
   }
 
@@ -770,7 +806,9 @@ export function createStationConnection(
     expectedRevisions?: Record<string, number>,
     traceContext?: TraceContext,
     signal?: AbortSignal,
+    awaitCompletion = false,
   ): Promise<CommandAnswer> {
+    if (signal?.aborted) throw asError(signal.reason);
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
     const station_instance_id = (await stationApi().getStationInstance()).id;
@@ -793,6 +831,7 @@ export function createStationConnection(
         arms: Object.keys(command.targets),
       },
       signal,
+      awaitCompletion,
     );
   }
 
@@ -805,6 +844,7 @@ export function createStationConnection(
       arms: string[];
     },
     signal?: AbortSignal,
+    awaitCompletion = false,
   ): Promise<CommandAnswer> {
     const cancel = () => {
       if (identity.token === null || identity.arms.length === 0) return;
@@ -819,8 +859,9 @@ export function createStationConnection(
           console.warn("Could not cancel command", error),
         );
     };
-    signal?.addEventListener("abort", cancel, { once: true });
-    try {
+    if (signal?.aborted) throw asError(signal.reason);
+    let retainedCancellation = false;
+    const submitAndWait = async (): Promise<CommandAnswer> => {
       const deadline = Date.now() + REPLY_TIMEOUT_MILLISECONDS;
       let response: z.infer<typeof apiSchemas.shape.CommandAnswer>;
       while (true) {
@@ -847,46 +888,38 @@ export function createStationConnection(
         throw new StationConnectionError("Unexpected command response");
       if (parsed.answer.status === "accepted")
         for (const entry of parsed.answer.records) rememberRecord(entry);
+      if (awaitCompletion) return finishedAnswer(parsed.answer, signal);
+      if (signal && !signal.aborted && parsed.answer.status === "accepted") {
+        retainedCancellation = true;
+        const commandIds = parsed.answer.records.map(
+          (entry) => entry.record.command_id,
+        );
+        void waitFor(
+          () =>
+            commandIds.every((id) => records.get(id)?.record.completion != null)
+              ? true
+              : undefined,
+          { signal, patient: true },
+        )
+          .catch(() => {})
+          .finally(() => signal.removeEventListener("abort", onAbort));
+      }
       return parsed.answer;
-    } finally {
-      signal?.removeEventListener("abort", cancel);
-    }
-  }
-
-  /** Run `work`; if `signal` aborts first, stop its arms and reject. */
-  async function stoppingOnAbort<Result>(
-    arms: string[],
-    signal: AbortSignal | undefined,
-    work: () => Promise<Result>,
-  ): Promise<Result> {
-    if (signal === undefined) return work();
-    if (signal.aborted) throw asError(signal.reason);
-    const token = heldLeaseToken();
-    let onAbort: (() => void) | undefined;
+    };
+    let rejectAbort: (reason: Error) => void = () => {};
     const aborted = new Promise<never>((_resolve, reject) => {
-      onAbort = () => {
-        for (const arm of arms) {
-          if (token !== null) {
-            void stationApi()
-              .stopLeasedArmHttp(arm, { lease_token: token })
-              .catch((error: unknown) =>
-                console.warn("Could not stop arm", error),
-              );
-          } else if (ready) {
-            void sendCommand(arm, stopCommand).catch((error: unknown) =>
-              console.warn("Could not stop arm", error),
-            );
-          }
-        }
-        reject(asError(signal.reason));
-      };
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
+      rejectAbort = reject;
     });
+    const onAbort = () => {
+      cancel();
+      rejectAbort(asError(signal?.reason));
+    };
+    if (signal === undefined) return submitAndWait();
+    signal.addEventListener("abort", onAbort, { once: true });
     try {
-      return await Promise.race([work(), aborted]);
+      return await Promise.race([submitAndWait(), aborted]);
     } finally {
-      if (onAbort) signal.removeEventListener("abort", onAbort);
+      if (!retainedCancellation) signal.removeEventListener("abort", onAbort);
     }
   }
 
@@ -932,14 +965,25 @@ export function createStationConnection(
     );
   }
 
-  async function returnLease(): Promise<void> {
+  async function returnLease(keepalive = false): Promise<void> {
     const token = heldLeaseToken();
     if (token === null) return;
-    leaseState = { kind: "idle" };
-    if (leaseRenewalTimer !== null) clearTimeout(leaseRenewalTimer);
-    leaseRenewalTimer = null;
+    if (keepalive) loseLease();
+    else {
+      leaseState = { kind: "idle" };
+      if (leaseRenewalTimer !== null) clearTimeout(leaseRenewalTimer);
+      leaseRenewalTimer = null;
+    }
     try {
-      await stationApi().releaseLeaseHttp({ lease_token: token });
+      if (keepalive) {
+        const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
+        await stationFetch(new URL("/leases/release", base), {
+          ...jsonRequestInit("POST", { lease_token: token }),
+          keepalive: true,
+        });
+      } else {
+        await stationApi().releaseLeaseHttp({ lease_token: token });
+      }
     } catch (error) {
       if (!(error instanceof StationHttpError && error.status === 409))
         throw error;
@@ -1079,16 +1123,14 @@ export function createStationConnection(
     traceContext?: TraceContext,
     waitForOutcome = true,
   ): Promise<CommandAnswer> {
-    return stoppingOnAbort([arm], signal, async () => {
-      const answer = await sendCommand(
-        arm,
-        command,
-        expectedRevision,
-        traceContext,
-        signal,
-      );
-      return waitForOutcome ? finishedAnswer(answer) : answer;
-    });
+    return sendCommand(
+      arm,
+      command,
+      expectedRevision,
+      traceContext,
+      signal,
+      waitForOutcome,
+    );
   }
 
   function runGroup(
@@ -1097,11 +1139,7 @@ export function createStationConnection(
     signal?: AbortSignal,
     traceContext?: TraceContext,
   ): Promise<CommandAnswer> {
-    return stoppingOnAbort(Object.keys(command.targets), signal, async () =>
-      finishedAnswer(
-        await sendGroup(command, expectedRevisions, traceContext, signal),
-      ),
-    );
+    return sendGroup(command, expectedRevisions, traceContext, signal, true);
   }
 
   async function startActionSequence(
@@ -1111,7 +1149,7 @@ export function createStationConnection(
     if (token === null) throw new LeaseLostError();
     return stationApi().startActionSequenceHttp(
       apiSchemas.shape.ActionSequenceStartRequest.parse({
-        request_id: crypto.randomUUID(),
+        request_id: newRequestId(),
         station_instance_id: (await stationApi().getStationInstance()).id,
         lease_token: token,
         action_sequence,
@@ -1199,7 +1237,7 @@ export function createStationConnection(
       ) {
         if (!isHeld()) throw new LeaseLostError();
         return stationApi().runCompiledSequenceHttp({
-          request_id: crypto.randomUUID(),
+          request_id: newRequestId(),
           station_instance_id: (await stationApi().getStationInstance()).id,
           compilation_id: compilationId,
           continuation: continuation ?? null,
@@ -1261,7 +1299,7 @@ export function createStationConnection(
     },
     close() {
       closed = true;
-      void returnLease().catch((error: unknown) =>
+      void returnLease(true).catch((error: unknown) =>
         console.warn("Could not release lease", error),
       );
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
