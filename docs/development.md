@@ -115,9 +115,7 @@ bounds merely because the lockfile selected a newer version.
 | MCAP Tools | Native dependencies in `livekit-cameras/Cargo.toml` |
 
 Validate upstream changes in their owning repository first, then update affected
-pins and Cargo/pnpm/uv lockfiles here. When Biome changes, update both checked-in
-Biome schema URLs. Optional policy dependencies remain resolved in `uv.lock` even
-when their runtimes are not installed; report whether policy execution was tested.
+pins and Cargo/pnpm/uv lockfiles here. When Biome changes, update the checked-in schema URLs.
 
 ### SO-101 dependency
 
@@ -134,11 +132,6 @@ Update the pin for the change you need. For a runtime update, refresh the
 Cargo lockfile and run the affected station tests. For an asset update, update
 the revision and file checksums, run `uv run rua-dev setup`, and check the
 affected profiles and geometry. The station wheel includes the pinned assets.
-
-## Build artifacts and releases
-
-See [release preparation](releasing.md) for the package build, clean-install
-check, and publishing workflow.
 
 ## Worktrees and tooling
 
