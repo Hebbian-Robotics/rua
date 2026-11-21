@@ -150,7 +150,9 @@ include = [
 incompatible-mutable-override = "ignore"
 
 [tool.ty.environment]
-extra-paths = []
+extra-paths = [
+    "typings",
+]
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -165,6 +167,8 @@ dev = [
     "anthropic>=2.8.0",
     "google-genai>=3.1.0",
     "datamodel-code-generator>=0.89.0",
+    "mujoco>=3.17.0",
+    "pillow>=12.3.0",
     "numpy>=2",
     "pytest>=9.2.0",
     "ruff",

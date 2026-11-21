@@ -54,8 +54,12 @@ Use the path where you saved your profile if it differs from the example.
 
 Use `from hebbian_rua import StationClient` in your Python program. See the
 [read-only state check](../examples/python/README.md#read-your-arms-state) and
-[Python agent example](../examples/python/README.md#run-an-agent). For simulation, run your own engine and
-[connect its adapter](simulators.md); no engine is included or started by RUA.
+[Python agent example](../examples/python/README.md#run-an-agent).
+
+## Try RUA without hardware
+
+Follow the [MuJoCo quickstart](simulation.md) from a source checkout, or
+[connect your own simulator](simulators.md).
 
 ## Cameras
 

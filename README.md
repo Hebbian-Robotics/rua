@@ -31,7 +31,8 @@ Prebuilt wheels support Linux x86-64 (glibc 2.39+) and macOS 14+ on Apple Silico
 See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it,
 and the [example applications](examples/applications/README.md) for example toy projects.
 
-See [connecting a simulator](docs/simulators.md) to try in simulation.
+Try the SO-101 without hardware using the [MuJoCo quickstart](docs/simulation.md),
+or [connect your own simulator](docs/simulators.md).
 To watch your cameras, follow the [LiveKit web preview setup](docs/cameras.md#watch-a-usb-camera).
 
 ## Build an agent

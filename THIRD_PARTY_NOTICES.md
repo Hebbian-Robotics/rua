@@ -7,6 +7,11 @@ The SO-101 robot models derive from
 `a758567c3978dfeefe282ede0500085a48fe8f78`, under Apache-2.0.
 See [model attribution](https://github.com/Hebbian-Robotics/so101/blob/main/setup/src/so101_setup/assets/robot/so101/README.md) and its included license files.
 
+The [MuJoCo scene](examples/mujoco_sim/environment.xml) adapts the visual,
+floor, sky and light settings from `Simulation/SO101/scene.xml` in the SO-ARM100
+repository above. RUA assembles the arm models separately. See the
+[Apache-2.0 license](examples/mujoco_sim/LICENSE-APACHE).
+
 Camera components use the separately maintained
 [livekit-cameras](https://github.com/Hebbian-Robotics/livekit-cameras) and
 [mcap-tools](https://github.com/Hebbian-Robotics/mcap-tools) repositories.
