@@ -2,6 +2,8 @@
   "ignores": [
     "**/node_modules/**",
     "**/.venv/**",
+    "**/wheel-data/**",
+    "dist/**",
     "target/**",
     "licenses/**",
     ".cache/**",
