@@ -19,7 +19,7 @@ jobs:
       - name: Install link checker
         run: cargo install lychee --version 0.24.2 --locked
       - name: Check documentation links and anchors
-        run: lychee --offline --include-fragments --extensions md README.md CONTRIBUTING.md docs examples
+        run: lychee --offline --include-fragments --extensions md README.md CONTRIBUTING.md docs examples typescript-client
 
   comments:
     runs-on: ubuntu-24.04
@@ -118,8 +118,14 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm check
+          uv run rua-dev contracts --check
+      - if: ${{ runner.os == 'Linux' && hashFiles('vite.config.ts') != '' }}
+        run: |
           pnpm test:viewer
           pnpm build
-          uv run rua-dev contracts --check
+      - if: ${{ runner.os == 'Linux' && hashFiles('typescript-client/package.json') != '' && hashFiles('vite.config.ts') == '' }}
+        run: |
+          pnpm --filter @hebbian/robot-use-client test
+          pnpm test:package
       - if: ${{ runner.os != 'Linux' || hashFiles('pnpm-workspace.yaml') == '' }}
         run: uv run rua-dev contracts --check --targets python rust
