@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest an addition or change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what-you-ran
+    attributes:
+      label: What you are trying to do
+      description: What you ran or wrote today, and where it falls short.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS and version.
+  - type: dropdown
+    id: robot-or-sim
+    attributes:
+      label: Robot or simulation
+      options:
+        - Simulation
+        - Real SO-101 (single arm)
+        - Real SO-101 (bimanual)
+        - Other robot
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What you would like to see, and any alternatives you considered.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or examples
+      description: Optional output or links that show the problem.
+      render: text

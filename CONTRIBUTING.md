@@ -12,12 +12,12 @@ Choose checks for the component you are changing:
 | Documentation | Local link check below |
 | Python SDK or tooling | `uv run rua-dev validate --lane python` |
 | TypeScript SDK | `pnpm check` and `pnpm --filter hebbian-rua test` |
-| TypeScript example applications | `uv run rua-dev validate --lane viewer` in the full checkout |
+| TypeScript example applications | `pnpm check` and `pnpm --filter @hebbian/agent test` |
 | Rust control or station behavior | A focused Cargo test, such as `cargo test --locked -p hebbian-robot-use-server --bin hebbian-robot-use-server so101` after setup |
 | Shared wire types | Regenerate from the owning Rust types with `uv run rua-dev contracts` |
 
 Run `uv run rua-dev validate --help` for the lanes in your checkout.
-In the full checkout, `docs/development.md` explains generated-file checks.
+[Development reference](docs/development.md) explains generated-file checks.
 
 ## Making a change
 
@@ -102,8 +102,7 @@ check local links and section anchors:
 lychee --offline --include-fragments --extensions md README.md CONTRIBUTING.md docs examples
 ```
 
-Check affected component READMEs too. Check public-export templates in an
-assembled checkout, where relative links resolve. Use the same selection without
+Check affected component READMEs too. Use the same selection without
 `--offline` for external links when needed.
 
 ## Testing
@@ -139,8 +138,7 @@ Keep shared procedures in one place and document current behavior, not discovery
 history. Update existing topic guides rather than adding overlapping ones.
 
 Link to the owning dependency’s documentation for its workflows and internals;
-keep RUA integration instructions in this repository. Review public-export
-overlays and included files when changing shared setup or package guidance.
+keep RUA integration instructions in this repository.
 
 ## Robot profiles
 

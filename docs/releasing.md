@@ -12,11 +12,6 @@ public source commit. The Python wheels include the station and media companion.
 
 ## Prepare and verify
 
-In the development checkout, bring public contributions back before preparing a
-release. Produce the public source with the allowlisted export documented in the development checkout
-and review its contents against the current public repository. Publish from the
-reviewed public source commit.
-
 Choose a new version across all three registries. Update the release package
 manifests, the contracts dependency version in `sdk/Cargo.toml`, the local
 Python dependency pins, and the lockfiles.

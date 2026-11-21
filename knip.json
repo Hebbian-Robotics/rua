@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/inline-schema-refs.ts"]
+    },
+    "typescript-client": {
+      "entry": ["tests/*.test.ts", "tests/simulated-robot-tools.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "examples/typescript/agent": {
+      "entry": ["tests/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    }
+  },
+  "ignoreBinaries": ["build"],
+  "ignoreDependencies": ["hebbian-rua", "json-schema-to-zod"]
+}

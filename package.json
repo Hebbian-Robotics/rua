@@ -7,11 +7,13 @@
   },
   "type": "module",
   "scripts": {
-    "check": "pnpm lint && pnpm typecheck",
+    "check": "pnpm lint && pnpm typecheck && pnpm knip && pnpm lint:docs",
     "lint": "biome check --error-on-warnings .",
     "format": "biome check --write .",
     "typecheck": "tsrs --noEmit --fast",
-    "test:package": "tsx scripts/check-client-package.ts"
+    "test:package": "tsx scripts/check-client-package.ts",
+    "knip": "knip",
+    "lint:docs": "markdownlint-cli2 '**/*.md'"
   },
   "dependencies": {
     "hebbian-rua": "workspace:*"
@@ -23,7 +25,9 @@
     "tsrs": "0.25.0-ts7.1.0-beta",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "knip": "^6.45.0",
+    "markdownlint-cli2": "0.24.1"
   },
   "packageManager": "pnpm@12.16.1"
 }
