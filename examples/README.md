@@ -40,9 +40,7 @@ The agent declares its dependencies in `typescript/agent/package.json`.
 | --- | --- | --- | --- |
 | [`mujoco_sim/`](mujoco_sim/README.md) | Minimal MuJoCo fixture for control, multi-arm plant transport and camera validation. Start the station with a [fixture profile](mujoco_sim/profiles/single.toml), then point the fixture at the station work directory. Users implement the [simulator contract](../docs/simulators.md) for their own engine and scene. | `uv sync --project examples/mujoco_sim` | `uv run --project examples/mujoco_sim python examples/mujoco_sim/run.py --socket-directory DIR` |
 
-The [`scripts/`](../scripts/) directory holds hardware diagnostics and
-installed-package smoke checks. Run `uv run rua-dev contracts` to regenerate
-schemas and SDK contracts. These development tools are not needed to run or write a loop.
+Run `uv run rua-dev contracts` to regenerate schemas and SDK contracts. These development tools are not needed to run or write a loop.
 
 To build your own loop with other inputs or another model SDK, read
 [write your own loop](../docs/write-your-own-loop.md).

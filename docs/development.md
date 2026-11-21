@@ -24,9 +24,19 @@ cargo test -p hebbian-robot-use-core profile::tests
 pnpm --filter hebbian-rua test
 ```
 
-Pytest runs serially so station scenarios do not compete for control-loop
-deadlines. Tests that lack optional policy data or dependencies may skip. See
-[test ownership](../tests/README.md).
+Pytest runs serially so simulated station scenarios do not compete for
+control-loop deadlines. Shared helpers live in `tests/fixture_*.py`.
+Run `uv run pytest -m server` for native integration tests after
+`pnpm install --frozen-lockfile`. The `server` validation lane excludes tests
+marked `typescript`, which also need Node.js and pnpm.
+
+Policy replay skips unless `ORT_DYLIB_PATH` points to ONNX Runtime and
+`SO101_POLICY_GOLDEN_DIR` contains `policy.onnx` and `golden.npz`.
+For a controller cycle timing measurement, run on an idle host:
+
+```sh
+cargo test --release -p hebbian-robot-use-core --lib control_loop::tests::combined_motion_and_opening_meet_the_motor_cycle_deadline -- --ignored --exact --nocapture --test-threads=1
+```
 
 Validation builds the station once and passes its path through
 `HEBBIAN_ROBOT_USE_SERVER`. Standalone pytest builds it lazily through a shared
@@ -100,7 +110,7 @@ bounds merely because the lockfile selected a newer version.
 
 | Owned dependency | Pins to inspect when changing that integration |
 | --- | --- |
-| SO-101 | [Dependency pins](so101-dependency.md) for the runtime and model assets |
+| SO-101 | [Runtime and model asset pins](#so-101-dependency) |
 | LiveKit Cameras | Git dependencies in `livekit-cameras/Cargo.toml`; keep station access’s `livekit-api` compatible with the pinned LiveKit dependency graph |
 | MCAP Tools | Native dependencies in `livekit-cameras/Cargo.toml` |
 
@@ -109,23 +119,26 @@ pins and Cargo/pnpm/uv lockfiles here. When Biome changes, update both checked-i
 Biome schema URLs. Optional policy dependencies remain resolved in `uv.lock` even
 when their runtimes are not installed; report whether policy execution was tested.
 
+### SO-101 dependency
+
+RUA uses [Hebbian-Robotics/so101](https://github.com/Hebbian-Robotics/so101)
+for the hardware runtime and robot model assets. The upstream setup CLI
+handles arm calibration and servo setup.
+
+| What you need to update | Where it is pinned |
+| --- | --- |
+| Rust hardware runtime | [`server-core/Cargo.toml`](../server-core/Cargo.toml) and `Cargo.lock` |
+| Robot assemblies, URDFs and meshes | [`robots/so101-assets.toml`](../robots/so101-assets.toml) |
+
+Update the pin for the change you need. For a runtime update, refresh the
+Cargo lockfile and run the affected station tests. For an asset update, update
+the revision and file checksums, run `uv run rua-dev setup`, and check the
+affected profiles and geometry. The station wheel includes the pinned assets.
+
 ## Build artifacts and releases
 
-See the workspace [Cargo manifest](../Cargo.toml) for build-profile settings.
-
-See [release preparation](releasing.md) for the assembled wheel and publishing.
-To build or debug the individual native components, run:
-
-```sh
-uv run rua-dev package server --platform local --without-viewer --with-media
-uv run rua-dev package server --platform manylinux --without-viewer
-uv run rua-dev package media
-```
-
-`--with-media` is supported only for local builds.
-`package media` archives an already built Ubuntu media wheel. These artifacts
-are inputs to the assembled `hebbian-rua` wheel, which is the input accepted by
-`package check`.
+See [release preparation](releasing.md) for the package build, clean-install
+check, and publishing workflow.
 
 ## Worktrees and tooling
 

@@ -77,7 +77,7 @@ Trace drops create gaps. Phase timings include OS scheduling delays.
 To investigate a slow cycle, separate request admission, feedback read,
 reference computation and writes using the timing fields. The [motor loop](../server-core/src/control_loop/mod.rs) defines phase order and
 where admission yields. A batch budget cannot preempt an individual request or serial
-operation. Use the [SO-101 dependency guide](so101-dependency.md) to locate the
+operation. Use the [SO-101 dependency guide](development.md#so-101-dependency) to locate the
 pinned runtime that owns servo retries and environmental checks. Retain both the
 original and confirmation readings when investigating temperature or voltage
 trips.

@@ -54,5 +54,5 @@ reports what happened for the model’s next turn.
 - [Control invariants](control-invariants.md): motion admission, geometry guards and failure handling.
 - [Contributing](../CONTRIBUTING.md): contributor workflow, validation and style.
 - [Development reference](development.md): validation details and generated contracts.
-- [Testing](../tests/README.md): test selection, ownership and integration boundaries.
+- [Integration tests](development.md#validation-details): test selection and setup.
 - [Release preparation](releasing.md): distribution and checks before publishing.

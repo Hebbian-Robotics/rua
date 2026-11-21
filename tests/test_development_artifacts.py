@@ -1,7 +1,5 @@
 import hashlib
-import json
 import subprocess
-import tarfile
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -9,90 +7,6 @@ import pytest
 import tomli_w
 from rua_dev.bundle import assemble_bundle
 from rua_dev.generated import check_generated_files
-from rua_dev.media_archive import package_media_wheel
-
-
-def write_media_wheel(path: Path, *, invalid_entry: str | None = None) -> None:
-    package_prefix = "hebbian_robot_use_media-0.1.0.data/"
-    media_prefix = package_prefix + "data/share/hebbian-robot-use-media/"
-    entries = {
-        package_prefix + "scripts/hebbian-robot-use-media": b"media executable",
-        media_prefix + "LICENSE": b"project license",
-        media_prefix + "THIRD_PARTY_NOTICES.md": b"third party notices",
-        media_prefix + "licenses/webrtc/LICENSE.md": b"webrtc license",
-        media_prefix + "licenses/rust/manifest.json": json.dumps(
-            [
-                {
-                    "name": "example",
-                    "version": "1",
-                    "directory": "example-1",
-                    "files": ["LICENSE"],
-                }
-            ]
-        ).encode(),
-        media_prefix + "licenses/rust/example-1/LICENSE": b"dependency license",
-        "hebbian_robot_use_media-0.1.0.dist-info/METADATA": b"wheel-only metadata",
-    }
-    match invalid_entry:
-        case "missing-binary":
-            del entries[package_prefix + "scripts/hebbian-robot-use-media"]
-        case "missing-license":
-            del entries[media_prefix + "licenses/rust/example-1/LICENSE"]
-        case "unsafe-path":
-            entries[media_prefix + "../../outside"] = b"outside"
-    with ZipFile(path, "w") as wheel:
-        for name, contents in entries.items():
-            wheel.writestr(name, contents)
-
-
-def test_media_archive_contains_runtime_assets_and_is_reproducible(
-    tmp_path: Path,
-) -> None:
-    wheel_path = tmp_path / "media.whl"
-    write_media_wheel(wheel_path)
-    output_path = package_media_wheel(wheel_path, tmp_path / "artifacts", "0.1.0")
-    first_archive = output_path.read_bytes()
-    bundle_name = "hebbian-robot-use-media-0.1.0-ubuntu24.04-x86_64"
-    with tarfile.open(output_path) as archive:
-        binary = archive.getmember(f"{bundle_name}/bin/hebbian-robot-use-media")
-        assert binary.mode == 0o755
-        assert binary.uid == binary.gid == binary.mtime == 0
-        binary_contents = archive.extractfile(binary)
-        assert binary_contents is not None
-        assert binary_contents.read() == b"media executable"
-        assert (
-            archive.getmember(
-                f"{bundle_name}/share/hebbian-robot-use-media/licenses/rust/example-1/LICENSE"
-            ).mode
-            == 0o644
-        )
-        assert not any("dist-info" in entry.name for entry in archive)
-    assert (
-        package_media_wheel(wheel_path, output_path.parent, "0.1.0").read_bytes()
-        == first_archive
-    )
-
-
-@pytest.mark.parametrize(
-    ("invalid_entry", "message"),
-    [
-        ("missing-binary", "Media wheel is missing:"),
-        ("missing-license", "Media wheel is missing listed license files:"),
-        ("unsafe-path", "Unsafe wheel entry:"),
-    ],
-)
-def test_invalid_media_wheel_preserves_previous_archive(
-    tmp_path: Path, invalid_entry: str, message: str
-) -> None:
-    wheel_path = tmp_path / "media.whl"
-    write_media_wheel(wheel_path)
-    output_path = package_media_wheel(wheel_path, tmp_path / "artifacts", "0.1.0")
-    previous_archive = output_path.read_bytes()
-    write_media_wheel(wheel_path, invalid_entry=invalid_entry)
-    with pytest.raises(ValueError, match=message):
-        package_media_wheel(wheel_path, output_path.parent, "0.1.0")
-    assert output_path.read_bytes() == previous_archive
-    assert list(output_path.parent.iterdir()) == [output_path]
 
 
 @pytest.mark.parametrize(

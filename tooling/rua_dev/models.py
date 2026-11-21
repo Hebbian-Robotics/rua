@@ -7,11 +7,6 @@ class SdkTarget(StrEnum):
     TYPESCRIPT = "typescript"
 
 
-class BuildPlatform(StrEnum):
-    LOCAL = "local"
-    MANYLINUX = "manylinux"
-
-
 class ValidationLane(StrEnum):
     PYTHON = "python"
     VIEWER = "viewer"
