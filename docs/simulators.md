@@ -79,6 +79,5 @@ that duration, then reply to each arm.
 
 Start RUA with a simulator profile and run your application separately. Your
 application owns actuator gains, initial pose, rendering and its run loop.
-The full source checkout includes a MuJoCo integration in `examples/mujoco_sim/`
-which uses the shared connection. The wheel provides the Python connection
-API for users who run their own simulator.
+The [MuJoCo quickstart](simulation.md) shows how the source example uses the
+shared connection. The wheel provides the same Python connection API.
