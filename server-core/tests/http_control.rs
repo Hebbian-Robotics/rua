@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::control_loop::ArmSetup;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
@@ -125,7 +125,7 @@ impl Plant for OverloadedPlant {
 
 #[test]
 fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
-    let config = ExecutorConfig::parse(CONFIG).unwrap();
+    let config = ControllerConfig::parse(CONFIG).unwrap();
     let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
     let handle = link.handle();
     let mut client = LinkClient::connect(&handle);
@@ -147,7 +147,7 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
             inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
             overloaded: Arc::clone(&overloaded),
         },
-        Some(link),
+        link,
     )]);
     client.command(hebbian_contracts::Command::Enable);
     client.read_until(|event| {
@@ -173,7 +173,7 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
 
 #[test]
 fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
-    let config = ExecutorConfig::parse(CONFIG).unwrap();
+    let config = ControllerConfig::parse(CONFIG).unwrap();
     let control = Arc::new(Lease::new(LEASE));
     let first = Link::new(&config, Arc::clone(&control)).unwrap();
     let second = Link::new(&config, control).unwrap();
@@ -195,13 +195,13 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
             "first".into(),
             config.clone(),
             NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
-            Some(first),
+            first,
         ),
         ArmSetup::new(
             "second".into(),
             config,
             NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
-            Some(second),
+            second,
         ),
     ]);
     let address = server.local_address();

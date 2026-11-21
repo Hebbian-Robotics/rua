@@ -6,7 +6,8 @@ use std::time::Duration;
 use super::runner::{Begun, BusRecovery, Flow, Runner};
 use super::runner_for;
 use crate::arm::Now;
-use crate::config::{EnableChecks, ExecutorConfig};
+use crate::config::{ControllerConfig, EnableChecks};
+use crate::control_link::Link;
 use crate::plant::{Feedback, Plant, RecoveryObservation};
 use hebbian_contracts::{ArmMode, Command};
 
@@ -158,8 +159,8 @@ fn at(positions: [f64; 2]) -> Feedback {
     }
 }
 
-fn config(test_name: &str) -> ExecutorConfig {
-    let mut config = ExecutorConfig::parse(crate::config::TEST_CONFIG)
+fn config(test_name: &str) -> ControllerConfig {
+    let mut config = ControllerConfig::parse(crate::config::TEST_CONFIG)
         .unwrap()
         .into_input();
     config.enable_checks = Some(EnableChecks {
@@ -170,17 +171,25 @@ fn config(test_name: &str) -> ExecutorConfig {
         .join(format!("lifecycle-{test_name}-{}", std::process::id()))
         .to_string_lossy()
         .into_owned();
-    ExecutorConfig::try_from(config).unwrap()
+    ControllerConfig::try_from(config).unwrap()
+}
+
+fn test_link(config: &ControllerConfig) -> Link {
+    Link::for_controller(
+        config,
+        std::sync::Arc::new(crate::lease::Lease::new(Duration::from_secs(1))),
+    )
 }
 
 fn runner<'a>(
     plant: &'a mut ScriptedPlant,
-    config: &'a ExecutorConfig,
+    config: &'a ControllerConfig,
+    link: &'a Link,
 ) -> Runner<'a, ScriptedPlant> {
     let Ok(runner) = runner_for(
         "arm",
         plant,
-        None,
+        link,
         config,
         std::path::Path::new(&config.trace_directory),
     ) else {
@@ -193,7 +202,8 @@ fn enabling_error(readings: Vec<Feedback>, test_name: &str) -> (String, Calls) {
     let calls = Calls::default();
     let config = config(test_name);
     let mut plant = ScriptedPlant::new(readings, &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     let Err(refusal) = runner.enable_checked() else {
         panic!("the enable is refused");
     };
@@ -249,7 +259,8 @@ fn drift_after_the_first_good_enable_sample_releases_torque_without_following_it
         ],
         &calls,
     );
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     runner.enable(Now::current());
     assert_eq!(count(&calls.enable), 1);
     assert_eq!(count(&calls.release), 1);
@@ -273,7 +284,8 @@ fn a_refused_enable_releases_whatever_the_attempt_left_on_and_fails_the_command(
     let calls = Calls::default();
     let config = config("refused-enable");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0]), at([2.5, 0.0])], &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     let now = Now::current();
     runner.state.arm().submit(Command::Enable, now).unwrap();
     runner.state.arm().next_job();
@@ -288,7 +300,8 @@ fn a_clean_enable_turns_torque_on_once_and_powers_the_loop_up() {
     let calls = Calls::default();
     let config = config("clean-enable");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     let now = Now::current();
     runner.state.arm().submit(Command::Enable, now).unwrap();
     runner.state.arm().next_job();
@@ -300,9 +313,10 @@ fn a_clean_enable_turns_torque_on_once_and_powers_the_loop_up() {
 
 fn powered_runner<'a>(
     plant: &'a mut ScriptedPlant,
-    config: &'a ExecutorConfig,
+    config: &'a ControllerConfig,
+    link: &'a Link,
 ) -> Runner<'a, ScriptedPlant> {
-    let mut runner = runner(plant, config);
+    let mut runner = runner(plant, config, link);
     runner.state.power_up(&[0.0, 0.0], None);
     runner.state.arm().enabled(&[0.0, 0.0], Now::current());
     runner
@@ -313,7 +327,8 @@ fn a_bus_failure_while_enabled_is_waited_out_with_the_guard_still_heard() {
     let calls = Calls::default();
     let config = config("patience");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
     assert!(runner.state.powered);
     assert!(runner.report.trip.is_none());
@@ -327,7 +342,8 @@ fn a_lost_bus_recovers_a_verified_hold_without_releasing_torque() {
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
     let cycles_in_grace = 49;
     let failed_reconnections = 3;
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     runner.plant.unanswered_reads = cycles_in_grace + 1 + failed_reconnections;
     let cycle = |runner: &mut Runner<'_, ScriptedPlant>| {
         if let Begun::Done(flow, _) = runner.begin_cycle(Duration::from_millis(10), None) {
@@ -379,7 +395,8 @@ fn another_communication_failure_during_recovery_retries_the_full_hold_check() {
     let calls = Calls::default();
     let config = config("recovery-disconnect");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     for _ in 0..50 {
         runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
     }
@@ -406,7 +423,8 @@ fn an_out_of_limits_reconnection_never_commands_a_recovery_hold() {
     let calls = Calls::default();
     let config = config("recovery-outside-limits");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     for _ in 0..50 {
         runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
     }
@@ -425,7 +443,8 @@ fn a_reconnected_bus_with_a_motor_unpowered_does_not_resume_or_release() {
     let calls = Calls::default();
     let config = config("mixed-torque-recovery");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     runner.plant.recovery_torque[1] = false;
     for _ in 0..50 {
         runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
@@ -470,7 +489,8 @@ fn stopping_an_approved_recovery_keeps_the_arm_paused() {
     let calls = Calls::default();
     let config = config("stop-recovery");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     runner.plant.recovery_torque[1] = false;
     for _ in 0..50 {
         runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
@@ -508,7 +528,8 @@ fn a_heartbeat_that_fails_during_patience_counts_as_a_plant_failure() {
     let config = config("heartbeat");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
     plant.heartbeat_fails = true;
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
     assert!(!runner.state.powered);
     assert!(
@@ -526,7 +547,8 @@ fn a_shutdown_at_the_rest_pose_releases_without_moving() {
     let calls = Calls::default();
     let config = config("shutdown-at-rest");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     let now = Now::current();
     runner.state.arm().submit(Command::Shutdown, now).unwrap();
     assert!(runner.shutdown_step(now));
@@ -539,7 +561,8 @@ fn a_shutdown_away_from_rest_returns_once_and_then_releases() {
     let calls = Calls::default();
     let config = config("shutdown-away");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     let now = Now::current();
     runner.state.previous_command = vec![1.0, 0.0];
     runner.state.arm().submit(Command::Shutdown, now).unwrap();
@@ -556,7 +579,8 @@ fn shutdown_releases_instead_of_returning_to_rest_outside_joint_limits() {
     let calls = Calls::default();
     let config = config("shutdown-outside-limits");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     let now = Now::current();
     runner.state.arm().enabled(&[2.02, 0.0], now);
     runner.state.arm().set_hold(&[0.0, 0.0]);
@@ -575,7 +599,8 @@ fn a_shutdown_not_requested_or_an_unpowered_arm_does_nothing() {
     let calls = Calls::default();
     let config = config("shutdown-idle");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     assert!(!runner.shutdown_step(Now::current()));
     assert!(runner.state.powered);
     assert_eq!(count(&calls.release), 0);
@@ -588,7 +613,8 @@ fn a_trip_clears_when_the_checks_pass_again_and_stays_while_they_fail() {
     let mut faulty = at([0.0, 0.0]);
     faulty.fault = Some("1: overheating".into());
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0]), faulty, at([0.0, 0.0])], &calls);
-    let mut runner = powered_runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
     runner.state.tripped = Some("earlier".into());
     let cycle = Duration::from_millis(10);
     runner.begin_cycle(cycle, None);
@@ -608,9 +634,10 @@ fn the_loop_answers_a_bounded_number_of_requests_each_cycle_and_the_rest_next_cy
     let calls = Calls::default();
     let config = config("bounded-requests");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     let (handle, inbox) = crate::handoff::arm_channel();
-    runner.inbox = Some(inbox);
+    runner.inbox = inbox;
     let excess = 6;
     let answers: Vec<_> = (0..crate::handoff::MAXIMUM_REQUESTS_PER_CYCLE + excess)
         .map(|_| handle.submit_unawaited(Command::Stop, None).unwrap())
@@ -644,9 +671,10 @@ fn a_cycle_with_nothing_asked_of_it_serves_nothing_and_does_not_wait() {
     let calls = Calls::default();
     let config = config("idle-inbox");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     let (_handle, inbox) = crate::handoff::arm_channel();
-    runner.inbox = Some(inbox);
+    runner.inbox = inbox;
     super::serve_requests(
         std::slice::from_mut(&mut runner),
         Duration::from_millis(10),
@@ -669,7 +697,8 @@ fn malformed_feedback_never_becomes_a_position_or_gripper_write() {
         let mut malformed = at([0.0, 0.0]);
         malformed.positions = positions;
         let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0]), at([0.0, 0.0]), malformed], &calls);
-        let mut runner = powered_runner(&mut plant, &config);
+        let link = test_link(&config);
+        let mut runner = powered_runner(&mut plant, &config, &link);
         assert!(matches!(
             runner.begin_cycle(Duration::from_millis(10), None),
             Begun::Pending(_)
@@ -713,11 +742,13 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
     mismatched_input.lower_limits.push(-2.0);
     mismatched_input.upper_limits.push(2.0);
     mismatched_input.joint_effort_limits.push(10.0);
-    let mismatched_config = ExecutorConfig::try_from(mismatched_input).unwrap();
+    let mismatched_config = ControllerConfig::try_from(mismatched_input).unwrap();
     let mut left_plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
     let mut right_plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
-    let mut left = powered_runner(&mut left_plant, &left_config);
-    let mut right = powered_runner(&mut right_plant, &right_config);
+    let left_link = test_link(&left_config);
+    let right_link = test_link(&right_config);
+    let mut left = powered_runner(&mut left_plant, &left_config, &left_link);
+    let mut right = powered_runner(&mut right_plant, &right_config, &right_link);
     left.name = "left".into();
     right.name = "right".into();
     let membership = GroupMembership {
@@ -770,7 +801,7 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
     }
 }
 
-fn gripper_config(test_name: &str) -> ExecutorConfig {
+fn gripper_config(test_name: &str) -> ControllerConfig {
     let mut input = config(test_name).into_input();
     input.driven_joints.push("jaw".into());
     input.gripper = Some(crate::config::GripperLimits {
@@ -779,7 +810,7 @@ fn gripper_config(test_name: &str) -> ExecutorConfig {
         position_tolerance_radians: 0.02,
         contact_dwell_seconds: 0.2,
     });
-    ExecutorConfig::try_from(input).unwrap()
+    ControllerConfig::try_from(input).unwrap()
 }
 
 #[test]
@@ -787,10 +818,11 @@ fn startup_refuses_missing_required_gripper_feedback() {
     let calls = Calls::default();
     let config = gripper_config("missing-startup-gripper-feedback");
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
+    let link = test_link(&config);
     let Err(report) = runner_for(
         "arm",
         &mut plant,
-        None,
+        &link,
         &config,
         std::path::Path::new(&config.trace_directory),
     ) else {
@@ -812,7 +844,8 @@ fn missing_required_gripper_feedback_skips_all_motor_writes() {
     let mut initial = at([0.0, 0.0]);
     initial.gripper_angle = Some(0.0);
     let mut plant = ScriptedPlant::new(vec![initial, at([0.0, 0.0])], &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     runner.state.power_up(&[0.0, 0.0], Some(0.0));
     runner.state.core.enabled(&[0.0, 0.0], Now::current());
     assert!(matches!(
@@ -831,7 +864,8 @@ fn a_missing_gripper_controller_fails_its_command_and_holds_without_reconnecting
     let mut initial = at([0.0, 0.0]);
     initial.gripper_angle = Some(0.0);
     let mut plant = ScriptedPlant::new(vec![initial], &calls);
-    let mut runner = runner(&mut plant, &config);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
     runner.state.power_up(&[0.0, 0.0], Some(0.0));
     runner.state.core.enabled(&[0.0, 0.0], Now::current());
     let record = runner

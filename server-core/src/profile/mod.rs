@@ -1,4 +1,4 @@
-mod executor_config;
+mod controller_config;
 mod robot_assembly;
 
 use std::collections::{BTreeMap, HashSet};
@@ -15,8 +15,8 @@ pub use crate::so101::calibration::{
 use crate::so101::policy::CONTROL_FREQUENCY_HERTZ as POLICY_CONTROL_HERTZ;
 pub use crate::so101::settings::{FeetechSettings, Sign};
 
-pub use executor_config::{
-    JointLimitSource, executor_config, executor_config_input, urdf_joint_limits,
+pub use controller_config::{
+    JointLimitSource, controller_config, controller_config_input, urdf_joint_limits,
 };
 
 // SAFETY: A descriptive per-joint reference; it never commands motion or proves support.
@@ -443,13 +443,6 @@ pub fn load_robot_profile_with_fragments(
         .with_context(|| format!("Profile {name} does not match the profile schema"))?;
     let profile = validated(parsed, repository_root).with_context(|| format!("Profile {name}"))?;
     Ok(profile)
-}
-
-pub fn parse_robot_profile_json(text: &str, relative_to: &Path) -> anyhow::Result<RobotProfile> {
-    let parsed: ProfileTables =
-        serde_json::from_str(text).context("The profile JSON does not match the profile schema")?;
-    let name = parsed.name.clone();
-    validated(parsed, relative_to).with_context(|| format!("Profile {name}"))
 }
 
 fn positive_and_finite(values: &[f64]) -> bool {

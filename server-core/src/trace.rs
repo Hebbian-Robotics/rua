@@ -82,10 +82,10 @@ impl TraceWriter {
             .duration_since(UNIX_EPOCH)
             .context("The system clock is before 1970")?
             .as_nanos();
-        // CONSTRAINT: The clock ticks in microseconds on some platforms, so executors starting in the same
+        // CONSTRAINT: The clock ticks in microseconds on some platforms, so controllers starting in the same
         // tick would otherwise collide on the name; take the next free one.
         let (path, file) = loop {
-            let path = directory.join(format!("executor-{nanoseconds}-trace.jsonl"));
+            let path = directory.join(format!("controller-{nanoseconds}-trace.jsonl"));
             match File::create_new(&path) {
                 Ok(file) => break (path, file),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn executors_opened_at_the_same_instant_get_distinct_trace_files() {
+    fn controllers_opened_at_the_same_instant_get_distinct_trace_files() {
         let directory =
             std::env::temp_dir().join(format!("trace-collision-test-{}", std::process::id()));
         let mut paths = std::collections::BTreeSet::new();

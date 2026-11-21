@@ -28,7 +28,7 @@ pub struct Feedback {
 impl Feedback {
     pub(crate) fn measured_positions(
         &self,
-        config: &crate::config::ExecutorConfig,
+        config: &crate::config::ControllerConfig,
     ) -> anyhow::Result<crate::motion_values::MeasuredPositions<'_>> {
         anyhow::ensure!(
             self.gripper_angle.is_none_or(f64::is_finite),

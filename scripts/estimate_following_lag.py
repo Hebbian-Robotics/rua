@@ -83,7 +83,7 @@ def report_joint(traces: list[dict[str, np.ndarray]], joint: int) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Estimate joint lag from executor traces."
+        description="Estimate joint lag from controller traces."
     )
     parser.add_argument(
         "traces", type=Path, nargs="+", help="Completed JSONL trace files"

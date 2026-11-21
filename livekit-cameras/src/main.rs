@@ -60,7 +60,7 @@ async fn publish(arguments: Arguments) -> Result<(), PublisherError> {
     let telemetry_stopped = stopped.clone();
     let telemetry = tokio::spawn(async move {
         if let Err(error) =
-            livekit_cameras::follow_station(&arguments.executor_url, telemetry_stopped).await
+            livekit_cameras::follow_station(&arguments.station_url, telemetry_stopped).await
         {
             eprintln!("Station telemetry: {error}");
         }

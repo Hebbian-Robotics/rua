@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use anyhow::{Context, ensure};
 use hdrhistogram::Histogram;
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::{Link, LinkHandle};
 use hebbian_robot_use_core::control_loop::{ArmSetup, Report, run_arms};
 use hebbian_robot_use_core::guard::GuardedPlant;
@@ -100,7 +100,7 @@ pub(crate) const DEFAULT_STAND_IN_LAG_SECONDS: f64 = 0.05;
 
 pub(crate) struct ConfiguredArm {
     pub name: String,
-    pub config: ExecutorConfig,
+    pub config: ControllerConfig,
     pub config_path: PathBuf,
 }
 
@@ -118,26 +118,19 @@ pub(crate) fn load_arms(arms: &[(String, PathBuf)]) -> anyhow::Result<Vec<Config
 
 fn arm_setup<P: Plant>(
     name: &str,
-    config: ExecutorConfig,
+    config: ControllerConfig,
     plant: P,
-    control: Option<&Arc<Lease>>,
+    control: &Arc<Lease>,
 ) -> ArmSetup<P> {
-    let link = control.map(|control| Link::for_controller(&config, Arc::clone(control)));
+    let link = Link::for_controller(&config, Arc::clone(control));
     ArmSetup::new(name.to_owned(), config, plant, link)
 }
 
-fn close_links<P: Plant>(setups: &mut [ArmSetup<P>]) {
-    for setup in setups {
-        if let Some(link) = setup.link.take() {
-            link.close();
-        }
-    }
-}
 fn simulator_setups(
     arms: &[ConfiguredArm],
     directory: &Path,
     shutdown_requested: &AtomicBool,
-    control: Option<&Arc<Lease>>,
+    control: &Arc<Lease>,
 ) -> anyhow::Result<Vec<ArmSetup<SocketPlant>>> {
     // INVARIANT: Every arm's plant socket exists before the first accept, so a
     // simulator serving several arms can connect to all of them at once.
@@ -172,7 +165,7 @@ fn simulator_setups(
 
 fn hardware_setups(
     arms: &[ConfiguredArm],
-    control: Option<&Arc<Lease>>,
+    control: &Arc<Lease>,
 ) -> anyhow::Result<
     Vec<
         ArmSetup<
@@ -199,7 +192,7 @@ fn hardware_setups(
 fn no_physics_setups(
     arms: &[ConfiguredArm],
     plant_lag_seconds: f64,
-    control: Option<&Arc<Lease>>,
+    control: &Arc<Lease>,
 ) -> Vec<ArmSetup<NoPhysicsStandIn>> {
     let mut setups = Vec::new();
     for arm in arms {
@@ -330,12 +323,7 @@ fn run_connected<P: Plant>(
     let stop_socket = socket.try_clone()?;
     let arms: BTreeMap<String, LinkHandle> = setups
         .iter()
-        .filter_map(|setup| {
-            setup
-                .link
-                .as_ref()
-                .map(|link| (setup.name.clone(), link.handle()))
-        })
+        .map(|setup| (setup.name.clone(), setup.link.handle()))
         .collect();
     let shutting_down = Arc::new(AtomicBool::new(false));
     let service_shutting_down = Arc::clone(&shutting_down);
@@ -363,36 +351,24 @@ fn run_connected<P: Plant>(
     Ok(reports)
 }
 
-pub(crate) enum RunMode<'a> {
-    Diagnostic {
-        seconds: Option<f64>,
-    },
-    Controller {
-        socket: &'a Path,
-        instance: uuid::Uuid,
-    },
-}
-
 fn run_setups<P: Plant>(
     mut setups: Vec<ArmSetup<P>>,
-    mode: RunMode<'_>,
-    run_for: Option<Duration>,
+    station_socket: &Path,
+    instance: uuid::Uuid,
     shutdown_requested: &Arc<AtomicBool>,
     hardware: bool,
     bus_timing: impl Fn(&P) -> Option<&BusTiming>,
 ) -> anyhow::Result<()> {
-    let reports = match mode {
-        RunMode::Controller { socket, instance } => {
-            run_connected(&mut setups, socket, instance, shutdown_requested, hardware)?
-        }
-        RunMode::Diagnostic { .. } => {
-            // INVARIANT: A hardware diagnostic leaves the arms holding; use `disable` to release them.
-            run_arms(&mut setups, run_for, shutdown_requested)
-        }
-    };
-    close_links(&mut setups);
-    for (setup, (name, report)) in setups.iter().zip(&reports) {
+    let reports = run_connected(
+        &mut setups,
+        station_socket,
+        instance,
+        shutdown_requested,
+        hardware,
+    )?;
+    for (setup, (name, report)) in setups.into_iter().zip(&reports) {
         print_timing(name, report, bus_timing(setup.plant()));
+        setup.link.close();
     }
     Ok(())
 }
@@ -411,7 +387,7 @@ fn select_plant(
     if arms.iter().any(uses_simulator) {
         ensure!(
             !hardware && arms.iter().all(uses_simulator),
-            "Arms with a sim_plant section cannot share an executor with arms on other plants"
+            "Arms with a sim_plant section cannot share a controller with arms on other plants"
         );
         Ok(PlantSelection::Simulator {
             socket_directory: socket_directory
@@ -431,50 +407,37 @@ fn select_plant(
 
 pub(crate) fn run_configured(
     arms: &[ConfiguredArm],
-    mode: RunMode<'_>,
+    station_socket: &Path,
+    instance: uuid::Uuid,
     socket_directory: Option<PathBuf>,
     plant_lag_seconds: f64,
     hardware: bool,
 ) -> anyhow::Result<()> {
-    let run_for = match mode {
-        RunMode::Diagnostic {
-            seconds: Some(seconds),
-        } => Some(
-            Duration::try_from_secs_f64(seconds)
-                .context("--seconds must be a non-negative number")?,
-        ),
-        RunMode::Diagnostic { seconds: None } | RunMode::Controller { .. } => None,
-    };
     validate_arms(arms)?;
     let plant = select_plant(arms, socket_directory, plant_lag_seconds, hardware)?;
     let shutdown_requested = shutdown_flag()?;
-    let control = matches!(mode, RunMode::Controller { .. }).then(|| Arc::new(Lease::new(LEASE)));
+    let control = Arc::new(Lease::new(LEASE));
     match plant {
         PlantSelection::Servos => run_setups(
-            hardware_setups(arms, control.as_ref())?,
-            mode,
-            run_for,
+            hardware_setups(arms, &control)?,
+            station_socket,
+            instance,
             &shutdown_requested,
             true,
             |plant| Some(plant.inner().bus().timing()),
         ),
         PlantSelection::Simulator { socket_directory } => run_setups(
-            simulator_setups(
-                arms,
-                &socket_directory,
-                &shutdown_requested,
-                control.as_ref(),
-            )?,
-            mode,
-            run_for,
+            simulator_setups(arms, &socket_directory, &shutdown_requested, &control)?,
+            station_socket,
+            instance,
             &shutdown_requested,
             false,
             |_| None,
         ),
         PlantSelection::NoPhysicsStandIn { lag_seconds } => run_setups(
-            no_physics_setups(arms, lag_seconds, control.as_ref()),
-            mode,
-            run_for,
+            no_physics_setups(arms, lag_seconds, &control),
+            station_socket,
+            instance,
             &shutdown_requested,
             false,
             |_| None,

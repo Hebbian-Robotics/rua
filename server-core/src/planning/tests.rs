@@ -5,13 +5,13 @@ use serde_json::{Value, json};
 
 use super::orientation::{grasp_rotation, pose_orientation_quaternion, xyzw};
 use super::{PlanRefusal, PlannedMotion, Planner, ProjectionOutcome, Waypoint};
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::preview::{PreviewOutcome, ReachPreview};
 use hebbian_contracts::{
     Approach, JawClosingAxis, NamedApproach, PoseOrientation, RejectionReason,
 };
 
-fn config(urdf: &Path, joints: &[&str], tool_link: &str, settings: &Value) -> ExecutorConfig {
+fn config(urdf: &Path, joints: &[&str], tool_link: &str, settings: &Value) -> ControllerConfig {
     let mut text: Value = serde_json::from_str(crate::config::TEST_CONFIG).unwrap();
     text["urdf"] = json!(urdf);
     text["driven_joints"] = json!(joints);
@@ -19,7 +19,7 @@ fn config(urdf: &Path, joints: &[&str], tool_link: &str, settings: &Value) -> Ex
     for (key, value) in settings.as_object().unwrap() {
         text[key] = value.clone();
     }
-    ExecutorConfig::parse(&text.to_string()).unwrap()
+    ControllerConfig::parse(&text.to_string()).unwrap()
 }
 
 fn seven_joint_planner(name: &str) -> Planner {

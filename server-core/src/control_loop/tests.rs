@@ -2,12 +2,12 @@ use nalgebra::Isometry3;
 
 use super::guard_command;
 use crate::arm::ReachGoal;
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::plant::Feedback;
 use crate::policy::{ActiveReach, PolicyRuntime, ReachStatus};
 
-fn config() -> ExecutorConfig {
-    ExecutorConfig::parse(crate::config::TEST_CONFIG).unwrap()
+fn config() -> ControllerConfig {
+    ControllerConfig::parse(crate::config::TEST_CONFIG).unwrap()
 }
 fn feedback(positions: Vec<f64>) -> Feedback {
     Feedback {
@@ -71,7 +71,7 @@ fn policy_timing_is_checked_before_loading_a_network() {
     config.policy = Some(policy_settings());
     config.frequency_hertz = 60.0;
     assert!(
-        PolicyRuntime::new(&ExecutorConfig::try_from(config.clone()).unwrap(), None)
+        PolicyRuntime::new(&ControllerConfig::try_from(config.clone()).unwrap(), None)
             .err()
             .unwrap()
             .to_string()
@@ -118,7 +118,7 @@ fn a_record_reports_the_tool_in_the_world_frame_targets_are_planned_in() {
     text["lower_limits"] = serde_json::json!(vec![-1.5; 5]);
     text["upper_limits"] = serde_json::json!(vec![1.5; 5]);
     text["joint_effort_limits"] = serde_json::json!(vec![10.0; 5]);
-    let config = ExecutorConfig::parse(&text.to_string()).unwrap();
+    let config = ControllerConfig::parse(&text.to_string()).unwrap();
     let robot = super::load_shared_robot(&config).unwrap();
     let tool = super::tool_pose::ToolPose::new(&config, robot.as_ref())
         .unwrap()
@@ -177,10 +177,11 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
         )
         .unwrap();
     let mut plant = NoPhysicsStandIn::at(initial.clone(), 0.0).with_gripper(0.0);
+    let link = test_link(&config);
     let mut runner = super::runner_for(
         "arm",
         &mut plant,
-        None,
+        &link,
         &config,
         std::path::Path::new(&config.trace_directory),
     )
@@ -254,14 +255,14 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
     )
 }
 
-fn combined_motion_config() -> ExecutorConfig {
+fn combined_motion_config() -> ControllerConfig {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
     let mut profile =
         crate::profile::load_robot_profile(&root.join("profiles"), "so101-sim").unwrap();
     profile.urdf = root.join("robots/so101/robot.urdf");
-    let mut config = crate::profile::executor_config_input(
+    let mut config = crate::profile::controller_config_input(
         &profile,
         "arm",
         crate::profile::JointLimitSource::Urdf,
@@ -272,7 +273,7 @@ fn combined_motion_config() -> ExecutorConfig {
         .join(format!("combined-motion-{}", std::process::id()))
         .to_string_lossy()
         .into_owned();
-    ExecutorConfig::try_from(config).unwrap()
+    ControllerConfig::try_from(config).unwrap()
 }
 
 #[test]
@@ -286,14 +287,16 @@ fn admission_yields_at_its_budget_and_resumes_with_the_next_arm() {
         .join("admission-budget-traces")
         .to_string_lossy()
         .into_owned();
-    let config = ExecutorConfig::try_from(config).unwrap();
+    let config = ControllerConfig::try_from(config).unwrap();
     let mut left_plant = NoPhysicsStandIn::at(vec![0.0; 2], 0.0);
     let mut right_plant = NoPhysicsStandIn::at(vec![0.0; 2], 0.0);
+    let left_link = test_link(&config);
+    let right_link = test_link(&config);
     let mut runners = vec![
         super::runner_for(
             "left",
             &mut left_plant,
-            None,
+            &left_link,
             &config,
             std::path::Path::new(&config.trace_directory),
         )
@@ -302,7 +305,7 @@ fn admission_yields_at_its_budget_and_resumes_with_the_next_arm() {
         super::runner_for(
             "right",
             &mut right_plant,
-            None,
+            &right_link,
             &config,
             std::path::Path::new(&config.trace_directory),
         )
@@ -311,8 +314,8 @@ fn admission_yields_at_its_budget_and_resumes_with_the_next_arm() {
     ];
     let (left_handle, left_inbox) = arm_channel();
     let (right_handle, right_inbox) = arm_channel();
-    runners[0].inbox = Some(left_inbox);
-    runners[1].inbox = Some(right_inbox);
+    runners[0].inbox = left_inbox;
+    runners[1].inbox = right_inbox;
     let left_first = left_handle.submit_unawaited(Command::Enable, None).unwrap();
     let left_second = left_handle.submit_unawaited(Command::Enable, None).unwrap();
     let right_first = right_handle
@@ -395,4 +398,11 @@ fn grouped_arms_share_progress_and_complete_on_the_same_step() {
             .collect();
     }
     panic!("the grouped motion did not complete in 10 simulated seconds");
+}
+
+fn test_link(config: &ControllerConfig) -> crate::control_link::Link {
+    crate::control_link::Link::for_controller(
+        config,
+        std::sync::Arc::new(crate::lease::Lease::new(std::time::Duration::from_secs(1))),
+    )
 }

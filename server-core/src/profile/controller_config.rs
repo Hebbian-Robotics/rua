@@ -4,11 +4,11 @@ use anyhow::{Context, ensure};
 
 use super::{Driver, PolicySettings, RobotProfile};
 use crate::config::{
-    EnableChecks, ExecutorConfig, ExecutorConfigInput, GripperLimits, GuardConfig, MotionLimits,
-    PolicyConfig, SelfCollisionConfig,
+    ControllerConfig, ControllerConfigInput, EnableChecks, GripperLimits, GuardConfig,
+    MotionLimits, PolicyConfig, SelfCollisionConfig,
 };
 use crate::so101::calibration::calibrated_joint_limits;
-use crate::so101::executor_config::feetech_bus;
+use crate::so101::controller_config::feetech_bus;
 use hebbian_contracts::{SimulationModelConfig, SurfaceGuardConfig};
 
 const STREAM_GOAL_TIMEOUT_SECONDS: f64 = 0.5;
@@ -79,13 +79,13 @@ fn simulation_model_config(profile: &RobotProfile) -> Option<SimulationModelConf
     })
 }
 
-pub fn executor_config(
+pub fn controller_config(
     profile: &RobotProfile,
     arm: &str,
     joint_limits: JointLimitSource,
     calibration_root: &Path,
-) -> anyhow::Result<ExecutorConfig> {
-    ExecutorConfig::try_from(executor_config_input(
+) -> anyhow::Result<ControllerConfig> {
+    ControllerConfig::try_from(controller_config_input(
         profile,
         arm,
         joint_limits,
@@ -94,12 +94,12 @@ pub fn executor_config(
     .with_context(|| format!("The config for arm {arm} of {}", profile.name))
 }
 
-pub fn executor_config_input(
+pub fn controller_config_input(
     profile: &RobotProfile,
     arm: &str,
     joint_limits: JointLimitSource,
     calibration_root: &Path,
-) -> anyhow::Result<ExecutorConfigInput> {
+) -> anyhow::Result<ControllerConfigInput> {
     ensure!(
         profile.arms.iter().any(|known| known == arm),
         "Profile {} has no arm {arm}",
@@ -116,7 +116,7 @@ pub fn executor_config_input(
         .map(|settings| feetech_bus(profile.gripper.as_ref(), settings, arm, calibration_root))
         .transpose()?;
     let has_feetech = feetech.is_some();
-    let config = ExecutorConfigInput {
+    let config = ControllerConfigInput {
         urdf: std::fs::canonicalize(&profile.urdf)
             .with_context(|| format!("Cannot find the URDF {}", profile.urdf.display()))?
             .display()

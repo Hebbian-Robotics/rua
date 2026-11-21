@@ -1,4 +1,4 @@
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,7 +37,7 @@ pub(crate) enum TrackingFailure {
 impl TrackingFailure {
     pub(crate) fn into_trip(
         self,
-        config: &ExecutorConfig,
+        config: &ControllerConfig,
         feedback: &crate::plant::Feedback,
         motion_speed: Option<(f64, f64)>,
     ) -> Trip {
@@ -77,7 +77,7 @@ impl TrackingFailure {
 }
 
 pub(crate) fn validated_tracking_error(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     measured: &[f64],
     commanded: &[f64],
     commanded_velocities: &[f64],
@@ -135,7 +135,7 @@ pub(crate) fn tracking_allowance_radians(
     speed * following_lag_seconds + static_margin_radians
 }
 
-pub(crate) fn check_effort(config: &ExecutorConfig, efforts: &[f64]) -> Result<(), Trip> {
+pub(crate) fn check_effort(config: &ControllerConfig, efforts: &[f64]) -> Result<(), Trip> {
     if efforts
         .iter()
         .zip(&config.joint_effort_limits)
@@ -150,8 +150,8 @@ pub(crate) fn check_effort(config: &ExecutorConfig, efforts: &[f64]) -> Result<(
 mod tests {
     use super::*;
 
-    fn config() -> ExecutorConfig {
-        ExecutorConfig::parse(crate::config::TEST_CONFIG).unwrap()
+    fn config() -> ControllerConfig {
+        ControllerConfig::parse(crate::config::TEST_CONFIG).unwrap()
     }
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
         arm["lower_limits"] = serde_json::json!([-2.0, -2.0, -2.0, -2.0, -2.0]);
         arm["upper_limits"] = serde_json::json!([2.0, 2.0, 2.0, 2.0, 2.0]);
         arm["joint_effort_limits"] = serde_json::json!([10.0, 10.0, 10.0, 10.0, 10.0]);
-        let without_policy = ExecutorConfig::parse(&arm.to_string()).unwrap();
+        let without_policy = ControllerConfig::parse(&arm.to_string()).unwrap();
         arm["policy"] = serde_json::json!({
             "reach_deadline_seconds": 8.0, "settle_dwell_seconds": 0.1,
             "settled_velocity_radians_per_second": 0.15, "preview_lag_seconds": 0.05,
@@ -206,11 +206,11 @@ mod tests {
             "checkpoint_sha256": "", "max_target_lead_radians": lead, "tool_link": "tool",
             "position_tolerance_meters": 0.02, "orientation_tolerance_radians": 0.1,
         });
-        let with_policy = ExecutorConfig::parse(&arm.to_string()).unwrap();
+        let with_policy = ControllerConfig::parse(&arm.to_string()).unwrap();
         let margin = with_policy.tracking_static_margin_radians;
         let measured = [0.0; 5];
         let at_rest = [0.0; 5];
-        let trips = |config: &ExecutorConfig, error: f64| {
+        let trips = |config: &ControllerConfig, error: f64| {
             let commanded = [error, 0.0, 0.0, 0.0, 0.0];
             validated_tracking_error(config, &measured, &commanded, &at_rest, 0.01).is_err()
         };

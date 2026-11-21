@@ -6,7 +6,7 @@ use rsruckig::prelude::{
     ThrowErrorHandler, Trajectory,
 };
 
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::limits::{Trip, is_finite_joint_vector};
 
 // CONSTRAINT: Ruckig refuses target states beyond its own caps; aim just inside them.
@@ -71,7 +71,7 @@ pub(crate) struct ReferenceFilter {
 }
 
 impl ReferenceFilter {
-    pub fn new(config: &ExecutorConfig, initial: &[f64]) -> anyhow::Result<Self> {
+    pub fn new(config: &ControllerConfig, initial: &[f64]) -> anyhow::Result<Self> {
         let n = config.joint_count;
         config
             .recovery_limits()
@@ -314,7 +314,7 @@ mod tests {
     }
 
     fn filter_at(start: &[f64]) -> ReferenceFilter {
-        ReferenceFilter::new(&ExecutorConfig::parse(TEST_CONFIG).unwrap(), start).unwrap()
+        ReferenceFilter::new(&ControllerConfig::parse(TEST_CONFIG).unwrap(), start).unwrap()
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
 
     #[test]
     fn a_start_far_outside_the_limits_is_refused() {
-        let config = ExecutorConfig::parse(TEST_CONFIG).unwrap();
+        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
         assert!(ReferenceFilter::new(&config, &[2.5, 0.0]).is_err());
     }
 }

@@ -14,7 +14,7 @@ pub use hebbian_contracts::{
 pub use hebbian_so101::config::{
     FeetechConfig, FeetechGripper, FeetechMotor, Gains, MotorCalibration,
 };
-pub type ExecutorConfigInput = hebbian_contracts::ExecutorConfigInput<FeetechConfig>;
+pub type ControllerConfigInput = hebbian_contracts::ControllerConfigInput<FeetechConfig>;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ControlTiming {
@@ -47,8 +47,8 @@ impl TryFrom<&GuardConfig> for GuardTiming {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(transparent)]
-pub struct ExecutorConfig {
-    input: ExecutorConfigInput,
+pub struct ControllerConfig {
+    input: ControllerConfigInput,
     #[serde(skip)]
     recovery_limits: JointRecoveryLimits,
     #[serde(skip)]
@@ -59,18 +59,18 @@ pub struct ExecutorConfig {
     pub(crate) guard_timing: Option<GuardTiming>,
 }
 
-impl std::ops::Deref for ExecutorConfig {
-    type Target = ExecutorConfigInput;
+impl std::ops::Deref for ControllerConfig {
+    type Target = ControllerConfigInput;
 
     fn deref(&self) -> &Self::Target {
         &self.input
     }
 }
 
-impl TryFrom<ExecutorConfigInput> for ExecutorConfig {
+impl TryFrom<ControllerConfigInput> for ControllerConfig {
     type Error = anyhow::Error;
 
-    fn try_from(input: ExecutorConfigInput) -> anyhow::Result<Self> {
+    fn try_from(input: ControllerConfigInput) -> anyhow::Result<Self> {
         let recovery_limits = validated_recovery_limits(&input)?;
         let control_timing = ControlTiming {
             period: positive_clock_duration(
@@ -106,7 +106,7 @@ impl TryFrom<ExecutorConfigInput> for ExecutorConfig {
     }
 }
 
-impl ExecutorConfig {
+impl ControllerConfig {
     #[must_use]
     pub fn recovery_limits(&self) -> &JointRecoveryLimits {
         &self.recovery_limits
@@ -118,7 +118,7 @@ impl ExecutorConfig {
     }
 
     #[must_use]
-    pub fn into_input(self) -> ExecutorConfigInput {
+    pub fn into_input(self) -> ControllerConfigInput {
         self.input
     }
     #[must_use]
@@ -146,13 +146,13 @@ impl ExecutorConfig {
     }
 
     pub fn parse(text: &str) -> anyhow::Result<Self> {
-        let config: ExecutorConfigInput = serde_json::from_str(text)
-            .context("The executor config is not valid JSON for its schema")?;
+        let config: ControllerConfigInput = serde_json::from_str(text)
+            .context("The controller config is not valid JSON for its schema")?;
         Self::try_from(config)
     }
 }
 
-fn validate_policy_settings(input: &ExecutorConfigInput) -> anyhow::Result<()> {
+fn validate_policy_settings(input: &ControllerConfigInput) -> anyhow::Result<()> {
     if let Some(policy) = &input.policy
         && [
             policy.reach_deadline_seconds,
@@ -170,7 +170,7 @@ fn validate_policy_settings(input: &ExecutorConfigInput) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn validate_joint_limits(input: &ExecutorConfigInput) -> anyhow::Result<JointRecoveryLimits> {
+fn validate_joint_limits(input: &ControllerConfigInput) -> anyhow::Result<JointRecoveryLimits> {
     let n = input.joint_count;
     if n == 0 {
         bail!("An arm needs at least one joint");
@@ -195,7 +195,7 @@ fn validate_joint_limits(input: &ExecutorConfigInput) -> anyhow::Result<JointRec
     )
 }
 
-fn validated_recovery_limits(input: &ExecutorConfigInput) -> anyhow::Result<JointRecoveryLimits> {
+fn validated_recovery_limits(input: &ControllerConfigInput) -> anyhow::Result<JointRecoveryLimits> {
     let recovery_limits = validate_joint_limits(input)?;
     let n = input.joint_count;
     let positive = [
@@ -270,49 +270,49 @@ mod tests {
             let mut config = serde_json::from_str::<serde_json::Value>(TEST_CONFIG).unwrap();
             config["motion"][field] = serde_json::json!(0.0);
             assert!(
-                ExecutorConfig::parse(&config.to_string()).is_err(),
+                ControllerConfig::parse(&config.to_string()).is_err(),
                 "{field}"
             );
         }
-        let mut config: ExecutorConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
+        let mut config: ControllerConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
         config.joint_limit_recovery_tolerance_radians = -0.01;
-        assert!(ExecutorConfig::try_from(config.clone()).is_err());
+        assert!(ControllerConfig::try_from(config.clone()).is_err());
         config.joint_limit_recovery_tolerance_radians = 0.0;
-        assert!(ExecutorConfig::try_from(config.clone()).is_ok());
+        assert!(ControllerConfig::try_from(config.clone()).is_ok());
     }
 
     #[test]
     fn a_consistent_configuration_parses() {
-        assert!(ExecutorConfig::parse(TEST_CONFIG).is_ok());
+        assert!(ControllerConfig::parse(TEST_CONFIG).is_ok());
     }
 
     #[test]
     fn simulator_timeouts_must_fit_nonzero_durations() {
-        let mut input: ExecutorConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
+        let mut input: ControllerConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
         input.sim_plant = Some(SimPlantConfig {
             connect_timeout_seconds: 30.0,
             reply_timeout_seconds: 5.0,
             real_time: true,
         });
-        assert!(ExecutorConfig::try_from(input.clone()).is_ok());
+        assert!(ControllerConfig::try_from(input.clone()).is_ok());
 
         let mut too_long = input.clone();
         too_long.sim_plant.as_mut().unwrap().connect_timeout_seconds = 1e30;
-        let error = ExecutorConfig::try_from(too_long).unwrap_err();
+        let error = ControllerConfig::try_from(too_long).unwrap_err();
         assert!(error.to_string().contains("connect timeout"));
 
         input.sim_plant.as_mut().unwrap().reply_timeout_seconds = 1e-12;
-        let error = ExecutorConfig::try_from(input).unwrap_err();
+        let error = ControllerConfig::try_from(input).unwrap_err();
         assert!(error.to_string().contains("reply timeout"));
     }
 
     #[test]
     fn invalid_control_and_guard_timings_are_rejected_before_running() {
-        let input: ExecutorConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
+        let input: ControllerConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
         let mut zero_period = input.clone();
         zero_period.frequency_hertz = 1e30;
         assert!(
-            ExecutorConfig::try_from(zero_period)
+            ControllerConfig::try_from(zero_period)
                 .unwrap_err()
                 .to_string()
                 .contains("Control period")
@@ -325,7 +325,7 @@ mod tests {
             hold_limit_seconds: 30.0,
         });
         assert!(
-            ExecutorConfig::try_from(invalid_guard)
+            ControllerConfig::try_from(invalid_guard)
                 .unwrap_err()
                 .to_string()
                 .contains("Guard heartbeat timeout")
@@ -333,36 +333,36 @@ mod tests {
     }
 
     #[test]
-    fn invalid_joint_limits_cannot_become_executor_configuration() {
-        let valid: ExecutorConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
+    fn invalid_joint_limits_cannot_become_controller_configuration() {
+        let valid: ControllerConfigInput = serde_json::from_str(TEST_CONFIG).unwrap();
         let mut empty = valid.clone();
         empty.joint_count = 0;
         empty.lower_limits.clear();
         empty.upper_limits.clear();
         empty.joint_effort_limits.clear();
-        assert!(ExecutorConfig::try_from(empty).is_err());
+        assert!(ControllerConfig::try_from(empty).is_err());
 
         let mut nonfinite = valid.clone();
         nonfinite.lower_limits[0] = f64::NAN;
-        assert!(ExecutorConfig::try_from(nonfinite).is_err());
+        assert!(ControllerConfig::try_from(nonfinite).is_err());
 
         let mut no_effort = valid;
         no_effort.joint_effort_limits[0] = 0.0;
-        assert!(ExecutorConfig::try_from(no_effort).is_err());
+        assert!(ControllerConfig::try_from(no_effort).is_err());
     }
 
     #[test]
     fn an_unknown_field_is_refused_so_the_two_sides_cannot_drift() {
         let drifted = TEST_CONFIG.replace("\"joint_count\": 2,", "\"joint_count\": 2, \"new\": 1,");
-        assert!(ExecutorConfig::parse(&drifted).is_err());
+        assert!(ControllerConfig::parse(&drifted).is_err());
     }
 
     #[test]
     fn inconsistent_limits_are_refused() {
         let swapped = TEST_CONFIG.replace("[-2.0, -2.0]", "[3.0, 3.0]");
-        assert!(ExecutorConfig::parse(&swapped).is_err());
+        assert!(ControllerConfig::parse(&swapped).is_err());
         let short = TEST_CONFIG.replace("[10.0, 10.0]", "[10.0]");
-        assert!(ExecutorConfig::parse(&short).is_err());
+        assert!(ControllerConfig::parse(&short).is_err());
     }
     fn feetech_config_json() -> serde_json::Value {
         let motor = |id: u8, sign: i32| {
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn a_feetech_configuration_with_its_guard_and_checks_parses() {
-        assert!(ExecutorConfig::parse(&feetech_config_json().to_string()).is_ok());
+        assert!(ControllerConfig::parse(&feetech_config_json().to_string()).is_ok());
     }
 
     #[test]
@@ -398,7 +398,7 @@ mod tests {
             let mut config = feetech_config_json();
             config[missing] = serde_json::Value::Null;
             assert!(
-                ExecutorConfig::parse(&config.to_string()).is_err(),
+                ControllerConfig::parse(&config.to_string()).is_err(),
                 "{missing}"
             );
         }
@@ -424,7 +424,7 @@ mod tests {
             ("voltage", bad_voltage),
         ] {
             assert!(
-                ExecutorConfig::parse(&config.to_string()).is_err(),
+                ControllerConfig::parse(&config.to_string()).is_err(),
                 "{name}"
             );
         }

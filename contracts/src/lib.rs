@@ -1,7 +1,7 @@
 //! Shared station state and command-record contracts.
 
-mod executor_config;
-pub use executor_config::*;
+mod controller_config;
+pub use controller_config::*;
 mod backoff;
 pub mod server_sent_events;
 pub use backoff::*;
@@ -265,7 +265,7 @@ pub enum TargetStatus {
 pub struct Achieved {
     pub sampled_at: f64,
     pub joints: Vec<f64>,
-    /// The tool pose at `joints`; absent when the executor has no tool link.
+    /// The tool pose at `joints`; absent when the controller has no tool link.
     pub position: Option<[f64; 3]>,
     pub quaternion: Option<[f64; 4]>,
     pub joint_error_radians: Option<f64>,
@@ -314,7 +314,7 @@ pub struct CommandRecord {
     pub trace_context: Option<TraceContext>,
 }
 
-/// How a gripper command ended, in the jaw's own angle. The executor sees where the jaw
+/// How a gripper command ended, in the jaw's own angle. The controller sees where the jaw
 /// stopped, not what stopped it, so it cannot tell a held object from a blocked jaw.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -463,7 +463,7 @@ pub struct ArmState {
 /// The whole station, as `GET /state` and the event stream provide it.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StationState {
-    /// The profile name, absent for a bare executor configuration.
+    /// The profile name, absent for a bare controller configuration.
     pub robot: Option<String>,
     /// What a model is told about this robot: layout, frames, reach.
     pub description: Option<String>,

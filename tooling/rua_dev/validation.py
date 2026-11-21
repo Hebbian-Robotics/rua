@@ -2,18 +2,11 @@ import os
 import subprocess
 import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from rua_dev.models import ValidationLane
 from rua_dev.native_build import build_server
 from rua_dev.robot_assets import prepare_robot_assets
-
-
-@dataclass(frozen=True)
-class ViewerChecks:
-    check: Callable[[], None]
-    check_contracts: Callable[[], None]
 
 
 def check_python_static() -> None:
@@ -94,8 +87,6 @@ def check_python_tests(lane: ValidationLane, *, server: bool) -> None:
         selection.append("server" if server else "not server")
     if lane != ValidationLane.FULL and "typescript" in markers:
         selection.append("not typescript")
-    if "contracts" in markers:
-        selection.append("not contracts")
     report_directory = Path(".cache/validation")
     report_directory.mkdir(parents=True, exist_ok=True)
     test_lane = "server" if server else "fast"
@@ -114,9 +105,9 @@ def check_python_tests(lane: ValidationLane, *, server: bool) -> None:
 def validate(
     lane: ValidationLane,
     *,
-    viewer: ViewerChecks | None = None,
+    check_viewer: Callable[[], None] | None = None,
 ) -> None:
-    if lane == ValidationLane.VIEWER and viewer is None:
+    if lane == ValidationLane.VIEWER and check_viewer is None:
         raise ValueError("This checkout does not include viewer validation")
     subprocess.run(
         ["source-doc-lint", "--config", "source-doc-lint.toml"],
@@ -125,12 +116,12 @@ def validate(
     prepare_robot_assets(Path.cwd())
     if lane in {ValidationLane.PYTHON, ValidationLane.FAST, ValidationLane.FULL}:
         check_python_static()
-    if viewer is not None and lane in {
+    if check_viewer is not None and lane in {
         ValidationLane.VIEWER,
         ValidationLane.FAST,
         ValidationLane.FULL,
     }:
-        viewer.check()
+        check_viewer()
     if lane in {ValidationLane.SERVER, ValidationLane.CONTRACTS, ValidationLane.FULL}:
         prepare_server()
     if lane in {ValidationLane.SERVER, ValidationLane.FULL}:
@@ -139,8 +130,6 @@ def validate(
         from rua_dev.contracts import available_sdk_targets, generate_contracts
 
         generate_contracts(available_sdk_targets(), check=True)
-        if viewer is not None:
-            viewer.check_contracts()
     if lane in {ValidationLane.PYTHON, ValidationLane.FAST, ValidationLane.FULL}:
         check_python_tests(lane, server=False)
     if lane in {ValidationLane.SERVER, ValidationLane.FULL}:

@@ -34,36 +34,14 @@ allowed_collision_pairs = [["first_link", "second_link"]]
 }
 
 #[test]
-fn a_profile_given_as_json_matches_its_toml() {
-    let path = bimanual_hardware_profile();
-    let name = path.to_str().unwrap();
-    let from_toml = load_robot_profile(&bundled_profiles(), name).unwrap();
-    let root = bundled_profiles().parent().unwrap().to_owned();
-    let mut tables = profile_tables(&bundled_profiles(), name, 0).unwrap();
-    robot_assembly::apply_robot_assembly(&mut tables, &root).unwrap();
-    let text = serde_json::to_string(&tables).unwrap();
-    let from_json = parse_robot_profile_json(&text, &root).unwrap();
-    assert_eq!(from_json.arms, from_toml.arms);
-    assert_eq!(from_json.urdf, from_toml.urdf);
-    assert!(parse_robot_profile_json("{\"name\": \"x\"}", &root).is_err());
-}
-
-#[test]
 fn profile_arm_names_must_be_unique_socket_names() {
-    let mut tables = profile_tables(&bundled_profiles(), "so101-sim", 0).unwrap();
-    let profiles = bundled_profiles();
-    let repository = profiles.parent().unwrap();
-    robot_assembly::apply_robot_assembly(&mut tables, repository).unwrap();
     for (arms, expected_error) in [
-        (vec!["arm", "arm"], "Duplicate arm name"),
-        (vec!["arm/other"], "Invalid arm name"),
+        (r#"["arm", "arm"]"#, "Duplicate arm name"),
+        (r#"["arm/other"]"#, "Invalid arm name"),
     ] {
-        tables.insert(
-            "arms".into(),
-            toml::Value::Array(arms.into_iter().map(|arm| arm.to_owned().into()).collect()),
-        );
-        let profile_json = serde_json::to_string(&tables).unwrap();
-        let error = parse_robot_profile_json(&profile_json, repository).unwrap_err();
+        let path = scratch_directory().join("invalid-arms.toml");
+        std::fs::write(&path, format!("extends = \"so101-sim\"\narms = {arms}\n")).unwrap();
+        let error = load_robot_profile(&bundled_profiles(), path.to_str().unwrap()).unwrap_err();
         assert!(format!("{error:#}").contains(expected_error));
     }
 }
@@ -193,7 +171,7 @@ fn a_feetech_arm_takes_its_limits_and_motors_from_its_calibration() {
     let profile = load_robot_profile(&bundled_profiles(), "so101").unwrap();
     let calibration_root = scratch_directory();
     write_calibration(&calibration_root, "arm");
-    let config = executor_config(
+    let config = controller_config(
         &profile,
         "arm",
         JointLimitSource::Calibration,
@@ -214,7 +192,7 @@ fn a_feetech_arm_takes_its_limits_and_motors_from_its_calibration() {
 #[test]
 fn a_feetech_arm_without_its_calibration_is_refused() {
     let profile = load_robot_profile(&bundled_profiles(), "so101").unwrap();
-    let error = executor_config(
+    let error = controller_config(
         &profile,
         "arm",
         JointLimitSource::Urdf,
@@ -228,7 +206,7 @@ fn a_feetech_arm_without_its_calibration_is_refused() {
 fn an_unknown_arm_is_refused() {
     let profile = load_robot_profile(&bundled_profiles(), "so101").unwrap();
     assert!(
-        executor_config(
+        controller_config(
             &profile,
             "nobody",
             JointLimitSource::Urdf,
@@ -281,7 +259,7 @@ fn an_external_simulator_needs_no_engine_or_hardware_settings() {
     assert!(matches!(profile.driver, Driver::Simulator));
     assert!(profile.feetech().is_none());
     assert!(
-        executor_config(
+        controller_config(
             &profile,
             "arm",
             JointLimitSource::Urdf,
@@ -309,7 +287,7 @@ force_fraction = 0.2
     )
     .unwrap();
     let profile = load_robot_profile(&bundled_profiles(), profile_path.to_str().unwrap()).unwrap();
-    let config = executor_config(&profile, "arm", JointLimitSource::Urdf, &directory).unwrap();
+    let config = controller_config(&profile, "arm", JointLimitSource::Urdf, &directory).unwrap();
     let resolved = serde_json::to_value(config).unwrap();
     assert_eq!(
         resolved["simulation_model"],

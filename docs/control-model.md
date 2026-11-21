@@ -5,7 +5,7 @@ acquires a control lease before sending motion commands. Other clients can
 continue reading state and camera snapshots.
 
 See [control invariants and failure responses](control-invariants.md) for the
-Rust admission guarantees and the executor's handling of invalid inputs.
+Rust admission guarantees and the controller's handling of invalid inputs.
 
 In Python, use `station.holding_lease(...)` and send motion through the returned
 lease. Power, stop and state access are available through `station.arm(...)`.

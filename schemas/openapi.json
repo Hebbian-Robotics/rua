@@ -48,7 +48,7 @@
             ]
           },
           "position": {
-            "description": "The tool pose at `joints`; absent when the executor has no tool link.",
+            "description": "The tool pose at `joints`; absent when the controller has no tool link.",
             "items": {
               "format": "double",
               "type": "number"
@@ -1917,7 +1917,7 @@
         "type": "object"
       },
       "Event": {
-        "description": "Executor to client.",
+        "description": "Controller to client.",
         "oneOf": [
           {
             "$ref": "#/components/schemas/Sample",
@@ -2562,11 +2562,11 @@
         ]
       },
       "Frame": {
-        "description": "One line from the executor: a log event with its sequence number, or an\nunsequenced sample or reply.",
+        "description": "One line from the controller: a log event with its sequence number, or an\nunsequenced sample or reply.",
         "properties": {
           "emitted_unix_nano": {
             "$ref": "#/components/schemas/UnixNanos",
-            "description": "When the executor's writer made the frame; a replayed log event keeps\nthe time it was first emitted."
+            "description": "When the controller's writer made the frame; a replayed log event keeps\nthe time it was first emitted."
           },
           "event": {
             "$ref": "#/components/schemas/Event"
@@ -2588,7 +2588,7 @@
         "type": "object"
       },
       "GripperResult": {
-        "description": "How a gripper command ended, in the jaw's own angle. The executor sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
+        "description": "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
         "oneOf": [
           {
             "description": "The jaw arrived at the angle it was asked for.",
@@ -4517,7 +4517,7 @@
             "type": "object"
           },
           {
-            "description": "The first message: the arms this executor serves.",
+            "description": "The first message: the arms this controller serves.",
             "properties": {
               "arms": {
                 "items": {
@@ -5150,7 +5150,7 @@
             "type": "number"
           },
           "robot": {
-            "description": "The profile name, absent for a bare executor configuration.",
+            "description": "The profile name, absent for a bare controller configuration.",
             "type": [
               "string",
               "null"
@@ -6801,7 +6801,7 @@
             "description": "An error: {\"detail\": ...}"
           }
         },
-        "summary": "The executor's trace files, newest first.",
+        "summary": "The controller's trace files, newest first.",
         "x-sdk": true,
         "x-server": "station"
       }

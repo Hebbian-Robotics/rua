@@ -39,13 +39,12 @@ artifact and continuation semantics.
 
 ## Client SDKs
 
-This source subset includes the Python SDK in `hebbian_rua/client/`. Its generated
-contracts and HTTP methods come from the shared Rust definitions and OpenAPI.
+The [Python SDK](../hebbian_rua/client/README.md) and [Rust SDK](../sdk/README.md)
+use generated routes from the shared Rust definitions and OpenAPI.
 Provider adapters in `hebbian_rua/client/llm/` handle model-specific messages;
 the common station client owns HTTP, leases and execution outcomes.
 
-The TypeScript and Rust SDKs live in the development repository and are not
-included in this subset. Shared contract changes must be coordinated across those
-implementations before release. Keep server code independent of SDKs and
-provider adapters. Use the [source setup](install-from-source.md) and
-[contributing guide](../CONTRIBUTING.md) for validation commands.
+The [command-line client](../cli/README.md) uses the Rust SDK. Keep server code
+independent of SDKs and provider adapters. Use the
+[source setup](install-from-source.md) and [contributing guide](../CONTRIBUTING.md)
+for validation commands.

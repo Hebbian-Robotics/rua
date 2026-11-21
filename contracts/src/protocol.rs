@@ -81,13 +81,13 @@ impl Sample {
     }
 }
 
-/// One line from the executor: a log event with its sequence number, or an
+/// One line from the controller: a log event with its sequence number, or an
 /// unsequenced sample or reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Frame {
     /// Present on log events only; numbers rise by one with no gaps.
     pub seq: Option<u64>,
-    /// When the executor's writer made the frame; a replayed log event keeps
+    /// When the controller's writer made the frame; a replayed log event keeps
     /// the time it was first emitted.
     pub emitted_unix_nano: UnixNanos,
     pub event: Event,
@@ -105,7 +105,7 @@ impl Frame {
     }
 }
 
-/// Executor to client.
+/// Controller to client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Event {

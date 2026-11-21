@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "livekit-cameras"]
-default-members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings"]
+members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "livekit-cameras", "sdk", "cli"]
+default-members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "sdk", "cli"]
 # livekit-cameras links libwebrtc (needs clang 21); build it with `-p livekit-cameras`.
 
 [workspace.lints.clippy]
@@ -51,7 +51,7 @@ opt-level = 3
 [profile.dev.package.livekit-cameras]
 opt-level = 2
 
-# panic = "abort" removes unwinding, so a panic in the loop ends the executor
+# panic = "abort" removes unwinding, so a panic in the loop ends the controller
 # rather than unwinding through it; the servos keep holding their last goal.
 [profile.release]
 lto = true

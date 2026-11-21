@@ -15,18 +15,18 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
 
-use crate::config::{ExecutorConfig, GuardTiming};
+use crate::config::{ControllerConfig, GuardTiming};
 use crate::limits::{check_effort, max_joint_deviation};
 use crate::plant::{Feedback, Plant, Reconnection};
 use crate::so101::driver::{SerialBus, Servos};
 
-const EXECUTOR_EXIT: Duration = Duration::from_secs(2);
+const CONTROLLER_EXIT: Duration = Duration::from_secs(2);
 const SUPERVISOR_START: Duration = Duration::from_secs(10);
 const DETACH_WAIT: Duration = Duration::from_secs(3);
 const HEARTBEAT_READ_BUFFER_BYTES: usize = 4096;
 
 pub(crate) struct HoldSupervisor<'a> {
-    config: &'a ExecutorConfig,
+    config: &'a ControllerConfig,
     hold_limit: Duration,
     reference_positions: Vec<f64>,
     started_at: Instant,
@@ -35,7 +35,7 @@ pub(crate) struct HoldSupervisor<'a> {
 impl<'a> HoldSupervisor<'a> {
     #[must_use]
     pub fn new(
-        config: &'a ExecutorConfig,
+        config: &'a ControllerConfig,
         timing: GuardTiming,
         reference_positions: Vec<f64>,
         started_at: Instant,
@@ -73,7 +73,7 @@ impl<'a> HoldSupervisor<'a> {
         }
         if now.duration_since(self.started_at) > self.hold_limit {
             return Some(format!(
-                "Executor silent for over {} s",
+                "Controller silent for over {} s",
                 self.hold_limit.as_secs_f64()
             ));
         }
@@ -104,7 +104,7 @@ struct GuardReading {
 }
 
 impl GuardReading {
-    fn read(arm: &mut impl GuardedArm, config: &ExecutorConfig) -> anyhow::Result<Self> {
+    fn read(arm: &mut impl GuardedArm, config: &ControllerConfig) -> anyhow::Result<Self> {
         let (feedback, torque) = arm.read()?;
         feedback
             .measured_positions(config)
@@ -140,29 +140,29 @@ fn report(message: &str) {
     );
 }
 
-// WHY: The guard is reparented when its executor exits, so the parent ID detects that loss.
-fn executor_alive(executor_pid: u32) -> bool {
-    std::os::unix::process::parent_id() == executor_pid
+// WHY: The guard is reparented when its controller exits, so the parent ID detects that loss.
+fn controller_alive(controller_pid: u32) -> bool {
+    std::os::unix::process::parent_id() == controller_pid
 }
 
-fn kill_executor(executor_pid: u32) -> anyhow::Result<()> {
-    if !executor_alive(executor_pid) {
+fn kill_controller(controller_pid: u32) -> anyhow::Result<()> {
+    if !controller_alive(controller_pid) {
         return Ok(());
     }
-    let process_id =
-        libc::pid_t::try_from(executor_pid).context("The executor's process id is out of range")?;
+    let process_id = libc::pid_t::try_from(controller_pid)
+        .context("The controller's process id is out of range")?;
     // SAFETY: kill only reads its plain arguments.
     if unsafe { libc::kill(process_id, libc::SIGKILL) } != 0 {
         let error = std::io::Error::last_os_error();
-        // CONSTRAINT: An executor that exited in the meantime is what was wanted.
+        // CONSTRAINT: A controller that exited in the meantime is what was wanted.
         if error.raw_os_error() != Some(libc::ESRCH) {
-            return Err(error).context("Cannot kill the executor");
+            return Err(error).context("Cannot kill the controller");
         }
     }
-    let deadline = Instant::now() + EXECUTOR_EXIT;
-    while executor_alive(executor_pid) {
+    let deadline = Instant::now() + CONTROLLER_EXIT;
+    while controller_alive(controller_pid) {
         if Instant::now() > deadline {
-            bail!("Executor did not exit after SIGKILL");
+            bail!("Controller did not exit after SIGKILL");
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -171,7 +171,7 @@ fn kill_executor(executor_pid: u32) -> anyhow::Result<()> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum GuardOutcome {
-    ExecutorDetached,
+    ControllerDetached,
     TookOverMotorsAlreadyOff,
     HeldThenReleased { reason: String },
 }
@@ -179,8 +179,8 @@ pub enum GuardOutcome {
 impl std::fmt::Display for GuardOutcome {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ExecutorDetached => formatter
-                .write_str("Executor released the arm and detached; the guard never took over"),
+            Self::ControllerDetached => formatter
+                .write_str("Controller released the arm and detached; the guard never took over"),
             Self::TookOverMotorsAlreadyOff => formatter.write_str(
                 "Guard took over the bus, found the motors already off and released them",
             ),
@@ -218,10 +218,10 @@ enum Beat {
     Closed,
 }
 
-// SAFETY: Open the exclusive bus only after executor heartbeats stop. Failure to take over or release may leave the arm powered and must be reported.
+// SAFETY: Open the exclusive bus only after controller heartbeats stop. Failure to take over or release may leave the arm powered and must be reported.
 pub fn guard<A: GuardedArm>(
-    config: &ExecutorConfig,
-    executor_pid: u32,
+    config: &ControllerConfig,
+    controller_pid: u32,
     heartbeats: impl Read + Send + 'static,
     mut open_arm: impl FnMut() -> anyhow::Result<A>,
 ) -> anyhow::Result<GuardOutcome> {
@@ -233,16 +233,16 @@ pub fn guard<A: GuardedArm>(
     let listener = listen_for_heartbeats(heartbeats);
 
     let mut arm: Option<A> = None;
-    let mut executor_attached = true;
+    let mut controller_attached = true;
     let mut hold: Option<HoldSupervisor> = None;
     let result = (|| -> anyhow::Result<GuardOutcome> {
         loop {
-            let wait = if hold.is_some() || !executor_attached {
+            let wait = if hold.is_some() || !controller_attached {
                 timing.poll
             } else {
                 timing.heartbeat_timeout
             };
-            let heard = if executor_attached {
+            let heard = if controller_attached {
                 listener.recv_timeout(wait)
             } else {
                 std::thread::sleep(wait);
@@ -251,31 +251,32 @@ pub fn guard<A: GuardedArm>(
             match heard {
                 Ok(Beat::Heartbeat) => {
                     if hold.is_some() {
-                        report("Executor heartbeat resumed");
+                        report("Controller heartbeat resumed");
                     }
                     hold = None;
                     continue;
                 }
                 Ok(Beat::Closed) | Err(RecvTimeoutError::Disconnected) => {
-                    executor_attached = false;
-                    if arm.is_none() && executor_alive(executor_pid) {
-                        // INVARIANT: A live executor closes the pipe only after releasing
+                    controller_attached = false;
+                    if arm.is_none() && controller_alive(controller_pid) {
+                        // INVARIANT: A live controller closes the pipe only after releasing
                         // the motors, and it still holds the bus.
-                        return Ok(GuardOutcome::ExecutorDetached);
+                        return Ok(GuardOutcome::ControllerDetached);
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {}
             }
             if arm.is_none() {
-                if executor_alive(executor_pid) {
+                if controller_alive(controller_pid) {
                     report(&format!(
-                        "Executor (pid {executor_pid}) stalled; stopping it to take over the bus"
+                        "Controller (pid {controller_pid}) stalled; stopping it to take over the bus"
                     ));
-                    kill_executor(executor_pid)
-                        .context("Could not stop the stalled executor; the arm is unsupervised")?;
+                    kill_controller(controller_pid).context(
+                        "Could not stop the stalled controller; the arm is unsupervised",
+                    )?;
                 } else {
                     report(&format!(
-                        "Executor (pid {executor_pid}) is gone; taking over the bus"
+                        "Controller (pid {controller_pid}) is gone; taking over the bus"
                     ));
                 }
                 arm = Some(open_arm().context(
@@ -289,7 +290,7 @@ pub fn guard<A: GuardedArm>(
                 config,
             )?;
             if torque.iter().all(|enabled| !enabled) {
-                if !executor_attached {
+                if !controller_attached {
                     return Ok(GuardOutcome::TookOverMotorsAlreadyOff);
                 }
                 hold = None;
@@ -303,10 +304,10 @@ pub fn guard<A: GuardedArm>(
                     feedback.positions.clone(),
                     now,
                 ));
-                report(if executor_attached {
-                    "Executor heartbeat lost; supervising hold"
+                report(if controller_attached {
+                    "Controller heartbeat lost; supervising hold"
                 } else {
-                    "Executor exited with motors enabled; supervising hold"
+                    "Controller exited with motors enabled; supervising hold"
                 });
             }
             if let Some(reason) = hold
@@ -358,7 +359,7 @@ impl GuardProcess {
             .arg("guard")
             .arg("--config")
             .arg(config_path)
-            .arg("--executor-pid")
+            .arg("--controller-pid")
             .arg(std::process::id().to_string())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -579,14 +580,14 @@ mod tests {
 
     use crate::config::{GuardConfig, TEST_CONFIG};
 
-    fn config() -> ExecutorConfig {
-        let mut config = ExecutorConfig::parse(TEST_CONFIG).unwrap().into_input();
+    fn config() -> ControllerConfig {
+        let mut config = ControllerConfig::parse(TEST_CONFIG).unwrap().into_input();
         config.guard = Some(GuardConfig {
             heartbeat_timeout_seconds: 0.05,
             poll_seconds: 0.01,
             hold_limit_seconds: 5.0,
         });
-        ExecutorConfig::try_from(config).unwrap()
+        ControllerConfig::try_from(config).unwrap()
     }
 
     fn feedback(positions: &[f64]) -> Feedback {
@@ -741,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dead_executor_with_motors_on_leaves_the_arm_held_until_it_drifts_then_releases_it() {
+    fn a_dead_controller_with_motors_on_leaves_the_arm_held_until_it_drifts_then_releases_it() {
         let config = config();
         let n = config.joint_count;
         let mut drifted = vec![0.0; n];
@@ -755,7 +756,7 @@ mod tests {
             ],
             released: Arc::clone(&released),
         })));
-        // CONSTRAINT: The heartbeat pipe is already closed, and the executor (the real parent
+        // CONSTRAINT: The heartbeat pipe is already closed, and the controller (the real parent
         // of this test process is not it) counts as gone.
         let silent: &[u8] = &[];
         let outcome = guard(&config, u32::MAX, silent, || {
@@ -772,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    fn an_arm_already_without_torque_when_the_executor_goes_silent_is_released_not_held() {
+    fn an_arm_already_without_torque_when_the_controller_goes_silent_is_released_not_held() {
         let config = config();
         let n = config.joint_count;
         let released = Arc::new(Mutex::new(false));

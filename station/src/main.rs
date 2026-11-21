@@ -13,19 +13,6 @@ fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     match Arguments::parse().command {
         Command::Serve { arguments, web } => serve::serve(arguments, web.settings()?),
-        Command::Run {
-            arms,
-            seconds,
-            socket_directory,
-            plant_lag_seconds,
-            hardware,
-        } => run::run_configured(
-            &run::load_arms(&arms)?,
-            run::RunMode::Diagnostic { seconds },
-            socket_directory,
-            plant_lag_seconds,
-            hardware,
-        ),
         Command::Controller {
             arms,
             station_socket,
@@ -35,10 +22,8 @@ fn main() -> anyhow::Result<()> {
             hardware,
         } => run::run_configured(
             &run::load_arms(&arms)?,
-            run::RunMode::Controller {
-                socket: &station_socket,
-                instance,
-            },
+            &station_socket,
+            instance,
             socket_directory,
             plant_lag_seconds,
             hardware,
@@ -53,13 +38,12 @@ fn main() -> anyhow::Result<()> {
         Command::CheckConfig { config } => tools::check_config(&config),
         Command::Config {
             profile,
-            profile_json: _,
             selection,
             arm,
             profile_directory,
             urdf_limits,
         } => tools::print_profile_config(
-            profile.as_deref(),
+            &profile,
             &selection,
             &arm,
             profile_directory.as_deref(),
@@ -67,8 +51,8 @@ fn main() -> anyhow::Result<()> {
         ),
         Command::Guard {
             config,
-            executor_pid,
-        } => tools::run_guard(&config, executor_pid),
+            controller_pid,
+        } => tools::run_guard(&config, controller_pid),
         Command::Schema { sim_plant, .. } => {
             let kind = if sim_plant {
                 tools::SchemaKind::SimPlant

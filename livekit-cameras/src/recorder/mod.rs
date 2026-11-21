@@ -28,7 +28,7 @@ pub struct Arguments {
     #[arg(long)]
     directory: PathBuf,
     #[arg(long, default_value = "http://127.0.0.1:8792")]
-    pub(crate) executor_url: String,
+    pub(crate) station_url: String,
     /// The process that started this recorder. When it is no longer this
     /// process's parent, the recorder finalizes the file as incomplete and exits.
     #[arg(long)]
@@ -101,7 +101,7 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     let state_stopped = stopped.clone();
     let state_task = tokio::spawn(async move {
         let result = record_station_state(
-            &arguments.executor_url,
+            &arguments.station_url,
             &state_archive,
             state_stopped.clone(),
         )
@@ -155,11 +155,11 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
 }
 
 async fn record_station_state(
-    executor_url: &str,
+    station_url: &str,
     archive: &RecordingArchive,
     stopped: CancellationToken,
 ) -> Result<(), RecorderError> {
-    crate::station::subscribe(executor_url, Some(archive), stopped).await
+    crate::station::subscribe(station_url, Some(archive), stopped).await
 }
 
 async fn record_cameras(

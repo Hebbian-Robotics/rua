@@ -1,6 +1,6 @@
 # Control invariants and failure responses
 
-The executor keeps structural validity, arm admission and physical observations
+The controller keeps structural validity, arm admission and physical observations
 as separate guarantees. See [control model](control-model.md) for command and
 lease behavior.
 

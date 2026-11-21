@@ -7,11 +7,11 @@
 )]
 
 use hebbian_contracts::{CornerPlan, Segment};
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::corner_path::{MotionSupervisor, Stage};
 
-fn config() -> ExecutorConfig {
-    ExecutorConfig::parse(
+fn config() -> ControllerConfig {
+    ControllerConfig::parse(
         r#"{
       "urdf":"unused.urdf", "driven_joints":["a","b"], "surface_guard":null,
       "motion":{"acceleration_limit":5.0,"jerk_limit":20.0,

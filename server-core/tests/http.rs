@@ -86,7 +86,7 @@ fn health_answers_and_a_trace_is_listed_and_served_compressed() {
     let traces = directory.join("traces");
     std::fs::create_dir_all(&traces).unwrap();
     let contents = "{\"cycle\":1}\n".repeat(1000);
-    std::fs::write(traces.join("executor-1-trace.jsonl"), &contents).unwrap();
+    std::fs::write(traces.join("controller-1-trace.jsonl"), &contents).unwrap();
     std::fs::write(directory.join("secret.txt"), "not a trace").unwrap();
     let server = HttpServer::start(
         "127.0.0.1:0",
@@ -106,11 +106,11 @@ fn health_answers_and_a_trace_is_listed_and_served_compressed() {
     let (status, body) = get(address, "/traces");
     assert_eq!(status, 200);
     let listed: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(listed[0]["name"], "executor-1-trace.jsonl");
+    assert_eq!(listed[0]["name"], "controller-1-trace.jsonl");
     assert_eq!(listed[0]["sizeBytes"], contents.len());
     assert_eq!(listed.as_array().unwrap().len(), 1);
 
-    let (status, body) = get(address, "/traces/executor-1-trace.jsonl");
+    let (status, body) = get(address, "/traces/controller-1-trace.jsonl");
     assert_eq!(status, 200);
     assert!(body.len() < contents.len());
     let mut decompressed = String::new();

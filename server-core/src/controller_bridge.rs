@@ -437,7 +437,7 @@ mod tests {
 
     use super::*;
     use crate::arm::ArmCore;
-    use crate::config::{ExecutorConfig, TEST_CONFIG};
+    use crate::config::{ControllerConfig, TEST_CONFIG};
     use crate::handoff::{apply_single_request, arm_channel};
 
     #[test]
@@ -451,7 +451,7 @@ mod tests {
             .unwrap();
         let (request, station_answer) = station_arm.next_request().unwrap();
         let loop_answer = loop_arm.submit(request).unwrap();
-        let config = ExecutorConfig::parse(TEST_CONFIG).unwrap();
+        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
         let mut core = ArmCore::new(config.arm_limits(), |_| {});
         apply_single_request(loop_inbox.next().unwrap(), &mut core);
         station_answer.answer(loop_answer.wait());

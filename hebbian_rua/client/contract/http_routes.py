@@ -230,7 +230,7 @@ class StationApi:
         return TypeAdapter(StationState).validate_json(response.content)
 
     async def list_traces(self) -> list[TraceFile]:
-        """The executor's trace files, newest first."""
+        """The controller's trace files, newest first."""
         response = await self._send(self._station, "GET", "/traces")
         return TypeAdapter(list[TraceFile]).validate_json(response.content)
 

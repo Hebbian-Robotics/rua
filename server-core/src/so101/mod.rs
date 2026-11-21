@@ -1,7 +1,7 @@
 pub mod calibration;
+pub(crate) mod controller_config;
 pub mod discovery;
 pub mod driver;
-pub(crate) mod executor_config;
 pub mod policy;
 pub mod registry;
 pub mod settings;

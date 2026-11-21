@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::limits::max_joint_deviation;
 use crate::motion_values::MeasuredPositions;
 use crate::plant::{Feedback, RecoveryObservation};
 use hebbian_contracts::ArmRecoveryIssue;
 
 pub(super) fn recovery_positions<'a>(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     feedback: &'a Feedback,
 ) -> anyhow::Result<MeasuredPositions<'a>> {
     config.recovery_limits().clamp(&feedback.positions)?;
@@ -21,7 +21,7 @@ pub(super) enum RecoveryHold {
 }
 
 pub(super) fn assess_recovery_hold(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     held: &Feedback,
     observation: &RecoveryObservation,
     elapsed: Duration,
@@ -66,12 +66,12 @@ mod tests {
 
     #[test]
     fn a_recovery_hold_requires_stable_valid_feedback_and_energized_healthy_motors() {
-        let mut settings = ExecutorConfig::parse(crate::config::TEST_CONFIG)
+        let mut settings = ControllerConfig::parse(crate::config::TEST_CONFIG)
             .unwrap()
             .into_input();
         settings.motion.settle_dwell_seconds = 0.1;
         settings.motion.settled_error_radians = 0.02;
-        let config = ExecutorConfig::try_from(settings).unwrap();
+        let config = ControllerConfig::try_from(settings).unwrap();
         let held = Feedback {
             positions: vec![0.0, 0.0],
             gripper_angle: Some(0.5),

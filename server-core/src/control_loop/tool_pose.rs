@@ -1,4 +1,4 @@
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::plant::Feedback;
 use crate::robot::Robot;
 use anyhow::Context;
@@ -13,7 +13,7 @@ pub(crate) struct ToolPose {
 
 impl ToolPose {
     pub(crate) fn new(
-        config: &ExecutorConfig,
+        config: &ControllerConfig,
         robot: Option<&Arc<Robot>>,
     ) -> anyhow::Result<Option<Self>> {
         let Some(link) = &config.tool_link else {

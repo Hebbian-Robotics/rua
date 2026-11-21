@@ -1317,6 +1317,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "hebbian-robot-use-cli"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "hebbian-robot-use-core",
+ "hebbian-robot-use-sdk",
+ "hebbian-robot-use-server",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "hebbian-robot-use-core"
 version = "0.1.2"
 dependencies = [
@@ -1345,6 +1359,24 @@ dependencies = [
  "toml",
  "tower-http",
  "urdf-rs",
+ "uuid",
+]
+
+[[package]]
+name = "hebbian-robot-use-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "futures-util",
+ "hebbian-contracts",
+ "hebbian-robot-use-core",
+ "hebbian-robot-use-server",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
  "uuid",
 ]
 

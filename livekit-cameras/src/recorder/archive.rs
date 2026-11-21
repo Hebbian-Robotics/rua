@@ -169,7 +169,7 @@ impl RecordingArchive {
     pub fn metadata(&self, room: &str) -> Result<(), RecorderError> {
         self.json("/recording/metadata", &json!({
             "room": room,
-            "timestampSource": "video: publisher capture time or arrival; arm frames: executor emission; run telemetry: server receipt; station snapshots: recorder arrival",
+            "timestampSource": "video: publisher capture time or arrival; arm frames: controller emission; run telemetry: server receipt; station snapshots: recorder arrival",
             "stateSamplingHz": 10,
             "limitations": [
                 "Unsequenced control samples and decimated station state cannot be replayed across a disconnect",

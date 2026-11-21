@@ -143,7 +143,7 @@ pub enum ServerMessage {
         request_id: Option<String>,
         action_sequence_id: String,
     },
-    /// The first message: the arms this executor serves.
+    /// The first message: the arms this controller serves.
     #[schemars(title = "ServerHello")]
     Hello { arms: Vec<String> },
     /// One frame from one arm's link.

@@ -2,7 +2,7 @@ use super::tool_pose::ToolPose;
 use super::trajectory::{ActiveGroupMember, ActiveMotion, GroupReference};
 use super::{build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot};
 use crate::arm::{ArmCore, Now, StreamGoal};
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::gripper::GripperController;
 use crate::limits::{Trip, check_effort, validated_tracking_error};
 use crate::plant::Feedback;
@@ -26,7 +26,7 @@ pub(super) enum Activity {
 }
 
 pub(super) struct Loop<'a> {
-    pub(super) config: &'a ExecutorConfig,
+    pub(super) config: &'a ControllerConfig,
     pub(super) core: ArmCore,
     pub(super) powered: bool,
     pub(super) filter: ReferenceFilter,
@@ -318,7 +318,7 @@ impl Loop<'_> {
 }
 
 pub(super) fn initialize_loop<'a>(
-    config: &'a ExecutorConfig,
+    config: &'a ControllerConfig,
     mut core: ArmCore,
     first: &Feedback,
 ) -> anyhow::Result<Loop<'a>> {

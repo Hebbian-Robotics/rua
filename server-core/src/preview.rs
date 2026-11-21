@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::arm::ReachGoal;
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::control_loop::{build_guard, build_self_collision, guard_command, load_shared_robot};
 use crate::kinematics::pose_from_xyzw;
 use crate::limits::Trip;
@@ -60,14 +60,14 @@ pub struct PreviewRequest {
 }
 
 pub struct Preview {
-    config: ExecutorConfig,
+    config: ControllerConfig,
     runtime: PolicyRuntime,
     guard: Option<SurfaceGuard>,
     self_collision: Option<SelfCollisionGuard>,
 }
 
 impl Preview {
-    pub fn new(config: &ExecutorConfig) -> anyhow::Result<Option<Self>> {
+    pub fn new(config: &ControllerConfig) -> anyhow::Result<Option<Self>> {
         if config.policy.is_none() {
             return Ok(None);
         }

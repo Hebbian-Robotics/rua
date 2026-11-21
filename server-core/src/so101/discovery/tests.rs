@@ -4,7 +4,7 @@ use serialport::{SerialPortInfo, SerialPortType, UsbPortInfo};
 use uuid::Uuid;
 
 use super::*;
-use crate::profile::{JointLimitSource, executor_config};
+use crate::profile::{JointLimitSource, controller_config};
 use crate::so101::SO101_JOINT_NAMES;
 use crate::so101::calibration::so_follower_calibration_path;
 use crate::so101::registry::{CalibrationInstallation, install_calibration};
@@ -200,7 +200,7 @@ fn registry_selection_produces_the_arm_config_without_manual_port_or_calibration
         .unwrap(),
         CalibrationInstallation::Installed(_)
     ));
-    let config = executor_config(
+    let config = controller_config(
         &profile,
         "arm",
         JointLimitSource::Calibration,
@@ -310,7 +310,7 @@ fn native_setup_routes_scrambled_calibration_to_the_physical_joints() {
     let settings = profile.feetech().unwrap();
     let calibration_root = fixture.0.join("calibration");
     install_calibration(&calibration_path, settings, "arm", &calibration_root).unwrap();
-    let config = executor_config(
+    let config = controller_config(
         &profile,
         "arm",
         JointLimitSource::Calibration,

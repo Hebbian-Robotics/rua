@@ -9,8 +9,6 @@ def check_release_versions(repository: Path) -> None:
         "server-core": ("server-core/Cargo.toml", "package"),
         "media": ("livekit-cameras/Cargo.toml", "package"),
     }
-    if (repository / "packages/rua-tools/pyproject.toml").is_file():
-        manifests["tools"] = ("packages/rua-tools/pyproject.toml", "project")
     sections = {}
     for name, (filename, section) in manifests.items():
         with (repository / filename).open("rb") as source:

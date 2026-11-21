@@ -34,10 +34,10 @@ use anyhow::{Context, ensure};
 use hdrhistogram::Histogram;
 
 use crate::arm::{ArmCore, Now};
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::control_link::Link;
 use crate::cycle::CycleTimer;
-use crate::handoff::{ArmInbox, ArmRequest, MAXIMUM_REQUESTS_PER_CYCLE};
+use crate::handoff::{ArmRequest, MAXIMUM_REQUESTS_PER_CYCLE};
 use crate::plant::{Feedback, Pacing, Plant};
 use crate::trace::{TraceSummary, TraceWriter};
 use hebbian_contracts::Command;
@@ -97,8 +97,8 @@ fn deadline_missed_message(cycle: Duration, load: Option<[f64; 3]>) -> String {
 )]
 pub fn run(
     plant: &mut impl Plant,
-    link: Option<&Link>,
-    config: &ExecutorConfig,
+    link: &Link,
+    config: &ControllerConfig,
     run_for: Option<Duration>,
     shutdown_requested: &AtomicBool,
 ) -> Report {
@@ -118,13 +118,13 @@ pub fn run(
 
 pub struct ArmSetup<P: Plant> {
     pub name: String,
-    pub config: ExecutorConfig,
+    pub config: ControllerConfig,
     plant: P,
-    pub link: Option<Link>,
+    pub link: Link,
 }
 
 impl<P: Plant> ArmSetup<P> {
-    pub fn new(name: String, config: ExecutorConfig, plant: P, link: Option<Link>) -> Self {
+    pub fn new(name: String, config: ControllerConfig, plant: P, link: Link) -> Self {
         Self {
             name,
             config,
@@ -197,7 +197,7 @@ pub fn run_arms<P: Plant>(
         .iter()
         .any(|arm| (arm.config.frequency_hertz - first.config.frequency_hertz).abs() > f64::EPSILON)
     {
-        return failed("The arms of one executor must share a control frequency".into());
+        return failed("The arms of one controller must share a control frequency".into());
     }
     let several = arms.len() > 1;
     let mut runners = Vec::new();
@@ -211,7 +211,7 @@ pub fn run_arms<P: Plant>(
         match runner_for(
             &arm.name,
             &mut arm.plant,
-            arm.link.as_ref(),
+            &arm.link,
             &arm.config,
             &trace_directory,
         ) {
@@ -234,8 +234,8 @@ pub fn run_arms<P: Plant>(
 fn runner_for<'a, P: Plant>(
     name: &str,
     plant: &'a mut P,
-    link: Option<&'a Link>,
-    config: &'a ExecutorConfig,
+    link: &'a Link,
+    config: &'a ControllerConfig,
     trace_directory: &Path,
 ) -> Result<Runner<'a, P>, Box<Report>> {
     let mut report = Report::empty();
@@ -246,10 +246,7 @@ fn runner_for<'a, P: Plant>(
             return Err(Box::new(report));
         }
     };
-    let core = link.map_or_else(
-        || ArmCore::new(config.arm_limits(), |_| {}),
-        |link| ArmCore::new(config.arm_limits(), link.log_publisher()),
-    );
+    let core = ArmCore::new(config.arm_limits(), link.log_publisher());
     let initialized = plant.read_feedback().and_then(|feedback| {
         feedback.measured_positions(config)?;
         let state = initialize_loop(config, core, &feedback)?;
@@ -262,15 +259,16 @@ fn runner_for<'a, P: Plant>(
             return Err(Box::new(report));
         }
     };
-    let (inbox, samples) = link
-        .and_then(Link::take_loop_end)
-        .map_or((None, None), |end| (Some(end.inbox), Some(end.samples)));
+    let Some(loop_end) = link.take_loop_end() else {
+        report.trip = Some(format!("The control link for {name} is already in use"));
+        return Err(Box::new(report));
+    };
     Ok(Runner {
         name: name.to_owned(),
         plant,
         link,
-        inbox,
-        samples,
+        inbox: loop_end.inbox,
+        samples: loop_end.samples,
         feedback,
         feedback_scratch: Feedback::default(),
         config,
@@ -284,7 +282,6 @@ fn runner_for<'a, P: Plant>(
         failed_cycles: 0,
         last_reconnect_failure: None,
         recovery: runner::BusRecovery::Disabled,
-        sine_stream: None,
     })
 }
 
@@ -293,7 +290,7 @@ fn refuse_mixed_pacing<P: Plant>(runners: Vec<Runner<'_, P>>) -> Vec<Report> {
         .into_iter()
         .map(|mut runner| {
             runner.report.trip = Some(
-                "Arms driven by a simulator and arms driven otherwise cannot share an executor"
+                "Arms driven by a simulator and arms driven otherwise cannot share a controller"
                     .into(),
             );
             runner.report.trace = Some(runner.trace.finish());
@@ -318,7 +315,7 @@ fn serve_requests<P: Plant>(
         for _ in 0..runners.len() {
             let index = *next_request_arm;
             *next_request_arm = (index + 1) % runners.len();
-            let Some(request) = runners[index].inbox.as_ref().and_then(ArmInbox::next) else {
+            let Some(request) = runners[index].inbox.next() else {
                 consecutive_empty_inboxes += 1;
                 if consecutive_empty_inboxes == runners.len() {
                     return;
@@ -373,11 +370,6 @@ fn run_runners<P: Plant>(
         .map(|runner| runner.config.control_timing.deadline)
         .min()
         .unwrap_or(first.config.control_timing.deadline);
-    for runner in &mut runners {
-        if runner.link.is_none() {
-            let _ = runner.state.arm().submit(Command::Enable, Now::current());
-        }
-    }
     let started = Instant::now();
     // CONSTRAINT: Simulators set the pace themselves: with them the loop does not sleep, each
     // cycle lasts the nominal period, and wall time cannot miss a deadline.

@@ -65,8 +65,8 @@ limits to conceal poor tracking. The controller is soft real time and its
 collision checks only cover configured geometry, not unknown workspace objects.
 
 To estimate following lag, run the trace analyzer on a completed run's JSONL
-file. Single-arm stations write `executor-*-trace.jsonl` files under
-`traces/executor/` by default. Substitute the path to the completed run below.
+file. Single-arm stations write `controller-*-trace.jsonl` files under
+`traces/controller/` by default. Substitute the path to the completed run below.
 If you set `--trace-directory`, look there. Multi-arm runs use per-arm
 subdirectories.
 

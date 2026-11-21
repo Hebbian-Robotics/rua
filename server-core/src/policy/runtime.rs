@@ -5,7 +5,7 @@ use anyhow::Context;
 
 use nalgebra::Isometry3;
 
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::plant::Feedback;
 use crate::robot::Robot;
 use crate::so101::policy::{JOINT_COUNT, Policy};
@@ -18,7 +18,7 @@ pub(crate) struct PolicyRuntime {
 
 impl PolicyRuntime {
     pub(crate) fn new(
-        config: &ExecutorConfig,
+        config: &ControllerConfig,
         robot: Option<&Arc<Robot>>,
     ) -> anyhow::Result<Option<Self>> {
         let Some(settings) = &config.policy else {
@@ -57,7 +57,7 @@ impl PolicyRuntime {
 
     pub(crate) fn joint_goal(
         &mut self,
-        config: &ExecutorConfig,
+        config: &ControllerConfig,
         feedback: &Feedback,
         target: &Isometry3<f64>,
     ) -> anyhow::Result<[f64; JOINT_COUNT]> {

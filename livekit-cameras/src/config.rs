@@ -11,7 +11,7 @@ pub struct Arguments {
     #[command(flatten)]
     pub publishing: livekit_camera_publisher::config::PublishingOptions,
     #[arg(long, default_value = "http://127.0.0.1:8792")]
-    pub executor_url: String,
+    pub station_url: String,
     /// Camera mapping: name=device, repeatable.
     #[arg(long = "camera")]
     camera_mappings: Vec<String>,

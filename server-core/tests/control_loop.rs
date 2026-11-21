@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::control_loop::{ArmSetup, run, run_arms};
 use hebbian_robot_use_core::lease::{LEASE, Lease};
@@ -33,13 +33,13 @@ fn control() -> Arc<Lease> {
     Arc::new(Lease::new(LEASE))
 }
 
-fn test_config() -> ExecutorConfig {
-    let mut config = ExecutorConfig::parse(CONFIG).unwrap().into_input();
+fn test_config() -> ControllerConfig {
+    let mut config = ControllerConfig::parse(CONFIG).unwrap().into_input();
     config.trace_directory = std::env::temp_dir()
         .join("hebbian-robot-use-server-test-traces")
         .to_string_lossy()
         .into_owned();
-    ExecutorConfig::try_from(config).unwrap()
+    ControllerConfig::try_from(config).unwrap()
 }
 
 fn in_mode(mode: ArmMode) -> impl FnMut(&Event) -> bool {
@@ -113,7 +113,7 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
         };
         let report = run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(10)),
             &loop_shutdown_requested,
@@ -182,13 +182,7 @@ fn the_loop_runs_until_shutdown_is_requested() {
     let mut client = LinkClient::connect(&link.handle());
     let loop_thread = std::thread::spawn(move || {
         let mut plant = NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
-        let report = run(
-            &mut plant,
-            Some(&link),
-            &config,
-            None,
-            &loop_shutdown_requested,
-        );
+        let report = run(&mut plant, &link, &config, None, &loop_shutdown_requested);
         link.close();
         report
     });
@@ -210,7 +204,7 @@ fn a_simulated_arm_recovers_from_just_outside_a_joint_limit() {
         let mut plant = NoPhysicsStandIn::at(vec![2.02, 0.0], 0.02);
         let report = run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(4)),
             &loop_shutdown_requested,
@@ -304,14 +298,11 @@ fn two_arms() -> TwoArms {
                     inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
                     fault: Arc::clone(fault),
                 },
-                Some(link),
+                link,
             )
         })
         .collect();
-    let handles: Vec<_> = setups
-        .iter()
-        .filter_map(|setup| setup.link.as_ref().map(Link::handle))
-        .collect();
+    let handles: Vec<_> = setups.iter().map(|setup| setup.link.handle()).collect();
     let running_arms = RunningArms::start(setups);
     let mut left = LinkClient::connect(&handles[0]);
     let mut right = LinkClient::connect(&handles[1]);
@@ -488,14 +479,14 @@ fn fake_simulator(
     (shutdown_sender, simulator_thread)
 }
 
-fn sim_config(reply_timeout_seconds: f64) -> ExecutorConfig {
+fn sim_config(reply_timeout_seconds: f64) -> ControllerConfig {
     let mut config = test_config().into_input();
     config.sim_plant = Some(hebbian_robot_use_core::config::SimPlantConfig {
         connect_timeout_seconds: 5.0,
         reply_timeout_seconds,
         real_time: true,
     });
-    ExecutorConfig::try_from(config).unwrap()
+    ControllerConfig::try_from(config).unwrap()
 }
 
 fn sim_setups(
@@ -528,7 +519,7 @@ fn sim_setups(
             )
             .unwrap();
             let link = Link::new(&config, Arc::clone(&control)).unwrap();
-            ArmSetup::new(name.to_owned(), config, plant, Some(link))
+            ArmSetup::new(name.to_owned(), config, plant, link)
         })
         .collect()
 }
@@ -539,16 +530,14 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
     std::fs::create_dir_all(&directory).unwrap();
     let (simulator_shutdown, simulator) = fake_simulator(&directory, 100_000);
     let mut setups = sim_setups(&directory, 2.0);
-    let left_handle = setups[0].link.as_ref().unwrap().handle();
+    let left_handle = setups[0].link.handle();
     let shutdown = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&shutdown);
     let loop_thread = std::thread::spawn(move || {
         let reports = run_arms(&mut setups, Some(Duration::from_secs(3)), &stop);
-        for setup in &mut setups {
+        for setup in setups {
             assert_eq!(setup.config.trace_directory, test_config().trace_directory);
-            if let Some(link) = setup.link.take() {
-                link.close();
-            }
+            setup.link.close();
         }
         reports
     });
@@ -595,10 +584,8 @@ fn a_simulator_that_stops_answering_trips_the_arms_instead_of_hanging_the_loop()
         started.elapsed() < Duration::from_secs(5),
         "the loop must not wait out its run time"
     );
-    for setup in &mut setups {
-        if let Some(link) = setup.link.take() {
-            link.close();
-        }
+    for setup in setups {
+        setup.link.close();
     }
     assert!(reports.iter().all(|(_, report)| {
         report
@@ -656,7 +643,7 @@ fn bus_outages_do_not_release_torque() {
     // WHY: Exercise bus recovery, without an unrelated host scheduling trip winning
     // the race on a shared CI runner. Production profiles are unchanged.
     configuration.loop_deadline_seconds = 5.0;
-    let config = ExecutorConfig::try_from(configuration).unwrap();
+    let config = ControllerConfig::try_from(configuration).unwrap();
     let link = Link::new(&config, control()).unwrap();
     let handle = link.handle();
     let bus_down = Arc::new(AtomicBool::new(false));
@@ -671,7 +658,7 @@ fn bus_outages_do_not_release_torque() {
     let loop_thread = std::thread::spawn(move || {
         let report = run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(30)),
             &loop_shutdown_requested,
@@ -723,7 +710,7 @@ fn a_signal_returns_the_arm_to_rest_and_releases_it_before_the_run_ends() {
     let loop_thread = std::thread::spawn(move || {
         let report = run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(30)),
             &signal,

@@ -247,19 +247,19 @@ impl Loop<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ExecutorConfig, TEST_CONFIG};
+    use crate::config::{ControllerConfig, TEST_CONFIG};
     use crate::limits::validated_tracking_error;
     use crate::plant::{NoPhysicsStandIn, Plant};
     use hebbian_contracts::{CornerPlan, Segment};
 
     #[test]
     fn a_lagging_axis_can_finish_without_raising_the_tracking_limit() -> Result<(), Trip> {
-        let mut input = ExecutorConfig::parse(TEST_CONFIG).unwrap().into_input();
+        let mut input = ControllerConfig::parse(TEST_CONFIG).unwrap().into_input();
         input.tracking_following_lag_seconds = 0.11;
         input.tracking_static_margin_radians = 0.1;
         input.motion.acceleration_limit = 5.0;
         input.motion.jerk_limit = 20.0;
-        let config = ExecutorConfig::try_from(input).unwrap();
+        let config = ControllerConfig::try_from(input).unwrap();
         let run = |adapt: bool, lag: f64| -> Result<(bool, f64, usize), Trip> {
             let mut plant = NoPhysicsStandIn::at(vec![0.0, 0.0], lag);
             let mut motion = MotionSupervisor::new(

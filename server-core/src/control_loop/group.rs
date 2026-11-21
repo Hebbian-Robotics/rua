@@ -2,7 +2,7 @@ use super::activity::Activity;
 use super::runner::{PendingCycle, Runner};
 use super::trajectory::{ActiveGroupMember, GroupReference, MotionStatus};
 use crate::arm::{GroupMembership, Now};
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::corner_path::{MotionSupervisor, ValidatedPlan};
 use crate::limits::Trip;
 use crate::motion_values::GroupId;
@@ -54,7 +54,7 @@ impl ActiveGroup {
         id: &GroupId,
         members: Vec<usize>,
         plans: &[&ValidatedPlan],
-        configs: &[&ExecutorConfig],
+        configs: &[&ControllerConfig],
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             !members.is_empty() && members.len() == plans.len() && plans.len() == configs.len(),
@@ -209,7 +209,7 @@ pub(super) fn form_groups<P: Plant>(runners: &mut [Runner<'_, P>], groups: &mut 
             .iter()
             .filter_map(|index| runners[*index].group_member().map(|member| &*member.plan))
             .collect();
-        let configs: Vec<&ExecutorConfig> =
+        let configs: Vec<&ControllerConfig> =
             indexes.iter().map(|index| runners[*index].config).collect();
         let result = ActiveGroup::form(&membership.id, indexes.clone(), &plans, &configs);
         match result {
