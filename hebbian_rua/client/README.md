@@ -4,7 +4,11 @@ Robot observations, context, tools and execution for your own agents.
 Import `RobotTools` and `StationClient` from `hebbian_rua`; use
 `OpenAIRobotTools`, `AnthropicRobotTools` or `GeminiRobotTools` from the matching
 `hebbian_rua.client.llm.openai`, `.anthropic` or `.gemini` module with your model SDK.
-Start with the [runnable agent examples](../../examples/python/README.md).
+Start with the [read-only state check](../../examples/python/README.md#read-your-arms-state)
+or run one of the [agent examples](../../examples/python/README.md#run-an-agent).
+Without explicit URLs, `StationClient()` uses `HEBBIAN_STATION_URL` and
+`HEBBIAN_MEDIA_SERVER` from the process environment, falling back to the
+loopback station and media addresses.
 They already handle observations and tool execution with the default model view;
 you do not need custom formatters or your own loop.
 

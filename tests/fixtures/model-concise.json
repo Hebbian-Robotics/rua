@@ -1,0 +1,1013 @@
+[
+  {
+    "name": "station state without station context",
+    "keep_station_context": false,
+    "input": {
+      "robot": "so101-test",
+      "description": "SO-101 arm. World +X forward, +Z up.",
+      "joint_names": [
+        "shoulder_pan",
+        "shoulder_lift"
+      ],
+      "surface_guard": {
+        "surface_height_meters": 0.0,
+        "leeway_meters": 0.01
+      },
+      "jaw_closing_axis": "x",
+      "max_joint_speed": 2.5,
+      "arms": [
+        {
+          "arm": "follower",
+          "mode": "holding",
+          "sampled_at_unix_seconds": 1794806421.5874462,
+          "measured_joints": [
+            -0.0552233,
+            -1.8223691
+          ],
+          "measured_joint_velocities": [
+            0.0,
+            0.5
+          ],
+          "measured_joint_efforts": [
+            0.0,
+            0.42
+          ],
+          "commanded_joints": null,
+          "tool": {
+            "position": [
+              0.15608368,
+              0.0142001,
+              0.00045331
+            ],
+            "quaternion": [
+              0.702956058,
+              0.673672387,
+              0.173128141,
+              0.148475389
+            ],
+            "orientation": {
+              "approach": [
+                0.4435,
+                0.0245,
+                -0.896
+              ],
+              "degrees_from_down": 26.4,
+              "jaw_yaw_degrees": 87.9
+            },
+            "model_points": [
+              [
+                0.0388,
+                0.0,
+                0.0624
+              ],
+              [
+                0.07,
+                -0.0166,
+                0.1166
+              ]
+            ]
+          },
+          "controller": "policy",
+          "status": "ready",
+          "rest_pose": [
+            0.0,
+            -1.8
+          ],
+          "segment": null,
+          "active_command": null,
+          "last_command": {
+            "command_id": "move-1",
+            "label": "move_to_pose",
+            "accepted_at": 1234.56789,
+            "joint_speed": 1.0,
+            "completion": {
+              "outcome": "stopped_short",
+              "finished_at": 1236.123456,
+              "detail": "Object contact"
+            },
+            "checkpoints": [
+              {
+                "label": "start",
+                "measured_joints": [
+                  0.123456789
+                ]
+              }
+            ],
+            "goal_joints": null,
+            "target_joints": [
+              0.1,
+              -0.2
+            ],
+            "target_position": [
+              0.2,
+              0.0,
+              0.1
+            ],
+            "target_quaternion": [
+              0.0,
+              0.7071067811865476,
+              0.0,
+              0.7071067811865475
+            ],
+            "target_status": "partial",
+            "path_limited": null,
+            "pose_limited": {
+              "waypoint": 0,
+              "reason": "at_joint_limit",
+              "position_shortfall_meters": 0.0043278,
+              "orientation_shortfall_radians": 0.0007954
+            },
+            "achieved": {
+              "sampled_at": 1236.123456,
+              "joints": [
+                0.5,
+                -0.5
+              ],
+              "position": [
+                0.19,
+                0.0012345,
+                0.0987654
+              ],
+              "quaternion": [
+                0.0,
+                0.7071067811865476,
+                0.0,
+                0.7071067811865475
+              ],
+              "joint_errors_radians": [
+                0.01,
+                0.02
+              ],
+              "position_error_meters": 0.0019092,
+              "orientation": {
+                "approach": [
+                  -0.0092,
+                  0.0002,
+                  -1.0
+                ],
+                "degrees_from_down": 0.5,
+                "jaw_yaw_degrees": 90.1
+              }
+            },
+            "group_id": "group-1",
+            "trace_context": {
+              "trace_id": "abc",
+              "span_id": "def"
+            }
+          },
+          "fault": null,
+          "active_trip": "Joint tracking error",
+          "recovery_issue": null,
+          "gripper_opening": 0.0027485587,
+          "interlocks": [
+            {
+              "kind": "required_camera_unavailable",
+              "camera": "table"
+            }
+          ],
+          "revision": 4
+        }
+      ],
+      "lease": {
+        "holder": "agent",
+        "label": "hebbian-robot-use"
+      }
+    },
+    "concise": {
+      "robot": "so101-test",
+      "joint_names": [
+        "shoulder_pan",
+        "shoulder_lift"
+      ],
+      "max_joint_speed": 2.5,
+      "surface_guard": {
+        "surface_height_meters": 0.0,
+        "leeway_meters": 0.01
+      },
+      "arms": [
+        {
+          "arm": "follower",
+          "mode": "holding",
+          "sampled_at_unix_seconds": 1794806421.5874462,
+          "measured_joints": [
+            -0.0552233,
+            -1.8223691
+          ],
+          "tool": {
+            "position": [
+              0.15608368,
+              0.0142001,
+              0.00045331
+            ],
+            "quaternion": [
+              0.702956058,
+              0.673672387,
+              0.173128141,
+              0.148475389
+            ],
+            "orientation": {
+              "approach": [
+                0.4435,
+                0.0245,
+                -0.896
+              ],
+              "degrees_from_down": 26.4,
+              "jaw_yaw_degrees": 87.9
+            }
+          },
+          "status": "ready",
+          "fault": null,
+          "active_trip": "Joint tracking error",
+          "recovery_issue": null,
+          "gripper_opening": 0.0027485587,
+          "interlocks": [
+            {
+              "kind": "required_camera_unavailable",
+              "camera": "table"
+            }
+          ],
+          "revision": 4
+        }
+      ]
+    },
+    "expected": {
+      "robot": "so101-test",
+      "joint_names": [
+        "shoulder_pan",
+        "shoulder_lift"
+      ],
+      "max_joint_speed_degrees_per_second": 143.2,
+      "surface_guard": {
+        "surface_height_mm": 0.0,
+        "leeway_mm": 10.0
+      },
+      "arms": [
+        {
+          "arm": "follower",
+          "mode": "holding",
+          "sampled_at_unix_seconds": 1794806421.587,
+          "measured_joints_degrees": [
+            -3.2,
+            -104.4
+          ],
+          "tool": {
+            "position_mm": [
+              156.1,
+              14.2,
+              0.5
+            ],
+            "quaternion": [
+              0.703,
+              0.6737,
+              0.1731,
+              0.1485
+            ],
+            "orientation": {
+              "approach": [
+                0.4435,
+                0.0245,
+                -0.896
+              ],
+              "degrees_from_down": 26.4,
+              "jaw_yaw_degrees": 87.9
+            }
+          },
+          "status": "ready",
+          "active_trip": "Joint tracking error",
+          "gripper_opening": 0.0027,
+          "interlocks": [
+            {
+              "kind": "required_camera_unavailable",
+              "camera": "table"
+            }
+          ],
+          "revision": 4
+        }
+      ]
+    }
+  },
+  {
+    "name": "station state keeping station context",
+    "keep_station_context": true,
+    "input": {
+      "robot": "so101-test",
+      "description": "SO-101 arm. World +X forward, +Z up.",
+      "joint_names": [
+        "shoulder_pan",
+        "shoulder_lift"
+      ],
+      "surface_guard": {
+        "surface_height_meters": 0.0,
+        "leeway_meters": 0.01
+      },
+      "jaw_closing_axis": "x",
+      "max_joint_speed": 2.5,
+      "arms": [
+        {
+          "arm": "follower",
+          "mode": "holding",
+          "sampled_at_unix_seconds": 1794806421.5874462,
+          "measured_joints": [
+            -0.0552233,
+            -1.8223691
+          ],
+          "measured_joint_velocities": [
+            0.0,
+            0.5
+          ],
+          "measured_joint_efforts": [
+            0.0,
+            0.42
+          ],
+          "commanded_joints": null,
+          "tool": {
+            "position": [
+              0.15608368,
+              0.0142001,
+              0.00045331
+            ],
+            "quaternion": [
+              0.702956058,
+              0.673672387,
+              0.173128141,
+              0.148475389
+            ],
+            "orientation": {
+              "approach": [
+                0.4435,
+                0.0245,
+                -0.896
+              ],
+              "degrees_from_down": 26.4,
+              "jaw_yaw_degrees": 87.9
+            },
+            "model_points": [
+              [
+                0.0388,
+                0.0,
+                0.0624
+              ],
+              [
+                0.07,
+                -0.0166,
+                0.1166
+              ]
+            ]
+          },
+          "controller": "policy",
+          "status": "ready",
+          "rest_pose": [
+            0.0,
+            -1.8
+          ],
+          "segment": null,
+          "active_command": null,
+          "last_command": {
+            "command_id": "move-1",
+            "label": "move_to_pose",
+            "accepted_at": 1234.56789,
+            "joint_speed": 1.0,
+            "completion": {
+              "outcome": "stopped_short",
+              "finished_at": 1236.123456,
+              "detail": "Object contact"
+            },
+            "checkpoints": [
+              {
+                "label": "start",
+                "measured_joints": [
+                  0.123456789
+                ]
+              }
+            ],
+            "goal_joints": null,
+            "target_joints": [
+              0.1,
+              -0.2
+            ],
+            "target_position": [
+              0.2,
+              0.0,
+              0.1
+            ],
+            "target_quaternion": [
+              0.0,
+              0.7071067811865476,
+              0.0,
+              0.7071067811865475
+            ],
+            "target_status": "partial",
+            "path_limited": null,
+            "pose_limited": {
+              "waypoint": 0,
+              "reason": "at_joint_limit",
+              "position_shortfall_meters": 0.0043278,
+              "orientation_shortfall_radians": 0.0007954
+            },
+            "achieved": {
+              "sampled_at": 1236.123456,
+              "joints": [
+                0.5,
+                -0.5
+              ],
+              "position": [
+                0.19,
+                0.0012345,
+                0.0987654
+              ],
+              "quaternion": [
+                0.0,
+                0.7071067811865476,
+                0.0,
+                0.7071067811865475
+              ],
+              "joint_errors_radians": [
+                0.01,
+                0.02
+              ],
+              "position_error_meters": 0.0019092,
+              "orientation": {
+                "approach": [
+                  -0.0092,
+                  0.0002,
+                  -1.0
+                ],
+                "degrees_from_down": 0.5,
+                "jaw_yaw_degrees": 90.1
+              }
+            },
+            "group_id": "group-1",
+            "trace_context": {
+              "trace_id": "abc",
+              "span_id": "def"
+            }
+          },
+          "fault": null,
+          "recovery_issue": null,
+          "gripper_opening": 0.0027485587,
+          "interlocks": [
+            {
+              "kind": "required_camera_unavailable",
+              "camera": "table"
+            }
+          ],
+          "revision": 4
+        }
+      ],
+      "lease": {
+        "holder": "agent",
+        "label": "hebbian-robot-use"
+      }
+    },
+    "concise": {
+      "robot": "so101-test",
+      "joint_names": [
+        "shoulder_pan",
+        "shoulder_lift"
+      ],
+      "max_joint_speed": 2.5,
+      "surface_guard": {
+        "surface_height_meters": 0.0,
+        "leeway_meters": 0.01
+      },
+      "description": "SO-101 arm. World +X forward, +Z up.",
+      "lease": {
+        "holder": "agent",
+        "label": "hebbian-robot-use"
+      },
+      "arms": [
+        {
+          "arm": "follower",
+          "mode": "holding",
+          "sampled_at_unix_seconds": 1794806421.5874462,
+          "measured_joints": [
+            -0.0552233,
+            -1.8223691
+          ],
+          "tool": {
+            "position": [
+              0.15608368,
+              0.0142001,
+              0.00045331
+            ],
+            "quaternion": [
+              0.702956058,
+              0.673672387,
+              0.173128141,
+              0.148475389
+            ],
+            "orientation": {
+              "approach": [
+                0.4435,
+                0.0245,
+                -0.896
+              ],
+              "degrees_from_down": 26.4,
+              "jaw_yaw_degrees": 87.9
+            }
+          },
+          "status": "ready",
+          "fault": null,
+          "recovery_issue": null,
+          "gripper_opening": 0.0027485587,
+          "interlocks": [
+            {
+              "kind": "required_camera_unavailable",
+              "camera": "table"
+            }
+          ],
+          "revision": 4
+        }
+      ]
+    },
+    "expected": {
+      "robot": "so101-test",
+      "joint_names": [
+        "shoulder_pan",
+        "shoulder_lift"
+      ],
+      "max_joint_speed_degrees_per_second": 143.2,
+      "surface_guard": {
+        "surface_height_mm": 0.0,
+        "leeway_mm": 10.0
+      },
+      "description": "SO-101 arm. World +X forward, +Z up.",
+      "lease": {
+        "holder": "agent",
+        "label": "hebbian-robot-use"
+      },
+      "arms": [
+        {
+          "arm": "follower",
+          "mode": "holding",
+          "sampled_at_unix_seconds": 1794806421.587,
+          "measured_joints_degrees": [
+            -3.2,
+            -104.4
+          ],
+          "tool": {
+            "position_mm": [
+              156.1,
+              14.2,
+              0.5
+            ],
+            "quaternion": [
+              0.703,
+              0.6737,
+              0.1731,
+              0.1485
+            ],
+            "orientation": {
+              "approach": [
+                0.4435,
+                0.0245,
+                -0.896
+              ],
+              "degrees_from_down": 26.4,
+              "jaw_yaw_degrees": 87.9
+            }
+          },
+          "status": "ready",
+          "gripper_opening": 0.0027,
+          "interlocks": [
+            {
+              "kind": "required_camera_unavailable",
+              "camera": "table"
+            }
+          ],
+          "revision": 4
+        }
+      ]
+    }
+  },
+  {
+    "name": "action sequence includes each step outcome",
+    "keep_station_context": false,
+    "input": {
+      "id": "sequence-1",
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "execution",
+          "step": 1,
+          "detail": "Motion limited"
+        }
+      },
+      "requested_steps": [
+        {
+          "arms": {
+            "left": {
+              "gripper_opening": 1.0
+            }
+          }
+        },
+        {
+          "arms": {
+            "left": {
+              "gripper_opening": 0.0
+            }
+          }
+        },
+        {
+          "arms": {
+            "left": {
+              "gripper_opening": 0.5
+            }
+          }
+        }
+      ],
+      "steps": [
+        [
+          {
+            "arm": "left",
+            "record": {
+              "command_id": "a",
+              "accepted_at": 1.5,
+              "completion": {
+                "outcome": "completed",
+                "finished_at": 2.5,
+                "detail": null,
+                "gripper": {
+                  "kind": "stopped_short",
+                  "measured_angle_radians": 0.25,
+                  "target_angle_radians": 0.0
+                }
+              },
+              "checkpoints": [],
+              "label": "set_gripper",
+              "achieved": {
+                "position": [
+                  0.1,
+                  0.0,
+                  0.05
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "arm": "left",
+            "record": {
+              "command_id": "b",
+              "accepted_at": 3.5,
+              "completion": {
+                "outcome": "stopped_short",
+                "finished_at": 4.5,
+                "detail": "Object contact"
+              },
+              "achieved": {
+                "position": [
+                  0.1,
+                  0.0,
+                  0.05
+                ],
+                "sampled_at": 4.5
+              },
+              "target_status": "partial",
+              "trace_context": {
+                "trace_id": "t"
+              }
+            }
+          }
+        ]
+      ],
+      "arms": [
+        "left"
+      ]
+    },
+    "concise": {
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "execution",
+          "step": 1,
+          "detail": "Motion limited"
+        }
+      },
+      "requested_step_count": 3,
+      "recorded_step_count": 2,
+      "arms": [
+        "left"
+      ],
+      "steps": [
+        [
+          {
+            "arm": "left",
+            "record": {
+              "label": "set_gripper",
+              "completion": {
+                "outcome": "completed",
+                "detail": null,
+                "gripper": {
+                  "kind": "stopped_short",
+                  "measured_angle_radians": 0.25,
+                  "target_angle_radians": 0.0
+                }
+              }
+            }
+          }
+        ],
+        [
+          {
+            "arm": "left",
+            "record": {
+              "completion": {
+                "outcome": "stopped_short",
+                "detail": "Object contact"
+              },
+              "achieved": {
+                "position": [
+                  0.1,
+                  0.0,
+                  0.05
+                ],
+                "sampled_at": 4.5
+              },
+              "target_status": "partial"
+            }
+          }
+        ]
+      ]
+    },
+    "expected": {
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "execution",
+          "step": 1,
+          "detail": "Motion limited"
+        }
+      },
+      "requested_step_count": 3,
+      "recorded_step_count": 2,
+      "arms": [
+        "left"
+      ],
+      "steps": [
+        [
+          {
+            "arm": "left",
+            "record": {
+              "label": "set_gripper",
+              "completion": {
+                "outcome": "completed",
+                "gripper": {
+                  "kind": "stopped_short",
+                  "measured_angle_radians": 0.25,
+                  "target_angle_radians": 0.0
+                }
+              }
+            }
+          }
+        ],
+        [
+          {
+            "arm": "left",
+            "record": {
+              "completion": {
+                "outcome": "stopped_short",
+                "detail": "Object contact"
+              },
+              "achieved": {
+                "position_mm": [
+                  100.0,
+                  0.0,
+                  50.0
+                ],
+                "sampled_at": 4.5
+              },
+              "target_status": "partial"
+            }
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "grouped command record without diagnostics",
+    "keep_station_context": false,
+    "input": {
+      "group_id": "group-1",
+      "status": "stopped_short",
+      "commands": [
+        {
+          "command_id": "move-1",
+          "label": "move_to_pose",
+          "accepted_at": 1234.56789,
+          "joint_speed": 1.0,
+          "completion": {
+            "outcome": "stopped_short",
+            "finished_at": 1236.123456,
+            "detail": "Object contact"
+          },
+          "checkpoints": [
+            {
+              "label": "start",
+              "measured_joints": [
+                0.123456789
+              ]
+            }
+          ],
+          "goal_joints": null,
+          "target_joints": [
+            0.1,
+            -0.2
+          ],
+          "target_position": [
+            0.2,
+            0.0,
+            0.1
+          ],
+          "target_quaternion": [
+            0.0,
+            0.7071067811865476,
+            0.0,
+            0.7071067811865475
+          ],
+          "target_status": "partial",
+          "path_limited": null,
+          "pose_limited": {
+            "waypoint": 0,
+            "reason": "at_joint_limit",
+            "position_shortfall_meters": 0.0043278,
+            "orientation_shortfall_radians": 0.0007954
+          },
+          "achieved": {
+            "sampled_at": 1236.123456,
+            "joints": [
+              0.5,
+              -0.5
+            ],
+            "position": [
+              0.19,
+              0.0012345,
+              0.0987654
+            ],
+            "quaternion": [
+              0.0,
+              0.7071067811865476,
+              0.0,
+              0.7071067811865475
+            ],
+            "joint_errors_radians": [
+              0.01,
+              0.02
+            ],
+            "position_error_meters": 0.0019092,
+            "orientation": {
+              "approach": [
+                -0.0092,
+                0.0002,
+                -1.0
+              ],
+              "degrees_from_down": 0.5,
+              "jaw_yaw_degrees": 90.1
+            }
+          },
+          "group_id": "group-1",
+          "trace_context": {
+            "trace_id": "abc",
+            "span_id": "def"
+          }
+        }
+      ]
+    },
+    "concise": {
+      "status": "stopped_short",
+      "commands": [
+        {
+          "label": "move_to_pose",
+          "joint_speed": 1.0,
+          "completion": {
+            "outcome": "stopped_short",
+            "detail": "Object contact"
+          },
+          "goal_joints": null,
+          "target_joints": [
+            0.1,
+            -0.2
+          ],
+          "target_position": [
+            0.2,
+            0.0,
+            0.1
+          ],
+          "target_quaternion": [
+            0.0,
+            0.7071067811865476,
+            0.0,
+            0.7071067811865475
+          ],
+          "target_status": "partial",
+          "path_limited": null,
+          "pose_limited": {
+            "waypoint": 0,
+            "reason": "at_joint_limit",
+            "position_shortfall_meters": 0.0043278,
+            "orientation_shortfall_radians": 0.0007954
+          },
+          "achieved": {
+            "sampled_at": 1236.123456,
+            "joints": [
+              0.5,
+              -0.5
+            ],
+            "position": [
+              0.19,
+              0.0012345,
+              0.0987654
+            ],
+            "quaternion": [
+              0.0,
+              0.7071067811865476,
+              0.0,
+              0.7071067811865475
+            ],
+            "joint_errors_radians": [
+              0.01,
+              0.02
+            ],
+            "position_error_meters": 0.0019092,
+            "orientation": {
+              "approach": [
+                -0.0092,
+                0.0002,
+                -1.0
+              ],
+              "degrees_from_down": 0.5,
+              "jaw_yaw_degrees": 90.1
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "status": "stopped_short",
+      "commands": [
+        {
+          "label": "move_to_pose",
+          "joint_speed_degrees_per_second": 57.3,
+          "completion": {
+            "outcome": "stopped_short",
+            "detail": "Object contact"
+          },
+          "target_joints_degrees": [
+            5.7,
+            -11.5
+          ],
+          "target_position_mm": [
+            200.0,
+            0.0,
+            100.0
+          ],
+          "target_quaternion": [
+            0.0,
+            0.7071,
+            0.0,
+            0.7071
+          ],
+          "target_status": "partial",
+          "pose_limited": {
+            "waypoint": 0,
+            "reason": "at_joint_limit",
+            "position_shortfall_mm": 4.3,
+            "orientation_shortfall_degrees": 0.0
+          },
+          "achieved": {
+            "sampled_at": 1236.123,
+            "joints_degrees": [
+              28.6,
+              -28.6
+            ],
+            "position_mm": [
+              190.0,
+              1.2,
+              98.8
+            ],
+            "quaternion": [
+              0.0,
+              0.7071,
+              0.0,
+              0.7071
+            ],
+            "joint_errors_degrees": [
+              0.6,
+              1.1
+            ],
+            "position_error_mm": 1.9,
+            "orientation": {
+              "approach": [
+                -0.0092,
+                0.0002,
+                -1.0
+              ],
+              "degrees_from_down": 0.5,
+              "jaw_yaw_degrees": 90.1
+            }
+          }
+        }
+      ]
+    }
+  }
+]

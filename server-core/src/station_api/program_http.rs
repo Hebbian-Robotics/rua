@@ -1,0 +1,276 @@
+use std::sync::Arc;
+
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use hebbian_contracts::{
+    ActionSequenceRequest, ActionSequenceStartRequest, CompilationArtifact, CompilationOutcome,
+    RunCompiledProgramRequest,
+};
+
+use super::http::{StationState, validate_submission_id};
+use super::programs::{ArtifactLookup, CompilationRetention, ProgramCompilation};
+use super::submissions::{
+    ProgramSubmissionRequest, RequestReservation, SubmissionCompletion, wait_for_outcome,
+};
+
+type HttpFailure = (StatusCode, String);
+
+#[derive(Clone)]
+pub(crate) enum ProgramSubmissionError {
+    Unavailable(&'static str),
+    MissingCompilation,
+    IncompatibleCompilation,
+    Conflict(String),
+    Internal(String),
+}
+
+impl From<ProgramSubmissionError> for HttpFailure {
+    fn from(error: ProgramSubmissionError) -> Self {
+        match error {
+            ProgramSubmissionError::Unavailable(detail) => {
+                (StatusCode::SERVICE_UNAVAILABLE, detail.into())
+            }
+            ProgramSubmissionError::MissingCompilation => (
+                StatusCode::NOT_FOUND,
+                "Compilation artifact is unknown or expired; compile the saved source again".into(),
+            ),
+            ProgramSubmissionError::IncompatibleCompilation => (
+                StatusCode::CONFLICT,
+                "Compilation configuration changed; compile the saved source again".into(),
+            ),
+            ProgramSubmissionError::Conflict(detail) => (StatusCode::CONFLICT, detail),
+            ProgramSubmissionError::Internal(detail) => internal_failure(detail),
+        }
+    }
+}
+
+fn station_links(
+    station_state: &StationState,
+) -> Result<
+    &std::collections::BTreeMap<String, crate::control_link::LinkHandle>,
+    ProgramSubmissionError,
+> {
+    station_state
+        .arms
+        .get()
+        .ok_or(ProgramSubmissionError::Unavailable(
+            "Station arms are not ready",
+        ))
+}
+
+fn internal_failure(error: impl std::fmt::Display) -> HttpFailure {
+    (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+}
+
+pub(crate) async fn compile_action_sequence(
+    State(station_state): State<Arc<StationState>>,
+    Json(source): Json<ActionSequenceRequest>,
+) -> Result<Response, HttpFailure> {
+    tokio::task::spawn_blocking(move || {
+        let targets = station_state
+            .compilation_targets()
+            .map_err(internal_failure)?;
+        let result = station_state
+            .compiler
+            .compile(
+                &station_state.instance_id,
+                targets,
+                source,
+                CompilationRetention::WithInspectionFiles,
+            )
+            .map_err(internal_failure)?;
+        Ok(match result {
+            ProgramCompilation::Ready(artifact) => Json(CompilationOutcome::Compiled {
+                artifact: &artifact.compilation,
+            })
+            .into_response(),
+            ProgramCompilation::Rejected(diagnostic) => {
+                Json(CompilationOutcome::<&CompilationArtifact>::Rejected {
+                    diagnostics: vec![diagnostic],
+                })
+                .into_response()
+            }
+        })
+    })
+    .await
+    .map_err(internal_failure)?
+}
+
+pub(crate) async fn import_compilation(
+    State(station_state): State<Arc<StationState>>,
+    Json(artifact): Json<CompilationArtifact>,
+) -> Result<Response, HttpFailure> {
+    if artifact.schema_version != 1 {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Unsupported compilation schema; extract and compile the source explicitly".into(),
+        ));
+    }
+    compile_action_sequence(State(station_state), Json(artifact.source)).await
+}
+
+pub(crate) async fn inspect_compilation(
+    State(station_state): State<Arc<StationState>>,
+    Path(id): Path<String>,
+) -> Result<Response, HttpFailure> {
+    tokio::task::spawn_blocking(move || {
+        lookup_artifact(&station_state, &id)
+            .map(|artifact| Json(&artifact.compilation).into_response())
+            .map_err(HttpFailure::from)
+    })
+    .await
+    .map_err(internal_failure)?
+}
+
+fn lookup_artifact(
+    station_state: &StationState,
+    id: &str,
+) -> Result<Arc<super::programs::ProgramArtifact>, ProgramSubmissionError> {
+    let targets = station_state
+        .compilation_targets()
+        .map_err(ProgramSubmissionError::Internal)?;
+    match station_state.compiler.lookup(id, targets) {
+        ArtifactLookup::Found(artifact) => Ok(artifact),
+        ArtifactLookup::Missing => Err(ProgramSubmissionError::MissingCompilation),
+        ArtifactLookup::Incompatible => Err(ProgramSubmissionError::IncompatibleCompilation),
+    }
+}
+
+pub(crate) async fn execute_source(
+    State(station_state): State<Arc<StationState>>,
+    Json(request): Json<ActionSequenceStartRequest>,
+) -> Result<Json<String>, HttpFailure> {
+    let request_id = request.request_id.clone();
+    let instance_id = request.station_instance_id.clone();
+    submit_program(
+        station_state,
+        &request_id,
+        &instance_id,
+        ProgramSubmissionRequest::Source(request),
+    )
+    .await
+}
+
+pub(crate) async fn run_program(
+    State(station_state): State<Arc<StationState>>,
+    Json(request): Json<RunCompiledProgramRequest>,
+) -> Result<Json<String>, HttpFailure> {
+    let request_id = request.request_id.clone();
+    let instance_id = request.station_instance_id.clone();
+    submit_program(
+        station_state,
+        &request_id,
+        &instance_id,
+        ProgramSubmissionRequest::Compiled(request),
+    )
+    .await
+}
+
+async fn submit_program(
+    station_state: Arc<StationState>,
+    request_id: &str,
+    instance_id: &str,
+    request: ProgramSubmissionRequest,
+) -> Result<Json<String>, HttpFailure> {
+    let request_id = validate_submission_id(&station_state, instance_id, request_id)?;
+    let response = match station_state
+        .program_submissions
+        .reserve(request_id, request.clone())
+    {
+        RequestReservation::Existing(outcome) => outcome,
+        RequestReservation::New(outcome) => SubmissionCompletion::start(
+            outcome,
+            ProgramSubmissionError::Internal("Program worker failed; outcome is unknown".into()),
+            |completion| {
+                tokio::task::spawn_blocking(move || {
+                    completion.publish(execute_submission(&station_state, request));
+                });
+            },
+        ),
+        RequestReservation::Conflict => {
+            return Err((
+                StatusCode::CONFLICT,
+                "Request identifier already belongs to different work".into(),
+            ));
+        }
+        RequestReservation::Expired => {
+            return Err((
+                StatusCode::GONE,
+                "Submission outcome expired; this request will not be executed again".into(),
+            ));
+        }
+        RequestReservation::Full => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Too many submissions are pending".into(),
+            ));
+        }
+    };
+    wait_for_outcome(response)
+        .await
+        .map_err(|_| internal_failure("Program submission worker stopped"))?
+        .map(Json)
+        .map_err(HttpFailure::from)
+}
+
+fn execute_submission(
+    station_state: &Arc<StationState>,
+    request: ProgramSubmissionRequest,
+) -> Result<String, ProgramSubmissionError> {
+    check_admission(station_state)?;
+    let links = station_links(station_state)?;
+    let (token, artifact, expected_revisions, continuation) = match request {
+        ProgramSubmissionRequest::Source(request) => {
+            let targets = station_state
+                .compilation_targets()
+                .map_err(ProgramSubmissionError::Internal)?;
+            let artifact = match station_state
+                .compiler
+                .compile(
+                    &station_state.instance_id,
+                    targets,
+                    request.action_sequence,
+                    CompilationRetention::InMemory,
+                )
+                .map_err(|error| ProgramSubmissionError::Internal(format!("{error:#}")))?
+            {
+                ProgramCompilation::Ready(artifact) => artifact,
+                ProgramCompilation::Rejected(diagnostic) => {
+                    return Err(ProgramSubmissionError::Conflict(diagnostic.to_string()));
+                }
+            };
+            let expected_revisions = artifact.compilation.source.expected_revisions.clone();
+            (request.lease_token, artifact, expected_revisions, None)
+        }
+        ProgramSubmissionRequest::Compiled(request) => {
+            let artifact = lookup_artifact(station_state, &request.compilation_id)?;
+            (
+                request.lease_token,
+                artifact,
+                request.expected_revisions,
+                request.continuation,
+            )
+        }
+    };
+    check_admission(station_state)?;
+    super::runtime::run_compiled_program(
+        &station_state.executions,
+        links,
+        token,
+        artifact,
+        expected_revisions,
+        continuation,
+    )
+    .map_err(ProgramSubmissionError::Conflict)
+}
+
+fn check_admission(station_state: &StationState) -> Result<(), ProgramSubmissionError> {
+    if station_state.is_shutting_down() {
+        return Err(ProgramSubmissionError::Unavailable(
+            super::http::SHUTTING_DOWN,
+        ));
+    }
+    Ok(())
+}

@@ -13,19 +13,19 @@ moves, so the answer is always shown the same way.
 - One SO-101 with [per-arm setup](https://github.com/Hebbian-Robotics/rua/blob/main/docs/hardware.md) done, resting on its
   table. The arm rehomes and disables between questions, and disabling drops it,
   so the start pose must be supported.
-- A camera named `table` that the model can point, such as a wrist camera
-  ([cameras](https://github.com/Hebbian-Robotics/rua/blob/main/docs/cameras.md)).
+- A wrist-mounted [camera registered with the station](../../../docs/cameras.md#connect-a-usb-camera)
+  that the model can point by moving the arm.
 - A clear workspace, by default a mat in front of the arm. Questions only cover
   objects on it.
 - `OPENAI_API_KEY` in your environment or `.env`.
 
 ## Run
 
-Start the station with your profile and camera, then the app:
+Start the station with your profile and camera. Pass its registered name to
+the app. The command below assumes you registered it as `wrist`.
 
 ```sh
-uv run rua serve --profile ~/.config/rua/so101.toml --camera table=0
-uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py
+uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py --camera wrist
 ```
 
 Type a question and press Enter; a blank line quits. Pass

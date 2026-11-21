@@ -1,7 +1,22 @@
 # Contributing
 
-Feedback, issue reports and contributions are welcome. Follow the
-[source setup](docs/install-from-source.md) for the development environment.
+Follow [source setup](docs/install-from-source.md#prepare-the-checkout) and
+install [source-doc-lint](tooling/source-doc-lint/README.md) for code changes.
+Set up [Node.js and pnpm](docs/install-from-source.md#optional-viewer) for
+TypeScript changes.
+
+Choose checks for the component you are changing:
+
+| Change | Start with |
+| --- | --- |
+| Documentation | Local link check below |
+| Python SDK or tooling | `uv run rua-dev validate --lane python` |
+| TypeScript client, agent, or viewer | `uv run rua-dev validate --lane viewer` in the full checkout |
+| Rust control or station behavior | A focused Cargo test, such as `cargo test -p hebbian-robot-use-server --bin hebbian-robot-use-server so101` after setup |
+| Shared wire types | Regenerate from the owning Rust types with `uv run rua-dev contracts` |
+
+Run `uv run rua-dev validate --help` for the lanes in your checkout.
+In the full checkout, `docs/development.md` explains generated-file checks.
 
 ## Making a change
 
@@ -11,6 +26,12 @@ dependencies we maintain, make and validate the generic fix upstream before
 updating this repository’s pins and lockfiles. Keep public dependencies generic
 and keep private configuration, calibration, credentials and recordings out of
 commits.
+
+For an architecture review, inspect the Rust workspace dependency tree on demand:
+
+```sh
+cargo tree --locked --workspace --depth workspace --edges normal --all-features --target all
+```
 
 For shared SDK changes, check the SDKs included in your checkout and document
 intentional differences. See [SDK implementations](docs/architecture.md#client-sdks)
@@ -27,10 +48,10 @@ Run the affected language’s formatting, lint and type checks, then the relevan
 tests. Start with targeted checks and broaden when the change crosses a boundary;
 avoid redundant builds and full test runs.
 
-Run the [comment checker](tooling/comment-policy/README.md) for code changes:
+Run the [comment checker](tooling/source-doc-lint/README.md) for code changes:
 
 ```sh
-uv run python tooling/comment-policy/check.py
+source-doc-lint --config source-doc-lint.toml
 ```
 
 For Python:
@@ -44,7 +65,9 @@ uv run ty check
 If your `pyproject.toml` includes `[tool.importlinter]`, also run
 `uv run lint-imports`.
 
-For Rust, install the pinned dependency checkers once:
+The server and full lanes run workspace Rust checks. For those lanes,
+install the [media build prerequisites](docs/cameras.md#rua-configuration) and
+the pinned dependency checkers:
 
 ```sh
 cargo install cargo-machete --version 0.9.2 --locked
@@ -117,3 +140,11 @@ history. Update existing topic guides rather than adding overlapping ones.
 Link to the owning dependency’s documentation for its workflows and internals;
 keep RUA integration instructions in this repository. Review public-export
 overlays and included files when changing shared setup or package guidance.
+
+## Robot profiles
+
+`profiles/` ships two runnable SO-101 starting points, `so101` for hardware and
+`so101-sim` for the simulator socket. Use incomplete TOML fragments for settings
+shared across scenarios. Keep runnable combinations in the owning examples
+and keep per-station calibration and ports in local profiles. The executor's
+profile test checks the two bundled entry points.

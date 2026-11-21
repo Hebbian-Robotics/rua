@@ -69,11 +69,13 @@ jobs:
           shared-key: release-${{ matrix.os }}
           env-vars: CC CXX MACOSX_DEPLOYMENT_TARGET
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+      - name: Install source-doc-lint
+        run: bash tooling/source-doc-lint/install-ci.sh
       - name: Check source and generated contracts
         run: |
           uv run --locked rua-dev setup
           uv run --locked rua-dev validate --lane python
-          uv run --locked rua-dev contracts --check
+          uv run --locked rua-dev contracts --check --targets python
       - name: Build the release wheel
         run: uv run --locked rua-dev package rua
       - name: Repair Linux libraries

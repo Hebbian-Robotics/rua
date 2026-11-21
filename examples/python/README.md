@@ -1,8 +1,8 @@
 # Python examples
 
-Start RUA with your robot or simulator connected
-([getting started](../../docs/getting-started.md)). This directory is an
-independent uv project using the SDK from this checkout:
+Start RUA with [your SO-101 connected](../../docs/getting-started.md).
+This directory is an independent uv project using the SDK from this checkout.
+From the repository root:
 
 ```sh
 cd examples/python
@@ -10,7 +10,28 @@ uv sync --locked
 ```
 
 For your own agent project, use `uv add "hebbian-rua[openai,anthropic,gemini]"`,
-or choose just the provider extras you need.
+or choose just the provider extras you need. Set up the station with an
+[explicit profile](../../docs/hardware.md) when using the published wheel.
+
+## Read your arm's state
+
+From this directory, check that the SDK can see the station and print the
+registered arms. This works with torque off and requires no control lease.
+
+```sh
+uv run python - <<'PYTHON'
+import asyncio
+from hebbian_rua import StationClient
+
+async def main():
+    async with StationClient() as station:
+        state = await station.state()
+        for arm in state.arms:
+            print(arm.arm, arm.mode, arm.measured_joints)
+
+asyncio.run(main())
+PYTHON
+```
 
 ## Run an agent
 
@@ -18,25 +39,32 @@ The [agent example](agent_quickstart.py) supports OpenAI, Claude and Gemini.
 
 Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` for your provider.
 
-Pass `--model` to select a model available in your account. Anthropic and Gemini
-require it. Set `ANTHROPIC_MODEL` or `GEMINI_MODEL` for the corresponding example:
+Set `OPENAI_MODEL`, `ANTHROPIC_MODEL` or `GEMINI_MODEL` to an ID from your account
+and pass it with `--model`:
 
 ```sh
-uv run agent_quickstart.py "Wave hello" --provider openai --camera table
-uv run agent_quickstart.py "Wave hello" --provider anthropic --model "$ANTHROPIC_MODEL" --camera table
-uv run agent_quickstart.py "Wave hello" --provider gemini --model "$GEMINI_MODEL" --camera table
+uv run agent_quickstart.py "Describe the robot state. Keep the arm still." --provider openai --model "$OPENAI_MODEL"
+uv run agent_quickstart.py "Describe the robot state. Keep the arm still." --provider anthropic --model "$ANTHROPIC_MODEL"
+uv run agent_quickstart.py "Describe the robot state. Keep the arm still." --provider gemini --model "$GEMINI_MODEL"
 ```
 
-Both reference agents use the model selected by the station profile. The
-physical-arm setup defaults to `so101-soft-gripper-camera-manual`, our SO-101
-with TPU fingers and the HBVCAM-W20217 V22 wrist camera. Keep your arm-specific
-port and calibration in a local profile extending that preset. For a stock
-SO-101, extend `so101-manual` instead. The station loads the URDF for control
-and collision checks and serves the same model to the viewer; the agent does
-not load a separate robot model.
+The agent uses the robot model selected by the station. With `--profile auto`,
+the station selects the stock or soft-gripper camera model from the arm's
+saved setup. The station uses that same model for control, collision checks
+and the viewer.
 
-These commands run from this directory. Use `--help` for the arm, station and
-media endpoints. The example uses the provider's official async SDK directly.
+These commands run from this directory. On hardware, verify the arm before
+running the agent, return any manual lease in the viewer and supervise the run.
+The example enables the arm and gives the model motion tools.
+For images, [connect a camera and check its name](../../docs/cameras.md#connect-a-usb-camera),
+then add `--camera NAME` and ask the model to describe the view. Repeat the flag
+for each camera. With one arm, the example uses its name from station state.
+With several arms, pass `--arm NAME` using the name printed by the state check.
+The example honors `HEBBIAN_STATION_URL` and `HEBBIAN_MEDIA_SERVER`. Use
+`--server` or `--media-server` to override them for a run.
+
+Each run stops after at most 20 model calls by default. Set
+`--max-turns` to change that limit. The example uses the provider's async SDK.
 Adapters supply `.tools`, a model-ready `.observe()` message, and
 `.execute(response)`, which returns `.messages`, `.results` and `.should_stop`.
 Append the messages without rebuilding them: they preserve reasoning and
@@ -53,8 +81,9 @@ For mixed toolsets, use `RobotTools` and the `RobotToolCall`/`RobotToolResult`
 types to route calls yourself. The adapters don't run a model, own conversation
 history or enable the arm.
 
-See [camera setup](../../docs/cameras.md) for feeds and the web preview.
-For lower-level SDK calls without a model, see [hello_robot.py](hello_robot.py).
+For a lower-level motion example without a model, see [hello_robot.py](hello_robot.py).
+It previews and moves to a fixed target. Before running it on hardware, choose
+a target with clearance for your arm and workspace.
 
 ## Customize the model view
 
@@ -77,7 +106,7 @@ from hebbian_rua import (
 
 def task_formatter(output: RobotOutput) -> ModelContent:
     output = summarize_output(output)
-    output = select_output_cameras(output, {"table"})
+    output = select_output_cameras(output, {"wrist"})
     return render_output(output)
 
 

@@ -1,0 +1,74 @@
+@layer theme, base, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@source "./";
+@source "../components";
+@source "../features";
+@source "../shared";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--surface);
+  --color-foreground: var(--ink);
+  --color-muted-foreground: var(--muted);
+  --color-border: var(--line);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-sidebar: var(--surface);
+  --color-sidebar-foreground: var(--ink);
+  --color-sidebar-accent: var(--accent-soft);
+  --color-sidebar-accent-foreground: var(--ink);
+  --color-sidebar-border: var(--line);
+  --color-sidebar-ring: #4e9ec6;
+  --color-ring: #4e9ec6;
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--surface);
+  --color-muted: var(--accent-soft);
+  --color-secondary: var(--surface-muted);
+  --color-secondary-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-input: var(--line);
+  --color-destructive: var(--danger);
+  --color-positive: var(--positive);
+}
+
+@layer base {
+  :where(button, input, select, textarea) {
+    font: inherit;
+  }
+  :where(button) {
+    padding: 0;
+    color: inherit;
+    background: transparent;
+  }
+  :where(button:not(:disabled), select:not(:disabled)) {
+    cursor: pointer;
+  }
+  :where([data-slot="sidebar-menu"]) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  :where(
+    [data-slot="sidebar-container"],
+    [data-slot="sidebar"][data-mobile],
+    [data-slot="sidebar-footer"],
+    [data-slot="sidebar-wrapper"] > header,
+    button,
+    [data-slot="badge"],
+    [data-slot="alert"],
+    [data-slot="switch"],
+    [data-slot="input"],
+    [data-slot="native-select"],
+    [data-slot="textarea"],
+    [data-slot="alert-dialog-footer"]
+  ) {
+    border: 0 solid var(--line);
+  }
+}

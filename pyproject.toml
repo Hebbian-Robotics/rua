@@ -5,63 +5,65 @@ readme = "README.md"
 version = "0.1.2"
 requires-python = ">=3.12"
 license = "MIT"
-license-files = [
-    "LICENSE",
-]
-authors = [
-    { name = "Hebbian Robotics" },
-]
-dependencies = [
-    "httpx2>=2.16.0",
-    "pydantic>=2.11",
-    "python-dotenv>=1.2.4",
-]
+license-files = ["LICENSE"]
+authors = [{ name = "Hebbian Robotics" }]
+dependencies = ["httpx2>=2.16.0", "pydantic>=2.11", "python-dotenv>=1.2.4"]
 
 [project.urls]
 Repository = "https://github.com/Hebbian-Robotics/rua"
 Documentation = "https://github.com/Hebbian-Robotics/rua#readme"
 
 [project.optional-dependencies]
-openai = [
-    "openai>=3.49.0",
-]
-anthropic = [
-    "anthropic>=2.8.0",
-]
-gemini = [
-    "google-genai>=3.1.0",
-]
+openai = ["openai>=3.49.0"]
+anthropic = ["anthropic>=2.8.0"]
+gemini = ["google-genai>=3.1.0"]
 
 [project.scripts]
 rua = "hebbian_rua.cli:main"
 
 [build-system]
-requires = [
-    "uv_build>=0.13.6,<0.14",
-]
+requires = ["uv_build>=0.13.6,<0.14"]
 build-backend = "uv_build"
-
-[tool.uv]
-exclude-newer = "3 days"
 
 [tool.uv.build-backend]
 module-root = ""
 module-name = "hebbian_rua"
 
-[tool.uv.sources.hebbian-rua]
-workspace = true
-
-[tool.uv.sources.rua-dev]
-workspace = true
+[tool.uv.sources]
+hebbian-rua = { workspace = true }
+rua-dev = { workspace = true }
+hebbian-robot-use-tools = { workspace = true }
 
 [tool.uv.workspace]
-members = [
-    "tooling",
+members = ["tooling", "packages/rua-tools"]
+exclude = ["examples/python", "examples/mujoco_sim"]
+
+[dependency-groups]
+dev = [
+    "rua-dev",
+    "hebbian-robot-use-tools",
+    # All three agent adapters and examples.
+    "openai>=3.49.0",
+    "anthropic>=2.8.0",
+    "google-genai>=3.1.0",
+    "datamodel-code-generator>=0.89.0",
+    # The reference simulator, for the MuJoCo-backed tests.
+    "mujoco>=3.17.0",
+    "pillow>=12.3.0",
+    "import-linter>=2.15",
+    "jsonref>=1.1.0",
+    "pytest>=9.2.0",
+    "ruff",
+    "ty",
 ]
-exclude = [
-    "examples/python",
-    "examples/mujoco_sim",
-]
+
+policy = ["torch>=2.6", "onnx>=1.23.2", "onnxruntime>=1.31.1"]
+
+
+[tool.uv]
+# Supply-chain hardening: refuse PyPI releases younger than 3 days.
+# See: https://docs.astral.sh/uv/concepts/resolution/#exclude-newer
+exclude-newer = "3 days"
 
 [tool.ruff]
 line-length = 88
@@ -69,50 +71,17 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = [
-    "E",
-    "W",
-    "F",
-    "I",
-    "B",
-    "C4",
-    "C901",
-    "UP",
-    "ANN",
-    "PTH",
-    "RET",
-    "SIM",
-    "TID",
-    "RUF",
-    "PLE",
-    "LOG",
-    "PGH003",
-    "PGH004",
-    "PLW0108",
-    "PLC3002",
-    "PT010",
-    "PT011",
-    "PT012",
-    "PT014",
-    "PT016",
-    "PT017",
-    "PT018",
-    "PT028",
-    "PT030",
-    "PT031",
-    "ASYNC210",
-    "ASYNC220",
-    "ASYNC221",
-    "ASYNC222",
-    "ASYNC230",
-    "ASYNC250",
-    "ASYNC251",
+    "E", "W", "F", "I", "B", "C4", "C901", "UP", "ANN", "PTH", "RET", "SIM", "TID", "RUF",
+    # Catch invalid operations and logging, and require targeted suppressions.
+    "PLE", "LOG", "PGH003", "PGH004",
+    "PLW0108", "PLC3002",
+    # Keep failure checks precise and fixture resolution explicit.
+    "PT010", "PT011", "PT012", "PT014", "PT016", "PT017", "PT018",
+    "PT028", "PT030", "PT031",
+    # Keep network, process, file and terminal waits out of async event loops.
+    "ASYNC210", "ASYNC220", "ASYNC221", "ASYNC222", "ASYNC230", "ASYNC250", "ASYNC251",
 ]
-ignore = [
-    "E501",
-    "B008",
-    "RET504",
-    "ANN401",
-]
+ignore = ["E501", "B008", "RET504", "ANN401"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
@@ -130,43 +99,71 @@ ignore-comment-unknown-rule = "error"
 possibly-unresolved-reference = "error"
 
 [tool.ty.src]
-exclude = [
-    "hebbian_rua/client/contract/station_api.py",
-]
+exclude = ["hebbian_rua/client/contract/station_api.py"]
 
 [tool.ty.analysis]
-allowed-unresolved-imports = [
-    "onnx",
-    "onnxruntime",
-    "torch",
-]
+# The export script's ML libraries are not installed in the default environment.
+allowed-unresolved-imports = ["onnx", "onnxruntime", "torch"]
 
 [[tool.ty.overrides]]
-include = [
-    "scripts/export_so101_policy_onnx.py",
-]
+include = ["scripts/export_so101_policy_onnx.py"]
 
 [tool.ty.overrides.rules]
+# PyTorch's Module.forward is a writable callable, overridden by every model.
 incompatible-mutable-override = "ignore"
 
 [tool.ty.environment]
-extra-paths = []
+extra-paths = ["typings"]
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-]
+testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "server: requires the Rust station binary",
+    "contracts: verifies committed generated contracts; validation runs generation once instead",
+    "typescript: requires Node.js and pnpm for TypeScript integration tests",
+]
 
-[dependency-groups]
-dev = [
-    "rua-dev",
-    "openai>=3.49.0",
-    "anthropic>=2.8.0",
-    "google-genai>=3.1.0",
-    "datamodel-code-generator>=0.89.0",
-    "jsonref>=1.1.0",
-    "pytest>=9.2.0",
-    "ruff",
-    "ty",
+# Who may import whom. `uv run lint-imports` checks every contract.
+[tool.importlinter]
+root_packages = [
+    "hebbian_robot_use_tools",
+    "hebbian_rua",
+]
+include_external_packages = true
+
+# The client holds the wire models and the typed client; the station depends on it,
+# never the reverse.
+[[tool.importlinter.contracts]]
+name = "the client never imports the station"
+type = "forbidden"
+source_modules = ["hebbian_rua"]
+forbidden_modules = [
+    "hebbian_robot_use_tools",
+]
+
+[[tool.importlinter.contracts]]
+name = "client transformations are independent of live station and provider adapters"
+type = "forbidden"
+source_modules = [
+    "hebbian_rua.client.llm.tool_catalog",
+    "hebbian_rua.client.llm.robot_tool_rules",
+    "hebbian_rua.client.llm.response_format",
+    "hebbian_rua.client.llm.tools",
+    "hebbian_rua.client.llm.types",
+    "hebbian_rua.client.rotations",
+]
+forbidden_modules = [
+    "hebbian_rua.client.station_client",
+    "hebbian_rua.client.station_connection",
+    "hebbian_rua.client.environment",
+    "hebbian_rua.client.llm.robot_tools",
+    "hebbian_rua.client.llm.openai",
+    "hebbian_rua.client.llm.anthropic",
+    "hebbian_rua.client.llm.gemini",
+    "asyncio",
+    "httpx2",
+    "socket",
+    "subprocess",
+    "urllib",
 ]

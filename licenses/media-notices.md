@@ -1,13 +1,20 @@
-# Media source notices
+# Media distribution notices
 
-RUA media integration code is MIT licensed; see the repository's [LICENSE](../LICENSE).
-Camera and recording dependencies retain their own licenses and notices.
+Hebbian Robot Use media is MIT licensed; see `LICENSE` beside this file.
 
-The source dependency versions are recorded in `Cargo.lock`. Additional Rust
-license source copies and their provenance are under [licenses/rust](rust/README.md).
-Recording-schema license texts are under [licenses/recording-schema](recording-schema/).
-See [third-party notices](../THIRD_PARTY_NOTICES.md) for model and dependency attribution.
+`licenses/rust/` contains a Rust dependency inventory and the available license
+files. Entries without a file require review before release. The inventory also
+includes build dependencies and may be broader than the linked binary.
 
-Native libraries such as WebRTC and FFmpeg retain their own licensing terms.
-Any distribution of compiled binaries needs the notices for the libraries it
-actually includes or links.
+`licenses/webrtc/LICENSE.md` is supplied with the WebRTC archive linked into
+the media binary and contains its third-party notices.
+
+The recorder embeds protobuf descriptors for `foxglove.CompressedVideo` and
+`google.protobuf.Timestamp`. Their license texts are included under
+`licenses/recording-schema/`; see the repository's third-party notices for
+the source revisions used to reproduce the descriptor.
+
+The Ubuntu media archive uses FFmpeg and other native libraries installed on
+the target machine; it does not include those libraries. Their licenses and any
+distribution obligations require separate review. In particular, an Ubuntu
+FFmpeg build can enable GPL components; inspect the target's actual packages.

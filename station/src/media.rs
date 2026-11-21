@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use hebbian_contracts::Backoff;
 use hebbian_contracts::MediaState;
-use hebbian_station::media_status::MediaStatus;
+use hebbian_robot_use_server::media_status::MediaStatus;
 #[cfg(unix)]
 use nix::sys::signal::{Signal, kill};
 #[cfg(unix)]

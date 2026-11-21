@@ -1,0 +1,224 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "revision": {
+      "title": "Revision",
+      "type": "integer"
+    },
+    "spans": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "traceId": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Traceid",
+            "type": "string"
+          },
+          "spanId": {
+            "pattern": "^[0-9a-f]{16}$",
+            "title": "Spanid",
+            "type": "string"
+          },
+          "parentSpanId": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{16}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parentspanid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "startTimeUnixNano": {
+            "title": "Starttimeunixnano",
+            "type": "string"
+          },
+          "endTimeUnixNano": {
+            "title": "Endtimeunixnano",
+            "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "title": "Attributes",
+            "type": "object"
+          },
+          "status": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "STATUS_CODE_UNSET",
+                  "STATUS_CODE_OK",
+                  "STATUS_CODE_ERROR"
+                ],
+                "title": "SpanStatusCode",
+                "type": "string"
+              },
+              "message": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Message"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "title": "SpanStatus",
+            "type": "object"
+          }
+        },
+        "required": [
+          "traceId",
+          "spanId",
+          "parentSpanId",
+          "name",
+          "startTimeUnixNano",
+          "endTimeUnixNano",
+          "attributes",
+          "status"
+        ],
+        "title": "TraceSpan",
+        "type": "object"
+      },
+      "title": "Spans",
+      "type": "array"
+    },
+    "usage": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "runId": {
+              "title": "Runid",
+              "type": "string"
+            },
+            "turns": {
+              "title": "Turns",
+              "type": "integer"
+            },
+            "inputTokens": {
+              "title": "Inputtokens",
+              "type": "integer"
+            },
+            "cachedInputTokens": {
+              "title": "Cachedinputtokens",
+              "type": "integer"
+            },
+            "outputTokens": {
+              "title": "Outputtokens",
+              "type": "integer"
+            },
+            "reasoningTokens": {
+              "title": "Reasoningtokens",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "runId",
+            "turns",
+            "inputTokens",
+            "cachedInputTokens",
+            "outputTokens",
+            "reasoningTokens"
+          ],
+          "title": "RunUsage",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "memory": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "title": "Text",
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "active",
+                      "done",
+                      "failed"
+                    ],
+                    "title": "Status",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text",
+                  "status"
+                ],
+                "title": "PlanStep",
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task",
+        "plan",
+        "notes"
+      ],
+      "title": "RunMemory",
+      "type": "object"
+    }
+  },
+  "required": [
+    "revision",
+    "spans",
+    "usage",
+    "memory"
+  ],
+  "title": "LiveRun",
+  "type": "object"
+}

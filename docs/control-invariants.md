@@ -6,11 +6,11 @@ lease behavior.
 
 ## Plan guarantees
 
-`ValidatedPlan` establishes nonempty continuous segments, finite corners of the
+[`ValidatedPlan`](../server-core/src/corner_path.rs) establishes nonempty continuous segments, finite corners of the
 expected joint count, a positive finite speed and valid minimum durations. Its
 private representation permits checked rebasing without losing those facts.
 
-`AdmittedPlan` additionally checks the arm's speed cap and joint bounds after
+[`AdmittedPlan`](../server-core/src/arm/motion_admission.rs) additionally checks the arm's speed cap and joint bounds after
 rebasing to the current hold or measured settling pose. Only the first corner
 may use the configured joint-limit recovery tolerance; subsequent corners must
 lie within nominal limits. Group members must contain one straight section.
@@ -65,20 +65,11 @@ validation. The shell retains ordered event publication before request replies;
 there is no general effect framework, state cloning or hardware I/O in the
 preparation logic.
 
-Static construction facts, such as fixed histogram parameters and the number of
-reports for a single runner, retain narrow documented Clippy exceptions. These
-are separate from fallible control inputs. Release builds still abort on panic;
-these boundaries reduce reachable failure paths, not prove global panic freedom.
-
 ## Property testing
 
-Test-only `proptest` strategies generate bounded command and lease sequences.
-They check terminal-record stability, refusal without target changes, shutdown
-admission and stale-token rejection across expiration, takeover and controller
-loss/recovery. An expired agent lease remains fenced; expiry does not grant
-unleased control. Multi-arm properties check that a later refusal does not admit
-an earlier arm. Subprocess-based property execution is disabled.
-
-Deterministic actuator-boundary regressions separately verify malformed feedback
-and failed group construction. Simulator and pure-core tests do not establish
-physical hardware behavior.
+The [arm properties](../server-core/src/arm/tests.rs) and
+[lease properties](../server-core/src/lease.rs) cover terminal records, refusal
+without target changes and stale-token fencing. The
+[lifecycle tests](../server-core/src/control_loop/lifecycle_tests.rs) exercise
+malformed feedback at the actuator boundary. Hardware behavior requires
+validation on the physical arm.

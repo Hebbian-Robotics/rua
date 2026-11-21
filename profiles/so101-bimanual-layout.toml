@@ -1,0 +1,9 @@
+arms = ["left", "right"]
+
+# Geometry-only layout; the physical mounts must be measured to match before use.
+# Both bases are on the table plane, facing +x, with a shared target/pose frame.
+[base_poses.left]
+position_meters = [0.0, 0.19057474487310352, 0.0]
+
+[base_poses.right]
+position_meters = [0.0, -0.19057474487310352, 0.0]

@@ -38,9 +38,9 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 prost = "0.14"
-hebbian-robot-use-server = { path = "../executor" }
+hebbian-robot-use-core = { path = "../server-core" }
 # The run telemetry buffer lives in the station; the recorder test needs a real one.
-hebbian-station = { path = "../station" }
+hebbian-robot-use-server = { path = "../station" }
 tempfile = "3"
 
 [lints]

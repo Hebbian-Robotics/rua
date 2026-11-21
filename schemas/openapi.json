@@ -488,6 +488,18 @@
           "arm": {
             "type": "string"
           },
+          "base_pose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BasePose"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The arm's URDF root in the station world frame. None means the world origin."
+          },
           "commanded_joints": {
             "description": "Joint setpoint sent in the latest sample, if the arm was commanded.",
             "items": {
@@ -627,6 +639,30 @@
           "status",
           "interlocks",
           "revision"
+        ],
+        "type": "object"
+      },
+      "BasePose": {
+        "additionalProperties": false,
+        "description": "A fixed placement of an arm's base: a position, and a turn about the world's\nvertical axis.",
+        "properties": {
+          "position_meters": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "yaw_radians": {
+            "default": 0.0,
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "position_meters"
         ],
         "type": "object"
       },

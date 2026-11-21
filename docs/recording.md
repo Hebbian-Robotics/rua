@@ -1,8 +1,22 @@
 # Recording
 
-Recording is optional. Install `ffmpeg` on the station process's `PATH` when
-enabling it; the RUA wheel does not bundle it. Source workspace recording tests
-also require this command.
+Recording is optional and disabled by default. It captures station telemetry and
+LiveKit camera streams for playback. Camera streaming and robot control do not
+require recording to be enabled.
+
+RUA owns recording lifecycle, station telemetry and interruption status.
+[LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras/tree/main/native/recorder)
+handles video capture/encoding; [MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools)
+handles file writing, video export and browser playback primitives. Their guides
+cover those components independently of RUA.
+
+## Prerequisites
+
+Installed wheels include the media companion. For source runs, build the
+[media companion](../livekit-cameras/README.md#build-and-verification).
+Install `ffmpeg` on the station process's `PATH`. See the upstream
+[recorder requirements](https://github.com/Hebbian-Robotics/livekit-cameras/tree/main/native/recorder)
+for encoder details. FFmpeg is not bundled in the Python wheel.
 
 ## Install FFmpeg
 
@@ -32,9 +46,9 @@ brew install ffmpeg
 
 ### Windows with WSL2
 
-Install FFmpeg inside the Ubuntu environment running RUA, using the Ubuntu
-commands above. See [Windows with WSL2](windows-wsl.md); a Windows executable is
-not a substitute for the Linux FFmpeg required by that station.
+Install FFmpeg inside the Ubuntu environment running the station, using the
+Ubuntu commands above. A Windows `ffmpeg.exe` installation does not provide the
+Linux executable needed by RUA in WSL. See [WSL setup](windows-wsl.md).
 
 ### Other Linux distributions
 
@@ -63,19 +77,48 @@ terminal. For a service or container, install FFmpeg and configure `PATH` inside
 that environment too, then restart the station so it sees the change. Support
 and disable a connected arm before restarting its station.
 
-See [LiveKit Cameras' recorder guide](https://github.com/Hebbian-Robotics/livekit-cameras/tree/main/native/recorder)
-for encoder requirements and [MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools)
-for file utilities and video export. RUA camera topics use
-`/cameras/<camera>/video`, for example `/cameras/table/video`.
+## Enable recording
 
-Each arm's joints are recorded on `/arms/<arm>/joint_states` as ROS 2
-`sensor_msgs/msg/JointState`: positions in radians, velocities in radians per
-second, and efforts in the hardware profile's effort units. A plant that
-reports no velocity or effort leaves that array empty.
+Configure [LiveKit cameras](cameras.md), then add `--enable-recording` to the
+station command you use for [your SO-101](getting-started.md#3-verify-manual-control).
+You can also set `HEBBIAN_ENABLE_RECORDING=true` in the station's environment.
 
-See [cameras](cameras.md) for camera configuration. Enable recording on the
-station with `--enable-recording`, then use `await station.ensure_recording()`
-from the Python SDK. Finish it with `await lease.stop_recording()` while holding
-the lease, or use the station’s recording HTTP API. Recording continues across
-lease handover until explicitly stopped or the station shuts down. The full
-interactive playback UI is not included in this distribution.
+In the viewer, select **Record** to start recording or enable **Record when
+control starts**. Recording continues when control changes hands. Select **Stop
+recording** to finish it. Recording is independent of power and lease ownership.
+Clients can explicitly end it: the TypeScript reference agent stops recording
+when its task ends normally, while cancellation leaves it running. Station
+shutdown also finalizes the active recording.
+During shutdown, the station refuses new recordings, finalizes the active one,
+and waits for the final LiveKit room-state announcement attempt. Announcement
+requests have a timeout; failures are logged and do not prevent shutdown.
+If the motor controller stops, recording continues while the station remains
+available. The recording includes controller availability events and ends with
+an incomplete status because arm telemetry has a gap, even if the controller
+later reconnects. A recorder whose supervising station exits finalizes as
+incomplete when possible. The viewer reports an unsuccessful finalization.
+Recording requests are rejected when recording is disabled. Previously saved
+recordings remain available for playback. The viewer reports recorder failures;
+camera streaming runs separately.
+If FFmpeg or LiveKit credentials are missing at startup, the station logs why
+recording is unavailable and continues serving control and cameras.
+
+See [media integration](media-integration.md#interpreting-a-recording)
+for the recorded signals and their limitations.
+
+## Export and playback
+
+After stopping the capture, open **Recordings** in the viewer and select the
+saved recording. The station writes recordings to `recordings/` by default.
+Use `--recordings-directory` to choose another location.
+
+Use [MCAP Tools' video exporter](https://github.com/Hebbian-Robotics/mcap-tools#export-mcap-camera-video-to-mp4)
+with a RUA camera topic of the form `/cameras/<camera>/video`, using the camera's
+registered name. Its guide covers commands,
+supported formats and timing limits. RUA's viewer provides station-specific
+playback; its range reader, video remuxing and shared clock come from the
+[MCAP browser library](https://github.com/Hebbian-Robotics/mcap-tools/tree/main/typescript).
+
+For shared-library changes, update the native pin in `livekit-cameras/Cargo.toml`
+and `Cargo.lock`, or the browser pin in `package.json` and `pnpm-lock.yaml`,
+according to the affected integration.

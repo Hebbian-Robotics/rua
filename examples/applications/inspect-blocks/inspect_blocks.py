@@ -14,7 +14,7 @@ from hebbian_rua import RobotTools, StationClient
 from hebbian_rua.client.contract.station_api import ArmMode
 from hebbian_rua.client.environment import load_environment
 from hebbian_rua.client.llm.openai import OpenAIRobotTools
-from hebbian_rua.client.station_client import Lease
+from hebbian_rua.client.station_client import LeasedArm
 from hebbian_rua.client.station_types import CommandResult
 
 CLI_HELP = """Inspect Blocks: yes/no questions about blocks on the table.
@@ -24,11 +24,9 @@ inspect the scene with the wrist camera, decides, and the arm nods (yes) or
 shakes its head (no) with fixed gestures. The arm rehomes and disables between
 questions, so start it resting on the table.
 
-    uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py
+    uv run --project examples/python examples/applications/inspect-blocks/inspect_blocks.py --camera wrist
 """
 
-ARM = "follower"
-CAMERA = "table"
 MAX_TURNS = 20
 GESTURE_SPEED = 0.8  # rad/s; the profile caps all motion anyway
 # Gripper 22 cm forward, 14 cm up, tilted ~30 degrees below horizontal, facing the
@@ -111,9 +109,7 @@ def save_frames(observation: Mapping[str, Any], prefix: Path) -> None:
         prefix.with_name(f"{prefix.name}-{index}.jpg").write_bytes(jpeg)
 
 
-async def gesture(lease: Lease, answer: str) -> None:
-
-    moving = lease.arm(ARM)
+async def gesture(moving: LeasedArm, answer: str) -> None:
     joint, swing = (3, NOD_RADIANS) if answer == "YES" else (0, SHAKE_RADIANS)
     poses = [PRESENT_JOINTS]
     for _ in range(3):
@@ -137,26 +133,31 @@ async def ask(
     model: str,
     workspace: str,
     question: str,
+    camera_name: str,
 ) -> None:
-    arm = station.arm(ARM)
-    async with station.holding_lease(question, required_cameras=[CAMERA]) as lease:
+    arm_name = await station.resolve_arm_name()
+    arm = station.arm(arm_name)
+    async with station.holding_lease(question, required_cameras=[camera_name]) as lease:
         if (await arm.state()).mode != ArmMode.holding:
             await expect(arm.enable())  # the rest pose becomes the rehome target
         try:
-            robot = RobotTools(station, lease, ARM, [CAMERA])
+            robot = RobotTools(station, lease, arm_name, [camera_name])
             answer, text = await inspect_and_decide(
                 client, robot, model, workspace, question
             )
             print(f"\n{text.strip()}\n")
             if answer:
-                await gesture(lease, answer)
+                await gesture(lease.arm(arm_name), answer)
         finally:
-            await expect(lease.arm(ARM).rehome())
+            await expect(lease.arm(arm_name).rehome())
             await expect(arm.disable())  # the rest pose is supported by the table
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=CLI_HELP)
+    parser.add_argument(
+        "--camera", required=True, help="Name of the station's wrist camera"
+    )
     parser.add_argument("--model", default="gpt-6.2-astra", help="OpenAI model ID")
     parser.add_argument(
         "--workspace",
@@ -166,6 +167,7 @@ async def main() -> None:
     arguments = parser.parse_args()
     load_environment()
     async with StationClient() as station, AsyncOpenAI() as client:
+        await station.camera_jpeg(arguments.camera)
         while True:
             # No lease is held here; main-thread stdin lets Ctrl-C exit promptly.
             question = input(  # noqa: ASYNC250
@@ -173,7 +175,14 @@ async def main() -> None:
             )
             if not question.strip():
                 break
-            await ask(station, client, arguments.model, arguments.workspace, question)
+            await ask(
+                station,
+                client,
+                arguments.model,
+                arguments.workspace,
+                question,
+                arguments.camera,
+            )
 
 
 if __name__ == "__main__":

@@ -1,18 +1,19 @@
-# SO-101 v0.1.2 release assets; update archive and file checksums together.
-archive_url = "https://github.com/Hebbian-Robotics/so101/releases/download/v0.1.2/hebbian_so101_setup-0.1.2-py3-none-any.whl"
-archive_sha256 = "4abf7d254b572074581ba0ff5bf72aee1615fb4e54e9ac3af37cbf9a6b266e4e"
-archive_prefix = "so101_setup/assets/robot/so101/"
+# SO-101 source asset pin and per-file SHA-256 checksums.
+repository = "Hebbian-Robotics/so101"
+revision = "9db377b26f7fa2fb36a4c6a64409615d02eed789"
+asset_directory = "setup/src/so101_setup/assets/robot/so101"
 
 [files]
 "LICENSE.txt" = "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
-"README.md" = "5b3438eabf7d8fe39f2f058e46c5bdc10b46b265c705b05a76f0901856068a38"
+"README.md" = "2110f4151ce493ee96f00eb0f87c7564843d147420c36e039aa48a6c4ca07fdb"
 "SOFT_GRIPPER_NOTICE.txt" = "a1054887fdaf4dc123269c3f49753766a4dbbc762bc7f4cf55420c8ce2e13417"
 "base_motor_holder_so101_v1.stl" = "2b868734361acd1ea0781dadf200e1cb339c9572b28d9cf6e56385cf4f9e006d"
 "base_so101_v2.stl" = "4e303f0474673d7d491a39a674e53e3eeea5ed2db1c86974f681fefe009ca5f2"
 "motor_holder_so101_base_v1.stl" = "6bc491c03b5a0a643d7f8826cf3ab570348deb9342dfb4c524559c49c2985437"
 "motor_holder_so101_wrist_v1.stl" = "9b3eee01fda44a936ffd43e91fc4356bd8cdc8e279e54f0e66736f3738512cc1"
 "moving_jaw_so101_v1.stl" = "598b024e20c6ef6f52641e1a2282e3f13ad14115c27e6191427847419c38fbf6"
-"robot-soft-gripper-camera.urdf" = "50892a9c7765a0920fd05a956ae64290b7dbb9d3aeb63a071c991ec9181e25b7"
+"robot-assemblies.toml" = "699e23854c331a122fa273d84db15b3cfdc78d3417e7d8a5fbec50a52f79dff9"
+"robot-soft-gripper-camera.urdf" = "a71b9e69d66c8bbf53e1608bb54733c10b126538be1b8b48e9a085fdd645709b"
 "robot.urdf" = "9d3c08f91c0e54826f7bcde883033bfd6e7f23afe86c6263a7f1b344a9de84f2"
 "rotation_pitch_so101_v1.stl" = "70528fb6248f3072809d5a91c571bee14348692c47c0637fbf11260d0f1fb536"
 "soft-gripper-camera/body.stl" = "6d718d14f943dafcf5ccc4b703375b91e3de24b87a8c3087bdb787a6d6e81135"

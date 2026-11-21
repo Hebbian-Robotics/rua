@@ -1,0 +1,161 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "examples/typescript/viewer/src/**",
+      "examples/typescript/viewer/tests/**/*.ts",
+      "typescript-client/src/**/*.ts",
+      "typescript-client/tests/**/*.ts",
+      "examples/typescript/agent/src/**/*.ts",
+      "examples/typescript/agent/tests/**/*.ts",
+      "vite.config.ts",
+      "*.json",
+      "examples/typescript/viewer/server/**/*.ts",
+      "examples/typescript/viewer/shared/**/*.ts",
+      "scripts/check-client-package.ts",
+      "scripts/build-client.ts"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space"
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "complexity": {
+        "useLiteralKeys": "off",
+        "noExcessiveNestedTestSuites": "error"
+      },
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error",
+        "noUnusedFunctionParameters": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noDuplicateTestHooks": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "useExhaustiveSwitchCases": {
+          "level": "error",
+          "options": {
+            "requireExplicitCase": true
+          }
+        },
+        "noExcessiveNestedBlocks": {
+          "level": "error",
+          "options": {
+            "max": 4
+          }
+        }
+      },
+      "style": {
+        "noUselessElse": "error",
+        "noDoneCallback": "error",
+        "noParameterAssign": {
+          "level": "error",
+          "options": {
+            "propertyAssignment": "allow"
+          }
+        }
+      }
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["typescript-client/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "**/examples/**",
+                      "**/station/**",
+                      "**/server-core/**",
+                      "**/tooling/**",
+                      "@/**"
+                    ],
+                    "message": "Client SDKs must stay independent of server implementations and example applications."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "typescript-client/src/station-types.ts",
+        "typescript-client/src/tool-catalog.ts",
+        "typescript-client/src/robot-tool-input.ts",
+        "typescript-client/src/robot-tool-types.ts",
+        "typescript-client/src/response-format.ts",
+        "typescript-client/src/output-format.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "**",
+                      "!ts-pattern",
+                      "!zod",
+                      "!./generated/api-schemas.js",
+                      "!./generated/arm-commands.js",
+                      "!./generated/robot-tools.js",
+                      "!./station-types.js",
+                      "!./robot-tool-types.js",
+                      "!./response-format.js",
+                      "!./output-format.js",
+                      "!./tool-catalog.js",
+                      "!./robot-tool-input.js"
+                    ],
+                    "message": "Tool transformations and data types must stay independent of live execution. Pass data in; perform station and camera operations in adapters."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "fetch": "Pass station data into transformations; perform network requests in adapters.",
+                  "WebSocket": "Keep live connections in adapters, outside tool transformations."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

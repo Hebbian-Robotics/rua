@@ -15,12 +15,20 @@ A manual control lease expires if its viewer stops renewing it. The station
 stops every arm and releases the expired lease after all arms confirm they have
 stopped. You can then enable a disabled arm and take manual control again.
 If the stop cannot be confirmed, control stays fenced for explicit recovery.
-An active lease still requires an explicit handoff to another controller.
+Changing the holder of an active lease requires an explicit handoff.
 
 The station enforces configured joint limits and protective stops. These checks
 require per-arm calibration and do not establish physical workspace clearance.
-See [hardware setup](hardware.md) before operating a physical arm, and the
+See [SO-101 calibration](so101-calibration.md) before operating a physical arm, and the
 [Python example](../examples/python/hello_robot.py) for a small control program.
+
+## Coordinated arm clearance
+
+Before admitting a group move or sequence step, the station checks the
+synchronized joint paths when at least two arms have planned trajectories,
+configured base poses and collision geometry. It uses the measured jaw openings
+and allows up to 3 mm of modeled overlap. Each arm retains its self-collision
+settings. Verify clearance from stationary arms and objects in the workspace.
 
 ## Compile before running
 
@@ -40,9 +48,7 @@ from hebbian_rua.client.contract.station_api import (
 
 source = ActionSequenceRequest(
     steps=[
-        ActionSequenceStep(
-            arms={"follower": ActionSequenceArmAction(gripper_opening=0.8)}
-        )
+        ActionSequenceStep(arms={"arm": ActionSequenceArmAction(gripper_opening=0.8)})
     ]
 )
 outcome = await station.compile_action_sequence(source)
@@ -58,13 +64,13 @@ else:
     print(outcome.diagnostics)
 ```
 
-Enable the arm with `station.arm("follower").enable()` and check its outcome
+Enable the arm with `station.arm("arm").enable()` and check its outcome
 before running. Compilation can succeed
 while an arm is disabled; execution still requires enablement, a current lease
 and live admission checks. `inspect_compilation(compilation_id)` retrieves a retained
 artifact; an unknown or expired artifact returns HTTP 404. The station retains
-up to 128 compilations, preserving those used by active executions. Temporary
-files may disappear after external cleanup or reboot.
+up to 128 compilations in memory, preserving those used by active executions.
+Compilation IDs are scoped to the running station.
 
 A completed or stopped execution includes its `compilation_id`, requested steps
 and actual command records. Starting the compiled program again creates a new
@@ -108,19 +114,9 @@ work. A prior execution must be finished or canceled, and at least one step must
 remain. Continued execution records contain only their newly attempted steps and
 link the prior execution and starting index.
 
-On the station host, compilation JSON, prepared-step snapshots and execution
-snapshots live in `rua-compiler-{station_instance_id}/{compilation_id}` under the
-platform temporary directory. Each execution has its own `executions/{id}`
-directory containing `record.json`, `step-{index}.prepared.json` and
-`step-{index}.timing.json` files. Timing snapshots separate state-dependent
-preparation from controller admission; compilation manifests report structural
-compilation time.
-Station files use compact JSON; inspection returns the same structured data,
-and callers can format exported JSON as needed. Preparation snapshots identify
-source operations;
-they are evidence of preparation, not proof of admission or completion. Files are
-written outside the motor cycle. At startup, a background job removes inactive
-station workspaces older than 24 hours. A live session's directory lock
-protects its files.
-Export the inspection JSON or copy the workspace directory beside your recording
-before relying on it for longer retention.
+Explicit compile and import requests save a manifest. Executions of these
+compilations save records and per-step preparation and timing snapshots under the
+[temporary workspace](../server-core/src/station_api/artifact_workspace.rs).
+Preparation snapshots identify the planned source operations. Check the
+execution record for admission and completion. Export the inspection JSON or
+copy the workspace beside your recording for longer retention.

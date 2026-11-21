@@ -1,36 +1,12 @@
 # Hebbian Robot-Use Agents (RUA)
 
 Build your own robot-use agents. Give an LLM a goal, camera views
-and robot tools, and let it observe, act and adjust. We're open sourcing the
-parts of our stack that make that loop easy to build. More coming soon.
+and robot tools, and let it observe, act and adjust.
 
-## Included
+## Get started
 
-- Rust server
-- Python SDK and a small agent loop
-- [LiveKit camera preview](docs/cameras.md)
-
-For a physical SO-101, follow the [source quickstart](docs/getting-started.md#set-up-a-physical-so-101)
-to calibrate the arm with `so101-calibrate` and start RUA with `--profile auto`.
-
-Start an agent project with [uv](https://docs.astral.sh/uv/):
-
-```sh
-uv init my-robot-agent
-cd my-robot-agent
-uv add "hebbian-rua[openai,anthropic,gemini]"
-```
-
-Already have a uv project? Start with `uv add`. Choose just the extras you need.
-With the published RUA 0.1.2 wheel, use an
-[explicit profile and LeRobot calibration](docs/hardware.md) to connect a physical arm.
-Prebuilt wheels support Linux x86-64 (glibc 2.39+) and macOS 14+ on Apple Silicon. On Windows, use [WSL2](docs/windows-wsl.md).
-
-See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it,
-and the [example applications](examples/applications/README.md) for example toy projects.
-
-See [connecting a simulator](docs/simulators.md) to try in simulation.
-To watch your cameras, follow the [LiveKit web preview setup](docs/cameras.md#watch-a-usb-camera).
+[Set up your SO-101](docs/getting-started.md) to calibrate the arm, start RUA,
+verify manual control and run your first agent from the browser.
 
 ## Build an agent
 
@@ -45,7 +21,7 @@ from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
 robot_tools = OpenAIRobotTools(robot)
 messages = [{"role": "user", "content": "Wave hello"}]
-while True:
+for _ in range(20):
     messages.append(await robot_tools.observe())
     response = await client.responses.create(
         model=model,
@@ -72,21 +48,49 @@ against live robot state and admits it for execution. Advanced users can
 [compile and inspect before running](docs/control-model.md#compile-before-running).
 See [how execution works](docs/architecture.md#robot-use-compiler-and-runtime).
 
+See [write your own loop](docs/write-your-own-loop.md) for more on robot tools,
+observations and execution.
+
+## In this checkout
+
+- Rust server and media companion
+- [Python](hebbian_rua/client/README.md), [TypeScript](typescript-client/README.md) and [Rust](sdk/README.md) SDKs
+- [Reference agents](examples/typescript/agent/README.md) and [examples](examples/README.md)
+- [CLIs](cli/README.md) for coding agents and shell workflows
+- [Browser viewer](examples/typescript/viewer/README.md), manual controls and recording playback
+- [LiveKit cameras](docs/cameras.md) and [recordings](docs/recording.md)
+- [SO-101 setup](docs/so101-manual-control.md) and [calibration tools](docs/so101-calibration.md)
+
+See the [documentation index](docs/README.md) for the guides, or
+[architecture](docs/architecture.md) for component boundaries.
+
 Hardware setup, camera tools and recording utilities have their own guides:
 [SO-101](https://github.com/Hebbian-Robotics/so101),
 [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras) and
 [MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools). RUA handles their
 integration with your robot and agent.
 
-## Coming soon
+## Python package
 
-- TypeScript and Rust SDKs
-- CLIs
-- Browser viewer and manual controls
-- More agents
-- More examples and integrations
-- Recording playback and analysis
-- Policy and training tools
+The `hebbian-rua` wheel includes the Python SDK, model adapters, station, media
+companion and SO-101 profiles and geometry. Install only the model SDK extras you need.
+Prebuilt wheels support Linux x86-64
+(glibc 2.39+) and macOS 14+ on Apple Silicon; Windows uses
+[WSL2](docs/windows-wsl.md). Add RUA to your agent project
+with `uv add hebbian-rua`, or choose an extra such as `uv add 'hebbian-rua[openai]'`.
+Run `uv run rua serve --help` for station options. The [hardware profile guide](docs/hardware.md)
+shows how to configure a station with an existing calibration.
+
+## Robot support
+
+SO-101 is the supported robot, with single-arm and bimanual IK profiles.
+The experimental learned policy
+supports one SO-101; its weights are not included and physical-arm operation is
+not validated. See [controller and embodiment support](docs/architecture.md#embodiments-and-controller-support).
+
+The API can move a real arm. Run it on a trusted network, verify clearance,
+supervise initial motions and keep a physical power cutoff accessible. Support
+the arm before disabling it. Follow the [hardware operating guide](docs/so101-manual-control.md).
 
 ## Research and related projects
 
@@ -104,5 +108,7 @@ Some reading and projects around robot-use agents:
 
 ## Contributing and license
 
-See [contributing](CONTRIBUTING.md). Code is [MIT](LICENSE); models and dependencies
-keep their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
+See [contributing](CONTRIBUTING.md) for contribution workflow, validation and style. The
+code is released under the [MIT License](LICENSE); robot models and dependencies
+keep their own licenses, listed in [third-party notices](THIRD_PARTY_NOTICES.md).
+To report a security problem, see [security](SECURITY.md).

@@ -12,35 +12,22 @@ use std::time::Duration;
 
 use anyhow::{Context, ensure};
 use hdrhistogram::Histogram;
-use hebbian_robot_use_server::config::ExecutorConfig;
-use hebbian_robot_use_server::control_link::{Link, LinkHandle};
-use hebbian_robot_use_server::control_loop::{ArmSetup, Report, run_arms};
-use hebbian_robot_use_server::guard::GuardedPlant;
-use hebbian_robot_use_server::lease::{LEASE, Lease};
-use hebbian_robot_use_server::plant::{Plant, SimulatedPlant};
-use hebbian_robot_use_server::sim_plant::{SimTimeouts, SocketPlant};
-use hebbian_robot_use_server::so101::driver::BusTiming;
-use hebbian_robot_use_server::station_api::{self, HttpServer};
-use hebbian_station::controller_process::ControllerLaunch;
-use hebbian_station::controller_supervisor;
-use hebbian_station::run_telemetry::{self, LiveRunStore};
-use hebbian_station::web::{self, Mounted, WebSettings};
+use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::control_link::{Link, LinkHandle};
+use hebbian_robot_use_core::control_loop::{ArmSetup, Report, run_arms};
+use hebbian_robot_use_core::guard::GuardedPlant;
+use hebbian_robot_use_core::lease::{LEASE, Lease};
+use hebbian_robot_use_core::plant::{NoPhysicsStandIn, Plant};
+use hebbian_robot_use_core::sim_plant::SocketPlant;
+use hebbian_robot_use_core::so101::driver::BusTiming;
+use hebbian_robot_use_core::station_api::{self, HttpServer};
+use hebbian_robot_use_server::controller_process::{ControllerLaunch, PlantSelection};
+use hebbian_robot_use_server::controller_supervisor;
+use hebbian_robot_use_server::run_telemetry::{self, LiveRunStore};
+use hebbian_robot_use_server::web::{self, WebSettings};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use crate::tools::{feetech_servos, load_config};
-
-struct Serving {
-    server: HttpServer,
-    mounted: Mounted,
-}
-
-impl Serving {
-    fn close(self) {
-        let handle = self.server.runtime_handle();
-        handle.block_on(self.mounted.recording.shutdown());
-        self.server.close();
-    }
-}
 
 fn millisecond_percentiles(
     microseconds: &Histogram<u64>,
@@ -109,10 +96,12 @@ fn shutdown_flag() -> anyhow::Result<Arc<AtomicBool>> {
     Ok(shutdown_requested)
 }
 
+pub(crate) const DEFAULT_STAND_IN_LAG_SECONDS: f64 = 0.05;
+
 pub(crate) struct ConfiguredArm {
     pub name: String,
     pub config: ExecutorConfig,
-    pub guard_config_path: Option<PathBuf>,
+    pub config_path: PathBuf,
 }
 
 pub(crate) fn load_arms(arms: &[(String, PathBuf)]) -> anyhow::Result<Vec<ConfiguredArm>> {
@@ -121,7 +110,7 @@ pub(crate) fn load_arms(arms: &[(String, PathBuf)]) -> anyhow::Result<Vec<Config
             Ok(ConfiguredArm {
                 name: name.clone(),
                 config: load_config(path)?,
-                guard_config_path: Some(path.clone()),
+                config_path: path.clone(),
             })
         })
         .collect()
@@ -131,13 +120,10 @@ fn arm_setup<P: Plant>(
     name: &str,
     config: ExecutorConfig,
     plant: P,
-    with_link: bool,
-    control: &Arc<Lease>,
-) -> anyhow::Result<ArmSetup<P>> {
-    let link = with_link
-        .then(|| Link::new(&config, Arc::clone(control)))
-        .transpose()?;
-    Ok(ArmSetup::new(name.to_owned(), config, plant, link))
+    control: Option<&Arc<Lease>>,
+) -> ArmSetup<P> {
+    let link = control.map(|control| Link::for_controller(&config, Arc::clone(control)));
+    ArmSetup::new(name.to_owned(), config, plant, link)
 }
 
 fn close_links<P: Plant>(setups: &mut [ArmSetup<P>]) {
@@ -147,41 +133,11 @@ fn close_links<P: Plant>(setups: &mut [ArmSetup<P>]) {
         }
     }
 }
-fn run_and_report<P: Plant>(
-    mut setups: Vec<ArmSetup<P>>,
-    run_for: Option<Duration>,
-    shutdown_requested: &AtomicBool,
-    serving: Option<&Serving>,
-    bus_timing: impl Fn(&P) -> Option<&BusTiming>,
-) {
-    if let Some(serving) = serving {
-        let arms: BTreeMap<String, LinkHandle> = setups
-            .iter()
-            .filter_map(|setup| {
-                setup
-                    .link
-                    .as_ref()
-                    .map(|link| (setup.name.clone(), link.handle()))
-            })
-            .collect();
-        serving
-            .mounted
-            .attach_arms(&serving.server.runtime_handle(), &arms);
-        serving.server.attach_arms(arms);
-    }
-    let reports = run_arms(&mut setups, run_for, shutdown_requested);
-    close_links(&mut setups);
-    for (setup, (name, report)) in setups.iter().zip(&reports) {
-        print_timing(name, report, bus_timing(setup.plant()));
-    }
-}
-
 fn simulator_setups(
     arms: &[ConfiguredArm],
     directory: &Path,
-    with_link: bool,
     shutdown_requested: &AtomicBool,
-    control: &Arc<Lease>,
+    control: Option<&Arc<Lease>>,
 ) -> anyhow::Result<Vec<ArmSetup<SocketPlant>>> {
     // INVARIANT: Every arm's plant socket exists before the first accept, so a
     // simulator serving several arms can connect to all of them at once.
@@ -197,38 +153,32 @@ fn simulator_setups(
     }
     let mut setups = Vec::new();
     for (name, config, listener) in listeners {
-        let sim = config
-            .sim_plant
-            .clone()
+        let timeouts = config
+            .simulator_timeouts()
             .context("An arm on a simulator needs a sim_plant section")?;
         eprintln!("Waiting for a simulator to connect for arm {name}...");
         let plant = SocketPlant::accept(
             &listener,
             &config.driven_joints,
             config.joint_count,
-            SimTimeouts {
-                connect: Duration::from_secs_f64(sim.connect_timeout_seconds),
-                reply: Duration::from_secs_f64(sim.reply_timeout_seconds),
-                real_time: sim.real_time,
-            },
+            timeouts,
             shutdown_requested,
         )
         .with_context(|| format!("Arm {name}'s simulator"))?;
-        setups.push(arm_setup(name, config, plant, with_link, control)?);
+        setups.push(arm_setup(name, config, plant, control));
     }
     Ok(setups)
 }
 
 fn hardware_setups(
     arms: &[ConfiguredArm],
-    with_link: bool,
-    control: &Arc<Lease>,
+    control: Option<&Arc<Lease>>,
 ) -> anyhow::Result<
     Vec<
         ArmSetup<
             GuardedPlant<
-                hebbian_robot_use_server::so101::driver::Servos<
-                    hebbian_robot_use_server::so101::driver::SerialBus,
+                hebbian_robot_use_core::so101::driver::Servos<
+                    hebbian_robot_use_core::so101::driver::SerialBus,
                 >,
             >,
         >,
@@ -238,28 +188,19 @@ fn hardware_setups(
     for arm in arms {
         let name = &arm.name;
         let config = arm.config.clone();
-        let guard_config_path = if config.guard.is_some() {
-            Some(
-                arm.guard_config_path
-                    .as_deref()
-                    .context("A configured hardware guard needs its config file")?,
-            )
-        } else {
-            None
-        };
+        let guard_config_path = config.guard.as_ref().map(|_| arm.config_path.as_path());
         let servos = feetech_servos(&config)?;
         let plant = GuardedPlant::new(servos, guard_config_path);
-        setups.push(arm_setup(name, config, plant, with_link, control)?);
+        setups.push(arm_setup(name, config, plant, control));
     }
     Ok(setups)
 }
 
-fn lag_setups(
+fn no_physics_setups(
     arms: &[ConfiguredArm],
     plant_lag_seconds: f64,
-    with_link: bool,
-    control: &Arc<Lease>,
-) -> anyhow::Result<Vec<ArmSetup<SimulatedPlant>>> {
+    control: Option<&Arc<Lease>>,
+) -> Vec<ArmSetup<NoPhysicsStandIn>> {
     let mut setups = Vec::new();
     for arm in arms {
         let name = &arm.name;
@@ -270,31 +211,29 @@ fn lag_setups(
             .zip(&config.upper_limits)
             .map(|(lower, upper)| 0.0_f64.clamp(*lower, *upper))
             .collect();
-        let mut plant = SimulatedPlant::at(start, plant_lag_seconds);
+        let mut plant = NoPhysicsStandIn::at(start, plant_lag_seconds);
         if let Some(gripper) = &config.gripper {
             plant = plant
                 .with_gripper(0.0_f64.clamp(gripper.minimum_radians(), gripper.maximum_radians()));
         }
-        setups.push(arm_setup(name, config, plant, with_link, control)?);
+        setups.push(arm_setup(name, config, plant, control));
     }
-    Ok(setups)
+    setups
+}
+
+fn validate_arms(arms: &[ConfiguredArm]) -> anyhow::Result<()> {
+    ensure!(!arms.is_empty(), "At least one arm is required");
+    hebbian_robot_use_core::profile::validate_arm_names(arms.iter().map(|arm| arm.name.as_str()))
 }
 
 pub(crate) fn run_supervised(
     arms: &[ConfiguredArm],
     directory: &Path,
-    plant_lag_seconds: f64,
-    hardware: bool,
+    plant: PlantSelection,
     http_address: &str,
     web: WebSettings,
 ) -> anyhow::Result<()> {
-    ensure!(!arms.is_empty(), "A station needs at least one arm");
-    let mut names: Vec<&str> = arms.iter().map(|arm| arm.name.as_str()).collect();
-    names.sort_unstable();
-    ensure!(
-        names.windows(2).all(|pair| pair[0] != pair[1]),
-        "Each --arm needs its own name"
-    );
+    validate_arms(arms)?;
     let shutdown_requested = shutdown_flag()?;
     let lease = Arc::new(Lease::new(LEASE));
     let mut links = BTreeMap::new();
@@ -307,24 +246,14 @@ pub(crate) fn run_supervised(
             .context("The station handoff was already taken")?;
         handoffs.insert(arm.name.clone(), handoff);
         links.insert(arm.name.clone(), link);
-        controller_arms.push((
-            arm.name.clone(),
-            arm.guard_config_path
-                .clone()
-                .context("The controller needs its configuration file")?,
-        ));
+        controller_arms.push((arm.name.clone(), arm.config_path.clone()));
     }
-    let session = hebbian_robot_use_server::controller_bridge::StationSession::new(handoffs);
+    let session = hebbian_robot_use_core::controller_bridge::StationSession::new(handoffs);
     let launch = ControllerLaunch {
-        executable: std::env::current_exe()?,
+        executable: hebbian_robot_use_core::running_executable_for_child()?,
         arms: controller_arms,
         work_directory: directory.to_path_buf(),
-        simulator_socket_directory: arms
-            .iter()
-            .any(|arm| arm.config.sim_plant.is_some())
-            .then(|| directory.to_path_buf()),
-        plant_lag_seconds,
-        hardware,
+        plant,
     };
     let (supervisor, supervisor_thread) = controller_supervisor::start(
         launch,
@@ -344,6 +273,7 @@ pub(crate) fn run_supervised(
         directories,
         station_api::default_viewer_directory(),
         live_run.clone(),
+        Arc::clone(&shutdown_requested),
         |runtime, bound| {
             let (routes, mounted_routes) = web::mount(runtime, bound, web);
             supervisor.attach_recording(mounted_routes.recording.clone());
@@ -385,15 +315,14 @@ pub(crate) fn run_supervised(
     Ok(())
 }
 
-fn run_controller_setups<P: Plant>(
-    mut setups: Vec<ArmSetup<P>>,
+fn run_connected<P: Plant>(
+    setups: &mut [ArmSetup<P>],
     socket_path: &Path,
     instance: uuid::Uuid,
-    shutdown_requested: &AtomicBool,
+    shutdown_requested: &Arc<AtomicBool>,
     verify_torque: bool,
-    bus_timing: impl Fn(&P) -> Option<&BusTiming>,
-) -> anyhow::Result<()> {
-    for setup in &mut setups {
+) -> anyhow::Result<Vec<(String, Report)>> {
+    for setup in setups.iter_mut() {
         setup.verify_disabled(verify_torque)?;
     }
     let socket =
@@ -410,13 +339,15 @@ fn run_controller_setups<P: Plant>(
         .collect();
     let shutting_down = Arc::new(AtomicBool::new(false));
     let service_shutting_down = Arc::clone(&shutting_down);
+    let service_shutdown_requested = Arc::clone(shutdown_requested);
     let service = std::thread::spawn(move || {
-        let result = hebbian_robot_use_server::controller_service::serve_controller(
+        let result = hebbian_robot_use_core::controller_service::serve_controller(
             socket,
-            hebbian_robot_use_server::controller_transport::ControllerInstanceId(
+            hebbian_robot_use_core::controller_transport::ControllerInstanceId(
                 *instance.as_bytes(),
             ),
             &arms,
+            &service_shutdown_requested,
         );
         if !service_shutting_down.load(Ordering::Acquire) {
             eprintln!("Station connection lost: {result:?}");
@@ -425,10 +356,40 @@ fn run_controller_setups<P: Plant>(
             std::process::exit(1);
         }
     });
-    let reports = run_arms(&mut setups, None, shutdown_requested);
+    let reports = run_arms(setups, None, shutdown_requested);
     shutting_down.store(true, Ordering::Release);
     let _ = stop_socket.shutdown(std::net::Shutdown::Both);
     let _ = service.join();
+    Ok(reports)
+}
+
+pub(crate) enum RunMode<'a> {
+    Diagnostic {
+        seconds: Option<f64>,
+    },
+    Controller {
+        socket: &'a Path,
+        instance: uuid::Uuid,
+    },
+}
+
+fn run_setups<P: Plant>(
+    mut setups: Vec<ArmSetup<P>>,
+    mode: RunMode<'_>,
+    run_for: Option<Duration>,
+    shutdown_requested: &Arc<AtomicBool>,
+    hardware: bool,
+    bus_timing: impl Fn(&P) -> Option<&BusTiming>,
+) -> anyhow::Result<()> {
+    let reports = match mode {
+        RunMode::Controller { socket, instance } => {
+            run_connected(&mut setups, socket, instance, shutdown_requested, hardware)?
+        }
+        RunMode::Diagnostic { .. } => {
+            // INVARIANT: A hardware diagnostic leaves the arms holding; use `disable` to release them.
+            run_arms(&mut setups, run_for, shutdown_requested)
+        }
+    };
     close_links(&mut setups);
     for (setup, (name, report)) in setups.iter().zip(&reports) {
         print_timing(name, report, bus_timing(setup.plant()));
@@ -436,168 +397,87 @@ fn run_controller_setups<P: Plant>(
     Ok(())
 }
 
-pub(crate) fn run_controller(
+fn select_plant(
     arms: &[ConfiguredArm],
-    station_socket: &Path,
-    instance: uuid::Uuid,
-    socket_directory: Option<&Path>,
+    socket_directory: Option<PathBuf>,
     plant_lag_seconds: f64,
     hardware: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<PlantSelection> {
     ensure!(
         plant_lag_seconds.is_finite() && plant_lag_seconds > 0.0,
         "--plant-lag-seconds must be positive"
     );
-    let shutdown_requested = shutdown_flag()?;
-    let control = Arc::new(Lease::new(LEASE));
-    let simulated = arms.iter().any(|arm| arm.config.sim_plant.is_some());
-    if simulated {
+    let uses_simulator = |arm: &ConfiguredArm| arm.config.simulator_timeouts().is_some();
+    if arms.iter().any(uses_simulator) {
         ensure!(
-            !hardware && arms.iter().all(|arm| arm.config.sim_plant.is_some()),
-            "Controller arms must share a plant type"
+            !hardware && arms.iter().all(uses_simulator),
+            "Arms with a sim_plant section cannot share an executor with arms on other plants"
         );
-        let directory =
-            socket_directory.context("Simulator controllers need a socket directory")?;
-        let setups = simulator_setups(arms, directory, true, &shutdown_requested, &control)?;
-        run_controller_setups(
-            setups,
-            station_socket,
-            instance,
-            &shutdown_requested,
-            false,
-            |_| None,
-        )
+        Ok(PlantSelection::Simulator {
+            socket_directory: socket_directory
+                .context("Arms on a simulator need --socket-directory for their plant sockets")?,
+        })
     } else if hardware {
-        let setups = hardware_setups(arms, true, &control)?;
-        run_controller_setups(
-            setups,
-            station_socket,
-            instance,
-            &shutdown_requested,
-            true,
-            |plant| Some(plant.inner().bus().timing()),
-        )
+        if let Some(arm) = arms.iter().find(|arm| arm.config.feetech.is_none()) {
+            anyhow::bail!("Arm {:?} needs a feetech section with --hardware", arm.name);
+        }
+        Ok(PlantSelection::Servos)
     } else {
-        let setups = lag_setups(arms, plant_lag_seconds, true, &control)?;
-        run_controller_setups(
-            setups,
-            station_socket,
-            instance,
-            &shutdown_requested,
-            false,
-            |_| None,
-        )
+        Ok(PlantSelection::NoPhysicsStandIn {
+            lag_seconds: plant_lag_seconds,
+        })
     }
 }
 
-pub(crate) fn run_loop(
+pub(crate) fn run_configured(
     arms: &[ConfiguredArm],
-    seconds: Option<f64>,
-    socket_directory: Option<&Path>,
+    mode: RunMode<'_>,
+    socket_directory: Option<PathBuf>,
     plant_lag_seconds: f64,
     hardware: bool,
-    http_address: Option<&str>,
-    web: WebSettings,
 ) -> anyhow::Result<()> {
-    let run_for = seconds
-        .map(|seconds| {
-            Duration::try_from_secs_f64(seconds).context("--seconds must be a non-negative number")
-        })
-        .transpose()?;
-    ensure!(
-        plant_lag_seconds.is_finite() && plant_lag_seconds > 0.0,
-        "--plant-lag-seconds must be positive"
-    );
-    let mut names: Vec<&str> = arms.iter().map(|arm| arm.name.as_str()).collect();
-    names.sort_unstable();
-    ensure!(
-        names.windows(2).all(|pair| pair[0] != pair[1]),
-        "Each --arm needs its own name"
-    );
+    let run_for = match mode {
+        RunMode::Diagnostic {
+            seconds: Some(seconds),
+        } => Some(
+            Duration::try_from_secs_f64(seconds)
+                .context("--seconds must be a non-negative number")?,
+        ),
+        RunMode::Diagnostic { seconds: None } | RunMode::Controller { .. } => None,
+    };
+    validate_arms(arms)?;
+    let plant = select_plant(arms, socket_directory, plant_lag_seconds, hardware)?;
     let shutdown_requested = shutdown_flag()?;
-    // INVARIANT: One lease for every arm of this executor.
-    let control = Arc::new(Lease::new(LEASE));
-    let configs = arms.iter().map(|arm| &arm.config).collect::<Vec<_>>();
-    let simulator_configs: Vec<bool> = configs
-        .iter()
-        .map(|config| config.sim_plant.is_some())
-        .collect();
-    // WHY: Started before the loop and closed after it, on its own threads.
-    let serving = http_address
-        .map(|address| {
-            let directories = station_api::trace_directories(
-                configs
-                    .iter()
-                    .map(|config| Path::new(config.trace_directory.as_str())),
-            );
-            let mut mounted = None;
-            let live_run = Arc::new(LiveRunStore::default());
-            let server = HttpServer::start(
-                address,
-                directories,
-                station_api::default_viewer_directory(),
-                live_run.clone(),
-                |runtime, bound| {
-                    let (routes, mounted_routes) = web::mount(runtime, bound, web);
-                    mounted = Some(mounted_routes);
-                    Ok(routes.merge(run_telemetry::routes(live_run)).merge(
-                        controller_supervisor::router(
-                            controller_supervisor::ControllerSupervisor::unmanaged(),
-                        ),
-                    ))
-                },
-            )?;
-            let mounted = mounted.context("The station routes were not mounted")?;
-            eprintln!("HTTP on http://{}", server.local_address());
-            anyhow::Ok(Serving { server, mounted })
-        })
-        .transpose()?;
-    if simulator_configs.contains(&true) {
-        ensure!(
-            simulator_configs.iter().all(|simulated| *simulated) && !hardware,
-            "Arms with a sim_plant section cannot share an executor with arms on other plants"
-        );
-        let directory = socket_directory
-            .context("Arms on a simulator need --socket-directory for their plant sockets")?;
-        let setups = simulator_setups(
-            arms,
-            directory,
-            serving.is_some(),
-            &shutdown_requested,
-            &control,
-        )?;
-        run_and_report(
-            setups,
+    let control = matches!(mode, RunMode::Controller { .. }).then(|| Arc::new(Lease::new(LEASE)));
+    match plant {
+        PlantSelection::Servos => run_setups(
+            hardware_setups(arms, control.as_ref())?,
+            mode,
             run_for,
             &shutdown_requested,
-            serving.as_ref(),
-            |_| None,
-        );
-    } else if hardware {
-        // INVARIANT: Every arm starts disabled; the station enables each (preflight, then
-        // torque on holding the present pose), or a run without a station enables
-        // all at once. Torque stays on when the loop ends: the servos keep holding
-        // their last goal, and `disable` is how an arm is let go.
-        let setups = hardware_setups(arms, serving.is_some(), &control)?;
-        run_and_report(
-            setups,
-            run_for,
-            &shutdown_requested,
-            serving.as_ref(),
+            true,
             |plant| Some(plant.inner().bus().timing()),
-        );
-    } else {
-        let setups = lag_setups(arms, plant_lag_seconds, serving.is_some(), &control)?;
-        run_and_report(
-            setups,
+        ),
+        PlantSelection::Simulator { socket_directory } => run_setups(
+            simulator_setups(
+                arms,
+                &socket_directory,
+                &shutdown_requested,
+                control.as_ref(),
+            )?,
+            mode,
             run_for,
             &shutdown_requested,
-            serving.as_ref(),
+            false,
             |_| None,
-        );
+        ),
+        PlantSelection::NoPhysicsStandIn { lag_seconds } => run_setups(
+            no_physics_setups(arms, lag_seconds, control.as_ref()),
+            mode,
+            run_for,
+            &shutdown_requested,
+            false,
+            |_| None,
+        ),
     }
-    if let Some(serving) = serving {
-        serving.close();
-    }
-    Ok(())
 }

@@ -1,0 +1,35 @@
+# Only Git-tracked regular files under these paths can enter the public snapshot.
+paths = [
+  "Cargo.toml", "Cargo.lock", "clippy.toml", ".cargo/config.toml", "LICENSE", ".gitignore",
+  "pyproject.toml", ".python-version", "rust-toolchain.toml", ".env.example",
+  "CONTRIBUTING.md", "AGENTS.md", "CLAUDE.md", ".github/workflows/check.yml", ".github/workflows/publish.yml",
+  "robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "livekit-cameras",
+  "hebbian_rua", "examples/python", "examples/applications",
+  "profiles/so101.toml", "profiles/so101-sim.toml", "profiles/so101-common.toml", "profiles/so101-description.toml",
+  "profiles/so101-soft-gripper-camera-assembly.toml",
+  "profiles/so101-bimanual-layout.toml", "profiles/so101-policy-settings.toml",
+  "robots/so101-assets.toml", "schemas/openapi.json", "schemas/robot-tools.json",
+  "scripts/estimate_following_lag.py",
+  "schemas/robot-context.json", "schemas/sim-plant.schema.json",
+  "licenses/media-notices.md", "licenses/recording-schema", "licenses/rust",
+  "docs/model-output.md", "docs/control-model.md", "docs/control-invariants.md", "docs/install-from-source.md", "docs/cameras.md",
+  "docs/hardware.md", "docs/so101-calibration.md", "docs/simulators.md", "docs/windows-wsl.md",
+  "source-doc-lint.toml", "tooling/source-doc-lint", "tooling/architecture",
+  "tooling/pyproject.toml", "tooling/rua_dev/__init__.py", "tooling/rua_dev/cli.py",
+  "tooling/rua_dev/models.py", "tooling/rua_dev/robot_assets.py",
+  "tooling/rua_dev/validation.py", "tooling/rua_dev/contracts.py",
+  "tooling/rua_dev/native_build.py",
+  "tooling/rua_dev/generated.py", "tooling/rua_dev/generators",
+  "tooling/rua_dev/typescript_schemas.py", "tooling/rua_dev/wheel_check.py",
+  "tooling/rua_dev/bundle.py", "tooling/rua_dev/packaging.py",
+  "tooling/rua_dev/versions.py", "tooling/rua_dev/licenses",
+  "tooling/rua_dev/bundle_smoke.py", "tests/test_robot_assets.py",
+  "tests/test_development_components.py", "tests/test_station_event_stream.py",
+  "tests/test_output_formatting.py", "tests/test_llm_outcomes.py", "tests/fixtures/model-command-outcomes.json",
+]
+exclude = []
+workspace_members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "livekit-cameras"]
+
+# Runtime package metadata is shared; only development components are omitted.
+python_excluded_dependencies = ["hebbian-robot-use-tools", "mujoco", "pillow", "import-linter"]
+python_excluded_groups = ["policy"]

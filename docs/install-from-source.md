@@ -11,16 +11,18 @@ For Windows setup considerations, see [Windows with WSL2](windows-wsl.md).
 Install [uv](https://docs.astral.sh/uv/), the pinned Rust toolchain and, on Ubuntu,
 `build-essential`, `pkg-config`, `libudev-dev` and `mold`. On macOS, install
 Xcode Command Line Tools (`xcode-select --install`) and use the default Apple
-Clang compiler. From the checkout root:
+Clang compiler. This checkout pins Python in `.python-version` (uv can install
+it) and Rust in `rust-toolchain.toml` (rustup selects it). From the checkout root:
 
 ```sh
 uv run rua-dev setup
-uv sync --project examples/python --locked
 ```
 
 Setup prepares the checksum-pinned SO-101 models in ignored `robots/so101` and
-caches their release archive under `.cache/so101`. Once prepared, model assets
+caches their pinned Git snapshot under `.cache/so101`. Once prepared, model assets
 need no network access for builds or runs. Installed wheels need no setup step.
+Sync the separate [Python example environment](../examples/python/README.md)
+when you want to run those examples.
 
 ## Start the station
 
@@ -28,7 +30,7 @@ For a physical SO-101, [calibrate your arm](so101-calibration.md), then start th
 station from the checkout root:
 
 ```sh
-uv run cargo run -p hebbian-station -- serve --profile auto
+uv run cargo run -p hebbian-robot-use-server -- serve --profile auto
 ```
 
 This source command checks and rebuilds the station before starting it.
@@ -41,7 +43,8 @@ checks and commands for the components included in your checkout.
 
 ## Optional viewer
 
-If your checkout includes the TypeScript viewer, install Node.js and pnpm, then:
+If your checkout includes the TypeScript viewer, use the Node.js version in
+`.nvmrc` and the pnpm version pinned in `package.json`, then:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -60,7 +63,7 @@ Run commands from the repository root. After pulling dependency changes, run
 
 | What changed | Command | When the change takes effect |
 | --- | --- | --- |
-| Rust station or hardware profile | `uv run cargo run -p hebbian-station -- serve --profile ./robot.toml` | Stop the old station first; this builds and starts the current source. Support and disable the arm before stopping the control process. |
+| Rust station or hardware profile | `uv run cargo run -p hebbian-robot-use-server -- serve --profile auto` | Support and disable the arm, then stop the station. This builds and starts the current source. If you use an explicit profile, pass its path instead of `auto`. |
 | Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
 | TypeScript agent or client | `pnpm start:agent` | Restart the agent server to load current source. No client build is required. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and imported client source and restarts on changes. |

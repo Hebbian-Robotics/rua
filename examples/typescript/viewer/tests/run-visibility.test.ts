@@ -1,0 +1,70 @@
+import { expect, test } from "vitest";
+import type { Run } from "../shared/run-api.js";
+import { clearRunContents, visibleRunContents } from "../src/run-visibility.js";
+import type { TraceSpan } from "../src/span-time.js";
+
+function span(traceId: string, spanId: string): TraceSpan {
+  return {
+    traceId,
+    spanId,
+    parentSpanId: null,
+    name: "model",
+    startTimeUnixNano: "1000000000",
+    endTimeUnixNano: "2000000000",
+    attributes: {},
+    status: { code: "STATUS_CODE_OK", message: null },
+  };
+}
+
+test("clearing dismisses every part of a run and its later updates while admitting a new run", () => {
+  const agentRun: Run = {
+    id: "first",
+    createdAt: 1,
+    request: {
+      arm: "arm",
+      task: "Pick up the block",
+      cameras: [],
+      optionalCameras: [],
+      settings: { provider: null, model: null, reasoningEffort: null },
+    },
+    phase: { state: "running", startedAt: 1 },
+    output: [],
+  };
+  const contents = {
+    agentRun,
+    spans: [span("first-trace", "first-span")],
+    usage: {
+      runId: "first",
+      turns: 1,
+      inputTokens: 100,
+      cachedInputTokens: 0,
+      outputTokens: 10,
+      reasoningTokens: 0,
+    },
+    memory: { task: "Pick up the block", plan: null, notes: ["Block located"] },
+  };
+  const cleared = clearRunContents(contents);
+  const emptyRun = { agentRun: null, spans: [], usage: null, memory: null };
+  expect(visibleRunContents(contents, cleared)).toEqual(emptyRun);
+  expect(
+    visibleRunContents(
+      {
+        ...contents,
+        spans: [...contents.spans, span("first-trace", "later-span")],
+        memory: { ...contents.memory, notes: ["Done"] },
+      },
+      cleared,
+    ),
+  ).toEqual(emptyRun);
+  const nextRun = {
+    ...contents,
+    agentRun: { ...agentRun, id: "second" },
+    usage: { ...contents.usage, runId: "second" },
+    memory: { ...contents.memory, task: "Place the block" },
+    spans: [...contents.spans, span("second-trace", "new-span")],
+  };
+  expect(visibleRunContents(nextRun, cleared)).toEqual({
+    ...nextRun,
+    spans: [span("second-trace", "new-span")],
+  });
+});

@@ -7,11 +7,15 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 from rua_dev.robot_assets import prepare_robot_assets
 
+REVISION = "a" * 40
+ARCHIVE_STEM = f"so101-{REVISION}"
+
 ASSET_CONTENTS = {
     "robot.urdf": b'<robot name="fixture"><link name="base"/></robot>\n',
     "base.stl": b"fixture mesh geometry\n",
     "LICENSE.txt": b"fixture model license\n",
     "README.md": b"fixture model attribution\n",
+    "robot-assemblies.toml": b'joint_names = ["shoulder_pan"]\n',
     "robot-soft-gripper-camera.urdf": b'<robot name="optional"/>\n',
     "soft-gripper-camera/camera_mount.stl": b"fixture camera bracket\n",
 }
@@ -22,15 +26,14 @@ def create_asset_source(repository: Path) -> tuple[Path, bytes]:
     archive_buffer = io.BytesIO()
     with ZipFile(archive_buffer, "w", compression=ZIP_DEFLATED) as archive:
         for name, content in ASSET_CONTENTS.items():
-            archive.writestr(f"model/{name}", content)
-        archive.writestr("unrelated/private.txt", b"not a robot asset")
+            archive.writestr(f"{ARCHIVE_STEM}/model/{name}", content)
+        archive.writestr(f"{ARCHIVE_STEM}/unrelated/private.txt", b"not a robot asset")
     archive_content = archive_buffer.getvalue()
-    archive_digest = hashlib.sha256(archive_content).hexdigest()
     manifest = repository / "robots/so101-assets.toml"
     manifest.write_text(
-        'archive_url = "https://offline.invalid/so101.whl"\n'
-        f'archive_sha256 = "{archive_digest}"\n'
-        'archive_prefix = "model/"\n\n[files]\n'
+        'repository = "fixture/so101"\n'
+        f'revision = "{REVISION}"\n'
+        'asset_directory = "model"\n\n[files]\n'
         + "".join(
             f'"{name}" = "{hashlib.sha256(content).hexdigest()}"\n'
             for name, content in ASSET_CONTENTS.items()
@@ -38,11 +41,11 @@ def create_asset_source(repository: Path) -> tuple[Path, bytes]:
     )
     cache = repository / ".cache/so101"
     cache.mkdir(parents=True)
-    (cache / f"{archive_digest}.whl").write_bytes(archive_content)
+    (cache / f"{ARCHIVE_STEM}.zip").write_bytes(archive_content)
     return manifest, archive_content
 
 
-def test_cached_release_prepares_exact_assets_and_repairs_tampering_offline(
+def test_cached_commit_prepares_exact_assets_and_repairs_tampering_offline(
     tmp_path: Path,
 ) -> None:
     create_asset_source(tmp_path)
@@ -80,14 +83,16 @@ def test_untrusted_download_does_not_replace_existing_geometry(
         return io.BytesIO(b"corrupt download")
 
     monkeypatch.setattr(urllib.request, "urlopen", download_archive)
-    with pytest.raises(ValueError, match="archive checksum"):
+    with pytest.raises(ValueError, match="Invalid robot asset archive"):
         prepare_robot_assets(tmp_path)
     assert (destination / "robot.urdf").read_bytes() == b"previous geometry"
     assert sorted(path.name for path in destination.iterdir()) == ["robot.urdf"]
 
 
-def test_mismatched_asset_pin_rejects_the_entire_update(tmp_path: Path) -> None:
-    manifest, _ = create_asset_source(tmp_path)
+def test_mismatched_asset_pin_rejects_the_entire_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, archive = create_asset_source(tmp_path)
     destination = tmp_path / "robots/so101"
     destination.mkdir()
     (destination / "robot.urdf").write_bytes(b"previous geometry")
@@ -96,10 +101,20 @@ def test_mismatched_asset_pin_rejects_the_entire_update(tmp_path: Path) -> None:
             hashlib.sha256(ASSET_CONTENTS["LICENSE.txt"]).hexdigest(), "0" * 64
         )
     )
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(archive)
+    )
     with pytest.raises(ValueError, match="asset checksum"):
         prepare_robot_assets(tmp_path)
     assert (destination / "robot.urdf").read_bytes() == b"previous geometry"
     assert sorted(path.name for path in destination.iterdir()) == ["robot.urdf"]
+
+
+def test_floating_revision_is_refused(tmp_path: Path) -> None:
+    manifest, _ = create_asset_source(tmp_path)
+    manifest.write_text(manifest.read_text().replace(f'"{REVISION}"', '"main"'))
+    with pytest.raises(ValueError, match="full Git commit"):
+        prepare_robot_assets(tmp_path)
 
 
 @pytest.mark.parametrize(

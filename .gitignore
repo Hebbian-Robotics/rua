@@ -22,7 +22,7 @@ __pycache__/
 
 # Executor and control-loop cycle traces
 /traces/
-/executor/traces/
+/server-core/traces/
 /station/traces/
 
 .DS_Store

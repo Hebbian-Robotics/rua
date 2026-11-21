@@ -19,16 +19,12 @@ fn main() -> anyhow::Result<()> {
             socket_directory,
             plant_lag_seconds,
             hardware,
-            http_address,
-            web,
-        } => run::run_loop(
+        } => run::run_configured(
             &run::load_arms(&arms)?,
-            seconds,
-            socket_directory.as_deref(),
+            run::RunMode::Diagnostic { seconds },
+            socket_directory,
             plant_lag_seconds,
             hardware,
-            http_address.as_deref(),
-            web.settings()?,
         ),
         Command::Controller {
             arms,
@@ -37,11 +33,13 @@ fn main() -> anyhow::Result<()> {
             socket_directory,
             plant_lag_seconds,
             hardware,
-        } => run::run_controller(
+        } => run::run_configured(
             &run::load_arms(&arms)?,
-            &station_socket,
-            instance,
-            socket_directory.as_deref(),
+            run::RunMode::Controller {
+                socket: &station_socket,
+                instance,
+            },
+            socket_directory,
             plant_lag_seconds,
             hardware,
         ),
@@ -71,13 +69,11 @@ fn main() -> anyhow::Result<()> {
             config,
             executor_pid,
         } => tools::run_guard(&config, executor_pid),
-        Command::Schema { sim_plant, openapi } => {
+        Command::Schema { sim_plant, .. } => {
             let kind = if sim_plant {
                 tools::SchemaKind::SimPlant
-            } else if openapi {
-                tools::SchemaKind::OpenApi
             } else {
-                tools::SchemaKind::Contract
+                tools::SchemaKind::OpenApi
             };
             tools::print_schema(kind);
             Ok(())

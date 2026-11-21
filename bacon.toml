@@ -1,0 +1,35 @@
+[jobs.build]
+command = ["cargo", "build"]
+
+[jobs.clippy-all]
+command = ["cargo", "clippy", "--all-targets", "--all-features"]
+
+[jobs.python-lint]
+command = ["uv", "run", "ruff", "check"]
+default_watch = false
+watch = ["."]
+need_stdout = true
+
+[jobs.python-typecheck]
+command = ["uv", "run", "ty", "check"]
+default_watch = false
+watch = ["."]
+need_stdout = true
+
+[jobs.python-test]
+command = ["uv", "run", "pytest"]
+default_watch = false
+watch = ["."]
+need_stdout = true
+
+[jobs.viewer-check]
+command = ["pnpm", "check"]
+default_watch = false
+watch = ["."]
+need_stdout = true
+
+[jobs.viewer-test]
+command = ["pnpm", "test:viewer"]
+default_watch = false
+watch = ["."]
+need_stdout = true

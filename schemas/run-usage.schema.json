@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "runId": {
+      "title": "Runid",
+      "type": "string"
+    },
+    "turns": {
+      "title": "Turns",
+      "type": "integer"
+    },
+    "inputTokens": {
+      "title": "Inputtokens",
+      "type": "integer"
+    },
+    "cachedInputTokens": {
+      "title": "Cachedinputtokens",
+      "type": "integer"
+    },
+    "outputTokens": {
+      "title": "Outputtokens",
+      "type": "integer"
+    },
+    "reasoningTokens": {
+      "title": "Reasoningtokens",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "runId",
+    "turns",
+    "inputTokens",
+    "cachedInputTokens",
+    "outputTokens",
+    "reasoningTokens"
+  ],
+  "title": "RunUsage",
+  "type": "object"
+}

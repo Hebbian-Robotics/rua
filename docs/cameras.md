@@ -1,95 +1,78 @@
-# Cameras and the web preview
+# Cameras
 
-RUA uses [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras)
-for camera streaming and its hosted web preview. RUA starts the media companion
-for you; your Python agent needs no LiveKit SDK or frontend build.
+LiveKit is the streaming path for RUA. It lets the browser and other clients
+watch the same cameras. The station starts the media companion and publishes
+your configured cameras to one room. The SDK requests JPEG frames by name.
 
-## Watch a USB camera
+## Connect a USB camera
 
-1. Put your LiveKit project's credentials in `.env` where you launch RUA:
+1. If you run RUA from source, [build the media companion](#rua-configuration)
+   once. The Python wheel includes it.
+2. Create or choose a LiveKit project. Copy its WebSocket URL and API
+   credentials into `.env` where you start the station.
 
-   ```sh
+   ```dotenv
    LIVEKIT_URL=wss://your-project.livekit.cloud
    LIVEKIT_API_KEY=your-api-key
    LIVEKIT_API_SECRET=your-api-secret
    ```
 
-2. Start RUA with your robot profile and camera:
+3. Add `--camera wrist=0` to your usual station start command. `wrist` is a
+   label you choose, and `0` is the camera device index. You can also use a
+   device path such as `/dev/video0`. Repeat the flag for each USB camera.
 
-   ```sh
-   uv run rua serve --profile ./robot.toml --camera table=0
-   ```
+## Watch a USB camera
 
-   `table` is the SDK camera name; `0` is the device index. Device paths such as
-   `table=/dev/video0` also work. Repeat `--camera` for more cameras.
+Open the station viewer and look for your feed under **Workspace**. Use the
+same label in SDK calls or example flags such as `--camera wrist`. If the feed
+is missing, check the media status in **Workspace**.
 
-3. Request watch-only access on the station machine:
+If your install uses the hosted [Room viewer](https://hebbian-robotics.github.io/livekit-cameras/),
+run this on the station host, then use the returned `server_url` and `token`
+to connect. Keep the token private.
 
-   ```sh
-   curl --fail http://127.0.0.1:8792/viewer/api/token
-   ```
-
-   Open [camera tools](https://hebbian-robotics.github.io/livekit-cameras/), select
-   **Room viewer**, and connect with the returned `server_url` and `token`.
-   Use your station's HTTP address if it differs from the default above.
-
-The agent and viewer share the cameras. Keep tokens private; API keys and secrets
-stay on the station. See the [Room viewer guide](https://github.com/Hebbian-Robotics/livekit-cameras#room-viewer)
-for viewer behavior and the [camera tools guide](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
-for browser controls and hosting.
+```sh
+curl --fail http://127.0.0.1:8792/viewer/api/token
+```
 
 ## Add a phone
 
-With RUA running, generate an invite from your agent project:
+With LiveKit configured, select **Add a phone camera** in **Workspace**, enter
+a feed label and scan the QR code. For a station without the viewer, request
+an invite and open its private `url` on your phone.
 
 ```sh
-uv run python - <<'PYTHON'
-import asyncio
-from hebbian_rua import StationClient
-
-async def main():
-    async with StationClient() as station:
-        print((await station.phone_invite("table")).url)
-
-asyncio.run(main())
-PYTHON
+curl --fail http://127.0.0.1:8792/viewer/api/phone-invites \
+  --json '{"label":"overhead"}'
 ```
 
-Open the private invite on your phone. Its SDK camera name is `phone_table`.
-Follow the [browser camera instructions](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
-to start streaming. Set `HEBBIAN_PHONE_PAGE_URL` before starting RUA if you host
-that page yourself.
+The feed uses the name `phone_overhead` for that label. See the
+[browser camera guide](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
+for phone controls and custom hosting.
+
+## Local snapshots
+
+For an SDK-only setup without LiveKit credentials, register the camera with the
+same `--camera` flag. List feeds and check a JPEG using the label you chose.
+
+```sh
+curl --fail http://127.0.0.1:8781/cameras
+curl --fail http://127.0.0.1:8781/cameras/wrist --output wrist.jpg
+```
 
 ## RUA configuration
 
-- Restart RUA after changing credentials. By default, each start creates a new
-  room; request a new viewer token and phone invite after restarting.
-- Pass `--room demo` to reuse a room. Use distinct rooms for distinct stations.
-- Without LiveKit credentials, local USB and simulator snapshots still work for
-  the SDK, but are not published to Room viewer. See [simulator integration](simulators.md)
-  for user-owned camera streams.
-- Source builds need the [native prerequisites](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/CONTRIBUTING.md#native-rust),
-  then `CC=clang-21 CXX=clang++-21 cargo build -p livekit-cameras` on Linux.
-  On macOS, use `CC=clang CXX=clang++ cargo build -p livekit-cameras`.
-  Allow camera access for your terminal in macOS System Settings when prompted.
-  RUA finds the media binary beside the server in `target/debug`.
-  Recording additionally needs [FFmpeg](recording.md).
+For source builds, install the [native prerequisites](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/CONTRIBUTING.md#native-rust)
+and build the companion. RUA finds it beside the station binary.
 
-## Compare native publishing codecs
+```sh
+# Linux
+CC=clang-21 CXX=clang++-21 cargo build -p livekit-cameras
 
-Set `LIVEKIT_CAMERA_CODEC=h264` before starting the station to request H.264
-instead of the default VP8. Set `LIVEKIT_CAMERA_DIAGNOSTICS=true` to report
-publishing statistics every five seconds; omit it for normal operation. These
-variables apply to native USB publishers, not phone cameras or simulation views.
-The media child inherits them from the station environment.
+# macOS
+CC=clang CXX=clang++ cargo build -p livekit-cameras
+```
 
-The publisher reports its negotiated codec and encoder once, even with diagnostics
-off. H.264 is a request, not a guarantee of hardware encoding. Compare the same
-camera setup under similar load and inspect the actual encoder and mean encoding
-time. Submission age measures host receipt to WebRTC submission, not the complete
-camera-to-display delay. A running station must restart to use changed variables;
-follow the [hardware restart precautions](hardware.md) for a physical arm.
-
-When invoking `hebbian-robot-use-media publish` directly, the equivalent flags are
-`--video-codec h264 --camera-diagnostics`. The implementation and measurement
-limitations are documented in the [native publisher guide](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/native/publisher/README.md#codec-selection-and-diagnostics).
+Restart the station after changing credentials. Each start creates a new room
+unless you pass `--room NAME`. Give each running station a distinct room.
+Recording also needs [FFmpeg](recording.md).

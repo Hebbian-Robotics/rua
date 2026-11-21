@@ -16,6 +16,6 @@ class ValidationLane(StrEnum):
     PYTHON = "python"
     VIEWER = "viewer"
     FAST = "fast"
-    EXECUTOR = "executor"
+    SERVER = "server"
     CONTRACTS = "contracts"
     FULL = "full"

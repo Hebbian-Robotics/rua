@@ -1,130 +1,12 @@
-//! Messages between clients and the executor: one JSON object per line over
-//! the in-process link. These types are the contract:
-//! `hebbian-robot-use-server schema` writes their JSON Schema, and the Python and
-//! TypeScript types are generated from it.
-//!
-//! A client sends an [`Envelope`] (a request, and optionally a request id). The
-//! executor answers with [`Frame`]s: samples, which may be dropped, and log
-//! events, which carry a station-wide sequence number and are never dropped, so a
-//! client that reconnects can resume from the last number it saw.
+//! Arm feedback frames and motion inputs shared by the station and controller.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArmMode, ArmRecoveryIssue, Command, CommandRecord, CornerPlan, IkResult, LeaseAnswer,
-    LeaseHolder, OnInterruption, OrientationGoal, PathLimited, PlannedMotion, PoseDescription,
-    PoseLimited, PoseOrientation, PoseProjection, RejectionReason, UnixNanos, Waypoint,
+    ArmMode, ArmRecoveryIssue, CommandRecord, CornerPlan, IkResult, LeaseAnswer, PathLimited,
+    PlannedMotion, PoseDescription, PoseLimited, PoseProjection, RejectionReason, UnixNanos,
 };
-
-/// Client to executor.
-#[derive(Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Request {
-    /// A command for the arm: admitted into its state machine and answered with
-    /// the command's record, or refused with a reason.
-    #[schemars(title = "CommandRequest")]
-    Command {
-        command: Command,
-        /// The lease token the client holds; none when it holds none.
-        lease_token: Option<String>,
-    },
-    /// Move several arms of this executor together: one shared trajectory and
-    /// tracking gate across their joints, in the order given. Every arm admits
-    /// its part or none does; the reply carries one record per arm, in order.
-    /// When one arm's part ends without completing, the others stop and hold.
-    #[schemars(title = "MoveArmsRequest")]
-    MoveArms {
-        /// What the client calls this kind of move (`move_arms`).
-        label: String,
-        moves: Vec<ArmMove>,
-        /// The lease token the client holds; none when it holds none.
-        lease_token: Option<String>,
-    },
-    /// Acquire the lease on every arm of this executor: granted when no one
-    /// holds it, else answered with the holder.
-    #[schemars(title = "AcquireLeaseRequest")]
-    AcquireLease {
-        holder: LeaseHolder,
-        label: String,
-        required_cameras: Vec<String>,
-        on_interruption: OnInterruption,
-    },
-    /// Take the lease from whoever holds it, stopping every arm first.
-    #[schemars(title = "TakeLeaseRequest")]
-    TakeLease {
-        holder: LeaseHolder,
-        label: String,
-        required_cameras: Vec<String>,
-        on_interruption: OnInterruption,
-    },
-    /// Keep the lease from lapsing; refused when the token is not the holder's.
-    #[schemars(title = "RetainLeaseRequest")]
-    RetainLease { lease_token: Option<String> },
-    /// Give the lease up; does nothing for a token that is not the holder's.
-    #[schemars(title = "ReturnLeaseRequest")]
-    ReturnLease { lease_token: Option<String> },
-    /// The operator's override: end whoever holds the lease.
-    #[schemars(title = "RevokeLeaseRequest")]
-    RevokeLease,
-    /// Ask who holds the lease; the reply carries the holder, if any.
-    #[schemars(title = "ReadLeaseRequest")]
-    ReadLease,
-    /// Plan a move from `start` through the waypoints, without moving the arm:
-    /// each pose solved, every corner checked against the joint limits, and every
-    /// straight joint line against self-collision and the table. The reply carries
-    /// the plan to send as a `move`, or the reason it was refused.
-    #[schemars(title = "PlanMotionRequest")]
-    PlanMotion {
-        /// Where the arm holds, which the plan starts from.
-        start: Vec<f64>,
-        waypoints: Vec<Waypoint>,
-        /// The speed asked for; none for the arm's default. Never above its limit.
-        joint_speed: Option<f64>,
-        /// Measured gripper angle used by the trajectory's geometry checks.
-        #[serde(default)]
-        gripper_angle: Option<f64>,
-    },
-    /// Where the arm could take the tool toward a pose from the measured joints,
-    /// without moving it: for a policy arm the policy's own rehearsal, otherwise
-    /// the solve and the checks a move would get. An orientation left out is the
-    /// solver's to choose. The reply carries the projection.
-    #[schemars(title = "ProjectPoseRequest")]
-    ProjectPose {
-        position: [f64; 3],
-        orientation: Option<PoseOrientation>,
-        /// The arm's measured joints.
-        joints: Vec<f64>,
-        /// The jaw's angle, when the arm has a gripper.
-        gripper_angle: Option<f64>,
-    },
-    /// The tool's pose at these joints, in the station's world frame.
-    #[schemars(title = "DescribePoseRequest")]
-    DescribePose { joints: Vec<f64> },
-    /// Solve inverse kinematics for the arm's tool, without moving the arm:
-    /// joints that put the tool at `position` with `orientation`, searched from
-    /// `seed`. The reply carries the solve's result.
-    #[schemars(title = "SolvePoseRequest")]
-    SolvePose {
-        /// Where the tool goes, in the station's world frame.
-        position: [f64; 3],
-        orientation: OrientationGoal,
-        /// The arm's joints the search starts from, one per arm joint.
-        seed: Vec<f64>,
-    },
-    /// Ask for a snapshot: the log's head, the latest sample and the retained
-    /// log, in one message.
-    #[schemars(title = "SnapshotRequest")]
-    Snapshot,
-    /// Replay the retained log after sequence number `after` (all of it when
-    /// absent), then continue live. When `after` is older than the retained log,
-    /// a snapshot comes first, since events were lost to retention.
-    #[schemars(title = "Subscribe")]
-    Subscribe {
-        #[serde(default)]
-        after: Option<u64>,
-    },
-}
 
 /// One arm's part of a grouped move: a single straight run from where the arm
 /// holds to its target.
@@ -136,16 +18,6 @@ pub struct ArmMove {
     pub joint_speed: f64,
     pub path_limited: Option<PathLimited>,
     pub pose_limited: Option<PoseLimited>,
-}
-
-/// A request and the id the client chose for it. Every request with an id gets
-/// exactly one [`Event::Reply`]; sending an id again repeats that reply without
-/// acting twice.
-#[derive(Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct Envelope {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub request_id: Option<String>,
-    pub request: Request,
 }
 
 /// One control cycle's state; a sample, so a slow client may miss some.
@@ -317,36 +189,5 @@ impl Event {
             self,
             Self::State(_) | Self::Reply { .. } | Self::Snapshot { .. }
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_request_needs_no_request_id() {
-        let parsed = serde_json::from_str::<Envelope>(
-            r#"{"request":{"kind":"command","command":{"kind":"stop"}}}"#,
-        )
-        .unwrap();
-        assert_eq!(parsed.request_id, None);
-        assert_eq!(
-            parsed.request,
-            Request::Command {
-                command: Command::Stop,
-                lease_token: None,
-            }
-        );
-    }
-
-    #[test]
-    fn an_unknown_command_is_refused() {
-        assert!(
-            serde_json::from_str::<Envelope>(
-                r#"{"request":{"kind":"command","command":{"kind":"fly"}}}"#
-            )
-            .is_err()
-        );
     }
 }

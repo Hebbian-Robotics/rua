@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@/*": ["./examples/typescript/viewer/src/*"]
+    },
+    "strict": true,
+    "jsx": "react-jsx",
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "useUnknownInCatchVariables": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "customConditions": ["development"],
+    "noUncheckedSideEffectImports": true
+  },
+  "include": [
+    "examples/typescript/agent/src/**/*.ts",
+    "examples/typescript/agent/tests/**/*.ts",
+    "examples/typescript/viewer/src/**/*.ts",
+    "examples/typescript/viewer/src/**/*.tsx",
+    "examples/typescript/viewer/tests/**/*.ts",
+    "typescript-client/src/**/*.ts",
+    "typescript-client/tests/**/*.ts",
+    "vite.config.ts",
+    "examples/typescript/viewer/server/**/*.ts",
+    "examples/typescript/viewer/shared/**/*.ts",
+    "scripts/check-client-package.ts",
+    "scripts/build-client.ts"
+  ]
+}

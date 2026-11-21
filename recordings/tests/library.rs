@@ -36,7 +36,12 @@ fn fixture() -> (TempDir, RecordingLibrary) {
 }
 #[test]
 fn lists_each_recording_with_its_data_file() {
-    let (_root, library) = fixture();
+    let (root, library) = fixture();
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt as _;
+        fs::create_dir(root.path().join(std::ffi::OsStr::from_bytes(b"bad-\xff"))).unwrap();
+    }
     let listed = library.recordings().unwrap();
     assert_eq!(listed.recordings.len(), 1);
     let recording = &listed.recordings[0];

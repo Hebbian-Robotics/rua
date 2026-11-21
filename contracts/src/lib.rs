@@ -420,6 +420,9 @@ pub struct ArmRecoveryIssue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ArmState {
     pub arm: String,
+    /// The arm's URDF root in the station world frame. None means the world origin.
+    #[serde(default)]
+    pub base_pose: Option<BasePose>,
     pub mode: ArmMode,
     /// When the newest sample was taken, in Unix seconds; none before the first.
     pub sampled_at_unix_seconds: Option<f64>,

@@ -1,0 +1,21 @@
+[project]
+name = "rua-mujoco-example"
+version = "0.1.1"
+requires-python = ">=3.12"
+dependencies = [
+    "hebbian-robot-use-tools",
+    "hebbian-rua",
+    "cyclopts>=5.3.2",
+    "mujoco>=3.17.0",
+    "numpy>=2",
+    "pillow>=12.3.0",
+    "pydantic>=2.11",
+]
+
+[tool.uv]
+package = false
+exclude-newer = "3 days"
+
+[tool.uv.sources]
+hebbian-robot-use-tools = { path = "../../packages/rua-tools", editable = true }
+hebbian-rua = { path = "../..", editable = true }

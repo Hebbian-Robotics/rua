@@ -8,12 +8,12 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use hebbian_robot_use_server::config::ExecutorConfig;
-use hebbian_robot_use_server::kinematics::pose_from_xyzw;
-use hebbian_robot_use_server::profile;
-use hebbian_robot_use_server::robot::Robot;
-use hebbian_robot_use_server::so101::driver::{SerialBus, Servos};
-use hebbian_robot_use_server::so101::policy::{self, Policy};
+use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::kinematics::pose_from_xyzw;
+use hebbian_robot_use_core::profile;
+use hebbian_robot_use_core::robot::Robot;
+use hebbian_robot_use_core::so101::driver::{SerialBus, Servos};
+use hebbian_robot_use_core::so101::policy::{self, Policy};
 use serde::Deserialize;
 
 use crate::run::bus_timing_json;
@@ -151,7 +151,6 @@ struct PolicyReplay {
     arm_joints: Vec<String>,
     tool_link: String,
     onnx: PathBuf,
-    tool_frame_fixture: PathBuf,
     checkpoint_sha256: String,
     steps: Vec<PolicyReplayStep>,
 }
@@ -159,11 +158,7 @@ struct PolicyReplay {
 pub(crate) fn replay_policy(trace_path: &Path) -> anyhow::Result<()> {
     let replay: PolicyReplay = read_json(trace_path)?;
     let robot = Robot::load(&replay.urdf, &replay.arm_joints)?;
-    let mut network = Policy::load(
-        &replay.onnx,
-        &replay.tool_frame_fixture,
-        &replay.checkpoint_sha256,
-    )?;
+    let mut network = Policy::load(&replay.onnx, &replay.urdf, &replay.checkpoint_sha256)?;
     let results = replay
         .steps
         .iter()
@@ -204,7 +199,7 @@ pub(crate) fn print_profile_config(
             Some(directory) => directory.to_owned(),
             None => profile::default_profile_directory()?,
         };
-        selection.load_profile(profile_name, &directory)?
+        selection.load_profile(profile_name, &directory, false)?
     } else {
         selection.require_explicit_profile()?;
         let text = std::io::read_to_string(std::io::stdin()).context("Cannot read stdin")?;
@@ -232,7 +227,7 @@ pub(crate) fn run_guard(config_path: &Path, executor_pid: u32) -> anyhow::Result
         .clone()
         .context("The guard needs a config with a feetech section")?;
     let outcome =
-        hebbian_robot_use_server::guard::guard(&config, executor_pid, std::io::stdin(), || {
+        hebbian_robot_use_core::guard::guard(&config, executor_pid, std::io::stdin(), || {
             Servos::open(feetech.clone())
         })?;
     let _ = writeln!(
@@ -244,16 +239,14 @@ pub(crate) fn run_guard(config_path: &Path, executor_pid: u32) -> anyhow::Result
 }
 
 pub(crate) enum SchemaKind {
-    Contract,
     SimPlant,
     OpenApi,
 }
 
 pub(crate) fn print_schema(kind: SchemaKind) {
     let schema = match kind {
-        SchemaKind::SimPlant => hebbian_robot_use_server::sim_plant::schema_json(),
-        SchemaKind::OpenApi => hebbian_station::openapi::openapi_json(),
-        SchemaKind::Contract => hebbian_robot_use_server::contract::schema_json(),
+        SchemaKind::SimPlant => hebbian_robot_use_core::sim_plant::schema_json(),
+        SchemaKind::OpenApi => hebbian_robot_use_server::openapi::openapi_json(),
     };
     print!("{schema}");
 }

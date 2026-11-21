@@ -16,7 +16,7 @@ use axum::{Json, Router};
 use crate::lease_routes::ServedArms;
 use crate::recording::{RecordingConfiguration, RecordingManager};
 use hebbian_contracts::{PhoneInvite, PhoneInviteRequest, ViewerControl, ViewerControlMode};
-use hebbian_robot_use_server::control_link::LinkHandle;
+use hebbian_robot_use_core::control_link::LinkHandle;
 use station_access::{CameraConfiguration, Credentials, WatcherRole, new_room_name};
 
 pub const DEFAULT_PHONE_PAGE_URL: &str = "https://hebbian-robotics.github.io/livekit-cameras/";

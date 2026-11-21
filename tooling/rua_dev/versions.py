@@ -6,7 +6,7 @@ def check_release_versions(repository: Path) -> None:
     manifests = {
         "rua": ("pyproject.toml", "project"),
         "server": ("station/Cargo.toml", "package"),
-        "executor": ("executor/Cargo.toml", "package"),
+        "server-core": ("server-core/Cargo.toml", "package"),
         "media": ("livekit-cameras/Cargo.toml", "package"),
     }
     if (repository / "packages/rua-tools/pyproject.toml").is_file():

@@ -1,0 +1,11 @@
+# Supply-chain hardening: refuse npm releases younger than 3 days.
+# See: https://pnpm.io/settings#minimumreleaseage
+packages:
+  - typescript-client
+  - examples/typescript/agent
+minimumReleaseAge: 4320
+allowBuilds:
+  esbuild: true
+  workerd: true
+  "@google/genai": false
+  protobufjs: false

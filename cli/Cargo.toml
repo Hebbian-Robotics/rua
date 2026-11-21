@@ -1,0 +1,33 @@
+[package]
+name = "hebbian-robot-use-cli"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+description = "Command-line client for a Hebbian robot-use station, for coding agents driving the robot from bash."
+publish = false
+
+[[bin]]
+name = "hebbian-robot-use"
+path = "src/main.rs"
+
+[dependencies]
+hebbian-robot-use-sdk = { path = "../sdk" }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+
+[dev-dependencies]
+axum = "0.8.9"
+hebbian-robot-use-core = { path = "../server-core" }
+hebbian-robot-use-server = { path = "../station" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process"] }
+
+# Used by the shared integration fixture at sdk/tests/support/simulated_station.rs.
+# Machete scans this crate's directory and cannot see that external source module.
+[package.metadata.cargo-machete]
+ignored = ["hebbian-robot-use-server"]
+
+[lints]
+workspace = true

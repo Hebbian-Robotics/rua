@@ -1,10 +1,10 @@
-use hebbian_robot_use_server::{
+use hebbian_robot_use_core::{
     config::ExecutorConfig,
     control_link::Link,
     lease::{LEASE, Lease},
     station_api::HttpServer,
 };
-use hebbian_station::run_telemetry::LiveRunStore;
+use hebbian_robot_use_server::run_telemetry::LiveRunStore;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use std::{fs, process::Command};
@@ -105,7 +105,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
     let config = ExecutorConfig::parse(include_str!(
-        "../../executor/tests/support/two_joint_config.json"
+        "../../server-core/tests/support/two_joint_config.json"
     ))?;
     let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
     link.publish(hebbian_contracts::Event::ControllerAvailable);
@@ -195,7 +195,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
     let mut config = ExecutorConfig::parse(include_str!(
-        "../../executor/tests/support/two_joint_config.json"
+        "../../server-core/tests/support/two_joint_config.json"
     ))?
     .into_input();
     config.trace_directory = directory
@@ -211,8 +211,8 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let loop_shutdown_requested = Arc::clone(&shutdown_requested);
     let loop_thread = std::thread::spawn(move || {
-        let mut plant = hebbian_robot_use_server::plant::SimulatedPlant::at(vec![0.0, 0.0], 0.02);
-        hebbian_robot_use_server::control_loop::run(
+        let mut plant = hebbian_robot_use_core::plant::NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
+        hebbian_robot_use_core::control_loop::run(
             &mut plant,
             Some(&link),
             &config,
@@ -289,6 +289,7 @@ async fn start_station(address: String) -> Result<HttpServer, Box<dyn std::error
             vec![],
             None,
             Arc::new(LiveRunStore::default()),
+            Arc::default(),
             |_, _| Ok(axum::Router::new()),
         )
     })

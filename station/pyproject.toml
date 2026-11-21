@@ -1,6 +1,6 @@
 [project]
 name = "hebbian-robot-use-server"
-description = "The Hebbian arm executor: a prebuilt real-time control loop, installed as the `hebbian-robot-use-server` command"
+description = "The prebuilt Hebbian robot-use station and its supervised motor controller"
 requires-python = ">=3.12"
 authors = [{ name = "Hebbian Robotics" }]
 license = "MIT"
