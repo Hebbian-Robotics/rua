@@ -137,5 +137,9 @@ jobs:
         run: |
           pnpm --filter @hebbian/robot-use-client test
           pnpm test:package
+      - if: ${{ runner.os == 'Linux' && hashFiles('examples/typescript/agent/package.json') != '' && hashFiles('vite.config.ts') == '' }}
+        run: |
+          pnpm --filter @hebbian/agent test
+          pnpm --filter @hebbian/agent start --help
       - if: ${{ runner.os != 'Linux' || hashFiles('pnpm-workspace.yaml') == '' }}
         run: uv run rua-dev contracts --check --targets python rust

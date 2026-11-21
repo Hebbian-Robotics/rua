@@ -176,6 +176,9 @@ media service `http://127.0.0.1:8781`.
 
 ## Write a model loop
 
+Start with the [TypeScript reference agent](../examples/typescript/agent/README.md)
+for a CLI example with OpenAI, Anthropic and Gemini.
+
 `createRobotTools` supplies model-facing tool declarations, observations and
 execution for a loop you write. It uses the same Rust-derived catalog as the other SDKs.
 Pass `descriptions: { observe: "Your description" }` when creating the tools to
