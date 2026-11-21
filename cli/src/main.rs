@@ -55,7 +55,7 @@ async fn main() -> ExitCode {
 async fn execute(cli: Cli) -> Result<Value, Failure> {
     let station = Station::connect_with(ConnectOptions {
         server: cli.server,
-        media_server: cli.media_server,
+        media_server: cli.media_server.unwrap_or_default(),
         run_after: None,
     })
     .await?

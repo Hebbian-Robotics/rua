@@ -115,7 +115,10 @@ test("observe exposes retained images only when history is requested", async () 
   const address = server.address();
   if (!address || typeof address === "string")
     throw new Error("Missing server address");
-  const connection = createStationConnection("http://station", "agent");
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
   const state = apiSchemas.shape.StationState.parse(stateMessage([{}]).state);
   const stateSpy = vi.spyOn(connection, "getState").mockReturnValue(state);
   const sequenceSpy = vi
@@ -136,7 +139,6 @@ test("observe exposes retained images only when history is requested", async () 
     lease: fakeLease({ startActionSequence: async () => "sequence" }),
     arm: "follower",
     cameras: ["front"],
-    mediaUrl: `http://127.0.0.1:${address.port}`,
   });
   try {
     const [missing] = await robot.execute([

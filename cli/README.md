@@ -18,9 +18,10 @@ hebbian-robot-use preview-pose arm --position 0.2,0,0.1
 These examples use `arm`, the name assigned by native SO-101 setup. Run
 `hebbian-robot-use state` to discover the names served by a custom profile.
 
-`--server` (default `http://127.0.0.1:8792`) is the station, `--media-server` (default
-`http://127.0.0.1:8781`) the media service. Export `HEBBIAN_STATION_URL` and
-`HEBBIAN_MEDIA_SERVER` to change those defaults. The older `HEBBIAN_SERVER`
+`--server` (default `http://127.0.0.1:8792`) is the station URL, including for
+camera requests. Set `--media-server` or `HEBBIAN_MEDIA_SERVER` to use the
+companion directly, typically at `http://127.0.0.1:8781`. Set
+`HEBBIAN_STATION_URL` to change the default station URL. The older `HEBBIAN_SERVER`
 name is a fallback when `HEBBIAN_STATION_URL` is unset.
 Input units: radians, metres, rad/s, gripper 0 closed to 1 open, jaw yaw in degrees.
 Output is the concise model view shared with the SDKs (see

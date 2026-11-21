@@ -25,17 +25,11 @@ enum Reply {
     Redirect,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Server {
-    Station,
-    Media,
-}
-
 pub struct Route {
     pub operation: &'static str,
     pub method: &'static str,
     pub path: &'static str,
-    pub server: Server,
+    pub direct_media: bool,
     summary: &'static str,
     request: Option<SchemaOf>,
     reply: Reply,
@@ -55,7 +49,7 @@ const fn route(
         operation,
         method,
         path,
-        server: Server::Station,
+        direct_media: false,
         summary,
         request,
         reply,
@@ -467,7 +461,7 @@ pub fn routes() -> Vec<Route> {
     let mut routes: Vec<Route> = table.into_iter().collect();
     for media in [
         Route {
-            server: Server::Media,
+            direct_media: true,
             ..route(
                 "list_cameras",
                 "get",
@@ -479,7 +473,7 @@ pub fn routes() -> Vec<Route> {
             )
         },
         Route {
-            server: Server::Media,
+            direct_media: true,
             ..route(
                 "get_camera",
                 "get",
@@ -539,8 +533,11 @@ pub fn openapi_json() -> String {
             "operationId": route.operation,
             "summary": route.summary,
             "x-sdk": route.sdk,
-            "x-server": if route.server == Server::Media { "media" } else { "station" },
+            "x-server": "station",
         });
+        if route.direct_media {
+            operation["x-direct-media"] = json!(true);
+        }
         let parameters = path_parameters(route.path);
         if !parameters.is_empty() {
             operation["parameters"] = Value::Array(parameters);

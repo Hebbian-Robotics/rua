@@ -124,7 +124,7 @@ export async function captureSequenceImages<Result>(
       try {
         const response = await fetch(
           new URL(`/cameras/${encodeURIComponent(camera)}`, mediaUrl),
-          { signal },
+          { signal, priority: "low" },
         );
         if (!response.ok || !response.body)
           throw new Error("Snapshot unavailable");

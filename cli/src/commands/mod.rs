@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
+use hebbian_robot_use_sdk::DEFAULT_SERVER;
 use hebbian_robot_use_sdk::contracts::{Approach, NamedApproach, PoseOrientation, PreviewPose};
-use hebbian_robot_use_sdk::{DEFAULT_MEDIA_SERVER, DEFAULT_SERVER};
 
 fn default_station_url() -> String {
     std::env::var("HEBBIAN_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.to_owned())
@@ -55,9 +55,9 @@ pub struct Cli {
     /// The station's HTTP server.
     #[arg(long, global = true, env = "HEBBIAN_STATION_URL", default_value_t = default_station_url(), value_name = "URL")]
     pub server: String,
-    /// The media service, for cameras.
-    #[arg(long, global = true, env = "HEBBIAN_MEDIA_SERVER", default_value = DEFAULT_MEDIA_SERVER, value_name = "URL")]
-    pub media_server: String,
+    /// Direct media URL for cameras. Defaults to the station URL.
+    #[arg(long, global = true, env = "HEBBIAN_MEDIA_SERVER", value_name = "URL")]
+    pub media_server: Option<String>,
     /// Print the station's full records in SI units (metres, radians) instead of the compact
     /// millimetre and degree form.
     #[arg(long, global = true)]
@@ -379,7 +379,7 @@ mod tests {
     fn defaults_match_the_station() {
         let cli = parse(&["state"]).expect("state parses");
         assert_eq!(cli.server, DEFAULT_SERVER);
-        assert_eq!(cli.media_server, DEFAULT_MEDIA_SERVER);
+        assert!(cli.media_server.is_none());
     }
 
     #[test]

@@ -11,7 +11,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
-  DEFAULT_MEDIA_URL,
   DEFAULT_STATION_URL,
   type OnInterruption,
 } from "@hebbian/robot-use-client";
@@ -30,7 +29,7 @@ import { apiKeyFromEnvironment, runAgent } from "./run.js";
 export const USAGE = `Usage: hebbian-agent --provider NAME [options] [--] <arm> <task>
 
   --server URL            The station's HTTP URL (default $HEBBIAN_STATION_URL or ${DEFAULT_STATION_URL})
-  --media-server URL      The camera service (default $HEBBIAN_MEDIA_SERVER or ${DEFAULT_MEDIA_URL})
+  --media-server URL      Direct camera service (default $HEBBIAN_MEDIA_SERVER or the station URL)
   --camera NAMES          Comma-separated cameras to show the model; omitted sends state only
   --optional-camera NAMES Comma-separated cameras that may be unavailable
   --provider NAME         ${PROVIDERS.join(", ")} (required)
@@ -107,15 +106,12 @@ export function parseCommandLine(
     reasoningEffort,
   );
   if (effortProblem !== null) throw new Error(effortProblem);
+  const server =
+    values.server ?? environment["HEBBIAN_STATION_URL"] ?? DEFAULT_STATION_URL;
   return {
-    server:
-      values.server ??
-      environment["HEBBIAN_STATION_URL"] ??
-      DEFAULT_STATION_URL,
+    server,
     mediaServer:
-      values["media-server"] ??
-      environment["HEBBIAN_MEDIA_SERVER"] ??
-      DEFAULT_MEDIA_URL,
+      values["media-server"] ?? environment["HEBBIAN_MEDIA_SERVER"] ?? server,
     config: {
       arm,
       task,

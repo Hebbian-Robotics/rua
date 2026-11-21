@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_server::openapi::{Server, routes};
-use hebbian_robot_use_server::web::{self, WebSettings};
+use hebbian_robot_use_server::openapi::routes;
+use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
 
 fn probe(address: SocketAddr, path: &str) -> (u16, Option<String>) {
     let mut stream = TcpStream::connect(address).unwrap();
@@ -60,6 +60,7 @@ fn the_openapi_document_matches_the_routers() {
         recordings_directory: scratch.join("recordings"),
         enable_recording: false,
         media_address: None,
+        camera_forwarding: CameraForwarding::Enabled,
         media_executable: scratch.join("hebbian-robot-use-media"),
         room: None,
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
@@ -87,14 +88,13 @@ fn the_openapi_document_matches_the_routers() {
     let mut documented: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut media_paths = BTreeSet::new();
     for route in routes() {
-        if route.server == Server::Media {
+        if route.direct_media {
             media_paths.insert(route.path.to_owned());
-        } else {
-            documented
-                .entry(route.path.to_owned())
-                .or_default()
-                .insert(route.method.to_uppercase());
         }
+        documented
+            .entry(route.path.to_owned())
+            .or_default()
+            .insert(route.method.to_uppercase());
     }
     for (path, methods) in &documented {
         let filled = path.replace(['{', '}'], "");
@@ -121,6 +121,7 @@ fn the_openapi_document_matches_the_routers() {
         "",
     ));
     registered.extend(registered_paths(&read("station/src/web.rs"), ""));
+    registered.extend(registered_paths(&read("station/src/camera_proxy.rs"), ""));
     registered.extend(registered_paths(&read("station/src/run_telemetry.rs"), ""));
     registered.extend(registered_paths(
         &read("station/src/controller_supervisor.rs"),
@@ -134,11 +135,12 @@ fn the_openapi_document_matches_the_routers() {
         &read("recordings/src/routes.rs"),
         "/viewer/api",
     ));
-    registered.extend(registered_paths(
-        &read("livekit-cameras/src/snapshots.rs"),
-        "",
-    ));
-    let all_documented: BTreeSet<String> = documented.keys().cloned().chain(media_paths).collect();
+    assert_eq!(
+        registered_paths(&read("livekit-cameras/src/snapshots.rs"), ""),
+        media_paths,
+        "direct media routes against documented overrides"
+    );
+    let all_documented: BTreeSet<String> = documented.keys().cloned().collect();
     assert_eq!(
         registered, all_documented,
         "routed paths against documented paths"

@@ -19,7 +19,7 @@ use hebbian_robot_use_core::control_loop::run;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
 use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Plant, RecoveryObservation};
 use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_server::web::{self, WebSettings};
+use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
 use serde_json::{Value, json};
 
 const CONFIG: &str = include_str!("../../server-core/tests/support/two_joint_config.json");
@@ -248,6 +248,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         recordings_directory: scratch.join("recordings"),
         enable_recording: true,
         media_address: Some("127.0.0.1:8784".parse().unwrap()),
+        camera_forwarding: CameraForwarding::Enabled,
         media_executable: media_executable(&scratch),
         room: Some("station-test".into()),
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
