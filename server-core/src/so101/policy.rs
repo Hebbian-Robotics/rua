@@ -425,10 +425,8 @@ mod tests {
     }
 
     #[test]
-    fn default_pose_offset_holds_a_constant_target_and_leads_the_measured_joint_by_at_most_the_step()
-     {
+    fn constant_action_holds_the_target_within_the_configured_joint_lead() {
         let mapping = mapping("0.12");
-        // A constant action holds one target while the measured joint settles near it.
         for measured in [0.45, 0.5, 0.55] {
             assert!((mapping.joint_target(0, measured, 1.0) - 0.5).abs() < 1e-12);
         }
