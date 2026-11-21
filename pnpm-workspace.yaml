@@ -1,0 +1,7 @@
+# Supply-chain hardening: refuse npm releases younger than 3 days.
+# See: https://pnpm.io/settings#minimumreleaseage
+packages:
+  - typescript-client
+minimumReleaseAge: 4320
+allowBuilds:
+  esbuild: true

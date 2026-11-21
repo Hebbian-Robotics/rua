@@ -39,8 +39,9 @@ artifact and continuation semantics.
 
 ## Client SDKs
 
-The [Python SDK](../hebbian_rua/client/README.md) and [Rust SDK](../sdk/README.md)
-use generated routes from the shared Rust definitions and OpenAPI.
+The [Python SDK](../hebbian_rua/client/README.md), [Rust SDK](../sdk/README.md)
+and [TypeScript SDK](../typescript-client/README.md) use generated routes from
+the shared Rust definitions and OpenAPI.
 Provider adapters in `hebbian_rua/client/llm/` handle model-specific messages;
 the common station client owns HTTP, leases and execution outcomes.
 

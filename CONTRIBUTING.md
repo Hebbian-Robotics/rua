@@ -2,8 +2,8 @@
 
 Follow [source setup](docs/install-from-source.md#prepare-the-checkout) and
 install [source-doc-lint](tooling/source-doc-lint/README.md) for code changes.
-Set up [Node.js and pnpm](docs/install-from-source.md#optional-viewer) for
-TypeScript changes.
+Follow the [TypeScript SDK setup](typescript-client/README.md#use-the-workspace-package)
+for TypeScript changes.
 
 Choose checks for the component you are changing:
 
@@ -11,7 +11,8 @@ Choose checks for the component you are changing:
 | --- | --- |
 | Documentation | Local link check below |
 | Python SDK or tooling | `uv run rua-dev validate --lane python` |
-| TypeScript client, agent, or viewer | `uv run rua-dev validate --lane viewer` in the full checkout |
+| TypeScript SDK | `pnpm check` and `pnpm --filter @hebbian/robot-use-client test` |
+| TypeScript example applications | `uv run rua-dev validate --lane viewer` in the full checkout |
 | Rust control or station behavior | A focused Cargo test, such as `cargo test -p hebbian-robot-use-server --bin hebbian-robot-use-server so101` after setup |
 | Shared wire types | Regenerate from the owning Rust types with `uv run rua-dev contracts` |
 

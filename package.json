@@ -1,0 +1,29 @@
+{
+  "name": "rua-sdk-workspace",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "type": "module",
+  "scripts": {
+    "check": "pnpm lint && pnpm typecheck",
+    "lint": "biome check --error-on-warnings .",
+    "format": "biome check --write .",
+    "typecheck": "tsrs --noEmit --fast",
+    "test:package": "tsx scripts/check-client-package.ts"
+  },
+  "dependencies": {
+    "@hebbian/robot-use-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@types/node": "^26.6.6",
+    "json-schema-to-zod": "2.8.1",
+    "tsrs": "0.25.0-ts7.1.0-beta",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "packageManager": "pnpm@12.16.1"
+}

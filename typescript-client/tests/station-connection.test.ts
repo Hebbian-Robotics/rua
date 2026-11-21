@@ -1,0 +1,453 @@
+import assert from "node:assert/strict";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import type { AddressInfo } from "node:net";
+import { setImmediate } from "node:timers/promises";
+import { expect, test, vi } from "vitest";
+import {
+  type ActionSequenceRecord,
+  createStationConnection,
+} from "../src/index.js";
+import { commandRecord, recordFrame, stateMessage } from "./station-fakes.js";
+
+test("a cancelled acceptance-only command rejects with its abort reason", async () => {
+  const connection = createStationConnection("http://127.0.0.1:1", "agent");
+  const reason = new Error("Operator cancelled before sending the command");
+  try {
+    await expect(
+      connection
+        .arm("follower", {
+          waitForOutcome: false,
+          signal: AbortSignal.abort(reason),
+        })
+        .enable(),
+    ).rejects.toBe(reason);
+  } finally {
+    connection.close();
+  }
+});
+
+test.each(["before", "after"] as const)(
+  "action-sequence waits started %s closing reject instead of hanging",
+  async (timing) => {
+    const connection = createStationConnection("http://127.0.0.1:1", "agent");
+    if (timing === "after") connection.close();
+    const rejected = expect(
+      connection.waitForActionSequence("sequence"),
+    ).rejects.toThrow(/connection.*closed/);
+    if (timing === "before") connection.close();
+    await rejected;
+  },
+);
+
+test.each(["stream", "retained", "close during lookup"] as const)(
+  "action-sequence waits handle %s results",
+  async (delivery) => {
+    const instance = "11111111-1111-4111-8111-111111111111";
+    const completed: ActionSequenceRecord = {
+      arms: ["follower"],
+      id: "sequence",
+      phase: { state: "completed" },
+      requested_steps: [],
+      compilation_id: "compilation",
+      continuation: null,
+      steps: [],
+    };
+    let stream: ServerResponse | undefined;
+    let lookupRequested: (() => void) | undefined;
+    const requested = new Promise<void>((resolve) => {
+      lookupRequested = resolve;
+    });
+    const server = createServer((request, response) => {
+      if (request.url === "/events") {
+        stream = response;
+        const current =
+          delivery === "stream"
+            ? { ...completed, phase: { state: "running", step: 0 } }
+            : { ...completed, id: "newer-sequence" };
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        response.write(
+          `id: ${instance}:1\nevent: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{}]), { kind: "action_sequence_state", action_sequence: current }] })}\n\n`,
+        );
+      } else if (request.url === "/action_sequence/sequence") {
+        lookupRequested?.();
+        if (delivery === "retained")
+          response
+            .writeHead(200, { "Content-Type": "application/json" })
+            .end(JSON.stringify(completed));
+      } else response.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address() as AddressInfo;
+    const connection = createStationConnection(
+      `http://127.0.0.1:${address.port}`,
+      "agent",
+    );
+    try {
+      connection.start();
+      await connection.waitUntilConnected();
+      const waiting = connection.waitForActionSequence("sequence");
+      if (delivery === "stream") {
+        stream?.write(
+          `id: ${instance}:2\nevent: station\ndata: ${JSON.stringify({ kind: "action_sequence_state", action_sequence: completed })}\n\n`,
+        );
+      }
+      if (delivery === "close during lookup") {
+        const rejected = expect(waiting).rejects.toThrow(/connection.*closed/);
+        await requested;
+        connection.close();
+        await rejected;
+      } else {
+        await expect(waiting).resolves.toEqual(completed);
+      }
+    } finally {
+      connection.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
+);
+
+// Exercise the SDK over HTTP: a completed record can precede its command reply,
+// but the command must not finish until a later state reflects that outcome.
+test.each(["c", "newer"])(
+  "HTTP commands wait for their own arm to settle with last command %s",
+  async (lastCommandId) => {
+    const instance = "11111111-1111-4111-8111-111111111111";
+    let stream: ServerResponse | undefined;
+    let sequence = 0;
+    let commandReceived: (() => void) | undefined;
+    const received = new Promise<void>((resolve) => {
+      commandReceived = resolve;
+    });
+    let commandBody: unknown;
+    const publish = (kind: string, data: unknown) => {
+      sequence += 1;
+      stream?.write(
+        `id: ${instance}:${sequence}\nevent: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
+      );
+    };
+    const server = createServer((request, response) => {
+      if (request.url === "/events") {
+        stream = response;
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        publish("snapshot", {
+          station_instance_id: instance,
+          sequence: 0,
+          run_sequence: 0,
+          items: [stateMessage([{}])],
+        });
+        return;
+      }
+      if (request.url === "/instance") {
+        response
+          .writeHead(200, { "Content-Type": "application/json" })
+          .end(JSON.stringify({ id: instance }));
+        return;
+      }
+      if (request.url === "/commands" && request.method === "POST") {
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          commandBody = JSON.parse(body) as unknown;
+          publish("station", recordFrame("follower", 1, commandRecord("c", 2)));
+          response.writeHead(200, { "Content-Type": "application/json" }).end(
+            JSON.stringify({
+              status: "accepted",
+              records: [{ arm: "follower", record: commandRecord("c") }],
+            }),
+          );
+          commandReceived?.();
+        });
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address() as AddressInfo;
+    const connection = createStationConnection(
+      `http://127.0.0.1:${address.port}`,
+      "agent",
+    );
+    try {
+      connection.start();
+      await connection.waitUntilConnected();
+      let finished = false;
+      const command = connection
+        .arm("follower")
+        .enable()
+        .then((answer) => {
+          finished = true;
+          return answer;
+        });
+      await received;
+      expect(commandBody).toMatchObject({
+        arm: "follower",
+        command: { kind: "enable" },
+        station_instance_id: instance,
+      });
+      publish(
+        "station",
+        stateMessage([
+          { sampledAt: 1, activeCommandId: "c" },
+          { arm: "other", lastCommandId: "newer" },
+        ]),
+      );
+      await connection.waitForState(
+        (state) => state.arms[0]?.sampled_at_unix_seconds === 1,
+      );
+      await setImmediate();
+      expect(finished).toBe(false);
+      publish(
+        "station",
+        stateMessage([
+          { sampledAt: 1.5 },
+          { arm: "other", lastCommandId: "newer" },
+        ]),
+      );
+      await connection.waitForState(
+        (state) => state.arms[0]?.sampled_at_unix_seconds === 1.5,
+      );
+      await setImmediate();
+      expect(finished).toBe(false);
+      publish("station", stateMessage([{ sampledAt: 3, lastCommandId }]));
+      const answer = await command;
+      assert.equal(answer.status, "accepted");
+      expect(answer.records[0]?.record.completion?.outcome).toBe("completed");
+    } finally {
+      connection.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
+);
+
+// A reconnect must not make an earlier in-flight acquisition appear current.
+test.each(["reconnection", "close"] as const)(
+  "a lease granted after %s is released",
+  async (interruption) => {
+    const instance = "11111111-1111-4111-8111-111111111111";
+    let eventStream: ServerResponse | undefined;
+    let leaseResponse: ServerResponse | undefined;
+    let leaseRequested: (() => void) | undefined;
+    let leaseReleased: (() => void) | undefined;
+    const requested = new Promise<void>((resolve) => {
+      leaseRequested = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      leaseReleased = resolve;
+    });
+    const server = createServer((request, response) => {
+      if (request.url === "/events") {
+        eventStream = response;
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        response.write(
+          `id: ${instance}:1\nevent: snapshot\ndata: ${JSON.stringify({ station_instance_id: instance, sequence: 1, run_sequence: 0, items: [stateMessage([{}])] })}\n\n`,
+        );
+      } else if (request.url === "/instance") {
+        response
+          .writeHead(200, { "Content-Type": "application/json" })
+          .end(JSON.stringify({ id: instance }));
+      } else if (request.url === "/leases") {
+        leaseResponse = response;
+        leaseRequested?.();
+      } else if (request.url === "/leases/renew") {
+        response.writeHead(204).end();
+      } else if (request.url === "/leases/release") {
+        response.writeHead(204).end();
+        leaseReleased?.();
+      } else if (request.url?.startsWith("/run/records")) {
+        response
+          .writeHead(200, { "Content-Type": "application/json" })
+          .end("[]");
+      } else {
+        response.writeHead(404).end();
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address() as AddressInfo;
+    const connection = createStationConnection(
+      `http://127.0.0.1:${address.port}`,
+      "agent",
+    );
+    try {
+      connection.start();
+      await connection.waitUntilConnected();
+      const acquiring = connection.acquireLease("test");
+      const rejected = expect(acquiring).rejects.toThrow(
+        "lost while acquiring",
+      );
+      await requested;
+      if (interruption === "close") {
+        connection.close();
+      } else {
+        let disconnected = false;
+        const reconnected = new Promise<void>((resolve) => {
+          const unsubscribe = connection.onConnectionChange((connected) => {
+            if (!connected) disconnected = true;
+            if (connected && disconnected) {
+              unsubscribe();
+              resolve();
+            }
+          });
+        });
+        eventStream?.destroy();
+        await reconnected;
+      }
+      leaseResponse?.writeHead(200, { "Content-Type": "application/json" }).end(
+        JSON.stringify({
+          lease_token: "token",
+          lease_seconds: 15,
+          status: {
+            holder: "agent",
+            label: "test",
+            required_cameras: [],
+            on_interruption: "wait_for_approval",
+            expires_in_seconds: 15,
+          },
+        }),
+      );
+      await rejected;
+      await released;
+    } finally {
+      connection.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
+);
+
+async function startLeaseStation(
+  leaseSeconds: number,
+  handleLeaseRequest: (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) => void,
+) {
+  const instance = "11111111-1111-4111-8111-111111111111";
+  const server = createServer((request, response) => {
+    if (request.url === "/events") {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(
+        `id: ${instance}:1\nevent: snapshot\ndata: ${JSON.stringify({ station_instance_id: instance, sequence: 1, run_sequence: 0, items: [stateMessage([{}])] })}\n\n`,
+      );
+    } else if (request.url === "/instance") {
+      response
+        .writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ id: instance }));
+    } else if (request.url === "/leases") {
+      response.writeHead(200, { "Content-Type": "application/json" }).end(
+        JSON.stringify({
+          lease_token: "token",
+          lease_seconds: leaseSeconds,
+          status: {
+            holder: "agent",
+            label: "test",
+            required_cameras: [],
+            on_interruption: "wait_for_approval",
+            expires_in_seconds: leaseSeconds,
+          },
+        }),
+      );
+    } else if (
+      request.url === "/leases/renew" ||
+      request.url === "/leases/release"
+    ) {
+      handleLeaseRequest(request, response);
+    } else if (request.url?.startsWith("/run/records")) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end("[]");
+    } else response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  return {
+    connection,
+    close: async () => {
+      connection.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    },
+  };
+}
+
+test("a lease grant is released when its initial renewal fails", async () => {
+  let releaseLease: (() => void) | undefined;
+  const released = new Promise<void>((resolve) => {
+    releaseLease = resolve;
+  });
+  const { connection, close } = await startLeaseStation(
+    15,
+    (request, response) => {
+      if (request.url === "/leases/renew")
+        response.writeHead(503).end("renewal failed");
+      else {
+        response.writeHead(204).end();
+        releaseLease?.();
+      }
+    },
+  );
+  try {
+    connection.start();
+    await connection.waitUntilConnected();
+    await expect(connection.acquireLease("test")).rejects.toThrow();
+    await expect(
+      Promise.race([
+        released.then(() => true),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), 250),
+        ),
+      ]),
+    ).resolves.toBe(true);
+  } finally {
+    await close();
+  }
+});
+
+test("renewal failure invalidates a held lease", async () => {
+  let renewalCount = 0;
+  const { connection, close } = await startLeaseStation(
+    0.3,
+    (request, response) => {
+      if (request.url !== "/leases/renew") {
+        response.writeHead(404).end();
+        return;
+      }
+      renewalCount += 1;
+      response.writeHead(renewalCount === 1 ? 204 : 503).end();
+    },
+  );
+  try {
+    connection.start();
+    await connection.waitUntilConnected();
+    const lease = await connection.acquireLease("test");
+    expect(lease.isHeld()).toBe(true);
+    await vi.waitFor(() => expect(lease.isHeld()).toBe(false));
+    expect(() => lease.arm("follower").streamJoints([0, 0, 0, 0, 0])).toThrow();
+  } finally {
+    await close();
+  }
+});

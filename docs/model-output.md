@@ -11,6 +11,14 @@ The default robot tools are `action_sequence`, `preview_pose`, `observe` and
 [Python example](../examples/python/README.md) filters sequences to Cartesian
 movement and gripper actions and adds its own `finish` tool.
 
+## TypeScript SDK
+
+`result.data` and `observation.data` retain station payloads in SI units.
+`result.text` holds the formatted model output. `result.modelData` parses that
+text as JSON when possible. See
+[TypeScript output formatting](../typescript-client/README.md#raw-results-and-model-views)
+for an example.
+
 ## Rust SDK and CLI
 
 In Rust, `result.model_data()` gives the concise view and `result.data()` returns

@@ -1,0 +1,376 @@
+import { readFileSync } from "node:fs";
+import { expect, test, vi } from "vitest";
+import { apiSchemas } from "../src/generated/api-schemas.js";
+import {
+  createRobotTools,
+  createStationConnection,
+  filterSequenceActions,
+} from "../src/index.js";
+import { fakeLease } from "./station-fakes.js";
+
+const connection = createStationConnection("http://localhost", "agent");
+const robot = createRobotTools({
+  tools: [
+    "action_sequence",
+    "preview_pose",
+    "move_arms",
+    "set_arm_gripper",
+    "rehome",
+    "stop",
+    "observe",
+  ],
+  connection,
+  lease: fakeLease(),
+  arm: "follower",
+});
+
+test("model tools return invalid inputs as errors to the model", async () => {
+  const results = await robot.execute([
+    { id: "1", name: "action_sequence", arguments: { steps: [] } },
+    {
+      id: "2",
+      name: "set_arm_gripper",
+      arguments: { arm: "follower", opening: "half" },
+    },
+  ]);
+  expect(results).toHaveLength(2);
+  for (const result of results) {
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Invalid input");
+  }
+});
+
+test.each([false, true])(
+  "required camera recovery returns a fresh observation (already interlocked: %s)",
+  async (alreadyInterlocked) => {
+    const { vi } = await import("vitest");
+    const { createRobotTools, createStationConnection } = await import(
+      "../src/index.js"
+    );
+    const connection = createStationConnection("http://station", "agent");
+    let revision = 0;
+    let interlocks: { kind: string; camera: string }[] = alreadyInterlocked
+      ? [{ kind: "required_camera_unavailable", camera: "front" }]
+      : [];
+    let cameraAvailable = alreadyInterlocked;
+    const state = () =>
+      ({
+        robot: "sim",
+        arms: [{ arm: "follower", mode: "holding", interlocks, revision }],
+      }) as ReturnType<typeof connection.getState>;
+    vi.spyOn(connection, "getState").mockImplementation(state);
+    vi.spyOn(connection, "onState").mockImplementation((listener) => {
+      queueMicrotask(() => {
+        const current = state();
+        if (current) listener(current);
+      });
+      return () => {};
+    });
+    const reports: unknown[] = [];
+    const lease = fakeLease({
+      reportCamera: async (_camera, available) => {
+        reports.push({ available });
+        if (available) interlocks = [];
+        else {
+          interlocks = [
+            { kind: "required_camera_unavailable", camera: "front" },
+          ];
+          revision++;
+          cameraAvailable = true;
+        }
+      },
+    });
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/cameras/front")
+        return cameraAvailable
+          ? new Response(new Uint8Array([1, 2, 3]))
+          : new Response(null, { status: 503 });
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    const robot = createRobotTools({
+      tools: [
+        "action_sequence",
+        "preview_pose",
+        "move_arms",
+        "set_arm_gripper",
+        "rehome",
+        "stop",
+        "observe",
+      ],
+      connection,
+      lease,
+      mediaUrl: "http://media",
+      arm: "follower",
+      cameras: ["front"],
+    });
+    try {
+      const observation = await robot.observeWhenReady();
+      expect(observation.revisions).toEqual({
+        follower: alreadyInterlocked ? 0 : 1,
+      });
+      expect(observation.cameras["front"]).toEqual(new Uint8Array([1, 2, 3]));
+      expect(reports).toEqual(
+        alreadyInterlocked
+          ? [{ available: true }]
+          : [{ available: false }, { available: true }],
+      );
+      expect(interlocks).toEqual([]);
+    } finally {
+      robot.close();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  },
+);
+
+test("a stale revision refusal is returned to the model", async () => {
+  const connection = createStationConnection("http://station", "agent");
+  const lease = fakeLease({
+    runCommand: vi.fn(async () => ({
+      status: "refused" as const,
+      reason: "stale_revision" as const,
+      detail: "moved on",
+    })),
+  });
+  const robot = createRobotTools({
+    tools: [
+      "action_sequence",
+      "preview_pose",
+      "move_arms",
+      "set_arm_gripper",
+      "rehome",
+      "stop",
+      "observe",
+    ],
+    connection,
+    lease,
+    arm: "follower",
+  });
+  try {
+    const [stopped] = await robot.execute(
+      [
+        {
+          id: "1",
+          name: "set_arm_gripper",
+          arguments: { arm: "follower", opening: 1 },
+        },
+      ],
+      { follower: 3 },
+    );
+    expect(stopped?.isError).toBe(true);
+    expect(stopped?.data).toMatchObject({ reason: "stale_revision" });
+    expect(vi.mocked(lease.runCommand).mock.calls[0]?.[2]).toBe(3);
+  } finally {
+    robot.close();
+    vi.restoreAllMocks();
+  }
+});
+
+test("model responses show readable units and preserve copyable orientations", async () => {
+  const { modelResponse } = await import("../src/index.js");
+  const fixtures = JSON.parse(
+    readFileSync(
+      new URL("../../tests/fixtures/model-response.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { input: unknown; expected: unknown }[];
+  for (const fixture of fixtures)
+    expect(modelResponse(fixture.input)).toEqual(fixture.expected);
+});
+
+test("concise views match the shared examples", async () => {
+  const { conciseOutput, conciseResponse } = await import("../src/index.js");
+  const fixtures = JSON.parse(
+    readFileSync(
+      new URL("../../tests/fixtures/model-concise.json", import.meta.url),
+      "utf8",
+    ),
+  ) as {
+    name: string;
+    keep_station_context: boolean;
+    input: unknown;
+    concise: unknown;
+    expected: unknown;
+  }[];
+  for (const fixture of fixtures) {
+    const options = { keepStationContext: fixture.keep_station_context };
+    expect(conciseOutput(fixture.input, options), fixture.name).toEqual(
+      fixture.concise,
+    );
+    expect(conciseResponse(fixture.input, options), fixture.name).toEqual(
+      fixture.expected,
+    );
+  }
+});
+
+test("group outcomes match the shared examples", async () => {
+  const examples = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../tests/fixtures/model-command-outcomes.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ) as {
+    name: string;
+    record: unknown;
+    expected_error: boolean;
+    expected_status: string;
+  }[];
+  for (const example of examples) {
+    const connection = createStationConnection("http://station", "agent");
+    const record = apiSchemas.shape.CommandRecord.parse(example.record);
+    vi.spyOn(connection, "waitForOutcome").mockResolvedValue(record);
+    const robot = createRobotTools({
+      tools: [
+        "action_sequence",
+        "preview_pose",
+        "move_arms",
+        "set_arm_gripper",
+        "rehome",
+        "stop",
+        "observe",
+      ],
+      connection,
+      lease: fakeLease({
+        runGroup: async () => ({
+          status: "accepted",
+          records: [{ arm: "follower", record }],
+        }),
+        runCommand: async () => ({
+          status: "accepted",
+          records: [{ arm: "follower", record }],
+        }),
+      }),
+      arm: "follower",
+    });
+    try {
+      const [result] = await robot.execute([
+        {
+          id: example.name,
+          name: "move_arms",
+          arguments: {
+            targets: { follower: { joints_degrees: [0, 0, 0, 0, 0] } },
+          },
+        },
+      ]);
+      expect(result?.isError).toBe(example.expected_error);
+      expect(result?.data).toMatchObject({ status: example.expected_status });
+      const [single] = await robot.execute([
+        {
+          id: example.name,
+          name: "set_arm_gripper",
+          arguments: { arm: "follower", opening: 0.5 },
+        },
+      ]);
+      expect(single?.isError).toBe(example.expected_error);
+      expect(single?.data).toMatchObject({
+        completion: { outcome: record.completion?.outcome },
+      });
+    } finally {
+      robot.close();
+    }
+  }
+});
+
+test("tool calls run concurrently and results retain input order", async () => {
+  const connection = createStationConnection("http://station", "agent");
+  const started: number[] = [];
+  let releaseFirst: (() => void) | undefined;
+  const firstFinished = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const lease = fakeLease({
+    runCommand: async (_arm, command) => {
+      if (command.kind !== "set_gripper") throw new Error("unexpected command");
+      started.push(command.opening);
+      if (command.opening === 0.1) await firstFinished;
+      return {
+        status: "refused",
+        reason: command.opening === 0.2 ? "stale_revision" : "malformed",
+        detail: "refused",
+      };
+    },
+  });
+  const robot = createRobotTools({
+    tools: [
+      "action_sequence",
+      "preview_pose",
+      "move_arms",
+      "set_arm_gripper",
+      "rehome",
+      "stop",
+      "observe",
+    ],
+    connection,
+    lease,
+    arm: "follower",
+  });
+  const calls = [0.1, 0.2, 0.3].map((opening) => ({
+    id: String(opening),
+    name: "set_arm_gripper",
+    arguments: { arm: "follower", opening },
+  }));
+  const pending = robot.execute(calls);
+  await Promise.resolve();
+  expect(started).toEqual([0.1, 0.2, 0.3]);
+  releaseFirst?.();
+  const results = await pending;
+  expect(started).toEqual([0.1, 0.2, 0.3]);
+  expect(results.map((item) => item.call.id)).toEqual(["0.1", "0.2", "0.3"]);
+  expect(results[1]?.interrupted).toBe(true);
+  expect(results[2]?.isError).toBe(true);
+  robot.close();
+});
+
+test("single-arm pose/gripper specialization hides and rejects joint targets and standalone actions", async () => {
+  const original = createRobotTools({
+    connection,
+    lease: fakeLease(),
+    arm: "follower",
+    descriptions: { preview_pose: "Preview poses before moving" },
+  });
+  const specialized = original
+    .mapTools((capabilities) => capabilities.toReversed())
+    .mapTools(filterSequenceActions((action) => action !== "joints"));
+  expect(specialized.tools.map((tool) => tool.name)).toEqual([
+    "observe",
+    "stop",
+    "preview_pose",
+    "action_sequence",
+  ]);
+  expect(
+    JSON.stringify(
+      original.tools.find((tool) => tool.name === "action_sequence")
+        ?.parameters,
+    ),
+  ).toContain("joints_degrees");
+  expect(
+    specialized.tools.find((tool) => tool.name === "preview_pose")?.description,
+  ).toBe("Preview poses before moving");
+  const schema = specialized.tools.find(
+    (tool) => tool.name === "action_sequence",
+  )?.parameters;
+  expect(JSON.stringify(schema)).toContain("position_mm");
+  expect(JSON.stringify(schema)).not.toContain("joints_degrees");
+  expect(JSON.stringify(schema)).not.toContain('"arms"');
+  const [hiddenJoint, standalone] = await specialized.execute([
+    {
+      id: "joint",
+      name: "action_sequence",
+      arguments: { steps: [{ movement: { joints_degrees: [0, 0, 0, 0, 0] } }] },
+    },
+    {
+      id: "standalone",
+      name: "set_arm_gripper",
+      arguments: { arm: "follower", opening: 0.5 },
+    },
+  ]);
+  expect(hiddenJoint?.isError).toBe(true);
+  expect(hiddenJoint?.text).toContain("not available");
+  expect(standalone?.isError).toBe(true);
+  expect(standalone?.text).toContain("not available");
+  specialized.close();
+});

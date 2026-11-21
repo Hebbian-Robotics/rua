@@ -1,0 +1,41 @@
+{
+  "name": "@hebbian/robot-use-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "test": "vitest run --root .. typescript-client/tests",
+    "typecheck": "tsrs --noEmit --fast -p tsconfig.json",
+    "build": "node ../scripts/build-client.ts",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "eventsource-parser": "^4.1.3",
+    "ts-pattern": "^5.9.2",
+    "zod": "4.6.7"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      }
+    }
+  }
+}

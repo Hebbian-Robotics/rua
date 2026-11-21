@@ -8,6 +8,7 @@ parts of our stack that make that loop easy to build.
 
 - Rust server
 - [Python SDK and agent examples](examples/python/README.md)
+- [TypeScript SDK](typescript-client/README.md)
 - [Rust SDK](sdk/README.md) and [command-line station client](cli/README.md)
 - [LiveKit camera preview](docs/cameras.md)
 
