@@ -2,7 +2,7 @@
 
 Build your own robot-use agents. Give an LLM a goal, camera views
 and robot tools, and let it observe, act and adjust. We're open sourcing the
-parts of our stack that make that loop easy to build. More coming soon.
+parts of our stack that make that loop easy to build.
 
 ## Included
 
@@ -11,7 +11,8 @@ parts of our stack that make that loop easy to build. More coming soon.
 - [LiveKit camera preview](docs/cameras.md)
 
 For a physical SO-101, follow the [source quickstart](docs/getting-started.md#set-up-a-physical-so-101)
-to calibrate the arm with `so101-calibrate` and start RUA with `--profile auto`.
+to calibrate the arm with `so101 setup`, start RUA with `--profile auto` and
+run your first Python agent.
 
 Start an agent project with [uv](https://docs.astral.sh/uv/):
 
@@ -23,7 +24,7 @@ uv add "hebbian-rua[openai,anthropic,gemini]"
 
 Already have a uv project? Start with `uv add`. Choose just the extras you need.
 With the published RUA 0.1.2 wheel, use an
-[explicit profile and LeRobot calibration](docs/hardware.md) to connect a physical arm.
+[explicit profile and LeRobot calibration](https://github.com/Hebbian-Robotics/rua/blob/v0.1.2/docs/hardware.md) to connect a physical arm.
 Prebuilt wheels support Linux x86-64 (glibc 2.39+) and macOS 14+ on Apple Silicon. On Windows, use [WSL2](docs/windows-wsl.md).
 
 See [getting started](docs/getting-started.md) and the [Python examples](examples/python/README.md) to try it,
@@ -45,7 +46,7 @@ from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
 robot_tools = OpenAIRobotTools(robot)
 messages = [{"role": "user", "content": "Wave hello"}]
-while True:
+for _ in range(20):
     messages.append(await robot_tools.observe())
     response = await client.responses.create(
         model=model,
@@ -77,16 +78,6 @@ Hardware setup, camera tools and recording utilities have their own guides:
 [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras) and
 [MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools). RUA handles their
 integration with your robot and agent.
-
-## Coming soon
-
-- TypeScript and Rust SDKs
-- CLIs
-- Browser viewer and manual controls
-- More agents
-- More examples and integrations
-- Recording playback and analysis
-- Policy and training tools
 
 ## Research and related projects
 

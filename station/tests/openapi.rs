@@ -13,9 +13,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use hebbian_robot_use_server::station_api::HttpServer;
-use hebbian_station::openapi::{Server, routes};
-use hebbian_station::web::{self, WebSettings};
+use hebbian_robot_use_core::station_api::HttpServer;
+use hebbian_robot_use_server::openapi::{Server, routes};
+use hebbian_robot_use_server::web::{self, WebSettings};
 
 fn probe(address: SocketAddr, path: &str) -> (u16, Option<String>) {
     let mut stream = TcpStream::connect(address).unwrap();
@@ -64,20 +64,21 @@ fn the_openapi_document_matches_the_routers() {
         room: None,
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
         manual_control: false,
-        media_status: hebbian_station::media_status::MediaStatus::default(),
+        media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
     };
-    let live_run = Arc::new(hebbian_station::run_telemetry::LiveRunStore::default());
+    let live_run = Arc::new(hebbian_robot_use_server::run_telemetry::LiveRunStore::default());
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
         Some(scratch.clone()),
         live_run.clone(),
+        Arc::default(),
         |runtime, bound| {
             let (routes, _manager) = web::mount(runtime, bound, settings);
             Ok(routes
-                .merge(hebbian_station::run_telemetry::routes(live_run))
-                .merge(hebbian_station::controller_supervisor::router(
-                    hebbian_station::controller_supervisor::ControllerSupervisor::unmanaged(),
+                .merge(hebbian_robot_use_server::run_telemetry::routes(live_run))
+                .merge(hebbian_robot_use_server::controller_supervisor::router(
+                    hebbian_robot_use_server::controller_supervisor::ControllerSupervisor::unmanaged(),
                 )))
         },
     )
@@ -116,7 +117,7 @@ fn the_openapi_document_matches_the_routers() {
     let read = |file: &str| std::fs::read_to_string(root.join(file)).unwrap();
     let mut registered = BTreeSet::new();
     registered.extend(registered_paths(
-        &read("executor/src/station_api/http.rs"),
+        &read("server-core/src/station_api/http.rs"),
         "",
     ));
     registered.extend(registered_paths(&read("station/src/web.rs"), ""));

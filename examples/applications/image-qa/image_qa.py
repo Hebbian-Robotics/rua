@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 
 from hebbian_rua import StationClient
 from hebbian_rua.client.environment import load_environment
-from hebbian_rua.client.station_client import Lease
+from hebbian_rua.client.station_client import LeasedArm
 from hebbian_rua.client.station_types import CommandResult
 
 CLI_HELP = """Image Q&A: yes/no questions about whatever is on a display in front of the arm.
@@ -21,11 +21,9 @@ searches the web when it needs facts, and the arm nods (yes) or shakes its head
 (no). Leaving the session rehomes the arm and turns torque off, so start it resting
 on the table.
 
-    uv run --project examples/python examples/applications/image-qa/image_qa.py
+    uv run --project examples/python examples/applications/image-qa/image_qa.py --camera wrist
 """
 
-ARM = "follower"
-CAMERA = "table"
 RISE_SPEED = 0.5  # rad/s from rest to the viewing pose
 GESTURE_SPEED = 0.8  # rad/s; the profile caps all motion anyway
 EXPOSURE_SETTLE_SECONDS = 2.0
@@ -77,9 +75,7 @@ async def decide(
     return (match.group(1).upper() if match else None), text
 
 
-async def gesture(lease: Lease, answer: str) -> None:
-
-    moving = lease.arm(ARM)
+async def gesture(moving: LeasedArm, answer: str) -> None:
     joint, swing = (3, NOD_RADIANS) if answer == "YES" else (0, SHAKE_RADIANS)
     for _ in range(3):
         for offset in (swing, -swing):
@@ -97,18 +93,25 @@ async def expect(command: Awaitable[CommandResult]) -> None:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=CLI_HELP)
+    parser.add_argument(
+        "--camera", required=True, help="Name of the station's wrist camera"
+    )
     parser.add_argument("--model", default="gpt-6.2-astra", help="OpenAI model ID")
     arguments = parser.parse_args()
     load_environment()
     async with (
         StationClient() as station,
         AsyncOpenAI() as client,
-        station.holding_lease("image q&a", required_cameras=[CAMERA]) as lease,
+        station.holding_lease(
+            "image q&a", required_cameras=[arguments.camera]
+        ) as lease,
     ):
-        arm = station.arm(ARM)
+        await station.camera_jpeg(arguments.camera)
+        arm_name = await station.resolve_arm_name()
+        arm = station.arm(arm_name)
+        moving = lease.arm(arm_name)
         await expect(arm.enable())  # the rest pose becomes the rehome target
         try:
-            moving = lease.arm(ARM)
             await expect(moving.move_to_joints(VIEW_JOINTS, max_joint_speed=RISE_SPEED))
             while True:
                 # A thread keeps the event loop free to renew the lease while we wait.
@@ -119,7 +122,7 @@ async def main() -> None:
                     break
                 # Auto-exposure lags after a move; the first frames come out washed out.
                 await asyncio.sleep(EXPOSURE_SETTLE_SECONDS)
-                jpeg = (await station.camera_jpeg(CAMERA)).jpeg
+                jpeg = (await station.camera_jpeg(arguments.camera)).jpeg
                 answer, text = await decide(client, arguments.model, jpeg, question)
                 run = RUNS / time.strftime("%Y%m%d-%H%M%S")
                 run.mkdir(parents=True)
@@ -127,9 +130,9 @@ async def main() -> None:
                 (run / "log.txt").write_text(f"Q: {question}\n\n{text}\n")
                 print(f"\n{text.strip()}\n")
                 if answer:
-                    await gesture(lease, answer)
+                    await gesture(moving, answer)
         finally:
-            await expect(lease.arm(ARM).rehome())
+            await expect(moving.rehome())
             await expect(arm.disable())  # the rest pose is supported by the table
 
 

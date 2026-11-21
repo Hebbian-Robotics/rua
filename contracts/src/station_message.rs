@@ -135,7 +135,7 @@ pub enum ClientMessage {
 }
 
 /// Station event and result models shared with SDKs.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ServerMessage {
     #[schemars(title = "ActionSequenceAccepted")]

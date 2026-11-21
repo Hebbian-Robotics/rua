@@ -44,6 +44,20 @@ fn lists_each_recording_with_its_data_file() {
     assert_eq!(recording.mcap_path.as_deref(), Some(FILE));
     assert_eq!(recording.size_bytes, DATA.len() as u64);
 }
+#[cfg(target_os = "linux")]
+#[test]
+fn skips_recording_directories_with_non_utf8_names() {
+    use std::os::unix::ffi::OsStrExt as _;
+
+    let (root, library) = fixture();
+    let invalid_name = std::ffi::OsStr::from_bytes(b"bad-\xff");
+    fs::create_dir(root.path().join(invalid_name)).unwrap();
+
+    let listed = library.recordings().unwrap();
+    assert_eq!(listed.recordings.len(), 1);
+    assert_eq!(listed.recordings[0].name, "take");
+}
+
 #[tokio::test]
 async fn serves_ranges_and_refuses_traversal_before_deleting_a_listed_recording() {
     let (root, library) = fixture();

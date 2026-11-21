@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -340,12 +341,21 @@ class StationClient:
 
     def __init__(
         self,
-        server: str = DEFAULT_SERVER,
+        server: str | None = None,
         *,
-        media_server: str = DEFAULT_MEDIA_SERVER,
+        media_server: str | None = None,
         run_after: int | None = None,
     ) -> None:
-        """`run_after` resumes `run_telemetry` after that sequence number."""
+        """Omitted URLs use HEBBIAN_STATION_URL and HEBBIAN_MEDIA_SERVER.
+
+        `run_after` resumes `run_telemetry` after that sequence number.
+        """
+        if server is None:
+            server = os.environ.get("HEBBIAN_STATION_URL") or DEFAULT_SERVER
+        if media_server is None:
+            media_server = (
+                os.environ.get("HEBBIAN_MEDIA_SERVER") or DEFAULT_MEDIA_SERVER
+            )
         self._connection = StationConnection(server, run_after=run_after)
         self._lease_state: _LeasePhase | LeaseGranted = _LeasePhase.IDLE
         self._lease_renewal: asyncio.Task[None] | None = None
@@ -427,6 +437,20 @@ class StationClient:
 
     def arm(self, name: str) -> Arm:
         return Arm(self, name)
+
+    async def resolve_arm_name(self, name: str | None = None) -> str:
+        """Select a named arm, or the station's sole arm when no name is given."""
+        arm_names = [arm.arm for arm in (await self.state()).arms]
+        if name is not None and name in arm_names:
+            return name
+        if name is None and len(arm_names) == 1:
+            return arm_names[0]
+        if not arm_names:
+            raise ValueError("The station reports no arms")
+        available = ", ".join(arm_names)
+        if name is None:
+            raise ValueError(f"Select an arm from: {available}")
+        raise ValueError(f"Unknown arm {name!r}. Available arms: {available}")
 
     async def camera_names(self) -> list[str]:
         return [
@@ -762,23 +786,18 @@ class StationClient:
         expected_revision: int | None = None,
         expected_lease: str | None = None,
     ) -> CommandResult:
-        captured_lease = expected_lease or self._lease_token
-        try:
-            answer = await self._send(
+        [result] = await self._run_for_arms(
+            [arm],
+            lambda: self._send(
                 arm,
                 command,
                 expected_revision=expected_revision,
                 expected_lease=expected_lease,
-            )
-            if isinstance(answer, CommandRefused):
-                return CommandResult.of(answer)
-            [record] = answer.records
-            return CommandResult.of(
-                await self._connection.wait_for_outcome(record.record.command_id)
-            )
-        except asyncio.CancelledError:
-            await self._stop_after_cancellation(arm, captured_lease)
-            raise
+            ),
+            expected_lease=expected_lease,
+            expected_record_count=1,
+        )
+        return result
 
     async def _stop_after_cancellation(self, arm: str, lease_token: str | None) -> None:
         if lease_token is None:
@@ -830,15 +849,36 @@ class StationClient:
         expected_revisions: dict[str, int] | None = None,
         expected_lease: str | None = None,
     ) -> list[CommandResult]:
-        captured_lease = expected_lease or self._lease_token
-        try:
-            answer = await self._send_group(
+        return await self._run_for_arms(
+            list(command.targets),
+            lambda: self._send_group(
                 command,
                 expected_revisions=expected_revisions,
                 expected_lease=expected_lease,
-            )
+            ),
+            expected_lease=expected_lease,
+        )
+
+    async def _run_for_arms(
+        self,
+        arms: list[str],
+        submit: Callable[[], Awaitable[CommandAccepted | CommandRefused]],
+        *,
+        expected_lease: str | None,
+        expected_record_count: int | None = None,
+    ) -> list[CommandResult]:
+        captured_lease = expected_lease or self._lease_token
+        try:
+            answer = await submit()
             if isinstance(answer, CommandRefused):
                 return [CommandResult.of(answer)]
+            if (
+                expected_record_count is not None
+                and len(answer.records) != expected_record_count
+            ):
+                raise ValueError(
+                    f"Expected {expected_record_count} command records, got {len(answer.records)}"
+                )
             return [
                 CommandResult.of(
                     await self._connection.wait_for_outcome(record.record.command_id)
@@ -847,10 +887,7 @@ class StationClient:
             ]
         except asyncio.CancelledError:
             await asyncio.gather(
-                *(
-                    self._stop_after_cancellation(arm, captured_lease)
-                    for arm in command.targets
-                )
+                *(self._stop_after_cancellation(arm, captured_lease) for arm in arms)
             )
             raise
 

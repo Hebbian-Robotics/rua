@@ -96,9 +96,10 @@ pub struct CompilationArtifact {
 /// Compilation does not acquire a lease or command hardware.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CompilationOutcome {
+#[schemars(rename = "CompilationOutcome")]
+pub enum CompilationOutcome<Artifact = Box<CompilationArtifact>> {
     #[schemars(title = "ProgramCompiled")]
-    Compiled { artifact: Box<CompilationArtifact> },
+    Compiled { artifact: Artifact },
     #[schemars(title = "ProgramRejected")]
     Rejected {
         diagnostics: Vec<CompilationDiagnostic>,

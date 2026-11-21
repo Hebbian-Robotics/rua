@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Envelope, Frame, JawClosingAxis, SurfaceGuardConfig};
+use crate::{JawClosingAxis, SurfaceGuardConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -99,7 +99,6 @@ pub struct PolicyConfig {
     pub settled_velocity_radians_per_second: f64,
     pub preview_lag_seconds: f64,
     pub onnx: String,
-    pub tool_frame_fixture: String,
     /// The checkpoint the model must have been exported from.
     pub checkpoint_sha256: String,
     /// The furthest ahead of a measured joint the model may set its target each cycle.
@@ -138,7 +137,25 @@ fn default_real_time() -> bool {
 #[serde(deny_unknown_fields)]
 pub struct BasePose {
     pub position_meters: [f64; 3],
+    #[serde(default)]
     pub yaw_radians: f64,
+}
+
+/// The units used for the profile's effort feedback and limits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EffortUnit {
+    NewtonMetres,
+    PercentOfRatedLoad,
+}
+
+/// Profile settings an external physics fixture needs to initialize its model.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SimulationModelConfig {
+    pub effort_unit: EffortUnit,
+    pub initial_joint_positions_radians: Option<Vec<f64>>,
+    pub gripper_force_fraction: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -159,6 +176,9 @@ pub struct ExecutorConfigInput<DriverConfig> {
     /// simulator or the servos.
     #[serde(default)]
     pub sim_plant: Option<SimPlantConfig>,
+    /// Physical settings for the profile's simulator model, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simulation_model: Option<SimulationModelConfig>,
     /// Required with a Feetech bus; `None` skips the drift checks, as for the simulator.
     #[serde(default)]
     pub enable_checks: Option<EnableChecks>,
@@ -224,24 +244,4 @@ pub struct StationDescription {
 #[must_use]
 pub fn default_trace_directory() -> String {
     "traces/executor".to_owned()
-}
-
-/// An executor configuration that has passed its consistency checks.
-#[derive(JsonSchema)]
-#[schemars(rename = "ExecutorConfig")]
-#[serde(transparent)]
-pub struct ExecutorConfigurationSchema<Config> {
-    pub input: Config,
-}
-
-/// The root of the generated schema; it exists only to carry the three types.
-#[derive(JsonSchema)]
-#[schemars(rename = "Contract")]
-pub struct ExecutorContract<Config> {
-    /// What a client sends.
-    pub request: Envelope,
-    /// What the executor sends back, one per line.
-    pub frame: Frame,
-    /// What the executor is started with.
-    pub config: ExecutorConfigurationSchema<Config>,
 }

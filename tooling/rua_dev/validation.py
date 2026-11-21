@@ -1,13 +1,12 @@
 import os
 import subprocess
-import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from rua_dev.models import ValidationLane
-from rua_dev.native_build import build_executor
+from rua_dev.native_build import build_server
 from rua_dev.robot_assets import prepare_robot_assets
 
 
@@ -29,13 +28,13 @@ def check_python_static() -> None:
         subprocess.run(["lint-imports"], check=True)
 
 
-def prepare_executor() -> None:
-    os.environ["HEBBIAN_ROBOT_USE_SERVER"] = str(build_executor())
+def prepare_server() -> None:
+    os.environ["HEBBIAN_ROBOT_USE_SERVER"] = str(build_server())
 
 
 def check_rust_architecture() -> None:
     manifests = [
-        ("executor/Cargo.toml", "server"),
+        ("server-core/Cargo.toml", "server"),
         ("station/Cargo.toml", "server"),
         *(
             (manifest, "client")
@@ -82,24 +81,24 @@ def check_rust() -> None:
         subprocess.run(arguments, check=True)
 
 
-def check_python_tests(lane: ValidationLane, *, executor: bool) -> None:
+def check_python_tests(lane: ValidationLane, *, server: bool) -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text())
     configuration = project.get("tool", {}).get("pytest", {}).get("ini_options", {})
     markers = {
         marker.split(":", 1)[0].strip() for marker in configuration.get("markers", [])
     }
-    if executor and "executor" not in markers:
+    if server and "server" not in markers:
         return
     selection = []
-    if "executor" in markers:
-        selection.append("executor" if executor else "not executor")
+    if "server" in markers:
+        selection.append("server" if server else "not server")
     if lane != ValidationLane.FULL and "typescript" in markers:
         selection.append("not typescript")
     if "contracts" in markers:
         selection.append("not contracts")
     report_directory = Path(".cache/validation")
     report_directory.mkdir(parents=True, exist_ok=True)
-    test_lane = "executor" if executor else "fast"
+    test_lane = "server" if server else "fast"
     subprocess.run(
         [
             "pytest",
@@ -120,7 +119,7 @@ def validate(
     if lane == ValidationLane.VIEWER and viewer is None:
         raise ValueError("This checkout does not include viewer validation")
     subprocess.run(
-        [sys.executable, "tooling/comment-policy/check.py"],
+        ["source-doc-lint", "--config", "source-doc-lint.toml"],
         check=True,
     )
     prepare_robot_assets(Path.cwd())
@@ -132,9 +131,9 @@ def validate(
         ValidationLane.FULL,
     }:
         viewer.check()
-    if lane in {ValidationLane.EXECUTOR, ValidationLane.CONTRACTS, ValidationLane.FULL}:
-        prepare_executor()
-    if lane in {ValidationLane.EXECUTOR, ValidationLane.FULL}:
+    if lane in {ValidationLane.SERVER, ValidationLane.CONTRACTS, ValidationLane.FULL}:
+        prepare_server()
+    if lane in {ValidationLane.SERVER, ValidationLane.FULL}:
         check_rust()
     if lane in {ValidationLane.CONTRACTS, ValidationLane.FULL}:
         from rua_dev.contracts import available_sdk_targets, generate_contracts
@@ -143,6 +142,6 @@ def validate(
         if viewer is not None:
             viewer.check_contracts()
     if lane in {ValidationLane.PYTHON, ValidationLane.FAST, ValidationLane.FULL}:
-        check_python_tests(lane, executor=False)
-    if lane in {ValidationLane.EXECUTOR, ValidationLane.FULL}:
-        check_python_tests(lane, executor=True)
+        check_python_tests(lane, server=False)
+    if lane in {ValidationLane.SERVER, ValidationLane.FULL}:
+        check_python_tests(lane, server=True)

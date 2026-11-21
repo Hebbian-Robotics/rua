@@ -1,6 +1,0 @@
-# A user-owned SO-101 simulator driven by the learned policy instead of IK + Ruckig.
-# Needs the policy assets of so101-policy-settings.toml.
-extends = ["so101-sim", "so101-policy-settings"]
-name = "so101-sim-policy"
-# The released policy is for the arm with the TPU gripper and wrist camera.
-urdf = "robots/so101/robot-soft-gripper-camera.urdf"

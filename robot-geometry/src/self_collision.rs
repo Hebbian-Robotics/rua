@@ -167,50 +167,162 @@ impl SelfCollisionModel {
     }
 
     pub fn collision(&self, joints: &[f64]) -> anyhow::Result<Option<String>> {
+        self.collision_with_workspace(joints, &mut CollisionWorkspace::default())
+    }
+
+    pub fn collision_with_workspace(
+        &self,
+        joints: &[f64],
+        workspace: &mut CollisionWorkspace,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(workspace
+            .scene_collision(
+                &[CollisionBody {
+                    model: self,
+                    joints,
+                    base: Isometry3::identity(),
+                }],
+                0.0,
+            )?
+            .map(|hit| {
+                format!(
+                    "Self-collision between {} and {}",
+                    hit.links[0], hit.links[1]
+                )
+            }))
+    }
+}
+
+pub struct CollisionBody<'a> {
+    pub model: &'a SelfCollisionModel,
+    pub joints: &'a [f64],
+    pub base: Isometry3<f64>,
+}
+
+pub struct CollisionHit<'a> {
+    pub bodies: [usize; 2],
+    pub links: [&'a str; 2],
+}
+
+struct HullPlacement {
+    pose: Pose,
+    bounds: Aabb,
+    centre: Point3<f64>,
+}
+
+impl CollisionBody<'_> {
+    fn place_hulls(&self, placements: &mut Vec<HullPlacement>) -> anyhow::Result<()> {
         ensure!(
-            self.robot.accepts(joints),
+            self.model.robot.accepts(self.joints),
             "Expected finite values for every driven joint"
         );
-        let link_poses = self.robot.link_poses(joints);
-        let hull_poses: Vec<_> = self
-            .hulls
-            .iter()
-            .map(|hull| parry_pose(&link_poses[hull.link]))
-            .collect();
-        let hull_bounds: Vec<_> = self
-            .hulls
-            .iter()
-            .zip(&hull_poses)
-            .map(|(hull, pose)| hull.bounds.transform_by(pose))
-            .collect();
-        for &(first, second) in &self.pairs {
-            let (a, b) = (&self.hulls[first], &self.hulls[second]);
-            let apart = (link_poses[a.link] * a.centre - link_poses[b.link] * b.centre).norm();
-            if apart > a.radius + b.radius {
-                continue;
+        let links = self.model.robot.link_poses(self.joints);
+        placements.clear();
+        placements.extend(self.model.hulls.iter().map(|hull| {
+            let transform = self.base * links[hull.link];
+            let pose = parry_pose(&transform);
+            HullPlacement {
+                bounds: hull.bounds.transform_by(&pose),
+                pose,
+                centre: transform * hull.centre,
             }
-            // WHY: Spheres overlap readily around thin brackets and fingers. These
-            // boxes enclose the full hulls, so disjoint boxes safely avoid the
-            // signed-depth query without changing the penetration allowance.
-            if !hull_bounds[first].intersects(&hull_bounds[second]) {
-                continue;
+        }));
+        Ok(())
+    }
+}
+
+fn penetrates(
+    (first, first_placement): (&Hull, &HullPlacement),
+    (second, second_placement): (&Hull, &HullPlacement),
+    tolerance: f64,
+) -> anyhow::Result<bool> {
+    if (first_placement.centre - second_placement.centre).norm_squared()
+        > (first.radius + second.radius).powi(2)
+        || !first_placement.bounds.intersects(&second_placement.bounds)
+    {
+        return Ok(false);
+    }
+    let contact = DefaultQueryDispatcher
+        .contact(
+            &first_placement.pose.inv_mul(&second_placement.pose),
+            &first.shape,
+            &second.shape,
+            0.0,
+        )
+        .context("The convex hull query is unsupported")?;
+    Ok(contact.is_some_and(|found| found.dist < -tolerance))
+}
+
+#[derive(Default)]
+pub struct CollisionWorkspace {
+    placements: Vec<Vec<HullPlacement>>,
+}
+
+impl CollisionWorkspace {
+    pub fn scene_collision<'a>(
+        &mut self,
+        bodies: &[CollisionBody<'a>],
+        inter_body_penetration_meters: f64,
+    ) -> anyhow::Result<Option<CollisionHit<'a>>> {
+        ensure!(
+            inter_body_penetration_meters.is_finite() && inter_body_penetration_meters >= 0.0,
+            "The inter-body penetration tolerance must be finite and nonnegative"
+        );
+        if self.placements.len() < bodies.len() {
+            self.placements.resize_with(bodies.len(), Vec::new);
+        }
+        let placements = &mut self.placements[..bodies.len()];
+        for (body, hull_placements) in bodies.iter().zip(&mut *placements) {
+            body.place_hulls(hull_placements)?;
+        }
+        let hit =
+            |first_body: usize, first: &Hull, second_body: usize, second: &Hull| CollisionHit {
+                bodies: [first_body, second_body],
+                links: [
+                    bodies[first_body].model.robot.link_name(first.link),
+                    bodies[second_body].model.robot.link_name(second.link),
+                ],
+            };
+        for (body_index, (body, hull_placements)) in bodies.iter().zip(&*placements).enumerate() {
+            let hulls = &body.model.hulls;
+            for &(first, second) in &body.model.pairs {
+                if penetrates(
+                    (&hulls[first], &hull_placements[first]),
+                    (&hulls[second], &hull_placements[second]),
+                    body.model.penetration_tolerance_meters,
+                )? {
+                    return Ok(Some(hit(
+                        body_index,
+                        &hulls[first],
+                        body_index,
+                        &hulls[second],
+                    )));
+                }
             }
-            let first_pose = &hull_poses[first];
-            let second_pose = &hull_poses[second];
-            // WHY: Only signed depth is used; leave contact points in the local frames.
-            let touching = DefaultQueryDispatcher
-                .contact(&first_pose.inv_mul(second_pose), &a.shape, &b.shape, 0.0)
-                .context("The convex hull query is unsupported")?;
-            if touching.is_some_and(|found| found.dist < -self.penetration_tolerance_meters) {
-                return Ok(Some(format!(
-                    "Self-collision between {} and {}",
-                    self.robot.link_name(a.link),
-                    self.robot.link_name(b.link)
-                )));
+            for (other_index, (other, other_placements)) in bodies
+                .iter()
+                .zip(&*placements)
+                .enumerate()
+                .skip(body_index + 1)
+            {
+                for first in hulls.iter().zip(hull_placements) {
+                    for second in other.model.hulls.iter().zip(other_placements) {
+                        if penetrates(first, second, inter_body_penetration_meters)? {
+                            return Ok(Some(hit(body_index, first.0, other_index, second.0)));
+                        }
+                    }
+                }
             }
         }
         Ok(None)
     }
+}
+
+pub fn scene_collision<'a>(
+    bodies: &[CollisionBody<'a>],
+    inter_body_penetration_meters: f64,
+) -> anyhow::Result<Option<CollisionHit<'a>>> {
+    CollisionWorkspace::default().scene_collision(bodies, inter_body_penetration_meters)
 }
 
 fn parry_pose(pose: &Isometry3<f64>) -> Pose {

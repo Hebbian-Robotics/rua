@@ -81,15 +81,13 @@ def stage_server_assets(
         shutil.copy2(repository_directory / filename, asset_directory / filename)
     collect_rust_licenses(
         repository_directory,
-        "hebbian-station",
+        "hebbian-robot-use-server",
         asset_directory / "licenses/rust",
         host_target(),
     )
     if include_viewer:
         viewer_directory = asset_directory / "dist/viewer"
         shutil.copytree(repository_directory / "dist/viewer", viewer_directory)
-        shutil.rmtree(viewer_directory / "robot", ignore_errors=True)
-        shutil.copytree(asset_directory / "robots", viewer_directory / "robot")
         collect_viewer_licenses(
             repository_directory, asset_directory / "licenses/viewer"
         )

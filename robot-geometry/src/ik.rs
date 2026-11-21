@@ -23,8 +23,6 @@ const TRIALS_PER_ITERATION: usize = 12;
 const LIMIT_EPSILON: f64 = 1e-9;
 const AT_LIMIT_RADIANS: f64 = 1e-6;
 const PROGRESS_FLOOR: f64 = 1e-16;
-const CONVERGED_STARTS: usize = 3;
-const SAME_ERROR: f64 = 1e-5;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum IkRefusal {
@@ -79,6 +77,8 @@ struct Goal {
     rotation: UnitQuaternion<f64>,
     orientation_weight: f64,
     orientation_required: bool,
+    position_tolerance: f64,
+    orientation_tolerance: f64,
 }
 
 struct Visit {
@@ -141,6 +141,8 @@ impl IkSolver {
                 rotation: required_rotation(quaternion)?,
                 orientation_weight: 1.0,
                 orientation_required: true,
+                position_tolerance: POSITION_TOLERANCE_METERS,
+                orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
             }],
             OrientationGoal::Free => [FREE_ORIENTATION_WEIGHT, 0.0]
                 .into_iter()
@@ -149,6 +151,8 @@ impl IkSolver {
                     rotation: held,
                     orientation_weight,
                     orientation_required: false,
+                    position_tolerance: POSITION_TOLERANCE_METERS,
+                    orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
                 })
                 .collect(),
         };
@@ -160,21 +164,16 @@ impl IkSolver {
         let start_count = if out_of_reach { 2 } else { usize::MAX };
         let mut best: Option<(IkFailure, Visit)> = None;
         for goal in &goals {
-            let mut converged = ConvergedStarts::default();
             for start in self.starts(&seed).take(start_count) {
                 let (reason, visit) = match self.attempt(goal, start, &seed) {
                     Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
                     Attempt::Fell { reason, best } => (reason, best),
                 };
-                let settled = converged.settled(task_error(goal, &visit));
                 if best
                     .as_ref()
                     .is_none_or(|(_, held)| closer(&goals[0], &visit, held))
                 {
                     best = Some((reason, visit));
-                }
-                if settled {
-                    break;
                 }
             }
         }
@@ -186,6 +185,30 @@ impl IkSolver {
                 reason
             },
             best: Self::pose(&visit),
+        })
+    }
+
+    pub fn refine_pose(
+        &self,
+        position: [f64; 3],
+        quaternion: [f64; 4],
+        seed: &[f64],
+    ) -> Result<Option<IkPose>, IkRefusal> {
+        let seed = self.checked_seed(seed)?;
+        if !position.iter().all(|value| value.is_finite()) {
+            return Err(IkRefusal::NotFinite);
+        }
+        let goal = Goal {
+            position: Vector3::from(position),
+            rotation: required_rotation(quaternion)?,
+            orientation_weight: 1.0,
+            orientation_required: true,
+            position_tolerance: POSITION_TOLERANCE_METERS / 1000.0,
+            orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS / 1000.0,
+        };
+        Ok(match self.attempt(&goal, seed.clone(), &seed) {
+            Attempt::Reached(visit) => Some(Self::pose(&visit)),
+            Attempt::Fell { .. } => None,
         })
     }
 
@@ -260,9 +283,8 @@ impl IkSolver {
     }
 
     fn reached(goal: &Goal, visit: &Visit) -> bool {
-        visit.position_error < POSITION_TOLERANCE_METERS
-            && (!goal.orientation_required
-                || visit.orientation_error < ORIENTATION_TOLERANCE_RADIANS)
+        visit.position_error < goal.position_tolerance
+            && (!goal.orientation_required || visit.orientation_error < goal.orientation_tolerance)
     }
 
     fn attempt(&self, goal: &Goal, start: DVector<f64>, seed: &DVector<f64>) -> Attempt {
@@ -424,26 +446,6 @@ fn task_error(goal: &Goal, visit: &Visit) -> f64 {
 // make a less accurate pose look like the best achievable target.
 fn closer(goal: &Goal, visit: &Visit, held: &Visit) -> bool {
     task_error(goal, visit) < task_error(goal, held)
-}
-
-#[derive(Default)]
-struct ConvergedStarts {
-    best_error: Option<f64>,
-    agreeing: usize,
-}
-
-impl ConvergedStarts {
-    fn settled(&mut self, error: f64) -> bool {
-        match self.best_error {
-            Some(best) if (error - best).abs() < SAME_ERROR => self.agreeing += 1,
-            Some(best) if error > best => {}
-            _ => {
-                self.best_error = Some(error);
-                self.agreeing = 1;
-            }
-        }
-        self.agreeing >= CONVERGED_STARTS
-    }
 }
 
 fn residual(goal: &Goal, tool: &Isometry3<f64>) -> (Vector3<f64>, Vector3<f64>) {

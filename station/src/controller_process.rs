@@ -7,18 +7,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, ensure};
-use hebbian_robot_use_server::controller_transport::ControllerInstanceId;
+use hebbian_robot_use_core::controller_transport::ControllerInstanceId;
 use uuid::Uuid;
 
 const REMEMBERED_REPORTS: usize = 128;
+
+pub enum PlantSelection {
+    Servos,
+    Simulator { socket_directory: PathBuf },
+    NoPhysicsStandIn { lag_seconds: f64 },
+}
 
 pub struct ControllerLaunch {
     pub executable: PathBuf,
     pub arms: Vec<(String, PathBuf)>,
     pub work_directory: PathBuf,
-    pub simulator_socket_directory: Option<PathBuf>,
-    pub plant_lag_seconds: f64,
-    pub hardware: bool,
+    pub plant: PlantSelection,
 }
 
 pub struct ControllerProcess {
@@ -26,8 +30,14 @@ pub struct ControllerProcess {
     listener: UnixListener,
     socket_path: PathBuf,
     instance: Uuid,
-    reports: Arc<Mutex<VecDeque<String>>>,
+    reports: Arc<Mutex<ControllerReports>>,
     report_pipe_closed: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+struct ControllerReports {
+    lines: VecDeque<String>,
+    changed: bool,
 }
 
 impl ControllerProcess {
@@ -47,8 +57,6 @@ impl ControllerProcess {
             .arg(&socket_path)
             .arg("--instance")
             .arg(instance.to_string())
-            .arg("--plant-lag-seconds")
-            .arg(configuration.plant_lag_seconds.to_string())
             .stdin(Stdio::null())
             .stderr(Stdio::piped());
         for (arm, config) in &configuration.arms {
@@ -56,12 +64,15 @@ impl ControllerProcess {
                 .arg("--arm")
                 .arg(format!("{arm}={}", config.display()));
         }
-        if configuration.hardware {
-            command.arg("--hardware");
-        }
-        if let Some(directory) = &configuration.simulator_socket_directory {
-            command.arg("--socket-directory").arg(directory);
-        }
+        match &configuration.plant {
+            PlantSelection::Servos => command.arg("--hardware"),
+            PlantSelection::Simulator { socket_directory } => {
+                command.arg("--socket-directory").arg(socket_directory)
+            }
+            PlantSelection::NoPhysicsStandIn { lag_seconds } => command
+                .arg("--plant-lag-seconds")
+                .arg(lag_seconds.to_string()),
+        };
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
@@ -73,7 +84,7 @@ impl ControllerProcess {
             .stderr
             .take()
             .context("The controller has no report pipe")?;
-        let reports = Arc::new(Mutex::new(VecDeque::new()));
+        let reports = Arc::new(Mutex::new(ControllerReports::default()));
         let report_pipe_closed = Arc::new(AtomicBool::new(false));
         let received_reports = Arc::clone(&reports);
         let pipe_closed = Arc::clone(&report_pipe_closed);
@@ -91,10 +102,12 @@ impl ControllerProcess {
                         let mut reports = received_reports
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        if reports.len() == REMEMBERED_REPORTS {
-                            reports.pop_front();
+                        if reports.lines.len() == REMEMBERED_REPORTS {
+                            reports.lines.pop_front();
                         }
-                        reports.push_back(line.trim_end().to_owned());
+                        line.truncate(line.trim_end().len());
+                        reports.lines.push_back(line);
+                        reports.changed = true;
                     }
                     Err(error) => {
                         eprintln!("Controller report pipe failed: {error}");
@@ -145,7 +158,7 @@ impl ControllerProcess {
     // SAFETY: Stopping the controller does not stop its independent guard; the guard remains
     // responsible for the arm until release is verified.
     pub fn stop_controller(&mut self) -> anyhow::Result<()> {
-        if self.try_wait()?.is_none() {
+        if !matches!(self.child.try_wait(), Ok(Some(_))) {
             self.child
                 .kill()
                 .context("Cannot stop the motor controller")?;
@@ -160,13 +173,12 @@ impl ControllerProcess {
     }
 
     #[must_use]
-    pub fn reports(&self) -> Vec<String> {
-        self.reports
+    pub(crate) fn take_updated_reports(&self) -> Option<Vec<String>> {
+        let mut reports = self
+            .reports
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .cloned()
-            .collect()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::mem::take(&mut reports.changed).then(|| reports.lines.iter().cloned().collect())
     }
 
     #[must_use]

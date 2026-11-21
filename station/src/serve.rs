@@ -1,54 +1,72 @@
+use std::fs::{DirBuilder, File, OpenOptions, Permissions};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
-use hebbian_robot_use_server::config::{ExecutorConfig, SimPlantConfig};
-use hebbian_robot_use_server::profile::{self, Driver, JointLimitSource};
-use hebbian_station::web::WebSettings;
+use anyhow::{Context, ensure};
+use hebbian_robot_use_core::config::{ExecutorConfig, SimPlantConfig};
+use hebbian_robot_use_core::profile::{self, Driver, JointLimitSource};
+use hebbian_robot_use_server::controller_process::PlantSelection;
+use hebbian_robot_use_server::web::WebSettings;
 use station_access::new_room_name;
 
 use crate::media::{MediaPlan, MediaSupervisor, SIMULATOR_CAMERA_SOCKET};
-use crate::run::{ConfiguredArm, run_supervised};
-
-const LAG_PLANT_SECONDS: f64 = 0.05;
+use crate::run::{ConfiguredArm, DEFAULT_STAND_IN_LAG_SECONDS, run_supervised};
 
 use crate::commands::ServeArguments;
 
-enum PlantKind {
-    Servos,
-    Simulator,
-    Lag,
+const SIMULATOR_ARMS_FILE: &str = ".simulator-arms.json";
+
+enum WorkDirectory {
+    Temporary(tempfile::TempDir),
+    Requested { path: PathBuf, lock: File },
 }
 
-fn plant_kind(driver: &Driver, simulate: bool) -> PlantKind {
-    match (simulate, driver) {
-        (true, _) => PlantKind::Lag,
-        (false, Driver::Feetech(_)) => PlantKind::Servos,
-        (false, Driver::Simulator) => PlantKind::Simulator,
+impl WorkDirectory {
+    fn open(requested: Option<PathBuf>) -> anyhow::Result<Self> {
+        let Some(path) = requested else {
+            // CONSTRAINT: A platform's temporary directory can use most of the Unix socket path limit.
+            let directory = tempfile::Builder::new()
+                .prefix("hebbian-")
+                .permissions(Permissions::from_mode(0o700))
+                .tempdir_in("/tmp")
+                .context("Cannot create a station work directory in /tmp")?;
+            return Ok(Self::Temporary(directory));
+        };
+        DirBuilder::new()
+            .mode(0o700)
+            .recursive(true)
+            .create(&path)
+            .with_context(|| format!("Cannot create work directory {}", path.display()))?;
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(nix::libc::O_NOFOLLOW)
+            .open(path.join(".station-lock"))
+            .with_context(|| format!("Cannot open the station lock in {}", path.display()))?;
+        lock.try_lock()
+            .with_context(|| format!("Cannot lock work directory {}", path.display()))?;
+        Ok(Self::Requested { path, lock })
+    }
+
+    fn path(&self) -> &Path {
+        match self {
+            Self::Temporary(directory) => directory.path(),
+            Self::Requested { path, .. } => path,
+        }
     }
 }
 
-struct TemporaryDirectory(PathBuf);
-
-impl Drop for TemporaryDirectory {
+impl Drop for WorkDirectory {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        if let Self::Requested { path, lock } = self {
+            let _ = std::fs::remove_file(path.join(SIMULATOR_ARMS_FILE));
+            // INVARIANT: Release immediately even if a child has forked and has yet to exec.
+            let _ = lock.unlock();
+        }
     }
-}
-
-fn work_directory(
-    requested: Option<PathBuf>,
-) -> anyhow::Result<(PathBuf, Option<TemporaryDirectory>)> {
-    if let Some(directory) = requested {
-        std::fs::create_dir_all(&directory)
-            .with_context(|| format!("Cannot create {}", directory.display()))?;
-        return Ok((directory, None));
-    }
-    // CONSTRAINT: Unix socket paths are limited to about 100 bytes, and a platform's temporary
-    // directory (macOS's `$TMPDIR`) can use most of that; `/tmp` is short everywhere.
-    let directory = PathBuf::from("/tmp").join(format!("hebbian-{}", std::process::id()));
-    std::fs::create_dir_all(&directory)
-        .with_context(|| format!("Cannot create {}", directory.display()))?;
-    Ok((directory.clone(), Some(TemporaryDirectory(directory))))
 }
 
 fn write_config(path: &Path, config: &ExecutorConfig) -> anyhow::Result<()> {
@@ -56,25 +74,79 @@ fn write_config(path: &Path, config: &ExecutorConfig) -> anyhow::Result<()> {
         .with_context(|| format!("Cannot write {}", path.display()))
 }
 
+fn clear_simulator_arms(directory: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(directory.join(SIMULATOR_ARMS_FILE)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("Cannot clear the previous simulator arm list"),
+    }
+}
+
+fn publish_simulator_arms(directory: &Path, arms: &[ConfiguredArm]) -> anyhow::Result<()> {
+    let names: Vec<&str> = arms.iter().map(|arm| arm.name.as_str()).collect();
+    let mut manifest = tempfile::NamedTempFile::new_in(directory)?;
+    serde_json::to_writer(&mut manifest, &names)?;
+    manifest.persist(directory.join(SIMULATOR_ARMS_FILE))?;
+    eprintln!(
+        "Plant sockets: {}/<arm>.plant.sock for {}",
+        directory.display(),
+        names.join(", ")
+    );
+    Ok(())
+}
+
+fn select_arms(profile_arms: &[String], requested: Vec<String>) -> anyhow::Result<Vec<String>> {
+    if requested.is_empty() {
+        return Ok(profile_arms.to_vec());
+    }
+    profile::validate_arm_names(requested.iter().map(String::as_str))?;
+    for arm in &requested {
+        ensure!(
+            profile_arms.contains(arm),
+            "Unknown arm {arm:?} in this profile"
+        );
+    }
+    Ok(requested)
+}
+
 pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::Result<()> {
     web.media_address = Some(arguments.media_address);
-    let profile_directory = match &arguments.profile_directory {
-        Some(directory) => directory.clone(),
-        None => profile::default_profile_directory()?,
+    let profile_directory = arguments
+        .profile_directory
+        .map_or_else(profile::default_profile_directory, Ok)?;
+    let robot_profile = arguments.selection.load_profile(
+        &arguments.profile,
+        &profile_directory,
+        arguments.no_physics_stand_in,
+    )?;
+    let arm_names = select_arms(&robot_profile.arms, arguments.arms)?;
+    let work_directory = WorkDirectory::open(arguments.work_directory)?;
+    let directory = work_directory.path();
+    clear_simulator_arms(directory)?;
+    let plant = match (arguments.no_physics_stand_in, &robot_profile.driver) {
+        (false, Driver::Feetech(_)) => PlantSelection::Servos,
+        (false, Driver::Simulator) => PlantSelection::Simulator {
+            socket_directory: directory.to_path_buf(),
+        },
+        (true, _) => PlantSelection::NoPhysicsStandIn {
+            lag_seconds: DEFAULT_STAND_IN_LAG_SECONDS,
+        },
     };
-    let robot_profile = arguments
-        .selection
-        .load_profile(&arguments.profile, &profile_directory)?;
-    let kind = plant_kind(&robot_profile.driver, arguments.simulate);
-    let arm_names = if arguments.arms.is_empty() {
-        robot_profile.arms.clone()
+    let limit_source = if matches!(plant, PlantSelection::Servos) {
+        JointLimitSource::Calibration
     } else {
-        arguments.arms
+        JointLimitSource::Urdf
     };
-    let (directory, _removed_at_exit) = work_directory(arguments.work_directory)?;
-    let limit_source = match kind {
-        PlantKind::Servos => JointLimitSource::Calibration,
-        PlantKind::Simulator | PlantKind::Lag => JointLimitSource::Urdf,
+    // WHY: The simulator reads each arm's joint stops from the config written below, so a
+    // simulated arm and the station's limits both match the mirrored arm.
+    let mirrored_arm_limits = if matches!(plant, PlantSelection::Servos) {
+        None
+    } else {
+        arguments.selection.mirrored_arm_joint_limits(
+            &robot_profile,
+            &profile_directory,
+            &directory.join("calibration"),
+        )?
     };
     let mut arms: Vec<ConfiguredArm> = Vec::new();
     for arm in arm_names {
@@ -84,7 +156,11 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
             limit_source,
             &profile::lerobot_calibration_root(),
         )?;
-        if matches!(kind, PlantKind::Simulator) {
+        if let Some(limits) = &mirrored_arm_limits {
+            config.lower_limits = limits.iter().map(|(lower, _)| *lower).collect();
+            config.upper_limits = limits.iter().map(|(_, upper)| *upper).collect();
+        }
+        if matches!(plant, PlantSelection::Simulator { .. }) {
             config.sim_plant = Some(SimPlantConfig {
                 connect_timeout_seconds: arguments.simulator_connect_seconds,
                 reply_timeout_seconds: arguments.simulator_reply_seconds,
@@ -98,20 +174,14 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
             .with_context(|| format!("Invalid config for arm {arm}"))?;
         let config_path = directory.join(format!("{arm}.json"));
         write_config(&config_path, &config)?;
-        let guard_config_path = Some(config_path);
         arms.push(ConfiguredArm {
             name: arm,
             config,
-            guard_config_path,
+            config_path,
         });
     }
-    if matches!(kind, PlantKind::Simulator) {
-        let names: Vec<&str> = arms.iter().map(|arm| arm.name.as_str()).collect();
-        eprintln!(
-            "Plant sockets: {}/<arm>.plant.sock for {}",
-            directory.display(),
-            names.join(", ")
-        );
+    if matches!(plant, PlantSelection::Simulator { .. }) {
+        publish_simulator_arms(directory, &arms)?;
     }
     // INVARIANT: The station and the media programs must name the same room.
     let room = web.room.get_or_insert_with(new_room_name).clone();
@@ -129,17 +199,10 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
             room,
             station_url: format!("http://{}", arguments.http_address),
             cameras,
-            simulator_camera_socket: matches!(kind, PlantKind::Simulator)
+            simulator_camera_socket: matches!(plant, PlantSelection::Simulator { .. })
                 .then(|| directory.join(SIMULATOR_CAMERA_SOCKET)),
         },
         &web.media_status,
     );
-    run_supervised(
-        &arms,
-        &directory,
-        LAG_PLANT_SECONDS,
-        matches!(kind, PlantKind::Servos),
-        &arguments.http_address,
-        web,
-    )
+    run_supervised(&arms, directory, plant, &arguments.http_address, web)
 }

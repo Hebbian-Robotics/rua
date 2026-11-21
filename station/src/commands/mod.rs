@@ -16,6 +16,10 @@ pub(crate) struct Arguments {
 }
 
 #[derive(Subcommand)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "One CLI invocation holds one command, so keeping its arguments inline avoids indirection."
+)]
 pub(crate) enum Command {
     /// Serve the station for a robot profile: build each arm's config, drive its
     /// servos, an external simulator or the lag simulator, and serve the HTTP API,
@@ -27,8 +31,7 @@ pub(crate) enum Command {
         web: WebArguments,
     },
     /// Run the control loop for one or more arms in lockstep and print each
-    /// arm's cycle timing. With `--http-address` it serves the HTTP API and follows the
-    /// station's goals; otherwise it sweeps a sine.
+    /// arm's cycle timing while sweeping a sine. Use `serve` for the station API.
     Run {
         /// An arm and its config, as `NAME=CONFIG.json`; repeat for each arm.
         /// A grouped move names these arms.
@@ -41,19 +44,13 @@ pub(crate) enum Command {
         #[arg(long)]
         socket_directory: Option<PathBuf>,
         /// How slowly the simulated joints follow commands.
-        #[arg(long, default_value_t = 0.05)]
+        #[arg(long, default_value_t = crate::run::DEFAULT_STAND_IN_LAG_SECONDS)]
         plant_lag_seconds: f64,
         /// Drive the Feetech servos in the config's `feetech` section instead of
         /// the simulator: check them, turn torque on, and leave it on when the
         /// loop ends, so the arm holds.
         #[arg(long)]
         hardware: bool,
-        /// Serve HTTP (health and the cycle traces) on this address, such as
-        /// `127.0.0.1:8792`, on threads of its own beside the loop.
-        #[arg(long)]
-        http_address: Option<String>,
-        #[command(flatten)]
-        web: WebArguments,
     },
     /// Internal motor-controller child, started by the station supervisor.
     #[command(hide = true)]
@@ -66,12 +63,12 @@ pub(crate) enum Command {
         instance: uuid::Uuid,
         #[arg(long)]
         socket_directory: Option<PathBuf>,
-        #[arg(long, default_value_t = 0.05)]
+        #[arg(long, default_value_t = crate::run::DEFAULT_STAND_IN_LAG_SECONDS)]
         plant_lag_seconds: f64,
         #[arg(long)]
         hardware: bool,
     },
-    /// List USB controller serials and their SO-101 config registry matches.
+    /// List USB adapter serials and their SO-101 config registry matches.
     /// Reads USB metadata only; never opens serial devices or changes torque.
     So101Discover {
         /// Local SO-101 config checkout; defaults to the configured registry.
@@ -109,9 +106,7 @@ pub(crate) enum Command {
         #[arg(long)]
         executor_pid: u32,
     },
-    /// Write the contract's JSON Schema (requests, frames, config) to stdout, or with
-    /// `--sim-plant` the schema of the simulator socket's messages, or with `--openapi` the
-    /// `OpenAPI` document of the station HTTP API.
+    /// Write the station's `OpenAPI` document to stdout, or the simulator socket schema.
     Schema {
         #[arg(long, conflicts_with = "openapi")]
         sim_plant: bool,
@@ -139,7 +134,7 @@ pub(crate) enum Command {
         #[arg(long)]
         arm: String,
         /// Defaults to `$HEBBIAN_PROFILE_DIRECTORY`, else installed or checkout
-        /// profiles above the executor or the working directory.
+        /// profiles above the server binary or the working directory.
         #[arg(long)]
         profile_directory: Option<PathBuf>,
         /// Use the URDF's joint limits, as in simulation.
@@ -179,7 +174,7 @@ pub(crate) struct WebArguments {
     #[arg(
         long,
         env = "HEBBIAN_PHONE_PAGE_URL",
-        default_value = hebbian_station::web::DEFAULT_PHONE_PAGE_URL
+        default_value = hebbian_robot_use_server::web::DEFAULT_PHONE_PAGE_URL
     )]
     phone_page_url: String,
     /// Show the viewer's manual pose controls (a single SO-101 arm).
@@ -188,8 +183,8 @@ pub(crate) struct WebArguments {
 }
 
 impl WebArguments {
-    pub(crate) fn settings(self) -> anyhow::Result<hebbian_station::web::WebSettings> {
-        Ok(hebbian_station::web::WebSettings {
+    pub(crate) fn settings(self) -> anyhow::Result<hebbian_robot_use_server::web::WebSettings> {
+        Ok(hebbian_robot_use_server::web::WebSettings {
             recordings_directory: self.recordings_directory,
             enable_recording: self.enable_recording,
             media_address: None,
@@ -197,7 +192,7 @@ impl WebArguments {
             room: self.room,
             phone_page_url: self.phone_page_url,
             manual_control: self.manual_control,
-            media_status: hebbian_station::media_status::MediaStatus::default(),
+            media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
         })
     }
 }

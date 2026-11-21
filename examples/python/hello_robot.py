@@ -1,5 +1,5 @@
+import argparse
 import asyncio
-import os
 
 from hebbian_rua import StationClient
 from hebbian_rua.client.contract.station_api import (
@@ -9,27 +9,33 @@ from hebbian_rua.client.contract.station_api import (
     QuaternionOrientation,
     UnavailableProjection,
 )
+from hebbian_rua.client.environment import load_environment
 from hebbian_rua.client.station_client import (
-    DEFAULT_SERVER,
     JointSpeedRadiansPerSecond,
     WorldPositionMeters,
 )
 
 
 async def main() -> None:
-    async with StationClient(
-        os.environ.get("HEBBIAN_STATION_URL", DEFAULT_SERVER)
-    ) as station:
-        arm = station.arm("follower")
+    parser = argparse.ArgumentParser(description="Preview and move an SO-101 arm.")
+    parser.add_argument("--arm", help="Arm name. Defaults to the station's sole arm.")
+    arguments = parser.parse_args()
+    load_environment()
+    async with StationClient() as station:
+        try:
+            arm_name = await station.resolve_arm_name(arguments.arm)
+        except ValueError as error:
+            parser.error(str(error))
+        arm = station.arm(arm_name)
         # Holding the lease keeps the viewer and other programs off the arm while we run.
         # Only the lease can move the arm; enable, stop and reads are on `arm`.
         async with station.holding_lease("hello robot") as lease:
-            moving_arm = lease.arm("follower")
+            moving_arm = lease.arm(arm_name)
             if (await arm.state()).mode != ArmMode.holding:
                 enabled = await arm.enable()  # the arm holds its current pose
                 if not enabled.completed:
                     raise SystemExit(f"Could not enable the arm: {enabled}")
-            target = WorldPositionMeters([0.22, 0.0, 0.10])
+            target = WorldPositionMeters([0.18, 0.0, 0.16])
             preview = await arm.preview_pose(
                 target
             )  # let the solver choose an orientation
@@ -44,7 +50,7 @@ async def main() -> None:
                     )
                 case UnavailableProjection(reason=reason):
                     raise SystemExit(f"Preview is unavailable: {reason}")
-            speed = JointSpeedRadiansPerSecond(0.5)
+            speed = JointSpeedRadiansPerSecond(0.25)
             result = await moving_arm.move_to_pose(
                 target, orientation, max_joint_speed=speed
             )

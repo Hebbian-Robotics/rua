@@ -7,7 +7,7 @@ use axum::{Json, Router};
 use hebbian_contracts::{
     KnownRunEvent, LiveRun, RunEvent, RunMemory, RunUsage, ServerMessage, TraceSpan, UnixNanos,
 };
-use hebbian_robot_use_server::station_api::{RunTelemetry, RunUpdates};
+use hebbian_robot_use_core::station_api::{RunTelemetry, RunUpdates};
 
 const KEPT_SPANS: usize = 1000;
 const KEPT_RECORDS: usize = 4096;
