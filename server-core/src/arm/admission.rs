@@ -182,7 +182,7 @@ impl ArmCore {
                 TargetStatus::Reached
             } else if outcome == CommandOutcome::StoppedShort {
                 TargetStatus::StoppedShort
-            } else if outcome == CommandOutcome::Failed || !is_active {
+            } else if !is_active || (outcome == CommandOutcome::Failed && !self.motion_advanced) {
                 TargetStatus::NotStarted
             } else {
                 TargetStatus::Partial
@@ -283,6 +283,9 @@ impl ArmCore {
                     self.submit_stream_joints(positions, joint_speed, stream_command_id, now)?;
                 if let Some(target) = gripper {
                     self.apply_gripper(target, now);
+                    if let Some(gripper) = &mut self.gripper_command {
+                        gripper.stream_id = Some(record.command_id.clone());
+                    }
                 }
                 Ok(record)
             }
@@ -318,7 +321,11 @@ impl ArmCore {
         if !self.mode().accepts_enable() || self.busy() {
             return Err(rejection(
                 RejectionReason::ArmBusy,
-                "The arm is already enabled",
+                if self.busy() {
+                    "Another command is active; wait for it to finish"
+                } else {
+                    "The arm is already enabled"
+                },
             ));
         }
         let record = self.new_record("enable", None, now);
@@ -387,6 +394,31 @@ impl ArmCore {
         self.store(record);
         self.finish(&id, CommandOutcome::Completed, None, now);
         self.records[&id].clone()
+    }
+
+    pub(crate) fn cancel_command(&mut self, command_id: &str, now: Now) {
+        if self.active_command_id() == Some(command_id) {
+            self.request_stop();
+        }
+        if matches!(
+            &self.lifecycle,
+            Lifecycle::Queued(job) | Lifecycle::Superseding(Some(job))
+                if job.command_id() == command_id
+        ) {
+            self.cancel_queued(now, "Cancelled before start");
+        }
+        if self.gripper_command.as_ref().is_some_and(|command| {
+            command.command_id == command_id || command.stream_id.as_deref() == Some(command_id)
+        }) && let Some(command) = self.gripper_command.take()
+        {
+            self.gripper_stop_requested = true;
+            self.finish(
+                &command.command_id,
+                CommandOutcome::Stopped,
+                Some("Cancelled and holding".into()),
+                now,
+            );
+        }
     }
 
     pub(super) fn request_stop(&mut self) {
@@ -617,14 +649,16 @@ impl ArmCore {
             self.limits.max_joint_speed,
         )
         .map_err(|invalid| rejection(RejectionReason::InvalidTarget, invalid.to_string()))?;
-        let goal: Vec<f64> = positions
-            .iter()
-            .zip(self.limits.lower.iter().zip(&self.limits.upper))
-            .map(|(value, (lower, upper))| value.clamp(*lower, *upper))
-            .collect();
+        if let Some(detail) = crate::joint_limits::joint_target_limit_error(
+            &positions,
+            &self.limits.lower,
+            &self.limits.upper,
+        ) {
+            return Err(rejection(RejectionReason::InvalidTarget, detail));
+        }
         self.submit_stream(
             StreamGoal::Joints {
-                positions: goal,
+                positions,
                 joint_speed: speed,
             },
             stream_command_id,
@@ -808,6 +842,7 @@ impl ArmCore {
         self.gripper_command = Some(GripperCommand {
             command_id: record.command_id.clone(),
             pending_target: Some(target),
+            stream_id: None,
         });
         self.store(record.clone());
         record

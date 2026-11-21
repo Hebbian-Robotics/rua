@@ -30,6 +30,42 @@ test("a cancelled acceptance-only command rejects with its abort reason", async 
   }
 });
 
+test("a silent event stream reconnects with its last cursor", async () => {
+  const cursor = "11111111-1111-4111-8111-111111111111:1";
+  let resumed: (cursor: string | null) => void = () => {};
+  const resumedWith = new Promise<string | null>((resolve) => {
+    resumed = resolve;
+  });
+  const server = createServer((request, response) => {
+    const previous = request.headers["last-event-id"];
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `id: ${cursor}\nevent: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{}])] })}\n\n`,
+    );
+    if (typeof previous === "string") resumed(previous);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  try {
+    connection.start();
+    await connection.waitUntilConnected();
+    await vi.advanceTimersByTimeAsync(30_001);
+    await expect(resumedWith).resolves.toBe(cursor);
+  } finally {
+    connection.close();
+    vi.useRealTimers();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test.each(["before", "after"] as const)(
   "action-sequence waits started %s closing reject instead of hanging",
   async (timing) => {

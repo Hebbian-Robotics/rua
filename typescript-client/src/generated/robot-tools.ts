@@ -534,7 +534,7 @@ export const robotToolContext = {
   orientation:
     "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
   outcomes:
-    "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are clamped.",
+    "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
   surface_guard:
     "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
 };

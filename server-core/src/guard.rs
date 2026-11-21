@@ -396,31 +396,39 @@ impl GuardProcess {
     }
 
     #[must_use]
-    pub(crate) fn detach(mut self) -> Vec<String> {
+    fn detach(&mut self) -> (bool, Vec<String>) {
         let mut cleanup_errors = Vec::new();
         drop(self.heartbeats.take());
-        let deadline = Instant::now() + DETACH_WAIT;
-        loop {
+        let mut deadline = Instant::now() + DETACH_WAIT;
+        let mut killed = false;
+        let reaped = loop {
             match self.child.try_wait() {
-                Ok(Some(status)) if status.success() => break,
+                Ok(Some(status)) if status.success() => break true,
                 Ok(Some(status)) => {
                     cleanup_errors.push(format!("The safety guard exited with {status}"));
-                    break;
+                    break true;
                 }
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(20));
                 }
+                Ok(None) if killed => break false,
                 Ok(None) => {
                     cleanup_errors.push("The safety guard did not exit".to_owned());
-                    break;
+                    if let Err(error) = self.child.kill() {
+                        cleanup_errors
+                            .push(format!("Could not terminate the safety guard: {error}"));
+                        break matches!(self.child.try_wait(), Ok(Some(_)));
+                    }
+                    killed = true;
+                    deadline = Instant::now() + DETACH_WAIT;
                 }
                 Err(error) => {
                     cleanup_errors.push(format!("The safety guard: {error}"));
-                    break;
+                    break false;
                 }
             }
-        }
-        cleanup_errors
+        };
+        (reaped, cleanup_errors)
     }
 }
 
@@ -501,6 +509,15 @@ impl<P: Plant> Plant for GuardedPlant<P> {
     }
 
     fn start_guard(&mut self) -> anyhow::Result<()> {
+        if let Some(previous) = &mut self.guard
+            && previous.heartbeats.is_none()
+        {
+            anyhow::ensure!(
+                previous.child.try_wait()?.is_some(),
+                "The previous safety guard has not exited",
+            );
+            self.guard = None;
+        }
         if self.guard.is_none()
             && let Some(config_path) = &self.config_path
         {
@@ -519,10 +536,14 @@ impl<P: Plant> Plant for GuardedPlant<P> {
     }
 
     fn stop_guard(&mut self) -> Vec<String> {
-        self.guard
-            .take()
-            .map(GuardProcess::detach)
-            .unwrap_or_default()
+        let Some(guard) = &mut self.guard else {
+            return Vec::new();
+        };
+        let (reaped, errors) = guard.detach();
+        if reaped {
+            self.guard = None;
+        }
+        errors
     }
 }
 

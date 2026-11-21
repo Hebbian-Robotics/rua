@@ -1,6 +1,7 @@
 # TypeScript client
 
 Use the TypeScript client to control a running station from a browser or Node.js.
+
 ## Use the workspace package
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
@@ -136,13 +137,14 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
   `moveToPose(..)`, `setGripper(opening)`, ...). Both are generated from the contracts
   (`armPowerCommands(send)` and `armMotionCommands(send)`, where `send` is any function
   taking a `StationCommand`) and run to the outcome; pass `{ waitForOutcome: false }`
-  to resolve once the station accepts the command, and `{ signal }` to stop the arm on abort.
+  to resolve once the station accepts the command. Pass `{ signal }` to request cancellation
+  of a leased motion submission on abort.
 - The lease's `runCommand` and `runGroup` resolve once the command's record finished and the
   first state frame reflects it (no arm still has it active, and an arm reports it as
   its last command or a sampling arm was sampled at or after completion), so
   `state()` right after shows the arm at rest. The wait survives a reconnect for
-  30 s. An aborted `AbortSignal` requests a stop in the background; rejection
-  does not confirm that the arm has stopped. Observe the arm before continuing.
+  30 s. An aborted `AbortSignal` requests cancellation of that submission in
+  the background. Observe the arm to confirm its state before continuing.
 - `waitForState(predicate)` returns the first state frame that satisfies it, checking
   the latest first; `StationTimeoutError` after 30 s. `state()` waits up to 10 s for
   the first frame.

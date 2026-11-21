@@ -165,6 +165,7 @@ pub(crate) struct GripperTarget {
 pub(super) struct GripperCommand {
     pub(super) command_id: String,
     pub(super) pending_target: Option<GripperTarget>,
+    pub(super) stream_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

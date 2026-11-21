@@ -89,8 +89,16 @@ pub(crate) struct GroupCollisionArm {
 }
 
 impl GroupCollisionArm {
-    pub(crate) fn joints_with_gripper(&self, joints: &[f64]) -> Vec<f64> {
-        self.guard.robot.driven_values(joints, self.gripper_angle)
+    pub(crate) fn joints_with_gripper(
+        &self,
+        joints: &[f64],
+        gripper_angle: Option<f64>,
+    ) -> Vec<f64> {
+        self.guard.robot.driven_values(joints, gripper_angle)
+    }
+
+    pub(crate) fn has_gripper(&self, arm_joint_count: usize) -> bool {
+        self.guard.robot.driven_joint_count() == arm_joint_count + 1
     }
 
     pub(crate) fn body<'a>(

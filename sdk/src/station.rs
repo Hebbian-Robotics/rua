@@ -392,11 +392,7 @@ impl Station {
 
     // ---- commands ------------------------------------------------------------
 
-    /// [`Station::send`] with a trace context and expected revisions.
-    ///
-    /// # Errors
-    /// As [`Station::send`]; a stale revision is refused as `StaleRevision`.
-    pub(crate) async fn send_with(
+    async fn run_single_submission(
         &self,
         arm: &str,
         command: StationCommand,
@@ -436,34 +432,47 @@ impl Station {
             expected_revision: options.expected_revisions.get(arm).copied(),
             trace_context: options.trace_context,
         };
-        self.submit_pending_command(
-            &submission.request_id,
-            &submission.station_instance_id,
-            submission.lease_token.as_deref(),
-            vec![arm.to_owned()],
+        self.submit_and_finish_command(
+            submission
+                .lease_token
+                .as_ref()
+                .map(|token| CommandCancellationRequest {
+                    request_id: submission.request_id.clone(),
+                    station_instance_id: submission.station_instance_id.clone(),
+                    lease_token: token.clone(),
+                    arms: vec![arm.to_owned()],
+                }),
             self.submit_command_http(&submission),
+            Some(1),
         )
         .await
     }
 
-    async fn submit_pending_command(
+    async fn submit_and_finish_command(
         &self,
-        request_id: &str,
-        station_instance_id: &str,
-        lease_token: Option<&str>,
-        arms: Vec<String>,
+        cancellation: Option<CommandCancellationRequest>,
         submit: impl Future<Output = Result<CommandAnswer>>,
+        expected_record_count: Option<usize>,
     ) -> Result<Vec<ArmRecord>> {
-        let cancellation = lease_token.map(|token| CommandCancellationRequest {
-            request_id: request_id.to_owned(),
-            station_instance_id: station_instance_id.to_owned(),
-            lease_token: token.to_owned(),
-            arms,
-        });
         let mut pending = PendingHttpCommand::new(self, cancellation);
         let answer = submit.await?;
+        if matches!(answer, CommandAnswer::Refused { .. }) {
+            pending.disarm();
+        }
+        let mut records = self.accepted_records(answer)?;
+        if let Some(expected) = expected_record_count
+            && records.len() != expected
+        {
+            return Err(Error::Connection(format!(
+                "expected one record, got {}",
+                records.len()
+            )));
+        }
+        for arm_record in &mut records {
+            arm_record.record = self.wait_for_outcome(&arm_record.record.command_id).await?;
+        }
         pending.disarm();
-        self.accepted_records(answer)
+        Ok(records)
     }
 
     fn accepted_records(&self, answer: CommandAnswer) -> Result<Vec<ArmRecord>> {
@@ -500,50 +509,12 @@ impl Station {
         options: CommandOptions,
         expected_lease: Option<&str>,
     ) -> Result<CommandRecord> {
-        let token = expected_lease.map(str::to_owned).or_else(|| {
-            self.shared
-                .read(|inner| inner.lease_state.token().map(str::to_owned))
-        });
-        let mut stops = [StopOnDrop::armed(self, arm, token)];
-        let accepted = self.send_with(arm, command, options, expected_lease).await;
         let [finished]: [ArmRecord; 1] = self
-            .finish_commands(accepted, &mut stops, Some(1))
+            .run_single_submission(arm, command, options, expected_lease)
             .await?
             .try_into()
             .map_err(|_| Error::Connection("expected one finished record".into()))?;
         completed(finished.record)
-    }
-
-    async fn finish_commands(
-        &self,
-        accepted: Result<Vec<ArmRecord>>,
-        stops: &mut [StopOnDrop],
-        expected_record_count: Option<usize>,
-    ) -> Result<Vec<ArmRecord>> {
-        let mut records = match accepted {
-            Ok(records) => records,
-            Err(error) => {
-                for stop in stops {
-                    stop.disarm();
-                }
-                return Err(error);
-            }
-        };
-        if let Some(expected) = expected_record_count
-            && records.len() != expected
-        {
-            return Err(Error::Connection(format!(
-                "expected one record, got {}",
-                records.len()
-            )));
-        }
-        for arm_record in &mut records {
-            arm_record.record = self.wait_for_outcome(&arm_record.record.command_id).await?;
-        }
-        for stop in stops {
-            stop.disarm();
-        }
-        Ok(records)
     }
 
     /// Wait for a command's record to finish, across reconnects.
@@ -794,7 +765,7 @@ impl LeaseGuard {
     }
     /// Move several arms together, planned before any moves; one refusal refuses
     /// all, and if one arm does not complete the others stop. Dropping the
-    /// future requests stops in the background without waiting for them.
+    /// future requests cancellation of the submitted group in the background.
     ///
     /// # Errors
     /// As [`Station::run_with`]; the first arm that did not complete is reported.
@@ -823,11 +794,6 @@ impl LeaseGuard {
         command: MoveArmsCommand,
         options: CommandOptions,
     ) -> Result<Vec<ArmRecord>> {
-        let mut stops = command
-            .targets
-            .keys()
-            .map(|arm| StopOnDrop::armed(&self.station, arm, Some(self.lease_token.clone())))
-            .collect::<Vec<_>>();
         let submission = GroupCommandSubmissionRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             station_instance_id: self.station.get_station_instance().await?.id,
@@ -836,18 +802,17 @@ impl LeaseGuard {
             trace_context: options.trace_context,
             expected_revisions: options.expected_revisions,
         };
-        let accepted = self
-            .station
-            .submit_pending_command(
-                &submission.request_id,
-                &submission.station_instance_id,
-                submission.lease_token.as_deref(),
-                submission.command.targets.keys().cloned().collect(),
-                self.station.submit_group_command_http(&submission),
-            )
-            .await;
         self.station
-            .finish_commands(accepted, &mut stops, None)
+            .submit_and_finish_command(
+                Some(CommandCancellationRequest {
+                    request_id: submission.request_id.clone(),
+                    station_instance_id: submission.station_instance_id.clone(),
+                    lease_token: self.lease_token.clone(),
+                    arms: submission.command.targets.keys().cloned().collect(),
+                }),
+                self.station.submit_group_command_http(&submission),
+                None,
+            )
             .await
     }
 
@@ -1131,7 +1096,7 @@ impl Drop for LeaseGuard {
     }
 }
 
-/// Fence a leased submission if its HTTP future ends without an answer.
+/// Cancel a leased submission if the caller stops waiting for completion.
 struct PendingHttpCommand {
     station: Station,
     cancellation: Option<CommandCancellationRequest>,
@@ -1173,52 +1138,6 @@ impl Drop for LeaseAcquisition<'_> {
                 inner.lease_state = LeaseState::Idle;
             }
         });
-    }
-}
-
-/// Requests a stop in the background if the command future is dropped first.
-pub(crate) struct StopOnDrop {
-    station: Station,
-    token: Option<String>,
-    arm: String,
-    armed: bool,
-}
-
-impl StopOnDrop {
-    pub(crate) fn armed(station: &Station, arm: &str, token: Option<String>) -> Self {
-        Self {
-            station: station.clone(),
-            token,
-            arm: arm.to_owned(),
-            armed: true,
-        }
-    }
-
-    pub(crate) fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for StopOnDrop {
-    fn drop(&mut self) {
-        if self.armed
-            && let Ok(runtime) = tokio::runtime::Handle::try_current()
-        {
-            let station = self.station.clone();
-            let arm = self.arm.clone();
-            let token = self.token.clone();
-            runtime.spawn(async move {
-                if let Some(lease_token) = token {
-                    let _ = station
-                        .stop_leased_arm_http(&arm, &LeaseToken { lease_token })
-                        .await;
-                } else {
-                    let _ = station
-                        .send_with(&arm, StationCommand::Stop, CommandOptions::default(), None)
-                        .await;
-                }
-            });
-        }
     }
 }
 

@@ -67,14 +67,23 @@ impl SimulatedStation {
         config.guard = None;
         config.enable_checks = None;
         config.trace_directory = directory.join("traces").to_string_lossy().into_owned();
-        let config = hebbian_robot_use_core::config::ControllerConfig::try_from(config)?;
         let shared_lease = Arc::new(Lease::new(LEASE));
         let links = arm_names
             .iter()
-            .map(|name| {
-                Link::new(&config, Arc::clone(&shared_lease)).map(|link| ((*name).to_owned(), link))
+            .enumerate()
+            .map(|(position, name)| {
+                let mut config = config.clone();
+                if arm_names.len() > 1 {
+                    config.base_pose = Some(hebbian_robot_use_sdk::contracts::BasePose {
+                        position_meters: [0.0, f64::from(u32::try_from(position)?), 0.0],
+                        yaw_radians: 0.0,
+                    });
+                }
+                let config = hebbian_robot_use_core::config::ControllerConfig::try_from(config)?;
+                let link = Link::new(&config, Arc::clone(&shared_lease))?;
+                Ok(((*name).to_owned(), config, link))
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
         let server = tokio::task::spawn_blocking(|| {
             HttpServer::start(
                 "127.0.0.1:0",
@@ -89,7 +98,7 @@ impl SimulatedStation {
         server.attach_arms(
             links
                 .iter()
-                .map(|(name, link)| (name.clone(), link.handle()))
+                .map(|(name, _, link)| (name.clone(), link.handle()))
                 .collect(),
         );
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -97,7 +106,7 @@ impl SimulatedStation {
         let loop_thread = std::thread::spawn(move || {
             let mut setups = links
                 .into_iter()
-                .map(|(name, link)| ArmSetup::new(name, config.clone(), create_plant(), link))
+                .map(|(name, config, link)| ArmSetup::new(name, config, create_plant(), link))
                 .collect::<Vec<_>>();
             run_arms(&mut setups, Some(Duration::from_secs(120)), &loop_shutdown);
             for setup in setups {

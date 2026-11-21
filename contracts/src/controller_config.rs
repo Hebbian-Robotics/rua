@@ -172,8 +172,8 @@ pub struct ControllerConfigInput<DriverConfig> {
     pub self_collision: Option<SelfCollisionConfig>,
     /// `None` for a robot without a Feetech bus, such as the simulator.
     pub feetech: Option<DriverConfig>,
-    /// `Some` when an external simulator is the plant, instead of the lag
-    /// simulator or the servos.
+    /// `Some` when an external simulator is the plant, instead of the no-physics
+    /// stand-in or the servos.
     #[serde(default)]
     pub sim_plant: Option<SimPlantConfig>,
     /// Physical settings for the profile's simulator model, when present.

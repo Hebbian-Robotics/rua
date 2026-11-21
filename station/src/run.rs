@@ -337,7 +337,9 @@ fn run_connected<P: Plant>(
             &arms,
             &service_shutdown_requested,
         );
-        if !service_shutting_down.load(Ordering::Acquire) {
+        if !service_shutting_down.load(Ordering::Acquire)
+            && !service_shutdown_requested.load(Ordering::Acquire)
+        {
             eprintln!("Station connection lost: {result:?}");
             // INVARIANT: The guard, when present, takes over after the controller exits.
             // Do not run the normal return-to-rest shutdown without the station.

@@ -1,4 +1,24 @@
-# Use an existing LeRobot calibration
+# Hardware
+
+## Supported hardware
+
+RUA supports single-arm and bimanual SO-101 setups on hardware and in
+[MuJoCo](simulation.md). Both support planned IK and joint motion. In a
+bimanual profile, check each `base_poses` transform against the physical mount
+before motion.
+
+### Learned policies
+
+For a single SO-101 arm, set `controller = "policy"` in the robot profile to
+run pose goals through the ONNX policy adapter. Supply a compatible model for
+the configured arm geometry, set `[policy].onnx` and
+`[policy].checkpoint_sha256`, and make ONNX Runtime available on the station
+host. The adapter checks the model's observation, action and geometry contract.
+Use the [policy settings profile](../profiles/so101-policy-settings.toml) as a
+starting point and check the policy's behavior on your setup before powered
+operation.
+
+## Use an existing LeRobot calibration
 
 If you already calibrated your SO-101 with LeRobot, point a local RUA profile
 at its calibration ID and serial port. For a new arm, follow the

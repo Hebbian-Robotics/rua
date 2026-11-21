@@ -15,6 +15,7 @@ parts of our stack that make that loop easy to build.
 For a physical SO-101, follow the [source quickstart](docs/getting-started.md#set-up-a-physical-so-101)
 to calibrate the arm with `so101 setup`, start RUA with `--profile auto` and
 run your first Python agent.
+For learned pose control, [configure a compatible ONNX policy](docs/hardware.md#learned-policies).
 
 Start an agent project with [uv](https://docs.astral.sh/uv/):
 

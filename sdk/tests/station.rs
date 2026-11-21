@@ -1374,17 +1374,20 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
     within(client.enable("left")).await??;
-    let action = |pan| ActionSequenceArmAction {
+    let action = |pan, gripper_opening| ActionSequenceArmAction {
         movement: Some(ActionSequenceMovement::Joints {
             joints: vec![pan, -0.5, 0.5, 0.0, 0.0],
             max_joint_speed: None,
         }),
-        gripper_opening: Some(0.2),
+        gripper_opening,
         max_joint_speed: None,
     };
     let first = within(lease.run_action_sequence(ActionSequenceRequest {
         steps: vec![ActionSequenceStep {
-            arms: BTreeMap::from([("left".into(), action(0.1)), ("right".into(), action(-0.1))]),
+            arms: BTreeMap::from([
+                ("left".into(), action(0.1, None)),
+                ("right".into(), action(-0.1, None)),
+            ]),
         }],
         expected_revisions: BTreeMap::new(),
     }))
@@ -1403,11 +1406,11 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
         steps: vec![
             ActionSequenceStep {
                 arms: BTreeMap::from([
-                    ("left".into(), action(0.1)),
-                    ("right".into(), action(-0.1)),
+                    ("left".into(), action(0.1, None)),
+                    ("right".into(), action(-0.1, None)),
                 ]),
             },
-            ActionSequenceStep::single("left", action(0.0)),
+            ActionSequenceStep::single("left", action(0.0, Some(0.2))),
         ],
         expected_revisions: BTreeMap::new(),
     }))
@@ -1416,7 +1419,7 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     assert_eq!(result.arms, ["left", "right"]);
     assert_eq!(
         result.steps.iter().map(Vec::len).collect::<Vec<_>>(),
-        [4, 2]
+        [2, 2]
     );
     assert!(
         result.steps[0]

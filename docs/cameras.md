@@ -74,3 +74,8 @@ CC=clang CXX=clang++ cargo build -p livekit-cameras
 Restart the station after changing credentials. Each start creates a new room
 unless you pass `--room NAME`. Give each running station a distinct room.
 Recording also needs [FFmpeg](recording.md).
+
+For a custom application, use SDK snapshots or publish compatible tracks to
+the station’s LiveKit room for discovery, required-camera checks and recording.
+Snapshot timestamps describe capture age. Robot feedback and camera frames
+are separate observations.

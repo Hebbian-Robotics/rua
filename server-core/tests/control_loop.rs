@@ -289,7 +289,18 @@ fn two_arms() -> TwoArms {
         .iter()
         .zip(&faults)
         .map(|(name, fault)| {
-            let config = test_config();
+            let mut config = test_config().into_input();
+            config.urdf =
+                concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/two_joint.urdf").into();
+            config.base_pose = Some(hebbian_contracts::BasePose {
+                position_meters: [0.0, if *name == "right" { 1.0 } else { 0.0 }, 0.0],
+                yaw_radians: 0.0,
+            });
+            config.self_collision = Some(hebbian_contracts::SelfCollisionConfig {
+                penetration_tolerance_meters: 0.003,
+                allowed_collision_pairs: Vec::new(),
+            });
+            let config = ControllerConfig::try_from(config).unwrap();
             let link = Link::new(&config, Arc::clone(&control)).unwrap();
             ArmSetup::new(
                 (*name).to_owned(),

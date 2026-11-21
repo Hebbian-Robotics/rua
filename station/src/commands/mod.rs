@@ -22,7 +22,7 @@ pub(crate) struct Arguments {
 )]
 pub(crate) enum Command {
     /// Serve the station for a robot profile: build each arm's config, drive its
-    /// servos, an external simulator or the lag simulator, and serve the HTTP API,
+    /// servos, an external simulator or the no-physics stand-in, and serve the HTTP API,
     /// the viewer, recording and lease routes over HTTP.
     Serve {
         #[command(flatten)]

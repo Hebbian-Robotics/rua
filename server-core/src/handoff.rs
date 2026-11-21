@@ -40,13 +40,13 @@ pub(crate) enum ArmRequest {
     Group(GroupRequest),
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "Keep submitted commands inline in the request queue"
-)]
 pub(crate) enum SingleArmRequest {
     ControlHandoffReadiness {
         reply: Sender<Result<bool, Rejection>>,
+    },
+    CancelCommand {
+        command_id: String,
+        reply: Sender<Result<(), Rejection>>,
     },
     Submit {
         command: Command,
@@ -122,6 +122,18 @@ impl ArmHandle {
         self.enqueue(ArmRequest::Single(
             SingleArmRequest::ControlHandoffReadiness { reply },
         ))?;
+        Ok(answer)
+    }
+
+    pub(crate) fn cancel_command(
+        &self,
+        command_id: String,
+    ) -> Result<Receiver<Result<(), Rejection>>, Rejection> {
+        let (reply, answer) = channel();
+        self.enqueue(ArmRequest::Single(SingleArmRequest::CancelCommand {
+            command_id,
+            reply,
+        }))?;
         Ok(answer)
     }
 
@@ -238,6 +250,10 @@ impl SingleArmRequest {
             Self::ControlHandoffReadiness { reply } => {
                 let _ = reply.send(arm.ready_for_control_handoff());
             }
+            Self::CancelCommand { command_id, reply } => {
+                arm.cancel_command(&command_id, Now::current());
+                let _ = reply.send(Ok(()));
+            }
             Self::Submit {
                 command,
                 trace_context,
@@ -340,6 +356,7 @@ struct AdmittedArmAction {
 fn prepare_arm_action(
     core: &ArmCore,
     action: PreparedArmAction,
+    motion_scope: MotionScope,
 ) -> Result<AdmittedArmAction, Rejection> {
     if action.movement.is_none() && action.gripper.is_none() {
         return Err(Rejection {
@@ -359,7 +376,7 @@ fn prepare_arm_action(
                     pose_limited,
                 } => AdmittedMovement::Trajectory {
                     label,
-                    decision: MoveDecision::prepare(core, plan, joint_speed, MotionScope::Grouped)?,
+                    decision: MoveDecision::prepare(core, plan, joint_speed, motion_scope)?,
                     short: ShortOfTarget {
                         path_limited,
                         pose_limited,
@@ -394,49 +411,92 @@ fn check_group_clearance(
     use hebbian_robot_geometry::self_collision::CollisionWorkspace;
 
     const INTER_ARM_PENETRATION_METERS: f64 = 0.003;
-    let members = actions
-        .iter()
-        .filter_map(|action| {
-            let Some(AdmittedMovement::Trajectory { decision, .. }) = &action.movement else {
-                return None;
-            };
-            let geometry = cores.get(action.arm.as_str())?.group_collision.as_ref()?;
-            Some((&action.arm, geometry, &decision.plan.segments[0].corners))
-        })
-        .collect::<Vec<_>>();
-    if members.len() < 2 {
+    if actions.len() < 2 {
         return Ok(());
     }
+    let mut members = Vec::with_capacity(actions.len());
+    let mut moving_arms = 0;
+    let mut moving_jaws = 0;
+    for action in actions {
+        let core = cores
+            .get(action.arm.as_str())
+            .ok_or_else(|| anyhow::anyhow!("No arm {}", action.arm))?;
+        let geometry = core.group_collision.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Arm {} needs a base pose and collision geometry for grouped motion",
+                action.arm
+            )
+        })?;
+        anyhow::ensure!(
+            !core.gripper_command_pending(),
+            "Wait for the gripper on {} before starting grouped motion",
+            action.arm
+        );
+        let (initial, target) = match &action.movement {
+            Some(AdmittedMovement::Trajectory { decision, .. }) => {
+                moving_arms += 1;
+                let corners = &decision.plan.segments[0].corners;
+                (corners[0].as_slice(), corners[1].as_slice())
+            }
+            Some(AdmittedMovement::PolicyPose { .. }) => {
+                anyhow::bail!(
+                    "Grouped clearance cannot check policy motion on {}",
+                    action.arm
+                );
+            }
+            None => {
+                let joints = core.stationary_joints().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Arm {} must be holding with joint feedback for grouped gripper motion",
+                        action.arm
+                    )
+                })?;
+                (joints, joints)
+            }
+        };
+        anyhow::ensure!(
+            !geometry.has_gripper(initial.len()) || geometry.gripper_angle.is_some(),
+            "Arm {} needs jaw feedback for grouped motion",
+            action.arm
+        );
+        let target_jaw = action
+            .gripper
+            .map(|target| target.angle.radians())
+            .or(geometry.gripper_angle);
+        if target_jaw != geometry.gripper_angle {
+            moving_jaws += 1;
+        }
+        let initial = geometry.joints_with_gripper(initial, geometry.gripper_angle);
+        let target = geometry.joints_with_gripper(target, target_jaw);
+        members.push((&action.arm, geometry, initial, target));
+    }
+    // SAFETY: A jaw advances independently from the grouped joint trajectory and
+    // other jaws. Only sweep one independent motion at a time.
+    anyhow::ensure!(
+        moving_jaws == 0 || (moving_jaws == 1 && moving_arms == 0),
+        "Use separate steps for grouped arm motion and each jaw movement"
+    );
     let start = members
         .iter()
-        .flat_map(|(_, _, corners)| corners[0].iter().copied())
+        .flat_map(|(_, _, start, _)| start.iter().copied())
         .collect::<Vec<_>>();
     let end = members
         .iter()
-        .flat_map(|(_, _, corners)| corners[1].iter().copied())
+        .flat_map(|(_, _, _, end)| end.iter().copied())
         .collect::<Vec<_>>();
     let mut joints = members
         .iter()
-        .map(|(_, geometry, corners)| geometry.joints_with_gripper(&corners[0]))
+        .map(|(_, _, start, _)| start.clone())
         .collect::<Vec<_>>();
     let mut workspace = CollisionWorkspace::default();
-    for fraction in
-        std::iter::once(None).chain(crate::robot::path_sample_fractions(&start, &end).map(Some))
-    {
-        if let Some(fraction) = fraction {
-            for ((_, _, corners), arm_joints) in members.iter().zip(&mut joints) {
-                crate::robot::interpolate_path_sample(
-                    &corners[0],
-                    &corners[1],
-                    fraction,
-                    &mut arm_joints[..corners[0].len()],
-                );
-            }
+    for fraction in std::iter::once(0.0).chain(crate::robot::path_sample_fractions(&start, &end)) {
+        for ((_, _, start, end), arm_joints) in members.iter().zip(&mut joints) {
+            crate::robot::interpolate_path_sample(start, end, fraction, arm_joints);
         }
         let bodies = members
             .iter()
             .zip(&joints)
-            .map(|((_, geometry, _), joints)| geometry.body(joints))
+            .map(|((_, geometry, _, _), joints)| geometry.body(joints))
             .collect::<Vec<_>>();
         if let Some(hit) = workspace.scene_collision(&bodies, INTER_ARM_PENETRATION_METERS)? {
             let [first, second] = hit.bodies;
@@ -480,6 +540,11 @@ pub(crate) fn admit_action_step(
     if let Some([duplicate, _]) = names.windows(2).find(|pair| pair[0] == pair[1]) {
         return Err(invalid(format!("Arm {duplicate} appears twice")));
     }
+    let scope = if actions.len() == 1 {
+        MotionScope::Individual
+    } else {
+        MotionScope::Grouped
+    };
     let trajectory_arms = actions
         .iter()
         .filter(|action| matches!(action.movement, Some(PreparedMovement::Trajectory { .. })))
@@ -492,7 +557,7 @@ pub(crate) fn admit_action_step(
                 .get(action.arm.as_str())
                 .ok_or_else(|| invalid(format!("No arm {}", action.arm)))?;
             let arm = action.arm.clone();
-            prepare_arm_action(core, action).map_err(|refused| Rejection {
+            prepare_arm_action(core, action, scope).map_err(|refused| Rejection {
                 reason: refused.reason,
                 detail: format!("{arm}: {}", refused.detail),
             })
@@ -514,7 +579,13 @@ pub(crate) fn admit_action_step(
                     label,
                     decision,
                     short,
-                } => core.apply_move(&label, decision, short, Some(group.clone()), now),
+                } => core.apply_move(
+                    &label,
+                    decision,
+                    short,
+                    matches!(scope, MotionScope::Grouped).then(|| group.clone()),
+                    now,
+                ),
                 AdmittedMovement::PolicyPose { label, goal } => core.apply_reach(&label, goal, now),
             };
             records.push(ArmRecord {
@@ -757,22 +828,24 @@ mod tests {
     }
 
     #[test]
-    fn a_group_goes_into_every_arm_with_one_shared_id() {
+    fn a_group_is_refused_when_either_arm_lacks_collision_geometry() {
         let mut left = holding_core();
         let mut right = holding_core();
         let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
-        let records = admit_group(
+        let refusal = admit_group(
             &mut cores,
             "together",
             vec![part("left", [0.5, 0.0]), part("right", [0.0, 0.5])],
             Now::current(),
         )
-        .unwrap();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].group_id, records[1].group_id);
-        assert!(records[0].group_id.is_some());
+        .unwrap_err();
+        assert!(
+            refusal
+                .detail
+                .contains("needs a base pose and collision geometry")
+        );
         drop(cores);
-        assert!(left.next_job().is_some() && right.next_job().is_some());
+        assert!(left.next_job().is_none() && right.next_job().is_none());
     }
 
     #[test]
@@ -840,7 +913,10 @@ mod tests {
                 Now::current(),
             );
             if accepted {
-                assert_eq!(outcome.unwrap().len(), 2);
+                let records = outcome.unwrap();
+                assert_eq!(records.len(), 2);
+                assert_eq!(records[0].group_id, records[1].group_id);
+                assert!(records[0].group_id.is_some());
             } else {
                 assert!(outcome.unwrap_err().detail.contains("allowed penetration"));
             }

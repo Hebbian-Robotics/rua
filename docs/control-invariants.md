@@ -15,12 +15,58 @@ rebasing to the current hold or measured settling pose. Only the first corner
 may use the configured joint-limit recovery tolerance; subsequent corners must
 lie within nominal limits. Group members must contain one straight section.
 Arbitrary supplied paths are refused rather than clamped into different paths.
-The planner still clamps requested joint targets before constructing a path.
+Move and stream reject joint targets outside the configured limits.
 
 Admission is not a permanent collision or tracking certificate. Geometry checks
 belong to the planner; current feedback, tracking, collision and surface checks
 remain in the control loop. Internally constructed shutdown returns retain their
 existing recovery behavior and pass the same per-cycle setpoint guards.
+
+## Geometry guards
+
+The controller samples configured collision geometry during planning and
+checks runtime references before writing setpoints. Jaw commands also sample
+the opening path. These checks cover modeled geometry. Verify clearance from
+workspace objects and arms outside a coordinated step. See
+[coordinated arm clearance](control-model.md#coordinated-arm-clearance).
+
+### Self-contact
+
+The bundled SO-101 hardware and simulator profiles enable self-collision
+checks. A profile can set the overlap allowance and exclude named link pairs:
+
+```toml
+self_collision_check = true
+self_collision_penetration_tolerance_meters = 0.01
+allowed_collision_pairs = [["first_link", "second_link"]]
+```
+
+The allowance permits shallow modeled contact. Geometry on the same joint and
+neighboring joints is generally excluded, with an explicit check for the jaw
+pair. Use collision-bearing link names for additional exclusions. Each pair
+excludes all geometry on those links through their full range of motion.
+
+A preview can report the last clear sample of a limited path. An already
+intersecting starting pose may make a path unavailable. Check the model and
+calibration before adjusting the allowance.
+
+### Table surface guard
+
+The surface height is measured in the arm’s base frame. For an SO-101 mounted
+at tabletop height, the bundled nominal height is zero. Override it for a raised
+mount or measured offset:
+
+```toml
+[surface_guard]
+enabled = true
+surface_height_meters = 0.0
+leeway_meters = 0.01
+```
+
+The guard checks the lowest modeled geometry, including the gripper and camera
+assembly. Its lower limit is the configured height minus leeway. It blocks
+further descent outside the limit and allows upward recovery. The configured
+plane represents the measured setup and requires verification on the physical arm.
 
 ## Failure responses
 

@@ -17,6 +17,9 @@ pub struct ControllerRequestId(pub u64);
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ControllerRequest {
     ControlHandoffReadiness,
+    CancelCommand {
+        command_id: String,
+    },
     Submit {
         command: Command,
         trace_context: Option<TraceContext>,
@@ -35,6 +38,7 @@ pub enum ControllerRequest {
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ControllerAnswer {
     ControlHandoffReadiness(bool),
+    CancelledCommand,
     Submitted(Box<CommandRecord>),
     MovedArms(Vec<CommandRecord>),
     ActionStep(Vec<ArmRecord>),

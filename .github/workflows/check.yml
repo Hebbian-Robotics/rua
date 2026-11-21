@@ -19,7 +19,17 @@ jobs:
       - name: Install link checker
         run: cargo install lychee --version 0.24.2 --locked
       - name: Check documentation links and anchors
-        run: lychee --offline --include-fragments --extensions md README.md CONTRIBUTING.md docs examples typescript-client
+        run: >-
+          lychee --offline --include-fragments --extensions md
+          README.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md docs examples cli/README.md
+          hebbian_rua/client/README.md livekit-cameras/README.md recordings/README.md
+          robot-geometry/README.md sdk/README.md server-core/README.md station-access/README.md
+          tooling/source-doc-lint/README.md typescript-client/README.md
+      - name: Check development documentation links and anchors
+        if: ${{ hashFiles('tooling/public_export/README.md') != '' }}
+        run: >-
+          lychee --offline --include-fragments --extensions md
+          tests/README.md tooling/public_export/README.md
 
   comments:
     runs-on: ubuntu-24.04

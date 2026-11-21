@@ -279,13 +279,21 @@ class ControllerStatus4(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    phase: Literal["stopping"] = "stopping"
+
+
+class ControllerStatus5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
     guard_released: bool
     phase: Literal["unavailable"] = "unavailable"
     reason: str
     reports: list[str]
 
 
-class ControllerStatus5(BaseModel):
+class ControllerStatus6(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -302,6 +310,7 @@ class ControllerStatus(
         | ControllerStatus3
         | ControllerStatus4
         | ControllerStatus5
+        | ControllerStatus6
     ]
 ):
     model_config = ConfigDict(
@@ -313,6 +322,7 @@ class ControllerStatus(
         | ControllerStatus3
         | ControllerStatus4
         | ControllerStatus5
+        | ControllerStatus6
     )
 
 

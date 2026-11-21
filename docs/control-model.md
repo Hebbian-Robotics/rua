@@ -11,9 +11,8 @@ In Python, use `station.holding_lease(...)` and send motion through the returned
 lease. Power, stop and state access are available through `station.arm(...)`.
 Commands return outcomes; check them before proceeding to another action.
 
-A manual control lease expires if its viewer stops renewing it. The station
-stops every arm and releases the expired lease after all arms confirm they have
-stopped. You can then enable a disabled arm and take manual control again.
+A control lease expires if the holding client stops renewing it. The station
+stops the arms and releases the expired lease after they confirm the stop.
 If the stop cannot be confirmed, control stays fenced for explicit recovery.
 Changing the holder of an active lease requires an explicit handoff.
 
@@ -22,21 +21,53 @@ require per-arm calibration and do not establish physical workspace clearance.
 See [SO-101 calibration](so101-calibration.md) before operating a physical arm, and the
 [Python example](../examples/python/hello_robot.py) for a small control program.
 
+## Command outcomes
+
+An admission refusal leaves that request unapplied. For an admitted command,
+the record carries the outcome and the state achieved where available. Check
+the outcome and limit details before deciding what to do next.
+
+| Outcome | Meaning |
+| --- | --- |
+| `completed` | The planned motion finished. A limited plan can finish at an adjusted target. |
+| `stopped_short` | The arm settled outside the target tolerance. Inspect the achieved pose and remaining errors. |
+| `stopped` or `superseded` | A stop ended the command, or a new move replaced it while settling. |
+| `tripped` or `timed_out` | A protective check or deadline ended the motion. Inspect state before retrying. |
+| `faulted`, `interrupted` or `failed` | A fault, lost feedback or execution failure ended the command. Inspect the record and recover before continuing. |
+
+A gripper that stops short may have contacted something. Use camera and state
+feedback to assess the grasp. `stop` brakes motion and holds with torque
+enabled. `disable` removes torque. A stop ends an affected action sequence
+while the application still owns its agent loop.
+
+## Action sequences
+
+An action sequence contains ordered steps with actions for one or more arms.
+The runtime prepares the whole step from current feedback before submitting it
+for coordinated admission. It waits for outcomes before starting the next step.
+A stop, failed or limited action, or interruption can end execution early.
+
+Execution depends on the lease and current interlocks. If a disconnected client
+stops renewing the lease, expiry stops the arms. Lease handoff, revocation and
+interlocks can also stop execution. An expected arm revision fences a request
+based on observations from before an interruption.
+
 ## Coordinated arm clearance
 
-Before admitting a group move or sequence step, the station checks the
-synchronized joint paths when at least two arms have planned trajectories,
-configured base poses and collision geometry. It uses the measured jaw openings
-and allows up to 3 mm of modeled overlap. Each arm retains its self-collision
-settings. Verify clearance from stationary arms and objects in the workspace.
+Before admitting a step with two or more arms, the station checks the
+synchronized joint paths of its participating arms. Each needs a configured
+base pose, collision geometry and jaw feedback if it has a modeled gripper.
+Use planned trajectories for multi-arm steps and move each jaw in a separate
+step from the arm trajectories and other jaws. The check allows up to 3 mm of
+modeled overlap. Verify clearance from arms outside the step and objects in the
+workspace.
 
 ## Compile before running
 
-Normal action-sequence tools compile automatically. An action sequence contains
-at most 1,024 ordered steps; actions within each step retain their coordinated
-semantics. To inspect a sequence before acquiring control, call `station.compile_action_sequence(source)`. Compilation
-checks structural validity and configured capabilities; future steps still need
-preparation from measured state during execution.
+Normal action-sequence submissions compile automatically. To inspect a
+sequence before acquiring control, call `station.compile_action_sequence(source)`.
+Compilation checks structure and configured capabilities for up to 1,024
+ordered steps. The runtime prepares each step from measured state.
 
 ```python
 from hebbian_rua.client.contract.station_api import (

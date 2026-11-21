@@ -64,10 +64,11 @@ pub(crate) fn load_shared_robot(config: &ControllerConfig) -> anyhow::Result<Opt
     if !needed {
         return Ok(None);
     }
-    Ok(Some(Arc::new(Robot::load(
-        Path::new(&config.urdf),
-        &config.driven_joints,
-    )?)))
+    let mut robot = Robot::load(Path::new(&config.urdf), &config.driven_joints)?;
+    if let Some(gripper) = &config.gripper {
+        robot = robot.with_closed_gripper_angle(gripper.closed_radians);
+    }
+    Ok(Some(Arc::new(robot)))
 }
 
 pub(crate) fn build_self_collision(

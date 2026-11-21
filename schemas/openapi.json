@@ -1847,6 +1847,18 @@
           },
           {
             "properties": {
+              "phase": {
+                "const": "stopping",
+                "type": "string"
+              }
+            },
+            "required": [
+              "phase"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
               "guard_released": {
                 "type": "boolean"
               },

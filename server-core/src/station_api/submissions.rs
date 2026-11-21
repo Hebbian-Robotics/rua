@@ -174,14 +174,17 @@ pub enum SubmissionRequest {
     reason = "The retained history is bounded. Keep command requests inline to avoid a separate allocation on every submission."
 )]
 enum Submission {
-    Command(TrackedRequest<SubmissionRequest, CommandAnswer>),
+    Command {
+        tracked: TrackedRequest<SubmissionRequest, CommandAnswer>,
+        cancelled: watch::Sender<bool>,
+    },
     Cancelled,
 }
 
 impl Submission {
     fn is_evictable(&self) -> bool {
         match self {
-            Self::Command(command) => command.outcome.borrow().is_some(),
+            Self::Command { tracked, .. } => tracked.outcome.borrow().is_some(),
             Self::Cancelled => true,
         }
     }
@@ -193,7 +196,10 @@ pub struct CommandSubmissions {
 }
 
 pub enum SubmissionReservation {
-    New(watch::Sender<Option<Result<CommandAnswer, String>>>),
+    New(
+        watch::Sender<Option<Result<CommandAnswer, String>>>,
+        watch::Receiver<bool>,
+    ),
     Existing(watch::Receiver<Option<Result<CommandAnswer, String>>>),
     Cancelled,
     Conflict,
@@ -202,7 +208,9 @@ pub enum SubmissionReservation {
 }
 
 pub enum CancellationResult {
-    Stopped(hebbian_contracts::LeasedStopOutcome),
+    Fenced,
+    Pending(watch::Receiver<Option<Result<CommandAnswer, String>>>),
+    Expired,
     Conflict,
 }
 
@@ -214,10 +222,10 @@ impl CommandSubmissions {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(existing) = entries.retained.get(&id) {
             return match existing {
-                Submission::Command(command) if command.request == request => {
-                    SubmissionReservation::Existing(command.outcome.subscribe())
+                Submission::Command { tracked, .. } if tracked.request == request => {
+                    SubmissionReservation::Existing(tracked.outcome.subscribe())
                 }
-                Submission::Command(_) => SubmissionReservation::Conflict,
+                Submission::Command { .. } => SubmissionReservation::Conflict,
                 Submission::Cancelled => SubmissionReservation::Cancelled,
             };
         }
@@ -228,31 +236,29 @@ impl CommandSubmissions {
             return SubmissionReservation::Full;
         }
         let (outcome, _) = watch::channel(None);
+        let (cancelled, cancellation) = watch::channel(false);
         entries.insert(
             id,
-            Submission::Command(TrackedRequest {
-                request,
-                outcome: outcome.clone(),
-            }),
+            Submission::Command {
+                tracked: TrackedRequest {
+                    request,
+                    outcome: outcome.clone(),
+                },
+                cancelled,
+            },
         );
-        SubmissionReservation::New(outcome)
+        SubmissionReservation::New(outcome, cancellation)
     }
 
-    // INVARIANT: Fence an identifier and stop its motion under the same reservation lock.
-    // A future arrival for an identifier cancelled before submission is refused.
-    pub fn cancel(
-        &self,
-        id: Uuid,
-        token: &str,
-        arms: &[String],
-        stop: impl FnOnce() -> hebbian_contracts::LeasedStopOutcome,
-    ) -> CancellationResult {
+    // INVARIANT: Fence the request before reading its admission reply. If it was
+    // already enqueued, only the controller records returned for it may be cancelled.
+    pub fn cancel(&self, id: Uuid, token: &str, arms: &[String]) -> CancellationResult {
         let mut entries = self
             .entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(Submission::Command(command)) = entries.retained.get(&id) {
-            let matches = match &command.request {
+        if let Some(Submission::Command { tracked, cancelled }) = entries.retained.get(&id) {
+            let matches = match &tracked.request {
                 SubmissionRequest::Single(request) => {
                     request.lease_token.as_deref() == Some(token)
                         && matches!(arms, [arm] if arm == &request.arm)
@@ -268,18 +274,21 @@ impl CommandSubmissions {
             if !matches {
                 return CancellationResult::Conflict;
             }
+            cancelled.send_replace(true);
+            return CancellationResult::Pending(tracked.outcome.subscribe());
         }
-        let outcome = stop();
-        if !matches!(outcome, hebbian_contracts::LeasedStopOutcome::LeaseLost) {
-            if !entries.seen.contains(&id) && entries.make_room(Submission::is_evictable) {
-                entries.insert(id, Submission::Cancelled);
-            } else {
-                // INVARIANT: Even when all retained submissions are in flight, a stop must
-                // never be refused just because its cancellation arrived first.
-                entries.seen.insert(id);
-            }
+        if matches!(entries.retained.get(&id), Some(Submission::Cancelled)) {
+            return CancellationResult::Fenced;
         }
-        CancellationResult::Stopped(outcome)
+        if entries.seen.contains(&id) {
+            return CancellationResult::Expired;
+        }
+        if entries.make_room(Submission::is_evictable) {
+            entries.insert(id, Submission::Cancelled);
+        } else {
+            entries.seen.insert(id);
+        }
+        CancellationResult::Fenced
     }
 }
 
@@ -369,10 +378,8 @@ mod tests {
         let id = Uuid::new_v4();
         let arms = vec!["left".to_owned()];
         assert!(matches!(
-            submissions.cancel(id, "lease", &arms, || {
-                hebbian_contracts::LeasedStopOutcome::Submitted
-            }),
-            CancellationResult::Stopped(hebbian_contracts::LeasedStopOutcome::Submitted)
+            submissions.cancel(id, "lease", &arms),
+            CancellationResult::Fenced
         ));
         let request = CommandSubmissionRequest {
             request_id: id.to_string(),
@@ -402,7 +409,7 @@ mod tests {
             expected_revision: None,
             trace_context: None,
         };
-        let SubmissionReservation::New(sender) =
+        let SubmissionReservation::New(sender, _) =
             submissions.reserve(id, SubmissionRequest::Single(request.clone()))
         else {
             panic!("first submission must be new");
@@ -447,7 +454,7 @@ mod tests {
                 expected_revision: None,
                 trace_context: None,
             };
-            let SubmissionReservation::New(sender) =
+            let SubmissionReservation::New(sender, _) =
                 submissions.reserve(id, SubmissionRequest::Single(request.clone()))
             else {
                 panic!(
@@ -493,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_still_stops_and_fences_when_all_outcomes_are_in_flight() {
+    fn cancellation_fences_when_all_outcomes_are_in_flight() {
         let submissions = CommandSubmissions::default();
         let mut request = CommandSubmissionRequest {
             request_id: String::new(),
@@ -509,16 +516,14 @@ mod tests {
             request.request_id = id.to_string();
             assert!(matches!(
                 submissions.reserve(id, SubmissionRequest::Single(request.clone())),
-                SubmissionReservation::New(_)
+                SubmissionReservation::New(..)
             ));
         }
         let cancelled_id = Uuid::new_v4();
         request.request_id = cancelled_id.to_string();
         assert!(matches!(
-            submissions.cancel(cancelled_id, "lease", &["left".into()], || {
-                hebbian_contracts::LeasedStopOutcome::Submitted
-            }),
-            CancellationResult::Stopped(hebbian_contracts::LeasedStopOutcome::Submitted)
+            submissions.cancel(cancelled_id, "lease", &["left".into()]),
+            CancellationResult::Fenced
         ));
         assert!(matches!(
             submissions.reserve(cancelled_id, SubmissionRequest::Single(request)),

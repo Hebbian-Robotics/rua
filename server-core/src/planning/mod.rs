@@ -117,7 +117,17 @@ impl Planner {
         for (index, waypoint) in waypoints.iter().enumerate() {
             let label = format!("waypoint_{index}");
             let (mut corner, target_position, target_quaternion, pose_limited) = match waypoint {
-                Waypoint::Joints { joints } => (self.joint_target(joints)?, None, None, None),
+                Waypoint::Joints { joints } => {
+                    self.require_joint_shape(joints)?;
+                    if let Some(detail) = crate::joint_limits::joint_target_limit_error(
+                        joints,
+                        &self.lower,
+                        &self.upper,
+                    ) {
+                        return Err(refusal(RejectionReason::InvalidTarget, detail));
+                    }
+                    (joints.clone(), None, None, None)
+                }
                 Waypoint::Pose {
                     position,
                     orientation,
@@ -421,10 +431,10 @@ fn limited_summary(reason: IkFailure, best: &IkPose, advice: &str) -> String {
 
 fn not_reached(reason: IkFailure, best: &IkPose) -> String {
     format!(
-        "No joints move the tool toward the pose: {}; the closest is {:.1} mm and {:.3} rad \
+        "No joints move the tool toward the pose: {}; the closest is {:.1} mm and {:.1} degrees \
          away; arm has not moved",
         shortfall_cause(reason),
         best.position_error_meters * 1000.0,
-        best.orientation_error_radians
+        best.orientation_error_radians.to_degrees()
     )
 }

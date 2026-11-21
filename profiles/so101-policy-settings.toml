@@ -1,7 +1,5 @@
-# Settings for the learned reaching policy. The released model is for the arm with the TPU
-# gripper and wrist camera. The servo-fit-30000 checkpoint was trained with a servo model
-# fitted to that assembly and validated in simulation. Put the checkpoint assets in
-# .cache/so101-policy-assets/ relative to the repository root.
+# ONNX policy settings for a single SO-101 with the TPU gripper and wrist camera.
+# Supply a compatible model at the configured path and match its checkpoint metadata.
 controller = "policy"
 
 [policy]
