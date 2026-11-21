@@ -6,7 +6,7 @@ use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
 use super::trajectory::GroupReference;
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
 use crate::arm::{Job, Now};
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::control_link::{Link, SampleRecycler};
 use crate::gripper::GripperState;
 use crate::handoff::ArmInbox;
@@ -14,7 +14,7 @@ use crate::limits::Trip;
 use crate::plant::{Feedback, Plant, Reconnection};
 use crate::trace::TraceWriter;
 use hebbian_contracts::ArmRecoveryIssue;
-use hebbian_contracts::{ArmMode, Command, CommandOutcome, Event, GripperResult};
+use hebbian_contracts::{ArmMode, CommandOutcome, Event, GripperResult};
 const BUS_FAILURE_GRACE_SECONDS: f64 = 0.5;
 // SAFETY: A cycle longer than this many periods is fed to the generators as this
 // many, so a late cycle does not become a jump.
@@ -61,13 +61,13 @@ pub(super) enum Flow {
 pub(super) struct Runner<'a, P: Plant> {
     pub(super) name: String,
     pub(super) plant: &'a mut P,
-    pub(super) link: Option<&'a Link>,
-    pub(super) inbox: Option<ArmInbox>,
-    pub(super) samples: Option<SampleRecycler>,
+    pub(super) link: &'a Link,
+    pub(super) inbox: ArmInbox,
+    pub(super) samples: SampleRecycler,
     pub(super) feedback: Feedback,
     // INVARIANT: Reused read buffer; failed reads never replace the retained trusted sample.
     pub(super) feedback_scratch: Feedback,
-    pub(super) config: &'a ExecutorConfig,
+    pub(super) config: &'a ControllerConfig,
     pub(super) state: Loop<'a>,
     pub(super) trace: TraceWriter,
     pub(super) timings: crate::trace::CycleTimings,
@@ -78,7 +78,6 @@ pub(super) struct Runner<'a, P: Plant> {
     pub(super) failed_cycles: u32,
     pub(super) last_reconnect_failure: Option<String>,
     pub(super) recovery: BusRecovery,
-    pub(super) sine_stream: Option<String>,
 }
 
 impl<P: Plant> Runner<'_, P> {
@@ -473,24 +472,6 @@ impl<P: Plant> Runner<'_, P> {
         Ok(())
     }
 
-    pub(super) fn drive_sine(&mut self, now: Now) {
-        let positions =
-            vec![0.4 * self.started.elapsed().as_secs_f64().sin(); self.config.joint_count];
-        let arm = self.state.arm();
-        if !matches!(arm.mode(), ArmMode::Holding | ArmMode::Moving) {
-            return;
-        }
-        let command = Command::StreamJoints {
-            gripper_angle: None,
-            positions,
-            joint_speed: None,
-            stream_command_id: self.sine_stream.clone(),
-        };
-        if let Ok(record) = arm.submit(command, now) {
-            self.sine_stream = Some(record.command_id);
-        }
-    }
-
     fn resolve_gripper_failure(
         &mut self,
         failure: GripperCycleFailure,
@@ -597,10 +578,6 @@ impl<P: Plant> Runner<'_, P> {
             tool_pose,
             feedback.fault.as_deref(),
         );
-        if self.link.is_none() {
-            self.drive_sine(now);
-        }
-
         let failure = self
             .state
             .cycle_failure(feedback, interval, deadline_missed);
@@ -746,7 +723,7 @@ impl<P: Plant> Runner<'_, P> {
 
     pub(super) fn finished_or_continue(&self) -> Flow {
         // CONSTRAINT: A simulator that is gone ends the arm's run: nothing paces the loop any
-        // more, and the closed socket tells the station the executor is not live.
+        // more, and the closed socket tells the station the controller is not live.
         if self.plant_lost || self.state.core.shutdown_finished() {
             Flow::End
         } else {
@@ -756,53 +733,49 @@ impl<P: Plant> Runner<'_, P> {
 
     pub(super) fn trip(&mut self, feedback: &Feedback, reason: &str, now: Now) {
         self.report.trip.get_or_insert_with(|| reason.to_owned());
-        if let Some(link) = self.link {
-            link.publish(Event::Tripped {
-                reason: reason.to_owned(),
-            });
-        }
+        self.link.publish(Event::Tripped {
+            reason: reason.to_owned(),
+        });
         self.state.hold_after_trip(reason, feedback, now);
     }
 
     pub(super) fn publish(&mut self, feedback: &Feedback, interval: f64, command_sent: bool) {
-        if let (Some(link), Some(samples)) = (self.link, &self.samples) {
-            let mut sample = samples.checkout();
-            let core = &self.state.core;
-            sample.cycle = self.cycle_number;
-            sample.mode = core.mode();
-            assign_text(&mut sample.active_command, core.active_command_id());
-            assign_text(&mut sample.segment, core.segment());
-            assign_numbers(
-                &mut sample.hold_pose,
-                core.poses().map(|poses| &poses.hold[..]),
-            );
-            assign_numbers(
-                &mut sample.rest_pose,
-                core.poses().map(|poses| &poses.rest[..]),
-            );
-            sample.positions.clone_from(&feedback.positions);
-            assign_numbers(
-                &mut sample.commanded_positions,
-                command_sent.then_some(self.state.previous_command.as_slice()),
-            );
-            sample.velocities.clone_from(&feedback.velocities);
-            sample.efforts.clone_from(&feedback.efforts);
-            sample
-                .temperatures_celsius
-                .clone_from(&feedback.temperatures_celsius);
-            sample.voltages_volts.clone_from(&feedback.voltages_volts);
-            sample.gripper_angle = feedback.gripper_angle;
-            sample.fault.clone_from(&feedback.fault);
-            sample.active_trip.clone_from(&self.state.tripped);
-            sample.recovery_issue = match &self.recovery {
-                BusRecovery::AwaitingApproval(issue) => Some(issue.clone()),
-                BusRecovery::Disabled
-                | BusRecovery::Reconnecting
-                | BusRecovery::VerifyingHold { .. } => None,
-            };
-            sample.cycle_seconds = interval;
-            link.publish(Event::State(sample));
-        }
+        let mut sample = self.samples.checkout();
+        let core = &self.state.core;
+        sample.cycle = self.cycle_number;
+        sample.mode = core.mode();
+        assign_text(&mut sample.active_command, core.active_command_id());
+        assign_text(&mut sample.segment, core.segment());
+        assign_numbers(
+            &mut sample.hold_pose,
+            core.poses().map(|poses| &poses.hold[..]),
+        );
+        assign_numbers(
+            &mut sample.rest_pose,
+            core.poses().map(|poses| &poses.rest[..]),
+        );
+        sample.positions.clone_from(&feedback.positions);
+        assign_numbers(
+            &mut sample.commanded_positions,
+            command_sent.then_some(self.state.previous_command.as_slice()),
+        );
+        sample.velocities.clone_from(&feedback.velocities);
+        sample.efforts.clone_from(&feedback.efforts);
+        sample
+            .temperatures_celsius
+            .clone_from(&feedback.temperatures_celsius);
+        sample.voltages_volts.clone_from(&feedback.voltages_volts);
+        sample.gripper_angle = feedback.gripper_angle;
+        sample.fault.clone_from(&feedback.fault);
+        sample.active_trip.clone_from(&self.state.tripped);
+        sample.recovery_issue = match &self.recovery {
+            BusRecovery::AwaitingApproval(issue) => Some(issue.clone()),
+            BusRecovery::Disabled
+            | BusRecovery::Reconnecting
+            | BusRecovery::VerifyingHold { .. } => None,
+        };
+        sample.cycle_seconds = interval;
+        self.link.publish(Event::State(sample));
         self.cycle_number += 1;
     }
 }

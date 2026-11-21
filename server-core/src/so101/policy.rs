@@ -358,7 +358,7 @@ pub(crate) fn validate_joint_count(joint_count: usize) -> anyhow::Result<()> {
 }
 
 // CONSTRAINT: Rate and action scale are part of the trained model, not shared loop policy.
-pub(crate) fn validate_execution(config: &crate::config::ExecutorConfig) -> anyhow::Result<()> {
+pub(crate) fn validate_execution(config: &crate::config::ControllerConfig) -> anyhow::Result<()> {
     validate_joint_count(config.joint_count)?;
     ensure!(
         (config.frequency_hertz - CONTROL_FREQUENCY_HERTZ).abs() < 1e-9,

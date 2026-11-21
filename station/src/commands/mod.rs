@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(about = "The real-time control loop for the SO-101")]
+#[command(about = "Run an SO-101 station for robot-use clients")]
 pub(crate) struct Arguments {
     #[command(subcommand)]
     pub(crate) command: Command,
@@ -29,28 +29,6 @@ pub(crate) enum Command {
         arguments: serve::ServeArguments,
         #[command(flatten)]
         web: WebArguments,
-    },
-    /// Run the control loop for one or more arms in lockstep and print each
-    /// arm's cycle timing while sweeping a sine. Use `serve` for the station API.
-    Run {
-        /// An arm and its config, as `NAME=CONFIG.json`; repeat for each arm.
-        /// A grouped move names these arms.
-        #[arg(long = "arm", required = true, value_parser = parse_arm)]
-        arms: Vec<(String, PathBuf)>,
-        /// Stop after this many seconds; without it, run until SIGINT or SIGTERM.
-        #[arg(long)]
-        seconds: Option<f64>,
-        /// Where a simulator's plant sockets go, as `NAME.plant.sock`.
-        #[arg(long)]
-        socket_directory: Option<PathBuf>,
-        /// How slowly the simulated joints follow commands.
-        #[arg(long, default_value_t = crate::run::DEFAULT_STAND_IN_LAG_SECONDS)]
-        plant_lag_seconds: f64,
-        /// Drive the Feetech servos in the config's `feetech` section instead of
-        /// the simulator: check them, turn torque on, and leave it on when the
-        /// loop ends, so the arm holds.
-        #[arg(long)]
-        hardware: bool,
     },
     /// Internal motor-controller child, started by the station supervisor.
     #[command(hide = true)]
@@ -98,13 +76,12 @@ pub(crate) enum Command {
         #[arg(long)]
         trace: PathBuf,
     },
-    /// Watch an enabled arm for an executor: started by the executor, not for direct
-    /// use. Reads heartbeats on stdin.
+    /// Internal watchdog for an enabled arm. The controller sends heartbeats on stdin.
     Guard {
         #[arg(long)]
         config: PathBuf,
         #[arg(long)]
-        executor_pid: u32,
+        controller_pid: u32,
     },
     /// Write the station's `OpenAPI` document to stdout, or the simulator socket schema.
     Schema {
@@ -119,18 +96,10 @@ pub(crate) enum Command {
     /// unless `--urdf-limits`.
     Config {
         /// Bundled profile name, absolute local profile path, or auto for a registered SO-101.
-        #[arg(
-            long,
-            required_unless_present = "profile_json",
-            conflicts_with = "profile_json"
-        )]
-        profile: Option<String>,
+        #[arg(long)]
+        profile: String,
         #[command(flatten)]
         selection: so101::SelectionArguments,
-        /// Read the profile from stdin as JSON with the TOML keys and no
-        /// `extends`; relative paths resolve against the working directory.
-        #[arg(long)]
-        profile_json: bool,
         #[arg(long)]
         arm: String,
         /// Defaults to `$HEBBIAN_PROFILE_DIRECTORY`, else installed or checkout

@@ -20,7 +20,7 @@ __pycache__/
 /profiles/local/
 /target/
 
-# Executor and control-loop cycle traces
+# Controller traces and cycle timings
 /traces/
 /server-core/traces/
 /station/traces/

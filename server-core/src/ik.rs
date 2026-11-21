@@ -1,10 +1,10 @@
-use crate::{config::ExecutorConfig, robot::Robot};
+use crate::{config::ControllerConfig, robot::Robot};
 pub use hebbian_robot_geometry::ik::{
     IkRefusal, IkSolver, ORIENTATION_TOLERANCE_RADIANS, POSITION_TOLERANCE_METERS,
 };
 
 pub(crate) fn solver_for_arm(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     robot: &Robot,
 ) -> anyhow::Result<Option<IkSolver>> {
     let Some(tool_link) = &config.tool_link else {

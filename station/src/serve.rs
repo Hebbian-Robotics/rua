@@ -3,7 +3,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, ensure};
-use hebbian_robot_use_core::config::{ExecutorConfig, SimPlantConfig};
+use hebbian_robot_use_core::config::{ControllerConfig, SimPlantConfig};
 use hebbian_robot_use_core::profile::{self, Driver, JointLimitSource};
 use hebbian_robot_use_server::controller_process::PlantSelection;
 use hebbian_robot_use_server::web::WebSettings;
@@ -69,7 +69,7 @@ impl Drop for WorkDirectory {
     }
 }
 
-fn write_config(path: &Path, config: &ExecutorConfig) -> anyhow::Result<()> {
+fn write_config(path: &Path, config: &ControllerConfig) -> anyhow::Result<()> {
     std::fs::write(path, serde_json::to_string(config)?)
         .with_context(|| format!("Cannot write {}", path.display()))
 }
@@ -150,7 +150,7 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
     };
     let mut arms: Vec<ConfiguredArm> = Vec::new();
     for arm in arm_names {
-        let mut config = profile::executor_config_input(
+        let mut config = profile::controller_config_input(
             &robot_profile,
             &arm,
             limit_source,
@@ -170,7 +170,7 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
         if let Some(trace_directory) = &arguments.trace_directory {
             config.trace_directory = trace_directory.to_string_lossy().into_owned();
         }
-        let config = ExecutorConfig::try_from(config)
+        let config = ControllerConfig::try_from(config)
             .with_context(|| format!("Invalid config for arm {arm}"))?;
         let config_path = directory.join(format!("{arm}.json"));
         write_config(&config_path, &config)?;

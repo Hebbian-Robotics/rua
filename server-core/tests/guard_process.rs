@@ -16,13 +16,13 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use hebbian_robot_use_core::config::{ExecutorConfig, GuardConfig};
+use hebbian_robot_use_core::config::{ControllerConfig, GuardConfig};
 use hebbian_robot_use_core::guard::{GuardedArm, guard};
 use hebbian_robot_use_core::plant::Feedback;
 
 const ROLE_VARIABLE: &str = "HEBBIAN_GUARD_PROCESS_TEST_ROLE";
 const DIRECTORY_VARIABLE: &str = "HEBBIAN_GUARD_PROCESS_TEST_DIRECTORY";
-const EXECUTOR_PID_VARIABLE: &str = "HEBBIAN_GUARD_PROCESS_TEST_EXECUTOR";
+const CONTROLLER_PID_VARIABLE: &str = "HEBBIAN_GUARD_PROCESS_TEST_CONTROLLER";
 const TEST_NAME: &str = "simulated_guard_takes_over_after_controller_stalls";
 
 struct LockedBus {
@@ -73,8 +73,8 @@ impl GuardedArm for LockedBus {
     }
 }
 
-fn guard_configuration() -> ExecutorConfig {
-    let config = ExecutorConfig::parse(r#"{
+fn guard_configuration() -> ControllerConfig {
+    let config = ControllerConfig::parse(r#"{
       "urdf":"unused.urdf","driven_joints":["a","b"],"surface_guard":null,
       "motion":{"acceleration_limit":20.0,"jerk_limit":200.0,"settled_error_radians":0.02,"settle_dwell_seconds":0.1,"settle_timeout_seconds":2.0},
       "joint_count":2,"frequency_hertz":100.0,"loop_deadline_seconds":0.1,
@@ -88,7 +88,7 @@ fn guard_configuration() -> ExecutorConfig {
         poll_seconds: 0.02,
         hold_limit_seconds: 1.0,
     });
-    ExecutorConfig::try_from(config).unwrap()
+    ControllerConfig::try_from(config).unwrap()
 }
 
 fn spawn_role(role: &str, directory: &Path) -> Command {
@@ -101,13 +101,13 @@ fn spawn_role(role: &str, directory: &Path) -> Command {
 }
 
 fn run_guard(directory: &Path) {
-    let executor_pid = std::env::var(EXECUTOR_PID_VARIABLE)
+    let controller_pid = std::env::var(CONTROLLER_PID_VARIABLE)
         .unwrap()
         .parse()
         .unwrap();
     let result = guard(
         &guard_configuration(),
-        executor_pid,
+        controller_pid,
         std::io::stdin(),
         || {
             let bus = LockedBus::open(directory)?;
@@ -122,7 +122,7 @@ fn run_controller(directory: &Path) {
     let _bus = LockedBus::open(directory).unwrap();
     std::fs::write(directory.join("torque"), "on").unwrap();
     let mut guard_process = spawn_role("guard", directory)
-        .env(EXECUTOR_PID_VARIABLE, std::process::id().to_string())
+        .env(CONTROLLER_PID_VARIABLE, std::process::id().to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

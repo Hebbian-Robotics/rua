@@ -3,7 +3,7 @@ pub mod recorder;
 
 pub(crate) mod station;
 
-/// Follow executor telemetry independently of `LiveKit` publishing.
+/// Follow station telemetry independently of `LiveKit` publishing.
 /// # Errors
 /// Returns local telemetry errors; connection loss is retried with resume.
 pub async fn follow_station(

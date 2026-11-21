@@ -69,7 +69,7 @@ impl LinkClient {
                     assert!(Instant::now() < deadline, "no frame in {WAIT:?}");
                     std::thread::sleep(Duration::from_millis(1));
                 }
-                Err(TryRecvError::Disconnected) => panic!("the executor dropped the client"),
+                Err(TryRecvError::Disconnected) => panic!("the controller dropped the client"),
             }
         }
     }
@@ -111,9 +111,7 @@ impl RunningArms {
                 &loop_shutdown_requested,
             );
             for arm in arms {
-                if let Some(link) = arm.link {
-                    link.close();
-                }
+                arm.link.close();
             }
         });
         Self {

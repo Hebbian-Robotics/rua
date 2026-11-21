@@ -97,7 +97,7 @@ impl SocketPlant {
         let hello: SimHello = read_line(&mut reader).context("The simulator's hello")?;
         ensure!(
             hello.protocol_version == PROTOCOL_VERSION,
-            "The simulator speaks protocol {}, the executor {PROTOCOL_VERSION}",
+            "The simulator speaks protocol {}, the controller {PROTOCOL_VERSION}",
             hello.protocol_version
         );
         ensure!(

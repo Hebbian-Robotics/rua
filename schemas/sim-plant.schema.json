@@ -13,7 +13,7 @@
       "$ref": "#/$defs/SimState"
     },
     "step": {
-      "description": "The executor's line each cycle.",
+      "description": "The controller's line each cycle.",
       "$ref": "#/$defs/SimStep"
     }
   },
@@ -28,7 +28,7 @@
       "type": "object",
       "properties": {
         "joint_names": {
-          "description": "The URDF joint names the simulator serves: the arm's, then the gripper's\nwhen it has one. They must equal the executor's driven joints.",
+          "description": "The URDF joint names the simulator serves: the arm's, then the gripper's\nwhen it has one. They must equal the controller's driven joints.",
           "type": "array",
           "items": {
             "type": "string"
@@ -94,7 +94,7 @@
       ]
     },
     "SimStep": {
-      "description": "What the executor sends each cycle.",
+      "description": "What the controller sends each cycle.",
       "type": "object",
       "properties": {
         "gripper_angle": {

@@ -7,7 +7,7 @@ mod tests;
 use anyhow::Context;
 use nalgebra::{UnitQuaternion, Vector3};
 
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::control_loop::{build_guard, build_self_collision, load_shared_robot};
 use crate::ik::IkSolver;
 use crate::joint_limits::motion_speed;
@@ -60,7 +60,7 @@ pub struct Planner {
 }
 
 impl Planner {
-    pub fn for_arm(config: &ExecutorConfig) -> anyhow::Result<Option<Self>> {
+    pub fn for_arm(config: &ControllerConfig) -> anyhow::Result<Option<Self>> {
         if config.tool_link.is_none() {
             return Ok(None);
         }

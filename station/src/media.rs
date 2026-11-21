@@ -93,7 +93,7 @@ impl MediaPlan {
             "publish".to_owned(),
             "--room".to_owned(),
             self.room.clone(),
-            "--executor-url".to_owned(),
+            "--station-url".to_owned(),
             self.station_url.clone(),
         ];
         for (name, device) in &self.cameras {

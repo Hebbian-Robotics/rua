@@ -1,5 +1,5 @@
 use hebbian_robot_use_core::{
-    config::ExecutorConfig,
+    config::ControllerConfig,
     control_link::Link,
     lease::{LEASE, Lease},
     station_api::HttpServer,
@@ -57,7 +57,7 @@ async fn recorder_marks_controller_loss_even_if_telemetry_was_not_received()
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-media"))
         .args(["record", "--room", "test", "--directory"])
         .arg(&recording)
-        .args(["--executor-url", "http://127.0.0.1:1"])
+        .args(["--station-url", "http://127.0.0.1:1"])
         .env("LIVEKIT_URL", "ws://127.0.0.1:1")
         .env("LIVEKIT_API_KEY", "test-key")
         .env("LIVEKIT_API_SECRET", "test-secret")
@@ -104,7 +104,7 @@ async fn recorder_marks_controller_loss_even_if_telemetry_was_not_received()
 async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomplete()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
-    let config = ExecutorConfig::parse(include_str!(
+    let config = ControllerConfig::parse(include_str!(
         "../../server-core/tests/support/two_joint_config.json"
     ))?;
     let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
@@ -115,7 +115,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
         .args(["record", "--room", "test", "--directory"])
         .arg(directory.path().join("recording"))
         .args([
-            "--executor-url",
+            "--station-url",
             &format!("http://{}", server.local_address()),
         ])
         .env("LIVEKIT_URL", "ws://127.0.0.1:1")
@@ -194,7 +194,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
 async fn unreachable_livekit_and_station_reconnect_preserve_recording()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
-    let mut config = ExecutorConfig::parse(include_str!(
+    let mut config = ControllerConfig::parse(include_str!(
         "../../server-core/tests/support/two_joint_config.json"
     ))?
     .into_input();
@@ -203,7 +203,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .join("traces")
         .to_string_lossy()
         .into_owned();
-    let config = ExecutorConfig::try_from(config)?;
+    let config = ControllerConfig::try_from(config)?;
     let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
     let server = start_station("127.0.0.1:0".into()).await?;
     let arm_links = BTreeMap::from([("left".into(), link.handle())]);
@@ -214,7 +214,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         let mut plant = hebbian_robot_use_core::plant::NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
         hebbian_robot_use_core::control_loop::run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(30)),
             &loop_shutdown_requested,
@@ -227,7 +227,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .args(["record", "--room", "test", "--directory"])
         .arg(&recording)
         .args([
-            "--executor-url",
+            "--station-url",
             &format!("http://{}", server.local_address()),
         ])
         .env("LIVEKIT_URL", "ws://127.0.0.1:1")
@@ -423,7 +423,7 @@ async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
     // as supervisor, prints the recorder's pid and then idles until killed.
     let script = format!(
         "\"{executable}\" record --room test --directory \"{}\" \
-         --executor-url http://127.0.0.1:1 --supervisor-pid $$ & echo $!; wait",
+         --station-url http://127.0.0.1:1 --supervisor-pid $$ & echo $!; wait",
         recording.display()
     );
     let mut supervisor = tokio::process::Command::new("sh")

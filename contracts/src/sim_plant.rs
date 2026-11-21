@@ -24,12 +24,12 @@ pub struct SimState {
 pub struct SimHello {
     pub protocol_version: u32,
     /// The URDF joint names the simulator serves: the arm's, then the gripper's
-    /// when it has one. They must equal the executor's driven joints.
+    /// when it has one. They must equal the controller's driven joints.
     pub joint_names: Vec<String>,
     pub state: SimState,
 }
 
-/// What the executor sends each cycle.
+/// What the controller sends each cycle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SimStep {
@@ -52,6 +52,6 @@ pub struct SimPlantContract {
     pub hello: SimHello,
     /// The simulator's reply to each step.
     pub state: SimState,
-    /// The executor's line each cycle.
+    /// The controller's line each cycle.
     pub step: SimStep,
 }

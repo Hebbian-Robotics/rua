@@ -8,7 +8,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::arm::{PoseGoalSettings, ReachGoal};
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
 use crate::lease::{
     AcquireError, AdmissionOptions, ArmGate, Lease, LeaseRequest, SharedInterlocks,
@@ -72,7 +72,7 @@ struct Shared {
     reach_settings: Option<PoseGoalSettings>,
     gripper: Option<crate::config::GripperLimits>,
     has_policy: bool,
-    config: Arc<ExecutorConfig>,
+    config: Arc<ControllerConfig>,
     next_client: Arc<AtomicU64>,
     changes: Arc<tokio::sync::watch::Sender<Option<ArmMode>>>,
 }
@@ -265,7 +265,7 @@ impl LinkHandle {
     }
 
     #[must_use]
-    pub fn config(&self) -> &ExecutorConfig {
+    pub fn config(&self) -> &ControllerConfig {
         &self.shared.config
     }
 
@@ -533,18 +533,18 @@ impl Link {
         crate::controller_bridge::LoopArm::new(self.shared.arm.clone())
     }
 
-    pub fn new(config: &ExecutorConfig, lease: Arc<Lease>) -> anyhow::Result<Self> {
+    pub fn new(config: &ControllerConfig, lease: Arc<Lease>) -> anyhow::Result<Self> {
         let preview = Preview::new(config)?.map(|preview| Arc::new(Mutex::new(preview)));
         let planner = Planner::for_arm(config)?.map(Arc::new);
         Ok(Self::with_handoff(config, lease, planner, preview))
     }
 
-    pub fn for_controller(config: &ExecutorConfig, lease: Arc<Lease>) -> Self {
+    pub fn for_controller(config: &ControllerConfig, lease: Arc<Lease>) -> Self {
         Self::with_handoff(config, lease, None, None)
     }
 
     fn with_handoff(
-        config: &ExecutorConfig,
+        config: &ControllerConfig,
         lease: Arc<Lease>,
         planner: Option<Arc<Planner>>,
         preview: Option<Arc<Mutex<Preview>>>,
@@ -901,7 +901,8 @@ mod tests {
     #[test]
     fn cleanup_for_an_old_execution_leaves_the_next_command_admissible() {
         let config =
-            ExecutorConfig::parse(include_str!("../tests/support/two_joint_config.json")).unwrap();
+            ControllerConfig::parse(include_str!("../tests/support/two_joint_config.json"))
+                .unwrap();
         let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let handle = link.handle();
         let lease = handle
@@ -937,7 +938,8 @@ mod tests {
     #[test]
     fn a_pending_motor_command_does_not_block_a_lease_claim() {
         let config =
-            ExecutorConfig::parse(include_str!("../tests/support/two_joint_config.json")).unwrap();
+            ControllerConfig::parse(include_str!("../tests/support/two_joint_config.json"))
+                .unwrap();
         let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let handle = link.handle();
         let mut reply = handle

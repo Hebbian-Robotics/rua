@@ -815,7 +815,7 @@ mod tests {
 
     #[tokio::test]
     async fn losing_the_lease_wakes_a_step_waiting_for_holding() {
-        let config = crate::config::ExecutorConfig::parse(include_str!(
+        let config = crate::config::ControllerConfig::parse(include_str!(
             "../../tests/support/two_joint_config.json"
         ))
         .unwrap();

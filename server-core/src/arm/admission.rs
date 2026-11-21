@@ -550,7 +550,7 @@ impl ArmCore {
         let Some(settings) = self.limits.pose_goals else {
             return Err(rejection(
                 RejectionReason::InvalidTarget,
-                "This executor has no policy loaded, so it cannot reach a pose",
+                "This controller has no policy loaded, so it cannot reach a pose",
             ));
         };
         if let Some(refused) = self.mode_rejection() {
@@ -642,7 +642,7 @@ impl ArmCore {
         if self.limits.pose_goals.is_none() {
             return Err(rejection(
                 RejectionReason::InvalidTarget,
-                "This executor has no policy loaded, so it cannot take a pose goal",
+                "This controller has no policy loaded, so it cannot take a pose goal",
             ));
         }
         let norm = quaternion.iter().map(|v| v * v).sum::<f64>().sqrt();

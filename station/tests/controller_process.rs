@@ -60,23 +60,6 @@ fn write_simulated_config(root: &Path, directory: &Path) -> PathBuf {
 }
 
 #[test]
-fn the_diagnostic_rejects_hardware_without_servo_configuration() {
-    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let temporary = tempfile::tempdir().unwrap();
-    let config_path = write_simulated_config(root, temporary.path());
-    let output = Command::new(executable)
-        .args(["run", "--arm"])
-        .arg(format!("arm={}", config_path.display()))
-        .arg("--hardware")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success());
-    assert!(stderr.contains("needs a feetech section"), "{stderr}");
-}
-
-#[test]
 fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
     let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

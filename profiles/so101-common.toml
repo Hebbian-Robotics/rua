@@ -30,7 +30,7 @@ loop_deadline_seconds = 0.2
 
 [tracking]
 # A joint may trail its command by commanded speed * following_lag_seconds +
-# static_margin_radians before the executor trips. Measure lag on each arm
+# static_margin_radians before the controller trips. Measure lag on each arm
 # from target and measured joint angles at the intended operating speeds.
 # The static margin is the error allowed at rest.
 following_lag_seconds = 0.11
@@ -61,8 +61,8 @@ enable_drift_limit_radians = 0.05
 [guard]
 heartbeat_timeout_seconds = 0.5
 poll_seconds = 0.05
-# Ends a hold the executor abandoned, which also frees the bus for the next
-# executor. Servo heating while holding is the temperature trip's, not this.
+# Ends a hold the controller abandoned, which also frees the bus for the next
+# controller. Servo heating while holding is the temperature trip's, not this.
 hold_limit_seconds = 30
 
 [gripper]

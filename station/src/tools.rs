@@ -8,7 +8,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::kinematics::pose_from_xyzw;
 use hebbian_robot_use_core::profile;
 use hebbian_robot_use_core::robot::Robot;
@@ -18,10 +18,10 @@ use serde::Deserialize;
 
 use crate::run::bus_timing_json;
 
-pub(crate) fn load_config(path: &Path) -> anyhow::Result<ExecutorConfig> {
+pub(crate) fn load_config(path: &Path) -> anyhow::Result<ControllerConfig> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("Cannot read the config {}", path.display()))?;
-    ExecutorConfig::parse(&text).with_context(|| format!("Invalid config {}", path.display()))
+    ControllerConfig::parse(&text).with_context(|| format!("Invalid config {}", path.display()))
 }
 
 pub(crate) fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> anyhow::Result<T> {
@@ -30,7 +30,7 @@ pub(crate) fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> anyhow::Re
     serde_json::from_str(&text).with_context(|| format!("Cannot parse {}", path.display()))
 }
 
-pub(crate) fn feetech_servos(config: &ExecutorConfig) -> anyhow::Result<Servos<SerialBus>> {
+pub(crate) fn feetech_servos(config: &ControllerConfig) -> anyhow::Result<Servos<SerialBus>> {
     let bus = config
         .feetech
         .clone()
@@ -188,29 +188,23 @@ pub(crate) fn check_config(config_path: &Path) -> anyhow::Result<()> {
 }
 
 pub(crate) fn print_profile_config(
-    profile_name: Option<&str>,
+    profile_name: &str,
     selection: &crate::commands::SelectionArguments,
     arm: &str,
     profile_directory: Option<&Path>,
     urdf_limits: bool,
 ) -> anyhow::Result<()> {
-    let robot_profile = if let Some(profile_name) = profile_name {
-        let directory = match profile_directory {
-            Some(directory) => directory.to_owned(),
-            None => profile::default_profile_directory()?,
-        };
-        selection.load_profile(profile_name, &directory, false)?
-    } else {
-        selection.require_explicit_profile()?;
-        let text = std::io::read_to_string(std::io::stdin()).context("Cannot read stdin")?;
-        profile::parse_robot_profile_json(&text, &std::env::current_dir()?)?
+    let directory = match profile_directory {
+        Some(directory) => directory.to_owned(),
+        None => profile::default_profile_directory()?,
     };
+    let robot_profile = selection.load_profile(profile_name, &directory, false)?;
     let joint_limits = if urdf_limits {
         profile::JointLimitSource::Urdf
     } else {
         profile::JointLimitSource::Calibration
     };
-    let config = profile::executor_config(
+    let config = profile::controller_config(
         &robot_profile,
         arm,
         joint_limits,
@@ -220,14 +214,14 @@ pub(crate) fn print_profile_config(
     Ok(())
 }
 
-pub(crate) fn run_guard(config_path: &Path, executor_pid: u32) -> anyhow::Result<()> {
+pub(crate) fn run_guard(config_path: &Path, controller_pid: u32) -> anyhow::Result<()> {
     let config = load_config(config_path)?;
     let feetech = config
         .feetech
         .clone()
         .context("The guard needs a config with a feetech section")?;
     let outcome =
-        hebbian_robot_use_core::guard::guard(&config, executor_pid, std::io::stdin(), || {
+        hebbian_robot_use_core::guard::guard(&config, controller_pid, std::io::stdin(), || {
             Servos::open(feetech.clone())
         })?;
     let _ = writeln!(

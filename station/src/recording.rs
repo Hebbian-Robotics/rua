@@ -312,26 +312,26 @@ impl RecordingManager {
             .recording
             .as_ref()
             .ok_or("LiveKit recording is not configured")?;
-        let mut executor_url =
+        let mut station_url =
             reqwest::Url::parse(&self.station_url).map_err(|error| error.to_string());
-        executor_url = executor_url.and_then(|mut url| {
+        station_url = station_url.and_then(|mut url| {
             let scheme = match url.scheme() {
                 "http" | "ws" => "http",
                 "https" | "wss" => "https",
-                scheme => return Err(format!("unsupported executor URL scheme: {scheme}")),
+                scheme => return Err(format!("unsupported station URL scheme: {scheme}")),
             };
             url.set_scheme(scheme)
-                .map_err(|()| "invalid executor URL".to_owned())?;
+                .map_err(|()| "invalid station URL".to_owned())?;
             url.set_path("/");
             url.set_query(None);
             url.set_fragment(None);
             Ok(url)
         });
-        let executor_url = executor_url?;
+        let station_url = station_url?;
         Command::new(&configuration.executable)
             .args(["record", "--room", &configuration.room, "--directory"])
             .arg(configuration.directory.join(name))
-            .args(["--executor-url", executor_url.as_str()])
+            .args(["--station-url", station_url.as_str()])
             .args(["--supervisor-pid", &std::process::id().to_string()])
             .stdin(Stdio::null())
             .stdout(Stdio::null())

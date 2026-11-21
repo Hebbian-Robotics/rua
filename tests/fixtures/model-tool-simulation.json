@@ -1,0 +1,5 @@
+{
+  "limited_position_millimeters": [500.0, 0.0, 200.0],
+  "partial_gripper_opening": 0.5,
+  "requested_speed_degrees_per_second": 999.0
+}

@@ -1,0 +1,32 @@
+[package]
+name = "hebbian-robot-use-sdk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+description = "Async Rust client for a Hebbian robot-use station: control, commands, sequences, state, cameras and recordings."
+publish = false
+
+[lib]
+name = "hebbian_robot_use_sdk"
+
+[dependencies]
+hebbian-contracts = { path = "../contracts" }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+hebbian-robot-use-core = { path = "../server-core" }
+# The run telemetry buffer lives in the station; the telemetry test needs a real one.
+hebbian-robot-use-server = { path = "../station" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+[lints]
+workspace = true

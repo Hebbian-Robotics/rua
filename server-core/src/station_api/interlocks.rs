@@ -61,14 +61,14 @@ mod tests {
     use hebbian_contracts::{ArmRecoveryIssue, Event, Sample};
 
     use super::*;
-    use crate::config::ExecutorConfig;
+    use crate::config::ControllerConfig;
     use crate::control_link::Link;
     use crate::lease::{LEASE, Lease};
 
     #[tokio::test]
     async fn reconnection_replaces_an_obsolete_recovery_approval_interlock() {
         let config =
-            ExecutorConfig::parse(include_str!("../../tests/support/two_joint_config.json"))
+            ControllerConfig::parse(include_str!("../../tests/support/two_joint_config.json"))
                 .unwrap();
         let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
         let handle = link.handle();

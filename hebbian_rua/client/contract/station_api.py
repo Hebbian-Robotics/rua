@@ -1611,7 +1611,7 @@ class Achieved(BaseModel):
     position: Annotated[
         list[StrictFloat] | None,
         Field(
-            description="The tool pose at `joints`; absent when the executor has no tool link.",
+            description="The tool pose at `joints`; absent when the controller has no tool link.",
             max_length=3,
             min_length=3,
         ),
@@ -2382,7 +2382,7 @@ class StationState(BaseModel):
     robot: Annotated[
         str | None,
         Field(
-            description="The profile name, absent for a bare executor configuration."
+            description="The profile name, absent for a bare controller configuration."
         ),
     ] = None
     surface_guard: Annotated[
@@ -2590,7 +2590,7 @@ class Frame(BaseModel):
     emitted_unix_nano: Annotated[
         str,
         Field(
-            description="When the executor's writer made the frame; a replayed log event keeps\nthe time it was first emitted.",
+            description="When the controller's writer made the frame; a replayed log event keeps\nthe time it was first emitted.",
             pattern="^[0-9]+$",
         ),
     ]
@@ -2605,7 +2605,7 @@ class Frame(BaseModel):
         | Tripped
         | Event1
         | Event2,
-        Field(description="Executor to client."),
+        Field(description="Controller to client."),
     ]
     seq: Annotated[
         int | None,

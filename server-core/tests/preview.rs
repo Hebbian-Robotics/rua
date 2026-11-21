@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hebbian_robot_use_core::arm::ReachGoal;
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
 use hebbian_robot_use_core::preview::{Preview, PreviewOutcome, PreviewRequest};
@@ -62,11 +62,11 @@ fn control() -> Arc<Lease> {
     Arc::new(Lease::new(LEASE))
 }
 
-fn config(assets: &Path) -> ExecutorConfig {
+fn config(assets: &Path) -> ControllerConfig {
     config_accepting_target_lead(assets, MAX_TARGET_LEAD_RADIANS)
 }
 
-fn config_accepting_target_lead(assets: &Path, max_target_lead_radians: f64) -> ExecutorConfig {
+fn config_accepting_target_lead(assets: &Path, max_target_lead_radians: f64) -> ControllerConfig {
     let text = json!({
         "urdf": bundled_urdf(),
         "driven_joints": JOINTS,
@@ -100,7 +100,7 @@ fn config_accepting_target_lead(assets: &Path, max_target_lead_radians: f64) -> 
         "joint_limit_recovery_tolerance_radians": 0.0349, "jaw_closing_axis": "x",
     })
     .to_string();
-    ExecutorConfig::parse(&text).unwrap()
+    ControllerConfig::parse(&text).unwrap()
 }
 
 fn goal_near_start(offset: [f64; 3]) -> ReachGoal {
@@ -254,7 +254,7 @@ fn an_arm_without_a_policy_refuses_to_rehearse() {
     };
     let mut without_policy = config(&assets).into_input();
     without_policy.policy = None;
-    let without_policy = ExecutorConfig::try_from(without_policy).unwrap();
+    let without_policy = ControllerConfig::try_from(without_policy).unwrap();
     assert!(Preview::new(&without_policy).unwrap().is_none());
 }
 
@@ -410,7 +410,7 @@ fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation()
         let mut plant = NoPhysicsStandIn::at(START.to_vec(), 0.05).with_gripper(0.0);
         let report = run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(5)),
             &shutdown,

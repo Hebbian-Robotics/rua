@@ -120,6 +120,6 @@ jobs:
           pnpm check
           pnpm test:viewer
           pnpm build
-          uv run rua-dev contracts --check --with-viewer
+          uv run rua-dev contracts --check
       - if: ${{ runner.os != 'Linux' || hashFiles('pnpm-workspace.yaml') == '' }}
-        run: uv run rua-dev contracts --check --targets python
+        run: uv run rua-dev contracts --check --targets python rust

@@ -101,7 +101,7 @@ impl HttpServer {
     ) -> anyhow::Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(WORKER_THREADS)
-            .thread_name("executor-http")
+            .thread_name("station-http")
             .enable_all()
             .build()
             .context("Cannot start the HTTP runtime")?;

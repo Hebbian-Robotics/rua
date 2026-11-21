@@ -78,6 +78,10 @@ def create_app() -> App:
     app.command(package_app)
     app.command(setup, help="Prepare pinned robot assets for source development.")
     app.command(check_architecture, help="Check Rust production dependency boundaries.")
+    app.command(
+        contracts,
+        help="Generate schemas and SDKs; default to the SDK components in this checkout.",
+    )
     # WHY: Component-specific command composition is optional. The shared entrypoint
     # and operations are identical in source distributions of any size.
     module_name = "rua_dev.workspace_commands"
@@ -88,10 +92,6 @@ def create_app() -> App:
             package_rua,
             name="rua",
             help="Build the hebbian-rua release wheel; never publish it.",
-        )
-        app.command(
-            contracts,
-            help="Generate schemas and SDKs; default to the SDK components in this checkout.",
         )
         app.command(
             validate,

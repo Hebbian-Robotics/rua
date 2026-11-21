@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::config::ExecutorConfig;
+use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::control_loop::run;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
@@ -234,12 +234,12 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         );
     }
 
-    let mut config = ExecutorConfig::parse(CONFIG).unwrap().into_input();
+    let mut config = ControllerConfig::parse(CONFIG).unwrap().into_input();
     config.trace_directory = std::env::temp_dir()
         .join("hebbian-robot-use-server-test-traces")
         .to_string_lossy()
         .into_owned();
-    let config = ExecutorConfig::try_from(config).unwrap();
+    let config = ControllerConfig::try_from(config).unwrap();
     let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
     let scratch = scratch_directory("station");
     let media_status = hebbian_robot_use_server::media_status::MediaStatus::default();
@@ -297,7 +297,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         };
         run(
             &mut plant,
-            Some(&link),
+            &link,
             &config,
             Some(Duration::from_secs(20)),
             &loop_shutdown_requested,

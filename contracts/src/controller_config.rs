@@ -65,7 +65,7 @@ pub struct MotionLimits {
     pub settle_timeout_seconds: f64,
 }
 
-/// How the guard process watches the arm if the executor stops: the timings of
+/// How the guard process watches the arm if the controller stops: the timings of
 /// the profile's `guard` section.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -116,7 +116,7 @@ pub struct PolicyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SimPlantConfig {
-    /// How long the executor waits for the simulator to connect at startup.
+    /// How long the controller waits for the simulator to connect at startup.
     pub connect_timeout_seconds: f64,
     /// How long a simulator may take to answer one step before the arm trips.
     pub reply_timeout_seconds: f64,
@@ -160,9 +160,9 @@ pub struct SimulationModelConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(rename = "ExecutorConfigInput")]
-pub struct ExecutorConfigInput<DriverConfig> {
-    /// The robot description, and the joints the executor drives: the arm's in
+#[schemars(rename = "ControllerConfigInput")]
+pub struct ControllerConfigInput<DriverConfig> {
+    /// The robot description, and the joints the controller drives: the arm's in
     /// order, then the gripper's when it has one.
     pub urdf: String,
     pub driven_joints: Vec<String>,
@@ -243,5 +243,5 @@ pub struct StationDescription {
 
 #[must_use]
 pub fn default_trace_directory() -> String {
-    "traces/executor".to_owned()
+    "traces/controller".to_owned()
 }

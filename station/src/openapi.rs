@@ -152,7 +152,7 @@ pub fn routes() -> Vec<Route> {
             "list_traces",
             "get",
             "/traces",
-            "The executor's trace files, newest first.",
+            "The controller's trace files, newest first.",
             None,
             Reply::Json(schema_of::<Vec<TraceFile>>),
             true,

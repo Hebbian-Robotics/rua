@@ -359,7 +359,7 @@ fn record_command(
     )
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // CONSTRAINT: Executor command times are Unix seconds; span timestamps are nanoseconds.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // CONSTRAINT: station command times are Unix seconds; span timestamps are nanoseconds.
 fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> RecordedSpan {
     use sha2::{Digest, Sha256};
     let digest = format!(

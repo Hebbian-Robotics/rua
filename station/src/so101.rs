@@ -17,7 +17,7 @@ impl SelectionArguments {
             .map_or_else(discovery::default_config_directory, Ok)
     }
 
-    pub(crate) fn require_explicit_profile(&self) -> anyhow::Result<()> {
+    fn require_explicit_profile(&self) -> anyhow::Result<()> {
         ensure!(
             self.so101_config_directory.is_none() && self.so101_serial.is_none(),
             "SO-101 selection options require --profile auto"

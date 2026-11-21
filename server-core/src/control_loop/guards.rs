@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 
-use crate::config::ExecutorConfig;
+use crate::config::ControllerConfig;
 use crate::limits::Trip;
 use crate::plant::Feedback;
 use crate::robot::Robot;
@@ -15,7 +15,7 @@ use crate::surface_guard::SurfaceGuard;
 // pose that overshot a limit, a filter braking past one). A setpoint that was
 // already outside, as after enabling just past a limit, may stay there or move
 // inward, never farther out.
-pub(crate) fn clamp_setpoint(config: &ExecutorConfig, command: &mut [f64], previous: &[f64]) {
+pub(crate) fn clamp_setpoint(config: &ControllerConfig, command: &mut [f64], previous: &[f64]) {
     for (joint, value) in command.iter_mut().enumerate() {
         let lower = config.lower_limits[joint].min(previous[joint]);
         let upper = config.upper_limits[joint].max(previous[joint]);
@@ -24,7 +24,7 @@ pub(crate) fn clamp_setpoint(config: &ExecutorConfig, command: &mut [f64], previ
 }
 
 pub(crate) fn guard_command(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     guard: Option<&SurfaceGuard>,
     self_collision: Option<&SelfCollisionGuard>,
     command: &[f64],
@@ -56,7 +56,7 @@ pub(crate) fn guard_command(
     Ok(())
 }
 
-pub(crate) fn load_shared_robot(config: &ExecutorConfig) -> anyhow::Result<Option<Arc<Robot>>> {
+pub(crate) fn load_shared_robot(config: &ControllerConfig) -> anyhow::Result<Option<Arc<Robot>>> {
     let needed = config.surface_guard.is_some()
         || config.self_collision.is_some()
         || config.policy.is_some()
@@ -71,7 +71,7 @@ pub(crate) fn load_shared_robot(config: &ExecutorConfig) -> anyhow::Result<Optio
 }
 
 pub(crate) fn build_self_collision(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     robot: Option<&Arc<Robot>>,
 ) -> anyhow::Result<Option<SelfCollisionGuard>> {
     let Some(settings) = &config.self_collision else {
@@ -87,7 +87,7 @@ pub(crate) fn build_self_collision(
 }
 
 pub(crate) fn build_guard(
-    config: &ExecutorConfig,
+    config: &ControllerConfig,
     robot: Option<&Arc<Robot>>,
 ) -> anyhow::Result<Option<SurfaceGuard>> {
     let Some(settings) = &config.surface_guard else {

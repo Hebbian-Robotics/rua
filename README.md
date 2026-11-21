@@ -7,7 +7,8 @@ parts of our stack that make that loop easy to build.
 ## Included
 
 - Rust server
-- Python SDK and a small agent loop
+- [Python SDK and agent examples](examples/python/README.md)
+- [Rust SDK](sdk/README.md) and [command-line station client](cli/README.md)
 - [LiveKit camera preview](docs/cameras.md)
 
 For a physical SO-101, follow the [source quickstart](docs/getting-started.md#set-up-a-physical-so-101)

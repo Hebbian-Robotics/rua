@@ -17,7 +17,6 @@ from hebbian_rua.client.contract.arm_commands import (
     ArmMotionCommands,
     ArmPowerCommands,
 )
-from hebbian_rua.client.contract.camera_api import CAPTURED_AT_HEADER
 from hebbian_rua.client.contract.http_routes import StationApi
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceArmAction,
@@ -473,7 +472,7 @@ class StationClient:
             raise CameraUnavailable(
                 name, listed, await self._camera_problem(name)
             ) from error
-        captured_at = response.headers.get(CAPTURED_AT_HEADER)
+        captured_at = response.headers.get("X-Captured-At-Unix-Ns")
         return CameraJpeg(
             jpeg=response.content,
             retrieved_between_unix_seconds=(started, time.time()),
@@ -1046,7 +1045,7 @@ class StationClient:
         return await self._api.phone_invite(PhoneInviteRequest(label=label))
 
     async def list_traces(self) -> list[TraceFile]:
-        """The executor's trace files, newest first."""
+        """The station's trace files, newest first."""
         return await self._api.list_traces()
 
     async def download_trace(self, name: str) -> bytes:

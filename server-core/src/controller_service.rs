@@ -486,7 +486,7 @@ pub fn serve_controller(
 mod tests {
     use super::*;
     use crate::arm::ArmCore;
-    use crate::config::{ExecutorConfig, TEST_CONFIG};
+    use crate::config::{ControllerConfig, TEST_CONFIG};
     use crate::control_link::Link;
     use crate::controller_transport::ControllerRequest;
     use crate::handoff::apply_single_request;
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn readiness_waits_for_fresh_disabled_loop_feedback() {
-        let config = ExecutorConfig::parse(TEST_CONFIG).unwrap();
+        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
         let link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
         let arms = BTreeMap::from([("arm".to_owned(), link.handle())]);
         let (station_socket, controller_socket) = UnixStream::pair().unwrap();
@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn a_controller_executes_a_request_once_and_rejects_a_repeated_id() {
-        let config = ExecutorConfig::parse(TEST_CONFIG).unwrap();
+        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
         let link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
         let inbox = link.take_loop_end().unwrap().inbox;
         let arms = BTreeMap::from([("arm".to_owned(), link.handle())]);
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn station_and_controller_exchange_a_command_and_fence_requests_on_unavailable() {
-        let config = ExecutorConfig::parse(TEST_CONFIG).unwrap();
+        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
         let station_link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
         let controller_link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
         let controller_inbox = controller_link.take_loop_end().unwrap().inbox;

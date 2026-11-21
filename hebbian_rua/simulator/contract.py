@@ -60,7 +60,7 @@ class SimHello(BaseModel):
     joint_names: Annotated[
         list[str],
         Field(
-            description="The URDF joint names the simulator serves: the arm's, then the gripper's\nwhen it has one. They must equal the executor's driven joints."
+            description="The URDF joint names the simulator serves: the arm's, then the gripper's\nwhen it has one. They must equal the controller's driven joints."
         ),
     ]
     protocol_version: Annotated[int, Field(ge=0)]
@@ -74,4 +74,4 @@ class SimPlantContract(BaseModel):
     )
     hello: Annotated[SimHello, Field(description="The simulator's first line.")]
     state: Annotated[SimState, Field(description="The simulator's reply to each step.")]
-    step: Annotated[SimStep, Field(description="The executor's line each cycle.")]
+    step: Annotated[SimStep, Field(description="The controller's line each cycle.")]

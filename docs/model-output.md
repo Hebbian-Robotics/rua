@@ -11,6 +11,20 @@ The default robot tools are `action_sequence`, `preview_pose`, `observe` and
 [Python example](../examples/python/README.md) filters sequences to Cartesian
 movement and gripper actions and adds its own `finish` tool.
 
+## Rust SDK and CLI
+
+In Rust, `result.model_data()` gives the concise view and `result.data()` returns
+the complete payload in SI units. The CLI prints the concise view by default.
+Pass `--raw` for the full payload. See [Rust SDK output formatting](../sdk/README.md#raw-results-and-model-views)
+and [CLI output and units](../cli/README.md).
+
+## Images during action sequences
+
+With named cameras configured, the SDK can retain up to eight JPEGs from the
+latest model action sequence. Request them with the `observe` input
+`{"source": "last_sequence"}`. Without that input, observation returns current
+images. Sequence images can include timing gaps and are independent of station recording.
+
 ## Full output
 
 Starting with your existing `robot`, pass a different view to the provider adapter:
