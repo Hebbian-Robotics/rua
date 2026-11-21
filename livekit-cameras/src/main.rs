@@ -68,6 +68,8 @@ async fn publish_camera_until_stopped(
 }
 
 async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
+    // WHY: Capture subprocesses handle native permissions so HTTP can start while
+    // macOS is still waiting for camera access.
     let cameras = arguments.cameras()?;
     let mut termination =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -81,10 +83,6 @@ async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
             .collect();
         if !cameras.is_empty() {
             let credentials = Arc::new(Credentials::from_environment()?);
-            // WHY: Request native camera permission before starting capture subprocesses.
-            if let Err(error) = cameras::initialize() {
-                tracing::warn!(%error, "Camera initialization unavailable");
-            }
             for camera in cameras {
                 publishing_tasks.spawn(publish_camera_until_stopped(
                     camera,

@@ -63,11 +63,6 @@ impl Snapshots {
             ),
             socket,
         };
-        if !cameras.is_empty()
-            && let Err(error) = cameras::initialize()
-        {
-            tracing::warn!(%error, "Camera initialization unavailable");
-        }
         for camera in cameras {
             let name = camera.name().to_owned();
             snapshots.frames.register(TrackIdentity {

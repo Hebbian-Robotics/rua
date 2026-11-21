@@ -505,31 +505,36 @@ async fn combined_media_service_lists_its_cameras_and_exits_with_its_supervisor(
     let deadline = Duration::from_secs(5);
     tokio::time::timeout(deadline, output.read_line(&mut line)).await??;
     let media_pid = line.trim().parse::<u32>()?.to_string();
-    let result = tokio::time::timeout(deadline, async {
-        let client = reqwest::Client::new();
-        let cameras = format!("http://{address}/cameras");
-        loop {
-            if let Ok(response) = client.get(&cameras).send().await {
-                let listing: serde_json::Value = response.error_for_status()?.json().await?;
-                assert_eq!(
-                    listing,
-                    serde_json::json!([{"name": "wrist", "available": false}])
-                );
-                break;
+    let result = async {
+        tokio::time::timeout(deadline, async {
+            let client = reqwest::Client::new();
+            let cameras = format!("http://{address}/cameras");
+            loop {
+                if let Ok(response) = client.get(&cameras).send().await {
+                    let listing: serde_json::Value = response.error_for_status()?.json().await?;
+                    assert_eq!(
+                        listing,
+                        serde_json::json!([{"name": "wrist", "available": false}])
+                    );
+                    return Ok::<(), reqwest::Error>(());
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
             }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
+        })
+        .await
+        .map_err(|_| "the media service did not return its camera listing")??;
         supervisor.kill().await?;
         // WHY: EOF proves the child closed its inherited pipe even in containers that
         // do not promptly reap orphans.
         let mut remainder = Vec::new();
-        output.read_to_end(&mut remainder).await?;
+        tokio::time::timeout(deadline, output.read_to_end(&mut remainder))
+            .await
+            .map_err(|_| "the media service outlived its supervisor")??;
         Ok::<(), Box<dyn std::error::Error>>(())
-    })
+    }
     .await;
-    if !matches!(result, Ok(Ok(()))) {
+    if result.is_err() {
         let _ = Command::new("kill").args(["-KILL", &media_pid]).status();
     }
-    result??;
-    Ok(())
+    result
 }
