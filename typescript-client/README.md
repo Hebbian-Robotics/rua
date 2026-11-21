@@ -166,13 +166,15 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
   record once; `recordRunEvent` and `recordRunSpans` report them.
 - `createStationHttpClient({ stationUrl, mediaUrl })` lists cameras, fetches
   snapshots, creates phone invites and lists or downloads traces (gzip bytes as served).
+  Camera requests use the station URL unless `mediaUrl` is set. `createRobotTools`
+  uses the URL from its station connection and accepts the same `mediaUrl` override.
 
 Errors: `StationConnectionError`, `StationTimeoutError`, `StationRefusedError` (a
 message the station could not act on), `LeaseHeldElsewhereError` and
 `StationHttpError` (`status`, `body`). A refused or unfinished command is reported
 in the answer's records, not thrown. Timeouts: 10 s to connect, 30 s for a reply, an
-awaited state and every HTTP request. The station is `http://127.0.0.1:8792` and the
-media service `http://127.0.0.1:8781`.
+awaited state and every HTTP request. The station defaults to `http://127.0.0.1:8792`.
+The direct media address defaults to `http://127.0.0.1:8781`.
 
 ## Write a model loop
 

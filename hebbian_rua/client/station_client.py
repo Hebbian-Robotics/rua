@@ -71,7 +71,6 @@ from hebbian_rua.client.station_connection import (
 )
 from hebbian_rua.client.station_types import (
     CAMERA_TIMEOUT_SECONDS,
-    DEFAULT_MEDIA_SERVER,
     DEFAULT_SERVER,
     RUNS_TIMEOUT_SECONDS,
     CameraJpeg,
@@ -345,16 +344,14 @@ class StationClient:
         media_server: str | None = None,
         run_after: int | None = None,
     ) -> None:
-        """Omitted URLs use HEBBIAN_STATION_URL and HEBBIAN_MEDIA_SERVER.
+        """Use the station URL for cameras unless a media URL is passed or set in HEBBIAN_MEDIA_SERVER.
 
         `run_after` resumes `run_telemetry` after that sequence number.
         """
         if server is None:
             server = os.environ.get("HEBBIAN_STATION_URL") or DEFAULT_SERVER
         if media_server is None:
-            media_server = (
-                os.environ.get("HEBBIAN_MEDIA_SERVER") or DEFAULT_MEDIA_SERVER
-            )
+            media_server = os.environ.get("HEBBIAN_MEDIA_SERVER") or server
         self._connection = StationConnection(server, run_after=run_after)
         self._lease_state: _LeasePhase | LeaseGranted = _LeasePhase.IDLE
         self._lease_renewal: asyncio.Task[None] | None = None

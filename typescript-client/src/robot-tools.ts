@@ -27,6 +27,7 @@ import {
   LeaseLostError,
   StationRefusedError,
 } from "./station-errors.js";
+import { DEFAULT_MEDIA_URL } from "./station-http.js";
 import type { ArmState, CommandAnswer, StationState } from "./station-types.js";
 import {
   configurationFromCapabilities,
@@ -214,7 +215,8 @@ function createRobotToolsCore(
     cameras.length + optionalCameras.length
   )
     throw new Error("Camera names must be unique");
-  const mediaUrl = options.mediaUrl ?? "http://127.0.0.1:8781";
+  const mediaUrl = () =>
+    options.mediaUrl ?? connection.baseUrl?.() ?? DEFAULT_MEDIA_URL;
 
   async function stationState(fresh = false): Promise<StationState> {
     const current = connection.getState();
@@ -266,7 +268,7 @@ function createRobotToolsCore(
     requireNoInterlock(selected, allowCameraInterlock);
     async function readCamera(name: string): Promise<Uint8Array> {
       const response = await fetch(
-        new URL(`/cameras/${encodeURIComponent(name)}`, mediaUrl),
+        new URL(`/cameras/${encodeURIComponent(name)}`, mediaUrl()),
         { signal: AbortSignal.timeout(5000) },
       );
       if (!response.ok)
@@ -554,7 +556,7 @@ function createRobotToolsCore(
                     tracking.sequenceImages,
                     call.id,
                     [...cameras, ...optionalCameras],
-                    mediaUrl,
+                    mediaUrl(),
                     (sample) =>
                       connection.onActionSequence((current) => {
                         if (

@@ -5748,8 +5748,9 @@
           }
         },
         "summary": "The cameras the media service knows.",
+        "x-direct-media": true,
         "x-sdk": true,
-        "x-server": "media"
+        "x-server": "station"
       }
     },
     "/cameras/{name}": {
@@ -5797,8 +5798,9 @@
           }
         },
         "summary": "The newest JPEG frame from a camera, with `X-Captured-At-Unix-Ns` when known.",
+        "x-direct-media": true,
         "x-sdk": true,
-        "x-server": "media"
+        "x-server": "station"
       }
     },
     "/commands": {

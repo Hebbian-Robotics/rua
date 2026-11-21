@@ -136,6 +136,9 @@ pub(crate) struct WebArguments {
     /// Default: beside this executable, else on `PATH`, else `target/debug`.
     #[arg(long, env = "HEBBIAN_MEDIA")]
     media_executable: Option<PathBuf>,
+    /// Serve camera snapshots only on the media companion's address.
+    #[arg(long)]
+    disable_camera_forwarding: bool,
     /// The `LiveKit` room every camera publishes to; a new one each start by default.
     #[arg(long, env = "HEBBIAN_LIVEKIT_ROOM")]
     room: Option<String>,
@@ -153,10 +156,17 @@ pub(crate) struct WebArguments {
 
 impl WebArguments {
     pub(crate) fn settings(self) -> anyhow::Result<hebbian_robot_use_server::web::WebSettings> {
-        Ok(hebbian_robot_use_server::web::WebSettings {
+        use hebbian_robot_use_server::web::{CameraForwarding, WebSettings};
+
+        Ok(WebSettings {
             recordings_directory: self.recordings_directory,
             enable_recording: self.enable_recording,
             media_address: None,
+            camera_forwarding: if self.disable_camera_forwarding {
+                CameraForwarding::DirectOnly
+            } else {
+                CameraForwarding::Enabled
+            },
             media_executable: crate::media::find_media(self.media_executable),
             room: self.room,
             phone_page_url: self.phone_page_url,

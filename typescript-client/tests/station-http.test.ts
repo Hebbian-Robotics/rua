@@ -31,19 +31,19 @@ test("cameras list only the available ones and snapshots carry the capture time"
           headers: { "X-Captured-At-Unix-Ns": "1700000000000000001" },
         }),
   );
-  const client = createStationHttpClient();
+  const client = createStationHttpClient({ stationUrl: "http://station:8792" });
   expect(await client.cameraNames()).toEqual(["wrist"]);
   const frame = await client.cameraJpeg("wrist");
   expect([...frame.jpeg]).toEqual([1, 2, 3]);
   expect(frame.capturedAtUnixNanoseconds).toBe(1700000000000000001n);
   expect(requested.map(({ url }) => url)).toEqual([
-    "http://127.0.0.1:8781/cameras",
-    "http://127.0.0.1:8781/cameras/wrist",
+    "http://station:8792/cameras",
+    "http://station:8792/cameras/wrist",
   ]);
 });
 
-test("a camera without a frame names the cameras the media service lists", async () => {
-  stubFetch((url) => {
+test("a camera without a frame checks the configured direct media service", async () => {
+  const requested = stubFetch((url) => {
     if (url.pathname === "/cameras")
       return Response.json([{ name: "wrist", available: false }]);
     if (url.pathname === "/viewer/api/media-status")
@@ -58,7 +58,10 @@ test("a camera without a frame names the cameras the media service lists", async
       });
     return new Response("", { status: 404 });
   });
-  const failure = await createStationHttpClient()
+  const failure = await createStationHttpClient({
+    stationUrl: "http://station:8792",
+    mediaUrl: "http://station:8781",
+  })
     .cameraJpeg("wrist")
     .catch((error: unknown) => error);
   expect(failure).toMatchObject({
@@ -71,6 +74,11 @@ test("a camera without a frame names the cameras the media service lists", async
   expect(String(failure)).toContain(
     "last error: camera backend: Device is null",
   );
+  expect(requested.map(({ url }) => url)).toEqual([
+    "http://station:8781/cameras/wrist",
+    "http://station:8781/cameras",
+    "http://station:8792/viewer/api/media-status",
+  ]);
 });
 
 test("phone invites post to the station and traces are listed and downloaded from it", async () => {

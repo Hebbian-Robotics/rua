@@ -51,12 +51,24 @@ for phone controls and custom hosting.
 ## Local snapshots
 
 For an SDK-only setup without LiveKit credentials, register the camera with the
-same `--camera` flag. List feeds and check a JPEG using the label you chose.
+same `--camera` flag. The SDKs use the station URL for camera discovery and
+snapshots. List feeds and check a JPEG using the label you chose.
 
 ```sh
-curl --fail http://127.0.0.1:8781/cameras
-curl --fail http://127.0.0.1:8781/cameras/wrist --output wrist.jpg
+curl --fail http://127.0.0.1:8792/cameras
+curl --fail http://127.0.0.1:8792/cameras/wrist --output wrist.jpg
 ```
+
+The station limits concurrent forwarded camera requests and returns `503` when
+the limit is reached or `504` when the media companion times out. LiveKit
+continues to carry live video.
+
+For direct access, use the companion URL, `http://127.0.0.1:8781` by default.
+Set the SDK's media URL override or pass `--media-server` to the CLI. To serve
+snapshots exclusively from the companion, start the station with
+`--disable-camera-forwarding`. Use `--media-address` to choose which address
+the companion listens on. The media URL override also lets a new SDK fetch
+snapshots from an older station's companion.
 
 ## RUA configuration
 

@@ -21,7 +21,7 @@ class Operation:
     name: str
     method: str
     path: str
-    server: str
+    direct_media: bool
     summary: str
     path_parameters: list[str]
     body: dict | None
@@ -72,7 +72,7 @@ def load_operations(document: dict) -> list[Operation]:
                     name=operation["operationId"],
                     method=method.upper(),
                     path=path,
-                    server=operation["x-server"],
+                    direct_media=operation.get("x-direct-media", False),
                     summary=operation["summary"],
                     path_parameters=re.findall(r"\{(\w+)\}", path),
                     body=body["content"]["application/json"]["schema"]
@@ -167,7 +167,7 @@ def generate_rust(operations: list[Operation]) -> str:
             if operation.reply.schema
             else "",
         }[operation.reply.kind]
-        base = "&self.media_server" if operation.server == "media" else "&self.server"
+        base = "&self.media_server" if operation.direct_media else "&self.server"
         body = "Some(body)" if operation.body else "None::<&()>"
         call = (
             f"self.request(Method::{operation.method}, {base}, "
@@ -318,7 +318,7 @@ def generate_python(operations: list[Operation], components: dict) -> str:
             else segment
             for segment in operation.segments
         )
-        client = "self._media" if operation.server == "media" else "self._station"
+        client = "self._media" if operation.direct_media else "self._station"
         send = f'await self._send({client}, "{operation.method}", f"/{path}"' + (
             ", body)" if body_type else ")"
         )
@@ -391,7 +391,7 @@ def generate_typescript(operations: list[Operation]) -> str:
             else segment
             for segment in operation.segments
         )
-        base = "mediaUrl" if operation.server == "media" else "stationUrl"
+        base = "mediaUrl" if operation.direct_media else "stationUrl"
         init = (
             f'jsonRequestInit("{operation.method}"{", body" if operation.body else ""})'
         )

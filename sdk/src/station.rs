@@ -17,6 +17,7 @@ use crate::connection::{LeaseState, RunUpdate, Shared};
 use crate::error::{Error, Result};
 
 pub const DEFAULT_SERVER: &str = "http://127.0.0.1:8792";
+/// Default address of the direct media listener, for clients opting out of forwarding.
 pub const DEFAULT_MEDIA_SERVER: &str = "http://127.0.0.1:8781";
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -29,7 +30,7 @@ const DISCONNECT_PATIENCE: Duration = Duration::from_secs(30);
 pub struct ConnectOptions {
     /// The station's HTTP base URL.
     pub server: String,
-    /// The media service, for camera snapshots.
+    /// Direct media URL for camera snapshots. An empty string uses the station URL.
     pub media_server: String,
     /// Resume the run telemetry stream after this sequence number; `Some(0)`
     /// replays everything retained, `None` starts at the newest record.
@@ -40,7 +41,7 @@ impl Default for ConnectOptions {
     fn default() -> Self {
         Self {
             server: DEFAULT_SERVER.to_owned(),
-            media_server: DEFAULT_MEDIA_SERVER.to_owned(),
+            media_server: String::new(),
             run_after: None,
         }
     }
@@ -127,6 +128,11 @@ impl Station {
             ));
         }
         let url = options.server.trim_end_matches('/').to_owned();
+        let media_server = if options.media_server.is_empty() {
+            url.clone()
+        } else {
+            options.media_server.trim_end_matches('/').to_owned()
+        };
         let shared = Arc::new(Shared::new(url, options.run_after));
         let run_updates = shared.subscribe_run();
         let task = Arc::clone(&shared);
@@ -138,7 +144,7 @@ impl Station {
                 .timeout(Duration::from_secs(30))
                 .build()?,
             server: options.server.trim_end_matches('/').to_owned(),
-            media_server: options.media_server.trim_end_matches('/').to_owned(),
+            media_server,
         };
         // A refused connection fails at once; a slow one gets CONNECT_TIMEOUT.
         let connected = tokio::time::timeout(

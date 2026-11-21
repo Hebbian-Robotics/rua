@@ -79,7 +79,8 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   `stop_arm(arm)` use HTTP and are refused as `lease_held_elsewhere` once the lease
   changed; `stop_recording()` is an HTTP route carrying the token. `Station::ensure_recording`
   starts or joins a recording.
-- `camera_names`, `camera_jpeg` (media service, default `http://127.0.0.1:8781`),
+- `camera_names`, `camera_jpeg` (use the station URL by default, or set
+  `ConnectOptions.media_server` for direct access),
   `start_recording`, `stop_recording`, `phone_invite`, `list_traces` and
   `download_trace` (gzip bytes as served) are thin HTTP helpers.
 

@@ -1,3 +1,4 @@
+mod camera_proxy;
 pub mod controller_process;
 pub mod controller_supervisor;
 pub mod lease_routes;

@@ -1,4 +1,4 @@
-// The media service's cameras, phone invites and the station's traces, over the
+// Camera snapshots, phone invites and the station's traces, over the
 // generated routes.
 
 import { z } from "zod";
@@ -8,6 +8,7 @@ import { CameraUnavailableError, StationHttpError } from "./station-errors.js";
 import { stationRequest } from "./station-request.js";
 
 export const DEFAULT_STATION_URL = "http://127.0.0.1:8792";
+/** Default direct media address for clients opting out of forwarding. */
 export const DEFAULT_MEDIA_URL = "http://127.0.0.1:8781";
 
 const CAPTURED_AT_HEADER = "X-Captured-At-Unix-Ns";
@@ -29,11 +30,8 @@ const mediaStatusSchema = z.object({
 export function createStationHttpClient(
   options: { stationUrl?: string; mediaUrl?: string } = {},
 ) {
-  const api = createStationApi(
-    options.stationUrl ?? DEFAULT_STATION_URL,
-    options.mediaUrl ?? DEFAULT_MEDIA_URL,
-  );
   const stationUrl = options.stationUrl ?? DEFAULT_STATION_URL;
+  const api = createStationApi(stationUrl, options.mediaUrl ?? stationUrl);
   /** The latest failure the station saw in the media programs' output for a camera. */
   async function cameraProblem(name: string): Promise<string | null> {
     try {

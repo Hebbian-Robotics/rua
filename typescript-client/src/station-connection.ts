@@ -158,6 +158,8 @@ export interface Lease {
 }
 
 export interface StationConnection {
+  /** The current station HTTP base URL, including when the URL is supplied dynamically. */
+  baseUrl?(): string;
   /** Connect, and keep reconnecting while the page is open. */
   start(): void;
   close(): void;
@@ -1092,8 +1094,12 @@ export function createStationConnection(
     );
   }
 
+  function baseUrl(): string {
+    return typeof stationUrl === "string" ? stationUrl : stationUrl();
+  }
+
   function stationApi(): ReturnType<typeof createStationApi> {
-    const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
+    const base = baseUrl();
     return createStationApi(base, base);
   }
 
@@ -1293,6 +1299,7 @@ export function createStationConnection(
     );
 
   return {
+    baseUrl,
     start() {
       closed = false;
       if (eventStream === null) connect();

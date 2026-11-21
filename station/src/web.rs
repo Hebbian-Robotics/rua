@@ -21,13 +21,19 @@ use station_access::{CameraConfiguration, Credentials, WatcherRole, new_room_nam
 
 pub const DEFAULT_PHONE_PAGE_URL: &str = "https://hebbian-robotics.github.io/livekit-cameras/";
 
-fn local_media_server_url(address: SocketAddr) -> String {
+fn local_media_address(address: SocketAddr) -> SocketAddr {
     let ip = match address.ip() {
         IpAddr::V4(ip) if ip.is_unspecified() => Ipv4Addr::LOCALHOST.into(),
         IpAddr::V6(ip) if ip.is_unspecified() => Ipv6Addr::LOCALHOST.into(),
         ip => ip,
     };
-    format!("http://{}", SocketAddr::new(ip, address.port()))
+    SocketAddr::new(ip, address.port())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CameraForwarding {
+    Enabled,
+    DirectOnly,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +41,7 @@ pub struct WebSettings {
     pub recordings_directory: PathBuf,
     pub enable_recording: bool,
     pub media_address: Option<SocketAddr>,
+    pub camera_forwarding: CameraForwarding,
     pub media_executable: PathBuf,
     pub room: Option<String>,
     pub phone_page_url: String,
@@ -106,7 +113,7 @@ fn camera_access() -> Cameras {
 pub struct Mounted {
     pub recording: RecordingManager,
     pub arms: ServedArms,
-    pub media_server_url: Option<String>,
+    media_connect_address: Option<SocketAddr>,
 }
 
 impl Mounted {
@@ -119,7 +126,7 @@ impl Mounted {
         if let Some(link) = arms.values().next() {
             runtime.spawn(crate::lease_routes::monitor_required_cameras(
                 link.clone(),
-                self.media_server_url.clone(),
+                self.media_connect_address,
             ));
         }
     }
@@ -163,7 +170,7 @@ pub fn mount(
     });
     let recording_enabled = recording.is_some();
     let station_url = format!("http://127.0.0.1:{}", address.port());
-    let media_server_url = settings.media_address.map(local_media_server_url);
+    let media_connect_address = settings.media_address.map(local_media_address);
     // WHY: The manager spawns its recording announcer, so it needs the server's runtime.
     let _runtime = runtime.enter();
     let manager = RecordingManager::new(recording, station_url);
@@ -205,12 +212,18 @@ pub fn mount(
             crate::recording::router(manager.clone(), arms.clone()),
         )
         .nest("/viewer/api", recordings::router(recording_library));
+    let router = match settings.camera_forwarding {
+        CameraForwarding::Enabled => {
+            router.merge(crate::camera_proxy::router(media_connect_address))
+        }
+        CameraForwarding::DirectOnly => router,
+    };
     (
         router,
         Mounted {
             recording: manager,
             arms,
-            media_server_url,
+            media_connect_address,
         },
     )
 }
