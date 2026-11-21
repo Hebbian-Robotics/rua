@@ -310,7 +310,9 @@ fn fixture_profiles_share_the_hardware_control_defaults() {
     if !fixtures.is_dir() {
         return;
     }
-    for name in ["single", "bimanual", "policy"] {
+    // WHY: The reduced source checkout omits the profile for an external checkpoint.
+    let policy = fixtures.join("policy.toml").is_file().then_some("policy");
+    for name in ["single", "bimanual"].into_iter().chain(policy) {
         let path = fixtures.join(format!("{name}.toml"));
         let fixture = load_robot_profile(&directory, path.to_str().unwrap()).unwrap();
         assert_eq!(fixture.control, hardware.control, "{name}");
