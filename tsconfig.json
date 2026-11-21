@@ -24,6 +24,8 @@
   "include": [
     "typescript-client/src/**/*.ts",
     "typescript-client/tests/**/*.ts",
+    "examples/typescript/agent/src/**/*.ts",
+    "examples/typescript/agent/tests/**/*.ts",
     "scripts/check-client-package.ts",
     "scripts/build-client.ts"
   ]

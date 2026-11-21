@@ -2,6 +2,9 @@
 # See: https://pnpm.io/settings#minimumreleaseage
 packages:
   - typescript-client
+  - examples/typescript/agent
 minimumReleaseAge: 4320
 allowBuilds:
   esbuild: true
+  "@google/genai": false
+  protobufjs: false
