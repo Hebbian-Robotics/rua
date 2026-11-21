@@ -32,7 +32,7 @@ export function createStationHttpClient(
 ) {
   const stationUrl = options.stationUrl ?? DEFAULT_STATION_URL;
   const api = createStationApi(stationUrl, options.mediaUrl ?? stationUrl);
-  /** The latest failure the station saw in the media programs' output for a camera. */
+  /** The latest failure the station saw in the media service's output for a camera. */
   async function cameraProblem(name: string): Promise<string | null> {
     try {
       const status = mediaStatusSchema.parse(

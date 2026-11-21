@@ -203,9 +203,11 @@ impl<P: Plant> Runner<'_, P> {
         self.state.shutdown_return_attempted = true;
         self.state.arm().allow_shutdown_return();
         let motion = self
-            .state
-            .arm()
-            .shutdown_return_plan()
+            .config
+            .recovery_limits()
+            .clamp(&poses.rest)
+            .map_err(anyhow::Error::from)
+            .and_then(|home_target| self.state.arm().shutdown_return_plan(home_target))
             .and_then(|plan| self.state.start_motion(plan));
         match motion {
             Ok(()) => self.state.arm().begin_moving(),

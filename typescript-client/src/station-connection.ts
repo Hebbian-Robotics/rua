@@ -83,7 +83,9 @@ export interface StationConnectionOptions {
 
 /** How a command is sent and what is waited for. */
 export interface ArmCommandOptions {
-  /** Aborting stops the arm and rejects. */
+  /** Stable ID for retries, status, and cancellation. Generated if omitted. */
+  readonly operationId?: string;
+  /** Aborting cancels this operation and rejects. */
   readonly signal?: AbortSignal;
   /** Parents the command's span on the station. */
   readonly traceContext?: TraceContext;
@@ -105,10 +107,7 @@ export interface Lease {
   arm(
     arm: string,
     options?: ArmCommandOptions,
-  ): ReturnType<typeof armMotionCommands<Promise<CommandAnswer>>> & {
-    /** Return to the enable-time pose and close the gripper at up to 2 rad/s; always waits for completion. */
-    rehome(expectedRevision?: number): Promise<CommandAnswer>;
-  };
+  ): ReturnType<typeof armMotionCommands<Promise<CommandAnswer>>>;
   /** Send a command and return its admission answer. Aborting cancels its motion until it completes. */
   sendCommand(
     arm: string,
@@ -116,12 +115,27 @@ export interface Lease {
     expectedRevision?: number,
     traceContext?: TraceContext,
     signal?: AbortSignal,
+    operationId?: string,
+  ): Promise<CommandAnswer>;
+  /** Cancel the exact operation, including before its admission reply. */
+  cancelOperation(operationId: string): Promise<void>;
+  /** Update a stream with a strictly increasing sequence within that operation. */
+  updateStreamGoal(
+    operationId: string,
+    goal: {
+      sequence: number;
+      joints: number[];
+      gripper_opening?: number;
+      expected_revision?: number;
+    },
+    signal?: AbortSignal,
   ): Promise<CommandAnswer>;
   /** As `sendCommand` for several arms together. */
   sendGroup(
     command: MoveArmsCommand,
     expectedRevisions?: Record<string, number>,
     traceContext?: TraceContext,
+    operationId?: string,
   ): Promise<CommandAnswer>;
   /**
    * Run a command to its outcome, and until the station's state shows where the
@@ -133,6 +147,7 @@ export interface Lease {
     expectedRevision?: number,
     signal?: AbortSignal,
     traceContext?: TraceContext,
+    operationId?: string,
   ): Promise<CommandAnswer>;
   /** As `runCommand` for several arms together. */
   runGroup(
@@ -140,6 +155,7 @@ export interface Lease {
     expectedRevisions?: Record<string, number>,
     signal?: AbortSignal,
     traceContext?: TraceContext,
+    operationId?: string,
   ): Promise<CommandAnswer>;
   /** Start an ordered action_sequence and return its identifier. */
   startActionSequence(action_sequence: ActionSequenceRequest): Promise<string>;
@@ -179,13 +195,17 @@ export interface StationConnection {
     arm: string,
     options?: ArmCommandOptions,
   ): ReturnType<typeof armPowerCommands<Promise<CommandAnswer>>>;
-  /**
-   * Wait for a command's record to finish, across reconnects, then for the first
-   * state frame that reflects it: its arm no longer has it active and reports
-   * either this command or a later completion as its last command. A lost
-   * connection ends the second wait.
-   */
-  waitForOutcome(commandId: string): Promise<CommandRecord>;
+  captureObservation(
+    selection: import("./generated/api-schemas.js").ApiSchemas["ObservationRequest"],
+    signal?: AbortSignal,
+  ): Promise<
+    import("./generated/api-schemas.js").ApiSchemas["ObservationAnswer"]
+  >;
+  getOperation(
+    operationId: string,
+  ): Promise<
+    import("./generated/api-schemas.js").ApiSchemas["OperationStatus"]
+  >;
   preview(arm: string, pose: PreviewPose): Promise<PreviewAnswer>;
   previewPoses(
     body: z.input<typeof apiSchemas.shape.PosePreviewBatchRequest>,
@@ -795,6 +815,7 @@ export function createStationConnection(
     traceContext?: TraceContext,
     signal?: AbortSignal,
     awaitCompletion = false,
+    operationId?: string,
   ): Promise<CommandAnswer> {
     if (signal?.aborted) throw asError(signal.reason);
     const token = heldLeaseToken();
@@ -811,12 +832,12 @@ export function createStationConnection(
       throw new LeaseLostError();
     const station_instance_id = (await stationApi().getStationInstance()).id;
     if (signal?.aborted) throw asError(signal.reason);
-    const request_id = newRequestId();
+    const operation_id = operationId ?? newRequestId();
     const submission = apiSchemas.shape.CommandSubmissionRequest.parse({
       arm,
       command,
       station_instance_id,
-      request_id,
+      operation_id,
       lease_token: token,
       ...(expectedRevision === undefined
         ? {}
@@ -825,7 +846,7 @@ export function createStationConnection(
     });
     return submitHttpCommand(
       () => stationApi().submitCommandHttp(submission),
-      { request_id, station_instance_id, token, arms: [arm] },
+      { operation_id, station_instance_id, token },
       signal,
       awaitCompletion,
     );
@@ -837,16 +858,17 @@ export function createStationConnection(
     traceContext?: TraceContext,
     signal?: AbortSignal,
     awaitCompletion = false,
+    operationId?: string,
   ): Promise<CommandAnswer> {
     if (signal?.aborted) throw asError(signal.reason);
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
     const station_instance_id = (await stationApi().getStationInstance()).id;
     if (signal?.aborted) throw asError(signal.reason);
-    const request_id = newRequestId();
+    const operation_id = operationId ?? newRequestId();
     const submission = apiSchemas.shape.GroupCommandSubmissionRequest.parse({
       command,
-      request_id,
+      operation_id,
       station_instance_id,
       lease_token: token,
       ...(expectedRevisions ? { expected_revisions: expectedRevisions } : {}),
@@ -855,35 +877,45 @@ export function createStationConnection(
     return submitHttpCommand(
       () => stationApi().submitGroupCommandHttp(submission),
       {
-        request_id,
+        operation_id,
         station_instance_id,
         token,
-        arms: Object.keys(command.targets),
       },
       signal,
       awaitCompletion,
     );
   }
 
+  function parseCommandAnswer(
+    operationId: string,
+    answer: unknown,
+  ): CommandAnswer {
+    const message = serverMessageSchema.parse({
+      kind: "command_answer",
+      request_id: operationId,
+      answer,
+    });
+    if (message.kind !== "command_answer")
+      throw new StationConnectionError("Unexpected command response");
+    return message.answer;
+  }
+
   async function submitHttpCommand(
     submit: () => Promise<z.infer<typeof apiSchemas.shape.CommandAnswer>>,
     identity: {
-      request_id: string;
+      operation_id: string;
       station_instance_id: string;
       token: string | null;
-      arms: string[];
     },
     signal?: AbortSignal,
     awaitCompletion = false,
   ): Promise<CommandAnswer> {
     const cancel = () => {
-      if (identity.token === null || identity.arms.length === 0) return;
+      if (identity.token === null) return;
       void stationApi()
-        .cancelCommandSubmissionHttp({
-          request_id: identity.request_id,
+        .cancelOperationHttp(identity.operation_id, {
           station_instance_id: identity.station_instance_id,
           lease_token: identity.token,
-          arms: identity.arms,
         })
         .catch((error: unknown) =>
           console.warn("Could not cancel command", error),
@@ -909,19 +941,13 @@ export function createStationConnection(
           throw error;
         }
       }
-      const parsed = serverMessageSchema.parse({
-        kind: "command_answer",
-        request_id: identity.request_id,
-        answer: response,
-      });
-      if (parsed.kind !== "command_answer")
-        throw new StationConnectionError("Unexpected command response");
-      if (parsed.answer.status === "accepted")
-        for (const entry of parsed.answer.records) rememberRecord(entry);
-      if (awaitCompletion) return finishedAnswer(parsed.answer, signal);
-      if (signal && !signal.aborted && parsed.answer.status === "accepted") {
+      const answer = parseCommandAnswer(identity.operation_id, response);
+      if (answer.status === "accepted")
+        for (const entry of answer.records) rememberRecord(entry);
+      if (awaitCompletion) return finishedAnswer(answer, signal);
+      if (signal && !signal.aborted && answer.status === "accepted") {
         retainedCancellation = true;
-        const commandIds = parsed.answer.records.map(
+        const commandIds = answer.records.map(
           (entry) => entry.record.command_id,
         );
         void waitFor(
@@ -934,7 +960,7 @@ export function createStationConnection(
           .catch(() => {})
           .finally(() => signal.removeEventListener("abort", onAbort));
       }
-      return parsed.answer;
+      return answer;
     };
     let rejectAbort: (reason: Error) => void = () => {};
     const aborted = new Promise<never>((_resolve, reject) => {
@@ -1129,9 +1155,11 @@ export function createStationConnection(
     return typeof stationUrl === "string" ? stationUrl : stationUrl();
   }
 
-  function stationApi(): ReturnType<typeof createStationApi> {
+  function stationApi(
+    signal?: AbortSignal,
+  ): ReturnType<typeof createStationApi> {
     const base = baseUrl();
-    return createStationApi(base, base);
+    return createStationApi(base, base, signal);
   }
 
   function sendAs(
@@ -1149,6 +1177,7 @@ export function createStationConnection(
         options.signal,
         options.traceContext,
         options.waitForOutcome,
+        options.operationId,
       );
   }
 
@@ -1159,6 +1188,7 @@ export function createStationConnection(
     signal?: AbortSignal,
     traceContext?: TraceContext,
     waitForOutcome = true,
+    operationId?: string,
   ): Promise<CommandAnswer> {
     return sendCommand(
       arm,
@@ -1167,6 +1197,7 @@ export function createStationConnection(
       traceContext,
       signal,
       waitForOutcome,
+      operationId,
     );
   }
 
@@ -1175,8 +1206,16 @@ export function createStationConnection(
     expectedRevisions?: Record<string, number>,
     signal?: AbortSignal,
     traceContext?: TraceContext,
+    operationId?: string,
   ): Promise<CommandAnswer> {
-    return sendGroup(command, expectedRevisions, traceContext, signal, true);
+    return sendGroup(
+      command,
+      expectedRevisions,
+      traceContext,
+      signal,
+      true,
+      operationId,
+    );
   }
 
   async function startActionSequence(
@@ -1210,58 +1249,72 @@ export function createStationConnection(
       status: answer.status,
       leaseSeconds: answer.lease_seconds,
       isHeld,
-      arm: (arm, armOptions = {}) => {
-        const commands = armMotionCommands((command, revision) => {
+      arm: (arm, armOptions = {}) =>
+        armMotionCommands((command, revision) => {
           requireCurrentLease();
           return sendAs(arm, armOptions)(command, revision);
+        }),
+      sendCommand(arm, command, revision, traceContext, signal, operationId) {
+        requireCurrentLease();
+        return sendCommand(
+          arm,
+          command,
+          revision,
+          traceContext,
+          signal,
+          false,
+          operationId,
+        );
+      },
+      async cancelOperation(operationId) {
+        requireCurrentLease();
+        const station_instance_id = (await stationApi().getStationInstance())
+          .id;
+        requireCurrentLease();
+        await stationApi().cancelOperationHttp(operationId, {
+          station_instance_id,
+          lease_token: token,
         });
-        return {
-          ...commands,
-          async rehome(expectedRevision) {
-            requireCurrentLease();
-            const stationState = await state();
-            const selected = stationState.arms.find((item) => item.arm === arm);
-            if (!selected || selected.rest_pose === null)
-              return {
-                status: "refused",
-                reason: "not_enabled",
-                detail: `${arm} has no rest pose; enable it first`,
-              };
-            const rehomeCommands = armMotionCommands((command, revision) => {
-              requireCurrentLease();
-              return sendAs(arm, { ...armOptions, waitForOutcome: true })(
-                command,
-                revision,
-              );
-            });
-            const rehomeSpeed = Math.min(2.0, stationState.max_joint_speed);
-            const homed = await rehomeCommands.moveToJoints(
-              selected.rest_pose,
-              rehomeSpeed,
-              expectedRevision,
-            );
-            if (
-              homed.status !== "accepted" ||
-              homed.records.some(
-                ({ record }) => record.completion?.outcome !== "completed",
-              )
-            )
-              return homed;
-            return rehomeCommands.setGripper(0, rehomeSpeed, expectedRevision);
+      },
+      async updateStreamGoal(operationId, goal, signal) {
+        requireCurrentLease();
+        const station_instance_id = (await stationApi().getStationInstance())
+          .id;
+        requireCurrentLease();
+        const answer = await stationApi(signal).updateStreamGoalHttp(
+          operationId,
+          {
+            ...goal,
+            station_instance_id,
+            lease_token: token,
+            expected_revision: goal.expected_revision ?? null,
+            gripper_opening: goal.gripper_opening ?? null,
           },
-        };
+        );
+        return parseCommandAnswer(operationId, answer);
       },
-      sendCommand(...args) {
+      sendGroup(command, revisions, traceContext, operationId) {
         requireCurrentLease();
-        return sendCommand(...args);
+        return sendGroup(
+          command,
+          revisions,
+          traceContext,
+          undefined,
+          false,
+          operationId,
+        );
       },
-      sendGroup(...args) {
+      runCommand(arm, command, revision, signal, traceContext, operationId) {
         requireCurrentLease();
-        return sendGroup(...args);
-      },
-      runCommand(...args) {
-        requireCurrentLease();
-        return runCommand(...args);
+        return runCommand(
+          arm,
+          command,
+          revision,
+          signal,
+          traceContext,
+          true,
+          operationId,
+        );
       },
       runGroup(...args) {
         requireCurrentLease();
@@ -1349,7 +1402,9 @@ export function createStationConnection(
     },
     waitUntilConnected,
     arm: (arm, options = {}) => armPowerCommands(sendAs(arm, options)),
-    waitForOutcome,
+    captureObservation: (selection, signal) =>
+      stationApi(signal).captureObservationHttp(selection),
+    getOperation: (operationId) => stationApi().getOperation(operationId),
     getActionSequence,
     async waitForActionSequence(actionSequenceId) {
       let result: ActionSequenceRecord | undefined;

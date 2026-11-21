@@ -99,6 +99,14 @@ impl TestStation {
         arm_names: &[&str],
         blocked_at: Option<f64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::start_with_media(arm_names, blocked_at, None).await
+    }
+
+    async fn start_with_media(
+        arm_names: &[&str],
+        blocked_at: Option<f64>,
+        media_address: Option<std::net::SocketAddr>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let requests = StubRequests::default();
         let runtime = SimulatedStation::start(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles"),
@@ -109,6 +117,7 @@ impl TestStation {
                 blocked_at,
             },
             stub_station_routes(requests.clone()),
+            media_address,
         )
         .await?;
         Ok(Self { runtime, requests })
@@ -1237,11 +1246,10 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     ));
     assert_constrained_tool_move(&tools, &client).await?;
     let before_rehome = within(client.state()).await??.arms.remove(0);
-    assert!(
-        before_rehome
-            .gripper_opening
-            .is_some_and(|opening| opening > 0.02)
-    );
+    let opening_before_rehome = before_rehome
+        .gripper_opening
+        .ok_or("missing gripper opening")?;
+    assert!(opening_before_rehome > 0.02);
     assert!(
         before_rehome
             .measured_joints
@@ -1251,11 +1259,11 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     );
     let rehomed =
         within(tools.execute(call("rehome", json!({})), CommandOptions::default())).await??;
-    let RobotToolOutcome::Returned(closed) = rehomed.outcome else {
-        return Err("expected completed rehome and gripper closure".into());
+    let RobotToolOutcome::Returned(home_record) = rehomed.outcome else {
+        return Err("expected completed rehome".into());
     };
-    assert_eq!(closed["label"], "set_gripper");
-    let joints = closed["achieved"]["joints"]
+    assert_eq!(home_record["label"], "rehome");
+    let joints = home_record["achieved"]["joints"]
         .as_array()
         .ok_or("missing achieved joints")?;
     assert!(joints.iter().zip(REST).all(|(actual, expected)| {
@@ -1266,7 +1274,7 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     let arm = within(client.state()).await??.arms.remove(0);
     assert!(
         arm.gripper_opening
-            .is_some_and(|opening| opening.abs() < 0.02)
+            .is_some_and(|opening| (opening - opening_before_rehome).abs() < 0.02)
     );
     assert!(
         arm.measured_joints
@@ -1437,23 +1445,36 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn model_sequences_retain_camera_evidence_without_recording() -> TestResult {
-    let station = TestStation::start().await?;
-    let media = axum::Router::new().route(
+fn sequence_camera_routes() -> axum::Router {
+    axum::Router::new().route(
         "/cameras/{name}",
         axum::routing::get(
             |axum::extract::Path(name): axum::extract::Path<String>| async move {
                 if name == "front" {
-                    (axum::http::StatusCode::OK, "jpeg")
+                    (
+                        axum::http::StatusCode::OK,
+                        [(axum::http::header::CONTENT_TYPE, "image/jpeg")],
+                        "jpeg",
+                    )
                 } else {
-                    (axum::http::StatusCode::NOT_FOUND, "")
+                    (
+                        axum::http::StatusCode::NOT_FOUND,
+                        [(axum::http::header::CONTENT_TYPE, "image/jpeg")],
+                        "",
+                    )
                 }
             },
         ),
-    );
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn model_sequences_retain_camera_evidence_without_recording() -> TestResult {
+    let media = sequence_camera_routes();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let media_server = format!("http://{}", listener.local_addr()?);
+    let media_address = listener.local_addr()?;
+    let media_server = format!("http://{media_address}");
+    let station = TestStation::start_with_media(&[ARM], None, Some(media_address)).await?;
     let media_task = tokio::spawn(async move { axum::serve(listener, media).await });
     let (client, _) = Station::connect_with(ConnectOptions {
         server: station.url.clone(),

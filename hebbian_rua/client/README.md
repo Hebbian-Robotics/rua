@@ -7,10 +7,9 @@ Import `RobotTools` and `StationClient` from `hebbian_rua`; use
 Start with the [read-only state check](../../examples/python/README.md#read-your-arms-state)
 or run one of the [agent examples](../../examples/python/README.md#run-an-agent).
 `StationClient()` uses `HEBBIAN_STATION_URL` or `http://127.0.0.1:8792` for
-station and camera requests. Set `media_server` or `HEBBIAN_MEDIA_SERVER`
-to use the media companion directly.
-They already handle observations and tool execution with the default model view;
-you do not need custom formatters or your own loop.
+station requests, including observations. Set `media_server` or
+`HEBBIAN_MEDIA_SERVER` to use the media companion directly for individual camera
+reads and sequence images. The examples use the default model view.
 
 Use [the control model](../../docs/control-model.md) for a custom control
 program, or [model output](../../docs/model-output.md) to change presentation

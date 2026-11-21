@@ -132,10 +132,8 @@ jobs:
         run: |
           pnpm test:viewer
           pnpm build
-      - if: ${{ runner.os == 'Linux' && hashFiles('typescript-client/package.json') != '' && hashFiles('vite.config.ts') == '' }}
-        run: |
-          pnpm --filter hebbian-rua test
-          pnpm test:package
+      - if: ${{ runner.os == 'Linux' && hashFiles('typescript-client/package.json') != '' }}
+        run: pnpm test:package
       - if: ${{ runner.os == 'Linux' && hashFiles('examples/typescript/agent/package.json') != '' && hashFiles('vite.config.ts') == '' }}
         run: |
           pnpm --filter @hebbian/agent test

@@ -1,66 +1,73 @@
-# Get started
+# Get started with an SO-101
 
-## Set up a physical SO-101
+Calibrate your SO-101, verify manual control and run your first agent in the
+viewer. These steps use the source checkout. If you're using the published
+0.1.2 wheel, follow the [0.1.2 hardware guide](https://github.com/Hebbian-Robotics/rua/blob/v0.1.2/docs/hardware.md)
+to create a profile with LeRobot calibration.
 
-Clone this repository and [prepare the source checkout](install-from-source.md#prepare-the-checkout).
-Follow the [SO-101 calibration guide](so101-calibration.md) to save the arm's
-`setup.toml` and `calibration.json`. From the checkout root, start the station:
+## 1. Install RUA
 
-```sh
-uv run cargo run -p hebbian-robot-use-server -- serve
-```
+Complete the [source setup](install-from-source.md#prepare-the-checkout) and
+[build the viewer](install-from-source.md#optional-viewer), then return here to
+calibrate your arm. See [Windows with WSL2](windows-wsl.md) for Windows setup
+considerations.
 
-With torque off, move each joint and the gripper by hand and check that the
-positions reported in [station state](http://127.0.0.1:8792/state) agree with
-the physical arm before enabling it.
+## 2. Calibrate your arm
+
+Follow the [SO-101 calibration guide](so101-calibration.md) to run
+`so101 setup` and save your arm's `setup.toml` and `calibration.json`.
+The station uses these files to find and configure your arm by default.
+It exposes the arm as `arm` in the SDKs and command-line tools. For a custom
+profile, use the name reported in [station state](http://127.0.0.1:8792/state).
+If you've already saved both files for this arm, continue to station startup.
 
 If you've already calibrated the arm with LeRobot, you can
 [reuse that calibration with an explicit profile](hardware.md).
 
-With the station running, [read your arm's state with the Python SDK](../examples/python/README.md#read-your-arms-state).
-Then [run the Python agent](../examples/python/README.md#run-an-agent). To give
-it images, [connect a camera](cameras.md#connect-a-usb-camera) and pass its
-label to the example.
+Support the arm before disabling it. Verify clearance from objects and other
+arms, supervise the first motions, and keep a physical power cutoff accessible.
 
-## Install the published wheel
+## 3. Verify manual control
 
-`hebbian-rua` bundles the Python SDK, Rust server, media companion and robot
-models in one wheel. Prebuilt wheels support Linux x86-64 with glibc 2.39+
-(such as Ubuntu 24.04) and macOS 14+ on Apple Silicon.
-No Rust compiler is needed for those installs.
-On Windows, see [Windows with WSL2](windows-wsl.md) for setup considerations.
-
-Use [uv](https://docs.astral.sh/uv/) for your agent project:
+To stream camera video to the viewer, follow the [LiveKit camera setup](cameras.md#connect-a-usb-camera)
+before starting. Then run the station from the repository root:
 
 ```sh
-uv init my-robot-agent
-cd my-robot-agent
-uv add "hebbian-rua[openai,anthropic,gemini]"
+uv run cargo run -p hebbian-robot-use-server -- serve --manual-control
 ```
 
-In an existing uv project, start with `uv add`. This adds RUA to `pyproject.toml`
-and resolves its dependencies into `uv.lock`. Run your agent with `uv run` too.
-Choose only the provider extras you need, such as `hebbian-rua[anthropic]`.
+Wait for `measured_joints` to populate in [station state](http://127.0.0.1:8792/state).
+The API can respond before arm feedback arrives. With torque off, open the
+[viewer](http://127.0.0.1:8792/viewer/) and
+[check that its 3D view matches the arm](so101-manual-control.md#set-up-each-so-101).
+Choose **Manual**, then select **Enable arm** to hold its current pose and
+acquire manual control.
+Select **Target current pose** to preview a target, and use **Move to target**
+only after checking the preview and physical clearance.
+See [viewer controls](so101-manual-control.md#controls) for details and
+[fault recovery](so101-manual-control.md#recovering-from-a-fault) if needed.
 
-The published RUA 0.1.2 wheel uses the
-[0.1.2 hardware profile format](https://github.com/Hebbian-Robotics/rua/blob/v0.1.2/docs/hardware.md) for LeRobot calibrations. To start
-the wheel's station with your profile, pass its path:
+## 4. Run your first agent
 
-```sh
-uv run rua serve --profile "$HOME/.config/rua/so101.toml"
-```
+1. Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in your
+   environment or the repository's `.env`. Keep the station running and start
+   the agent server from the repository root.
 
-Use the path where you saved your profile if it differs from the example.
+   ```sh
+   pnpm start:agent
+   ```
 
-Use `from hebbian_rua import StationClient` in your Python program. See the
-[read-only state check](../examples/python/README.md#read-your-arms-state) and
-[Python agent example](../examples/python/README.md#run-an-agent).
+2. In **Run a task**, open **Agent settings** and choose your provider. If you
+   set up cameras, confirm their live feeds and select the views to share.
+3. With the arm enabled and holding, enter “Describe what you can observe. Keep
+   the arm and gripper still.” Select **Start task** and check the reply. The
+   agent can move the arm, so supervise the run and keep **Stop run** and the
+   physical power cutoff accessible.
 
-## Try RUA without hardware
+## Next steps
 
-Follow the [MuJoCo quickstart](simulation.md) from a source checkout, or
-[connect your own simulator](simulators.md).
-
-## Cameras
-
-For camera setup and the hosted LiveKit viewer, see [cameras](cameras.md).
+- [Run and customize the Python example](../examples/python/README.md) or use
+  the [TypeScript reference agent](../examples/typescript/agent/README.md).
+- [Write your own loop](write-your-own-loop.md) using the SDK.
+- [Record a session](recording.md).
+- Browse the [examples](../examples/README.md) and [documentation index](README.md).

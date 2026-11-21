@@ -10,12 +10,6 @@ pub enum PublisherError {
     Camera(#[from] cameras::CameraError),
     #[error("LiveKit room: {0}")]
     Room(#[from] livekit::RoomError),
-    #[error("invalid configuration: {0}")]
-    Configuration(String),
     #[error("system operation: {0}")]
     Io(#[from] std::io::Error),
-    #[error("publisher task: {0}")]
-    Task(#[from] tokio::task::JoinError),
-    #[error("all camera publishers stopped")]
-    NoActiveCameras,
 }

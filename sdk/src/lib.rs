@@ -1,7 +1,7 @@
 //! An async client for a Hebbian robot-use station.
 //!
 //! [`Station::connect`] opens a resumable HTTP event stream and submits commands
-//! over HTTP with request identifiers. Acquire
+//! over HTTP with operation identifiers. Acquire
 //! the lease with [`Station::acquire_lease`]; the [`LeaseGuard`] it returns carries every
 //! command that moves an arm, while power, stop and reads stay on [`Station`].
 //! Wire types come from `hebbian-rua-contracts`, re-exported as [`contracts`].

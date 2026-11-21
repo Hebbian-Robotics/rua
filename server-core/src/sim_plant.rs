@@ -2,7 +2,6 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail, ensure};
@@ -68,18 +67,18 @@ impl SocketPlant {
         driven_joints: &[String],
         joint_count: usize,
         timeouts: SimTimeouts,
-        shutdown_requested: &AtomicBool,
+        should_stop: impl Fn() -> bool,
     ) -> anyhow::Result<Self> {
         listener.set_nonblocking(true)?;
         let started = Instant::now();
         let stream = loop {
+            ensure!(
+                !should_stop(),
+                "Stopped while waiting for a simulator to connect"
+            );
             match listener.accept() {
                 Ok((stream, _)) => break stream,
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    ensure!(
-                        !shutdown_requested.load(Ordering::Relaxed),
-                        "Stopped while waiting for a simulator to connect"
-                    );
                     ensure!(
                         started.elapsed() < timeouts.connect,
                         "No simulator connected within {} s",
@@ -91,10 +90,11 @@ impl SocketPlant {
             }
         };
         stream.set_nonblocking(false)?;
-        stream.set_read_timeout(Some(timeouts.reply))?;
         stream.set_write_timeout(Some(timeouts.reply))?;
         let mut reader = BufReader::new(stream.try_clone()?);
-        let hello: SimHello = read_line(&mut reader).context("The simulator's hello")?;
+        let hello = read_hello(&mut reader, timeouts.reply, should_stop)
+            .context("The simulator's hello")?;
+        stream.set_read_timeout(Some(timeouts.reply))?;
         ensure!(
             hello.protocol_version == PROTOCOL_VERSION,
             "The simulator speaks protocol {}, the controller {PROTOCOL_VERSION}",
@@ -137,6 +137,54 @@ impl SocketPlant {
             .context("The simulator is gone")?;
         self.awaiting_reply = true;
         Ok(())
+    }
+}
+
+fn read_hello(
+    reader: &mut BufReader<UnixStream>,
+    timeout: Duration,
+    should_stop: impl Fn() -> bool,
+) -> anyhow::Result<SimHello> {
+    let started = Instant::now();
+    let mut line = Vec::new();
+    loop {
+        ensure!(
+            !should_stop(),
+            "Stopped while waiting for the simulator's hello"
+        );
+        let remaining = timeout.saturating_sub(started.elapsed());
+        ensure!(
+            !remaining.is_zero(),
+            "The simulator did not answer within {} s",
+            timeout.as_secs_f64()
+        );
+        // WHY: Retain partial bytes and check for station loss even when a peer
+        // connects but never finishes sending its hello.
+        reader
+            .get_ref()
+            .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+        let available = match reader.fill_buf() {
+            Ok([]) => bail!("The simulator disconnected"),
+            Ok(available) => available,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::Interrupted
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error).context("Cannot read the simulator's hello"),
+        };
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        line.extend_from_slice(&available[..consumed]);
+        reader.consume(consumed);
+        if newline.is_some() {
+            return serde_json::from_slice(&line).context("Invalid simulator JSON");
+        }
     }
 }
 
@@ -310,9 +358,7 @@ mod tests {
         let (listener, path) = listen(test_name);
         let mut sim = UnixStream::connect(&path).unwrap();
         say_hello(&mut sim, joints());
-        let plant =
-            SocketPlant::accept(&listener, &joints(), 2, timeouts(), &AtomicBool::new(false))
-                .unwrap();
+        let plant = SocketPlant::accept(&listener, &joints(), 2, timeouts(), || false).unwrap();
         let reader = BufReader::new(sim.try_clone().unwrap());
         (plant, sim, reader)
     }
@@ -361,10 +407,9 @@ mod tests {
         let (listener, path) = listen("names");
         let mut sim = UnixStream::connect(&path).unwrap();
         say_hello(&mut sim, vec!["x".to_owned(), "y".to_owned()]);
-        let error =
-            SocketPlant::accept(&listener, &joints(), 2, timeouts(), &AtomicBool::new(false))
-                .err()
-                .unwrap();
+        let error = SocketPlant::accept(&listener, &joints(), 2, timeouts(), || false)
+            .err()
+            .unwrap();
         assert!(format!("{error:#}").contains("serves joints"));
     }
 
@@ -376,14 +421,13 @@ mod tests {
             reply: Duration::from_millis(100),
             real_time: true,
         };
-        let error = SocketPlant::accept(&listener, &joints(), 2, quick, &AtomicBool::new(false))
+        let error = SocketPlant::accept(&listener, &joints(), 2, quick, || false)
             .err()
             .unwrap();
         assert!(format!("{error:#}").contains("No simulator connected"));
-        let error =
-            SocketPlant::accept(&listener, &joints(), 2, timeouts(), &AtomicBool::new(true))
-                .err()
-                .unwrap();
+        let error = SocketPlant::accept(&listener, &joints(), 2, timeouts(), || true)
+            .err()
+            .unwrap();
         assert!(format!("{error:#}").contains("Stopped"));
     }
 }

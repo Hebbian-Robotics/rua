@@ -176,6 +176,24 @@ export class ScriptedStation {
         })),
       });
     }
+    if (path === "/observations") {
+      const names = (body["required_cameras"] ?? []) as string[];
+      return Response.json({
+        status: "observation_captured",
+        state: this.stationStateMessage().state,
+        cameras: Object.fromEntries(
+          names.map((name) => [
+            name,
+            {
+              jpeg_base64: "AQID",
+              captured_at_unix_ns: null,
+              retrieved_between_unix_seconds: [0, 0],
+            },
+          ]),
+        ),
+        missing_optional_cameras: body["optional_cameras"] ?? [],
+      });
+    }
     if (path === "/commands") {
       const command = body as unknown as SentCommand;
       this.commands.push(command);

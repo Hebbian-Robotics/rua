@@ -1,0 +1,93 @@
+// The run API of the agent server, shared by the server and the viewer.
+// Times are Unix milliseconds.
+
+import { z } from "zod";
+import { REASONING_EFFORTS } from "../../agent/src/providers/types.js";
+
+export const reasoningEffortSchema = z.enum(REASONING_EFFORTS);
+export const providerSchema = z.enum(["anthropic", "openai", "gemini"]);
+export type Provider = z.infer<typeof providerSchema>;
+
+export const runRequestSchema = z.object({
+  arm: z.string().min(1),
+  task: z.string().min(1),
+  cameras: z.array(z.string().min(1)).default([]),
+  optionalCameras: z.array(z.string().min(1)).default([]),
+  settings: z.object({
+    provider: providerSchema.nullable().default(null),
+    model: z.string().min(1).nullable().default(null),
+    reasoningEffort: reasoningEffortSchema.nullable().default(null),
+  }),
+});
+export type RunRequest = z.input<typeof runRequestSchema>;
+export type ParsedRunRequest = z.output<typeof runRequestSchema>;
+
+const runOutcomeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("completed") }),
+  z.object({ kind: z.literal("incomplete"), detail: z.string() }),
+  z.object({ kind: z.literal("stopped") }),
+  z.object({ kind: z.literal("interrupted") }),
+  z.object({
+    kind: z.literal("failed"),
+    detail: z.string(),
+  }),
+]);
+
+const runPhaseSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("running"), startedAt: z.number() }),
+  z.object({ state: z.literal("stopping"), startedAt: z.number() }),
+  z.object({
+    state: z.literal("ended"),
+    startedAt: z.number().nullable(),
+    endedAt: z.number(),
+    outcome: runOutcomeSchema,
+    response: z.string().optional(),
+  }),
+]);
+
+export const runSchema = z.object({
+  id: z.string(),
+  createdAt: z.number(),
+  request: runRequestSchema,
+  phase: runPhaseSchema,
+  output: z.array(z.string()),
+  persistenceError: z.string().optional(),
+  usage: z
+    .object({
+      run_id: z.string(),
+      turns: z.number(),
+      input_tokens: z.number(),
+      cached_input_tokens: z.number(),
+      output_tokens: z.number(),
+      reasoning_tokens: z.number(),
+    })
+    .optional(),
+});
+export type Run = z.infer<typeof runSchema>;
+export type RunPhase = z.infer<typeof runPhaseSchema>;
+
+export const currentRunSchema = runSchema.nullable();
+export const modelProvidersSchema = z.array(
+  z.object({ provider: providerSchema, defaultModel: z.string().min(1) }),
+);
+export const healthSchema = z.object({ ok: z.literal(true) });
+
+export const runEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("snapshot"), run: runSchema }),
+  z.object({ type: z.literal("phase"), phase: runPhaseSchema }),
+  z.object({ type: z.literal("output"), line: z.string() }),
+  z.object({
+    type: z.literal("persistence_error"),
+    detail: z.string().nullable(),
+  }),
+]);
+export type RunEvent = z.infer<typeof runEventSchema>;
+
+export const errorBodySchema = z.object({ detail: z.string() });
+
+export function isRunActive(run: Run | null): boolean {
+  return (
+    run !== null &&
+    (run.phase.state === "running" || run.phase.state === "stopping")
+  );
+}

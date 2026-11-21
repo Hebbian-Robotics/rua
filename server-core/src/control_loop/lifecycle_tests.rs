@@ -582,7 +582,7 @@ fn shutdown_releases_instead_of_returning_to_rest_outside_joint_limits() {
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
     let now = Now::current();
-    runner.state.arm().enabled(&[2.02, 0.0], now);
+    runner.state.arm().enabled(&[2.05, 0.0], now);
     runner.state.arm().set_hold(&[0.0, 0.0]);
     runner.state.arm().submit(Command::Shutdown, now).unwrap();
 
@@ -592,6 +592,24 @@ fn shutdown_releases_instead_of_returning_to_rest_outside_joint_limits() {
     assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
     assert_eq!(count(&calls.position_writes), 0);
     assert_eq!(count(&calls.release), 1);
+}
+
+#[test]
+fn shutdown_can_return_to_a_home_pose_just_outside_joint_limits() {
+    let calls = Calls::default();
+    let config = config("shutdown-near-limit");
+    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
+    let now = Now::current();
+    runner.state.arm().enabled(&[2.02, 0.0], now);
+    runner.state.arm().set_hold(&[0.0, 0.0]);
+    runner.state.arm().submit(Command::Shutdown, now).unwrap();
+
+    runner.shutdown_step(now);
+
+    assert_eq!(runner.state.arm().mode(), ArmMode::Moving);
+    assert_eq!(count(&calls.release), 0);
 }
 
 #[test]

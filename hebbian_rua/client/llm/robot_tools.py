@@ -1,6 +1,7 @@
 """Async model-facing robot tools."""
 
 import asyncio
+from base64 import b64decode
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import copy, deepcopy
 from dataclasses import replace
@@ -8,12 +9,12 @@ from math import degrees
 from typing import Self
 from uuid import uuid4
 
-import httpx2
-
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceRequest,
     ArmMode,
     CommandOutcome,
+    ObservationAnswer1,
+    ObservationRequest,
     PosePreviewCandidate,
 )
 from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_CONTEXT
@@ -68,14 +69,11 @@ from hebbian_rua.client.station_client import (
     StationClient,
 )
 from hebbian_rua.client.station_connection import MessageRefused
-from hebbian_rua.client.station_types import CameraUnavailable
 
 type CallWrapper = Callable[
     [RobotToolCall, Callable[[], Awaitable[RobotToolResult]]],
     Awaitable[RobotToolResult],
 ]
-
-OPTIONAL_CAMERA_TIMEOUT_SECONDS = 0.5
 
 
 class RequiredCameraUnavailable(Exception):
@@ -198,46 +196,36 @@ class RobotTools(RobotToolRules):
     async def _capture_output(
         self, note: str = "", extra_lines: Sequence[str] = ()
     ) -> tuple[RobotOutput, dict[str, CameraJpeg], dict[str, int]]:
-        state = await self.station.state()
-        arms = {arm.arm: arm for arm in state.arms}
-        if self.arm not in arms:
-            raise ValueError(f"The station has no arm {self.arm}")
-        if arms[self.arm].mode in {ArmMode.disconnected, ArmMode.reconnected}:
-            raise ArmCommunicationInterrupted(f"Arm {self.arm} is disconnected")
-
-        async def required_camera(name: str) -> CameraJpeg:
-            try:
-                return await self.station.camera_jpeg(name)
-            except (CameraUnavailable, httpx2.HTTPError, OSError) as error:
-                raise RequiredCameraUnavailable(name) from error
-
-        async def optional_camera(name: str) -> CameraJpeg:
-            async with asyncio.timeout(OPTIONAL_CAMERA_TIMEOUT_SECONDS):
-                return await self.station.camera_jpeg(name)
-
-        # Optional snapshots run alongside the required ones, so a slow one
-        # adds nothing beyond its own bound to the critical path.
-        optional_snapshots = asyncio.gather(
-            *(optional_camera(name) for name in self.optional_cameras),
-            return_exceptions=True,
-        )
-        try:
-            required_results = await asyncio.gather(
-                *(required_camera(name) for name in self.cameras)
+        capture = (
+            await self.station.capture_observation(
+                ObservationRequest(
+                    required_cameras=list(self.cameras),
+                    optional_cameras=list(self.optional_cameras),
+                )
             )
-        except BaseException:
-            optional_snapshots.cancel()
-            raise
-        captures = dict(zip(self.cameras, required_results, strict=True))
-        optional_results = await optional_snapshots
-        missing_optional = []
-        for name, result in zip(self.optional_cameras, optional_results, strict=True):
-            if isinstance(result, Exception):
-                missing_optional.append(name)
-            elif isinstance(result, BaseException):
-                raise result
-            else:
-                captures[name] = result
+        ).root
+        if not isinstance(capture, ObservationAnswer1):
+            if capture.status == "observation_required_camera_unavailable":
+                raise RequiredCameraUnavailable(capture.camera)
+            raise ArmCommunicationInterrupted(
+                f"Arm {capture.arm} changed or disconnected during observation"
+            )
+        state = capture.state
+        if not any(arm.arm == self.arm for arm in state.arms):
+            raise ValueError(f"The station has no arm {self.arm}")
+        captures = {
+            name: CameraJpeg(
+                jpeg=b64decode(frame.jpeg_base64, validate=True),
+                retrieved_between_unix_seconds=(
+                    frame.retrieved_between_unix_seconds[0],
+                    frame.retrieved_between_unix_seconds[1],
+                ),
+                captured_at_unix_ns=int(frame.captured_at_unix_ns)
+                if frame.captured_at_unix_ns
+                else None,
+            )
+            for name, frame in capture.cameras.items()
+        }
         raw_data = state.model_dump(mode="json")
         output = RobotOutput(
             "observation",
@@ -245,7 +233,7 @@ class RobotTools(RobotToolRules):
             cameras={name: capture.jpeg for name, capture in captures.items()},
             selected_arm=self.arm,
             notes=(*extra_lines, *([note] if note else [])),
-            missing_optional_cameras=tuple(missing_optional),
+            missing_optional_cameras=tuple(capture.missing_optional_cameras),
             camera_intervals={
                 name: capture.retrieved_between_unix_seconds
                 for name, capture in captures.items()

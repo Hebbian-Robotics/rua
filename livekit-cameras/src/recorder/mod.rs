@@ -35,33 +35,6 @@ pub struct Arguments {
     pub(crate) supervisor_pid: Option<u32>,
 }
 
-/// How often a recorder checks that its supervisor still exists.
-const SUPERVISOR_POLL: Duration = Duration::from_millis(500);
-
-/// A guard is its supervisor's child, so it is reparented the moment the supervisor exits.
-fn supervisor_alive(supervisor_pid: u32) -> bool {
-    nix::unistd::getppid().as_raw().unsigned_abs() == supervisor_pid
-}
-
-/// Cancel `stopped` and set `lost` once `supervisor_pid` has gone.
-async fn watch_supervisor(supervisor_pid: u32, lost: Arc<AtomicBool>, stopped: CancellationToken) {
-    loop {
-        tokio::select! {
-            () = stopped.cancelled() => return,
-            () = tokio::time::sleep(SUPERVISOR_POLL) => {}
-        }
-        if !supervisor_alive(supervisor_pid) {
-            tracing::warn!(
-                supervisor_pid,
-                "Supervising station is gone; finalizing recording"
-            );
-            lost.store(true, Ordering::SeqCst);
-            stopped.cancel();
-            return;
-        }
-    }
-}
-
 /// Record until Ctrl-C or SIGTERM, then finish the encoders and MCAP index.
 ///
 /// # Errors
@@ -83,11 +56,18 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     });
     let supervisor_lost = Arc::new(AtomicBool::new(false));
     let supervisor_task = arguments.supervisor_pid.map(|supervisor_pid| {
-        tokio::spawn(watch_supervisor(
-            supervisor_pid,
-            supervisor_lost.clone(),
-            stopped.clone(),
-        ))
+        let supervisor_lost = supervisor_lost.clone();
+        let stopped = stopped.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                () = stopped.cancelled() => {}
+                () = crate::supervisor::exited(Some(supervisor_pid)) => {
+                    tracing::warn!(supervisor_pid, "Supervising station is gone; finalizing recording");
+                    supervisor_lost.store(true, Ordering::SeqCst);
+                    stopped.cancel();
+                }
+            }
+        })
     });
     let hardware = tokio::task::spawn_blocking(hardware_encoder_available).await?;
     let encoder = if hardware {

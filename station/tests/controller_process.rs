@@ -145,3 +145,68 @@ fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
         thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[tokio::test]
+async fn controller_exits_when_station_dies_during_the_simulator_handshake()
+-> Result<(), Box<dyn std::error::Error>> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let temporary = tempfile::tempdir()?;
+    let config_path = write_simulated_config(root, temporary.path());
+    let mut config: serde_json::Value = serde_json::from_slice(&std::fs::read(&config_path)?)?;
+    config["sim_plant"] = serde_json::json!({
+        "connect_timeout_seconds": 60,
+        "reply_timeout_seconds": 60,
+    });
+    std::fs::write(&config_path, serde_json::to_vec(&config)?)?;
+    let mut station = tokio::process::Command::new("sh")
+        .args([
+            "-c",
+            r#""$1" controller --station-pid "$$" --station-socket "$2" --instance "$3" --arm "$4" --socket-directory "$5" & echo $!; wait"#,
+            "station-supervisor",
+        ])
+        .arg(executable)
+        .arg(temporary.path().join("station.sock"))
+        .arg(uuid::Uuid::new_v4().to_string())
+        .arg(format!("arm={}", config_path.display()))
+        .arg(temporary.path())
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut output = BufReader::new(station.stdout.take().ok_or("no stdout")?);
+    let mut line = String::new();
+    let deadline = Duration::from_secs(5);
+    tokio::time::timeout(deadline, output.read_line(&mut line)).await??;
+    let controller_pid = line.trim().parse::<i32>()?;
+    let result = tokio::time::timeout(deadline, async {
+        let plant_socket = temporary.path().join("arm.plant.sock");
+        let mut simulator = loop {
+            if let Ok(socket) = tokio::net::UnixStream::connect(&plant_socket).await {
+                break socket;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        };
+        simulator.write_all(b"{\"protocol_version\":").await?;
+        // WHY: Sending more than the socket buffer establishes that the controller
+        // has begun reading the hello, which remains incomplete.
+        simulator.write_all(&vec![b' '; 512 * 1024]).await?;
+        station.kill().await?;
+        // WHY: The controller owns the inherited stdout pipe. EOF
+        // observes exit independently of how soon the container reaps the orphan.
+        let mut remainder = Vec::new();
+        output.read_to_end(&mut remainder).await?;
+        drop(simulator);
+        Ok::<(), std::io::Error>(())
+    })
+    .await;
+    if !matches!(result, Ok(Ok(()))) {
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(controller_pid),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+    }
+    result??;
+    Ok(())
+}

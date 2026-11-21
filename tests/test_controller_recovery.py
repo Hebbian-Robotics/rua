@@ -182,11 +182,15 @@ def test_station_reconnects_disabled_using_its_running_binary(
                 assert (await client.arm(ARM).enable()).completed
                 target = list((await client.arm(ARM).state()).measured_joints)
                 target[0] += 0.3
+                from uuid import uuid4
+
+                operation = uuid4()
                 motion = await lease.send(
-                    ARM, MoveToJointsCommand(joints=target, max_joint_speed=0.05)
+                    ARM,
+                    MoveToJointsCommand(joints=target, max_joint_speed=0.05),
+                    operation_id=operation,
                 )
                 assert isinstance(motion, CommandAccepted)
-                command_id = motion.records[0].record.command_id
                 os.kill(process_id, signal.SIGKILL)
                 await asyncio.wait_for(client.lease_lost.wait(), timeout=10)
                 assert station.process.poll() is None
@@ -196,10 +200,10 @@ def test_station_reconnects_disabled_using_its_running_binary(
                 )
 
                 async def command_interrupted() -> bool:
-                    response = httpx2.get(f"{server}/commands/{command_id}")
+                    response = httpx2.get(f"{server}/operations/{operation}")
                     if response.status_code != 200:
                         return False
-                    completion = response.json()["record"]["completion"]
+                    completion = response.json()["records"][0]["record"]["completion"]
                     return (
                         completion is not None
                         and completion["outcome"] == "interrupted"

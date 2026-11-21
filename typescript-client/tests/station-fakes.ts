@@ -129,6 +129,8 @@ export function fakeLease(overrides: Partial<Lease> = {}): Lease {
     isHeld: () => true,
     arm: vi.fn(),
     sendCommand: unexpected("sendCommand"),
+    cancelOperation: unexpected("cancelOperation"),
+    updateStreamGoal: unexpected("updateStreamGoal"),
     sendGroup: unexpected("sendGroup"),
     runCommand: unexpected("runCommand"),
     runGroup: unexpected("runGroup"),

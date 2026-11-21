@@ -43,6 +43,10 @@ camera fails with `camera_unavailable`, naming the cameras known and the station
 `traces list` / `traces pull [names...] --output <dir>` (files are written exactly as
 served, gzip-compressed).
 
+For live video and phone camera invites, follow the
+[LiveKit camera setup](../docs/cameras.md). The hosted page plays the live
+stream. The CLI lists cameras, captures JPEGs, and creates phone invites.
+
 ## Exit codes and errors
 
 | Code | Meaning |

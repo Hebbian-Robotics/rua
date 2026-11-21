@@ -3,9 +3,10 @@ use hebbian_contracts::{
     ActionSequenceRecord, ActionSequenceRequest, ActionSequenceStartRequest, CameraListing,
     CommandAnswer, CommandCancellationRequest, CommandSubmissionRequest, CompilationArtifact,
     CompilationOutcome, GroupCommandSubmissionRequest, LeaseAcquireRequest, LeaseCameraReport,
-    LeaseGrant, LeaseToken, PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest,
-    PosePreviewBatchResponse, RecordingStatus, RunCompiledProgramRequest, RunEvent,
-    RunSpansRequest, StationInstance, StationState, TraceFile,
+    LeaseGrant, LeaseToken, ObservationAnswer, ObservationRequest, OperationStatus, PhoneInvite,
+    PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse, RecordingStatus,
+    RunCompiledProgramRequest, RunEvent, RunSpansRequest, StationInstance, StationState,
+    StreamGoalUpdateRequest, TraceFile,
 };
 use reqwest::{Method, Response};
 
@@ -113,24 +114,6 @@ impl Station {
             .await?
             .json()
             .await?)
-    }
-
-    /// Cancel a submission and stop its arms while holding the lease.
-    ///
-    /// # Errors
-    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
-    pub(crate) async fn cancel_command_submission_http(
-        &self,
-        body: &CommandCancellationRequest,
-    ) -> Result<()> {
-        self.request(
-            Method::POST,
-            &self.server,
-            &["commands", "cancel"],
-            Some(body),
-        )
-        .await?;
-        Ok(())
     }
 
     /// Compile an action sequence without acquiring control or moving hardware.
@@ -287,6 +270,73 @@ impl Station {
         self.request(Method::POST, &self.server, &["leases", "renew"], Some(body))
             .await?;
         Ok(())
+    }
+
+    /// Capture selected arm state and camera frames under the same observation revisions.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn capture_observation_http(
+        &self,
+        body: &ObservationRequest,
+    ) -> Result<ObservationAnswer> {
+        Ok(self
+            .request(Method::POST, &self.server, &["observations"], Some(body))
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// The retained status and outcomes of an operation.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn get_operation(&self, id: &str) -> Result<OperationStatus> {
+        Ok(self
+            .request(Method::GET, &self.server, &["operations", id], None::<&()>)
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// Cancel an operation while holding its lease.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub(crate) async fn cancel_operation_http(
+        &self,
+        id: &str,
+        body: &CommandCancellationRequest,
+    ) -> Result<()> {
+        self.request(
+            Method::POST,
+            &self.server,
+            &["operations", id, "cancel"],
+            Some(body),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Update a live stream using its operation identifier and a newer goal sequence.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub(crate) async fn update_stream_goal_http(
+        &self,
+        id: &str,
+        body: &StreamGoalUpdateRequest,
+    ) -> Result<CommandAnswer> {
+        Ok(self
+            .request(
+                Method::POST,
+                &self.server,
+                &["operations", id, "goal"],
+                Some(body),
+            )
+            .await?
+            .json()
+            .await?)
     }
 
     /// Preview independent pose candidates for one arm in input order.

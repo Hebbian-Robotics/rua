@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use super::submissions::ControllerStreamCommand;
 use crate::control_link::LinkHandle;
 use hebbian_contracts::{
     ArmMode, ArmMove, Command, MoveArmsCommand, PlannedMotion, PoseProjection, PreviewPose,
@@ -70,13 +71,21 @@ fn planned_move(
     waypoints: &[Waypoint],
     max_joint_speed: Option<f64>,
 ) -> Result<PlannedMotion, Refusal> {
+    plan_from_sample(link, latest_sample(link)?, waypoints, max_joint_speed)
+}
+
+fn plan_from_sample(
+    link: &LinkHandle,
+    sample: Sample,
+    waypoints: &[Waypoint],
+    max_joint_speed: Option<f64>,
+) -> Result<PlannedMotion, Refusal> {
     let planner = link.planner().ok_or_else(|| {
         refused(
             RejectionReason::InvalidTarget,
             "This arm has no tool link to plan for",
         )
     })?;
-    let sample = latest_sample(link)?;
     let gripper_angle = sample.gripper_angle;
     let start = hold_pose(sample)?;
     planner
@@ -108,6 +117,28 @@ pub(crate) fn arm_command(
         StationCommand::Disable => Ok(Command::Disable),
         StationCommand::Stop => Ok(Command::Stop),
         StationCommand::ClearFault => Ok(Command::ClearFault),
+        StationCommand::Rehome => {
+            if policy {
+                return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+            }
+            let sample = latest_sample(link)?;
+            let rest_pose = sample.rest_pose.as_deref().ok_or_else(|| {
+                refused(
+                    RejectionReason::NotEnabled,
+                    "The arm has no saved home pose; enable it first",
+                )
+            })?;
+            let config = link.config();
+            let joints = config.recovery_limits().clamp(rest_pose).map_err(|error| {
+                refused(
+                    RejectionReason::InvalidTarget,
+                    format!("Saved home pose: {error}"),
+                )
+            })?;
+            let speed = config.max_joint_speed.min(2.0);
+            plan_from_sample(link, sample, &[Waypoint::Joints { joints }], Some(speed))
+                .map(|motion| move_command("rehome", motion))
+        }
         StationCommand::MoveToJoints {
             joints,
             max_joint_speed,
@@ -153,23 +184,15 @@ pub(crate) fn arm_command(
         }
         StationCommand::StreamJoints {
             joints,
-            stream_command_id,
             max_joint_speed,
             gripper_opening,
-        } => {
-            if policy {
-                return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
-            }
-            let gripper_angle = gripper_opening
-                .map(|opening| jaw_angle(link, arm, opening))
-                .transpose()?;
-            Ok(Command::StreamJoints {
-                gripper_angle,
-                positions: joints,
-                joint_speed: max_joint_speed,
-                stream_command_id,
-            })
-        }
+        } => joint_stream(
+            link,
+            arm,
+            joints,
+            gripper_opening,
+            StreamAdmission::Start { max_joint_speed },
+        ),
         StationCommand::SetGripper {
             opening,
             max_joint_speed,
@@ -178,6 +201,36 @@ pub(crate) fn arm_command(
             joint_speed: max_joint_speed,
         }),
     }
+}
+
+pub(super) enum StreamAdmission {
+    Start { max_joint_speed: Option<f64> },
+    Update(ControllerStreamCommand),
+}
+
+pub(super) fn joint_stream(
+    link: &LinkHandle,
+    arm: &str,
+    positions: Vec<f64>,
+    gripper_opening: Option<f64>,
+    admission: StreamAdmission,
+) -> Result<Command, Refusal> {
+    if link.has_policy() {
+        return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+    }
+    let gripper_angle = gripper_opening
+        .map(|opening| jaw_angle(link, arm, opening))
+        .transpose()?;
+    let (joint_speed, stream_command_id) = match admission {
+        StreamAdmission::Start { max_joint_speed } => (max_joint_speed, None),
+        StreamAdmission::Update(stream) => (None, Some(stream.into_controller_id())),
+    };
+    Ok(Command::StreamJoints {
+        gripper_angle,
+        positions,
+        joint_speed,
+        stream_command_id,
+    })
 }
 
 pub(crate) fn plan_group_move<'a>(

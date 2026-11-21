@@ -129,7 +129,7 @@ fn arm_setup<P: Plant>(
 fn simulator_setups(
     arms: &[ConfiguredArm],
     directory: &Path,
-    shutdown_requested: &AtomicBool,
+    should_stop: impl Fn() -> bool,
     control: &Arc<Lease>,
 ) -> anyhow::Result<Vec<ArmSetup<SocketPlant>>> {
     // INVARIANT: Every arm's plant socket exists before the first accept, so a
@@ -155,7 +155,7 @@ fn simulator_setups(
             &config.driven_joints,
             config.joint_count,
             timeouts,
-            shutdown_requested,
+            &should_stop,
         )
         .with_context(|| format!("Arm {name}'s simulator"))?;
         setups.push(arm_setup(name, config, plant, control));
@@ -293,7 +293,9 @@ pub(crate) fn run_supervised(
         .collect();
     mounted.attach_arms(&server.runtime_handle(), &handles);
     server.attach_arms(handles);
+    let runtime = server.runtime_handle();
     let media = crate::media::MediaSupervisor::start(
+        &runtime,
         &media,
         &web::local_http_url(server.local_address()),
         &media_status,
@@ -304,10 +306,10 @@ pub(crate) fn run_supervised(
         std::thread::sleep(Duration::from_millis(50));
     }
     let _ = supervisor_thread.join();
-    server
-        .runtime_handle()
-        .block_on(mounted.recording.shutdown());
-    drop(media);
+    runtime.block_on(async {
+        mounted.recording.shutdown().await;
+        media.shutdown().await;
+    });
     server.close();
     for link in links.into_values() {
         if let Ok(link) = Arc::try_unwrap(link) {
@@ -419,6 +421,7 @@ fn select_plant(
 pub(crate) fn run_configured(
     arms: &[ConfiguredArm],
     station_socket: &Path,
+    station_pid: u32,
     instance: uuid::Uuid,
     socket_directory: Option<PathBuf>,
     plant_lag_seconds: f64,
@@ -438,7 +441,15 @@ pub(crate) fn run_configured(
             |plant| Some(plant.inner().bus().timing()),
         ),
         PlantSelection::Simulator { socket_directory } => run_setups(
-            simulator_setups(arms, &socket_directory, &shutdown_requested, &control)?,
+            simulator_setups(
+                arms,
+                &socket_directory,
+                || {
+                    shutdown_requested.load(Ordering::Acquire)
+                        || std::os::unix::process::parent_id() != station_pid
+                },
+                &control,
+            )?,
             station_socket,
             instance,
             &shutdown_requested,

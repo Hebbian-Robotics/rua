@@ -685,10 +685,10 @@
         "type": "object"
       },
       "CameraProblem": {
-        "description": "Why a camera is not producing frames: the latest error a media program printed for it.",
+        "description": "Why a camera is not producing frames: the latest error from the media service.",
         "properties": {
           "detail": {
-            "description": "The program's message, such as `camera backend: Could not open device …`.",
+            "description": "The media service's message, such as `camera backend: Could not open device …`.",
             "type": "string"
           },
           "last_seen_unix_seconds": {
@@ -1209,18 +1209,9 @@
       },
       "CommandCancellationRequest": {
         "additionalProperties": false,
-        "description": "Cancel a submission and stop its affected arms while the lease is current.",
+        "description": "Cancel the operation identified by the route while its lease is current.",
         "properties": {
-          "arms": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "lease_token": {
-            "type": "string"
-          },
-          "request_id": {
             "type": "string"
           },
           "station_instance_id": {
@@ -1228,10 +1219,8 @@
           }
         },
         "required": [
-          "request_id",
           "station_instance_id",
-          "lease_token",
-          "arms"
+          "lease_token"
         ],
         "type": "object"
       },
@@ -1437,7 +1426,7 @@
       },
       "CommandSubmissionRequest": {
         "additionalProperties": false,
-        "description": "Submit one arm command with a client-generated request identifier.\nThe station uses the identifier to recognize retries of the same submission.",
+        "description": "Submit one arm command with a client-generated operation identifier.\nThe station uses the identifier to recognize retries of the same submission.",
         "properties": {
           "arm": {
             "type": "string"
@@ -1462,8 +1451,8 @@
               "null"
             ]
           },
-          "request_id": {
-            "description": "A caller-generated UUID v4 identifying this submission.",
+          "operation_id": {
+            "description": "A caller-generated UUID v4 identifying this operation.",
             "type": "string"
           },
           "station_instance_id": {
@@ -1483,7 +1472,7 @@
           }
         },
         "required": [
-          "request_id",
+          "operation_id",
           "station_instance_id",
           "arm",
           "command"
@@ -2670,8 +2659,8 @@
               "null"
             ]
           },
-          "request_id": {
-            "description": "A caller-generated UUID v4 identifying this submission.",
+          "operation_id": {
+            "description": "A caller-generated UUID v4 identifying this operation.",
             "type": "string"
           },
           "station_instance_id": {
@@ -2690,7 +2679,7 @@
           }
         },
         "required": [
-          "request_id",
+          "operation_id",
           "station_instance_id",
           "command"
         ],
@@ -3247,19 +3236,6 @@
             "type": "object"
           },
           {
-            "description": "Not asked for: `publish` without `LiveKit` credentials or USB cameras.",
-            "properties": {
-              "state": {
-                "const": "not_configured",
-                "type": "string"
-              }
-            },
-            "required": [
-              "state"
-            ],
-            "type": "object"
-          },
-          {
             "description": "It exited and will be started again.",
             "properties": {
               "last_exit": {
@@ -3296,7 +3272,7 @@
         ]
       },
       "MediaStatusReport": {
-        "description": "`GET /viewer/api/media-status`: each program's state and each camera's latest problem.\nA problem stays until a newer one replaces it, so read it only for a camera that is\nunavailable.",
+        "description": "`GET /viewer/api/media-status`: the media service's state and each camera's latest problem.\nA problem stays until a newer one replaces it, so read it only for a camera that is\nunavailable.",
         "properties": {
           "cameras": {
             "additionalProperties": {
@@ -3304,15 +3280,12 @@
             },
             "type": "object"
           },
-          "programs": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/MediaState"
-            },
-            "type": "object"
+          "service": {
+            "$ref": "#/components/schemas/MediaState"
           }
         },
         "required": [
-          "programs",
+          "service",
           "cameras"
         ],
         "type": "object"
@@ -3357,6 +3330,146 @@
           }
         ]
       },
+      "ObservationAnswer": {
+        "oneOf": [
+          {
+            "properties": {
+              "cameras": {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ObservationFrame"
+                },
+                "type": "object"
+              },
+              "missing_optional_cameras": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "state": {
+                "$ref": "#/components/schemas/StationState"
+              },
+              "status": {
+                "const": "observation_captured",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "state",
+              "cameras",
+              "missing_optional_cameras"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "status": {
+                "const": "observation_arm_disconnected",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "arm"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "status": {
+                "const": "observation_revision_changed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "arm"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "camera": {
+                "type": "string"
+              },
+              "status": {
+                "const": "observation_required_camera_unavailable",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "camera"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ObservationFrame": {
+        "description": "One captured JPEG with its source timestamp and retrieval interval.",
+        "properties": {
+          "captured_at_unix_ns": {
+            "description": "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jpeg_base64": {
+            "type": "string"
+          },
+          "retrieved_between_unix_seconds": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          }
+        },
+        "required": [
+          "jpeg_base64",
+          "retrieved_between_unix_seconds"
+        ],
+        "type": "object"
+      },
+      "ObservationRequest": {
+        "additionalProperties": false,
+        "description": "Select robot state and camera snapshots for one observation.",
+        "properties": {
+          "arms": {
+            "default": [],
+            "description": "With no arm selection, include every arm.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "optional_cameras": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "required_cameras": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "OnInterruption": {
         "description": "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
         "oneOf": [
@@ -3369,6 +3482,128 @@
             "const": "return_lease",
             "description": "Give the lease up.",
             "type": "string"
+          }
+        ]
+      },
+      "OperationStatus": {
+        "description": "Station-owned progress of one operation.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "pending",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "records": {
+                "items": {
+                  "$ref": "#/components/schemas/ArmRecord"
+                },
+                "type": "array"
+              },
+              "state": {
+                "const": "active",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "records"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "records": {
+                "items": {
+                  "$ref": "#/components/schemas/ArmRecord"
+                },
+                "type": "array"
+              },
+              "state": {
+                "const": "cancelling",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "records"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "records": {
+                "items": {
+                  "$ref": "#/components/schemas/ArmRecord"
+                },
+                "type": "array"
+              },
+              "state": {
+                "const": "finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "records"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/RejectionReason"
+              },
+              "state": {
+                "const": "refused",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "reason",
+              "detail"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "cancelled_before_admission",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "state": {
+                "const": "outcome_unknown",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "detail"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -4936,6 +5171,21 @@
           },
           {
             "additionalProperties": false,
+            "description": "Return to the pose saved when the arm was enabled, at up to 2 rad/s.",
+            "properties": {
+              "kind": {
+                "const": "rehome",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "RehomeCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "description": "Move to joint angles, one per joint in the state's order.",
             "properties": {
               "joints": {
@@ -5035,11 +5285,11 @@
           },
           {
             "additionalProperties": false,
-            "description": "Stream trajectory destinations. The first goal, without\n`stream_command_id`, starts a stream when the arm is holding; later goals\ncarry the command id it returned. Each cycle the arm moves toward the\nnewest goal at up to the first goal's speed. The stream ends stopped when\ngoals stop arriving, on stop, or on a trip.",
+            "description": "Start streaming joint destinations while the arm is holding. Send\nlater goals to the operation's goal endpoint. The stream ends when\ngoals stop arriving, on stop, or on a trip.",
             "properties": {
               "gripper_opening": {
                 "default": null,
-                "description": "The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
+                "description": "The initial gripper target, 0 closed to 1 open, if the stream drives it.",
                 "format": "double",
                 "maximum": 1.0,
                 "minimum": 0.0,
@@ -5064,13 +5314,6 @@
                 "format": "double",
                 "type": [
                   "number",
-                  "null"
-                ]
-              },
-              "stream_command_id": {
-                "default": null,
-                "type": [
-                  "string",
                   "null"
                 ]
               }
@@ -5192,6 +5435,57 @@
           "jaw_closing_axis",
           "max_joint_speed",
           "arms"
+        ],
+        "type": "object"
+      },
+      "StreamGoalUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Update a live joint stream at its original speed.",
+        "properties": {
+          "expected_revision": {
+            "default": null,
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gripper_opening": {
+            "default": null,
+            "format": "double",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "lease_token": {
+            "type": "string"
+          },
+          "sequence": {
+            "description": "Strictly increasing within this operation. Older goals cannot replace newer ones.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "station_instance_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "station_instance_id",
+          "lease_token",
+          "sequence",
+          "joints"
         ],
         "type": "object"
       },
@@ -5858,95 +6152,6 @@
         "x-server": "station"
       }
     },
-    "/commands/cancel": {
-      "post": {
-        "operationId": "cancel_command_submission_http",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CommandCancellationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No content"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "detail"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "An error: {\"detail\": ...}"
-          }
-        },
-        "summary": "Cancel a submission and stop its arms while holding the lease.",
-        "x-sdk": true,
-        "x-server": "station"
-      }
-    },
-    "/commands/{id}": {
-      "get": {
-        "operationId": "get_command",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommandRecord"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "detail"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "An error: {\"detail\": ...}"
-          }
-        },
-        "summary": "A retained command record, with the arm that ran it.",
-        "x-sdk": false,
-        "x-server": "station"
-      }
-    },
     "/compilations/compile": {
       "post": {
         "operationId": "compile_action_sequence",
@@ -6536,6 +6741,211 @@
         },
         "summary": "The configured arm's URDF as robot.urdf, or a referenced mesh (asset may contain slashes).",
         "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/observations": {
+      "post": {
+        "operationId": "capture_observation_http",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservationAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Capture selected arm state and camera frames under the same observation revisions.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/operations/{id}": {
+      "get": {
+        "operationId": "get_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "The retained status and outcomes of an operation.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/operations/{id}/cancel": {
+      "post": {
+        "operationId": "cancel_operation_http",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandCancellationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Cancel an operation while holding its lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/operations/{id}/goal": {
+      "post": {
+        "operationId": "update_stream_goal_http",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamGoalUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Update a live stream using its operation identifier and a newer goal sequence.",
+        "x-sdk": true,
         "x-server": "station"
       }
     },

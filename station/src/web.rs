@@ -228,10 +228,13 @@ pub fn mount(
             crate::recording::router(manager.clone(), arms.clone()),
         )
         .nest("/viewer/api", recordings::router(recording_library));
+    let proxy = crate::camera_proxy::camera_proxy(media_connect_address);
+    let router = router.merge(crate::camera_proxy::observation_router(
+        arms.clone(),
+        proxy.clone(),
+    ));
     let router = match settings.camera_forwarding {
-        CameraForwarding::Enabled => {
-            router.merge(crate::camera_proxy::router(media_connect_address))
-        }
+        CameraForwarding::Enabled => router.merge(crate::camera_proxy::router(proxy)),
         CameraForwarding::DirectOnly => router,
     };
     (

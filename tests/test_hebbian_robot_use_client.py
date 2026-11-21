@@ -182,7 +182,7 @@ class _MediaWithOneStalledCamera(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
         elif self.path == "/viewer/api/media-status":
             body = (
-                b'{"programs": {}, "cameras": {"wrist": {"detail": '
+                b'{"service": {"state": "running"}, "cameras": {"wrist": {"detail": '
                 b'"camera backend: Device is null", "last_seen_unix_seconds": 1.0}}}'
             )
             self.send_response(200)

@@ -61,7 +61,10 @@ impl std::ops::Deref for AdmittedPlan {
 }
 
 impl ArmCore {
-    pub(crate) fn shutdown_return_plan(&self) -> anyhow::Result<AdmittedPlan> {
+    pub(crate) fn shutdown_return_plan(
+        &self,
+        home_target: Vec<f64>,
+    ) -> anyhow::Result<AdmittedPlan> {
         anyhow::ensure!(
             self.shutdown == ShutdownState::ReturningToRest,
             "The arm is not returning to rest for shutdown"
@@ -70,7 +73,7 @@ impl ArmCore {
         let plan = CornerPlan {
             segments: vec![Segment {
                 label: "return_to_rest".into(),
-                corners: vec![poses.hold.clone(), poses.rest.clone()],
+                corners: vec![poses.hold.clone(), home_target],
                 minimum_duration_seconds: None,
                 target_position: None,
                 target_quaternion: None,

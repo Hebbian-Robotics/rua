@@ -1,0 +1,22 @@
+{
+  "arguments": {
+    "targets": {
+      "position": {
+        "position_mm": [250, -125, 0],
+        "orientation": {"approach": "down", "jaw_yaw_degrees": 90}
+      },
+      "joints_degrees": {"joints_degrees": [90, -180, 0]}
+    },
+    "max_joint_speed_degrees_per_second": 45
+  },
+  "station_command": {
+    "targets": {
+      "position": {
+        "position": [0.25, -0.125, 0.0],
+        "orientation": {"approach": "down", "jaw_yaw_degrees": 90}
+      },
+      "joints_degrees": {"joints": [1.5707963267948966, -3.141592653589793, 0.0]}
+    },
+    "max_joint_speed": 0.7853981633974483
+  }
+}

@@ -50,6 +50,8 @@ impl Default for ConnectOptions {
 /// What a command carries beyond its arm and body.
 #[derive(Debug, Clone, Default)]
 pub struct CommandOptions {
+    /// The operation identity to use for retries, status, and cancellation.
+    pub operation_id: Option<uuid::Uuid>,
     /// The caller's trace context; the command's record carries it.
     pub trace_context: Option<TraceContext>,
     /// Per arm, the revision the caller last read (`ArmState::revision`); the
@@ -430,7 +432,10 @@ impl Station {
             });
         }
         let submission = CommandSubmissionRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
+            operation_id: options
+                .operation_id
+                .unwrap_or_else(uuid::Uuid::new_v4)
+                .to_string(),
             station_instance_id: self.get_station_instance().await?.id,
             arm: arm.to_owned(),
             command,
@@ -442,11 +447,12 @@ impl Station {
             submission
                 .lease_token
                 .as_ref()
-                .map(|token| CommandCancellationRequest {
-                    request_id: submission.request_id.clone(),
-                    station_instance_id: submission.station_instance_id.clone(),
-                    lease_token: token.clone(),
-                    arms: vec![arm.to_owned()],
+                .map(|token| OperationCancellation {
+                    id: submission.operation_id.clone(),
+                    authorization: CommandCancellationRequest {
+                        station_instance_id: submission.station_instance_id.clone(),
+                        lease_token: token.clone(),
+                    },
                 }),
             self.submit_command_http(&submission),
             Some(1),
@@ -456,7 +462,7 @@ impl Station {
 
     async fn submit_and_finish_command(
         &self,
-        cancellation: Option<CommandCancellationRequest>,
+        cancellation: Option<OperationCancellation>,
         submit: impl Future<Output = Result<CommandAnswer>>,
         expected_record_count: Option<usize>,
     ) -> Result<Vec<ArmRecord>> {
@@ -527,7 +533,7 @@ impl Station {
     ///
     /// # Errors
     /// [`Error::Connection`] when the station stays unreachable for 30 s.
-    pub async fn wait_for_outcome(&self, command_id: &str) -> Result<CommandRecord> {
+    async fn wait_for_outcome(&self, command_id: &str) -> Result<CommandRecord> {
         let finished = self.shared.wait_for(|inner| {
             inner
                 .record(command_id)
@@ -801,7 +807,10 @@ impl LeaseGuard {
         options: CommandOptions,
     ) -> Result<Vec<ArmRecord>> {
         let submission = GroupCommandSubmissionRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
+            operation_id: options
+                .operation_id
+                .unwrap_or_else(uuid::Uuid::new_v4)
+                .to_string(),
             station_instance_id: self.station.get_station_instance().await?.id,
             command,
             lease_token: Some(self.lease_token.clone()),
@@ -810,11 +819,12 @@ impl LeaseGuard {
         };
         self.station
             .submit_and_finish_command(
-                Some(CommandCancellationRequest {
-                    request_id: submission.request_id.clone(),
-                    station_instance_id: submission.station_instance_id.clone(),
-                    lease_token: self.lease_token.clone(),
-                    arms: submission.command.targets.keys().cloned().collect(),
+                Some(OperationCancellation {
+                    id: submission.operation_id.clone(),
+                    authorization: CommandCancellationRequest {
+                        station_instance_id: submission.station_instance_id.clone(),
+                        lease_token: self.lease_token.clone(),
+                    },
                 }),
                 self.station.submit_group_command_http(&submission),
                 None,
@@ -858,33 +868,6 @@ impl LeaseGuard {
             None => self.station.current_orientation(arm).await?,
         };
         self.move_to_pose_with(arm, position, orientation, max_joint_speed, options)
-            .await
-    }
-
-    /// Return to the enable-time pose, then close the gripper, at up to 2 rad/s.
-    ///
-    /// # Errors
-    /// [`Error::Refused`] with `NotEnabled` when the arm has no rest pose yet.
-    pub async fn rehome(&self, arm: &str) -> Result<CommandRecord> {
-        self.rehome_with(arm, CommandOptions::default()).await
-    }
-
-    /// As [`Self::rehome`], with the command's options.
-    ///
-    /// # Errors
-    /// As [`Self::rehome`].
-    pub async fn rehome_with(&self, arm: &str, options: CommandOptions) -> Result<CommandRecord> {
-        let state = self.station.arm_state(arm).await?;
-        let Some(joints) = state.rest_pose else {
-            return Err(Error::Refused {
-                reason: RejectionReason::NotEnabled,
-                detail: format!("{arm} has no rest pose; is it enabled?"),
-            });
-        };
-        let rehome_speed = self.station.state().await?.max_joint_speed.min(2.0);
-        self.move_to_joints_with(arm, joints, Some(rehome_speed), options.clone())
-            .await?;
-        self.set_gripper_with(arm, 0.0, Some(rehome_speed), options)
             .await
     }
 
@@ -977,6 +960,86 @@ impl LeaseGuard {
             .start_compiled_sequence(compilation_id, expected_revisions)
             .await?;
         self.station.wait_for_action_sequence(&execution_id).await
+    }
+
+    /// Submit a command with a caller-selected identity and return its admission answer.
+    ///
+    /// # Errors
+    /// Returns an error if the station cannot be reached or refuses the command.
+    pub async fn send_operation(
+        &self,
+        arm: &str,
+        operation_id: uuid::Uuid,
+        command: StationCommand,
+        expected_revision: Option<u64>,
+    ) -> Result<Vec<ArmRecord>> {
+        let submission = CommandSubmissionRequest {
+            operation_id: operation_id.to_string(),
+            station_instance_id: self.station.get_station_instance().await?.id,
+            arm: arm.to_owned(),
+            command,
+            lease_token: Some(self.lease_token.clone()),
+            expected_revision,
+            trace_context: None,
+        };
+        let mut pending = PendingHttpCommand::new(
+            self.station(),
+            Some(OperationCancellation {
+                id: submission.operation_id.clone(),
+                authorization: CommandCancellationRequest {
+                    station_instance_id: submission.station_instance_id.clone(),
+                    lease_token: self.lease_token.clone(),
+                },
+            }),
+        );
+        let answer = self.station.submit_command_http(&submission).await?;
+        pending.disarm();
+        self.station.accepted_records(answer)
+    }
+
+    /// Update a stream with a strictly increasing sequence within the operation.
+    ///
+    /// # Errors
+    /// Returns an error if the station cannot be reached or refuses the goal.
+    pub async fn update_stream_goal(
+        &self,
+        operation_id: uuid::Uuid,
+        sequence: u32,
+        joints: Vec<f64>,
+        gripper_opening: Option<f64>,
+        expected_revision: Option<u64>,
+    ) -> Result<Vec<ArmRecord>> {
+        let answer = self
+            .station
+            .update_stream_goal_http(
+                &operation_id.to_string(),
+                &hebbian_contracts::StreamGoalUpdateRequest {
+                    station_instance_id: self.station.get_station_instance().await?.id,
+                    lease_token: self.lease_token.clone(),
+                    sequence,
+                    joints,
+                    gripper_opening,
+                    expected_revision,
+                },
+            )
+            .await?;
+        self.station.accepted_records(answer)
+    }
+
+    /// Cancel the exact operation, including while admission is pending.
+    ///
+    /// # Errors
+    /// Returns an error if the lease or the operation is no longer recognized.
+    pub async fn cancel_operation(&self, operation_id: uuid::Uuid) -> Result<()> {
+        self.station
+            .cancel_operation_http(
+                &operation_id.to_string(),
+                &CommandCancellationRequest {
+                    station_instance_id: self.station.get_station_instance().await?.id,
+                    lease_token: self.lease_token.clone(),
+                },
+            )
+            .await
     }
 
     /// The station this guard's lease lives on; commands sent through it run
@@ -1102,14 +1165,19 @@ impl Drop for LeaseGuard {
     }
 }
 
+struct OperationCancellation {
+    id: String,
+    authorization: CommandCancellationRequest,
+}
+
 /// Cancel a leased submission if the caller stops waiting for completion.
 struct PendingHttpCommand {
     station: Station,
-    cancellation: Option<CommandCancellationRequest>,
+    cancellation: Option<OperationCancellation>,
 }
 
 impl PendingHttpCommand {
-    fn new(station: &Station, cancellation: Option<CommandCancellationRequest>) -> Self {
+    fn new(station: &Station, cancellation: Option<OperationCancellation>) -> Self {
         Self {
             station: station.clone(),
             cancellation,
@@ -1128,7 +1196,9 @@ impl Drop for PendingHttpCommand {
         {
             let station = self.station.clone();
             runtime.spawn(async move {
-                let _ = station.cancel_command_submission_http(&cancellation).await;
+                let _ = station
+                    .cancel_operation_http(&cancellation.id, &cancellation.authorization)
+                    .await;
             });
         }
     }

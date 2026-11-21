@@ -152,6 +152,13 @@ class ScriptedHttpStation:
                 result: object = {"id": STATION_ID}
             elif path == "/state":
                 result = state_message(holder="agent")["state"]
+            elif method == "POST" and path == "/observations":
+                result = {
+                    "status": "observation_captured",
+                    "state": state_message(holder="agent")["state"],
+                    "cameras": {},
+                    "missing_optional_cameras": [],
+                }
             elif path.startswith("/run/records?"):
                 result = []
             elif method == "POST" and path == "/leases":

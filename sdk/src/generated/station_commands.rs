@@ -99,6 +99,23 @@ impl Station {
 }
 
 impl LeaseGuard {
+    /// Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+    ///
+    /// # Errors
+    /// As [`Station::run`].
+    pub async fn rehome(&self, arm: &str) -> Result<CommandRecord> {
+        self.rehome_with(arm, CommandOptions::default()).await
+    }
+
+    /// Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+    ///
+    /// # Errors
+    /// As [`Station::run_with`].
+    pub async fn rehome_with(&self, arm: &str, options: CommandOptions) -> Result<CommandRecord> {
+        self.run_with_lease(arm, StationCommand::Rehome, options)
+            .await
+    }
+
     /// Move to joint angles, one per joint in the state's order.
     ///
     /// `max_joint_speed`: Peak joint speed in rad/s; clamped to the profile's maximum.
@@ -220,13 +237,11 @@ impl LeaseGuard {
         .await
     }
 
-    /// Stream trajectory destinations. The first goal, without
-    /// `stream_command_id`, starts a stream when the arm is holding; later goals
-    /// carry the command id it returned. Each cycle the arm moves toward the
-    /// newest goal at up to the first goal's speed. The stream ends stopped when
+    /// Start streaming joint destinations while the arm is holding. Send
+    /// later goals to the operation's goal endpoint. The stream ends when
     /// goals stop arriving, on stop, or on a trip.
     ///
-    /// `gripper_opening`: The gripper's newest target, 0 closed to 1 open, if the stream drives it.
+    /// `gripper_opening`: The initial gripper target, 0 closed to 1 open, if the stream drives it.
     ///
     /// # Errors
     /// As [`Station::run`].
@@ -236,26 +251,22 @@ impl LeaseGuard {
         joints: Vec<f64>,
         gripper_opening: Option<f64>,
         max_joint_speed: Option<f64>,
-        stream_command_id: Option<String>,
     ) -> Result<CommandRecord> {
         self.stream_joints_with(
             arm,
             joints,
             gripper_opening,
             max_joint_speed,
-            stream_command_id,
             CommandOptions::default(),
         )
         .await
     }
 
-    /// Stream trajectory destinations. The first goal, without
-    /// `stream_command_id`, starts a stream when the arm is holding; later goals
-    /// carry the command id it returned. Each cycle the arm moves toward the
-    /// newest goal at up to the first goal's speed. The stream ends stopped when
+    /// Start streaming joint destinations while the arm is holding. Send
+    /// later goals to the operation's goal endpoint. The stream ends when
     /// goals stop arriving, on stop, or on a trip.
     ///
-    /// `gripper_opening`: The gripper's newest target, 0 closed to 1 open, if the stream drives it.
+    /// `gripper_opening`: The initial gripper target, 0 closed to 1 open, if the stream drives it.
     ///
     /// # Errors
     /// As [`Station::run_with`].
@@ -265,7 +276,6 @@ impl LeaseGuard {
         joints: Vec<f64>,
         gripper_opening: Option<f64>,
         max_joint_speed: Option<f64>,
-        stream_command_id: Option<String>,
         options: CommandOptions,
     ) -> Result<CommandRecord> {
         self.run_with_lease(
@@ -274,7 +284,6 @@ impl LeaseGuard {
                 joints,
                 gripper_opening,
                 max_joint_speed,
-                stream_command_id,
             },
             options,
         )

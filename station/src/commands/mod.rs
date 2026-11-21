@@ -38,6 +38,8 @@ pub(crate) enum Command {
         #[arg(long)]
         station_socket: PathBuf,
         #[arg(long)]
+        station_pid: u32,
+        #[arg(long)]
         instance: uuid::Uuid,
         #[arg(long)]
         socket_directory: Option<PathBuf>,

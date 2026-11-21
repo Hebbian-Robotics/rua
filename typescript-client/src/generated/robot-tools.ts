@@ -495,7 +495,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Return this arm to the joint pose recorded when it was enabled, then close the gripper. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.",
+      "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
     name: "rehome",
     operation: "rehome",
     parameters: {
@@ -561,3 +561,20 @@ export const robotToolContext = {
   surface_guard:
     "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
 };
+export const robotToolInputUnits = [
+  {
+    model_field: "position_mm",
+    scale_to_station: 0.001,
+    station_field: "position",
+  },
+  {
+    model_field: "joints_degrees",
+    scale_to_station: 0.017453292519943295,
+    station_field: "joints",
+  },
+  {
+    model_field: "max_joint_speed_degrees_per_second",
+    scale_to_station: 0.017453292519943295,
+    station_field: "max_joint_speed",
+  },
+] as const;

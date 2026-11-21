@@ -65,6 +65,7 @@ async fn execute(cli: Cli) -> Result<Value, Failure> {
     .0;
     let session = Session {
         options: CommandOptions {
+            operation_id: None,
             trace_context: None,
             expected_revisions: cli.expected_revision.into_iter().collect(),
         },

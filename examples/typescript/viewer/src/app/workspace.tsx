@@ -1,0 +1,586 @@
+import { useQuery } from "@tanstack/react-query";
+import type { LiveRun, StationState } from "hebbian-rua";
+import { apiSchemas } from "hebbian-rua";
+import { BotIcon, HandIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from "@/components/ui/alert.js";
+import { Button } from "@/components/ui/button.js";
+import { Card } from "@/components/ui/card.js";
+import { agentApi, resolveAgentUrl } from "../agent-api.js";
+import { stationJson } from "../api.js";
+import { errorMessage } from "../errors.js";
+import { AgentControl } from "../features/agent/agent-control.js";
+import { useAgentRun } from "../features/agent/use-agent-run.js";
+import { CameraView, useCameraRoom } from "../features/cameras/live-cameras.js";
+import { PhoneCameraSetup } from "../features/cameras/phone-camera-setup.js";
+import { ArmControl } from "../features/control/arm-control.js";
+import { controlModeLockReason } from "../features/control/control-mode.js";
+import { ControllerRecovery } from "../features/control/controller-recovery.js";
+import { ManualControl } from "../features/control/manual-control.js";
+import {
+  RecordingControls,
+  useControlRecording,
+} from "../features/recordings/recording-controls.js";
+import {
+  RobotScene,
+  type SceneProjection,
+} from "../features/robot-scene/robot-scene.js";
+import { RunPanels } from "../features/run/run-panels.js";
+import { SettingsPage } from "../features/settings/settings-page.js";
+import { useViewerPreferences } from "../features/settings/use-viewer-preferences.js";
+import { LiveTelemetry } from "../features/telemetry/joint-charts.js";
+import { armControl, manualLease } from "../manual-lease.js";
+import { isRunActive, type RunRequest } from "../run-logic.js";
+import { formatMotionDetail } from "../shared/measurements.js";
+import { ViewerShell } from "../shared/navigation.js";
+import { useStationState } from "../use-station-state.js";
+import { stationConnection } from "../viewer-connection.js";
+import "./ui.css";
+import "./workspace.css";
+
+type Position = [number, number, number];
+const CONTROL_MODES = [
+  { value: "agent", label: "Agent", Icon: BotIcon },
+  { value: "manual", label: "Manual", Icon: HandIcon },
+] as const;
+type ControlMode = (typeof CONTROL_MODES)[number]["value"];
+const CONTROL_MODE_KEY = "hebbian-viewer-control-mode:v1";
+const EMPTY_SPANS: LiveRun["spans"] = [];
+const noSeek = (): void => {};
+
+function useMediaStatus(): string {
+  const query = useQuery({
+    queryKey: ["media-status"],
+    queryFn: async () =>
+      apiSchemas.shape.MediaStatusReport.parse(
+        await stationJson("api/media-status"),
+      ),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+  if (query.isError || !query.data) return "";
+  const service = query.data.service;
+  switch (service.state) {
+    case "running":
+      return "";
+    case "restarting":
+      return `Media service restarting: ${service.last_exit}`;
+    case "unavailable":
+      return `Media service unavailable: ${service.reason}`;
+  }
+}
+
+function RecoveryControls({ state }: { state: StationState | null }) {
+  const [messages, setMessages] = useState<Record<string, string>>({});
+  const [pending, setPending] = useState<string | null>(null);
+  async function recover(armName: string): Promise<void> {
+    const arm = state?.arms.find((candidate) => candidate.arm === armName);
+    if (arm?.mode !== "faulted") return;
+    const fresh =
+      arm.sampled_at_unix_seconds !== null &&
+      Date.now() / 1000 - arm.sampled_at_unix_seconds < 1;
+    if (!fresh || pending !== null) return;
+    setMessages((previous) => ({ ...previous, [armName]: "" }));
+    setPending(armName);
+    try {
+      const answer = await armControl(armName).clearFault();
+      if (answer.status === "refused") throw new Error(answer.detail);
+    } catch (error: unknown) {
+      setMessages((previous) => ({
+        ...previous,
+        [armName]: `Could not clear fault: ${errorMessage(error)}`,
+      }));
+    } finally {
+      setPending(null);
+    }
+  }
+  return (
+    <div className="recovery">
+      {state?.arms.map((arm) => {
+        const fresh =
+          arm.sampled_at_unix_seconds !== null &&
+          Date.now() / 1000 - arm.sampled_at_unix_seconds < 1;
+        const issue = !fresh
+          ? "Motor feedback is stale. Check controller power and USB."
+          : arm.fault || arm.active_trip;
+        const error = messages[arm.arm];
+        return (
+          (issue || error || arm.mode === "faulted") && (
+            <Alert
+              key={arm.arm}
+              role="status"
+              variant="destructive"
+              className="flex flex-wrap items-center gap-3"
+            >
+              {(issue || arm.mode === "faulted") && (
+                <p className="m-0">
+                  {arm.arm}: {formatMotionDetail(issue || "Arm faulted.")}
+                </p>
+              )}
+              {error && <p className="m-0">{formatMotionDetail(error)}</p>}
+              {arm.mode === "faulted" && (
+                <Button
+                  variant="outline"
+                  disabled={pending !== null || !fresh}
+                  onClick={() => void recover(arm.arm)}
+                >
+                  {pending === arm.arm
+                    ? "Checking…"
+                    : `Clear fault: ${arm.arm}`}
+                </Button>
+              )}
+            </Alert>
+          )
+        );
+      })}
+    </div>
+  );
+}
+
+export function WorkspaceApp() {
+  const [route, setRoute] = useState(() => location.hash);
+  const [routePage, settingsSection] = route.split("/");
+  const page = routePage === "#settings" ? "settings" : "workspace";
+  const [controlMode, setControlMode] = useState<ControlMode>(() => {
+    try {
+      return sessionStorage.getItem(CONTROL_MODE_KEY) === "manual"
+        ? "manual"
+        : "agent";
+    } catch {
+      return "agent";
+    }
+  });
+  const [selectedArm, setSelectedArm] = useState("");
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const [manualMode, setManualMode] = useState<
+    "unknown" | "disabled" | "enabled"
+  >("unknown");
+  const { stationState, connected } = useStationState();
+  const [liveRun, setLiveRun] = useState<LiveRun | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000);
+  const [target, setTarget] = useState<Position | null>(null);
+  const [projection, setProjectionState] = useState<SceneProjection | null>(
+    null,
+  );
+  const [projectionEvaluation, setProjectionEvaluation] = useState<{
+    projection: SceneProjection;
+    valid: boolean;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [runError, setRunError] = useState("");
+  const globalStopHandler = useRef<(() => void) | null>(null);
+  const [startingRun, setStartingRun] = useState(false);
+  const [changingArmPower, setChangingArmPower] = useState(false);
+  const [stoppingRun, setStoppingRun] = useState(false);
+  const { preferences, updatePreferences, colorScheme } =
+    useViewerPreferences();
+  const agentUrl = resolveAgentUrl(preferences.agentServerUrl);
+  const agent = useAgentRun(agentUrl);
+  const { run, setRun } = agent;
+  const runActive = isRunActive(run);
+  const controlModeLocked = controlModeLockReason(
+    connected ? (stationState?.arms ?? []) : [],
+    startingRun || runActive,
+    changingArmPower,
+  );
+  const canSwitchMode = controlModeLocked === null;
+  useEffect(() => {
+    if (canSwitchMode) void manualLease.returnLease();
+  }, [canSwitchMode]);
+  const recording = useControlRecording(preferences.recordWithControl);
+  const armNames = stationState?.arms.map((arm) => arm.arm) ?? [];
+  const armName = armNames.includes(selectedArm)
+    ? selectedArm
+    : (armNames[0] ?? "");
+  const stopFollowing = useCallback(() => globalStopHandler.current?.(), []);
+  const cameras = useCameraRoom();
+  const cameraNames = useMemo(
+    () => cameras.feeds.map((feed) => feed.name),
+    [cameras.feeds],
+  );
+  const mediaStatus = useMediaStatus();
+  const cameraConnectionError = cameras.status.startsWith("Cameras unavailable")
+    ? cameras.status
+    : "";
+  const setProjection = useCallback((next: SceneProjection | null) => {
+    setProjectionState(next);
+  }, []);
+  const onProjectionValidityChange = useCallback(
+    (valid: boolean) => {
+      if (!projection) return;
+      setProjectionEvaluation((previous) =>
+        previous?.projection === projection && previous.valid === valid
+          ? previous
+          : { projection, valid },
+      );
+    },
+    [projection],
+  );
+  useEffect(
+    () =>
+      manualLease.onChange(() => {
+        if (!manualLease.holdsLease()) {
+          setTarget(null);
+          setProjection(null);
+        }
+      }),
+    [setProjection],
+  );
+  useEffect(() => {
+    const unsubscribeRun = stationConnection.onRun(setLiveRun);
+    stationConnection.start();
+    const interval = setInterval(() => setCurrentTime(Date.now() / 1000), 1000);
+    const onHashChange = () => {
+      const nextRoute = location.hash;
+      if (nextRoute.split("/")[0] === "#settings") stopFollowing();
+      setRoute(nextRoute);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
+      unsubscribeRun();
+      clearInterval(interval);
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, [stopFollowing]);
+  useEffect(() => {
+    if (route === "#workspace")
+      document.getElementById("workspace-heading")?.focus();
+  }, [route]);
+  useEffect(() => {
+    let active = true;
+    if (!connected) {
+      setManualMode("unknown");
+      setTarget(null);
+      setProjection(null);
+      return () => {
+        active = false;
+      };
+    }
+    void stationJson("api/control-mode")
+      .then((value) => {
+        const mode = apiSchemas.shape.ViewerControl.parse(value).mode;
+        if (active)
+          setManualMode(mode === "so101_manual" ? "enabled" : "disabled");
+      })
+      .catch(() => {
+        if (active) setManualMode("unknown");
+      });
+    return () => {
+      active = false;
+    };
+  }, [connected, setProjection]);
+
+  function selectControlMode(value: unknown): void {
+    if (value !== "agent" && value !== "manual") return;
+    if (
+      value === controlMode ||
+      controlModeLockReason(
+        stationConnection.isConnected()
+          ? (stationConnection.getState()?.arms ?? [])
+          : [],
+        startingRun || runActive,
+        changingArmPower,
+      )
+    )
+      return;
+
+    if (value === "agent") {
+      stopFollowing();
+      void manualLease.returnLease();
+    }
+    setControlMode(value);
+    try {
+      sessionStorage.setItem(CONTROL_MODE_KEY, value);
+    } catch {
+      // The selected mode remains usable when browser storage is unavailable.
+    }
+  }
+
+  async function startRun(request: RunRequest): Promise<void> {
+    if (startingRun || runActive) return;
+    setStartingRun(true);
+    setRunError("");
+    try {
+      stopFollowing();
+      await manualLease.returnLease();
+      await recording.startWithControl();
+      setRun(await agentApi.startRun(agentUrl, request));
+    } catch (error: unknown) {
+      setRunError(`Could not start the run: ${errorMessage(error)}`);
+    } finally {
+      setStartingRun(false);
+    }
+  }
+
+  async function stopRun(): Promise<void> {
+    if (!run || stoppingRun) return;
+    setStoppingRun(true);
+    setRunError("");
+    try {
+      globalStopHandler.current?.();
+      void manualLease.returnLease();
+      // The agent server only signals its loop to exit; its lease ends with
+      // the loop's connection, which stops the arms. Recording is untouched.
+      if (isRunActive(run)) setRun(await agentApi.stopRun(agentUrl, run.id));
+    } catch (error: unknown) {
+      setRunError(`Could not stop the run: ${errorMessage(error)}`);
+    } finally {
+      setStoppingRun(false);
+    }
+  }
+  return (
+    <ViewerShell
+      current={page}
+      onStop={stopFollowing}
+      recordingStatus={
+        recording.stopping
+          ? "Stopping recording…"
+          : recording.name || cameras.recording
+            ? "Recording"
+            : ""
+      }
+    >
+      <ControllerRecovery />
+      <RecoveryControls state={connected ? stationState : null} />
+      <div hidden={page !== "workspace"} className="workspace-page">
+        <div className="workspace-layout">
+          <main className="workspace-visuals">
+            <h1 id="workspace-heading" tabIndex={-1}>
+              Workspace
+            </h1>
+            <section
+              className="grid min-w-0 gap-3"
+              aria-labelledby="workspace-cameras"
+            >
+              <h2 id="workspace-cameras">Cameras</h2>
+              {cameraConnectionError || mediaStatus ? (
+                <details className="workspace-camera-status">
+                  <summary>
+                    {mediaStatus
+                      ? "Camera service needs attention"
+                      : "Live cameras unavailable"}
+                  </summary>
+                  {cameraConnectionError && <p>{cameraConnectionError}</p>}
+                  {mediaStatus && <p>{mediaStatus}</p>}
+                </details>
+              ) : (
+                cameras.status && (
+                  <p className="workspace-camera-status">{cameras.status}</p>
+                )
+              )}
+              <details className="camera-setup">
+                <summary>Add remote camera</summary>
+                <div className="grid gap-3">
+                  <p className="m-0 text-sm text-muted-foreground">
+                    Create an invite on the station laptop. Open its link on
+                    your phone or scan the QR code.
+                  </p>
+                  <PhoneCameraSetup />
+                </div>
+              </details>
+              <p className="workspace-camera-status">
+                USB camera plugged into the station laptop? Configure LiveKit on
+                the station and add <code>--camera wrist=0</code> to its startup
+                command. The feed appears here when it starts streaming.
+              </p>
+              {cameras.feeds.length > 0 && (
+                <div className="camera-grid">
+                  {cameras.feeds.map((feed) => (
+                    <CameraView
+                      key={feed.name}
+                      feed={feed}
+                      showLabel={preferences.showCameraLabels}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+            <RobotScene
+              colorScheme={colorScheme}
+              jointNames={stationState?.joint_names ?? []}
+              arms={
+                stationState?.arms.map((arm) => ({
+                  arm: arm.arm,
+                  basePose: arm.base_pose,
+                  measuredJoints: arm.measured_joints,
+                  commandedJoints: arm.commanded_joints,
+                  destinationJoints: arm.active_command?.target_joints ?? null,
+                  destinationLimited:
+                    arm.active_command?.path_limited != null ||
+                    arm.active_command?.pose_limited != null,
+                  gripperOpening: arm.gripper_opening,
+                })) ?? []
+              }
+              showTarget={preferences.showTargetJoints}
+              showCommanded={preferences.showCommandedJoints}
+              target={target}
+              projection={projection}
+              surfaceGuard={stationState?.surface_guard ?? null}
+              onTargetChange={setTarget}
+              onTargetDrag={setDragging}
+              onProjectionValidityChange={onProjectionValidityChange}
+            />
+          </main>
+          <Card
+            role="complementary"
+            aria-label="Control"
+            className="control-panel gap-0 py-0"
+          >
+            <div className="grid gap-2 p-4">
+              <fieldset
+                className="control-mode-picker"
+                aria-describedby="control-mode-hint"
+                disabled={controlModeLocked !== null}
+              >
+                <legend>Control mode</legend>
+                <div className="control-mode-toggle">
+                  {CONTROL_MODES.map(({ value, label, Icon }) => (
+                    <label key={value} className="control-mode-option">
+                      <input
+                        className="sr-only"
+                        type="radio"
+                        name="control-mode"
+                        value={value}
+                        checked={controlMode === value}
+                        onChange={() => selectControlMode(value)}
+                      />
+                      <span className="control-mode-label">
+                        <Icon
+                          className="control-mode-icon"
+                          aria-hidden="true"
+                        />
+                        {label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <p
+                id="control-mode-hint"
+                role="status"
+                className="m-0 text-xs text-muted-foreground"
+              >
+                {controlModeLocked ??
+                  "Choose a control mode, then enable the arm."}
+              </p>
+            </div>
+            <ArmControl
+              stationState={connected ? stationState : null}
+              armName={armName}
+              onSelectArm={(name) => {
+                stopFollowing();
+                setTarget(null);
+                setProjection(null);
+                setSelectedArm(name);
+              }}
+              runActive={
+                startingRun ||
+                (runActive &&
+                  !(
+                    run?.phase.state === "stopping" &&
+                    connected &&
+                    stationState?.lease === null
+                  ))
+              }
+              manualSelected={controlMode === "manual"}
+              manualAvailable={manualMode === "enabled"}
+              onManualControlStarted={recording.startWithControl}
+              onStopFollowing={stopFollowing}
+              onPowerTransition={setChangingArmPower}
+            />
+            <div hidden={controlMode !== "agent"}>
+              <AgentControl
+                agent={agent}
+                startingRun={startingRun}
+                onStartRun={startRun}
+                runError={runError}
+                armName={armName}
+                onStopRun={stopRun}
+                stoppingRun={stoppingRun}
+                stationState={connected ? stationState : null}
+                cameraNames={cameraNames}
+              />
+            </div>
+            <div hidden={controlMode !== "manual"}>
+              {manualMode === "enabled" ? (
+                <ManualControl
+                  key={armName}
+                  armName={armName}
+                  changingArmPower={changingArmPower}
+                  active={controlMode === "manual"}
+                  stationState={connected ? stationState : null}
+                  target={target}
+                  setTarget={setTarget}
+                  projection={projection}
+                  setProjection={setProjection}
+                  projectionValidity={
+                    projection !== null &&
+                    projectionEvaluation?.projection === projection
+                      ? projectionEvaluation.valid
+                      : null
+                  }
+                  dragging={dragging}
+                  globalStopHandler={globalStopHandler}
+                />
+              ) : (
+                <p className="manual-unavailable">
+                  {manualMode === "disabled"
+                    ? "Manual controls are disabled on this station. Start it with --manual-control to use them."
+                    : "Manual control availability is unavailable. Check the station connection."}
+                </p>
+              )}
+            </div>
+            <div className="border-t border-border p-4">
+              <RecordingControls
+                recording={recording}
+                run={run}
+                autoRecord={preferences.recordWithControl}
+                onAutoRecordChange={(recordWithControl) =>
+                  updatePreferences({ ...preferences, recordWithControl })
+                }
+              />
+            </div>
+          </Card>
+        </div>
+        <details
+          className="telemetry-panel"
+          onToggle={(event) => setTelemetryOpen(event.currentTarget.open)}
+        >
+          <summary>
+            Joint telemetry <span>Last 30 seconds</span>
+          </summary>
+          <LiveTelemetry
+            visible={telemetryOpen}
+            showTarget={preferences.showTargetJoints}
+            showCommanded={preferences.showCommandedJoints}
+          />
+        </details>
+        <details className="run-diagnostics">
+          <summary>
+            Run activity <span>Prompt, settings, memory and traces</span>
+          </summary>
+          <RunPanels
+            agentRun={run}
+            spans={liveRun?.spans ?? EMPTY_SPANS}
+            memory={liveRun?.memory ?? null}
+            usage={liveRun?.usage ?? null}
+            time={currentTime}
+            onSeek={noSeek}
+            live
+          />
+        </details>
+      </div>
+      {page === "settings" && (
+        <SettingsPage
+          preferences={preferences}
+          update={updatePreferences}
+          arms={connected ? (stationState?.arms ?? null) : null}
+          agent={agent}
+          agentSettingsLocked={startingRun || runActive}
+          section={settingsSection}
+        />
+      )}
+    </ViewerShell>
+  );
+}

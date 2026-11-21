@@ -206,17 +206,19 @@ fn submit_command(
     expected_revision: Option<u64>,
 ) -> Value {
     let instance = get_json(address, "/instance");
-    let (status, answer) = post_json(
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    let (status, mut answer) = post_json(
         address,
         "/commands",
         &json!({
-            "request_id": uuid::Uuid::new_v4().to_string(),
+            "operation_id": operation_id,
             "station_instance_id": instance["id"],
             "arm": "follower", "command": command,
             "lease_token": token, "expected_revision": expected_revision
         }),
     );
     assert_eq!(status, 200, "{answer}");
+    answer["operation_id"] = json!(operation_id);
     answer
 }
 
@@ -330,7 +332,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         media["cameras"]["wrist"]["detail"],
         "camera backend: Device is null"
     );
-    assert_eq!(media["programs"]["serve"]["state"], "unavailable");
+    assert_eq!(media["service"]["state"], "unavailable");
 
     // WHY: Tokens and phone invites are signed here, with no call to LiveKit.
     let access = get_json(address, "/viewer/api/token");
@@ -460,15 +462,12 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         Some(manual_token),
         json!({
             "kind":"stream_joints", "joints":[1.5,-1.5], "gripper_opening":null,
-            "max_joint_speed":0.2, "stream_command_id":null
+            "max_joint_speed":0.2
         }),
         None,
     );
     assert_eq!(accepted["status"], "accepted", "{accepted}");
-    let interrupted_command = accepted["records"][0]["record"]["command_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let interrupted_command = accepted["operation_id"].as_str().unwrap().to_owned();
     wait_for_arm(address, |arm| arm["mode"] == "moving");
     let revision_before_disconnect = get_json(address, "/state")["arms"][0]["revision"]
         .as_u64()
@@ -480,10 +479,10 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         Some(revision_before_disconnect + 1)
     );
     loop {
-        let record = get_json(address, &format!("/commands/{interrupted_command}"));
-        if !record["record"]["completion"].is_null() {
+        let record = get_json(address, &format!("/operations/{interrupted_command}"));
+        if !record["records"][0]["record"]["completion"].is_null() {
             assert_eq!(
-                record["record"]["completion"]["outcome"], "interrupted",
+                record["records"][0]["record"]["completion"]["outcome"], "interrupted",
                 "{record}"
             );
             break;

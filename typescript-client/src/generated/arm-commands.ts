@@ -46,6 +46,12 @@ export function armMotionCommands<Result>(
 ) {
   return {
     /**
+     * Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+     */
+    rehome(expectedRevision?: number): Result {
+      return send({ kind: "rehome" }, expectedRevision);
+    },
+    /**
      * Move to joint angles, one per joint in the state's order.
      *
      * `max_joint_speed`: Peak joint speed in rad/s; clamped to the profile's maximum.
@@ -110,13 +116,11 @@ export function armMotionCommands<Result>(
       );
     },
     /**
-     * Stream trajectory destinations. The first goal, without
-     * `stream_command_id`, starts a stream when the arm is holding; later goals
-     * carry the command id it returned. Each cycle the arm moves toward the
-     * newest goal at up to the first goal's speed. The stream ends stopped when
+     * Start streaming joint destinations while the arm is holding. Send
+     * later goals to the operation's goal endpoint. The stream ends when
      * goals stop arriving, on stop, or on a trip.
      *
-     * `gripper_opening`: The gripper's newest target, 0 closed to 1 open, if the stream drives it.
+     * `gripper_opening`: The initial gripper target, 0 closed to 1 open, if the stream drives it.
      */
     streamJoints(
       joints: Extract<StationCommand, { kind: "stream_joints" }>["joints"],
@@ -126,9 +130,6 @@ export function armMotionCommands<Result>(
       maxJointSpeed?: NonNullable<
         Extract<StationCommand, { kind: "stream_joints" }>["max_joint_speed"]
       >,
-      streamCommandId?: NonNullable<
-        Extract<StationCommand, { kind: "stream_joints" }>["stream_command_id"]
-      >,
       expectedRevision?: number,
     ): Result {
       return send(
@@ -137,7 +138,6 @@ export function armMotionCommands<Result>(
           joints: joints,
           gripper_opening: gripperOpening ?? null,
           max_joint_speed: maxJointSpeed ?? null,
-          stream_command_id: streamCommandId ?? null,
         },
         expectedRevision,
       );

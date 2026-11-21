@@ -1,5 +1,7 @@
 pub mod error;
 pub mod recorder;
+#[doc(hidden)]
+pub mod supervisor;
 
 pub(crate) mod station;
 

@@ -20,6 +20,9 @@ from hebbian_rua.client.contract.station_api import (
     LeaseCameraReport,
     LeaseGrant,
     LeaseToken,
+    ObservationAnswer,
+    ObservationRequest,
+    OperationStatus,
     PhoneInvite,
     PhoneInviteRequest,
     PosePreviewBatchRequest,
@@ -31,6 +34,7 @@ from hebbian_rua.client.contract.station_api import (
     RunSpansRequest,
     StationInstance,
     StationState,
+    StreamGoalUpdateRequest,
     TraceFile,
 )
 
@@ -140,12 +144,6 @@ class StationApi:
             response.content
         )
 
-    async def cancel_command_submission_http(
-        self, body: CommandCancellationRequest
-    ) -> None:
-        """Cancel a submission and stop its arms while holding the lease."""
-        await self._send(self._station, "POST", "/commands/cancel", body)
-
     async def compile_action_sequence(
         self, body: ActionSequenceRequest
     ) -> ProgramCompiled | ProgramRejected:
@@ -208,6 +206,39 @@ class StationApi:
     async def renew_lease_http(self, body: LeaseToken) -> None:
         """Renew a current station lease."""
         await self._send(self._station, "POST", "/leases/renew", body)
+
+    async def capture_observation_http(
+        self, body: ObservationRequest
+    ) -> ObservationAnswer:
+        """Capture selected arm state and camera frames under the same observation revisions."""
+        response = await self._send(self._station, "POST", "/observations", body)
+        return TypeAdapter(ObservationAnswer).validate_json(response.content)
+
+    async def get_operation(self, id: str) -> OperationStatus:
+        """The retained status and outcomes of an operation."""
+        response = await self._send(
+            self._station, "GET", f"/operations/{quote(id, safe='')}"
+        )
+        return TypeAdapter(OperationStatus).validate_json(response.content)
+
+    async def cancel_operation_http(
+        self, id: str, body: CommandCancellationRequest
+    ) -> None:
+        """Cancel an operation while holding its lease."""
+        await self._send(
+            self._station, "POST", f"/operations/{quote(id, safe='')}/cancel", body
+        )
+
+    async def update_stream_goal_http(
+        self, id: str, body: StreamGoalUpdateRequest
+    ) -> CommandAccepted | CommandRefused:
+        """Update a live stream using its operation identifier and a newer goal sequence."""
+        response = await self._send(
+            self._station, "POST", f"/operations/{quote(id, safe='')}/goal", body
+        )
+        return TypeAdapter(CommandAccepted | CommandRefused).validate_json(
+            response.content
+        )
 
     async def preview_poses(
         self, body: PosePreviewBatchRequest

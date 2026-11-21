@@ -12,10 +12,12 @@ from hebbian_rua.client.contract.station_api import (
     ActionSequenceJointsMovement,
     ActionSequenceRequest,
     ActionSequenceStep,
+    CommandAccepted,
     CommandRefused,
     EnableCommand,
     LeaseHolder,
     MoveToJointsCommand,
+    ObservationRequest,
     PosePreviewCandidate,
     PreviewPose,
     ProgramCompiled,
@@ -74,12 +76,12 @@ def test_model_can_return_to_the_enable_time_pose(server_binary: Path) -> None:
                 )
                 assert not outcome.is_error, outcome.text
                 assert isinstance(outcome.data, dict)
-                assert outcome.data["label"] == "set_gripper"
+                assert outcome.data["label"] == "rehome"
                 assert outcome.data["achieved"]["joints"] == pytest.approx(
                     original, abs=0.02
                 )
                 assert (await client.arm(ARM).state()).gripper_opening == pytest.approx(
-                    0.0, abs=0.02
+                    1.0, abs=0.02
                 )
                 assert (await client.arm(ARM).state()).measured_joints == pytest.approx(
                     original, abs=0.02
@@ -337,49 +339,103 @@ def test_required_camera_interlock_ends_with_the_lease(server_binary: Path) -> N
 def test_unresponsive_optional_camera_does_not_stall_observation(
     server_binary: Path,
 ) -> None:
-    with running_station(server_binary) as station:
+    async def exercise() -> None:
+        requested = asyncio.Event()
 
-        async def exercise() -> None:
-            async def stalled_camera(
-                reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-            ) -> None:
-                try:
-                    await reader.read()
-                finally:
-                    writer.close()
-                    await writer.wait_closed()
+        async def stalled_camera(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            requested.set()
+            try:
+                await reader.read()
+            finally:
+                writer.close()
+                await writer.wait_closed()
 
-            server = await asyncio.start_server(stalled_camera, "127.0.0.1", 0)
-            async with server:
-                port = server.sockets[0].getsockname()[1]
+        camera = await asyncio.start_server(stalled_camera, "127.0.0.1", 0)
+        async with camera:
+            port = camera.sockets[0].getsockname()[1]
+            with running_station(
+                server_binary, enabled=False, media_address=f"127.0.0.1:{port}"
+            ) as station:
                 async with (
-                    StationClient(
-                        station.server, media_server=f"http://127.0.0.1:{port}"
-                    ) as client,
+                    StationClient(station.server) as client,
                     client.holding_lease("camera test") as lease,
                 ):
-                    robot = RobotTools(
-                        client,
-                        lease,
-                        ARM,
-                        configuration=RobotToolConfiguration(
-                            tools=(
-                                "action_sequence",
-                                "preview_pose",
-                                "move_arms",
-                                "set_arm_gripper",
-                                "rehome",
-                                "stop",
-                                "observe",
-                            )
-                        ),
-                        optional_cameras=["front"],
-                    )
+                    assert (await client.arm(ARM).enable()).completed
+                    robot = RobotTools(client, lease, ARM, optional_cameras=["front"])
                     observation = await asyncio.wait_for(robot.observe(), timeout=3)
+                    assert requested.is_set()
                     assert "Arm state:" in observation.text
                     assert "Optional cameras unavailable: front" in observation.text
 
-        asyncio.run(asyncio.wait_for(exercise(), timeout=10))
+    asyncio.run(asyncio.wait_for(exercise(), timeout=10))
+
+
+@pytest.mark.server
+def test_observation_reports_revision_changed_during_camera_capture(
+    server_binary: Path,
+) -> None:
+    async def exercise() -> None:
+        camera_requested = asyncio.Event()
+        release_frame = asyncio.Event()
+
+        async def media(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            try:
+                request = await reader.readuntil(b"\r\n\r\n")
+                if request.split(b" ")[1] == b"/cameras":
+                    mime = b"application/json"
+                    body = b'[{"name":"front","available":true}]'
+                else:
+                    camera_requested.set()
+                    await release_frame.wait()
+                    mime = b"image/jpeg"
+                    body = b"test camera frame"
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: "
+                    + mime
+                    + b"\r\nContent-Length: "
+                    + str(len(body)).encode()
+                    + b"\r\n\r\n"
+                    + body
+                )
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        camera = await asyncio.start_server(media, "127.0.0.1", 0)
+        async with camera:
+            port = camera.sockets[0].getsockname()[1]
+            with running_station(
+                server_binary, enabled=False, media_address=f"127.0.0.1:{port}"
+            ) as station:
+                async with (
+                    StationClient(station.server) as client,
+                    client.holding_lease(
+                        "revision test", required_cameras=["front"]
+                    ) as lease,
+                ):
+                    assert (await client.arm(ARM).enable()).completed
+                    selection = ObservationRequest(
+                        arms=[ARM], required_cameras=["front"]
+                    )
+                    async with asyncio.TaskGroup() as tasks:
+                        pending = tasks.create_task(
+                            client.capture_observation(selection)
+                        )
+                        try:
+                            await asyncio.wait_for(camera_requested.wait(), timeout=1)
+                            await lease.report_camera("front", False)
+                        finally:
+                            release_frame.set()
+                    assert (
+                        pending.result().root.status == "observation_revision_changed"
+                    )
+
+    asyncio.run(asyncio.wait_for(exercise(), timeout=10))
 
 
 @pytest.mark.server
@@ -480,13 +536,13 @@ def test_late_command_cancellation_leaves_a_new_move_running(
                 }
                 joints = list((await client.arm(ARM).state()).measured_joints)
 
-                async def submit_move(request_id: str, displacement: float) -> str:
+                async def submit_move(operation_id: str, displacement: float) -> str:
                     response = await http.post(
                         "/commands",
                         json={
                             **submission_context,
                             "arm": ARM,
-                            "request_id": request_id,
+                            "operation_id": operation_id,
                             "command": {
                                 "kind": "move_to_joints",
                                 "joints": [joints[0] + displacement, *joints[1:]],
@@ -523,13 +579,68 @@ def test_late_command_cancellation_leaves_a_new_move_running(
                     )
                 )
                 response = await http.post(
-                    "/commands/cancel",
-                    json={**submission_context, "arms": [ARM], "request_id": original},
+                    f"/operations/{original}/cancel",
+                    json=submission_context,
                 )
                 assert response.status_code == 204
                 assert await wait_for_completion(newer) == "completed"
 
         asyncio.run(asyncio.wait_for(exercise(), timeout=15))
+
+
+@pytest.mark.server
+def test_one_operation_can_fence_admission_and_order_stream_updates(
+    server_binary: Path,
+) -> None:
+    async def exercise(station_url: str) -> None:
+        async with (
+            StationClient(station_url) as client,
+            client.holding_lease("stream operation") as lease,
+        ):
+            from hebbian_rua.client.contract.station_api import (
+                StationStreamJointsCommand,
+            )
+
+            joints = list((await client.arm(ARM).state()).measured_joints)
+            target = [joints[0] + 0.2, *joints[1:]]
+            command = StationStreamJointsCommand(joints=target, max_joint_speed=0.1)
+            fenced = uuid4()
+            await lease.cancel_operation(fenced)
+            response = await lease.send(ARM, command, operation_id=fenced)
+            assert isinstance(response, CommandRefused)
+            assert (
+                await client.get_operation(fenced)
+            ).root.state == "cancelled_before_admission"
+
+            operation = uuid4()
+            admitted = await lease.send(ARM, command, operation_id=operation)
+            assert isinstance(admitted, CommandAccepted)
+            assert await lease.send(ARM, command, operation_id=operation) == admitted
+            updated = await lease.update_stream_goal(operation, 8, target)
+            assert isinstance(updated, CommandAccepted)
+            assert (
+                updated.records[0].record.command_id
+                == admitted.records[0].record.command_id
+            )
+            delayed = await lease.update_stream_goal(operation, 7, joints)
+            assert isinstance(delayed, CommandRefused)
+            assert delayed.reason is RejectionReason.invalid_target
+            await lease.cancel_operation(operation)
+            await client.wait_for_state(
+                lambda state: (
+                    state.arms[0].last_command is not None
+                    and state.arms[0].last_command.command_id
+                    == admitted.records[0].record.command_id
+                    and state.arms[0].last_command.completion is not None
+                )
+            )
+            final = (await client.get_operation(operation)).root
+            assert final.state == "finished"
+            assert final.records[0].record.completion is not None
+            assert final.records[0].record.completion.outcome.value == "stopped"
+
+    with running_station(server_binary) as station:
+        asyncio.run(asyncio.wait_for(exercise(station.server), timeout=10))
 
 
 @pytest.mark.server

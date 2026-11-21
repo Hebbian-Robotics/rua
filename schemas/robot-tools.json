@@ -515,7 +515,7 @@
     }
   },
   {
-    "description": "Return this arm to the joint pose recorded when it was enabled, then close the gripper. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.",
+    "description": "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
     "name": "rehome",
     "operation": "rehome",
     "parameters": {

@@ -520,7 +520,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
     }
   },
   {
-    "description": "Return this arm to the joint pose recorded when it was enabled, then close the gripper. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.",
+    "description": "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
     "name": "rehome",
     "operation": "rehome",
     "parameters": {
@@ -583,4 +583,24 @@ ROBOT_TOOL_CONTEXT = json.loads(r"""
   "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
   "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit."
 }
+""")
+
+ROBOT_TOOL_INPUT_UNITS = json.loads(r"""
+[
+  {
+    "model_field": "position_mm",
+    "scale_to_station": 0.001,
+    "station_field": "position"
+  },
+  {
+    "model_field": "joints_degrees",
+    "scale_to_station": 0.017453292519943295,
+    "station_field": "joints"
+  },
+  {
+    "model_field": "max_joint_speed_degrees_per_second",
+    "scale_to_station": 0.017453292519943295,
+    "station_field": "max_joint_speed"
+  }
+]
 """)

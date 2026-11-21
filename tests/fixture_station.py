@@ -135,8 +135,11 @@ def station_process(
                 "--no-physics-stand-in",
                 "--http-address",
                 "127.0.0.1:0",
-                "--media-address",
-                "127.0.0.1:0",
+                *(
+                    ("--media-address", "127.0.0.1:0")
+                    if "--media-address" not in extra_arguments
+                    else ()
+                ),
                 "--work-directory",
                 str(
                     work_directory
@@ -157,9 +160,10 @@ def station_process(
 
 @contextmanager
 def running_station(
-    executable: Path, *, enabled: bool = True
+    executable: Path, *, enabled: bool = True, media_address: str | None = None
 ) -> Generator[RunningStation]:
-    with station_process(executable) as station:
+    arguments = ("--media-address", media_address) if media_address is not None else ()
+    with station_process(executable, *arguments) as station:
         server = station.http_server()
         wait_until_station_live(server)
         if enabled:

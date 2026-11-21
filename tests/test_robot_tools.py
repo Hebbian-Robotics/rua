@@ -11,6 +11,9 @@ from hebbian_rua.client.contract.station_api import (
     LeaseStatus,
     OnInterruption,
 )
+from hebbian_rua.client.llm.robot_tool_rules import (
+    convert_model_arguments_to_station_units,
+)
 from hebbian_rua.client.llm.robot_tools import RobotTools
 from hebbian_rua.client.llm.tool_catalog import RobotToolConfiguration
 from hebbian_rua.client.llm.tools import ROBOT_TOOLS
@@ -414,3 +417,13 @@ def test_model_motion_inputs_reject_booleans(
     assert isinstance(result, RobotToolResult)
     assert result.is_error
     assert "Invalid input" in result.text
+
+
+def test_tool_input_units_match_the_station_contract() -> None:
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/model-input-units.json").read_text()
+    )
+    assert (
+        convert_model_arguments_to_station_units(fixture["arguments"])
+        == fixture["station_command"]
+    )

@@ -118,3 +118,19 @@ test("an error status is a StationHttpError carrying the station's detail", asyn
     message: "no such trace",
   });
 });
+
+test("a plain-text HTTP rejection keeps the station's explanation", async () => {
+  stubFetch(
+    () =>
+      new Response("Failed to parse the request: unknown command", {
+        status: 422,
+      }),
+  );
+  await expect(
+    createStationHttpClient().phoneInvite("table"),
+  ).rejects.toMatchObject({
+    name: "StationHttpError",
+    status: 422,
+    message: "Failed to parse the request: unknown command",
+  });
+});
