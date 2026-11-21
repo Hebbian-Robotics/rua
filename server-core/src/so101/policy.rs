@@ -25,69 +25,51 @@ impl ActionStep {
     }
 }
 
-struct ActionRange {
-    lower: [f64; JOINT_COUNT],
-    upper: [f64; JOINT_COUNT],
+// CONSTRAINT: Per-joint vectors in the model's metadata, as JSON arrays of five numbers.
+fn parse_joint_vector(name: &str, metadata: &str) -> anyhow::Result<[f64; JOINT_COUNT]> {
+    let values: [f64; JOINT_COUNT] =
+        serde_json::from_str(metadata).with_context(|| format!("Invalid `{name}` metadata"))?;
+    ensure!(
+        values.iter().all(|value| value.is_finite()),
+        "The policy's `{name}` must be finite"
+    );
+    Ok(values)
 }
 
-impl ActionRange {
-    fn parse(metadata: &str) -> anyhow::Result<Self> {
-        #[derive(serde::Deserialize)]
-        struct Bounds {
-            lower: [f64; JOINT_COUNT],
-            upper: [f64; JOINT_COUNT],
-        }
-        let bounds: Bounds =
-            serde_json::from_str(metadata).context("Invalid `action_range_radians` metadata")?;
-        ensure!(
-            bounds
-                .lower
-                .iter()
-                .zip(&bounds.upper)
-                .all(|(lower, upper)| lower.is_finite() && upper.is_finite() && lower < upper),
-            "The policy's action range must be finite with each lower bound below its upper bound"
-        );
-        Ok(Self {
-            lower: bounds.lower,
-            upper: bounds.upper,
-        })
-    }
-}
-
-// CONSTRAINT: The trained model's action_mode metadata selects the target mapping.
-enum ActionMapping {
-    MeasuredIncrement(ActionStep),
-    // WHY: Clamping the lead lets a constant absolute action hold the same target as the arm moves.
-    LeadClampedPose {
-        step: ActionStep,
-        range: ActionRange,
-    },
+// CONSTRAINT: The trained model's action metadata defines the target mapping: the default pose
+// plus a per-joint scale times the action, no further than the step from the measured joint.
+// WHY: An absolute target lets a constant action hold the arm still as it settles.
+struct ActionMapping {
+    step: ActionStep,
+    offset: [f64; JOINT_COUNT],
+    scale: [f64; JOINT_COUNT],
 }
 
 impl ActionMapping {
-    fn step(&self) -> &ActionStep {
-        match self {
-            Self::MeasuredIncrement(step) | Self::LeadClampedPose { step, .. } => step,
-        }
+    fn parse(step: &str, offset: &str, scale: &str) -> anyhow::Result<Self> {
+        let scale = parse_joint_vector("action_scale_radians", scale)?;
+        ensure!(
+            scale.iter().all(|value| *value > 0.0),
+            "The policy's action scale must be positive"
+        );
+        Ok(Self {
+            step: ActionStep::parse(step)?,
+            offset: parse_joint_vector("action_offset_radians", offset)?,
+            scale,
+        })
     }
 
     fn joint_target(&self, joint: usize, measured_position: f64, action: f64) -> f64 {
-        let action = action.clamp(-1.0, 1.0);
-        match self {
-            Self::MeasuredIncrement(step) => measured_position + step.0 * action,
-            Self::LeadClampedPose { step, range } => {
-                let midpoint = f64::midpoint(range.lower[joint], range.upper[joint]);
-                let half_range = (range.upper[joint] - range.lower[joint]) / 2.0;
-                (midpoint + half_range * action)
-                    .clamp(measured_position - step.0, measured_position + step.0)
-            }
-        }
+        (self.offset[joint] + self.scale[joint] * action).clamp(
+            measured_position - self.step.0,
+            measured_position + self.step.0,
+        )
     }
 
     // CONSTRAINT: The step is how far ahead of the measured joint the policy may set its target. It is
     // a lead the servo chases, not a joint speed, so the profile accepts it as a distance.
     fn validate_target_lead(&self, max_target_lead_radians: f64) -> anyhow::Result<()> {
-        let step = self.step().0;
+        let step = self.step.0;
         ensure!(
             step <= max_target_lead_radians + 1e-12,
             "The policy model sets targets up to {step} rad ahead of the measured joints, but the profile accepts at most {max_target_lead_radians} rad ([policy] max_target_lead_radians)"
@@ -97,7 +79,8 @@ impl ActionMapping {
 }
 // CONSTRAINT: Timing is part of this trained controller's action and history contract.
 pub(crate) const CONTROL_FREQUENCY_HERTZ: f64 = 50.0;
-const METHOD: &str = "supermimic_so101_reference_pose_v2";
+const METHOD: &str = "supermimic_official_so101_pose_v1";
+const ACTION_MODE: &str = "default_pose_offset";
 
 struct HardwareBinding {
     hardware: String,
@@ -240,21 +223,20 @@ impl Policy {
             custom("method")? == METHOD,
             "Unsupported SO-101 policy observation contract"
         );
-        let action_step = ActionStep::parse(&custom("action_step")?)?;
-        let action_mapping = match custom("action_mode")?.as_str() {
-            "measured_increment" => ActionMapping::MeasuredIncrement(action_step),
-            "lead_clamped_pose" => ActionMapping::LeadClampedPose {
-                step: action_step,
-                range: ActionRange::parse(&custom("action_range_radians")?)?,
-            },
-            other => anyhow::bail!("Unsupported SO-101 policy action mode `{other}`"),
-        };
-        let offset: [f64; JOINT_COUNT] = serde_json::from_str(&custom("observation_joint_offset")?)
-            .context("Invalid `observation_joint_offset` metadata")?;
+        let action_mode = custom("action_mode")?;
         ensure!(
-            offset.iter().all(|value| value.is_finite()),
-            "The policy's joint offset must be finite"
+            action_mode == ACTION_MODE,
+            "Unsupported SO-101 policy action mode `{action_mode}`"
         );
+        let action_mapping = ActionMapping::parse(
+            &custom("action_step")?,
+            &custom("action_offset_radians")?,
+            &custom("action_scale_radians")?,
+        )?;
+        let offset = parse_joint_vector(
+            "observation_joint_offset",
+            &custom("observation_joint_offset")?,
+        )?;
         Ok((action_mapping, offset))
     }
 
@@ -435,53 +417,37 @@ pub(crate) fn validate_profile(
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionMapping, ActionRange, ActionStep, HardwareBinding, sha256_hex};
+    use super::{ActionMapping, ActionStep, HardwareBinding, sha256_hex};
     use std::path::Path;
 
-    #[test]
-    fn checkpoint_step_scales_targets_and_must_fit_the_accepted_target_lead() {
-        let original_step = ActionMapping::MeasuredIncrement(ActionStep::parse("0.04").unwrap());
-        let retrained_step = ActionMapping::MeasuredIncrement(ActionStep::parse("0.12").unwrap());
-        original_step.validate_target_lead(0.04).unwrap();
-        assert!(retrained_step.validate_target_lead(0.04).is_err());
-        retrained_step.validate_target_lead(0.12).unwrap();
-        for (action, original_target, retrained_target) in [
-            (-2.0, 0.96, 0.88),
-            (0.0, 1.0, 1.0),
-            (0.5, 1.02, 1.06),
-            (2.0, 1.04, 1.12),
-        ] {
-            assert!((original_step.joint_target(0, 1.0, action) - original_target).abs() < 1e-12);
-            assert!((retrained_step.joint_target(0, 1.0, action) - retrained_target).abs() < 1e-12);
-        }
-        for invalid in ["", "not-a-number", "NaN", "inf", "-inf", "0", "-0.12"] {
-            assert!(ActionStep::parse(invalid).is_err(), "accepted {invalid}");
-        }
+    fn mapping(step: &str) -> ActionMapping {
+        ActionMapping::parse(step, "[0.1, 0, 0, 0, 0]", "[0.4, 0.4, 0.4, 0.4, 0.4]").unwrap()
     }
 
     #[test]
-    fn lead_clamped_pose_holds_a_constant_target_and_leads_the_measured_joint_by_at_most_the_step()
-    {
-        let mapping = ActionMapping::LeadClampedPose {
-            step: ActionStep::parse("0.12").unwrap(),
-            range: ActionRange::parse(
-                r#"{"lower": [-2, -2, -2, -2, -2], "upper": [2, 2, 2, 2, 2]}"#,
-            )
-            .unwrap(),
-        };
+    fn default_pose_offset_holds_a_constant_target_and_leads_the_measured_joint_by_at_most_the_step()
+     {
+        let mapping = mapping("0.12");
+        // A constant action holds one target while the measured joint settles near it.
         for measured in [0.45, 0.5, 0.55] {
-            assert!((mapping.joint_target(0, measured, 0.25) - 0.5).abs() < 1e-12);
+            assert!((mapping.joint_target(0, measured, 1.0) - 0.5).abs() < 1e-12);
         }
-        assert!((mapping.joint_target(0, 0.0, 1.0) - 0.12).abs() < 1e-12);
-        assert!((mapping.joint_target(0, 0.0, -5.0) + 0.12).abs() < 1e-12);
+        assert!((mapping.joint_target(1, 0.0, 5.0) - 0.12).abs() < 1e-12);
+        assert!((mapping.joint_target(1, 0.0, -5.0) + 0.12).abs() < 1e-12);
         mapping.validate_target_lead(0.12).unwrap();
         assert!(mapping.validate_target_lead(0.04).is_err());
-        for invalid in [
-            "",
-            r#"{"lower": [0, 0, 0, 0, 0], "upper": [0, 1, 1, 1, 1]}"#,
-            r#"{"lower": [0, 0, 0, 0], "upper": [1, 1, 1, 1]}"#,
+        for invalid in ["", "not-a-number", "NaN", "inf", "-inf", "0", "-0.12"] {
+            assert!(ActionStep::parse(invalid).is_err(), "accepted {invalid}");
+        }
+        for (offset, scale) in [
+            ("[0, 0, 0, 0]", "[1, 1, 1, 1, 1]"),
+            ("[0, 0, 0, 0, 0]", "[1, 1, 1, 1, 0]"),
+            ("[0, 0, 0, 0, NaN]", "[1, 1, 1, 1, 1]"),
         ] {
-            assert!(ActionRange::parse(invalid).is_err(), "accepted {invalid}");
+            assert!(
+                ActionMapping::parse("0.12", offset, scale).is_err(),
+                "accepted {offset} {scale}"
+            );
         }
     }
 
