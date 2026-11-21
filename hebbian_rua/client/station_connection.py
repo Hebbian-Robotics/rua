@@ -31,6 +31,9 @@ CONNECT_TIMEOUT_SECONDS = 10.0
 REPLY_TIMEOUT_SECONDS = 30.0
 # How long a command's outcome is awaited across a lost connection.
 DISCONNECT_PATIENCE_SECONDS = 30.0
+# How long the event stream may stay silent before it is reconnected. The
+# station sends a keepalive comment at least every 15 seconds while idle.
+EVENT_STREAM_READ_TIMEOUT_SECONDS = 30.0
 RETAINED_RECORDS = 10_000
 
 
@@ -324,7 +327,10 @@ class StationConnection:
 
     async def _read_events(self) -> None:
         try:
-            async for event in stream_station_events(self._event_client):
+            async for event in stream_station_events(
+                self._event_client,
+                read_timeout_seconds=EVENT_STREAM_READ_TIMEOUT_SECONDS,
+            ):
                 await self._handle_stream_event(event)
         except Exception as error:
             self._reader_error = error

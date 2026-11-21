@@ -50,8 +50,14 @@ async def decode_station_events(
 
 async def stream_station_events(
     client: httpx2.AsyncClient,
+    *,
+    read_timeout_seconds: float,
 ) -> AsyncIterator[StationStreamEvent]:
-    """Reconnect a station event stream, requesting a snapshot after replay gaps."""
+    """Reconnect a station event stream, requesting a snapshot after replay gaps.
+
+    A stream that sends nothing, not even a keepalive comment, for
+    `read_timeout_seconds` is treated as disconnected and resumed from its cursor.
+    """
     import asyncio
 
     cursor: str | None = None
@@ -60,7 +66,10 @@ async def stream_station_events(
         headers = {"Last-Event-ID": cursor} if cursor is not None else {}
         try:
             async with client.stream(
-                "GET", "/events", headers=headers, timeout=None
+                "GET",
+                "/events",
+                headers=headers,
+                timeout=httpx2.Timeout(None, read=read_timeout_seconds),
             ) as response:
                 if response.status_code == 409 and cursor is not None:
                     cursor = None
