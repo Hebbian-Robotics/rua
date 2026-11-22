@@ -89,7 +89,7 @@
     }
   },
   {
-    "name": "completed execution distinguishes limited requested targets from reached targets",
+    "name": "target status and motion limit details remain separate",
     "input": [
       {
         "completion": {
@@ -132,7 +132,7 @@
         "completion": {
           "outcome": "completed"
         },
-        "target_status": "limited",
+        "target_status": "reached",
         "pose_limited": {
           "position_shortfall_mm": 1.1
         }
@@ -141,7 +141,7 @@
         "completion": {
           "outcome": "completed"
         },
-        "target_status": "limited",
+        "target_status": "reached",
         "path_limited": {
           "reason": "self_collision"
         }

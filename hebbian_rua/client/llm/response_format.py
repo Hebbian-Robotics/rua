@@ -121,16 +121,7 @@ def _format_model_field(value: object, field_name: str) -> object:
         for key, item in value.items():
             if item is None or (key == "checkpoints" and item == []):
                 continue
-            if (
-                key == "target_status"
-                and item == "reached"
-                and (
-                    value.get("pose_limited") is not None
-                    or value.get("path_limited") is not None
-                )
-            ):
-                formatted[key] = "limited"
-            elif key in _POSITION_FIELDS:
+            if key in _POSITION_FIELDS:
                 formatted[_POSITION_FIELDS[key]] = _scale_numbers(item, 1000.0)
             elif key in _ANGLE_FIELDS:
                 formatted[_ANGLE_FIELDS[key]] = _scale_numbers(item, 180.0 / math.pi)

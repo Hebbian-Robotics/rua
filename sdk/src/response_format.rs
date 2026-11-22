@@ -310,18 +310,11 @@ fn format_model_field(value: Value, field: &str) -> Value {
     match value {
         Value::Object(object) => {
             let object = model_command_record(object);
-            let limited_target = ["pose_limited", "path_limited"]
-                .iter()
-                .any(|field| object.get(*field).is_some_and(|value| !value.is_null()));
             let mut formatted = Map::new();
             for (key, value) in object {
                 if value.is_null()
                     || (key == "checkpoints" && value.as_array().is_some_and(Vec::is_empty))
                 {
-                    continue;
-                }
-                if key == "target_status" && value == "reached" && limited_target {
-                    formatted.insert(key, Value::String("limited".into()));
                     continue;
                 }
                 if let Some((name, factor)) = model_unit_field(&key) {

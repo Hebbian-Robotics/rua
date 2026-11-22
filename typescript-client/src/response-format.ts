@@ -113,14 +113,6 @@ function formatModelField(value: unknown, fieldName: string): unknown {
         (key === "checkpoints" && Array.isArray(item) && item.length === 0)
       )
         continue;
-      if (
-        key === "target_status" &&
-        item === "reached" &&
-        (record["pose_limited"] != null || record["path_limited"] != null)
-      ) {
-        formatted[key] = "limited";
-        continue;
-      }
       const positionField = positionFields[key];
       const angleField = angleFields[key];
       if (positionField !== undefined)
