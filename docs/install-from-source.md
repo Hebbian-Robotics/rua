@@ -65,15 +65,14 @@ Run commands from the repository root. After pulling dependency changes, run
 | --- | --- | --- |
 | Rust station or hardware profile | `uv run cargo run -p hebbian-robot-use-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
 | Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
-| TypeScript agent or client | `pnpm start:agent` | Restart the agent server to load current source. No client build is required. |
-| TypeScript agent during development | `pnpm dev:agent` | Watches the agent and imported client source and restarts on changes. |
+| TypeScript agent | `pnpm start:agent` | Restart the agent server to load example changes. |
+| TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
 | Viewer served by the station | `pnpm build` | Refresh the browser; no station restart is needed. |
 | Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
-| Python SDK or examples | Rerun the Python command | Local editable sources load on the next process start. |
+| Python examples | Rerun the example command | Example changes load on the next process start. |
 
-Repository commands enable the TypeScript client’s `development` export condition
-in tsx, Vite and tests, so they load current source. Default package exports load
-compiled files for external consumers; `pnpm pack` builds them automatically.
-Run `pnpm test:package` to validate the packed SDK outside the workspace. `pnpm build` builds the static
-viewer in `dist/viewer`; it does not build Rust binaries or restart services.
+Example environments use released SDKs. The repository's SDK tests exercise
+the source in your checkout. Run `pnpm test:package` to validate the packed
+TypeScript SDK outside the workspace. `pnpm build` builds the static viewer in
+`dist/viewer` without building Rust binaries or restarting services.
 A running process continues using its loaded code until it restarts.

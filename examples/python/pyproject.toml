@@ -7,6 +7,4 @@ dependencies = ["hebbian-rua==0.1.3", "openai>=3.49.0", "anthropic>=2.8.0", "goo
 [tool.uv]
 package = false
 exclude-newer = "3 days"
-
-[tool.uv.sources]
-hebbian-rua = { path = "../..", editable = true }
+exclude-newer-package = { hebbian-rua = false }

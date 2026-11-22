@@ -3,11 +3,11 @@
 Use the TypeScript client to control a running station from a browser or Node.js.
 Install a released version with `pnpm add hebbian-rua`.
 
-## Use the workspace package
+## Try the published SDK
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
 From the checkout root, install dependencies with `pnpm install --frozen-lockfile`.
-Use the workspace package or [pack it for another project](#package-builds).
+The checkout installs the published SDK for runnable examples.
 
 To read state without moving the robot, start a station
 ([MuJoCo quickstart](../docs/simulation.md) or [hardware setup](../docs/getting-started.md)).
@@ -27,7 +27,7 @@ try {
 }
 ```
 
-Run it with `pnpm exec tsx --conditions=development read-state.ts`.
+Run it with `pnpm exec tsx read-state.ts`.
 
 ## Run an action sequence
 
@@ -271,10 +271,6 @@ from the checkout root. Packing runs the build automatically:
 
 From your Node.js project, install the archive with
 `pnpm add /tmp/rua-client.tgz` and import `hebbian-rua`. The
-archive uses the compiled entry point. The SDK is available from source.
-
-Repository commands, Vite and TypeScript enable the `development` condition to
-read current source. For a custom local script use
-`pnpm exec tsx --conditions=development path/to/script.ts`. Plain Node consumers
-use the compiled package by default. Run `pnpm test:package` to pack, install,
+archive uses the compiled entry point. SDK tests in the workspace continue to
+exercise the SDK under development. Run `pnpm test:package` to pack, install,
 import and typecheck the SDK in a temporary consumer outside the workspace.
