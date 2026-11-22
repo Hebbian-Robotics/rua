@@ -2,7 +2,7 @@
 
 Start a station with [your arm connected](../../docs/getting-started.md).
 For testing without hardware, use a [simulated station](../../docs/simulation.md).
-From the repository root:
+The example environment installs the published SDK from PyPI. From the repository root:
 
 ```sh
 cd examples/python

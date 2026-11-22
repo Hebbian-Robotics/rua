@@ -2,7 +2,7 @@
 
 Follow [source setup](docs/install-from-source.md#prepare-the-checkout) and
 install [source-doc-lint](tooling/source-doc-lint/README.md) for code changes.
-Follow the [TypeScript SDK setup](typescript-client/README.md#use-the-workspace-package)
+Follow the [TypeScript SDK setup](typescript-client/README.md#package-builds)
 for TypeScript changes.
 
 Choose checks for the component you are changing:

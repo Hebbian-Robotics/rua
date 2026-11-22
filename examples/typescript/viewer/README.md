@@ -4,8 +4,8 @@ The station serves this React viewer at `/viewer/`. Follow the
 [viewer build instructions](../../../docs/install-from-source.md#optional-viewer)
 and start a station with [your arm connected](../../../docs/getting-started.md).
 Use [MuJoCo](../../../docs/simulation.md) to test the viewer without hardware.
-The viewer build uses the TypeScript SDK included in the checkout. The SDK
-requires no separate build or installation from npm.
+The viewer build installs the published TypeScript SDK from npm through the
+repository lockfile.
 
 ## Use the viewer
 

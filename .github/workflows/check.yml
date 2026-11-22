@@ -85,7 +85,7 @@ jobs:
       - if: ${{ hashFiles('examples/mujoco_sim/pyproject.toml') != '' }}
         run: uv lock --check --project examples/mujoco_sim
       - name: Check documented Python agent entry point
-        run: uv run python examples/python/agent_quickstart.py --help
+        run: uv run --locked --project examples/python python examples/python/agent_quickstart.py --help
 
   rust:
     needs: changes

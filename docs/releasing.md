@@ -68,3 +68,7 @@ the same release commit. The SDK job checks each registry and skips versions
 that are already live.
 After publishing, install the exact release from each registry in a clean
 project and verify the SDK imports, station startup, and a simulator connection.
+
+Update the Python and TypeScript example dependency pins and lockfiles once the
+new version is available on PyPI and npm. Keep release-age exemptions limited to
+the RUA SDK so the usual delay still applies to third-party dependencies.

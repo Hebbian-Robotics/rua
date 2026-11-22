@@ -6,6 +6,9 @@ requires-python = ">=3.12"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P3D"
 
+[options.exclude-newer-package]
+hebbian-rua = false
+
 [[package]]
 name = "annotated-types"
 version = "0.8.0"
@@ -90,40 +93,16 @@ wheels = [
 [[package]]
 name = "hebbian-rua"
 version = "0.1.3"
-source = { editable = "../../" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "tenacity" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=2.8.0" },
-    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=3.1.0" },
-    { name = "httpx2", specifier = ">=2.16.0" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=3.49.0" },
-    { name = "pydantic", specifier = ">=2.11" },
-    { name = "python-dotenv", specifier = ">=1.2.4" },
-    { name = "tenacity", specifier = ">=9.1.4" },
-]
-provides-extras = ["openai", "anthropic", "gemini"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "anthropic", specifier = ">=2.8.0" },
-    { name = "datamodel-code-generator", specifier = ">=0.89.0" },
-    { name = "google-genai", specifier = ">=3.1.0" },
-    { name = "import-linter", specifier = ">=2.15" },
-    { name = "mujoco", specifier = ">=3.17.0" },
-    { name = "numpy", specifier = ">=2" },
-    { name = "openai", specifier = ">=3.49.0" },
-    { name = "pillow", specifier = ">=12.3.0" },
-    { name = "pytest", specifier = ">=9.2.0" },
-    { name = "rua-dev", editable = "../../tooling" },
-    { name = "ruff" },
-    { name = "ty" },
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/12/b0db965b13214dae5a76664bd010ca84d1508b6a06e80bfb88fa86c446e3/hebbian_rua-0.1.3-py3-none-macosx_14_0_arm64.whl", hash = "sha256:5aee1181540996859cd8d3a6fec3a3f3e7e5cd39cabefc08b9cc1e50a250ac46", size = 23720198, upload-time = "2026-11-22T10:30:23.082Z" },
+    { url = "https://files.pythonhosted.org/packages/97/19/120ff188032f3f97b53fa2358225a74814238ed2e89cd71c308a2d992401/hebbian_rua-0.1.3-py3-none-manylinux_2_39_x86_64.whl", hash = "sha256:aa255c797e0ea5505a7ac10f2835cbc08e60ff474de6ac129aa75ad3e9555ae7", size = 27039464, upload-time = "2026-11-22T10:30:25.257Z" },
 ]
 
 [[package]]
@@ -625,7 +604,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=5.3.2" },
-    { name = "hebbian-rua", editable = "../../" },
+    { name = "hebbian-rua", specifier = "==0.1.3" },
     { name = "mujoco", specifier = ">=3.17.0" },
     { name = "numpy", specifier = ">=2" },
     { name = "pillow", specifier = ">=12.3.0" },
