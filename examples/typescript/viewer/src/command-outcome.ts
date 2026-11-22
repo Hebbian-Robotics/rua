@@ -1,4 +1,4 @@
-import type { CommandRecord } from "hebbian-rua";
+import { type CommandRecord, commandResult } from "hebbian-rua";
 import { formatMotionDetail, radiansToDegrees } from "./shared/measurements.js";
 
 // This presentation threshold is for the manual viewer only; the station's
@@ -9,8 +9,11 @@ export function describeCommandOutcome(command: CommandRecord): {
   text: string;
   isError: boolean;
 } {
-  const jointErrors = command.achieved?.joint_errors_radians;
-  const completion = command.completion;
+  const jointErrors =
+    command.phase.kind === "finished"
+      ? command.phase.achieved?.joint_errors_radians
+      : undefined;
+  const completion = commandResult(command);
   const approximatelyReached =
     completion?.outcome === "stopped_short" &&
     ["move_to_joints", "move_to_pose"].includes(command.label) &&
@@ -32,8 +35,12 @@ export function describeCommandOutcome(command: CommandRecord): {
     text: completion
       ? `Last: ${command.label} ${completion.outcome.replaceAll("_", " ")}${completion.detail ? ` — ${formatMotionDetail(completion.detail)}` : ""}`
       : "",
-    isError: ["failed", "faulted", "tripped", "stopped_short"].includes(
-      completion?.outcome ?? "",
-    ),
+    isError: [
+      "failed",
+      "faulted",
+      "tripped",
+      "stopped_short",
+      "interrupted",
+    ].includes(completion?.outcome ?? ""),
   };
 }

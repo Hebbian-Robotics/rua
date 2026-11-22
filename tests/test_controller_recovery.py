@@ -203,11 +203,8 @@ def test_station_reconnects_disabled_using_its_running_binary(
                     response = httpx2.get(f"{server}/operations/{operation}")
                     if response.status_code != 200:
                         return False
-                    completion = response.json()["records"][0]["record"]["completion"]
-                    return (
-                        completion is not None
-                        and completion["outcome"] == "interrupted"
-                    )
+                    phase = response.json()["records"][0]["record"]["phase"]
+                    return phase["kind"] == "outcome_unknown"
 
                 await wait_until_async(command_interrupted, timeout=10)
 

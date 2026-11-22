@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use crate::motion_values::JointSpeed;
 use hebbian_contracts::{ArmMode, JawClosingAxis, PathLimited, PoseLimited, RejectionReason};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -117,8 +118,8 @@ pub struct ReachGoal {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum StreamGoal {
     Joints {
-        positions: Vec<f64>,
-        joint_speed: f64,
+        positions: crate::joint_limits::JointTarget<Vec<f64>>,
+        joint_speed: JointSpeed,
     },
     Pose {
         position: [f64; 3],
@@ -134,14 +135,29 @@ impl StreamGoal {
         }
     }
 
-    pub(super) fn joints(&self) -> Option<&[f64]> {
+    pub(super) fn recorded(&self) -> hebbian_contracts::RecordedCommand {
+        use hebbian_contracts::{CommandPose, RecordedCommand};
         match self {
-            Self::Joints { positions, .. } => Some(positions),
-            Self::Pose { .. } => None,
+            Self::Joints {
+                positions,
+                joint_speed,
+            } => RecordedCommand::JointStream {
+                goal_joints: positions.as_slice().to_vec(),
+                joint_speed: joint_speed.radians_per_second(),
+            },
+            Self::Pose {
+                position,
+                quaternion,
+            } => RecordedCommand::PoseStream {
+                goal_pose: CommandPose {
+                    position: *position,
+                    quaternion: *quaternion,
+                },
+            },
         }
     }
 
-    pub(super) fn joint_speed(&self) -> Option<f64> {
+    pub(super) fn joint_speed(&self) -> Option<JointSpeed> {
         match self {
             Self::Joints { joint_speed, .. } => Some(*joint_speed),
             Self::Pose { .. } => None,
@@ -203,7 +219,7 @@ impl PowerState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum Lifecycle {
+pub(super) enum CommandState {
     Idle,
     Queued(Job),
     // INVARIANT: The previous motion has been superseded, but the loop still owns it.

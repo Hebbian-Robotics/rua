@@ -27,6 +27,13 @@ An admission refusal leaves that request unapplied. For an admitted command,
 the record carries the outcome and the state achieved where available. Check
 the outcome and limit details before deciding what to do next.
 
+The record's `command.kind` identifies the target or control action.
+Its `phase.kind` distinguishes `pending`, `not_started`, `finished`, and
+`outcome_unknown`. Only a finished command can carry end measurements.
+For a command issued before a controller disconnect, check the phase before
+using its result to plan another action. A combined arm-and-gripper step keeps
+one record per resource, so each has its own outcome.
+
 | Outcome | Meaning |
 | --- | --- |
 | `completed` | The planned motion finished. A limited plan can finish at an adjusted target. |

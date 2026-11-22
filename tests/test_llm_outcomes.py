@@ -2,24 +2,12 @@ import json
 from pathlib import Path
 
 from hebbian_rua.client.contract.station_api import (
-    CommandCompletion,
-    CommandOutcome,
+    CommandOutcomeUnknown,
     CommandRecord,
-    TargetStatus,
+    RecordedMove,
 )
 from hebbian_rua.client.llm.robot_tools import records_result
 from hebbian_rua.client.llm.types import RobotToolCall
-
-
-def record(outcome: CommandOutcome, target_status: TargetStatus) -> CommandRecord:
-    return CommandRecord(
-        command_id="c",
-        label="move_to_joints",
-        accepted_at=0.0,
-        checkpoints=[],
-        completion=CommandCompletion(finished_at=1.0, outcome=outcome),
-        target_status=target_status,
-    )
 
 
 def test_group_outcomes_match_the_shared_examples() -> None:
@@ -41,14 +29,23 @@ def test_group_outcomes_match_the_shared_examples() -> None:
         assert single.is_error is example["expected_error"]
         assert (
             json.loads(single.text)["completion"]["outcome"]
-            == example["record"]["completion"]["outcome"]
+            == example["record"]["phase"]["completion"]["outcome"]
         )
 
 
 def test_an_interrupted_move_requires_recovery_not_a_hard_fault_stop() -> None:
     result = records_result(
         RobotToolCall("1", "move_to_joints", {}),
-        [record(CommandOutcome.interrupted, TargetStatus.partial)],
+        [
+            CommandRecord(
+                command_id="c",
+                label="move_to_joints",
+                accepted_at=0.0,
+                checkpoints=[],
+                command=RecordedMove(target_joints=[0.1], joint_speed=1.0),
+                phase=CommandOutcomeUnknown(finished_at=1.0),
+            )
+        ],
     )
     assert result.is_error
     assert result.interrupted

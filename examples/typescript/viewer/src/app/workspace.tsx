@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { LiveRun, StationState } from "hebbian-rua";
-import { apiSchemas } from "hebbian-rua";
+import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
 import { BotIcon, HandIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert.js";
@@ -405,10 +405,9 @@ export function WorkspaceApp() {
                   basePose: arm.base_pose,
                   measuredJoints: arm.measured_joints,
                   commandedJoints: arm.commanded_joints,
-                  destinationJoints: arm.active_command?.target_joints ?? null,
-                  destinationLimited:
-                    arm.active_command?.path_limited != null ||
-                    arm.active_command?.pose_limited != null,
+                  destinationJoints:
+                    commandPlan(arm.active_command)?.target_joints ?? null,
+                  destinationLimited: commandWasLimited(arm.active_command),
                   gripperOpening: arm.gripper_opening,
                 })) ?? []
               }

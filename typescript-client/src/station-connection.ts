@@ -24,6 +24,7 @@ import {
   type ClientMessage,
   type CommandAnswer,
   type CommandRecord,
+  commandResult,
   type LeaseAnswer,
   type LeaseHolder,
   type LeaseStatus,
@@ -444,8 +445,8 @@ export function createStationConnection(
     // A late, unfinished revision never replaces the finished one.
     if (
       previous !== undefined &&
-      previous.record.completion !== null &&
-      record.completion === null
+      previous.record.phase.kind !== "pending" &&
+      record.phase.kind === "pending"
     )
       return;
     records.delete(record.command_id);
@@ -524,7 +525,9 @@ export function createStationConnection(
     const { arm: commandArm, record } = await waitFor(
       () => {
         const latest = records.get(commandId);
-        return latest?.record.completion ? latest : undefined;
+        return latest && latest.record.phase.kind !== "pending"
+          ? latest
+          : undefined;
       },
       { patient: true, signal },
     );
@@ -535,10 +538,10 @@ export function createStationConnection(
         const arm = latestState.arms.find((arm) => arm.arm === commandArm);
         if (arm === undefined || arm.active_command?.command_id === commandId)
           return undefined;
-        const finishedAt = record.completion?.finished_at ?? 0;
+        const finishedAt = commandResult(record)?.finished_at ?? 0;
         // Commands that finish in one cycle show only the latest on that arm.
         return arm.last_command?.command_id === commandId ||
-          (arm.last_command?.completion?.finished_at ?? -1) >= finishedAt
+          (commandResult(arm.last_command)?.finished_at ?? -1) >= finishedAt
           ? true
           : undefined;
       },
@@ -952,7 +955,9 @@ export function createStationConnection(
         );
         void waitFor(
           () =>
-            commandIds.every((id) => records.get(id)?.record.completion != null)
+            commandIds.every(
+              (id) => commandResult(records.get(id)?.record) != null,
+            )
               ? true
               : undefined,
           { signal, patient: true },

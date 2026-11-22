@@ -1,5 +1,5 @@
+use crate::child_process_group::{ChildProcessGroup, ProcessExit};
 use crate::lease_routes::Refusal;
-use crate::managed_child::{ChildExit, ManagedChild};
 use axum::{
     Json, Router,
     extract::State,
@@ -17,7 +17,11 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::{process::Command, sync::watch, time::Duration};
+use tokio::{
+    process::Command,
+    sync::{oneshot, watch},
+    time::Duration,
+};
 pub struct RecordingConfiguration {
     pub credentials: station_access::Credentials,
     pub room: String,
@@ -42,15 +46,46 @@ struct RecordingAnnouncement {
     revision: u64,
 }
 
+struct RecordingSession {
+    name: String,
+    controller_interrupted: bool,
+}
+
 enum RecordingState {
-    Inactive(RecordingStatus),
-    Active {
+    Idle,
+    Recording {
+        session: RecordingSession,
+        stop: oneshot::Sender<()>,
+    },
+    Stopping(RecordingSession),
+    Finished {
         name: String,
-        stop: watch::Sender<bool>,
-        stopping: bool,
-        controller_interrupted: bool,
+    },
+    Failed {
+        name: String,
+        detail: String,
     },
 }
+
+impl RecordingState {
+    fn active_session(&self) -> Option<&RecordingSession> {
+        match self {
+            Self::Recording { session, .. } | Self::Stopping(session) => Some(session),
+            Self::Idle | Self::Finished { .. } | Self::Failed { .. } => None,
+        }
+    }
+
+    fn stop(&mut self) {
+        *self = match std::mem::replace(self, Self::Idle) {
+            Self::Recording { session, stop } => {
+                let _ = stop.send(());
+                Self::Stopping(session)
+            }
+            other => other,
+        };
+    }
+}
+
 impl RecordingManager {
     #[must_use]
     pub fn new(configuration: Option<RecordingConfiguration>, station_url: String) -> Self {
@@ -59,7 +94,7 @@ impl RecordingManager {
         let (completed, announced) = watch::channel(0);
         let configuration = recording.clone();
         // INVARIANT: Keep only the latest desired state while a request is in flight.
-        // No lifecycle lock is held during the HTTP calls.
+        // No recording state lock is held during the HTTP calls.
         tokio::spawn(async move {
             while receiver.changed().await.is_ok() {
                 let announcement = *receiver.borrow_and_update();
@@ -79,7 +114,7 @@ impl RecordingManager {
             recording,
             announcements,
             announced,
-            state: Arc::new(Mutex::new(RecordingState::Inactive(RecordingStatus::Idle))),
+            state: Arc::new(Mutex::new(RecordingState::Idle)),
             controller_available: Arc::new(AtomicBool::new(true)),
             shutting_down: Arc::new(AtomicBool::new(false)),
             ended: watch::Sender::new(()),
@@ -107,14 +142,11 @@ impl RecordingManager {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let RecordingState::Active {
-            name,
-            controller_interrupted,
-            ..
-        } = &mut *state
+        if let RecordingState::Recording { session, .. } | RecordingState::Stopping(session) =
+            &mut *state
         {
-            *controller_interrupted = true;
-            if let Err(error) = self.mark_interruption_file(name) {
+            session.controller_interrupted = true;
+            if let Err(error) = self.mark_interruption_file(&session.name) {
                 tracing::warn!(%error, "Could not mark the recording's controller interruption");
             }
         }
@@ -125,14 +157,11 @@ impl RecordingManager {
     }
     #[must_use]
     pub fn active_recording(&self) -> Option<String> {
-        match &*self
-            .state
+        self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
-            RecordingState::Active { name, .. } => Some(name.clone()),
-            RecordingState::Inactive(_) => None,
-        }
+            .active_session()
+            .map(|session| session.name.clone())
     }
     #[must_use]
     pub fn recording_status(&self) -> RecordingStatus {
@@ -141,17 +170,18 @@ impl RecordingManager {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
         {
-            RecordingState::Inactive(status) => status.clone(),
-            RecordingState::Active {
-                name,
-                stopping: false,
-                ..
-            } => RecordingStatus::Recording { name: name.clone() },
-            RecordingState::Active {
-                name,
-                stopping: true,
-                ..
-            } => RecordingStatus::Stopping { name: name.clone() },
+            RecordingState::Idle => RecordingStatus::Idle,
+            RecordingState::Recording { session, .. } => RecordingStatus::Recording {
+                name: session.name.clone(),
+            },
+            RecordingState::Stopping(session) => RecordingStatus::Stopping {
+                name: session.name.clone(),
+            },
+            RecordingState::Finished { name } => RecordingStatus::Finished { name: name.clone() },
+            RecordingState::Failed { name, detail } => RecordingStatus::Failed {
+                name: name.clone(),
+                detail: detail.clone(),
+            },
         }
     }
     pub fn start_recording(&self) -> Result<String, String> {
@@ -162,7 +192,7 @@ impl RecordingManager {
         if self.shutting_down.load(Ordering::Acquire) {
             return Err("The station is shutting down".into());
         }
-        if matches!(*state, RecordingState::Active { .. }) {
+        if state.active_session().is_some() {
             return Err("A recording is already active".into());
         }
         let started_at_milliseconds = std::time::SystemTime::now()
@@ -178,22 +208,23 @@ impl RecordingManager {
             self.mark_interruption_file(&name)?;
         }
         let recorder = self.launch_recorder(&name)?;
-        let (stop, mut stopped) = watch::channel(false);
-        *state = RecordingState::Active {
-            name: name.clone(),
+        let (stop, stopped) = oneshot::channel();
+        *state = RecordingState::Recording {
+            session: RecordingSession {
+                name: name.clone(),
+                controller_interrupted,
+            },
             stop,
-            stopping: false,
-            controller_interrupted,
         };
         self.announce(true);
         let manager = self.clone();
         let recording_name = name.clone();
         tokio::spawn(async move {
             let shutdown = async {
-                let _ = stopped.changed().await;
+                let _ = stopped.await;
             };
             let finalized = recorder
-                .finish(
+                .wait_or_stop(
                     shutdown,
                     &[
                         (Signal::SIGINT, Duration::from_secs(10)),
@@ -205,45 +236,36 @@ impl RecordingManager {
                 )
                 .await;
             let outcome = match finalized {
-                Ok(ChildExit::Requested(status)) if status.success() => RecordingStatus::Finished {
-                    name: recording_name.clone(),
-                },
-                Ok(ChildExit::Requested(status)) => RecordingStatus::Failed {
-                    name: recording_name.clone(),
-                    detail: format!(
-                        "Recorder finalized with {status}; inspect the recording status for details"
-                    ),
-                },
-                Ok(ChildExit::Unexpected(status)) => RecordingStatus::Failed {
-                    name: recording_name.clone(),
-                    detail: format!("Recorder exited unexpectedly: {status}"),
-                },
-                Err(error) => RecordingStatus::Failed {
-                    name: recording_name.clone(),
-                    detail: error.to_string(),
-                },
+                Ok(ProcessExit::Requested(status)) if status.success() => Ok(()),
+                Ok(ProcessExit::Requested(status)) => Err(format!(
+                    "Recorder finalized with {status}; inspect the recording status for details"
+                )),
+                Ok(ProcessExit::Unexpected(status)) => {
+                    Err(format!("Recorder exited unexpectedly: {status}"))
+                }
+                Err(error) => Err(error.to_string()),
             };
             manager.announce(false);
             let mut state = manager
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let outcome = if matches!(
-                &*state,
-                RecordingState::Active {
-                    controller_interrupted: true,
-                    ..
-                }
-            ) && matches!(outcome, RecordingStatus::Finished { .. })
-            {
-                RecordingStatus::Failed {
+            let controller_interrupted = state
+                .active_session()
+                .is_some_and(|session| session.controller_interrupted);
+            *state = match outcome {
+                Ok(()) if controller_interrupted => RecordingState::Failed {
                     name: recording_name,
                     detail: "The motor controller was unavailable during the recording".into(),
-                }
-            } else {
-                outcome
+                },
+                Ok(()) => RecordingState::Finished {
+                    name: recording_name,
+                },
+                Err(detail) => RecordingState::Failed {
+                    name: recording_name,
+                    detail,
+                },
             };
-            *state = RecordingState::Inactive(outcome);
             manager.ended.send_replace(());
         });
         Ok(name)
@@ -268,13 +290,7 @@ impl RecordingManager {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut stop = || {
-            if let RecordingState::Active { stop, stopping, .. } = &mut *state {
-                *stopping = true;
-                let _ = stop.send(true);
-            }
-        };
-        authorize(&mut stop)
+        authorize(&mut || state.stop())
     }
     // INVARIANT: Close admission and finish recording/announcement work before dropping the
     // server runtime so pending finalization is not abandoned.
@@ -303,15 +319,13 @@ impl RecordingManager {
     }
     #[must_use]
     pub fn is_active(&self) -> bool {
-        matches!(
-            *self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-            RecordingState::Active { .. }
-        )
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .active_session()
+            .is_some()
     }
-    fn launch_recorder(&self, name: &str) -> Result<ManagedChild, String> {
+    fn launch_recorder(&self, name: &str) -> Result<ChildProcessGroup, String> {
         let configuration = self
             .recording
             .as_ref()
@@ -332,12 +346,12 @@ impl RecordingManager {
             Ok(url)
         });
         let station_url = station_url?;
-        ManagedChild::spawn(
+        ChildProcessGroup::spawn(
             Command::new(&configuration.executable)
                 .args(["record", "--room", &configuration.room, "--directory"])
                 .arg(configuration.directory.join(name))
                 .args(["--station-url", station_url.as_str()])
-                .args(["--supervisor-pid", &std::process::id().to_string()])
+                .args(["--station-pid", &std::process::id().to_string()])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null()),
         )

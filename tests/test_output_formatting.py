@@ -12,9 +12,10 @@ from hebbian_rua.client.contract.station_api import (
     Achieved,
     Checkpoint,
     CommandCompletion,
-    CommandOutcome,
     CommandRecord,
-    TargetStatus,
+    FinishedCommand,
+    KnownCommandOutcome,
+    RecordedMove,
 )
 from hebbian_rua.client.llm.robot_tools import records_result
 from hebbian_rua.client.llm.types import RobotToolCall
@@ -28,13 +29,15 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
         label="move_to_joints",
         accepted_at=123.123456789,
         checkpoints=[Checkpoint(label="start", measured_joints=[0.123456789])],
-        completion=CommandCompletion(
-            finished_at=124.123456789,
-            outcome=CommandOutcome.stopped_short,
-            detail="Object contact",
+        command=RecordedMove(target_joints=[0.3], joint_speed=0.5),
+        phase=FinishedCommand(
+            completion=CommandCompletion(
+                finished_at=124.123456789,
+                outcome=KnownCommandOutcome.stopped_short,
+                detail="Object contact",
+            ),
+            achieved=Achieved(joints=[0.123456789], sampled_at=124.123456789),
         ),
-        achieved=Achieved(joints=[0.123456789], sampled_at=124.123456789),
-        target_status=TargetStatus.partial,
     )
     result = records_result(RobotToolCall("call-1", "set_arm_gripper", {}), [record])
     summary = json.loads(result.text)

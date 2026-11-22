@@ -1,4 +1,9 @@
-import type { ActionSequenceRecord, LiveRun } from "hebbian-rua";
+import {
+  type ActionSequenceRecord,
+  commandPlan,
+  commandResult,
+  type LiveRun,
+} from "hebbian-rua";
 import { memo, useEffect, useId, useMemo, useState } from "react";
 import { match } from "ts-pattern";
 import { Button } from "@/components/ui/button.js";
@@ -46,12 +51,13 @@ function LiveActionSequence() {
           const status = records
             ? records
                 .map(({ arm, record }) => {
-                  if (record.pose_limited)
-                    return `${arm}: limited: ${record.pose_limited.advice}`;
-                  if (record.path_limited)
-                    return `${arm}: limited: ${record.path_limited.reason}`;
+                  const plan = commandPlan(record);
+                  if (plan?.pose_limited)
+                    return `${arm}: limited: ${plan.pose_limited.advice}`;
+                  if (plan?.path_limited)
+                    return `${arm}: limited: ${plan.path_limited.reason}`;
                   return `${arm}: ${
-                    record.completion?.outcome.replaceAll("_", " ") ??
+                    commandResult(record)?.outcome.replaceAll("_", " ") ??
                     "interrupted"
                   }`;
                 })

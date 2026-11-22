@@ -2,7 +2,7 @@
 
 The controller runs the motor cycle separately from the station and its clients.
 It is a soft-real-time loop on a general-purpose OS. Serial I/O, scheduling,
-lifecycle transitions and synchronous policy inference can all delay a cycle.
+torque changes and synchronous policy inference can all delay a cycle.
 Measure on the deployed host under representative load.
 
 - [Process and module ownership](architecture.md#station-and-companion-processes)

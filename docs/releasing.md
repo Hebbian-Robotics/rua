@@ -1,7 +1,7 @@
 # Release RUA
 
 A release ties the Python distribution and both SDKs to one version and one
-public source commit. The Python wheels include the station and media companion.
+source commit. The Python wheels include the station and media companion.
 
 | Registry | Package | Purpose |
 | --- | --- | --- |
@@ -21,16 +21,15 @@ verify affected contracts with `uv run --locked rua-dev contracts --check` after
 committing the generated files.
 
 Run [Publish](../.github/workflows/publish.yml) manually on a branch or tag that points
-to the intended public commit. This builds the Linux and macOS wheels and checks clean installations,
+to the intended release commit. This builds the Linux and macOS wheels and checks clean installations,
 packs and smoke-tests the npm tarball, and builds and verifies both crates
 together against a temporary local registry. Download the `rua-sdk-packages`
 artifact and keep the run associated with the commit.
 
 Before the first publication, verify ownership of any existing package and
-confirm the npm and crates.io accounts can create the new names. Check the
-existing `pypi` environment credential. Store credentials in the approved
-credential store. Build verification uses public dependencies and runs without
-publishing credentials.
+confirm the npm and crates.io accounts can create the new names. Configure the
+PyPI publishing credential in the repository's `pypi` GitHub environment.
+Build verification runs without publishing credentials.
 
 ## First SDK publication
 
@@ -58,7 +57,7 @@ publishing credentials.
 ## Publish an approved release
 
 Publish the GitHub release with the matching `v<version>` tag on the verified
-public source commit. After the build and installation checks pass, the workflow
+release commit. After the build and installation checks pass, the workflow
 publishes missing SDK versions using short-lived GitHub Actions credentials.
 It uploads the contracts crate before the Rust SDK and publishes the tested npm
 tarball. Then it publishes the wheels to PyPI and attaches the packages and

@@ -1,4 +1,4 @@
-// INVARIANT: Learned-policy adaptation produces references and updates lifecycle; hardware writes and setpoint guards remain in the common loop.
+// INVARIANT: Learned-policy adaptation produces references and advances command state; hardware writes and setpoint guards remain in the common loop.
 
 use super::activity::{Activity, Loop};
 use crate::arm::{Now, ReachGoal};

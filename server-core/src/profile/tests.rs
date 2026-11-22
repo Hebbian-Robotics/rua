@@ -307,12 +307,7 @@ fn fixture_profiles_share_the_hardware_control_defaults() {
         .parent()
         .unwrap()
         .join("examples/mujoco_sim/profiles");
-    if !fixtures.is_dir() {
-        return;
-    }
-    // WHY: The reduced source checkout omits the profile for an external checkpoint.
-    let policy = fixtures.join("policy.toml").is_file().then_some("policy");
-    for name in ["single", "bimanual"].into_iter().chain(policy) {
+    for name in ["single", "bimanual", "policy"] {
         let path = fixtures.join(format!("{name}.toml"));
         let fixture = load_robot_profile(&directory, path.to_str().unwrap()).unwrap();
         assert_eq!(fixture.control, hardware.control, "{name}");

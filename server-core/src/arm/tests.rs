@@ -126,8 +126,8 @@ fn enabling_holds_the_present_pose_and_completes_its_record() {
 fn a_move_is_queued_with_its_target_and_refused_while_another_is_active() {
     let (mut core, _) = enabled_core();
     let record = core.submit(mv([0.0, 0.0], [0.5, -0.5]), at(2.0)).unwrap();
-    assert_eq!(record.target_joints, Some(vec![0.5, -0.5]));
-    assert_eq!(record.joint_speed, Some(1.0));
+    assert_eq!(record.target_joints(), Some([0.5, -0.5].as_slice()));
+    assert_eq!(record_speed(&record), 1.0);
     assert_eq!(
         reason(core.submit(mv([0.0, 0.0], [0.1, 0.0]), at(2.0))),
         RejectionReason::ArmBusy
@@ -190,7 +190,7 @@ fn a_gripper_goal_past_its_range_is_clamped_and_a_non_finite_one_refused() {
                 at(2.0),
             )
             .unwrap();
-        assert_eq!(record.joint_speed, Some(expected));
+        assert_eq!(record_speed(&record), expected);
         assert_eq!(
             core.take_gripper_target()
                 .unwrap()
@@ -221,8 +221,8 @@ fn a_completed_move_records_how_close_the_arm_ended_to_its_target() {
     core.observe(at(3.0), &[0.49, 0.0], None, None);
     core.motion_ended(CommandOutcome::Completed, None, &[0.5, 0.0], at(3.0));
     let finished = core.record(&record.command_id).unwrap();
-    assert_eq!(finished.target_status, Some(TargetStatus::Reached));
-    let achieved = finished.achieved.as_ref().unwrap();
+    assert_eq!(finished.target_status(), Some(TargetStatus::Reached));
+    let achieved = finished.achieved().unwrap();
     assert!((achieved.joint_error_radians.unwrap() - 0.01).abs() < 1e-12);
     assert_eq!(core.mode(), ArmMode::Holding);
     assert_eq!(core.poses().unwrap().hold, vec![0.5, 0.0]);
@@ -237,7 +237,7 @@ fn stop_ends_the_queue_asks_the_active_command_to_stop_and_completes_itself() {
     assert_eq!(stop.label, "stop");
     let cancelled = core.record(&record.command_id).unwrap();
     assert_eq!(cancelled.outcome(), Some(CommandOutcome::Stopped));
-    assert_eq!(cancelled.target_status, Some(TargetStatus::NotStarted));
+    assert_eq!(cancelled.target_status(), Some(TargetStatus::NotStarted));
     assert!(core.next_job().is_none());
     let running = core
         .submit(mv_planned([0.0, 0.0], [0.5, 0.0]), at(3.0))
@@ -254,7 +254,7 @@ fn stop_ends_the_queue_asks_the_active_command_to_stop_and_completes_itself() {
     );
     let ended = core.record(&running.command_id).unwrap();
     assert_eq!(ended.outcome(), Some(CommandOutcome::Stopped));
-    assert_eq!(ended.target_status, Some(TargetStatus::Partial));
+    assert_eq!(ended.target_status(), Some(TargetStatus::Partial));
     assert!(!core.stop_requested());
 }
 
@@ -288,7 +288,7 @@ fn a_failed_move_only_reports_partial_when_feedback_showed_displacement() {
         core.failed("The trajectory failed", at(2.2));
         let record = core.record(&movement.command_id).unwrap();
         assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
-        assert_eq!(record.target_status, Some(expected));
+        assert_eq!(record.target_status(), Some(expected));
     }
 }
 
@@ -326,8 +326,8 @@ fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
         at(2.0),
     );
     assert_eq!(reason(wrong_length), RejectionReason::InvalidTarget);
-    assert_eq!(start.goal_joints, Some(vec![0.1, 2.0]));
-    assert_eq!(start.joint_speed, Some(0.5));
+    assert_eq!(stream_record_joints(&start), [0.1, 2.0]);
+    assert_eq!(record_speed(&start), 0.5);
     for joint_speed in [Some(9.0), None] {
         let update = core
             .submit(
@@ -341,9 +341,14 @@ fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
             )
             .unwrap();
         assert_eq!(update.command_id, start.command_id);
-        assert_eq!(update.goal_joints, Some(vec![0.2, 0.0]));
+        assert_eq!(stream_record_joints(&update), [0.2, 0.0]);
         let (stream_goal, _) = core.stream_goal(&start.command_id).unwrap();
-        assert_eq!(stream_goal.joint_speed(), start.joint_speed);
+        assert_eq!(
+            stream_goal
+                .joint_speed()
+                .map(crate::motion_values::JointSpeed::radians_per_second),
+            Some(record_speed(&start))
+        );
     }
     core.next_job().unwrap();
     core.begin_moving();
@@ -380,8 +385,8 @@ fn a_disconnected_motion_has_an_unknown_outcome() {
         Some(CommandOutcome::Interrupted)
     );
     let interrupted = core.record(&record.command_id).unwrap();
-    assert_eq!(interrupted.achieved, None);
-    assert_eq!(interrupted.target_status, None);
+    assert_eq!(interrupted.achieved(), None);
+    assert_eq!(interrupted.target_status(), None);
 }
 
 #[test]
@@ -572,7 +577,7 @@ fn a_combined_stream_is_rejected_before_either_target_changes() {
             at(3.0),
         )
         .unwrap();
-    assert_eq!(accepted.goal_joints, Some(vec![0.1, 0.0]));
+    assert_eq!(stream_record_joints(&accepted), [0.1, 0.0]);
     assert!(core.next_job().is_some());
     assert_eq!(core.take_gripper_target().unwrap().1.angle.radians(), 0.5);
 }
@@ -592,7 +597,7 @@ fn a_move_replaces_a_settling_one_from_the_measured_joints_and_reports_it_supers
     let replacement = core.submit(mv([0.5, 0.0], [0.0, 0.3]), at(3.0)).unwrap();
     let superseded = core.record(&settling.command_id).unwrap();
     assert_eq!(superseded.outcome(), Some(CommandOutcome::Superseded));
-    let errors = superseded.achieved.as_ref().unwrap();
+    let errors = superseded.achieved().unwrap();
     let joint_errors = errors.joint_errors_radians.clone().unwrap();
     assert!((joint_errors[0] - 0.05).abs() < 1e-12 && joint_errors[1] == 0.0);
     assert!(core.take_supersede());
@@ -658,7 +663,7 @@ fn a_move_that_stopped_short_is_not_reported_reached() {
     core.observe(at(3.0), &[0.449, 0.0], None, None);
     core.motion_ended(CommandOutcome::StoppedShort, None, &[0.5, 0.0], at(3.0));
     let finished = core.record(&record.command_id).unwrap();
-    assert_eq!(finished.target_status, Some(TargetStatus::StoppedShort));
+    assert_eq!(finished.target_status(), Some(TargetStatus::StoppedShort));
 }
 
 fn stopped_short_detail(target_position: Option<[f64; 3]>) -> Option<String> {
@@ -689,11 +694,8 @@ fn stopped_short_detail(target_position: Option<[f64; 3]>) -> Option<String> {
     );
     core.record(&record.command_id)
         .unwrap()
-        .completion
-        .as_ref()
-        .unwrap()
-        .detail
-        .clone()
+        .detail()
+        .map(str::to_owned)
 }
 
 #[test]
@@ -906,10 +908,28 @@ fn a_running_stream_survives_completed_record_history_eviction() {
         )
         .unwrap();
     assert_eq!(updated.command_id, stream.command_id);
-    assert_eq!(updated.goal_joints, Some(vec![0.2, 0.0]));
+    assert_eq!(stream_record_joints(&updated), [0.2, 0.0]);
     core.motion_ended(CommandOutcome::Stopped, None, &[0.2, 0.0], at(2.3));
     assert_eq!(
         core.record(&stream.command_id).unwrap().outcome(),
         Some(CommandOutcome::Stopped)
     );
+}
+
+fn stream_record_joints(record: &hebbian_contracts::CommandRecord) -> &[f64] {
+    let hebbian_contracts::RecordedCommand::JointStream { goal_joints, .. } = &record.command
+    else {
+        panic!("Expected a joint stream: {record:?}");
+    };
+    goal_joints
+}
+
+fn record_speed(record: &hebbian_contracts::CommandRecord) -> f64 {
+    use hebbian_contracts::RecordedCommand;
+    match record.command {
+        RecordedCommand::Move { joint_speed, .. }
+        | RecordedCommand::JointStream { joint_speed, .. }
+        | RecordedCommand::Gripper { joint_speed, .. } => joint_speed,
+        _ => panic!("Expected a command with a speed: {record:?}"),
+    }
 }

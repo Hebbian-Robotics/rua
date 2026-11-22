@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
-import type { StationState } from "hebbian-rua";
+import { commandPlan, commandWasLimited, type StationState } from "hebbian-rua";
 import type { StateTrack } from "../../recording-timeline.js";
 import { radiansToDegrees } from "../../shared/measurements.js";
 import { stationConnection } from "../../viewer-connection.js";
@@ -336,12 +336,10 @@ function appendState(
     sample.commandedJoints.forEach((series, index) => {
       series.push(arm?.commanded_joints?.[index] ?? null);
     });
-    sample.destinationJoints.push(arm?.active_command?.target_joints ?? null);
-    sample.destinationLimited.push(
-      Boolean(
-        arm?.active_command?.path_limited || arm?.active_command?.pose_limited,
-      ),
+    sample.destinationJoints.push(
+      commandPlan(arm?.active_command)?.target_joints ?? null,
     );
+    sample.destinationLimited.push(commandWasLimited(arm?.active_command));
     sample.gripperOpening.push(arm?.gripper_opening ?? null);
   }
   while (current.times.length > 1200 || (current.times[0] ?? now) < now - 30) {

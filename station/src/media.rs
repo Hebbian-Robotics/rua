@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use hebbian_contracts::Backoff;
 use hebbian_contracts::MediaState;
-use hebbian_robot_use_server::managed_child::{ChildExit, ManagedChild};
+use hebbian_robot_use_server::child_process_group::{ChildProcessGroup, ProcessExit};
 use hebbian_robot_use_server::media_status::MediaStatus;
 use nix::sys::signal::Signal;
 use station_access::CameraConfiguration;
@@ -63,7 +63,7 @@ impl MediaPlan {
     fn serve_arguments(&self, livekit: bool, station_url: &str) -> Vec<String> {
         let mut arguments = vec![
             "serve".to_owned(),
-            "--supervisor-pid".to_owned(),
+            "--station-pid".to_owned(),
             std::process::id().to_string(),
             "--address".to_owned(),
             self.address.to_string(),
@@ -154,7 +154,7 @@ async fn supervise(
         shutdown.try_recv(),
         Err(oneshot::error::TryRecvError::Empty)
     ) {
-        match ManagedChild::spawn(Command::new(executable).args(arguments)) {
+        match ChildProcessGroup::spawn(Command::new(executable).args(arguments)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if !reported_missing {
                     tracing::warn!(
@@ -178,7 +178,7 @@ async fn supervise(
                 let running_since = Instant::now();
                 report(MediaState::Running);
                 let exit = child
-                    .finish(
+                    .wait_or_stop(
                         async {
                             let _ = (&mut shutdown).await;
                         },
@@ -192,8 +192,8 @@ async fn supervise(
                     )
                     .await;
                 let exit = match exit {
-                    Ok(ChildExit::Requested(_)) => break,
-                    Ok(ChildExit::Unexpected(exit)) => exit,
+                    Ok(ProcessExit::Requested(_)) => break,
+                    Ok(ProcessExit::Unexpected(exit)) => exit,
                     Err(error) => {
                         tracing::error!(%error, "Cannot finish the media process");
                         report(MediaState::Unavailable {

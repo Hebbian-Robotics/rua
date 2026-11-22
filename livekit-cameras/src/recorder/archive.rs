@@ -172,7 +172,7 @@ impl RecordingArchive {
             "timestampSource": "video: publisher capture time or arrival; arm frames: controller emission; run telemetry: server receipt; station snapshots: recorder arrival",
             "stateSamplingHz": 10,
             "limitations": [
-                "Unsequenced control samples and decimated station state cannot be replayed across a disconnect",
+                "Station telemetry resumes only while the station retains the requested event range",
             ],
         }), unix_nanoseconds())
     }

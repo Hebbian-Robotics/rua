@@ -16,17 +16,17 @@ use tokio::{
     time::timeout,
 };
 
-pub enum ChildExit {
+pub enum ProcessExit {
     Requested(ExitStatus),
     Unexpected(ExitStatus),
 }
 
-pub struct ManagedChild {
+pub struct ChildProcessGroup {
     leader: Child,
     group: Option<Pid>,
 }
 
-impl ManagedChild {
+impl ChildProcessGroup {
     pub fn spawn(command: &mut Command) -> io::Result<Self> {
         let leader = command
             .process_group(0)
@@ -45,12 +45,12 @@ impl ManagedChild {
         })
     }
 
-    pub async fn finish(
+    pub async fn wait_or_stop(
         mut self,
         shutdown: impl Future<Output = ()>,
         graceful_signals: &[(Signal, Duration)],
         report: impl FnMut(&str),
-    ) -> io::Result<ChildExit> {
+    ) -> io::Result<ProcessExit> {
         let stderr = self.leader.stderr.take();
         let relay = relay_stderr(stderr, report);
         let exit = self.wait_for_exit(shutdown, graceful_signals);
@@ -69,11 +69,11 @@ impl ManagedChild {
         &mut self,
         shutdown: impl Future<Output = ()>,
         graceful_signals: &[(Signal, Duration)],
-    ) -> io::Result<ChildExit> {
+    ) -> io::Result<ProcessExit> {
         let outcome = tokio::select! {
             biased;
-            status = self.leader.wait() => status.map(ChildExit::Unexpected),
-            () = shutdown => self.stop(graceful_signals).await.map(ChildExit::Requested),
+            status = self.leader.wait() => status.map(ProcessExit::Unexpected),
+            () = shutdown => self.stop(graceful_signals).await.map(ProcessExit::Requested),
         };
         // WHY: The leader may already be reaped while its workers still hold files or devices.
         self.kill_group()?;
@@ -111,7 +111,7 @@ impl ManagedChild {
     }
 }
 
-impl Drop for ManagedChild {
+impl Drop for ChildProcessGroup {
     fn drop(&mut self) {
         if let Err(error) = self.kill_group() {
             tracing::warn!(%error, "Companion process cleanup failed");

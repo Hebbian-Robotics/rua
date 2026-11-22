@@ -1,17 +1,45 @@
-import type { CommandRecord } from "hebbian-rua";
+import { apiSchemas, type CommandRecord } from "hebbian-rua";
 import { describe, expect, it } from "vitest";
 import { describeCommandOutcome } from "../src/command-outcome.js";
 
 function stoppedMove(jointErrors: number[] | null): CommandRecord {
-  return {
+  return apiSchemas.shape.CommandRecord.parse({
+    command_id: "move",
     label: "move_to_joints",
-    completion: {
-      finished_at: 1,
-      outcome: "stopped_short",
-      detail: "Stopped short",
+    accepted_at: 0,
+    checkpoints: [],
+    trace_context: null,
+    command: {
+      kind: "move",
+      target_joints: [0.1],
+      joint_speed: 1,
+      group_id: null,
+      target_position: null,
+      target_quaternion: null,
+      path_limited: null,
+      pose_limited: null,
     },
-    achieved: { joint_errors_radians: jointErrors },
-  } as CommandRecord;
+    phase: {
+      kind: "finished",
+      completion: {
+        finished_at: 1,
+        outcome: "stopped_short",
+        detail: "Stopped short",
+        gripper: null,
+      },
+      achieved: {
+        joints: [0.07],
+        sampled_at: 1,
+        joint_errors_radians: jointErrors,
+        joint_error_radians: null,
+        orientation: null,
+        orientation_error_radians: null,
+        position: null,
+        position_error_meters: null,
+        quaternion: null,
+      },
+    },
+  });
 }
 
 describe("manual command outcomes", () => {
@@ -33,11 +61,15 @@ describe("manual command outcomes", () => {
     expect(
       describeCommandOutcome({
         ...command,
-        completion: {
-          finished_at: 1,
-          outcome: "tripped",
-          detail: "Loop deadline missed",
-          gripper: null,
+        phase: {
+          kind: "finished",
+          achieved: null,
+          completion: {
+            finished_at: 1,
+            outcome: "tripped",
+            detail: "Loop deadline missed",
+            gripper: null,
+          },
         },
       }),
     ).toEqual({

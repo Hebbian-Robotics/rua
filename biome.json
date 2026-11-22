@@ -6,6 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
+    "maxSize": 3145728,
     "includes": [
       "examples/typescript/viewer/src/**",
       "examples/typescript/viewer/tests/**/*.ts",

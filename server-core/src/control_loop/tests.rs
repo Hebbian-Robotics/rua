@@ -217,7 +217,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
     for _ in 0..250 {
         let began = Instant::now();
         let observation = runner.plant.read_feedback().unwrap();
-        runner.start_next(Now::current());
+        runner.dispatch_next_command(Now::current());
         runner
             .drive_gripper(&observation, 0.02, Now::current())
             .unwrap();

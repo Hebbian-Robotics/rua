@@ -221,7 +221,7 @@ pub enum CommandOutcome {
     Faulted,
     // Communication was lost; the arm may have continued toward its last goal.
     Interrupted,
-    // A command that never moved the arm failed, such as enable's preflight.
+    // A command failed. Its phase records whether it ran.
     Failed,
 }
 
@@ -287,30 +287,71 @@ pub struct TraceContext {
     pub tracestate: Option<String>,
 }
 
+/// The target pose or streamed goal in the station world frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CommandPose {
+    pub position: [f64; 3],
+    pub quaternion: [f64; 4],
+}
+
+/// State-changing commands with no position target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlAction {
+    Enable,
+    Disable,
+    ApproveRecovery,
+    ClearFault,
+    Stop,
+    Shutdown,
+}
+
+/// Data specific to the command the controller accepted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RecordedCommand {
+    #[schemars(title = "RecordedMove")]
+    Move {
+        target_joints: Vec<f64>,
+        target_position: Option<[f64; 3]>,
+        target_quaternion: Option<[f64; 4]>,
+        joint_speed: f64,
+        path_limited: Option<PathLimited>,
+        pose_limited: Option<PoseLimited>,
+        group_id: Option<String>,
+    },
+    #[schemars(title = "RecordedPolicyReach")]
+    PolicyReach { target_pose: CommandPose },
+    #[schemars(title = "RecordedJointStream")]
+    JointStream {
+        goal_joints: Vec<f64>,
+        joint_speed: f64,
+    },
+    #[schemars(title = "RecordedPoseStream")]
+    PoseStream { goal_pose: CommandPose },
+    #[schemars(title = "RecordedGripper")]
+    Gripper {
+        target_angle_radians: f64,
+        joint_speed: f64,
+        /// The joint stream that issued this jaw goal, if any.
+        stream_command_id: Option<String>,
+    },
+    #[schemars(title = "RecordedControl")]
+    Control { action: ControlAction },
+}
+
 /// One command, from acceptance to its end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CommandRecord {
     pub command_id: String,
-    /// What the command is: `enable`, `stream_joints`, or the label a move carried.
+    /// A readable description, including the originating operation's name.
     pub label: String,
     pub accepted_at: f64,
-    /// Speed actually used, after clamping, for motions.
-    pub joint_speed: Option<f64>,
-    pub completion: Option<CommandCompletion>,
+    pub command: RecordedCommand,
+    pub phase: CommandPhase,
     pub checkpoints: Vec<Checkpoint>,
-    /// The newest goal of a joint stream, after clamping to the joint limits.
-    pub goal_joints: Option<Vec<f64>>,
-    pub target_joints: Option<Vec<f64>>,
-    pub target_position: Option<[f64; 3]>,
-    pub target_quaternion: Option<[f64; 4]>,
-    pub target_status: Option<TargetStatus>,
-    pub path_limited: Option<PathLimited>,
-    pub pose_limited: Option<PoseLimited>,
-    pub achieved: Option<Achieved>,
-    /// The grouped motion this command is one arm's part of, if it is.
-    pub group_id: Option<String>,
-    /// The trace context the command arrived with, if any.
     pub trace_context: Option<TraceContext>,
 }
 
@@ -347,58 +388,230 @@ impl GripperResult {
     }
 }
 
-/// The outcome and timestamp are recorded together when a command ends.
+/// A command outcome established by the controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KnownCommandOutcome {
+    Completed,
+    Stopped,
+    Tripped,
+    TimedOut,
+    StoppedShort,
+    Superseded,
+    Faulted,
+    Failed,
+}
+
+impl From<KnownCommandOutcome> for CommandOutcome {
+    fn from(outcome: KnownCommandOutcome) -> Self {
+        match outcome {
+            KnownCommandOutcome::Completed => Self::Completed,
+            KnownCommandOutcome::Stopped => Self::Stopped,
+            KnownCommandOutcome::Tripped => Self::Tripped,
+            KnownCommandOutcome::TimedOut => Self::TimedOut,
+            KnownCommandOutcome::StoppedShort => Self::StoppedShort,
+            KnownCommandOutcome::Superseded => Self::Superseded,
+            KnownCommandOutcome::Faulted => Self::Faulted,
+            KnownCommandOutcome::Failed => Self::Failed,
+        }
+    }
+}
+
+impl CommandOutcome {
+    #[must_use]
+    pub fn known(self) -> Option<KnownCommandOutcome> {
+        Some(match self {
+            Self::Completed => KnownCommandOutcome::Completed,
+            Self::Stopped => KnownCommandOutcome::Stopped,
+            Self::Tripped => KnownCommandOutcome::Tripped,
+            Self::TimedOut => KnownCommandOutcome::TimedOut,
+            Self::StoppedShort => KnownCommandOutcome::StoppedShort,
+            Self::Superseded => KnownCommandOutcome::Superseded,
+            Self::Faulted => KnownCommandOutcome::Faulted,
+            Self::Failed => KnownCommandOutcome::Failed,
+            Self::Interrupted => return None,
+        })
+    }
+}
+
+/// The command was stopped or failed before it started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NotStartedOutcome {
+    Stopped,
+    Failed,
+}
+
+/// The outcome and timestamp for a command with a known end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandCompletion {
     pub finished_at: f64,
-    pub outcome: CommandOutcome,
+    pub outcome: KnownCommandOutcome,
     pub detail: Option<String>,
-    /// How a gripper command ended; null for every other command.
+    /// How a gripper command ended, when jaw feedback was available.
     pub gripper: Option<GripperResult>,
+}
+
+/// Evidence of how an accepted command ended.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CommandPhase {
+    /// Accepted and awaiting a terminal result.
+    #[schemars(title = "PendingCommand")]
+    Pending,
+    #[schemars(title = "CommandNotStarted")]
+    NotStarted {
+        finished_at: f64,
+        outcome: NotStartedOutcome,
+        detail: Option<String>,
+    },
+    #[schemars(title = "FinishedCommand")]
+    Finished {
+        completion: CommandCompletion,
+        achieved: Option<Box<Achieved>>,
+    },
+    /// Control was interrupted and the final arm position could not be confirmed.
+    #[schemars(title = "CommandOutcomeUnknown")]
+    OutcomeUnknown {
+        finished_at: f64,
+        detail: Option<String>,
+    },
 }
 
 impl CommandRecord {
     #[must_use]
-    pub fn new(command_id: String, kind: &str, accepted_at: f64, joint_speed: Option<f64>) -> Self {
+    pub fn new(
+        command_id: String,
+        label: &str,
+        accepted_at: f64,
+        command: RecordedCommand,
+    ) -> Self {
         Self {
             command_id,
-            label: kind.to_owned(),
+            label: label.to_owned(),
             accepted_at,
-            joint_speed,
-            completion: None,
+            command,
+            phase: CommandPhase::Pending,
             checkpoints: Vec::new(),
-            goal_joints: None,
-            target_joints: None,
-            target_position: None,
-            target_quaternion: None,
-            target_status: None,
-            path_limited: None,
-            pose_limited: None,
-            achieved: None,
-            group_id: None,
             trace_context: None,
         }
     }
 
     #[must_use]
     pub fn outcome(&self) -> Option<CommandOutcome> {
-        self.completion
-            .as_ref()
-            .map(|completion| completion.outcome)
+        match &self.phase {
+            CommandPhase::Pending => None,
+            CommandPhase::Finished { completion, .. } => Some(completion.outcome.into()),
+            CommandPhase::NotStarted { outcome, .. } => Some(match outcome {
+                NotStartedOutcome::Stopped => CommandOutcome::Stopped,
+                NotStartedOutcome::Failed => CommandOutcome::Failed,
+            }),
+            CommandPhase::OutcomeUnknown { .. } => Some(CommandOutcome::Interrupted),
+        }
     }
 
     #[must_use]
     pub fn finished_at(&self) -> Option<f64> {
-        self.completion
-            .as_ref()
-            .map(|completion| completion.finished_at)
+        match &self.phase {
+            CommandPhase::Pending => None,
+            CommandPhase::NotStarted { finished_at, .. }
+            | CommandPhase::OutcomeUnknown { finished_at, .. } => Some(*finished_at),
+            CommandPhase::Finished { completion, .. } => Some(completion.finished_at),
+        }
     }
 
     #[must_use]
     pub fn detail(&self) -> Option<&str> {
-        self.completion
-            .as_ref()
-            .and_then(|completion| completion.detail.as_deref())
+        match &self.phase {
+            CommandPhase::Pending => None,
+            CommandPhase::NotStarted { detail, .. }
+            | CommandPhase::OutcomeUnknown { detail, .. } => detail.as_deref(),
+            CommandPhase::Finished { completion, .. } => completion.detail.as_deref(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_pending(&self) -> bool {
+        matches!(self.phase, CommandPhase::Pending)
+    }
+
+    #[must_use]
+    pub fn was_limited(&self) -> bool {
+        matches!(
+            &self.command,
+            RecordedCommand::Move {
+                path_limited: Some(_),
+                ..
+            } | RecordedCommand::Move {
+                pose_limited: Some(_),
+                ..
+            }
+        )
+    }
+
+    #[must_use]
+    pub fn group_id(&self) -> Option<&str> {
+        match &self.command {
+            RecordedCommand::Move { group_id, .. } => group_id.as_deref(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn target_joints(&self) -> Option<&[f64]> {
+        match &self.command {
+            RecordedCommand::Move { target_joints, .. } => Some(target_joints),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn target_position(&self) -> Option<[f64; 3]> {
+        match &self.command {
+            RecordedCommand::Move {
+                target_position, ..
+            } => *target_position,
+            RecordedCommand::PolicyReach { target_pose } => Some(target_pose.position),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn target_quaternion(&self) -> Option<[f64; 4]> {
+        match &self.command {
+            RecordedCommand::Move {
+                target_quaternion, ..
+            } => *target_quaternion,
+            RecordedCommand::PolicyReach { target_pose } => Some(target_pose.quaternion),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn achieved(&self) -> Option<&Achieved> {
+        match &self.phase {
+            CommandPhase::Finished { achieved, .. } => achieved.as_deref(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn target_status(&self) -> Option<TargetStatus> {
+        self.target_joints()?;
+        match self.phase {
+            CommandPhase::Pending | CommandPhase::OutcomeUnknown { .. } => None,
+            CommandPhase::NotStarted { .. } => Some(TargetStatus::NotStarted),
+            CommandPhase::Finished { ref completion, .. } => Some(match completion.outcome {
+                KnownCommandOutcome::Completed => TargetStatus::Reached,
+                KnownCommandOutcome::StoppedShort => TargetStatus::StoppedShort,
+                KnownCommandOutcome::Stopped
+                | KnownCommandOutcome::Tripped
+                | KnownCommandOutcome::TimedOut
+                | KnownCommandOutcome::Superseded
+                | KnownCommandOutcome::Faulted
+                | KnownCommandOutcome::Failed => TargetStatus::Partial,
+            }),
+        }
     }
 }
 

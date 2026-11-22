@@ -17,7 +17,7 @@ pub struct ServeArguments {
     pub station_url: String,
     /// Exit if the station that launched this service exits.
     #[arg(long)]
-    pub supervisor_pid: Option<u32>,
+    pub station_pid: Option<u32>,
     /// Unix socket exposed by the simulator.
     #[arg(long)]
     pub camera_socket: Option<PathBuf>,

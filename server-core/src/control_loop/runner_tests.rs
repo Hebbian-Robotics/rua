@@ -168,7 +168,7 @@ fn config(test_name: &str) -> ControllerConfig {
         enable_drift_limit_radians: 0.05,
     });
     config.trace_directory = std::env::temp_dir()
-        .join(format!("lifecycle-{test_name}-{}", std::process::id()))
+        .join(format!("runner-{test_name}-{}", std::process::id()))
         .to_string_lossy()
         .into_owned();
     ControllerConfig::try_from(config).unwrap()
@@ -801,7 +801,7 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
                 .unwrap()
                 .command_id,
         );
-        runner.start_next(now);
+        runner.dispatch_next_command(now);
     }
     right.config = &mismatched_config;
     let mut runners = vec![left, right];

@@ -423,7 +423,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert_eq!(explicit.phase, ActionSequencePhase::Completed);
     assert_eq!(explicit.steps.len(), 2);
     assert_eq!(
-        explicit.steps[1][0].record.target_joints.as_deref(),
+        explicit.steps[1][0].record.target_joints(),
         Some([-0.2, -0.5, 0.5, 0.0, 0.0].as_slice())
     );
     let mut revised_source = source;
@@ -451,7 +451,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert_eq!(continued.continuation, Some(continuation));
     assert_eq!(continued.steps.len(), 1);
     assert_eq!(
-        continued.steps[0][0].record.target_joints.as_deref(),
+        continued.steps[0][0].record.target_joints(),
         Some([0.1, -0.5, 0.5, 0.0, 0.0].as_slice())
     );
     let repeated = lease
@@ -1023,8 +1023,8 @@ async fn assert_model_tool_batches(tools: &RobotTools<'_>) -> TestResult {
     let RobotToolOutcome::Returned(gripper) = &completed[0].outcome else {
         return Err("gripper batch operation did not complete".into());
     };
-    assert_eq!(gripper["completion"]["outcome"], "completed");
-    assert_eq!(gripper["completion"]["gripper"]["kind"], "reached");
+    assert_eq!(gripper["phase"]["completion"]["outcome"], "completed");
+    assert_eq!(gripper["phase"]["completion"]["gripper"]["kind"], "reached");
     let profile_speed = tools.context().await?.station["max_joint_speed_degrees_per_second"]
         .as_f64()
         .ok_or("missing speed")?;
@@ -1263,7 +1263,7 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
         return Err("expected completed rehome".into());
     };
     assert_eq!(home_record["label"], "rehome");
-    let joints = home_record["achieved"]["joints"]
+    let joints = home_record["phase"]["achieved"]["joints"]
         .as_array()
         .ok_or("missing achieved joints")?;
     assert!(joints.iter().zip(REST).all(|(actual, expected)| {
@@ -1306,14 +1306,26 @@ async fn a_gripper_command_reports_whether_the_jaw_arrived_or_stopped_short() ->
     within(client.enable(ARM)).await??;
 
     let opened = within(lease.set_gripper(ARM, 0.5, None)).await??;
-    let Some(GripperResult::Reached { .. }) = opened.completion.as_ref().and_then(|c| c.gripper)
-    else {
-        return Err(format!("opening should arrive: {:?}", opened.completion).into());
-    };
-
+    if !matches!(
+        opened.phase,
+        hebbian_contracts::CommandPhase::Finished {
+            completion: hebbian_contracts::CommandCompletion {
+                gripper: Some(GripperResult::Reached { .. }),
+                ..
+            },
+            ..
+        }
+    ) {
+        return Err(format!("opening should arrive: {:?}", opened.phase).into());
+    }
     let closed = within(lease.set_gripper(ARM, 0.0, None)).await??;
-    let completion = closed.completion.ok_or("the close did not finish")?;
-    assert_eq!(completion.outcome, CommandOutcome::Completed);
+    let hebbian_contracts::CommandPhase::Finished { completion, .. } = closed.phase else {
+        return Err("the close did not finish".into());
+    };
+    assert_eq!(
+        completion.outcome,
+        hebbian_contracts::KnownCommandOutcome::Completed
+    );
     let Some(GripperResult::StoppedShort {
         measured_angle_radians,
         target_angle_radians,

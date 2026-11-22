@@ -1,7 +1,6 @@
 import os
 import subprocess
 import tomllib
-from collections.abc import Callable
 from pathlib import Path
 
 from rua_dev.models import ValidationLane
@@ -103,13 +102,7 @@ def check_python_tests(lane: ValidationLane, *, server: bool) -> None:
     )
 
 
-def validate(
-    lane: ValidationLane,
-    *,
-    check_viewer: Callable[[], None] | None = None,
-) -> None:
-    if lane == ValidationLane.VIEWER and check_viewer is None:
-        raise ValueError("This checkout does not include viewer validation")
+def validate(lane: ValidationLane) -> None:
     subprocess.run(
         ["source-doc-lint", "--config", "source-doc-lint.toml"],
         check=True,
@@ -117,12 +110,9 @@ def validate(
     prepare_robot_assets(Path.cwd())
     if lane in {ValidationLane.PYTHON, ValidationLane.FAST, ValidationLane.FULL}:
         check_python_static()
-    if check_viewer is not None and lane in {
-        ValidationLane.VIEWER,
-        ValidationLane.FAST,
-        ValidationLane.FULL,
-    }:
-        check_viewer()
+    if lane in {ValidationLane.VIEWER, ValidationLane.FAST, ValidationLane.FULL}:
+        subprocess.run(["pnpm", "check"], check=True)
+        subprocess.run(["pnpm", "test:viewer"], check=True)
     if lane in {ValidationLane.SERVER, ValidationLane.CONTRACTS, ValidationLane.FULL}:
         prepare_server()
     if lane in {ValidationLane.SERVER, ValidationLane.FULL}:

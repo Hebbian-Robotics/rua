@@ -13,15 +13,34 @@ impl JointAngle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct InvalidSpeed;
+
+impl std::fmt::Display for InvalidSpeed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A joint speed must be positive and finite")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct JointSpeed(f64);
 
 impl JointSpeed {
-    pub(crate) fn new(radians_per_second: f64) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            radians_per_second.is_finite() && radians_per_second > 0.0,
-            "A joint speed must be positive and finite"
-        );
-        Ok(Self(radians_per_second))
+    pub(crate) fn new(radians_per_second: f64) -> Result<Self, InvalidSpeed> {
+        if radians_per_second.is_finite() && radians_per_second > 0.0 {
+            Ok(Self(radians_per_second))
+        } else {
+            Err(InvalidSpeed)
+        }
+    }
+
+    pub(crate) fn for_request(
+        requested: Option<f64>,
+        default: f64,
+        maximum: f64,
+    ) -> Result<Self, InvalidSpeed> {
+        let speed = Self::new(requested.unwrap_or(default))?;
+        let cap = Self::new(maximum)?;
+        Ok(Self(speed.0.min(cap.0)))
     }
 
     pub(crate) fn radians_per_second(self) -> f64 {
@@ -64,5 +83,30 @@ impl From<&str> for GroupId {
 impl GroupId {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::motion_values::{InvalidSpeed, JointSpeed};
+
+    #[test]
+    fn an_over_speed_request_runs_at_the_maximum_and_a_nonsense_one_is_refused() {
+        assert_eq!(
+            JointSpeed::for_request(Some(9.0), 1.0, 2.0).map(JointSpeed::radians_per_second),
+            Ok(2.0)
+        );
+        assert_eq!(
+            JointSpeed::for_request(None, 1.0, 2.0).map(JointSpeed::radians_per_second),
+            Ok(1.0)
+        );
+        assert_eq!(
+            JointSpeed::for_request(Some(0.0), 1.0, 2.0),
+            Err(InvalidSpeed)
+        );
+        assert_eq!(
+            JointSpeed::for_request(Some(f64::NAN), 1.0, 2.0),
+            Err(InvalidSpeed)
+        );
     }
 }

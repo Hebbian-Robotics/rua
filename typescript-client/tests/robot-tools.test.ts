@@ -309,9 +309,7 @@ test("group outcomes match the shared examples", async () => {
         },
       ]);
       expect(single?.isError).toBe(example.expected_error);
-      expect(single?.data).toMatchObject({
-        completion: { outcome: record.completion?.outcome },
-      });
+      expect(single?.data).toMatchObject({ phase: record.phase });
     } finally {
       robot.close();
     }

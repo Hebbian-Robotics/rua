@@ -205,6 +205,33 @@ class CommandOutcome(StrEnum):
     failed = "failed"
 
 
+class PendingCommand(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    kind: Literal["pending"] = "pending"
+
+
+class CommandOutcomeUnknown(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str | None = None
+    finished_at: StrictFloat
+    kind: Literal["outcome_unknown"] = "outcome_unknown"
+
+
+class CommandPose(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    position: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
+    quaternion: Annotated[list[StrictFloat], Field(max_length=4, min_length=4)]
+
+
 class CompilationDiagnostic(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -241,6 +268,15 @@ class CompiledMovement1(BaseModel):
     )
     joints: list[StrictFloat]
     kind: Literal["joints"] = "joints"
+
+
+class ControlAction(StrEnum):
+    enable = "enable"
+    disable = "disable"
+    approve_recovery = "approve_recovery"
+    clear_fault = "clear_fault"
+    stop = "stop"
+    shutdown = "shutdown"
 
 
 class ControllerKind(StrEnum):
@@ -614,6 +650,17 @@ class JawYawReference(StrEnum):
     world_y = "world_y"
 
 
+class KnownCommandOutcome(StrEnum):
+    completed = "completed"
+    stopped = "stopped"
+    tripped = "tripped"
+    timed_out = "timed_out"
+    stopped_short = "stopped_short"
+    superseded = "superseded"
+    faulted = "faulted"
+    failed = "failed"
+
+
 class RunStartedEvent(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -693,6 +740,11 @@ class MediaStatusReport(BaseModel):
 class NamedApproach(StrEnum):
     down = "down"
     forward = "forward"
+
+
+class NotStartedOutcome(StrEnum):
+    stopped = "stopped"
+    failed = "failed"
 
 
 class ObservationAnswer2(BaseModel):
@@ -887,6 +939,76 @@ class ReconnectRequest(BaseModel):
         frozen=True,
     )
     supported: bool
+
+
+class RecordedMove(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    group_id: str | None = None
+    joint_speed: StrictFloat
+    kind: Literal["move"] = "move"
+    path_limited: PathLimited | None = None
+    pose_limited: PoseLimited | None = None
+    target_joints: list[StrictFloat]
+    target_position: Annotated[
+        list[StrictFloat] | None, Field(max_length=3, min_length=3)
+    ] = None
+    target_quaternion: Annotated[
+        list[StrictFloat] | None, Field(max_length=4, min_length=4)
+    ] = None
+
+
+class RecordedPolicyReach(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    kind: Literal["policy_reach"] = "policy_reach"
+    target_pose: CommandPose
+
+
+class RecordedJointStream(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    goal_joints: list[StrictFloat]
+    joint_speed: StrictFloat
+    kind: Literal["joint_stream"] = "joint_stream"
+
+
+class RecordedPoseStream(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    goal_pose: CommandPose
+    kind: Literal["pose_stream"] = "pose_stream"
+
+
+class RecordedGripper(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    joint_speed: StrictFloat
+    kind: Literal["gripper"] = "gripper"
+    stream_command_id: Annotated[
+        str | None,
+        Field(description="The joint stream that issued this jaw goal, if any."),
+    ] = None
+    target_angle_radians: StrictFloat
+
+
+class RecordedControl(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    action: ControlAction
+    kind: Literal["control"] = "control"
 
 
 class Recording(BaseModel):
@@ -1308,13 +1430,6 @@ class TargetComparison(BaseModel):
     orientation_error_degrees: StrictFloat
 
 
-class TargetStatus(StrEnum):
-    reached = "reached"
-    stopped_short = "stopped_short"
-    partial = "partial"
-    not_started = "not_started"
-
-
 class ToolOrientation(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1408,9 +1523,22 @@ class CommandCompletion(BaseModel):
     finished_at: StrictFloat
     gripper: Annotated[
         GripperResult1 | GripperResult2 | None,
-        Field(description="How a gripper command ended; null for every other command."),
+        Field(
+            description="How a gripper command ended, when jaw feedback was available."
+        ),
     ] = None
-    outcome: CommandOutcome
+    outcome: KnownCommandOutcome
+
+
+class CommandNotStarted(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str | None = None
+    finished_at: StrictFloat
+    kind: Literal["not_started"] = "not_started"
+    outcome: NotStartedOutcome
 
 
 class CompilationTarget(BaseModel):
@@ -1798,52 +1926,44 @@ class RunSpansMessage(BaseModel):
     spans: list[TraceSpan]
 
 
+class FinishedCommand(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    achieved: Achieved | None = None
+    completion: CommandCompletion
+    kind: Literal["finished"] = "finished"
+
+
 class CommandRecord(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
     )
     accepted_at: StrictFloat
-    achieved: Achieved | None = None
     checkpoints: list[Checkpoint]
+    command: Annotated[
+        RecordedMove
+        | RecordedPolicyReach
+        | RecordedJointStream
+        | RecordedPoseStream
+        | RecordedGripper
+        | RecordedControl,
+        Field(description="Data specific to the command the controller accepted."),
+    ]
     command_id: str
-    completion: CommandCompletion | None = None
-    goal_joints: Annotated[
-        list[StrictFloat] | None,
-        Field(
-            description="The newest goal of a joint stream, after clamping to the joint limits."
-        ),
-    ] = None
-    group_id: Annotated[
-        str | None,
-        Field(
-            description="The grouped motion this command is one arm's part of, if it is."
-        ),
-    ] = None
-    joint_speed: Annotated[
-        StrictFloat | None,
-        Field(description="Speed actually used, after clamping, for motions."),
-    ] = None
     label: Annotated[
         str,
         Field(
-            description="What the command is: `enable`, `stream_joints`, or the label a move carried."
+            description="A readable description, including the originating operation's name."
         ),
     ]
-    path_limited: PathLimited | None = None
-    pose_limited: PoseLimited | None = None
-    target_joints: list[StrictFloat] | None = None
-    target_position: Annotated[
-        list[StrictFloat] | None, Field(max_length=3, min_length=3)
-    ] = None
-    target_quaternion: Annotated[
-        list[StrictFloat] | None, Field(max_length=4, min_length=4)
-    ] = None
-    target_status: TargetStatus | None = None
-    trace_context: Annotated[
-        TraceContext | None,
-        Field(description="The trace context the command arrived with, if any."),
-    ] = None
+    phase: Annotated[
+        PendingCommand | CommandNotStarted | FinishedCommand | CommandOutcomeUnknown,
+        Field(description="Evidence of how an accepted command ended."),
+    ]
+    trace_context: TraceContext | None = None
 
 
 class CompiledMovement2(BaseModel):
@@ -1865,47 +1985,29 @@ class Record(BaseModel):
         frozen=True,
     )
     accepted_at: StrictFloat
-    achieved: Achieved | None = None
     checkpoints: list[Checkpoint]
+    command: Annotated[
+        RecordedMove
+        | RecordedPolicyReach
+        | RecordedJointStream
+        | RecordedPoseStream
+        | RecordedGripper
+        | RecordedControl,
+        Field(description="Data specific to the command the controller accepted."),
+    ]
     command_id: str
-    completion: CommandCompletion | None = None
-    goal_joints: Annotated[
-        list[StrictFloat] | None,
-        Field(
-            description="The newest goal of a joint stream, after clamping to the joint limits."
-        ),
-    ] = None
-    group_id: Annotated[
-        str | None,
-        Field(
-            description="The grouped motion this command is one arm's part of, if it is."
-        ),
-    ] = None
-    joint_speed: Annotated[
-        StrictFloat | None,
-        Field(description="Speed actually used, after clamping, for motions."),
-    ] = None
     kind: Literal["record"] = "record"
     label: Annotated[
         str,
         Field(
-            description="What the command is: `enable`, `stream_joints`, or the label a move carried."
+            description="A readable description, including the originating operation's name."
         ),
     ]
-    path_limited: PathLimited | None = None
-    pose_limited: PoseLimited | None = None
-    target_joints: list[StrictFloat] | None = None
-    target_position: Annotated[
-        list[StrictFloat] | None, Field(max_length=3, min_length=3)
-    ] = None
-    target_quaternion: Annotated[
-        list[StrictFloat] | None, Field(max_length=4, min_length=4)
-    ] = None
-    target_status: TargetStatus | None = None
-    trace_context: Annotated[
-        TraceContext | None,
-        Field(description="The trace context the command arrived with, if any."),
-    ] = None
+    phase: Annotated[
+        PendingCommand | CommandNotStarted | FinishedCommand | CommandOutcomeUnknown,
+        Field(description="Evidence of how an accepted command ended."),
+    ]
+    trace_context: TraceContext | None = None
 
 
 class PlanUpdateEvent(BaseModel):

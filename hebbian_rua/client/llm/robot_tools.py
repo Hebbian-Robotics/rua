@@ -69,6 +69,7 @@ from hebbian_rua.client.station_client import (
     StationClient,
 )
 from hebbian_rua.client.station_connection import MessageRefused
+from hebbian_rua.client.station_types import command_record_outcome
 
 type CallWrapper = Callable[
     [RobotToolCall, Callable[[], Awaitable[RobotToolResult]]],
@@ -453,10 +454,9 @@ class RobotTools(RobotToolRules):
             action_sequence_id
         )
         outcomes = {
-            record.record.completion.outcome
+            command_record_outcome(record.record)
             for step in action_sequence.steps
             for record in step
-            if record.record.completion is not None
         }
         modes = {
             arm.mode

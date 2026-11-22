@@ -116,8 +116,8 @@ impl Inner {
         let record = &arm_record.record;
         // A late, unfinished revision never replaces the finished one.
         if let Some(previous) = self.records.get(&record.command_id)
-            && previous.record.completion.is_some()
-            && record.completion.is_none()
+            && !previous.record.is_pending()
+            && record.is_pending()
         {
             return;
         }

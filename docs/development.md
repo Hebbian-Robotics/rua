@@ -7,9 +7,11 @@ commands below from the repository root. Build/restart instructions live in
 
 ## Validation details
 
-Use `uv run rua-dev validate --help` for available lanes. Choose a language or
-component lane for a focused change, `fast` for work without a Rust build, and
-`full` for changes crossing runtime and SDK boundaries. The
+Use `uv run rua-dev validate --help` for available lanes. Run
+`uv run rua-dev validate --lane viewer` for viewer checks and tests. Install
+the JavaScript dependencies with `pnpm install --frozen-lockfile` before running
+the `viewer`, `fast` or `full` lanes. Use `fast` for work without a Rust build
+and `full` for changes crossing runtime and SDK boundaries. The
 [validation implementation](../tooling/rua_dev/validation.py) owns the exact check
 selection, test filters and report paths. The [CLI](../tooling/rua_dev/cli.py)
 lists the available lanes.
@@ -23,6 +25,16 @@ Examples of targeted test invocations:
 cargo test -p hebbian-robot-use-core profile::tests
 pnpm --filter hebbian-rua test
 ```
+
+Run the lease protocol tests locally with:
+
+```sh
+cargo test --locked -p hebbian-robot-use-core --lib lease::tests
+```
+
+Cargo runs the tests after compiling them. They advance time and deliver
+controller replies in test code, so they run without a robot or a CI runner.
+Set `PROPTEST_RNG_SEED` to a fixed integer to repeat the same generated cases.
 
 Pytest runs serially so simulated station scenarios do not compete for
 control-loop deadlines. Shared helpers live in `tests/fixture_*.py`.

@@ -96,8 +96,52 @@ class ResultOutcome(StrEnum):
                 assert_never(unreachable)
 
 
+def command_record_outcome(record: CommandRecord) -> CommandOutcome | None:
+    phase = record.phase
+    match phase.kind:
+        case "pending":
+            return None
+        case "finished":
+            return CommandOutcome(phase.completion.outcome.value)
+        case "not_started":
+            return CommandOutcome(phase.outcome.value)
+        case "outcome_unknown":
+            return CommandOutcome.interrupted
+        case _ as unreachable:
+            assert_never(unreachable)
+
+
+def command_record_finished_at(record: CommandRecord) -> float | None:
+    phase = record.phase
+    match phase.kind:
+        case "pending":
+            return None
+        case "finished":
+            return phase.completion.finished_at
+        case "not_started" | "outcome_unknown":
+            return phase.finished_at
+        case _ as unreachable:
+            assert_never(unreachable)
+
+
+def command_record_detail(record: CommandRecord) -> str | None:
+    phase = record.phase
+    match phase.kind:
+        case "pending":
+            return None
+        case "finished":
+            return phase.completion.detail
+        case "not_started" | "outcome_unknown":
+            return phase.detail
+        case _ as unreachable:
+            assert_never(unreachable)
+
+
 def command_record_was_limited(record: CommandRecord) -> bool:
-    return record.pose_limited is not None or record.path_limited is not None
+    command = record.command
+    return command.kind == "move" and (
+        command.pose_limited is not None or command.path_limited is not None
+    )
 
 
 @dataclass(frozen=True)
@@ -122,13 +166,13 @@ class CommandResult:
                 f"{answer.reason.value}: {answer.detail}",
                 answer,
             )
-        outcome = (
-            ResultOutcome.UNFINISHED
-            if answer.completion is None
-            else ResultOutcome.from_command_outcome(answer.completion.outcome)
-        )
+        outcome = command_record_outcome(answer)
         return cls(
-            outcome, answer.completion.detail if answer.completion else None, answer
+            ResultOutcome.UNFINISHED
+            if outcome is None
+            else ResultOutcome.from_command_outcome(outcome),
+            command_record_detail(answer),
+            answer,
         )
 
     @property

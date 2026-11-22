@@ -5,24 +5,30 @@
       "command_id": "motion",
       "label": "move_to_joints",
       "accepted_at": 1.0,
-      "joint_speed": null,
-      "completion": {
-        "outcome": "completed",
-        "finished_at": 2.0,
-        "detail": null,
-        "gripper": null
-      },
+      "trace_context": null,
       "checkpoints": [],
-      "goal_joints": null,
-      "target_joints": null,
-      "target_position": null,
-      "target_quaternion": null,
-      "target_status": "reached",
-      "path_limited": null,
-      "pose_limited": null,
-      "achieved": null,
-      "group_id": "group-1",
-      "trace_context": null
+      "command": {
+        "kind": "move",
+        "target_joints": [
+          0.1
+        ],
+        "joint_speed": 1.0,
+        "group_id": "group-1",
+        "target_position": null,
+        "target_quaternion": null,
+        "path_limited": null,
+        "pose_limited": null
+      },
+      "phase": {
+        "kind": "finished",
+        "completion": {
+          "outcome": "completed",
+          "finished_at": 2.0,
+          "detail": null,
+          "gripper": null
+        },
+        "achieved": null
+      }
     },
     "expected_error": false,
     "expected_status": "reached"
@@ -33,26 +39,32 @@
       "command_id": "motion",
       "label": "move_to_joints",
       "accepted_at": 1.0,
-      "joint_speed": null,
-      "completion": {
-        "outcome": "completed",
-        "finished_at": 2.0,
-        "detail": null,
-        "gripper": null
-      },
+      "trace_context": null,
       "checkpoints": [],
-      "goal_joints": null,
-      "target_joints": null,
-      "target_position": null,
-      "target_quaternion": null,
-      "target_status": "reached",
-      "path_limited": {
-        "reason": "self-collision"
+      "command": {
+        "kind": "move",
+        "target_joints": [
+          0.1
+        ],
+        "joint_speed": 1.0,
+        "path_limited": {
+          "reason": "self-collision"
+        },
+        "group_id": "group-1",
+        "target_position": null,
+        "target_quaternion": null,
+        "pose_limited": null
       },
-      "pose_limited": null,
-      "achieved": null,
-      "group_id": "group-1",
-      "trace_context": null
+      "phase": {
+        "kind": "finished",
+        "completion": {
+          "outcome": "completed",
+          "finished_at": 2.0,
+          "detail": null,
+          "gripper": null
+        },
+        "achieved": null
+      }
     },
     "expected_error": true,
     "expected_status": "limited"
@@ -63,24 +75,30 @@
       "command_id": "motion",
       "label": "move_to_joints",
       "accepted_at": 1.0,
-      "joint_speed": null,
-      "completion": {
-        "outcome": "stopped_short",
-        "finished_at": 2.0,
-        "detail": null,
-        "gripper": null
-      },
+      "trace_context": null,
       "checkpoints": [],
-      "goal_joints": null,
-      "target_joints": null,
-      "target_position": null,
-      "target_quaternion": null,
-      "target_status": "stopped_short",
-      "path_limited": null,
-      "pose_limited": null,
-      "achieved": null,
-      "group_id": "group-1",
-      "trace_context": null
+      "command": {
+        "kind": "move",
+        "target_joints": [
+          0.1
+        ],
+        "joint_speed": 1.0,
+        "group_id": "group-1",
+        "target_position": null,
+        "target_quaternion": null,
+        "path_limited": null,
+        "pose_limited": null
+      },
+      "phase": {
+        "kind": "finished",
+        "completion": {
+          "outcome": "stopped_short",
+          "finished_at": 2.0,
+          "detail": null,
+          "gripper": null
+        },
+        "achieved": null
+      }
     },
     "expected_error": true,
     "expected_status": "stopped_short"

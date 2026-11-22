@@ -537,7 +537,7 @@ impl Station {
         let finished = self.shared.wait_for(|inner| {
             inner
                 .record(command_id)
-                .filter(|arm_record| arm_record.record.completion.is_some())
+                .filter(|arm_record| !arm_record.record.is_pending())
                 .cloned()
         });
         let ArmRecord {

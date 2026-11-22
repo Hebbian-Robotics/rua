@@ -98,6 +98,7 @@ struct PreparationSource {
 }
 
 struct ExecutionAdmission {
+    owner: super::admission::AdmissionOwner,
     links: BTreeMap<String, LinkHandle>,
     token: String,
     gates: Vec<ArmGate>,
@@ -111,70 +112,42 @@ async fn submit_step(
     cancellation: watch::Receiver<bool>,
 ) -> Result<Vec<ArmRecord>, ExecutionFailure> {
     let source_step = source.step;
-    let (reply, source, admission_timing) = tokio::task::spawn_blocking(move || {
-        let commands = &source.artifact.compilation.compiled.steps[source_step];
-        let preparation_started = source
-            .artifact
-            .directory()
-            .map(|_| std::time::Instant::now());
-        let actions = prepare_step(&admission.links, commands, source_step)?;
-        let preparation_seconds =
-            preparation_started.map(|started| started.elapsed().as_secs_f64());
-        if preparation_seconds.is_some() {
-            let source_operations = commands
-                .iter()
-                .map(|(arm, operation)| (arm.as_str(), operation.source_operation_id.as_str()))
-                .collect();
-            if let Err(error) = source.artifact.record_prepared_step(
-                &source.execution_id,
-                source.step,
-                &source_operations,
-                &actions,
-            ) {
-                tracing::error!(%error, "Cannot serialize prepared step");
+    let (actions, source, preparation_seconds) = tokio::task::spawn_blocking({
+        let admission = Arc::clone(&admission);
+        move || {
+            let commands = &source.artifact.compilation.compiled.steps[source_step];
+            let preparation_started = source
+                .artifact
+                .directory()
+                .map(|_| std::time::Instant::now());
+            let actions = prepare_step(&admission.links, commands, source_step)?;
+            let preparation_seconds =
+                preparation_started.map(|started| started.elapsed().as_secs_f64());
+            if preparation_seconds.is_some() {
+                let source_operations = commands
+                    .iter()
+                    .map(|(arm, operation)| (arm.as_str(), operation.source_operation_id.as_str()))
+                    .collect();
+                if let Err(error) = source.artifact.record_prepared_step(
+                    &source.execution_id,
+                    source.step,
+                    &source_operations,
+                    &actions,
+                ) {
+                    tracing::error!(%error, "Cannot serialize prepared step");
+                }
             }
+            Ok((actions, source, preparation_seconds))
         }
-        let first = actions
-            .first()
-            .and_then(|action| admission.links.get(&action.arm))
-            .ok_or_else(|| ExecutionFailure::Runtime {
-                step: source_step,
-                detail: "A prepared step needs an arm".into(),
-            })?;
-        let admission_started =
-            preparation_seconds.map(|seconds| (seconds, std::time::Instant::now()));
-        let reply = first
-            .action_step_async(
-                actions,
-                Some(&admission.token),
-                &admission.gates,
-                &admission.generation,
-                &cancellation,
-            )
-            .map_err(|error| ExecutionFailure::Admission {
-                step: source_step,
-                reason: error.reason,
-                detail: error.detail,
-            })?;
-        Ok((reply, source, admission_started))
     })
     .await
     .map_err(|error| ExecutionFailure::AdmissionUnknown {
         step: source_step,
-        detail: format!("Preparation/admission worker failed: {error}"),
+        detail: format!("Preparation worker failed: {error}"),
     })??;
-    let result = reply
-        .await
-        .map_err(|_| ExecutionFailure::AdmissionUnknown {
-            step: source_step,
-            detail: "Controller admission reply was lost; the step may have acted".into(),
-        })?
-        .map_err(|error| ExecutionFailure::Admission {
-            step: source_step,
-            reason: error.reason,
-            detail: error.detail,
-        });
-    if let Some((preparation_seconds, admission_started)) = admission_timing
+    let admission_started = preparation_seconds.map(|seconds| (seconds, std::time::Instant::now()));
+    let result = admit_prepared_step(admission, source_step, actions, cancellation).await;
+    if let Some((preparation_seconds, admission_started)) = admission_started
         && let Err(error) = source.artifact.record_step_timing(
             &source.execution_id,
             source_step,
@@ -185,6 +158,51 @@ async fn submit_step(
         tracing::error!(%error, "Cannot serialize step timing");
     }
     result
+}
+
+async fn admit_prepared_step(
+    admission: Arc<ExecutionAdmission>,
+    source_step: usize,
+    actions: Vec<PreparedArmAction>,
+    cancellation: watch::Receiver<bool>,
+) -> Result<Vec<ArmRecord>, ExecutionFailure> {
+    let owner = admission.owner.clone();
+    let reply = owner
+        .decide(move |_| {
+            let first = actions
+                .first()
+                .and_then(|action| admission.links.get(&action.arm))
+                .ok_or_else(|| ExecutionFailure::Runtime {
+                    step: source_step,
+                    detail: "A prepared step needs an arm".into(),
+                })?;
+            first
+                .action_step_async(
+                    actions,
+                    Some(&admission.token),
+                    &admission.gates,
+                    &admission.generation,
+                    &cancellation,
+                )
+                .map_err(|error| ExecutionFailure::Admission {
+                    step: source_step,
+                    reason: error.reason,
+                    detail: error.detail,
+                })
+        })
+        .await
+        .map_err(|_| admission_lost(source_step))??;
+    reply
+        .await
+        .map_err(|_| ExecutionFailure::AdmissionUnknown {
+            step: source_step,
+            detail: "Controller admission reply was lost; the step may have acted".into(),
+        })?
+        .map_err(|error| ExecutionFailure::Admission {
+            step: source_step,
+            reason: error.reason,
+            detail: error.detail,
+        })
 }
 
 async fn execute_program(
@@ -217,7 +235,6 @@ async fn execute_program(
     let lease_link = &links[&arms[0]];
     let mut wait = ExecutionWait {
         admission: &admission,
-        lease_link,
         authority_changes: lease_link.authority_changes(),
         cancellation,
         updates,
@@ -251,19 +268,30 @@ async fn execute_program(
             let records = match wait.for_step(records, source_step).await {
                 Ok(records) => records,
                 Err((detail, records)) => {
-                    progress.update(|record| record.steps.push(records));
+                    update_execution(&admission.owner, progress, move || {
+                        ExecutionUpdate::StepInterrupted(records)
+                    })
+                    .await
+                    .map_err(|_| admission_lost(source_step))??;
                     return Err(detail);
                 }
             };
-            let mut advance = Ok(false);
-            progress.update(|record| match wait.check_cancellation(source_step) {
-                Ok(()) => advance = Ok(finish_step(record, records, step_count, commands)),
-                Err(failure) => {
-                    record.steps.push(records);
-                    advance = Err(failure);
+            let step_admission = Arc::clone(&admission);
+            let cancellation = wait.cancellation.clone();
+            let commands = commands.clone();
+            let advance = update_execution(&admission.owner, progress, move || {
+                let authority = execution_authority(&step_admission, &cancellation);
+                ExecutionUpdate::StepFinished {
+                    step: source_step,
+                    records,
+                    step_count,
+                    commands,
+                    authority,
                 }
-            });
-            if !advance? {
+            })
+            .await
+            .map_err(|_| admission_lost(source_step))??;
+            if advance == StepAdvance::End {
                 break;
             }
             wait.for_holding(arms, source_step).await?;
@@ -273,8 +301,83 @@ async fn execute_program(
     .await;
     if let Err(failure) = result {
         stop_program_motion(&admission, arms).await;
-        progress.update(|record| record.phase = ActionSequencePhase::Stopped { failure });
+        let _ = update_execution(&admission.owner, progress, move || {
+            ExecutionUpdate::Stopped(failure)
+        })
+        .await;
     }
+}
+
+fn admission_lost(step: usize) -> ExecutionFailure {
+    ExecutionFailure::AdmissionUnknown {
+        step,
+        detail: "Station admission became unavailable".into(),
+    }
+}
+
+enum ExecutionUpdate {
+    StepInterrupted(Vec<ArmRecord>),
+    StepFinished {
+        step: usize,
+        records: Vec<ArmRecord>,
+        step_count: usize,
+        commands: CompiledStep,
+        authority: ExecutionAuthority,
+    },
+    Stopped(ExecutionFailure),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum StepAdvance {
+    Continue,
+    End,
+}
+
+impl ExecutionUpdate {
+    fn apply(self, record: &mut ActionSequenceRecord) -> Result<StepAdvance, ExecutionFailure> {
+        match self {
+            Self::StepInterrupted(records) => {
+                record.steps.push(records);
+                Ok(StepAdvance::End)
+            }
+            Self::StepFinished {
+                step,
+                records,
+                step_count,
+                commands,
+                authority,
+            } => {
+                if let Err(failure) = authority.require(step) {
+                    record.steps.push(records);
+                    return Err(failure);
+                }
+                Ok(finish_step(record, records, step_count, &commands))
+            }
+            Self::Stopped(failure) => {
+                record.phase = ActionSequencePhase::Stopped { failure };
+                Ok(StepAdvance::End)
+            }
+        }
+    }
+}
+
+async fn update_execution(
+    owner: &super::admission::AdmissionOwner,
+    progress: &ExecutionProgress,
+    observe: impl FnOnce() -> ExecutionUpdate + Send + 'static,
+) -> Result<Result<StepAdvance, ExecutionFailure>, super::admission::AdmissionClosed> {
+    let progress = progress.clone();
+    owner
+        .decide(move |state| {
+            let event = observe();
+            let mut result = Ok(StepAdvance::End);
+            progress.update(|record| {
+                result = event.apply(record);
+                state.publish_execution(record.clone());
+            });
+            result
+        })
+        .await
 }
 
 async fn stop_program_motion(admission: &ExecutionAdmission, arms: &[String]) {
@@ -293,9 +396,25 @@ async fn stop_program_motion(admission: &ExecutionAdmission, arms: &[String]) {
     settling_arms.join_all().await;
 }
 
+fn check_execution_cancellation(
+    cancellation: &watch::Receiver<bool>,
+    source_step: usize,
+) -> Result<(), ExecutionFailure> {
+    if *cancellation.borrow() {
+        return Err(cancelled_execution(source_step));
+    }
+    Ok(())
+}
+
+fn cancelled_execution(step: usize) -> ExecutionFailure {
+    ExecutionFailure::Cancellation {
+        step,
+        detail: "Program execution canceled".into(),
+    }
+}
+
 struct ExecutionWait<'a> {
     admission: &'a ExecutionAdmission,
-    lease_link: &'a LinkHandle,
     authority_changes: watch::Receiver<()>,
     cancellation: watch::Receiver<bool>,
     updates: watch::Receiver<()>,
@@ -303,27 +422,7 @@ struct ExecutionWait<'a> {
 
 impl ExecutionWait<'_> {
     fn check_cancellation(&self, source_step: usize) -> Result<(), ExecutionFailure> {
-        if *self.cancellation.borrow() {
-            return Err(ExecutionFailure::Cancellation {
-                step: source_step,
-                detail: "Program execution canceled".into(),
-            });
-        }
-        Ok(())
-    }
-
-    fn check_authority(&self, source_step: usize) -> Result<(), ExecutionFailure> {
-        self.check_cancellation(source_step)?;
-        if !self
-            .lease_link
-            .execution_authorized(&self.admission.token, &self.admission.gates)
-        {
-            return Err(ExecutionFailure::Authority {
-                step: source_step,
-                detail: "The lease or an arm's interlock revision changed during execution".into(),
-            });
-        }
-        Ok(())
+        check_execution_cancellation(&self.cancellation, source_step)
     }
 
     async fn for_change(&mut self, source_step: usize) -> Result<(), ExecutionFailure> {
@@ -345,22 +444,16 @@ impl ExecutionWait<'_> {
     ) -> Result<(), ExecutionFailure> {
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
-            self.check_authority(source_step)?;
-            if arms
+            let authority = execution_authority(self.admission, &self.cancellation);
+            let settled = arms
                 .iter()
-                .all(|arm| self.admission.links[arm].current_mode() == Some(ArmMode::Holding))
-            {
-                return Ok(());
+                .all(|arm| self.admission.links[arm].current_mode() == Some(ArmMode::Holding));
+            match holding_status(source_step, authority, settled, Instant::now(), deadline)? {
+                WaitDecision::Ready => return Ok(()),
+                WaitDecision::Pending => {}
             }
             tokio::select! {
-                biased;
-                () = sleep_until(deadline) => {
-                    self.check_authority(source_step)?;
-                    return Err(ExecutionFailure::Execution {
-                        step: source_step,
-                        detail: "Arms did not report holding after the step".into(),
-                    });
-                }
+                () = sleep_until(deadline) => {}
                 result = self.for_change(source_step) => result?,
             }
         }
@@ -373,7 +466,7 @@ impl ExecutionWait<'_> {
     ) -> Result<Vec<ArmRecord>, (ExecutionFailure, Vec<ArmRecord>)> {
         loop {
             for record in &mut records {
-                if record.record.completion.is_none()
+                if record.record.is_pending()
                     && let Some(updated) = self.admission.links[&record.arm]
                         .find_record(record.record.command_id.clone())
                         .await
@@ -381,29 +474,11 @@ impl ExecutionWait<'_> {
                     record.record = updated;
                 }
             }
-            if let Err(failure) = self.check_authority(source_step) {
-                return Err((failure, records));
-            }
-            if records.iter().any(|record| {
-                record.record.completion.is_some() && !command_allows_next_step(&record.record)
-            }) {
-                let failure = ExecutionFailure::Execution {
-                    step: source_step,
-                    detail: if records.iter().any(|record| {
-                        record.record.pose_limited.is_some() || record.record.path_limited.is_some()
-                    }) {
-                        "A motion was limited before reaching the requested target; see the step result for details".into()
-                    } else {
-                        "A command in the step did not reach its requested target".into()
-                    },
-                };
-                return Err((failure, records));
-            }
-            if records
-                .iter()
-                .all(|record| record.record.completion.is_some())
-            {
-                return Ok(records);
+            let authority = execution_authority(self.admission, &self.cancellation);
+            match step_status(source_step, authority, &records) {
+                Ok(WaitDecision::Ready) => return Ok(records),
+                Ok(WaitDecision::Pending) => {}
+                Err(failure) => return Err((failure, records)),
             }
             if let Ok(Err(failure)) =
                 tokio::time::timeout(Duration::from_secs(1), self.for_change(source_step)).await
@@ -411,6 +486,103 @@ impl ExecutionWait<'_> {
                 return Err((failure, records));
             }
         }
+    }
+}
+
+fn execution_authority(
+    admission: &ExecutionAdmission,
+    cancellation: &watch::Receiver<bool>,
+) -> ExecutionAuthority {
+    if *cancellation.borrow() {
+        ExecutionAuthority::Cancelled
+    } else if admission
+        .links
+        .values()
+        .next()
+        .is_some_and(|link| link.execution_authorized(&admission.token, &admission.gates))
+    {
+        ExecutionAuthority::Current
+    } else {
+        ExecutionAuthority::Lost
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ExecutionAuthority {
+    Current,
+    Cancelled,
+    Lost,
+}
+
+impl ExecutionAuthority {
+    fn require(self, step: usize) -> Result<(), ExecutionFailure> {
+        match self {
+            Self::Current => Ok(()),
+            Self::Cancelled => Err(cancelled_execution(step)),
+            Self::Lost => Err(ExecutionFailure::Authority {
+                step,
+                detail: "The lease or an arm's interlock revision changed during execution".into(),
+            }),
+        }
+    }
+}
+
+enum WaitDecision {
+    Pending,
+    Ready,
+}
+
+fn holding_status(
+    step: usize,
+    authority: ExecutionAuthority,
+    settled: bool,
+    now: Instant,
+    deadline: Instant,
+) -> Result<WaitDecision, ExecutionFailure> {
+    authority.require(step)?;
+    if settled {
+        Ok(WaitDecision::Ready)
+    } else if now >= deadline {
+        Err(ExecutionFailure::Execution {
+            step,
+            detail: "Arms did not report holding after the step".into(),
+        })
+    } else {
+        Ok(WaitDecision::Pending)
+    }
+}
+
+fn step_status(
+    step: usize,
+    authority: ExecutionAuthority,
+    records: &[ArmRecord],
+) -> Result<WaitDecision, ExecutionFailure> {
+    authority.require(step)?;
+    if records.is_empty() {
+        return Err(ExecutionFailure::AdmissionUnknown {
+            step,
+            detail: "Controller admitted the step without command records".into(),
+        });
+    }
+    if records
+        .iter()
+        .any(|record| !record.record.is_pending() && !command_allows_next_step(&record.record))
+    {
+        let limited = records.iter().any(|record| record.record.was_limited());
+        return Err(ExecutionFailure::Execution {
+            step,
+            detail: if limited {
+                "A motion was limited before reaching the requested target; see the step result for details"
+            } else {
+                "A command in the step did not reach its requested target"
+            }
+            .into(),
+        });
+    }
+    if records.iter().all(|record| !record.record.is_pending()) {
+        Ok(WaitDecision::Ready)
+    } else {
+        Ok(WaitDecision::Pending)
     }
 }
 
@@ -427,22 +599,13 @@ pub struct ActiveExecution {
 
 #[derive(Default)]
 pub struct ExecutionRegistry {
-    state: std::sync::Mutex<ExecutionRegistryState>,
-}
-
-#[derive(Default)]
-struct ExecutionRegistryState {
     sequences: std::collections::VecDeque<ActiveExecution>,
 }
 
 impl ExecutionRegistry {
     pub fn cancel_owner(&self, token: &str) -> bool {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut cancelled = false;
-        for active in &state.sequences {
+        for active in &self.sequences {
             if active.owner == token && active.cancel() {
                 cancelled = true;
             }
@@ -464,11 +627,7 @@ impl ExecutionRegistry {
 
     #[must_use]
     pub fn owner_has_running_on_arms(&self, token: &str, arms: &[&str]) -> bool {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.sequences.iter().any(|active| {
+        self.sequences.iter().any(|active| {
             active.owner == token
                 && active.is_running()
                 && active
@@ -481,13 +640,9 @@ impl ExecutionRegistry {
         })
     }
 
-    pub fn install(&self, action_sequence: ActiveExecution) -> Result<(), &'static str> {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    pub fn install(&mut self, action_sequence: ActiveExecution) -> Result<(), &'static str> {
         let arms = action_sequence.progress.subscribe().borrow().arms.clone();
-        if state.sequences.iter().any(|active| {
+        if self.sequences.iter().any(|active| {
             active.is_running()
                 && active
                     .progress
@@ -499,27 +654,23 @@ impl ExecutionRegistry {
         }) {
             return Err("An action sequence is already running on this arm");
         }
-        while state.sequences.len() >= 100 {
-            let Some(index) = state
+        while self.sequences.len() >= 100 {
+            let Some(index) = self
                 .sequences
                 .iter()
                 .position(|active| !active.is_running())
             else {
                 break;
             };
-            state.sequences.remove(index);
+            self.sequences.remove(index);
         }
-        state.sequences.push_back(action_sequence);
+        self.sequences.push_back(action_sequence);
         Ok(())
     }
 
     #[must_use]
     pub fn lookup(&self, id: &str) -> Option<ActionSequenceRecord> {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.sequences.iter().find_map(|active| {
+        self.sequences.iter().find_map(|active| {
             let record = active.progress.updates.borrow();
             (record.id == id).then(|| record.clone())
         })
@@ -527,32 +678,13 @@ impl ExecutionRegistry {
 
     #[must_use]
     pub fn current(&self) -> Option<watch::Receiver<ActionSequenceRecord>> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .sequences
+        self.sequences
             .back()
             .map(|active| active.progress.subscribe())
     }
 
-    #[must_use]
-    pub fn snapshots(&self) -> Vec<ActionSequenceRecord> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .sequences
-            .iter()
-            .map(|active| active.progress.subscribe().borrow().clone())
-            .collect()
-    }
-
     pub fn cancel(&self, id: &str) -> bool {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state
-            .sequences
+        self.sequences
             .iter()
             .find(|active| active.progress.updates.borrow().id == id)
             .is_some_and(ActiveExecution::cancel)
@@ -613,42 +745,35 @@ impl ExecutionProgress {
 // CONSTRAINT: Gripper contact completes a step because gripping an object is an intended success.
 #[must_use]
 pub fn command_allows_next_step(record: &CommandRecord) -> bool {
-    record.outcome() == Some(CommandOutcome::Completed)
-        && record.pose_limited.is_none()
-        && record.path_limited.is_none()
+    record.outcome() == Some(CommandOutcome::Completed) && !record.was_limited()
 }
 
 // INVARIANT: Advance only after every command in the active step has finished.
 // Returns whether another step should be submitted.
-pub fn finish_step(
+fn finish_step(
     action_sequence: &mut ActionSequenceRecord,
     records: Vec<ArmRecord>,
     step_count: usize,
     commands: &CompiledStep,
-) -> bool {
+) -> StepAdvance {
     let ActionSequencePhase::Running { step } = action_sequence.phase else {
-        return false;
+        return StepAdvance::End;
     };
-    if records.is_empty()
-        || records
-            .iter()
-            .any(|record| record.record.completion.is_none())
-    {
-        return false;
+    if records.is_empty() || records.iter().any(|record| record.record.is_pending()) {
+        return StepAdvance::End;
     }
     let limited_joints = records.iter().any(|record| {
         commands
             .get(&record.arm)
             .and_then(|operation| operation.action.requested_joints())
             .is_some_and(|requested| {
-                record.record.label == "move_to_joints"
-                    && record.record.target_joints.as_ref().is_some_and(|target| {
-                        target.len() != requested.len()
-                            || target
-                                .iter()
-                                .zip(requested)
-                                .any(|(actual, requested)| (actual - requested).abs() > 1e-9)
-                    })
+                record.record.target_joints().is_some_and(|target| {
+                    target.len() != requested.len()
+                        || target
+                            .iter()
+                            .zip(requested)
+                            .any(|(actual, requested)| (actual - requested).abs() > 1e-9)
+                })
             })
     });
     let success = !limited_joints
@@ -667,18 +792,19 @@ pub fn finish_step(
                 },
             },
         };
-        return false;
+        return StepAdvance::End;
     }
     if step + 1 >= step_count {
         action_sequence.phase = ActionSequencePhase::Completed;
-        return false;
+        return StepAdvance::End;
     }
     action_sequence.phase = ActionSequencePhase::Running { step: step + 1 };
-    true
+    StepAdvance::Continue
 }
 
-pub(crate) fn run_compiled_program(
-    executions: &ExecutionRegistry,
+pub(super) fn run_compiled_program(
+    owner: super::admission::AdmissionOwner,
+    executions: &mut ExecutionRegistry,
     links: &BTreeMap<String, LinkHandle>,
     token: String,
     artifact: Arc<ProgramArtifact>,
@@ -697,7 +823,7 @@ pub(crate) fn run_compiled_program(
         artifact,
         expected_revisions,
     };
-    start_execution(executions, links, token, sequence)
+    start_execution(owner, executions, links, token, sequence)
 }
 
 fn check_continuation(
@@ -742,7 +868,8 @@ fn check_continuation(
     reason = "with_lease invokes the callback at most once while holding admission authorization."
 )]
 fn start_execution(
-    executions: &ExecutionRegistry,
+    owner: super::admission::AdmissionOwner,
+    executions: &mut ExecutionRegistry,
     links: &BTreeMap<String, LinkHandle>,
     token: String,
     mut sequence: ProgramExecution,
@@ -800,6 +927,7 @@ fn start_execution(
         return Err(detail.into());
     }
     let admission = Arc::new(ExecutionAdmission {
+        owner,
         links: links.clone(),
         token,
         gates: sequence
@@ -818,7 +946,9 @@ fn start_execution(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hebbian_contracts::CommandCompletion;
+    use hebbian_contracts::{
+        CommandCompletion, CommandPhase, CommandPose, KnownCommandOutcome, RecordedCommand,
+    };
 
     #[tokio::test]
     async fn losing_the_lease_wakes_a_step_waiting_for_holding() {
@@ -842,6 +972,10 @@ mod tests {
             .unwrap();
         let arms = vec!["arm".into()];
         let admission = ExecutionAdmission {
+            owner: super::super::admission::AdmissionOwner::start(
+                &tokio::runtime::Handle::current(),
+                Arc::new(super::super::events::EventJournal::default()),
+            ),
             links: BTreeMap::from([("arm".into(), handle.clone())]),
             token: grant.lease_token,
             gates: vec![handle.gate(Some(0))],
@@ -851,7 +985,6 @@ mod tests {
         let (notification_sender, updates) = watch::channel(());
         let mut wait = ExecutionWait {
             admission: &admission,
-            lease_link: &handle,
             authority_changes: handle.authority_changes(),
             cancellation,
             updates,
@@ -874,6 +1007,70 @@ mod tests {
         link.close();
     }
 
+    #[tokio::test]
+    async fn a_prepared_step_is_refused_if_its_lease_ended_before_handoff() {
+        let config = crate::config::ControllerConfig::parse(include_str!(
+            "../../tests/support/two_joint_config.json"
+        ))
+        .unwrap();
+        let lease = Arc::new(crate::lease::Lease::new(crate::lease::LEASE));
+        let link = crate::control_link::Link::new(&config, Arc::clone(&lease)).unwrap();
+        let handle = link.handle();
+        let grant = handle
+            .acquire_lease(
+                hebbian_contracts::LeaseRequest {
+                    holder: hebbian_contracts::LeaseHolder::Agent,
+                    label: "program".into(),
+                    required_cameras: vec![],
+                    on_interruption: hebbian_contracts::OnInterruption::WaitForApproval,
+                },
+                false,
+            )
+            .unwrap();
+        let owner = super::super::admission::AdmissionOwner::start(
+            &tokio::runtime::Handle::current(),
+            Arc::new(super::super::events::EventJournal::default()),
+        );
+        let admission = Arc::new(ExecutionAdmission {
+            owner: owner.clone(),
+            links: BTreeMap::from([("arm".into(), handle.clone())]),
+            token: grant.lease_token.clone(),
+            gates: vec![handle.gate(Some(0))],
+            generation: vec![handle.submission_generation()],
+        });
+        let prepared = vec![PreparedArmAction {
+            arm: "arm".into(),
+            movement: None,
+            gripper: Some(PreparedGripper {
+                angle: 0.5,
+                joint_speed: None,
+            }),
+        }];
+        owner
+            .decide(move |state| {
+                handle.release_lease_with(&grant.lease_token, || {
+                    state.executions.cancel_owner(&grant.lease_token)
+                })
+            })
+            .await
+            .unwrap();
+
+        let (_cancel, cancellation) = watch::channel(false);
+        let result = admit_prepared_step(admission, 0, prepared, cancellation).await;
+        assert!(
+            matches!(
+                result,
+                Err(ExecutionFailure::Admission {
+                    step: 0,
+                    reason: RejectionReason::LeaseHeldElsewhere,
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+        link.close();
+    }
+
     #[test]
     fn continuation_requires_a_finished_preserved_prefix_and_skips_attempted_steps() {
         let source = ActionSequenceRequest {
@@ -892,13 +1089,20 @@ mod tests {
                 .collect(),
             expected_revisions: BTreeMap::new(),
         };
-        let mut attempted = CommandRecord::new("command".into(), "set_gripper", 0.0, None);
-        attempted.completion = Some(CommandCompletion {
+        let mut attempted = CommandRecord::new(
+            "command".into(),
+            "set_gripper",
+            0.0,
+            RecordedCommand::Gripper {
+                target_angle_radians: 0.2,
+                joint_speed: 1.0,
+                stream_command_id: None,
+            },
+        );
+        attempted.phase = CommandPhase::OutcomeUnknown {
             finished_at: 1.0,
-            outcome: CommandOutcome::Interrupted,
             detail: Some("Canceled while moving".into()),
-            gripper: None,
-        });
+        };
         let mut prior = ActionSequenceRecord {
             id: "prior".into(),
             compilation_id: "compiled".into(),
@@ -954,7 +1158,7 @@ mod tests {
 
     #[test]
     fn registry_keeps_running_action_sequence_exclusive_and_cancels_by_id() {
-        let registry = ExecutionRegistry::default();
+        let mut registry = ExecutionRegistry::default();
         let record = || ActionSequenceRecord {
             continuation: None,
             compilation_id: "compilation".into(),
@@ -986,7 +1190,7 @@ mod tests {
 
     #[test]
     fn independent_arms_keep_their_own_sequences() {
-        let registry = ExecutionRegistry::default();
+        let mut registry = ExecutionRegistry::default();
         let new_sequence = |id: &str, arm: &str| {
             ActiveExecution::new(
                 ActionSequenceRecord {
@@ -1008,7 +1212,8 @@ mod tests {
         let right_progress = right.progress.clone();
         registry.install(left).unwrap();
         registry.install(right).unwrap();
-        assert_eq!(registry.snapshots().len(), 2);
+        assert!(registry.lookup("left-sequence").is_some());
+        assert!(registry.lookup("right-sequence").is_some());
         assert!(registry.owner_has_running_on_arms("owner", &["left"]));
         assert!(!registry.owner_has_running_on_arms("owner", &["other"]));
         left_progress.update(|record| record.phase = ActionSequencePhase::Completed);
@@ -1021,16 +1226,32 @@ mod tests {
 
     #[test]
     fn only_completed_unlimited_commands_allow_advancing() {
-        let mut command = CommandRecord::new("1".into(), "move_to_pose", 0.0, None);
+        let mut command = CommandRecord::new(
+            "1".into(),
+            "move_to_pose",
+            0.0,
+            RecordedCommand::PolicyReach {
+                target_pose: CommandPose {
+                    position: [0.0; 3],
+                    quaternion: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
+        );
         assert!(!command_allows_next_step(&command));
-        command.completion = Some(CommandCompletion {
-            finished_at: 1.0,
-            outcome: CommandOutcome::Completed,
-            detail: None,
-            gripper: None,
-        });
+        command.phase = CommandPhase::Finished {
+            completion: CommandCompletion {
+                finished_at: 1.0,
+                outcome: KnownCommandOutcome::Completed,
+                detail: None,
+                gripper: None,
+            },
+            achieved: None,
+        };
         assert!(command_allows_next_step(&command));
-        command.completion.as_mut().unwrap().outcome = CommandOutcome::Interrupted;
+        command.phase = CommandPhase::OutcomeUnknown {
+            finished_at: 1.0,
+            detail: None,
+        };
         assert!(!command_allows_next_step(&command));
     }
 
@@ -1045,32 +1266,74 @@ mod tests {
             phase: ActionSequencePhase::Running { step: 0 },
             steps: vec![],
         };
-        let mut command = CommandRecord::new("1".into(), "move_to_pose", 0.0, None);
-        command.completion = Some(CommandCompletion {
+        let mut command = CommandRecord::new(
+            "1".into(),
+            "move_to_pose",
+            0.0,
+            RecordedCommand::PolicyReach {
+                target_pose: CommandPose {
+                    position: [0.0; 3],
+                    quaternion: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
+        );
+        command.phase = CommandPhase::Finished {
+            completion: CommandCompletion {
+                finished_at: 1.0,
+                outcome: KnownCommandOutcome::Completed,
+                detail: None,
+                gripper: None,
+            },
+            achieved: None,
+        };
+        assert_eq!(
+            finish_step(
+                &mut action_sequence,
+                vec![ArmRecord {
+                    arm: "arm".into(),
+                    record: command.clone()
+                }],
+                3,
+                &BTreeMap::new(),
+            ),
+            StepAdvance::Continue
+        );
+        let mut after_lease_loss = action_sequence.clone();
+        let late_completion = ExecutionUpdate::StepFinished {
+            step: 1,
+            records: vec![ArmRecord {
+                arm: "arm".into(),
+                record: command.clone(),
+            }],
+            step_count: 3,
+            commands: BTreeMap::new(),
+            authority: ExecutionAuthority::Lost,
+        };
+        assert!(matches!(
+            late_completion.apply(&mut after_lease_loss),
+            Err(ExecutionFailure::Authority { step: 1, .. })
+        ));
+        assert!(matches!(
+            after_lease_loss.phase,
+            ActionSequencePhase::Running { step: 1 }
+        ));
+        assert_eq!(after_lease_loss.steps.len(), 2);
+        command.phase = CommandPhase::OutcomeUnknown {
             finished_at: 1.0,
-            outcome: CommandOutcome::Completed,
             detail: None,
-            gripper: None,
-        });
-        assert!(finish_step(
-            &mut action_sequence,
-            vec![ArmRecord {
-                arm: "arm".into(),
-                record: command.clone()
-            }],
-            3,
-            &BTreeMap::new(),
-        ));
-        command.completion.as_mut().unwrap().outcome = CommandOutcome::Interrupted;
-        assert!(!finish_step(
-            &mut action_sequence,
-            vec![ArmRecord {
-                arm: "arm".into(),
-                record: command
-            }],
-            3,
-            &BTreeMap::new(),
-        ));
+        };
+        assert_eq!(
+            finish_step(
+                &mut action_sequence,
+                vec![ArmRecord {
+                    arm: "arm".into(),
+                    record: command
+                }],
+                3,
+                &BTreeMap::new(),
+            ),
+            StepAdvance::End
+        );
         assert!(matches!(
             action_sequence.phase,
             ActionSequencePhase::Stopped { .. }

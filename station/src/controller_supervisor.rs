@@ -13,7 +13,7 @@ use axum::{
 };
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::controller_bridge::StationSession;
-use hebbian_robot_use_core::controller_service::serve_station_connection;
+use hebbian_robot_use_core::controller_service::{ReadyController, serve_station_connection};
 use hebbian_robot_use_core::lease::Lease;
 
 use hebbian_contracts::{ControllerStatus, ReconnectRequest};
@@ -25,9 +25,55 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const CONTROLLER_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const CONTROLLER_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 
+enum ControllerPhase {
+    Unmanaged,
+    Starting,
+    Online {
+        _readiness: ReadyController,
+    },
+    Stopping,
+    Unavailable {
+        reason: String,
+        guard_released: bool,
+        reports: Vec<String>,
+    },
+    WaitingForGuard {
+        reason: String,
+        reports: Vec<String>,
+    },
+}
+
+impl ControllerPhase {
+    fn is_available(&self) -> bool {
+        matches!(self, Self::Online { .. } | Self::Unmanaged)
+    }
+
+    fn status(&self) -> ControllerStatus {
+        match self {
+            Self::Unmanaged => ControllerStatus::Unmanaged,
+            Self::Starting => ControllerStatus::Starting,
+            Self::Online { .. } => ControllerStatus::Online,
+            Self::Stopping => ControllerStatus::Stopping,
+            Self::Unavailable {
+                reason,
+                guard_released,
+                reports,
+            } => ControllerStatus::Unavailable {
+                reason: reason.clone(),
+                guard_released: *guard_released,
+                reports: reports.clone(),
+            },
+            Self::WaitingForGuard { reason, reports } => ControllerStatus::WaitingForGuard {
+                reason: reason.clone(),
+                reports: reports.clone(),
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ControllerSupervisor {
-    status: Arc<Mutex<ControllerStatus>>,
+    phase: Arc<Mutex<ControllerPhase>>,
     requests: mpsc::Sender<()>,
     recording: Arc<Mutex<Option<RecordingManager>>>,
 }
@@ -37,7 +83,7 @@ impl ControllerSupervisor {
     pub fn unmanaged() -> Self {
         let (requests, _receiver) = mpsc::channel();
         Self {
-            status: Arc::new(Mutex::new(ControllerStatus::Unmanaged)),
+            phase: Arc::new(Mutex::new(ControllerPhase::Unmanaged)),
             requests,
             recording: Arc::new(Mutex::new(None)),
         }
@@ -45,15 +91,15 @@ impl ControllerSupervisor {
 
     #[must_use]
     pub fn status(&self) -> ControllerStatus {
-        self.status
+        self.phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+            .status()
     }
 
-    fn set_status(&self, status: ControllerStatus) {
+    fn set_phase(&self, phase: ControllerPhase) {
         let mut current = self
-            .status
+            .phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(recording) = self
@@ -62,31 +108,25 @@ impl ControllerSupervisor {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
         {
-            if matches!(
-                status,
-                ControllerStatus::Online | ControllerStatus::Unmanaged
-            ) {
+            if phase.is_available() {
                 recording.controller_ready();
             } else {
                 recording.controller_unavailable();
             }
         }
-        *current = status;
+        *current = phase;
     }
 
     pub fn attach_recording(&self, recording: RecordingManager) {
         let status = self
-            .status
+            .phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut slot = self
             .recording
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if matches!(
-            *status,
-            ControllerStatus::Online | ControllerStatus::Unmanaged
-        ) {
+        if status.is_available() {
             recording.controller_ready();
         } else {
             recording.controller_unavailable();
@@ -96,29 +136,27 @@ impl ControllerSupervisor {
 
     pub fn reconnect(&self) -> Result<(), &'static str> {
         let mut status = self
-            .status
+            .phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let ControllerStatus::Unavailable {
+        let ControllerPhase::Unavailable {
             reason, reports, ..
         } = &*status
         else {
             return Err(match &*status {
-                ControllerStatus::Online => "The controller is already online",
-                ControllerStatus::Unmanaged => "The station does not supervise a controller",
-                ControllerStatus::Stopping => "The controller is stopping",
+                ControllerPhase::Online { .. } => "The controller is already online",
+                ControllerPhase::Unmanaged => "The station does not supervise a controller",
+                ControllerPhase::Stopping => "The controller is stopping",
                 _ => "Controller startup or recovery is already in progress",
             });
         };
-        let previous = status.clone();
-        *status = ControllerStatus::WaitingForGuard {
+        self.requests
+            .send(())
+            .map_err(|_| "The controller supervisor stopped")?;
+        *status = ControllerPhase::WaitingForGuard {
             reason: reason.clone(),
             reports: reports.clone(),
         };
-        if self.requests.send(()).is_err() {
-            *status = previous;
-            return Err("The controller supervisor stopped");
-        }
         Ok(())
     }
 }
@@ -134,7 +172,7 @@ pub fn start(
 ) -> (ControllerSupervisor, JoinHandle<()>) {
     let (requests, incoming) = mpsc::channel();
     let supervisor = ControllerSupervisor {
-        status: Arc::new(Mutex::new(ControllerStatus::Starting)),
+        phase: Arc::new(Mutex::new(ControllerPhase::Starting)),
         requests,
         recording: Arc::new(Mutex::new(None)),
     };
@@ -164,11 +202,11 @@ fn refresh_guard_status(
     let released = process.guard_released();
     let updated_reports = process.take_updated_reports();
     let mut status = supervisor
-        .status
+        .phase
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     match &mut *status {
-        ControllerStatus::Unavailable {
+        ControllerPhase::Unavailable {
             guard_released,
             reports,
             ..
@@ -178,15 +216,15 @@ fn refresh_guard_status(
                 *reports = updated_reports;
             }
         }
-        ControllerStatus::WaitingForGuard { reports, .. } => {
+        ControllerPhase::WaitingForGuard { reports, .. } => {
             if let Some(updated_reports) = updated_reports {
                 *reports = updated_reports;
             }
         }
-        ControllerStatus::Starting
-        | ControllerStatus::Stopping
-        | ControllerStatus::Online
-        | ControllerStatus::Unmanaged => {}
+        ControllerPhase::Starting
+        | ControllerPhase::Stopping
+        | ControllerPhase::Online { .. }
+        | ControllerPhase::Unmanaged => {}
     }
     released
 }
@@ -300,12 +338,12 @@ fn run(
             break;
         }
         previous = None;
-        supervisor.set_status(ControllerStatus::Starting);
+        supervisor.set_phase(ControllerPhase::Starting);
         let mut process = match ControllerProcess::start(&configuration) {
             Ok(process) => process,
             Err(error) => {
                 tracing::warn!(error = %format_args!("{error:#}"), "Cannot start controller");
-                supervisor.set_status(ControllerStatus::Unavailable {
+                supervisor.set_phase(ControllerPhase::Unavailable {
                     reason: format!("Cannot start controller: {error:#}"),
                     guard_released: true,
                     reports: Vec::new(),
@@ -322,16 +360,16 @@ fn run(
                 &mut session,
                 &links,
                 &shutdown,
-                || {
-                    lease.controller_ready();
+                |ready| {
+                    ready.restore_motion_authority(&lease);
                     for link in links.values() {
                         link.publish(hebbian_contracts::Event::ControllerAvailable);
                     }
-                    supervisor.set_status(ControllerStatus::Online);
+                    supervisor.set_phase(ControllerPhase::Online { _readiness: ready });
                 },
                 || {
                     lease.controller_lost();
-                    supervisor.set_status(ControllerStatus::Stopping);
+                    supervisor.set_phase(ControllerPhase::Stopping);
                 },
             )
             .map_err(|error| format!("Controller connection ended: {error}"))
@@ -343,7 +381,7 @@ fn run(
         }
         let guard_released = process.guard_released();
         // INVARIANT: Publish the recoverable status once so a queued reconnect stays visible.
-        supervisor.set_status(ControllerStatus::Unavailable {
+        supervisor.set_phase(ControllerPhase::Unavailable {
             reason,
             guard_released,
             reports: process.take_updated_reports().unwrap_or_default(),

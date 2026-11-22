@@ -249,7 +249,8 @@ impl Loop<'_> {
                 },
                 _,
             )) => {
-                self.reference.set_at_rest(positions, Some(*joint_speed));
+                self.reference
+                    .set_at_rest(positions.as_slice(), Some(joint_speed.radians_per_second()));
                 None
             }
             Some((

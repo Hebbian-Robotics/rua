@@ -36,6 +36,8 @@ _ANGLE_FIELDS = {
     "joint_errors_radians": "joint_errors_degrees",
     "orientation_error_radians": "orientation_error_degrees",
     "orientation_shortfall_radians": "orientation_shortfall_degrees",
+    "measured_angle_radians": "measured_angle_degrees",
+    "target_angle_radians": "target_angle_degrees",
     "joint_speed": "joint_speed_degrees_per_second",
     "max_joint_speed": "max_joint_speed_degrees_per_second",
 }
@@ -54,6 +56,57 @@ def _scale_numbers(value: object, factor: float) -> object:
     return value
 
 
+def _model_command_record(record: dict) -> dict:
+    command, phase = record.get("command"), record.get("phase")
+    if (
+        not isinstance(command, dict)
+        or not isinstance(phase, dict)
+        or not isinstance(record.get("command_id"), str)
+        or not isinstance(command.get("kind"), str)
+        or phase.get("kind")
+        not in ("pending", "not_started", "finished", "outcome_unknown")
+    ):
+        return record
+    result = {
+        key: item for key, item in record.items() if key not in {"command", "phase"}
+    }
+    result.update(
+        (key, item)
+        for key, item in command.items()
+        if key not in {"kind", "target_pose"}
+    )
+    pose = command.get("target_pose")
+    if isinstance(pose, dict):
+        result["target_position"] = pose.get("position")
+        result["target_quaternion"] = pose.get("quaternion")
+    phase_kind = phase["kind"]
+    if phase_kind == "finished":
+        completion = phase.get("completion")
+        result["completion"] = completion
+        result["achieved"] = phase.get("achieved")
+        if command["kind"] == "move" and isinstance(completion, dict):
+            outcome = completion.get("outcome")
+            match outcome:
+                case "completed":
+                    result["target_status"] = "reached"
+                case "stopped_short":
+                    result["target_status"] = "stopped_short"
+                case _:
+                    result["target_status"] = "partial"
+    elif phase_kind in {"not_started", "outcome_unknown"}:
+        result["completion"] = {
+            "outcome": "interrupted"
+            if phase_kind == "outcome_unknown"
+            else phase.get("outcome"),
+            "detail": phase.get("detail"),
+            "finished_at": phase.get("finished_at"),
+        }
+        if phase_kind == "not_started":
+            key = "target_status" if command["kind"] == "move" else "phase"
+            result[key] = "not_started"
+    return result
+
+
 def model_response(value: object) -> object:
     """Convert an SI payload to readable model units without summarizing its history."""
     return _format_model_field(value, "")
@@ -63,6 +116,7 @@ def _format_model_field(value: object, field_name: str) -> object:
     if field_name in {"approach", "jaw_yaw_degrees"}:
         return value
     if isinstance(value, dict):
+        value = _model_command_record(value)
         formatted = {}
         for key, item in value.items():
             if item is None or (key == "checkpoints" and item == []):
@@ -117,6 +171,7 @@ _DIAGNOSTIC_FIELDS = {
     "id",
     "command_id",
     "group_id",
+    "stream_command_id",
     "sequence_id",
     "action_sequence_id",
     "checkpoints",
@@ -135,7 +190,7 @@ def _compact_earlier_step(value: object) -> object:
         if not isinstance(item, dict) or not isinstance(item.get("record"), dict):
             entries.append(concise_output(item))
             continue
-        record = item["record"]
+        record = _model_command_record(item["record"])
         entries.append(
             concise_output(
                 {
@@ -145,6 +200,7 @@ def _compact_earlier_step(value: object) -> object:
                         for key in (
                             "label",
                             "completion",
+                            "phase",
                             "target_status",
                             "pose_limited",
                             "path_limited",
@@ -171,6 +227,7 @@ def concise_output(value: object, *, keep_station_context: bool = False) -> obje
         ]
     if not isinstance(value, dict):
         return value
+    value = _model_command_record(value)
     if "arms" in value and "joint_names" in value:
         kept_state_fields = _STATE_FIELDS + (
             _STATION_CONTEXT_FIELDS if keep_station_context else ()

@@ -20,11 +20,11 @@ flowchart TB
         API["Station API"] -->|"Action sequence"| Compiler["Robot Use Compiler"]
         Compiler --> Artifact["Compiled program"]
         Artifact --> Runtime["Robot Use Runtime"]
-        Runtime -->|"Prepared step"| Handoff["Controller handoff"]
-        API -->|"Direct command"| Handoff
+        Runtime -->|"Prepared step"| Admission["Command admission"]
+        API -->|"Prepared command"| Admission
     end
 
-    Handoff --> Controller["Motor controller process"]
+    Admission --> Controller["Motor controller process"]
     Controller --> Robot["Robot"]
     Controller -.->|"Arm feedback"| Runtime
     Controller -.->|"State and command outcomes"| API
@@ -38,9 +38,11 @@ flowchart TB
    preserving the ordered steps and their arm groups. This stage can run
    before the client acquires a lease and can reuse unchanged operations.
 2. The **Robot Use Runtime** prepares each step from current arm feedback and
-   submits the participating commands for admission together. Execution checks
-   live authority and arm state, and records each step’s outcome.
-3. The **motor controller** applies final protective checks and drives the arms
+   submits the participating commands together and records each step’s outcome.
+3. **Command admission** orders direct commands, sequence steps, and
+   cancellations in one station task. Prepared work passes the live authority
+   check at controller handoff.
+4. The **motor controller** applies final protective checks and drives the arms
    through the coordinated control loop.
 
 Clients can also compile explicitly, inspect the artifact, and run it later by
