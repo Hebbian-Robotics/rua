@@ -224,9 +224,6 @@ export function WorkspaceApp({
     [cameras.feeds],
   );
   const mediaStatus = useMediaStatus();
-  const cameraConnectionError = cameras.status.startsWith("Cameras unavailable")
-    ? cameras.status
-    : "";
   const setProjection = useCallback((next: SceneProjection | null) => {
     setProjectionState(next);
   }, []);
@@ -373,20 +370,14 @@ export function WorkspaceApp({
               aria-labelledby="workspace-cameras"
             >
               <h2 id="workspace-cameras">Cameras</h2>
-              {cameraConnectionError || mediaStatus ? (
+              <p className="workspace-camera-status" role="status">
+                {cameras.status}
+              </p>
+              {mediaStatus && (
                 <details className="workspace-camera-status">
-                  <summary>
-                    {mediaStatus
-                      ? "Camera service needs attention"
-                      : "Live cameras unavailable"}
-                  </summary>
-                  {cameraConnectionError && <p>{cameraConnectionError}</p>}
-                  {mediaStatus && <p>{mediaStatus}</p>}
+                  <summary>Camera service needs attention</summary>
+                  <p>{mediaStatus}</p>
                 </details>
-              ) : (
-                cameras.status && (
-                  <p className="workspace-camera-status">{cameras.status}</p>
-                )
               )}
               <details className="camera-setup">
                 <summary>Add remote camera</summary>

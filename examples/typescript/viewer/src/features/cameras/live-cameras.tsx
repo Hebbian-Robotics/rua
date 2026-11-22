@@ -22,7 +22,7 @@ export type CameraRoomState = {
 
 export function useCameraRoom(): CameraRoomState {
   const [state, setState] = useState<CameraRoomState>({
-    status: "Connecting to cameras…",
+    status: "Connecting to LiveKit…",
     feeds: [],
     roomMetadata: undefined,
   });
@@ -45,7 +45,9 @@ export function useCameraRoom(): CameraRoomState {
       setState((previous) => ({
         ...previous,
         feeds: orderedFeeds,
-        status: orderedFeeds.length ? "" : "No cameras streaming.",
+        status: orderedFeeds.length
+          ? "LiveKit connected."
+          : "LiveKit connected. Waiting for cameras.",
       }));
     }
 
@@ -105,7 +107,7 @@ export function useCameraRoom(): CameraRoomState {
           connecting.removeAllListeners();
           feeds.clear();
           setState({
-            status: "Camera connection lost; reconnecting…",
+            status: "LiveKit disconnected. Reconnecting…",
             feeds: [],
             roomMetadata: undefined,
           });
@@ -116,7 +118,7 @@ export function useCameraRoom(): CameraRoomState {
         await connecting.disconnect();
         if (!active) return;
         setState({
-          status: `Cameras unavailable: ${errorMessage(error, "unknown error")}`,
+          status: `Couldn’t connect to LiveKit. ${errorMessage(error, "Unknown error.")}`,
           feeds: [],
           roomMetadata: undefined,
         });
