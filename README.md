@@ -2,8 +2,6 @@
   <a href="https://hebbianrobotics.com/">
     <img src="https://raw.githubusercontent.com/Hebbian-Robotics/rua/main/examples/typescript/viewer/public/hebbian-logo.svg" alt="Hebbian Robotics" width="128">
   </a>
-  <br>
-  <strong>Hebbian Robotics (YC S26)</strong>
 </p>
 
 <h1 align="center">Hebbian Robot-Use Agents (RUA)</h1>
