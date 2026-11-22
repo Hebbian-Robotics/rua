@@ -27,9 +27,8 @@ together against a temporary local registry. Download the `rua-sdk-packages`
 artifact and keep the run associated with the commit.
 
 Before the first publication, verify ownership of any existing package and
-confirm the npm and crates.io accounts can create the new names. Configure the
-PyPI publishing credential in the repository's `pypi` GitHub environment.
-Build verification runs without publishing credentials.
+confirm the npm and crates.io accounts can create the new names. Build
+verification runs without publishing credentials.
 
 ## First SDK publication
 
@@ -39,26 +38,29 @@ Build verification runs without publishing credentials.
 2. Publish `hebbian-rua` from the same commit with
    `cargo publish --locked -p hebbian-rua`. Publish the tested SDK tarball from
    `rua-sdk-packages` to npm with `npm publish <tarball> --access public`.
-3. Register GitHub Actions as a trusted publisher in the npm settings for
-   `hebbian-rua` and in the crates.io settings for **both** crates. Use these
-   values for all three registrations.
 
-   | Setting | Value |
-   | --- | --- |
-   | GitHub owner | `Hebbian-Robotics` |
-   | Repository | `rua` |
-   | Workflow filename | `publish.yml` |
-   | GitHub environment | `sdk-release` |
+## Configure Trusted Publishing
 
-   Enable direct publishing in the npm registration. See
-   [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) and
-   [crates.io Trusted Publishing](https://crates.io/docs/trusted-publishing).
+Register a GitHub Actions trusted publisher for each package. Use GitHub owner
+`Hebbian-Robotics`, repository `rua`, and workflow filename `publish.yml` for
+every registration.
+
+| Registry | Packages | GitHub environment |
+| --- | --- | --- |
+| PyPI | `hebbian-rua` | `pypi` |
+| npm | `hebbian-rua` | `sdk-release` |
+| crates.io | `hebbian-rua`, `hebbian-rua-contracts` | `sdk-release` |
+
+Enable direct publishing in the npm registration. See the
+[PyPI](https://docs.pypi.org/trusted-publishers/adding-a-publisher/),
+[npm](https://docs.npmjs.com/trusted-publishers), and
+[crates.io](https://crates.io/docs/trusted-publishing) setup guides.
 
 ## Publish an approved release
 
 Publish the GitHub release with the matching `v<version>` tag on the verified
 release commit. After the build and installation checks pass, the workflow
-publishes missing SDK versions using short-lived GitHub Actions credentials.
+publishes to all three registries using short-lived GitHub Actions credentials.
 It uploads the contracts crate before the Rust SDK and publishes the tested npm
 tarball. Then it publishes the wheels to PyPI and attaches the packages and
 checksums to the GitHub release. Pushing a tag alone leaves the registries unchanged.
