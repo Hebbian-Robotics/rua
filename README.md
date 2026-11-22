@@ -7,7 +7,7 @@
 <h1 align="center">Hebbian Robot-Use Agents (RUA)</h1>
 
 <p align="center">Build your own robot-use agents. Give an LLM a goal, camera views
-and robot tools, and let it observe, act and adjust.</p>
+and robot tools, and let it observe and act.</p>
 
 <p align="center">
   <a href="https://www.ycombinator.com/companies/hebbian-robotics">
