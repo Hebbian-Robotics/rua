@@ -14,12 +14,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      documentation: ${{ steps.classify.outputs.documentation }}
+      comments: ${{ steps.classify.outputs.comments }}
+      python: ${{ steps.classify.outputs.python }}
+      typescript: ${{ steps.classify.outputs.typescript }}
+      rust: ${{ steps.classify.outputs.rust }}
+      integration: ${{ steps.classify.outputs.integration }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: classify
+        run: python3 .github/scripts/check_lanes.py
+
   documentation:
+    needs: changes
+    if: ${{ needs.changes.outputs.documentation == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-check-node
+      - run: pnpm lint:docs
       - name: Install link checker
         run: cargo install lychee --version 0.24.2 --locked
       - name: Check documentation links and anchors
@@ -32,6 +53,8 @@ jobs:
           CODE_OF_CONDUCT.md SECURITY.md
 
   comments:
+    needs: changes
+    if: ${{ needs.changes.outputs.comments == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -42,6 +65,8 @@ jobs:
       - run: source-doc-lint --config source-doc-lint.toml
 
   python:
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -63,6 +88,8 @@ jobs:
         run: uv run python examples/python/agent_quickstart.py --help
 
   rust:
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -73,40 +100,10 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Install Linux build tools
-        if: runner.os == 'Linux'
-        run: |
-          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
-          echo 'deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-21 main' | sudo tee /etc/apt/sources.list.d/llvm.list
-          sudo apt-get update
-          sudo apt-get install -y pkg-config mold libudev-dev libglib2.0-dev clang-21 libclang-21-dev ffmpeg
-          {
-            echo 'CC=clang-21'
-            echo 'CXX=clang++-21'
-          } >> "$GITHUB_ENV"
-      - name: Install macOS build tools
-        if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg pkg-config
-          {
-            echo 'CC=clang'
-            echo 'CXX=clang++'
-            echo 'MACOSX_DEPLOYMENT_TARGET=14.0'
-            echo 'TMPDIR=/tmp'
-          } >> "$GITHUB_ENV"
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: ./.github/actions/setup-check-station
         with:
-          version: "0.13.6"
-          python-version: "3.14"
-          enable-cache: true
-      - name: Restore Rust build cache
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          shared-key: checks-${{ matrix.os }}
-          env-vars: CC CXX MACOSX_DEPLOYMENT_TARGET
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
-      - name: Prepare pinned robot assets
-        run: uv run rua-dev setup
+          cache-platform: ${{ matrix.os }}
+          save-cache: ${{ github.ref == 'refs/heads/main' }}
       - run: rustup show active-toolchain
       - name: Install unused-dependency checker
         run: cargo install cargo-machete --version 0.9.2 --locked
@@ -117,30 +114,35 @@ jobs:
       - run: cargo machete --with-metadata --skip-target-dir
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked --workspace --all-features
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-        if: ${{ runner.os == 'Linux' && hashFiles('pnpm-workspace.yaml') != '' }}
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        if: ${{ runner.os == 'Linux' && hashFiles('pnpm-workspace.yaml') != '' }}
+      - if: runner.os == 'macOS'
+        run: uv run --locked rua-dev contracts --check --targets python rust
+
+  typescript:
+    needs: changes
+    if: needs.changes.outputs.typescript == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - if: ${{ runner.os == 'Linux' && hashFiles('pnpm-workspace.yaml') != '' }}
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm check
-          uv run rua-dev contracts --check
+          persist-credentials: false
+      - uses: ./.github/actions/setup-check-node
+      - run: pnpm lint && pnpm typecheck && pnpm knip
+      - run: pnpm test:viewer && pnpm build
+      - run: pnpm test:package
+
+  integration:
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-check-station
+        with:
+          cache-platform: ubuntu-24.04
+      - uses: ./.github/actions/setup-check-node
+      - run: uv run --locked rua-dev contracts --check
       - name: Run station integration tests
-        if: ${{ runner.os == 'Linux' && hashFiles('tests/conftest.py') != '' }}
         run: uv run --locked pytest -m server
-      - if: ${{ runner.os == 'Linux' && hashFiles('vite.config.ts') != '' }}
-        run: |
-          pnpm test:viewer
-          pnpm build
-      - if: ${{ runner.os == 'Linux' && hashFiles('typescript-client/package.json') != '' }}
-        run: pnpm test:package
-      - if: ${{ runner.os == 'Linux' && hashFiles('examples/typescript/agent/package.json') != '' && hashFiles('vite.config.ts') == '' }}
-        run: |
-          pnpm --filter @hebbian/agent test
-          pnpm --filter @hebbian/agent start --help
-      - if: ${{ runner.os != 'Linux' || hashFiles('pnpm-workspace.yaml') == '' }}
-        run: uv run rua-dev contracts --check --targets python rust

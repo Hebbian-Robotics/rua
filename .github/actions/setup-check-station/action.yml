@@ -1,0 +1,49 @@
+name: Set up the station for checks
+description: Prepare native tools, dependencies, and pinned robot assets
+inputs:
+  cache-platform:
+    description: Runner image used as the Rust cache key
+    required: true
+  save-cache:
+    description: Whether this job is responsible for updating the Rust cache
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Install Linux build tools
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+        echo 'deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/noble/ llvm-toolchain-noble-21 main' | sudo tee /etc/apt/sources.list.d/llvm.list
+        sudo apt-get update
+        sudo apt-get install -y pkg-config mold libudev-dev libglib2.0-dev clang-21 libclang-21-dev ffmpeg
+        {
+          echo 'CC=clang-21'
+          echo 'CXX=clang++-21'
+        } >> "$GITHUB_ENV"
+    - name: Install macOS build tools
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew install ffmpeg pkg-config
+        {
+          echo 'CC=clang'
+          echo 'CXX=clang++'
+          echo 'MACOSX_DEPLOYMENT_TARGET=14.0'
+          echo 'TMPDIR=/tmp'
+        } >> "$GITHUB_ENV"
+    - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        version: "0.13.6"
+        python-version: "3.14"
+        enable-cache: true
+    - name: Restore Rust build cache
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        shared-key: checks-${{ inputs.cache-platform }}
+        env-vars: CC CXX MACOSX_DEPLOYMENT_TARGET
+        save-if: ${{ inputs.save-cache == 'true' }}
+    - name: Prepare pinned robot assets
+      shell: bash
+      run: uv run rua-dev setup
