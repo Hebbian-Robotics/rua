@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRecordingClient } from "hebbian-rua";
+import { CircleIcon } from "lucide-react";
 import { useRef } from "react";
 import { z } from "zod";
 import { Alert } from "@/components/ui/alert.js";
+import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
 import { stationJson } from "../../api.js";
@@ -146,4 +148,51 @@ export function RecordingControls({
       )}
     </section>
   );
+}
+
+export function RecordingStatus({
+  recording,
+  roomMetadata,
+}: {
+  recording: ReturnType<typeof useControlRecording>;
+  roomMetadata: string | undefined;
+}) {
+  const message = recording.stopping
+    ? "Stopping recording…"
+    : recording.name || roomIsRecording(roomMetadata)
+      ? "Recording"
+      : "";
+  return (
+    <div className="empty:hidden" role="status">
+      {message && (
+        <Badge
+          variant="outline"
+          title={message}
+          className="group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:px-0"
+        >
+          <CircleIcon
+            aria-hidden="true"
+            className="fill-destructive text-destructive"
+          />
+          <span className="group-data-[collapsible=icon]:sr-only">
+            {message}
+          </span>
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function roomIsRecording(roomMetadata: string | undefined): boolean {
+  try {
+    const metadata: unknown = JSON.parse(roomMetadata ?? "");
+    return (
+      typeof metadata === "object" &&
+      metadata !== null &&
+      "recording" in metadata &&
+      metadata.recording === true
+    );
+  } catch {
+    return false;
+  }
 }

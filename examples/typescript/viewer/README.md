@@ -26,7 +26,9 @@ From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the
 station first and add `--manual-control` to exercise manual motion in simulation.
 Use `pnpm check` and `pnpm test:viewer` to check changes.
 
-- [`src/app/`](src/app/) contains the page entry points and workspace.
+- [`src/app/`](src/app/) contains the page entry points and workspace. The full
+  viewer entry point adds recording controls and auto-record callbacks to the
+  live workspace. Playback has its own entry point.
 - [`src/features/`](src/features/) contains the controls, cameras, scene,
   recordings, and settings.
 - [`server/src/`](server/src/) hosts the [reference agent](../agent/README.md).

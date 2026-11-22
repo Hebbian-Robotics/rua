@@ -106,7 +106,7 @@ export function ArmControl({
   runActive: boolean;
   manualSelected: boolean;
   manualAvailable: boolean;
-  onManualControlStarted: () => Promise<void>;
+  onManualControlStarted?: () => Promise<void>;
   onStopFollowing: () => void;
   onPowerTransition: (changing: boolean) => void;
 }) {
@@ -241,7 +241,8 @@ export function ArmControl({
       );
       if (completion?.outcome !== "completed")
         throw new Error(completion?.detail ?? `Arm ${kind} did not complete.`);
-      if (kind === "enable" && manualSelected) await onManualControlStarted();
+      if (kind === "enable" && manualSelected && onManualControlStarted)
+        await onManualControlStarted();
     } catch (error: unknown) {
       if (acquiredLease) await manualLease.returnLease();
       setMessage(
@@ -258,7 +259,7 @@ export function ArmControl({
     setMessage("");
     try {
       await acquireManualLease();
-      await onManualControlStarted();
+      if (onManualControlStarted) await onManualControlStarted();
     } catch (error: unknown) {
       setMessage(`Could not reconnect manual control: ${errorMessage(error)}`);
     } finally {
