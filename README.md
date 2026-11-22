@@ -23,16 +23,19 @@ Prompt an LLM and let it observe and act in the real world.</p>
 
 ## Get started
 
-[Set up your SO-101](docs/getting-started.md) to calibrate the arm, start RUA,
-verify manual control and run your first agent from the browser.
+Start with the [browser viewer example](docs/getting-started.md). Set up your
+arm, see its live state and camera feeds, and run your first agent.
 
 ## Build an agent
 
+Build your own agent with the [Python](hebbian_rua/client/README.md),
+[Rust](sdk/README.md), or [TypeScript](typescript-client/README.md) SDK.
 RUA supplies robot tools, camera observations and execution. You bring the model
 and the loop.
 
-Here's an example agent loop. The [complete example](examples/python/agent_quickstart.py)
-includes the connection, lease and arm setup, plus loops for Claude and Gemini:
+Here's an agent loop using the Python SDK. The
+[complete Python example](examples/python/agent_quickstart.py) includes the
+connection, lease and arm setup, plus loops for Claude and Gemini.
 
 ```python
 from hebbian_rua.client.llm.openai import OpenAIRobotTools
