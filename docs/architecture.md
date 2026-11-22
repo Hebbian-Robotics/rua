@@ -1,9 +1,9 @@
 # Architecture
 
-Your application runs the agent loop. It prompts an LLM with robot state and
-camera images, passes its tool calls to RUA, and feeds the outcomes back into
-the model's next turn. RUA provides the SDKs, compiler, runtime and motor
-control that carry out those actions on the robot.
+RUA helps you build robot-use agents. An LLM observes robot state and camera
+images, chooses actions through robot tools, and uses the outcomes to decide
+what to do next. Your application owns the model loop. RUA provides the SDKs,
+compiler, runtime and motor control that execute its actions on the robot.
 
 ## Robot Use Compiler and Runtime
 

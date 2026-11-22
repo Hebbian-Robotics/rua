@@ -1,7 +1,8 @@
 # TypeScript reference agent
 
-Give an LLM a task and let it observe and act through the station using the
-[TypeScript SDK](../../../typescript-client/README.md).
+Run an example robot-use agent built with the
+[TypeScript SDK](../../../typescript-client/README.md). Give it a task and
+the LLM uses robot observations and tools to decide what to do.
 The example supports Anthropic, OpenAI, and Gemini.
 
 ## Run the agent
