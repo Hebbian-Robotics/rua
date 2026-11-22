@@ -150,9 +150,14 @@ test("observation views select presentation while retaining complete station dat
   if (!arm) throw new Error("Missing fixture arm");
   arm.measured_joints = [0.123456789];
   arm.measured_joint_velocities = [0.5];
-  const stateSpy = vi
-    .spyOn(connection, "waitForState")
-    .mockResolvedValue(state);
+  const stateSpy = vi.spyOn(connection, "captureObservation").mockResolvedValue(
+    apiSchemas.shape.ObservationAnswer.parse({
+      status: "observation_captured",
+      state,
+      cameras: {},
+      missing_optional_cameras: [],
+    }),
+  );
   const robot = createRobotTools({
     connection,
     lease: fakeLease(),

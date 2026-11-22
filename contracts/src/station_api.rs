@@ -35,6 +35,9 @@ pub enum StationCommand {
     /// Acknowledge a fault; the arm is already disabled.
     #[schemars(title = "ClearFaultCommand")]
     ClearFault,
+    /// Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+    #[schemars(title = "RehomeCommand")]
+    Rehome,
     /// Move to joint angles, one per joint in the state's order.
     #[schemars(title = "MoveToJointsCommand")]
     MoveToJoints {
@@ -58,19 +61,15 @@ pub enum StationCommand {
         #[serde(default)]
         max_joint_speed: Option<f64>,
     },
-    /// Stream trajectory destinations. The first goal, without
-    /// `stream_command_id`, starts a stream when the arm is holding; later goals
-    /// carry the command id it returned. Each cycle the arm moves toward the
-    /// newest goal at up to the first goal's speed. The stream ends stopped when
+    /// Start streaming joint destinations while the arm is holding. Send
+    /// later goals to the operation's goal endpoint. The stream ends when
     /// goals stop arriving, on stop, or on a trip.
     #[schemars(title = "StationStreamJointsCommand")]
     StreamJoints {
         joints: Vec<f64>,
         #[serde(default)]
-        stream_command_id: Option<String>,
-        #[serde(default)]
         max_joint_speed: Option<f64>,
-        /// The gripper's newest target, 0 closed to 1 open, if the stream drives it.
+        /// The initial gripper target, 0 closed to 1 open, if the stream drives it.
         #[serde(default)]
         #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
@@ -150,13 +149,13 @@ pub struct StationEventCursor {
     pub sequence: u64,
 }
 
-/// Submit one arm command with a client-generated request identifier.
+/// Submit one arm command with a client-generated operation identifier.
 /// The station uses the identifier to recognize retries of the same submission.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CommandSubmissionRequest {
-    /// A caller-generated UUID v4 identifying this submission.
-    pub request_id: String,
+    /// A caller-generated UUID v4 identifying this operation.
+    pub operation_id: String,
     /// The server instance the caller observed when creating this request.
     pub station_instance_id: String,
     pub arm: String,
@@ -174,8 +173,8 @@ pub struct CommandSubmissionRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GroupCommandSubmissionRequest {
-    /// A caller-generated UUID v4 identifying this submission.
-    pub request_id: String,
+    /// A caller-generated UUID v4 identifying this operation.
+    pub operation_id: String,
     pub station_instance_id: String,
     pub command: MoveArmsCommand,
     #[serde(default)]
@@ -186,14 +185,28 @@ pub struct GroupCommandSubmissionRequest {
     pub trace_context: Option<crate::TraceContext>,
 }
 
-/// Cancel a submission and stop its affected arms while the lease is current.
+/// Cancel the operation identified by the route while its lease is current.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CommandCancellationRequest {
-    pub request_id: String,
     pub station_instance_id: String,
     pub lease_token: String,
-    pub arms: Vec<String>,
+}
+
+/// Update a live joint stream at its original speed.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StreamGoalUpdateRequest {
+    pub station_instance_id: String,
+    pub lease_token: String,
+    /// Strictly increasing within this operation. Older goals cannot replace newer ones.
+    pub sequence: u32,
+    pub joints: Vec<f64>,
+    #[serde(default)]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub gripper_opening: Option<f64>,
+    #[serde(default)]
+    pub expected_revision: Option<u64>,
 }
 
 /// An ordered set of steps to execute under the caller's lease.
@@ -315,6 +328,71 @@ pub enum CommandAnswer {
     Refused {
         reason: RejectionReason,
         detail: String,
+    },
+}
+
+/// Station-owned progress of one operation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum OperationStatus {
+    Pending,
+    Active {
+        records: Vec<ArmRecord>,
+    },
+    Cancelling {
+        records: Vec<ArmRecord>,
+    },
+    Finished {
+        records: Vec<ArmRecord>,
+    },
+    Refused {
+        reason: RejectionReason,
+        detail: String,
+    },
+    CancelledBeforeAdmission,
+    OutcomeUnknown {
+        detail: String,
+    },
+}
+
+/// Select robot state and camera snapshots for one observation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationRequest {
+    /// With no arm selection, include every arm.
+    #[serde(default)]
+    pub arms: Vec<String>,
+    #[serde(default)]
+    pub required_cameras: Vec<String>,
+    #[serde(default)]
+    pub optional_cameras: Vec<String>,
+}
+
+/// One captured JPEG with its source timestamp and retrieval interval.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ObservationFrame {
+    pub jpeg_base64: String,
+    /// Decimal nanoseconds, encoded as text to preserve precision across SDKs.
+    pub captured_at_unix_ns: Option<String>,
+    pub retrieved_between_unix_seconds: [f64; 2],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ObservationAnswer {
+    ObservationCaptured {
+        state: Box<crate::StationState>,
+        cameras: BTreeMap<String, ObservationFrame>,
+        missing_optional_cameras: Vec<String>,
+    },
+    ObservationArmDisconnected {
+        arm: String,
+    },
+    ObservationRevisionChanged {
+        arm: String,
+    },
+    ObservationRequiredCameraUnavailable {
+        camera: String,
     },
 }
 

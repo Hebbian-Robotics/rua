@@ -48,8 +48,6 @@ pub struct ReconnectRequest {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum MediaState {
     Running,
-    /// Not asked for: `publish` without `LiveKit` credentials or USB cameras.
-    NotConfigured,
     /// It exited and will be started again.
     Restarting {
         last_exit: String,
@@ -60,19 +58,19 @@ pub enum MediaState {
     },
 }
 
-/// Why a camera is not producing frames: the latest error a media program printed for it.
+/// Why a camera is not producing frames: the latest error from the media service.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct CameraProblem {
-    /// The program's message, such as `camera backend: Could not open device …`.
+    /// The media service's message, such as `camera backend: Could not open device …`.
     pub detail: String,
     pub last_seen_unix_seconds: f64,
 }
 
-/// `GET /viewer/api/media-status`: each program's state and each camera's latest problem.
+/// `GET /viewer/api/media-status`: the media service's state and each camera's latest problem.
 /// A problem stays until a newer one replaces it, so read it only for a camera that is
 /// unavailable.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct MediaStatusReport {
-    pub programs: BTreeMap<String, MediaState>,
+    pub service: MediaState,
     pub cameras: BTreeMap<String, CameraProblem>,
 }

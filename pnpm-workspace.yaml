@@ -6,5 +6,6 @@ packages:
 minimumReleaseAge: 4320
 allowBuilds:
   esbuild: true
+  workerd: true
   "@google/genai": false
   protobufjs: false

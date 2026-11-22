@@ -2,23 +2,18 @@
 // missing/crashed media child makes cameras unavailable while control continues.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
+use std::io::Write;
 use std::net::SocketAddr;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use hebbian_contracts::Backoff;
 use hebbian_contracts::MediaState;
+use hebbian_robot_use_server::managed_child::{ChildExit, ManagedChild};
 use hebbian_robot_use_server::media_status::MediaStatus;
-#[cfg(unix)]
-use nix::sys::signal::{Signal, killpg};
-#[cfg(unix)]
-use nix::unistd::Pid;
+use nix::sys::signal::Signal;
 use station_access::CameraConfiguration;
+use tokio::{process::Command, runtime::Handle, sync::oneshot, task::JoinHandle};
 const RESTART_DELAY_CAP: Duration = Duration::from_secs(3);
 const STABLE_MEDIA_RUN: Duration = Duration::from_secs(3);
 
@@ -65,9 +60,11 @@ pub(crate) struct MediaPlan {
 }
 
 impl MediaPlan {
-    fn serve_arguments(&self, livekit: bool) -> Vec<String> {
+    fn serve_arguments(&self, livekit: bool, station_url: &str) -> Vec<String> {
         let mut arguments = vec![
             "serve".to_owned(),
+            "--supervisor-pid".to_owned(),
+            std::process::id().to_string(),
             "--address".to_owned(),
             self.address.to_string(),
         ];
@@ -75,28 +72,13 @@ impl MediaPlan {
             arguments.extend(["--camera-socket".to_owned(), socket.display().to_string()]);
         }
         if livekit {
-            // WHY: `publish` owns the devices; `serve` reads them back from the room.
-            arguments.extend(["--room".to_owned(), self.room.clone()]);
-            // WHY: A camera that fails to open never publishes; name it so it is listed as unavailable.
-            for name in self.cameras.keys() {
-                arguments.extend(["--expected-camera".to_owned(), name.clone()]);
-            }
-        } else {
-            for (name, device) in &self.cameras {
-                arguments.extend(["--camera".to_owned(), format!("{name}={device}")]);
-            }
+            arguments.extend([
+                "--room".to_owned(),
+                self.room.clone(),
+                "--station-url".to_owned(),
+                station_url.to_owned(),
+            ]);
         }
-        arguments
-    }
-
-    fn publish_arguments(&self, station_url: &str) -> Vec<String> {
-        let mut arguments = vec![
-            "publish".to_owned(),
-            "--room".to_owned(),
-            self.room.clone(),
-            "--station-url".to_owned(),
-            station_url.to_owned(),
-        ];
         for (name, device) in &self.cameras {
             arguments.extend(["--camera".to_owned(), format!("{name}={device}")]);
         }
@@ -104,18 +86,18 @@ impl MediaPlan {
     }
 }
 
-enum Event {
-    Stop,
-    Exited(std::io::Result<ExitStatus>),
-}
-
 pub(crate) struct MediaSupervisor {
-    stops: Vec<Sender<Event>>,
-    threads: Vec<JoinHandle<()>>,
+    stop: oneshot::Sender<()>,
+    task: JoinHandle<()>,
 }
 
 impl MediaSupervisor {
-    pub(crate) fn start(plan: &MediaPlan, station_url: &str, status: &MediaStatus) -> Self {
+    pub(crate) fn start(
+        runtime: &Handle,
+        plan: &MediaPlan,
+        station_url: &str,
+        status: &MediaStatus,
+    ) -> Self {
         let livekit = match CameraConfiguration::from_environment() {
             Ok(CameraConfiguration::Enabled(_)) => true,
             Ok(CameraConfiguration::Off { reason }) => {
@@ -127,61 +109,52 @@ impl MediaSupervisor {
                 false
             }
         };
-        let mut programs = vec![("serve", plan.serve_arguments(livekit))];
-        if livekit && !plan.cameras.is_empty() {
-            programs.push(("publish", plan.publish_arguments(station_url)));
-        } else {
-            status.set("publish", MediaState::NotConfigured);
-        }
-        let (stops, threads) = programs
-            .into_iter()
-            .map(|(label, arguments)| {
-                let executable = plan.executable.clone();
-                let status = status.clone();
-                let (sender, events) = std::sync::mpsc::channel();
-                let stop = sender.clone();
-                let thread = std::thread::spawn(move || {
-                    supervise(label, &executable, &arguments, &events, &sender, &status);
-                });
-                (stop, thread)
-            })
-            .unzip();
         tracing::info!(address = %plan.address, "Media HTTP endpoint");
-        Self { stops, threads }
+        Self::spawn(
+            runtime,
+            plan.executable.clone(),
+            plan.serve_arguments(livekit, station_url),
+            status.clone(),
+        )
+    }
+
+    fn spawn(
+        runtime: &Handle,
+        executable: PathBuf,
+        arguments: Vec<String>,
+        status: MediaStatus,
+    ) -> Self {
+        let (stop, shutdown) = oneshot::channel();
+        let task = runtime.spawn(async move {
+            supervise(&executable, &arguments, shutdown, &status).await;
+        });
+        Self { stop, task }
+    }
+
+    pub(crate) async fn shutdown(self) {
+        let _ = self.stop.send(());
+        if let Err(error) = self.task.await {
+            tracing::error!(%error, "Media supervisor task failed");
+        }
     }
 }
 
-impl Drop for MediaSupervisor {
-    fn drop(&mut self) {
-        for stop in &self.stops {
-            let _ = stop.send(Event::Stop);
-        }
-        for thread in self.threads.drain(..) {
-            let _ = thread.join();
-        }
-    }
-}
-
-fn supervise(
-    label: &str,
+async fn supervise(
     executable: &Path,
     arguments: &[String],
-    events: &Receiver<Event>,
-    exits: &Sender<Event>,
+    mut shutdown: oneshot::Receiver<()>,
     status: &MediaStatus,
 ) {
     let report = |state: MediaState| {
-        status.set(label, state);
+        status.set(state);
     };
     let mut reported_missing = false;
     let mut backoff = Backoff::new(RESTART_DELAY_CAP);
-    loop {
-        match Command::new(executable)
-            .args(arguments)
-            .process_group(0)
-            .stderr(Stdio::piped())
-            .spawn()
-        {
+    while matches!(
+        shutdown.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ) {
+        match ManagedChild::spawn(Command::new(executable).args(arguments)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if !reported_missing {
                     tracing::warn!(
@@ -196,48 +169,57 @@ fn supervise(
                 });
             }
             Err(error) => {
-                tracing::warn!(%label, %error, "Cameras unavailable; cannot start media");
+                tracing::warn!(%error, "Cameras unavailable; cannot start media");
                 report(MediaState::Unavailable {
                     reason: error.to_string(),
                 });
             }
-            Ok(mut child) => {
+            Ok(child) => {
                 let running_since = Instant::now();
-                if let Some(stderr) = child.stderr.take() {
-                    let status = status.clone();
-                    std::thread::spawn(move || relay_output(stderr, &status));
-                }
                 report(MediaState::Running);
-                let Some(exit) = wait_or_stop(child, events, exits) else {
-                    break;
+                let exit = child
+                    .finish(
+                        async {
+                            let _ = (&mut shutdown).await;
+                        },
+                        &[(Signal::SIGTERM, STOP_GRACE)],
+                        |line| {
+                            let _ = writeln!(std::io::stderr().lock(), "{line}");
+                            if let Some((camera, detail)) = parse_camera_problem(line) {
+                                status.record_camera_problem(camera, detail);
+                            }
+                        },
+                    )
+                    .await;
+                let exit = match exit {
+                    Ok(ChildExit::Requested(_)) => break,
+                    Ok(ChildExit::Unexpected(exit)) => exit,
+                    Err(error) => {
+                        tracing::error!(%error, "Cannot finish the media process");
+                        report(MediaState::Unavailable {
+                            reason: format!("Media process cleanup failed: {error}"),
+                        });
+                        return;
+                    }
                 };
                 // WHY: Spawn alone does not establish that a media process can stay up.
                 if running_since.elapsed() >= STABLE_MEDIA_RUN {
                     backoff.reset();
                 }
-                tracing::warn!(%label, %exit, "Media process exited");
-                report(MediaState::Restarting {
-                    last_exit: exit.to_string(),
-                });
+                let last_exit = exit.to_string();
+                tracing::warn!(%last_exit, "Media process exited");
+                report(MediaState::Restarting { last_exit });
             }
         }
-        match events.recv_timeout(backoff.next_delay()) {
-            Err(RecvTimeoutError::Timeout) | Ok(Event::Exited(_)) => {}
-            Ok(Event::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+        tokio::select! {
+            biased;
+            _ = &mut shutdown => break,
+            () = tokio::time::sleep(backoff.next_delay()) => {}
         }
     }
     report(MediaState::Unavailable {
         reason: "Media supervisor stopped".to_owned(),
     });
-}
-
-fn relay_output(output: impl std::io::Read, status: &MediaStatus) {
-    for line in BufReader::new(output).lines().map_while(Result::ok) {
-        eprintln!("{line}");
-        if let Some((camera, detail)) = parse_camera_problem(&line) {
-            status.record_camera_problem(camera, detail);
-        }
-    }
 }
 
 // CONSTRAINT: Capture failures use `Camera <name>: <message>`; reopening lines only announce
@@ -253,58 +235,14 @@ fn parse_camera_problem(line: &str) -> Option<(&str, &str)> {
         .then_some((camera, detail))
 }
 
-fn wait_or_stop(
-    mut child: Child,
-    events: &Receiver<Event>,
-    exits: &Sender<Event>,
-) -> Option<ExitStatus> {
-    let process_id = child.id();
-    let exits = exits.clone();
-    std::thread::spawn(move || {
-        let _ = exits.send(Event::Exited(child.wait()));
-    });
-    match events.recv() {
-        Ok(Event::Exited(Ok(status))) => {
-            signal_group(process_id, Signal::SIGKILL);
-            Some(status)
-        }
-        Ok(Event::Exited(Err(error))) => {
-            tracing::warn!(%error, "Cannot wait for media");
-            signal_group(process_id, Signal::SIGKILL);
-            None
-        }
-        Ok(Event::Stop) | Err(_) => {
-            terminate(process_id, events);
-            None
-        }
-    }
-}
-
-fn signal_group(process_id: u32, signal: Signal) {
-    if let Ok(pid) = i32::try_from(process_id) {
-        let _ = killpg(Pid::from_raw(pid), signal);
-    }
-}
-
-// WHY: The leader can exit before its capture workers. Reap the leader and
-// check for remaining group members even when it exits within the grace period.
-fn terminate(process_id: u32, events: &Receiver<Event>) {
-    signal_group(process_id, Signal::SIGTERM);
-    let exit = events.recv_timeout(STOP_GRACE);
-    signal_group(process_id, Signal::SIGKILL);
-    if matches!(exit, Err(RecvTimeoutError::Timeout) | Ok(Event::Stop)) {
-        while matches!(events.recv(), Ok(Event::Stop)) {}
-    }
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
 
-    #[test]
-    fn a_program_that_exits_is_restarted_and_reported() {
+    #[tokio::test]
+    async fn a_program_that_exits_is_restarted_and_reported() {
         let directory = tempfile::tempdir().unwrap();
         let launches = directory.path().join("launches");
         let program = directory.path().join("hebbian-robot-use-media");
@@ -318,19 +256,24 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         let status = MediaStatus::default();
-        let (stop, events) = std::sync::mpsc::channel();
-        let thread = {
-            let (status, exits) = (status.clone(), stop.clone());
-            std::thread::spawn(move || {
-                supervise("serve", &program, &[], &events, &exits, &status);
-            })
-        };
-        status.wait_until("serve", |state| {
-            matches!(state, MediaState::Restarting { .. })
-        });
-        status.wait_until("serve", |state| *state == MediaState::Running);
-        stop.send(Event::Stop).unwrap();
-        thread.join().unwrap();
+        let supervisor =
+            MediaSupervisor::spawn(&Handle::current(), program, Vec::new(), status.clone());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while std::fs::read_to_string(&launches)
+            .unwrap_or_default()
+            .lines()
+            .count()
+            < 2
+        {
+            assert!(Instant::now() < deadline, "media did not restart");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(status.report().service, MediaState::Running);
+        supervisor.shutdown().await;
+        assert!(matches!(
+            status.report().service,
+            MediaState::Unavailable { .. }
+        ));
     }
 
     #[test]
@@ -356,65 +299,55 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_program_that_cannot_open_a_camera_has_the_problem_reported() {
+    #[tokio::test]
+    async fn a_camera_problem_is_reported_after_non_utf8_output() {
         let directory = tempfile::tempdir().unwrap();
         let program = directory.path().join("hebbian-robot-use-media");
         std::fs::write(
             &program,
-            "#!/bin/sh\nwhile true; do\n\
+            "#!/bin/sh\nprintf '\\377\\n' >&2\nwhile true; do\n\
              echo 'Camera wrist: camera backend: Could not open device 0x1: Device is null' >&2\n\
              echo 'Camera wrist: reopening 0x1 in 3s' >&2\nsleep 0.05\ndone\n",
         )
         .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         let status = MediaStatus::default();
-        let (stop, events) = std::sync::mpsc::channel();
-        let thread = {
-            let (status, exits) = (status.clone(), stop.clone());
-            std::thread::spawn(move || {
-                supervise("publish", &program, &[], &events, &exits, &status);
-            })
-        };
+        let supervisor =
+            MediaSupervisor::spawn(&Handle::current(), program, Vec::new(), status.clone());
         let deadline = Instant::now() + Duration::from_secs(5);
         let problem = loop {
             if let Some(problem) = status.report().cameras.get("wrist") {
                 break problem.clone();
             }
             assert!(Instant::now() < deadline, "no problem was reported");
-            std::thread::sleep(Duration::from_millis(20));
+            tokio::time::sleep(Duration::from_millis(20)).await;
         };
         assert_eq!(
             problem.detail,
             "camera backend: Could not open device 0x1: Device is null"
         );
         assert!(problem.last_seen_unix_seconds > 0.0);
-        stop.send(Event::Stop).unwrap();
-        thread.join().unwrap();
+        supervisor.shutdown().await;
     }
 
-    #[test]
-    fn a_missing_program_is_unavailable() {
+    #[tokio::test]
+    async fn a_missing_program_is_unavailable() {
         let status = MediaStatus::default();
-        let (stop, events) = std::sync::mpsc::channel();
-        let thread = {
-            let (status, exits) = (status.clone(), stop.clone());
-            std::thread::spawn(move || {
-                supervise(
-                    "serve",
-                    Path::new("/no/such/hebbian-robot-use-media"),
-                    &[],
-                    &events,
-                    &exits,
-                    &status,
-                );
-            })
-        };
-        status.wait_until(
-            "serve",
-            |state| matches!(state, MediaState::Unavailable { reason } if reason.contains("not found")),
+        let supervisor = MediaSupervisor::spawn(
+            &Handle::current(),
+            PathBuf::from("/no/such/hebbian-robot-use-media"),
+            Vec::new(),
+            status.clone(),
         );
-        stop.send(Event::Stop).unwrap();
-        thread.join().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !matches!(status.report().service, MediaState::Unavailable { reason } if reason.contains("not found"))
+        {
+            assert!(
+                Instant::now() < deadline,
+                "missing media executable was not reported"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        supervisor.shutdown().await;
     }
 }

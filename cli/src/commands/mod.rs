@@ -102,7 +102,7 @@ pub enum Command {
     ///
     /// Example: hebbian-robot-use clear-fault arm
     ClearFault { arm: String },
-    /// Return to the pose the arm was enabled at, then close the gripper.
+    /// Return to the pose the arm was enabled at.
     ///
     /// Example: hebbian-robot-use rehome arm
     Rehome { arm: String },

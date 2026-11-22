@@ -41,7 +41,10 @@ export type {
   StationConnection,
   StationConnectionOptions,
 } from "./station-connection.js";
-export { createStationConnection } from "./station-connection.js";
+export {
+  createStationConnection,
+  newRequestId as newOperationId,
+} from "./station-connection.js";
 export {
   ArmRecoveryEndedError,
   CameraUnavailableError,

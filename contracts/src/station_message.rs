@@ -6,9 +6,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ActionSequenceRecord, ActionSequenceRequest, CommandAnswer, CommandRecord, Frame, LeaseAnswer,
-    LeaseHolder, LiveRun, MoveArmsCommand, OnInterruption, PreviewAnswer, PreviewPose, RunEvent,
-    StationCommand, StationState, TraceContext, TraceSpan, UnixNanos,
+    ActionSequenceRecord, ActionSequenceRequest, CommandAnswer, Frame, LeaseAnswer, LeaseHolder,
+    LiveRun, MoveArmsCommand, OnInterruption, PreviewAnswer, PreviewPose, RunEvent, StationCommand,
+    StationState, TraceContext, TraceSpan, UnixNanos,
 };
 
 /// Shared client request models used by SDK command and telemetry helpers.
@@ -208,11 +208,4 @@ pub enum ServerMessage {
         request_id: Option<String>,
         detail: String,
     },
-}
-
-/// `GET /commands/{id}`: a command's record and the arm it ran on.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct CommandLookup {
-    pub arm: String,
-    pub record: CommandRecord,
 }

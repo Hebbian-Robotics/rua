@@ -7,22 +7,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType, Self, assert_never
 
+from hebbian_rua.client.contract.arm_commands import StationCommand as StationCommand
 from hebbian_rua.client.contract.station_api import (
-    ApproveRecoveryCommand,
     CameraListing,
-    ClearFaultCommand,
     CommandOutcome,
     CommandRecord,
     CommandRefused,
-    DisableCommand,
-    EnableCommand,
-    FollowPathCommand,
     LeaseStatus,
-    MoveToJointsCommand,
-    MoveToPoseCommand,
-    StationSetGripperCommand,
-    StationStreamJointsCommand,
-    StopCommand,
     TraceContext,
 )
 
@@ -35,20 +26,6 @@ RUNS_TIMEOUT_SECONDS = 30
 
 WorldPositionMeters = NewType("WorldPositionMeters", list[float])
 JointSpeedRadiansPerSecond = NewType("JointSpeedRadiansPerSecond", float)
-
-
-type StationCommand = (
-    EnableCommand
-    | ApproveRecoveryCommand
-    | DisableCommand
-    | StopCommand
-    | ClearFaultCommand
-    | MoveToJointsCommand
-    | MoveToPoseCommand
-    | FollowPathCommand
-    | StationStreamJointsCommand
-    | StationSetGripperCommand
-)
 
 
 # The W3C trace context commands sent from this context carry, so each command's
@@ -181,7 +158,7 @@ class CameraUnavailable(Exception):
 
     `listed` is what the media service reports. A camera missing from it was never
     published or the name is wrong; one listed as unavailable stopped streaming.
-    `last_error` is the latest failure the station saw in the media programs' output for
+    `last_error` is the latest failure the station saw in the media service's output for
     it, when the station could be asked.
     """
 

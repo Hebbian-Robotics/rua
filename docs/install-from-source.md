@@ -43,8 +43,8 @@ checks and commands for the components included in your checkout.
 
 ## Optional viewer
 
-If your checkout includes the TypeScript viewer, use the Node.js version in
-`.nvmrc` and the pnpm version pinned in `package.json`, then:
+To build the TypeScript viewer, use the Node.js version in `.nvmrc` and the
+pnpm version pinned in `package.json`. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile

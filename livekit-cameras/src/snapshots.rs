@@ -13,7 +13,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use cameras::config::configure_camera;
 use hebbian_contracts::unix_nanoseconds;
 use livekit::webrtc::video_frame::VideoRotation;
 use livekit_camera_frames::{CameraFrame, CameraFrames, LatestFrame, TrackIdentity, camera_frame};
@@ -44,24 +43,19 @@ struct SocketReply {
 }
 
 impl Snapshots {
-    /// `expected` names cameras another program publishes into the room: they are listed
-    /// as unavailable until frames arrive, so a camera that never opens is still visible.
+    /// `expected` names known room cameras that should be listed even before frames arrive.
     pub fn start(
-        mappings: Vec<String>,
+        cameras: Vec<CameraConfiguration>,
         expected: Vec<String>,
         socket: Option<PathBuf>,
         room: Option<String>,
-    ) -> Result<Self, PublisherError> {
-        let mut cameras = BTreeMap::new();
-        for mapping in mappings {
-            configure_camera(&mut cameras, &mapping)?;
-        }
+    ) -> Self {
         let snapshots = Self {
             frames: CameraFrames::default(),
             local_names: Arc::new(
                 cameras
-                    .keys()
-                    .cloned()
+                    .iter()
+                    .map(|camera| camera.name().to_owned())
                     .chain(expected)
                     .collect::<std::collections::BTreeSet<_>>()
                     .into_iter()
@@ -69,17 +63,12 @@ impl Snapshots {
             ),
             socket,
         };
-        if !cameras.is_empty()
-            && let Err(error) = cameras::initialize()
-        {
-            tracing::warn!(%error, "Camera initialization unavailable");
-        }
-        for (name, device) in cameras {
+        for camera in cameras {
+            let name = camera.name().to_owned();
             snapshots.frames.register(TrackIdentity {
                 participant: name.clone(),
                 track_sid: format!("local:{name}"),
             });
-            let camera = CameraConfiguration::new(name.clone(), device)?;
             let state = snapshots.clone();
             tokio::spawn(async move {
                 let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
@@ -106,7 +95,7 @@ impl Snapshots {
                 state.subscribe(&room).await;
             });
         }
-        Ok(snapshots)
+        snapshots
     }
     async fn forward_local_frames(&self, name: &str, worker: &mut CaptureWorker) -> bool {
         let mut published_frame = false;
@@ -282,7 +271,7 @@ mod tests {
     #[tokio::test]
     async fn an_expected_camera_that_never_publishes_is_listed_unavailable()
     -> Result<(), Box<dyn std::error::Error>> {
-        let snapshots = Snapshots::start(Vec::new(), vec!["wrist".into()], None, None)?;
+        let snapshots = Snapshots::start(Vec::new(), vec!["wrist".into()], None, None);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let router = snapshots.router();

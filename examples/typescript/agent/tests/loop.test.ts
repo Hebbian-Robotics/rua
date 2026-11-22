@@ -163,7 +163,7 @@ test("planning and previews return results without fresh images; observe refresh
   // Initial capture, then explicit observe; no captures for planning or preview.
   expect(station.eventsOfType("observation")).toHaveLength(2);
   expect(
-    station.requests.filter((request) => request.includes("/cameras/")),
+    station.requests.filter((request) => request.includes("/observations")),
   ).toHaveLength(2);
 });
 
@@ -372,6 +372,6 @@ test("a history-only observe returns its result without another live capture", a
   expect(review.observation).toBeUndefined();
   expect(station.eventsOfType("observation")).toHaveLength(1);
   expect(
-    station.requests.filter((request) => request.includes("/cameras/")),
+    station.requests.filter((request) => request.includes("/observations")),
   ).toHaveLength(1);
 });

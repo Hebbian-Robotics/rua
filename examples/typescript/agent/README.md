@@ -1,78 +1,28 @@
 # TypeScript reference agent
 
-Run a model-driven robot loop from the command line. The example uses the
-[TypeScript SDK](../../../typescript-client/README.md) and supports Anthropic,
-OpenAI and Gemini.
+Run a model-driven robot loop using the [TypeScript SDK](../../../typescript-client/README.md).
+The example supports Anthropic, OpenAI, and Gemini.
 
 ## Run the agent
 
-Use Node.js 24 and the pnpm version pinned in the root `package.json`. Follow
-the [MuJoCo quickstart](../../../docs/simulation.md) or the
-[hardware setup guide](../../../docs/getting-started.md) to start the station.
-Confirm the arm appears in [station state](http://127.0.0.1:8792/state).
-Enable it with the [station CLI](../../../cli/README.md) before starting
-the agent:
+Start a [simulated station](../../../docs/simulation.md) or
+[physical station](../../../docs/getting-started.md). Use the Node.js version
+in the repository's `.nvmrc` and the pnpm version in `package.json`.
+
+Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the environment
+or `.env`. From the repository root, enable the arm and try a state-only task.
 
 ```sh
 cargo run --locked -p hebbian-robot-use-cli -- enable arm
-```
-
-Set `OPENAI_API_KEY`, `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` in the environment
-or `.env`. From the checkout root, try a state-only task:
-
-```sh
 pnpm install --frozen-lockfile
 pnpm --filter @hebbian/agent start --max-turns 3 -- "Describe the robot state. Keep the arm still."
 ```
 
-The agent selects the station's sole arm. If the station serves several arms,
-pass `--arm NAME` or put the arm name before the task. The agent uses the first
-configured provider in the order OpenAI, Gemini, Anthropic. Pass `--provider`
-to choose one. To override the provider's default model, set `OPENAI_MODEL`,
-`GEMINI_MODEL` or `ANTHROPIC_MODEL`, or pass `--model` for a one-run override.
-The command loads the local SDK source directly.
+Run `pnpm --filter @hebbian/agent start --help` for arm, station, provider,
+model, camera, and recording options.
 
-Pass `--camera NAME` to attach images from a [configured camera](../../../docs/cameras.md)
-or the [MuJoCo snapshot service](../../../docs/simulation.md#camera-snapshots).
-Pass `--record` after [enabling recording](../../../docs/recording.md#enable-recording).
-Run `pnpm --filter @hebbian/agent start --help` for station, model and other
-options. Use `--max-turns` to limit the number of model calls.
+## Use the loop in your own code
 
-## Use the reference loop as a library
-
-`runAgent(config, { signal, onEvent })` runs the same loop as the CLI. It returns
-a completed, stopped, incomplete or failed outcome. The loop captures fresh
-state and images after physical actions. A current-state `observe` can supply
-that capture. History reads and plan or notes updates use the existing
-observation. See [`loop.ts`](src/loop.ts) for options and events, or the
-[SDK loop guide](../../../docs/write-your-own-loop.md) to build a different
-application.
-
-## Tool and output composition
-
-The agent works with its existing tool selection and default output formatter.
-The following customization is optional: use it when a task needs different tools
-or camera images. You can keep the existing agent loop.
-
-The reference loop uses `mapTools(filterSequenceActions(...))` to expose Cartesian
-movement and gripper actions. Each mapping sees the previous result; tool order
-and execution restrictions follow the selected capabilities. The SDK's default
-formatter uses the shared summarize-then-render pipeline.
-
-For a custom model view, compose transforms independently of capability selection:
-
-```ts
-import {
-  renderOutput,
-  selectOutputCameras,
-  summarizeOutput,
-} from "hebbian-rua";
-
-const taskView = robot.withOutputFormatter((output) =>
-  renderOutput(selectOutputCameras(summarizeOutput(output), ["wrist"])),
-);
-```
-
-Use `taskView` for observations and execution. Field selection preserves raw SI
-units until rendering; camera selection changes model images without changing
-capture or required-camera checks. See [model output](../../../docs/model-output.md).
+[`src/loop.ts`](src/loop.ts) exports `runAgent`. See
+[Write your own loop](../../../docs/write-your-own-loop.md) for SDK patterns or
+[Model output](../../../docs/model-output.md) to customize what the model sees.

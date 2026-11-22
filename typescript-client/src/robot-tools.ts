@@ -1,4 +1,5 @@
 import { match } from "ts-pattern";
+import { apiSchemas } from "./generated/api-schemas.js";
 import { robotToolContext } from "./generated/robot-tools.js";
 import {
   defaultFormatter,
@@ -40,6 +41,12 @@ import {
 class RequiredCameraUnavailable extends Error {
   constructor(public readonly camera: string) {
     super(`Required camera ${camera} is unavailable`);
+  }
+}
+
+class ObservationChanged extends Error {
+  constructor(arm: string) {
+    super(`Arm ${arm} changed during observation`);
   }
 }
 
@@ -273,74 +280,47 @@ function createRobotToolsCore(
     output: Extract<RobotOutput, { kind: "observation" }>;
     state: StationState;
   }> {
-    const state = await stationState();
-    const selected = armOf(state);
-    if (selected.mode === "disconnected" || selected.mode === "reconnected")
-      throw new Error(`Arm ${arm} is disconnected`);
-    requireNoInterlock(selected, allowCameraInterlock);
-    async function readCamera(
-      name: string,
-      timeoutMilliseconds: number,
-    ): Promise<Uint8Array> {
-      const deadline = AbortSignal.timeout(timeoutMilliseconds);
-      const response = await fetch(
-        new URL(`/cameras/${encodeURIComponent(name)}`, mediaUrl()),
-        {
-          signal:
-            signal === undefined
-              ? deadline
-              : AbortSignal.any([signal, deadline]),
-        },
-      );
-      if (!response.ok)
-        throw new Error(`Camera ${name}: HTTP ${response.status}`);
-      return new Uint8Array(await response.arrayBuffer());
-    }
-    const [required, optionalResults] = await Promise.all([
-      Promise.all(
-        cameras.map(async (name) => {
-          try {
-            return [name, await readCamera(name, 5000)] as const;
-          } catch {
-            signal?.throwIfAborted();
-            throw new RequiredCameraUnavailable(name);
-          }
-        }),
-      ),
-      Promise.all(
-        optionalCameras.map(async (name) => {
-          try {
-            return [name, await readCamera(name, 500)] as const;
-          } catch {
-            signal?.throwIfAborted();
-            return [name, null] as const;
-          }
-        }),
-      ),
-    ]);
-    const optional = optionalResults.flatMap(([name, jpeg]) =>
-      jpeg === null ? [] : [[name, jpeg] as const],
-    );
-    const missingOptional = optionalResults.flatMap(([name, jpeg]) =>
-      jpeg === null ? [name] : [],
-    );
-    const after = armOf(connection.getState() ?? state);
-    if (after.revision !== selected.revision)
-      throw new Error(
-        "An interlock was raised during observation; observe again",
-      );
-    requireNoInterlock(after, allowCameraInterlock);
-    return {
-      state,
-      output: {
-        kind: "observation",
-        data: state,
-        selectedArm: arm,
-        notes: [...(text.extraLines ?? []), ...(text.note ? [text.note] : [])],
-        cameras: Object.fromEntries([...required, ...optional]),
-        missingOptionalCameras: missingOptional,
+    const capture = await connection.captureObservation(
+      {
+        arms: [],
+        required_cameras: [...cameras],
+        optional_cameras: [...optionalCameras],
       },
-    };
+      signal,
+    );
+    switch (capture.status) {
+      case "observation_required_camera_unavailable":
+        throw new RequiredCameraUnavailable(capture.camera);
+      case "observation_arm_disconnected":
+        throw new Error(`Arm ${capture.arm} is disconnected`);
+      case "observation_revision_changed":
+        throw new ObservationChanged(capture.arm);
+      case "observation_captured": {
+        const state = apiSchemas.shape.StationState.parse(capture.state);
+        requireNoInterlock(armOf(state), allowCameraInterlock);
+        return {
+          state,
+          output: {
+            kind: "observation",
+            data: state,
+            selectedArm: arm,
+            notes: [
+              ...(text.extraLines ?? []),
+              ...(text.note ? [text.note] : []),
+            ],
+            cameras: Object.fromEntries(
+              Object.entries(capture.cameras).map(([name, frame]) => [
+                name,
+                Uint8Array.from(atob(frame.jpeg_base64), (character) =>
+                  character.charCodeAt(0),
+                ),
+              ]),
+            ),
+            missingOptionalCameras: capture.missing_optional_cameras,
+          },
+        };
+      }
+    }
   }
 
   async function observe(
@@ -410,7 +390,7 @@ function createRobotToolsCore(
         if (error instanceof RequiredCameraUnavailable)
           await lease.reportCamera(error.camera, false);
         else if (tracking.isLost()) throw new LeaseLostError();
-        else {
+        else if (!(error instanceof ObservationChanged)) {
           const latest = armOf(await stationState());
           if (latest.interlocks.length === 0 && latest.mode !== "faulted")
             throw error;

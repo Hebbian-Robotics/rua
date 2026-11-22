@@ -2,7 +2,12 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/inline-schema-refs.ts"]
+      "entry": [
+        "examples/typescript/viewer/src/app/{main,recordings-main}.tsx",
+        "examples/typescript/viewer/tests/*.test.ts",
+        "examples/typescript/viewer/server/tests/*.test.ts"
+      ],
+      "project": ["examples/typescript/viewer/**/*.{ts,tsx}"]
     },
     "typescript-client": {
       "entry": ["tests/*.test.ts", "tests/simulated-robot-tools.ts"],
@@ -13,6 +18,11 @@
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     }
   },
-  "ignoreBinaries": ["build"],
-  "ignoreDependencies": ["hebbian-rua", "json-schema-to-zod"]
+  "ignoreBinaries": ["uv"],
+  "ignoreDependencies": [
+    "json-schema-to-zod",
+    "shadcn",
+    "tailwindcss",
+    "tw-animate-css"
+  ]
 }

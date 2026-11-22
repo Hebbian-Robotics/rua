@@ -139,12 +139,13 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
   (`armPowerCommands(send)` and `armMotionCommands(send)`, where `send` is any function
   taking a `StationCommand`) and run to the outcome; pass `{ waitForOutcome: false }`
   to resolve once the station accepts the command. Pass `{ signal }` to request cancellation
-  of a leased motion submission on abort.
+  of that operation on abort. Pass `operationId` from `newOperationId()` to keep
+  a handle for `getOperation`, `lease.updateStreamGoal` or `lease.cancelOperation`.
 - The lease's `runCommand` and `runGroup` resolve once the command's record finished and the
   first state frame reflects it (no arm still has it active, and an arm reports it as
   its last command or a sampling arm was sampled at or after completion), so
   `state()` right after shows the arm at rest. The wait survives a reconnect for
-  30 s. An aborted `AbortSignal` requests cancellation of that submission in
+  30 s. An aborted `AbortSignal` requests cancellation of that operation in
   the background. Observe the arm to confirm its state before continuing.
 - `waitForState(predicate)` returns the first state frame that satisfies it, checking
   the latest first; `StationTimeoutError` after 30 s. `state()` waits up to 10 s for
@@ -167,8 +168,9 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
   record once; `recordRunEvent` and `recordRunSpans` report them.
 - `createStationHttpClient({ stationUrl, mediaUrl })` lists cameras, fetches
   snapshots, creates phone invites and lists or downloads traces (gzip bytes as served).
-  Camera requests use the station URL unless `mediaUrl` is set. `createRobotTools`
-  uses the URL from its station connection and accepts the same `mediaUrl` override.
+  Direct camera requests use the station URL unless `mediaUrl` is set.
+  `createRobotTools` uses the station’s observation route. Its `mediaUrl` option
+  sets where it retrieves images during a sequence.
 
 Errors: `StationConnectionError`, `StationTimeoutError`, `StationRefusedError` (a
 message the station could not act on), `LeaseHeldElsewhereError` and

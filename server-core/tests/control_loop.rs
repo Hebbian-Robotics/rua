@@ -526,7 +526,7 @@ fn sim_setups(
                     reply: Duration::from_secs_f64(reply_timeout_seconds),
                     real_time: true,
                 },
-                &AtomicBool::new(false),
+                || false,
             )
             .unwrap();
             let link = Link::new(&config, Arc::clone(&control)).unwrap();

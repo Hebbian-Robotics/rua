@@ -37,6 +37,7 @@ Use `station.holding_lease(...)` to acquire a lease and send motion through
 | `lease.arm(name).move_to_pose(position, orientation=None, *, max_joint_speed=None)` | Tool position in metres, world frame. A `GraspOrientation(approach, jaw_yaw_degrees)` is an approach (`"down"`, `"forward"` or a vector) plus jaw yaw in degrees. Without one, the tool keeps its current orientation. |
 | `station.arm(name).preview_pose(position, orientation=None)` | Moves nothing. Returns a `PoseProjection` whose outcome is `projected` with a pose, `within_tolerance`, pose errors and any constraint reason, or `unavailable` with a reason and no pose. It also includes the available jaw yaws. A request refusal returns `PreviewRefused`. Without an orientation the solver chooses one. |
 | `lease.arm(name).move_to_joints(joints, *, max_joint_speed=None)` | Joint targets in radians. |
+| `lease.arm(name).rehome()` | Return to the pose saved at enable time. Use `set_gripper` separately to change the jaw target. |
 | `lease.arm(name).set_gripper(opening)` | 0 closed, 1 open. Stopping short can indicate contact or a blockage; it does not prove a grasp. |
 | `station.arm(name).stop()` | Stop arm and gripper motion and hold with torque enabled. Needs no lease; does not end an agent run. |
 
@@ -109,8 +110,12 @@ action sequence reports `completed`; a stopped action sequence explains why it s
 
 ## With a model: four pieces
 
-`RobotTools(station, lease, arm_name, camera_names)` supplies
-everything the model needs; the loop and the SDK call are yours.
+`RobotTools(station, lease, arm_name, camera_names)` provides a default set of
+model-facing tools. Use them as provided, filter or combine them with your own
+tools, or build your own toolset using the direct SDK calls above. The station
+applies the same motion checks to each path. For a structured observation with
+selected arms, camera frames, and arm revisions, use the SDK's capture operation
+over `POST /observations`. You can also read state and cameras separately.
 
 | Piece | Call |
 | --- | --- |

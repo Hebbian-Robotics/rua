@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from math import radians
 from typing import assert_never
 
 from hebbian_rua.client.contract.station_api import (
@@ -10,6 +9,7 @@ from hebbian_rua.client.contract.station_api import (
     CommandRecord,
     CommandRefused,
 )
+from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_INPUT_UNITS
 from hebbian_rua.client.llm.response_format import result_from_data
 from hebbian_rua.client.llm.tool_catalog import (
     RobotToolConfiguration,
@@ -163,17 +163,21 @@ def command_results(
     return records_result(call, records, grouped=grouped)
 
 
+_MODEL_INPUT_CONVERSIONS = {
+    unit["model_field"]: (unit["station_field"], unit["scale_to_station"])
+    for unit in ROBOT_TOOL_INPUT_UNITS
+}
+_STATION_UNIT_FIELDS = {
+    station_field for station_field, _ in _MODEL_INPUT_CONVERSIONS.values()
+}
+
+
 def convert_model_arguments_to_station_units(value: object) -> object:
     """Convert model millimeters/degrees to station meters/radians."""
     if isinstance(value, list):
         return [convert_model_arguments_to_station_units(item) for item in value]
     if not isinstance(value, dict):
         return value
-    fields = {
-        "position_mm": ("position", 0.001),
-        "joints_degrees": ("joints", radians(1)),
-        "max_joint_speed_degrees_per_second": ("max_joint_speed", radians(1)),
-    }
 
     def scale_model_input_numbers(item: object, factor: float) -> object:
         if isinstance(item, list):
@@ -186,11 +190,16 @@ def convert_model_arguments_to_station_units(value: object) -> object:
 
     converted = {}
     for key, item in value.items():
-        if key in {"position", "joints", "max_joint_speed"}:
+        if key in _STATION_UNIT_FIELDS:
             raise ValueError(f"Use explicit model units for {key}")
-        if key in fields:
-            station_field, factor = fields[key]
+        if key in _MODEL_INPUT_CONVERSIONS:
+            station_field, factor = _MODEL_INPUT_CONVERSIONS[key]
             converted[station_field] = scale_model_input_numbers(item, factor)
+        elif key in {"arms", "targets"} and isinstance(item, dict):
+            converted[key] = {
+                arm: convert_model_arguments_to_station_units(target)
+                for arm, target in item.items()
+            }
         else:
             converted[key] = convert_model_arguments_to_station_units(item)
     return converted

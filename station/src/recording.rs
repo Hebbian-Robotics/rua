@@ -1,4 +1,5 @@
 use crate::lease_routes::Refusal;
+use crate::managed_child::{ChildExit, ManagedChild};
 use axum::{
     Json, Router,
     extract::State,
@@ -6,11 +7,9 @@ use axum::{
     routing::{get, post},
 };
 use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, LeaseToken, RecordingStatus};
-use nix::{
-    sys::signal::{Signal, killpg},
-    unistd::Pid,
-};
+use nix::sys::signal::Signal;
 use std::{
+    io::Write,
     path::PathBuf,
     process::Stdio,
     sync::{
@@ -18,12 +17,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::{Child, Command},
-    sync::watch,
-    time::Duration,
-};
+use tokio::{process::Command, sync::watch, time::Duration};
 pub struct RecordingConfiguration {
     pub credentials: station_access::Credentials,
     pub room: String,
@@ -183,8 +177,7 @@ impl RecordingManager {
         if controller_interrupted {
             self.mark_interruption_file(&name)?;
         }
-        let mut recorder = self.launch_recorder(&name)?;
-        let stderr = recorder.stderr.take();
+        let recorder = self.launch_recorder(&name)?;
         let (stop, mut stopped) = watch::channel(false);
         *state = RecordingState::Active {
             name: name.clone(),
@@ -196,28 +189,40 @@ impl RecordingManager {
         let manager = self.clone();
         let recording_name = name.clone();
         tokio::spawn(async move {
-            let reader = stderr.map(|pipe| {
-                tokio::spawn(async move {
-                    let mut lines = BufReader::new(pipe).lines();
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        eprintln!("Recorder: {line}");
-                    }
-                })
-            });
-            let outcome = tokio::select! {
-                status = recorder.wait() => RecordingStatus::Failed {
-                    name: recording_name.clone(),
-                    detail: match status { Ok(status) => format!("Recorder exited unexpectedly: {status}"), Err(error) => error.to_string() },
-                },
-                _ = stopped.changed() => match interrupt(&mut recorder).await {
-                    Ok(status) if status.success() => RecordingStatus::Finished { name: recording_name.clone() },
-                    Ok(status) => RecordingStatus::Failed { name: recording_name.clone(), detail: format!("Recorder finalized with {status}; inspect the recording status for details") },
-                    Err(error) => RecordingStatus::Failed { name: recording_name.clone(), detail: error.to_string() },
-                }
+            let shutdown = async {
+                let _ = stopped.changed().await;
             };
-            if let Some(reader) = reader {
-                reader.abort();
-            }
+            let finalized = recorder
+                .finish(
+                    shutdown,
+                    &[
+                        (Signal::SIGINT, Duration::from_secs(10)),
+                        (Signal::SIGTERM, Duration::from_secs(5)),
+                    ],
+                    |line| {
+                        let _ = writeln!(std::io::stderr().lock(), "Recorder: {line}");
+                    },
+                )
+                .await;
+            let outcome = match finalized {
+                Ok(ChildExit::Requested(status)) if status.success() => RecordingStatus::Finished {
+                    name: recording_name.clone(),
+                },
+                Ok(ChildExit::Requested(status)) => RecordingStatus::Failed {
+                    name: recording_name.clone(),
+                    detail: format!(
+                        "Recorder finalized with {status}; inspect the recording status for details"
+                    ),
+                },
+                Ok(ChildExit::Unexpected(status)) => RecordingStatus::Failed {
+                    name: recording_name.clone(),
+                    detail: format!("Recorder exited unexpectedly: {status}"),
+                },
+                Err(error) => RecordingStatus::Failed {
+                    name: recording_name.clone(),
+                    detail: error.to_string(),
+                },
+            };
             manager.announce(false);
             let mut state = manager
                 .state
@@ -306,7 +311,7 @@ impl RecordingManager {
             RecordingState::Active { .. }
         )
     }
-    fn launch_recorder(&self, name: &str) -> Result<Child, String> {
+    fn launch_recorder(&self, name: &str) -> Result<ManagedChild, String> {
         let configuration = self
             .recording
             .as_ref()
@@ -327,38 +332,17 @@ impl RecordingManager {
             Ok(url)
         });
         let station_url = station_url?;
-        Command::new(&configuration.executable)
-            .args(["record", "--room", &configuration.room, "--directory"])
-            .arg(configuration.directory.join(name))
-            .args(["--station-url", station_url.as_str()])
-            .args(["--supervisor-pid", &std::process::id().to_string()])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .process_group(0)
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| error.to_string())
+        ManagedChild::spawn(
+            Command::new(&configuration.executable)
+                .args(["record", "--room", &configuration.room, "--directory"])
+                .arg(configuration.directory.join(name))
+                .args(["--station-url", station_url.as_str()])
+                .args(["--supervisor-pid", &std::process::id().to_string()])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null()),
+        )
+        .map_err(|error| error.to_string())
     }
-}
-
-async fn interrupt(child: &mut Child) -> std::io::Result<std::process::ExitStatus> {
-    for (signal, grace) in [
-        (Signal::SIGINT, 10),
-        (Signal::SIGTERM, 5),
-        (Signal::SIGKILL, 0),
-    ] {
-        if let Some(id) = child.id().and_then(|id| i32::try_from(id).ok()) {
-            let _ = killpg(Pid::from_raw(id), signal);
-        }
-        if grace == 0 {
-            return child.wait().await;
-        }
-        if let Ok(status) = tokio::time::timeout(Duration::from_secs(grace), child.wait()).await {
-            return status;
-        }
-    }
-    child.wait().await
 }
 
 // SAFETY: A lease-checked stop must not let a former holder stop the newer holder's recording.

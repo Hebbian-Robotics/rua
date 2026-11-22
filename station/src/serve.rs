@@ -183,7 +183,7 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
     if matches!(plant, PlantSelection::Simulator { .. }) {
         publish_simulator_arms(directory, &arms)?;
     }
-    // INVARIANT: The station and the media programs must name the same room.
+    // INVARIANT: The station and the media service must name the same room.
     let room = web.room.get_or_insert_with(new_room_name).clone();
     let mut cameras = robot_profile.cameras.clone();
     for (name, device) in arguments.cameras {

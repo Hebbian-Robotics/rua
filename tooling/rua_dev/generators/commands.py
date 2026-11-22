@@ -246,7 +246,9 @@ def generate_python(variants: list[Variant], definitions: dict) -> str:
         ")",
         "",
         "if TYPE_CHECKING:",
-        "    from hebbian_rua.client.station_types import CommandResult, StationCommand",
+        "    from hebbian_rua.client.station_types import CommandResult",
+        "",
+        "type StationCommand = " + " | ".join(variant.title for variant in variants),
     ]
     for class_name, needs_lease, summary in (
         (

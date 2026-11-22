@@ -1,0 +1,90 @@
+@layer theme, base, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@source "./";
+@source "../components";
+@source "../features";
+@source "../shared";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--surface);
+  --color-foreground: var(--ink);
+  --color-muted-foreground: var(--muted);
+  --color-border: var(--line);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-sidebar: var(--surface);
+  --color-sidebar-foreground: var(--ink);
+  --color-sidebar-accent: var(--surface-muted);
+  --color-sidebar-accent-foreground: var(--ink);
+  --color-sidebar-selected: var(--accent-soft);
+  --color-sidebar-selected-foreground: var(--accent-ink);
+  --color-sidebar-border: var(--line);
+  --color-sidebar-ring: var(--focus);
+  --color-ring: var(--focus);
+  --color-primary: var(--accent);
+  --color-primary-hover: var(--accent-hover);
+  --color-primary-foreground: var(--accent-on);
+  --color-muted: var(--surface-muted);
+  --color-secondary: var(--surface-muted);
+  --color-secondary-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-field: var(--field);
+  --color-disabled: var(--disabled-fill);
+  --color-disabled-foreground: var(--disabled-ink);
+  --color-scrim: var(--scrim);
+  --color-input: var(--input-edge);
+  --color-destructive: var(--danger);
+  --color-destructive-soft: var(--danger-soft);
+  --color-destructive-soft-hover: var(--danger-soft-hover);
+  --color-stop: var(--stop);
+  --color-stop-hover: var(--stop-hover);
+  --color-stop-foreground: var(--stop-ink);
+  --color-positive: var(--positive);
+}
+
+@layer base {
+  :where(button, input, select, textarea) {
+    font: inherit;
+    color: inherit;
+  }
+  :where(input, textarea)::placeholder {
+    color: var(--muted);
+    opacity: 1;
+  }
+  :where(button) {
+    padding: 0;
+    background: transparent;
+  }
+  :where(button:not(:disabled), select:not(:disabled)) {
+    cursor: pointer;
+  }
+  :where([data-slot="sidebar-menu"]) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  :where(
+    [data-slot="sidebar-container"],
+    [data-slot="sidebar"][data-mobile],
+    [data-slot="sidebar-footer"],
+    [data-slot="sidebar-wrapper"] > header,
+    button,
+    [data-slot="badge"],
+    [data-slot="alert"],
+    [data-slot="switch"],
+    [data-slot="input"],
+    [data-slot="native-select"],
+    [data-slot="textarea"],
+    [data-slot="alert-dialog-footer"]
+  ) {
+    border: 0 solid var(--line);
+  }
+}

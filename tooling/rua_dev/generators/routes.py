@@ -376,7 +376,7 @@ def generate_typescript(operations: list[Operation]) -> str:
         'import { jsonRequestInit, stationFetch, stationRequest } from "../station-request.js";',
         "",
         "/** One method per station HTTP route; the media service has its own address. */",
-        "export function createStationApi(stationUrl: string | URL, mediaUrl: string | URL) {",
+        "export function createStationApi(stationUrl: string | URL, mediaUrl: string | URL, signal?: AbortSignal) {",
         "  return {",
     ]
     for operation in operations:
@@ -392,9 +392,7 @@ def generate_typescript(operations: list[Operation]) -> str:
             for segment in operation.segments
         )
         base = "mediaUrl" if operation.direct_media else "stationUrl"
-        init = (
-            f'jsonRequestInit("{operation.method}"{", body" if operation.body else ""})'
-        )
+        init = f'jsonRequestInit("{operation.method}", {"body" if operation.body else "undefined"}, signal)'
         url = f"new URL(`/{path}`, {base})"
         lines += [
             f"    /** {operation.summary} */",

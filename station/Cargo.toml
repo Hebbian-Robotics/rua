@@ -14,6 +14,7 @@ name = "hebbian-robot-use-server"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow = "1.0.104"

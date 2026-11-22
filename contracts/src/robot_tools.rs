@@ -208,6 +208,33 @@ pub fn filter_sequence_actions(
     }
 }
 
+/// A numeric tool argument whose model units differ from the station contract.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ModelInputUnit {
+    pub model_field: &'static str,
+    pub station_field: &'static str,
+    pub scale_to_station: f64,
+}
+
+/// Unit conversions shared by the model tool schema and all SDK adapters.
+pub const MODEL_INPUT_UNITS: [ModelInputUnit; 3] = [
+    ModelInputUnit {
+        model_field: "position_mm",
+        station_field: "position",
+        scale_to_station: 0.001,
+    },
+    ModelInputUnit {
+        model_field: "joints_degrees",
+        station_field: "joints",
+        scale_to_station: std::f64::consts::PI / 180.0,
+    },
+    ModelInputUnit {
+        model_field: "max_joint_speed_degrees_per_second",
+        station_field: "max_joint_speed",
+        scale_to_station: std::f64::consts::PI / 180.0,
+    },
+];
+
 /// A provider-independent model tool specification.
 #[derive(Debug, Clone, Serialize)]
 pub struct RobotToolDefinition {
@@ -268,11 +295,12 @@ fn adapt(value: &mut Value) {
                     required.retain(|field| field != "kind");
                 }
             }
-            for (station_field, model_field) in [
-                ("position", "position_mm"),
-                ("joints", "joints_degrees"),
-                ("max_joint_speed", "max_joint_speed_degrees_per_second"),
-            ] {
+            for ModelInputUnit {
+                station_field,
+                model_field,
+                ..
+            } in MODEL_INPUT_UNITS
+            {
                 if let Some(Value::Object(properties)) = object.get_mut("properties")
                     && let Some(mut property) = properties.remove(station_field)
                 {
@@ -375,7 +403,7 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         RobotToolDefinition {
             name: "rehome",
             operation: RobotToolOperation::Rehome,
-            description: "Return this arm to the joint pose recorded when it was enabled, then close the gripper. Closing stops on contact, so a held object stays held; ensure the path and workspace are clear.".into(),
+            description: "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.".into(),
             parameters: model_arguments::<StopArguments>(),
         },
         RobotToolDefinition {

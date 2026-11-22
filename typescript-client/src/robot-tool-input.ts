@@ -5,6 +5,7 @@ import {
   armMotionCommands,
   armPowerCommands,
 } from "./generated/arm-commands.js";
+import { robotToolInputUnits } from "./generated/robot-tools.js";
 import type { RobotToolCall } from "./robot-tool-types.js";
 import type { StationCommand } from "./station-types.js";
 import type {
@@ -95,23 +96,35 @@ function convertModelArgumentsToStationUnits(value: unknown): unknown {
     return value.map(convertModelArgumentsToStationUnits);
   if (typeof value !== "object" || value === null) return value;
   const converted: Record<string, unknown> = {};
-  const fields: Record<string, [string, number]> = {
-    position_mm: ["position", 0.001],
-    joints_degrees: ["joints", Math.PI / 180],
-    max_joint_speed_degrees_per_second: ["max_joint_speed", Math.PI / 180],
-  };
   function scaleModelInputNumbers(value: unknown, factor: number): unknown {
     if (Array.isArray(value))
       return value.map((item) => scaleModelInputNumbers(item, factor));
     return typeof value === "number" ? value * factor : value;
   }
   for (const [key, item] of Object.entries(value)) {
-    if (["position", "joints", "max_joint_speed"].includes(key))
+    if (robotToolInputUnits.some((unit) => unit.station_field === key))
       throw new Error(`Use explicit model units for ${key}`);
-    const field = fields[key];
-    converted[field?.[0] ?? key] = field
-      ? scaleModelInputNumbers(item, field[1])
-      : convertModelArgumentsToStationUnits(item);
+    const unit = robotToolInputUnits.find((unit) => unit.model_field === key);
+    if (unit !== undefined) {
+      converted[unit.station_field] = scaleModelInputNumbers(
+        item,
+        unit.scale_to_station,
+      );
+    } else if (
+      (key === "arms" || key === "targets") &&
+      typeof item === "object" &&
+      item !== null &&
+      !Array.isArray(item)
+    ) {
+      converted[key] = Object.fromEntries(
+        Object.entries(item).map(([arm, target]) => [
+          arm,
+          convertModelArgumentsToStationUnits(target),
+        ]),
+      );
+    } else {
+      converted[key] = convertModelArgumentsToStationUnits(item);
+    }
   }
   return converted;
 }

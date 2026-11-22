@@ -52,7 +52,7 @@ export class StationHttpError extends Error {
  * The media service has no fresh frame for this camera. `listed` is what it reports: a
  * camera missing from it was never published or the name is wrong, while one listed as
  * unavailable stopped streaming. `lastError` is the latest failure the station saw in the
- * media programs' output for it, when the station could be asked.
+ * media service's output for it, when the station could be asked.
  */
 export class CameraUnavailableError extends Error {
   override name = "CameraUnavailableError";

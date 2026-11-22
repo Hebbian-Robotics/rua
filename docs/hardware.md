@@ -23,10 +23,10 @@ metadata entries:
 
 | Key | Meaning |
 |---|---|
-| `method` | `supermimic_so101_reference_pose_v2`, the observation contract |
-| `action_mode` | `measured_increment` or `lead_clamped_pose` |
+| `method` | `supermimic_official_so101_pose_v1`, the observation contract |
+| `action_mode` | `default_pose_offset`: target = offset + scale × action |
+| `action_offset_radians`, `action_scale_radians` | JSON lists of 5: the target's offset and positive scale |
 | `action_step` | Furthest a target may lead the measured joint, in radians |
-| `action_range_radians` | `lead_clamped_pose` only: `{"lower": [5], "upper": [5]}` |
 | `observation_joint_offset` | JSON list of 5 joint offsets subtracted from observations |
 | `hardware`, `station_urdf_sha256` | Optional binding to one URDF; other arms are refused |
 

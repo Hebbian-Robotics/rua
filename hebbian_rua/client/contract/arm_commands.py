@@ -14,13 +14,28 @@ from hebbian_rua.client.contract.station_api import (
     MoveToPoseCommand,
     PoseWaypoint,
     QuaternionOrientation,
+    RehomeCommand,
     StationSetGripperCommand,
     StationStreamJointsCommand,
     StopCommand,
 )
 
 if TYPE_CHECKING:
-    from hebbian_rua.client.station_types import CommandResult, StationCommand
+    from hebbian_rua.client.station_types import CommandResult
+
+type StationCommand = (
+    EnableCommand
+    | ApproveRecoveryCommand
+    | DisableCommand
+    | StopCommand
+    | ClearFaultCommand
+    | RehomeCommand
+    | MoveToJointsCommand
+    | MoveToPoseCommand
+    | FollowPathCommand
+    | StationStreamJointsCommand
+    | StationSetGripperCommand
+)
 
 
 class ArmPowerCommands:
@@ -82,6 +97,12 @@ class ArmMotionCommands:
     ) -> "CommandResult":
         raise NotImplementedError
 
+    async def rehome(self, *, expected_revision: int | None = None) -> "CommandResult":
+        """Return to the pose saved when the arm was enabled, at up to 2 rad/s."""
+        return await self._run_command(
+            RehomeCommand(), expected_revision=expected_revision
+        )
+
     async def move_to_joints(
         self,
         joints: list[float],
@@ -135,23 +156,19 @@ class ArmMotionCommands:
         *,
         gripper_opening: float | None = None,
         max_joint_speed: float | None = None,
-        stream_command_id: str | None = None,
         expected_revision: int | None = None,
     ) -> "CommandResult":
-        """Stream trajectory destinations. The first goal, without
-        `stream_command_id`, starts a stream when the arm is holding; later goals
-        carry the command id it returned. Each cycle the arm moves toward the
-        newest goal at up to the first goal's speed. The stream ends stopped when
+        """Start streaming joint destinations while the arm is holding. Send
+        later goals to the operation's goal endpoint. The stream ends when
         goals stop arriving, on stop, or on a trip.
 
-        `gripper_opening`: The gripper's newest target, 0 closed to 1 open, if the stream drives it.
+        `gripper_opening`: The initial gripper target, 0 closed to 1 open, if the stream drives it.
         """
         return await self._run_command(
             StationStreamJointsCommand(
                 joints=joints,
                 gripper_opening=gripper_opening,
                 max_joint_speed=max_joint_speed,
-                stream_command_id=stream_command_id,
             ),
             expected_revision=expected_revision,
         )

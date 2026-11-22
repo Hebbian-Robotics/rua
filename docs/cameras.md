@@ -1,15 +1,16 @@
 # Cameras
 
-LiveKit is the streaming path for RUA. It lets the browser and other clients
-watch the same cameras. The station starts the media companion and publishes
-your configured cameras to one room. The SDK requests JPEG frames by name.
+Set up cameras with LiveKit to watch live video, add a phone camera, or use
+frames from the room in the CLI and SDK examples. The station publishes
+configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
 
 ## Connect a USB camera
 
 1. If you run RUA from source, [build the media companion](#rua-configuration)
    once. The Python wheel includes it.
-2. Create or choose a LiveKit project. Copy its WebSocket URL and API
-   credentials into `.env` where you start the station.
+2. Use a LiveKit Cloud project or a reachable self-hosted
+   LiveKit server. Put its WebSocket URL and API credentials in the station’s
+   `.env` file.
 
    ```dotenv
    LIVEKIT_URL=wss://your-project.livekit.cloud
@@ -20,25 +21,40 @@ your configured cameras to one room. The SDK requests JPEG frames by name.
 3. Add `--camera wrist=0` to your usual station start command. `wrist` is a
    label you choose, and `0` is the camera device index. You can also use a
    device path such as `/dev/video0`. Repeat the flag for each USB camera.
+   The station publishes each named feed when it starts.
 
 ## Watch a USB camera
 
-Run this on the station host to get the `server_url` and `token`. Use them to
-connect in the [LiveKit Room viewer](https://hebbian-robotics.github.io/livekit-cameras/).
-Keep the token private. Use the camera label you chose in SDK calls or example
-flags such as `--camera wrist`. If you have the RUA station viewer installed,
-you can also watch the feed and check its status under **Workspace**.
+1. With LiveKit configured and the station running, get a viewer token on the
+   station host:
 
-```sh
-curl --fail http://127.0.0.1:8792/viewer/api/token
-```
+   ```sh
+   curl --fail http://127.0.0.1:8792/viewer/api/token
+   ```
+
+2. Open the [hosted LiveKit Cameras page](https://hebbian-robotics.github.io/livekit-cameras/)
+   and select **Room viewer**.
+3. Paste the response’s `server_url` and `token` into the URL and token fields,
+   then connect. The browser connects directly to LiveKit. Keep the room
+   token private and leave the LiveKit API key and secret on the station.
+
+Use the camera label you chose in SDK calls or example flags such as
+`--camera wrist`. If you have the RUA station viewer installed, you can
+also watch the feed under **Workspace**.
 
 ## Add a phone
 
-With LiveKit configured, create an invite from the station machine and open
-its private `url` on your phone. The station accepts invite requests over
-loopback. From the local viewer, select **Add a phone camera** in **Workspace**
-and scan its QR code. A phone has one hour to join using the invite.
+With LiveKit configured, run `hebbian-robot-use phone-invite overhead` on the
+station host and open the printed URL on your phone. You can also use the
+HTTP request below and open the response’s `url`. On the camera page, allow camera access
+and select **Start streaming**. Keep the invite URL private. The station accepts
+invite requests over loopback. In the local viewer, open
+**Workspace → Add remote camera**. Enter a camera location and select
+**Create invite**. On your phone, open the invite link or scan its QR code.
+To connect manually, open **Manual LiveKit connection** in the viewer, then
+paste its **LiveKit server URL** and **Publishing token** into the camera page
+and select **Use connection**. The station creates the room name by default
+and issues a one-hour publishing token with each invite. Keep the token private.
 
 ```sh
 curl --fail http://127.0.0.1:8792/viewer/api/phone-invites \
@@ -49,11 +65,22 @@ The feed uses the name `phone_overhead` for that label. See the
 [browser camera guide](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
 for phone controls and custom hosting.
 
+## Check a camera from the CLI
+
+With the station running, list available camera names and save a JPEG:
+
+```sh
+hebbian-robot-use camera list
+hebbian-robot-use camera snapshot wrist --out wrist.jpg
+```
+
+Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
+
 ## Local snapshots
 
-For an SDK-only setup without LiveKit credentials, register the camera with the
-same `--camera` flag. The SDKs use the station URL for camera discovery and
-snapshots. List feeds and check a JPEG using the label you chose.
+For local USB snapshots only, leave the LiveKit settings unset and keep the
+same `--camera` flag. The media companion captures frames directly. The CLI
+and SDKs still use the station URL for discovery and snapshots.
 
 ```sh
 curl --fail http://127.0.0.1:8792/cameras

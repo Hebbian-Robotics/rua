@@ -107,6 +107,8 @@ impl ControllerProcess {
             .arg("controller")
             .arg("--station-socket")
             .arg(&socket_path)
+            .arg("--station-pid")
+            .arg(std::process::id().to_string())
             .arg("--instance")
             .arg(instance.to_string())
             .process_group(0)

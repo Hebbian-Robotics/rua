@@ -6,7 +6,8 @@ import {
   createStationConnection,
   filterSequenceActions,
 } from "../src/index.js";
-import { fakeLease } from "./station-fakes.js";
+import { parseRobotToolCall } from "../src/robot-tool-input.js";
+import { fakeLease, stateMessage } from "./station-fakes.js";
 
 const connection = createStationConnection("http://localhost", "agent");
 const robot = createRobotTools({
@@ -22,6 +23,28 @@ const robot = createRobotTools({
   connection,
   lease: fakeLease(),
   arm: "follower",
+});
+
+test("tool input units match the station contract", () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      new URL("../../tests/fixtures/model-input-units.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const parsed = parseRobotToolCall(
+    { id: "units", name: "move_arms", arguments: fixture.arguments },
+    {
+      arm: "position",
+      sequenceScope: { kind: "single" },
+      sequenceActions: new Set(),
+      availableToolNames: new Map([["move_arms", "move_arms"]]),
+    },
+  );
+  expect(parsed).toMatchObject({
+    kind: "message",
+    message: { kind: "move_arms", command: fixture.station_command },
+  });
 });
 
 test("model tools return invalid inputs as errors to the model", async () => {
@@ -54,10 +77,17 @@ test.each([false, true])(
       : [];
     let cameraAvailable = alreadyInterlocked;
     const state = () =>
-      ({
+      apiSchemas.shape.StationState.parse({
+        ...stateMessage([{ revision }]).state,
         robot: "sim",
-        arms: [{ arm: "follower", mode: "holding", interlocks, revision }],
-      }) as ReturnType<typeof connection.getState>;
+        arms: stateMessage([{ revision }]).state.arms.map((arm) => ({
+          ...arm,
+          interlocks: interlocks.map((interlock) => ({
+            ...interlock,
+            detail: "missing",
+          })),
+        })),
+      });
     vi.spyOn(connection, "getState").mockImplementation(state);
     vi.spyOn(connection, "waitForState").mockImplementation(async () => {
       const current = state();
@@ -80,10 +110,26 @@ test.each([false, true])(
     });
     vi.stubGlobal("fetch", async (input: URL | string) => {
       const url = new URL(String(input));
-      if (url.pathname === "/cameras/front")
-        return cameraAvailable
-          ? new Response(new Uint8Array([1, 2, 3]))
-          : new Response(null, { status: 503 });
+      if (url.pathname === "/observations")
+        return Response.json(
+          cameraAvailable
+            ? {
+                status: "observation_captured",
+                state: state(),
+                cameras: {
+                  front: {
+                    jpeg_base64: "AQID",
+                    captured_at_unix_ns: null,
+                    retrieved_between_unix_seconds: [0, 0],
+                  },
+                },
+                missing_optional_cameras: [],
+              }
+            : {
+                status: "observation_required_camera_unavailable",
+                camera: "front",
+              },
+        );
       throw new Error(`Unexpected URL ${url}`);
     });
     const robot = createRobotTools({
@@ -220,7 +266,6 @@ test("group outcomes match the shared examples", async () => {
   for (const example of examples) {
     const connection = createStationConnection("http://station", "agent");
     const record = apiSchemas.shape.CommandRecord.parse(example.record);
-    vi.spyOn(connection, "waitForOutcome").mockResolvedValue(record);
     const robot = createRobotTools({
       tools: [
         "action_sequence",

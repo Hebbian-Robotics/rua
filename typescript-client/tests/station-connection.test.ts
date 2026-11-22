@@ -521,7 +521,7 @@ test("aborting an accepted leased command cancels the original submission", asyn
   const { connection, close } = await startLeaseStation(
     15,
     (request, response) => {
-      if (request.url === "/commands" || request.url === "/commands/cancel") {
+      if (request.url === "/commands" || request.url?.endsWith("/cancel")) {
         request.setEncoding("utf8");
         let body = "";
         request.on("data", (chunk: string) => {
@@ -529,8 +529,8 @@ test("aborting an accepted leased command cancels the original submission", asyn
         });
         request.on("end", () => {
           const payload: unknown = JSON.parse(body);
-          if (request.url === "/commands/cancel") {
-            receiveCancellation(payload);
+          if (request.url?.endsWith("/cancel")) {
+            receiveCancellation({ path: request.url, body: payload });
             response.writeHead(204).end();
           } else {
             acceptedRequest = payload;
@@ -556,15 +556,16 @@ test("aborting an accepted leased command cancels the original submission", asyn
     expect(answer.status).toBe("accepted");
     assert.ok(acceptedRequest !== null && typeof acceptedRequest === "object");
     assert.ok(
-      "request_id" in acceptedRequest &&
+      "operation_id" in acceptedRequest &&
         "station_instance_id" in acceptedRequest,
     );
     controller.abort();
     await expect(cancelling).resolves.toEqual({
-      request_id: acceptedRequest.request_id,
-      station_instance_id: acceptedRequest.station_instance_id,
-      lease_token: "token",
-      arms: ["follower"],
+      path: `/operations/${acceptedRequest.operation_id}/cancel`,
+      body: {
+        station_instance_id: acceptedRequest.station_instance_id,
+        lease_token: "token",
+      },
     });
   } finally {
     await close();

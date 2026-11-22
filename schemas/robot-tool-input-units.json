@@ -1,0 +1,17 @@
+[
+  {
+    "model_field": "position_mm",
+    "scale_to_station": 0.001,
+    "station_field": "position"
+  },
+  {
+    "model_field": "joints_degrees",
+    "scale_to_station": 0.017453292519943295,
+    "station_field": "joints"
+  },
+  {
+    "model_field": "max_joint_speed_degrees_per_second",
+    "scale_to_station": 0.017453292519943295,
+    "station_field": "max_joint_speed"
+  }
+]

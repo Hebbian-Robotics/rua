@@ -71,16 +71,18 @@ fn acquire(address: SocketAddr, instance: &str, label: &str, take: bool) -> Valu
 }
 
 fn submit(address: SocketAddr, instance: &str, token: &str, arm: &str, command: Value) -> Value {
-    let (status, answer) = request(
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    let (status, mut answer) = request(
         address,
         "POST",
         "/commands",
         Some(&json!({
-            "request_id":uuid::Uuid::new_v4().to_string(), "station_instance_id":instance,
+            "operation_id":operation_id, "station_instance_id":instance,
             "lease_token":token, "arm":arm, "command":command
         })),
     );
     assert_eq!(status, 200, "{answer}");
+    answer["operation_id"] = json!(operation_id);
     answer
 }
 
@@ -238,12 +240,7 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
             json!({"kind":"stream_joints", "joints":[1.5,-1.5], "max_joint_speed":0.2}),
         );
         assert_eq!(answer["status"], "accepted", "{answer}");
-        commands.push(
-            answer["records"][0]["record"]["command_id"]
-                .as_str()
-                .unwrap()
-                .to_owned(),
-        );
+        commands.push(answer["operation_id"].as_str().unwrap().to_owned());
     }
     wait_for_state(address, |state| {
         state["arms"]
@@ -253,10 +250,10 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let replacement = acquire(address, instance, "replacement", true);
     assert_ne!(replacement["lease_token"], grant["lease_token"]);
     for id in commands {
-        let (status, record) = request(address, "GET", &format!("/commands/{id}"), None);
+        let (status, record) = request(address, "GET", &format!("/operations/{id}"), None);
         assert_eq!(status, 200);
         assert_eq!(
-            record["record"]["completion"]["outcome"], "stopped",
+            record["records"][0]["record"]["completion"]["outcome"], "stopped",
             "{record}"
         );
     }

@@ -11,7 +11,9 @@ use hebbian_robot_use_core::lease::{LEASE, Lease};
 use hebbian_robot_use_core::plant::Plant;
 use hebbian_robot_use_core::profile::{JointLimitSource, controller_config, load_robot_profile};
 use hebbian_robot_use_core::station_api::HttpServer;
+use hebbian_robot_use_server::media_status::MediaStatus;
 use hebbian_robot_use_server::run_telemetry::LiveRunStore;
+use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
 use hebbian_rua::{Error, Station};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -51,6 +53,7 @@ impl SimulatedStation {
         arm_names: &[&str],
         create_plant: impl Fn() -> P + Send + 'static,
         routes: axum::Router,
+        media_address: Option<std::net::SocketAddr>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let directory = std::env::temp_dir().join(format!(
@@ -84,23 +87,45 @@ impl SimulatedStation {
                 Ok(((*name).to_owned(), config, link))
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
-        let server = tokio::task::spawn_blocking(|| {
+        let (server, mounted) = tokio::task::spawn_blocking(move || {
+            let mut mounted = None;
             HttpServer::start(
                 "127.0.0.1:0",
                 vec![],
                 None,
                 Arc::new(LiveRunStore::default()),
                 Arc::default(),
-                |_, _| Ok(routes),
+                |runtime, address| {
+                    let (web_routes, web) = web::mount(
+                        runtime,
+                        address,
+                        WebSettings {
+                            recordings_directory: std::env::temp_dir(),
+                            enable_recording: false,
+                            media_address,
+                            camera_forwarding: CameraForwarding::DirectOnly,
+                            media_executable: "unused".into(),
+                            room: None,
+                            phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
+                            manual_control: false,
+                            media_status: MediaStatus::default(),
+                        },
+                    );
+                    mounted = Some(web);
+                    Ok(routes.fallback_service(web_routes))
+                },
             )
+            .map(|server| (server, mounted))
         })
         .await??;
-        server.attach_arms(
-            links
-                .iter()
-                .map(|(name, _, link)| (name.clone(), link.handle()))
-                .collect(),
-        );
+        let handles = links
+            .iter()
+            .map(|(name, _, link)| (name.clone(), link.handle()))
+            .collect();
+        if let Some(mounted) = mounted {
+            mounted.attach_arms(&server.runtime_handle(), &handles);
+        }
+        server.attach_arms(handles);
         let shutdown = Arc::new(AtomicBool::new(false));
         let loop_shutdown = Arc::clone(&shutdown);
         let loop_thread = std::thread::spawn(move || {

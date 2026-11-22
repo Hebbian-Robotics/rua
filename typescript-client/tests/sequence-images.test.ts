@@ -108,7 +108,25 @@ test("observe exposes retained images only when history is requested", async () 
   const { createRobotTools, createStationConnection, apiSchemas } =
     await import("../src/index.js");
   const { fakeLease, stateMessage } = await import("./station-fakes.js");
-  const server = createServer((_request, response) => {
+  const state = apiSchemas.shape.StationState.parse(stateMessage([{}]).state);
+  const server = createServer((request, response) => {
+    if (request.url === "/observations") {
+      response.writeHead(200, { "Content-Type": "application/json" }).end(
+        JSON.stringify({
+          status: "observation_captured",
+          state,
+          cameras: {
+            front: {
+              jpeg_base64: "AQID",
+              captured_at_unix_ns: null,
+              retrieved_between_unix_seconds: [0, 0],
+            },
+          },
+          missing_optional_cameras: [],
+        }),
+      );
+      return;
+    }
     response.end(new Uint8Array([1, 2, 3]));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -119,7 +137,6 @@ test("observe exposes retained images only when history is requested", async () 
     `http://127.0.0.1:${address.port}`,
     "agent",
   );
-  const state = apiSchemas.shape.StationState.parse(stateMessage([{}]).state);
   const stateSpy = vi
     .spyOn(connection, "waitForState")
     .mockResolvedValue(state);

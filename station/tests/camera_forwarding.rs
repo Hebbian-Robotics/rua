@@ -198,7 +198,7 @@ async fn assert_forwarding(
         let stop: CommandAnswer = client
             .post(format!("{base}/commands"))
             .json(&json!({
-                "request_id": uuid::Uuid::new_v4().to_string(),
+                "operation_id": uuid::Uuid::new_v4().to_string(),
                 "station_instance_id": instance.id,
                 "arm": "follower",
                 "command": {"kind": "stop"}

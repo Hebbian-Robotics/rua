@@ -73,6 +73,7 @@ class CameraHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
         self.end_headers()
         self.wfile.write(
             b"x" * 4096
@@ -169,7 +170,9 @@ def test_missing_camera_does_not_change_sequence_outcome_or_drop_other_images(
                 )
 
     try:
-        with running_station(server_binary) as station:
+        with running_station(
+            server_binary, media_address=f"127.0.0.1:{server.server_port}"
+        ) as station:
             asyncio.run(exercise(station.server))
     finally:
         server.shutdown()

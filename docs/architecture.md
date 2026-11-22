@@ -51,8 +51,16 @@ compilations. Each execution has its own outcome and uses fresh feedback. See th
 ## Station and companion processes
 
 The station owns the HTTP API, control leases, compilation artifacts and
-recording lifecycle. Its supervised controller owns the motor buses and
-coordinated control loop. The media companion owns camera capture and publishing.
+recording sessions. Its supervised controller owns the motor buses and
+coordinated control loop. An independent guard watches the powered controller.
+The media companion owns snapshots and live video publishing. See the
+[station reference](reference.md) for operation and recovery.
+
+The [reference agent](../examples/typescript/agent/README.md) and the
+[optional viewer](install-from-source.md#optional-viewer) are station clients.
+Several clients can observe at once. One lease holder can send motion commands.
+Use a trusted network because reachable clients can issue a stop. See the
+[control model](control-model.md) for lease and interlock behavior.
 
 ## Components
 
@@ -64,16 +72,26 @@ coordinated control loop. The media companion owns camera capture and publishing
 | Robot Use Runtime | [`server-core/src/station_api/runtime.rs`](../server-core/src/station_api/runtime.rs) | Live step preparation, coordinated admission and truthful outcomes |
 | Station host | [Station composition](../station/src/serve.rs) | HTTP composition and process supervision |
 | Motor controller | [Motor loop](../server-core/src/control_loop/mod.rs) | Feedback, setpoints, protective checks and plant commands |
+| Profile resolution | [Profile loader](../server-core/src/profile/mod.rs) | Models, per-arm hardware mapping and configured limits |
+| Robot geometry | [Geometry library](../robot-geometry/README.md) | Robot models, kinematics and collision queries used by the planner |
+| Camera access | [Station access](../station-access/README.md) | Camera credentials, token grants and invites |
 | Camera companion | [Media CLI](../livekit-cameras/src/main.rs) | Capture, snapshots, publishing and recording video |
 | Recording library | [Recording library](../recordings/src/library.rs) | Retained recordings and playback access |
+
+The controller commands hardware and simulators through the same
+[plant interface](../server-core/src/plant.rs). The
+[controller guide](controller.md) explains which component owns each motion
+path. The [simulator contract](simulators.md) describes how to attach an engine.
 
 ## Client SDKs
 
 The [Python SDK](../hebbian_rua/client/README.md), [Rust SDK](../sdk/README.md)
 and [TypeScript SDK](../typescript-client/README.md) use generated routes from
 the shared Rust definitions and OpenAPI.
-Provider adapters in `hebbian_rua/client/llm/` handle model-specific messages;
-the common station client owns HTTP, leases and execution outcomes.
+Provider adapters handle model-specific messages. See the
+[Python adapters](../hebbian_rua/client/llm/) and
+[TypeScript agent](../examples/typescript/agent/README.md). Rust applications
+assemble provider messages from SDK tool results.
 
 The [command-line client](../cli/README.md) uses the Rust SDK. Keep server code
 independent of SDKs and provider adapters. Use the

@@ -105,7 +105,7 @@ class CameraProblem(BaseModel):
     detail: Annotated[
         str,
         Field(
-            description="The program's message, such as `camera backend: Could not open device …`."
+            description="The media service's message, such as `camera backend: Could not open device …`."
         ),
     ]
     last_seen_unix_seconds: StrictFloat
@@ -189,9 +189,7 @@ class CommandCancellationRequest(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    arms: list[str]
     lease_token: str
-    request_id: str
     station_instance_id: str
 
 
@@ -670,19 +668,11 @@ class MediaState2(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    state: Literal["not_configured"] = "not_configured"
-
-
-class MediaState3(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
     last_exit: str
     state: Literal["restarting"] = "restarting"
 
 
-class MediaState4(BaseModel):
+class MediaState3(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -697,7 +687,7 @@ class MediaStatusReport(BaseModel):
         frozen=True,
     )
     cameras: dict[str, CameraProblem]
-    programs: dict[str, MediaState1 | MediaState2 | MediaState3 | MediaState4]
+    service: MediaState1 | MediaState2 | MediaState3
 
 
 class NamedApproach(StrEnum):
@@ -705,9 +695,92 @@ class NamedApproach(StrEnum):
     forward = "forward"
 
 
+class ObservationAnswer2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arm: str
+    status: Literal["observation_arm_disconnected"] = "observation_arm_disconnected"
+
+
+class ObservationAnswer3(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arm: str
+    status: Literal["observation_revision_changed"] = "observation_revision_changed"
+
+
+class ObservationAnswer4(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    camera: str
+    status: Literal["observation_required_camera_unavailable"] = (
+        "observation_required_camera_unavailable"
+    )
+
+
+class ObservationFrame(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    captured_at_unix_ns: Annotated[
+        str | None,
+        Field(
+            description="Decimal nanoseconds, encoded as text to preserve precision across SDKs."
+        ),
+    ] = None
+    jpeg_base64: str
+    retrieved_between_unix_seconds: Annotated[
+        list[StrictFloat], Field(max_length=2, min_length=2)
+    ]
+
+
+class ObservationRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arms: Annotated[
+        list[str], Field(description="With no arm selection, include every arm.")
+    ] = []
+    optional_cameras: list[str] = []
+    required_cameras: list[str] = []
+
+
 class OnInterruption(StrEnum):
     wait_for_approval = "wait_for_approval"
     return_lease = "return_lease"
+
+
+class OperationStatus1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["pending"] = "pending"
+
+
+class OperationStatus6(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["cancelled_before_admission"] = "cancelled_before_admission"
+
+
+class OperationStatus7(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str
+    state: Literal["outcome_unknown"] = "outcome_unknown"
 
 
 class PathLimited(BaseModel):
@@ -1132,6 +1205,14 @@ class ClearFaultCommand(BaseModel):
     kind: Literal["clear_fault"] = "clear_fault"
 
 
+class RehomeCommand(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    kind: Literal["rehome"] = "rehome"
+
+
 class MoveToJointsCommand(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1155,7 +1236,7 @@ class StationStreamJointsCommand(BaseModel):
     gripper_opening: Annotated[
         StrictFloat | None,
         Field(
-            description="The gripper's newest target, 0 closed to 1 open, if the stream drives it.",
+            description="The initial gripper target, 0 closed to 1 open, if the stream drives it.",
             ge=0.0,
             le=1.0,
         ),
@@ -1163,7 +1244,6 @@ class StationStreamJointsCommand(BaseModel):
     joints: list[StrictFloat]
     kind: Literal["stream_joints"] = "stream_joints"
     max_joint_speed: StrictFloat | None = None
-    stream_command_id: str | None = None
 
 
 class StationSetGripperCommand(BaseModel):
@@ -1187,6 +1267,25 @@ class StationInstance(BaseModel):
         frozen=True,
     )
     id: str
+
+
+class StreamGoalUpdateRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    expected_revision: Annotated[int | None, Field(ge=0)] = None
+    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
+    joints: list[StrictFloat]
+    lease_token: str
+    sequence: Annotated[
+        int,
+        Field(
+            description="Strictly increasing within this operation. Older goals cannot replace newer ones.",
+            ge=0,
+        ),
+    ]
+    station_instance_id: str
 
 
 class SurfaceGuardConfig(BaseModel):
@@ -1396,6 +1495,16 @@ class LeaseStatus(BaseModel):
     required_cameras: Annotated[
         list[str], Field(description="Cameras the holder cannot work without.")
     ]
+
+
+class OperationStatus5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str
+    reason: RejectionReason
+    state: Literal["refused"] = "refused"
 
 
 class OrientationSummary(BaseModel):
@@ -2142,6 +2251,7 @@ class ArmCommand(BaseModel):
         | DisableCommand
         | StopCommand
         | ClearFaultCommand
+        | RehomeCommand
         | MoveToJointsCommand
         | MoveToPoseCommand
         | FollowPathCommand
@@ -2221,6 +2331,7 @@ class CommandSubmissionRequest(BaseModel):
         | DisableCommand
         | StopCommand
         | ClearFaultCommand
+        | RehomeCommand
         | MoveToJointsCommand
         | MoveToPoseCommand
         | FollowPathCommand
@@ -2235,9 +2346,8 @@ class CommandSubmissionRequest(BaseModel):
             description="The active lease token, when one is required for this command."
         ),
     ] = None
-    request_id: Annotated[
-        str,
-        Field(description="A caller-generated UUID v4 identifying this submission."),
+    operation_id: Annotated[
+        str, Field(description="A caller-generated UUID v4 identifying this operation.")
     ]
     station_instance_id: Annotated[
         str,
@@ -2322,12 +2432,64 @@ class GroupCommandSubmissionRequest(BaseModel):
     command: MoveArmsCommand
     expected_revisions: dict[str, ExpectedRevisionsAdditionalProperty] = {}
     lease_token: str | None = None
-    request_id: Annotated[
-        str,
-        Field(description="A caller-generated UUID v4 identifying this submission."),
+    operation_id: Annotated[
+        str, Field(description="A caller-generated UUID v4 identifying this operation.")
     ]
     station_instance_id: str
     trace_context: TraceContext | None = None
+
+
+class OperationStatus2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    records: list[ArmRecord]
+    state: Literal["active"] = "active"
+
+
+class OperationStatus3(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    records: list[ArmRecord]
+    state: Literal["cancelling"] = "cancelling"
+
+
+class OperationStatus4(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    records: list[ArmRecord]
+    state: Literal["finished"] = "finished"
+
+
+class OperationStatus(
+    RootModel[
+        OperationStatus1
+        | OperationStatus2
+        | OperationStatus3
+        | OperationStatus4
+        | OperationStatus5
+        | OperationStatus6
+        | OperationStatus7
+    ]
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[
+        OperationStatus1
+        | OperationStatus2
+        | OperationStatus3
+        | OperationStatus4
+        | OperationStatus5
+        | OperationStatus6
+        | OperationStatus7,
+        Field(description="Station-owned progress of one operation."),
+    ]
 
 
 class PosePreviewBatchRequest(BaseModel):
@@ -2538,6 +2700,36 @@ class CompilationOutcome(RootModel[ProgramCompiled | ProgramRejected]):
         ProgramCompiled | ProgramRejected,
         Field(description="Compilation does not acquire a lease or command hardware."),
     ]
+
+
+class ObservationAnswer1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    cameras: dict[str, ObservationFrame]
+    missing_optional_cameras: list[str]
+    state: StationState
+    status: Literal["observation_captured"] = "observation_captured"
+
+
+class ObservationAnswer(
+    RootModel[
+        ObservationAnswer1
+        | ObservationAnswer2
+        | ObservationAnswer3
+        | ObservationAnswer4
+    ]
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: (
+        ObservationAnswer1
+        | ObservationAnswer2
+        | ObservationAnswer3
+        | ObservationAnswer4
+    )
 
 
 class PosePreviewBatchResponse(BaseModel):

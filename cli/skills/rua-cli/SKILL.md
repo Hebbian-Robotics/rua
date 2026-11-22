@@ -44,12 +44,13 @@ orientation, `move-pose` preserves the current orientation, whereas
 when comparing a preview with a move.
 
 A grasp is judged from `completion.gripper`: `{"kind": "stopped_short", ...}` on a close means
-the jaw stopped on something (or was blocked); `{"kind": "reached", ...}` means it arrived. `rehome` returns to the enable-time joint pose, waits for the move to complete,
-then closes the gripper. A failed or interrupted home move does not start closure. A move's `pose_limited.advice` gives a reachable approach.
+the jaw stopped on something (or was blocked). `{"kind": "reached", ...}` means it arrived.
+A move's `pose_limited.advice` gives a reachable approach.
 Place with the target visible: a held block hides it from the wrist camera.
 
 Motion acquires and releases its own lease per invocation; power is separate.
 Enable an arm before authorized motion. Rehome returns to its enable-time pose.
+Use `gripper` for a separate jaw command.
 `stop` holds position; `disable` removes torque, so support the arm first.
 
 On failure, inspect the error and current state before retrying. Exit codes:

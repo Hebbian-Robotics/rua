@@ -96,6 +96,10 @@ cargo run --locked -p hebbian-robot-use-cli -- camera snapshot sim_overview --ou
 Use `sim_wrist` for a single-arm wrist view or `sim_left_wrist` and
 `sim_right_wrist` for the bimanual fixture.
 
+MuJoCo's camera feeds are JPEG snapshots from the simulator socket. The
+[LiveKit room viewer](cameras.md#watch-a-usb-camera) shows tracks published to
+LiveKit, such as a USB or phone camera.
+
 ## Run a model loop
 
 For a single simulated arm, set `OPENAI_API_KEY` in your environment. The

@@ -1,0 +1,86 @@
+:root {
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--canvas);
+  color-scheme: light;
+
+  --canvas: #f4f3f0;
+  --surface: #fbfaf8;
+  --surface-muted: #f0eeea;
+  --scene-background: #f4f2ee;
+  --field: #fdfcfb;
+  --ink: #383530;
+  --muted: #59554e;
+  --line: #dedbd5;
+  --input-edge: #85817a;
+
+  --accent: #625e57;
+  --accent-hover: #56534e;
+  --accent-on: #faf9f7;
+  --accent-ink: #48443d;
+  --accent-soft: #e8e6e1;
+  --focus: #58544c;
+  --disabled-fill: #edeae5;
+  --disabled-ink: #665f55;
+  --scrim: #29252052;
+  --danger: #ae263b;
+  --danger-soft: #f8e5e8;
+  --danger-soft-hover: #f1d5db;
+  --stop: #bd2037;
+  --stop-hover: #a5172c;
+  --stop-ink: #f7f7f7;
+  --positive: #126c47;
+
+  --media: #252525;
+  --media-control: #393939;
+  --media-ink: #eaeaea;
+
+  --joint-1: #175bc8;
+  --joint-2: #9b4d10;
+  --joint-3: #137749;
+  --joint-4: #ae304d;
+  --joint-5: #684ab4;
+  --joint-6: #06717c;
+  --joint-7: #835d14;
+  --joint-8: #595959;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #1c1c1c;
+  --surface: #282828;
+  --surface-muted: #343434;
+  --scene-background: #222222;
+  --field: #222222;
+  --ink: #dfdfdf;
+  --muted: #b0b0b0;
+  --line: #454545;
+  --input-edge: #7e7e7e;
+
+  --accent: #c7c7c7;
+  --accent-hover: #d9d9d9;
+  --accent-on: #252525;
+  --accent-ink: #d8d8d8;
+  --accent-soft: #444444;
+  --focus: #bdbdbd;
+  --disabled-fill: #353535;
+  --disabled-ink: #a3a3a3;
+  --scrim: #141414b3;
+  --danger: #ff8b9a;
+  --danger-soft: #3d2c2e;
+  --danger-soft-hover: #493337;
+  --stop: #523438;
+  --stop-hover: #66383f;
+  --stop-ink: #ff9aa7;
+  --positive: #6bd6a1;
+
+  --joint-1: #82b1ff;
+  --joint-2: #ffad63;
+  --joint-3: #69d59a;
+  --joint-4: #ff8da8;
+  --joint-5: #c7a5ff;
+  --joint-6: #70d5dd;
+  --joint-7: #e4c16c;
+  --joint-8: #b0b0b0;
+}

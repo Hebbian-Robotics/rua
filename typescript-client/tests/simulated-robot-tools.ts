@@ -165,28 +165,28 @@ try {
     (arm) => arm.arm === "arm",
   );
   assert.ok(beforeRehome);
-  assert.ok((beforeRehome.gripper_opening ?? 0) > 0.02);
+  const openingBeforeRehome = beforeRehome.gripper_opening;
+  assert.ok(openingBeforeRehome !== null && openingBeforeRehome > 0.02);
   displacedJoints.forEach((joint, index) => {
     assert.ok(
       Math.abs((beforeRehome.measured_joints[index] ?? Infinity) - joint) <
         0.02,
     );
   });
-  // Rehome must still wait for home before closing in acceptance-only mode.
-  const rehomed = await lease.arm("arm", { waitForOutcome: false }).rehome();
+  const rehomed = await lease.arm("arm").rehome();
   assert.equal(rehomed.status, "accepted");
-  const closed = rehomed.records[0]?.record;
-  assert.equal(closed?.label, "set_gripper");
-  assert.equal(closed?.completion?.outcome, "completed");
+  const homeRecord = rehomed.records[0]?.record;
+  assert.equal(homeRecord?.label, "rehome");
+  assert.equal(homeRecord?.completion?.outcome, "completed");
   assert.ok(
-    closed?.achieved?.joints.every(
+    homeRecord?.achieved?.joints.every(
       (joint, index) => Math.abs(joint - (homeJoints[index] ?? 0)) < 0.02,
     ),
   );
   assert.ok(
     Math.abs(
-      (await connection.state()).arms.find((arm) => arm.arm === "arm")
-        ?.gripper_opening ?? 1,
+      ((await connection.state()).arms.find((arm) => arm.arm === "arm")
+        ?.gripper_opening ?? 0) - openingBeforeRehome,
     ) < 0.02,
   );
   const [refused] = await robot.execute([

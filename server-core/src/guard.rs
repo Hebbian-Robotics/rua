@@ -348,14 +348,20 @@ fn write_heartbeat(pipe: &mut impl Write) -> anyhow::Result<()> {
         .context("The safety guard heartbeat could not be delivered")
 }
 
+enum GuardAttachment {
+    Starting,
+    Attached(ChildStdin),
+    Detached,
+}
+
 pub(crate) struct GuardProcess {
     child: Child,
-    heartbeats: Option<ChildStdin>,
+    attachment: GuardAttachment,
 }
 
 impl GuardProcess {
-    pub fn start(config_path: &Path) -> anyhow::Result<Self> {
-        let mut child = Command::new(crate::running_executable_for_child()?)
+    fn spawn(config_path: &Path) -> anyhow::Result<Self> {
+        let child = Command::new(crate::running_executable_for_child()?)
             .arg("guard")
             .arg("--config")
             .arg(config_path)
@@ -365,28 +371,62 @@ impl GuardProcess {
             .stdout(Stdio::piped())
             .spawn()
             .context("Cannot start the guard")?;
-        let heartbeats = child.stdin.take();
-        if let Some(pipe) = &heartbeats {
-            make_heartbeat_nonblocking(pipe)?;
-        }
-        let stdout = child.stdout.take().context("The guard has no stdout")?;
+        Ok(Self {
+            child,
+            attachment: GuardAttachment::Starting,
+        })
+    }
+
+    fn attach(&mut self) -> anyhow::Result<()> {
+        let pipe = self
+            .child
+            .stdin
+            .as_mut()
+            .context("The guard has no heartbeat pipe")?;
+        make_heartbeat_nonblocking(pipe)?;
+        let stdout = self
+            .child
+            .stdout
+            .take()
+            .context("The guard has no stdout")?;
         let (ready, hearing) = channel();
         std::thread::spawn(move || {
             let mut line = String::new();
-            let _ = std::io::BufRead::read_line(&mut std::io::BufReader::new(stdout), &mut line);
-            let _ = ready.send(line);
+            let result =
+                std::io::BufRead::read_line(&mut std::io::BufReader::new(stdout), &mut line);
+            let _ = ready.send(result.map(|_| line));
         });
         match hearing.recv_timeout(SUPERVISOR_START) {
-            Ok(line) if line.trim() == "ready" => {
-                tracing::debug!(pid = child.id(), "Safety guard ready");
-                Ok(Self { child, heartbeats })
+            Ok(Ok(line)) if line.trim() == "ready" => {}
+            Ok(Ok(_)) => bail!("The safety guard did not report readiness; check the logs"),
+            Ok(Err(error)) => {
+                return Err(error).context("Cannot read the safety guard readiness report");
             }
-            Ok(_) => bail!("The safety guard exited before it was ready; check the logs"),
-            Err(_) => bail!("The safety guard did not start within 10 seconds; try enabling again"),
+            Err(RecvTimeoutError::Timeout) => {
+                bail!("The safety guard did not start within 10 seconds; try enabling again")
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                bail!("The safety guard readiness reader stopped")
+            }
         }
+        self.check_child()?;
+        let pipe = self
+            .child
+            .stdin
+            .as_mut()
+            .context("The guard has no heartbeat pipe")?;
+        write_heartbeat(pipe)?;
+        let pipe = self
+            .child
+            .stdin
+            .take()
+            .context("The guard has no heartbeat pipe")?;
+        self.attachment = GuardAttachment::Attached(pipe);
+        tracing::debug!(pid = self.child.id(), "Safety guard ready");
+        Ok(())
     }
 
-    pub(crate) fn heartbeat(&mut self) -> anyhow::Result<()> {
+    fn check_child(&mut self) -> anyhow::Result<()> {
         if let Some(status) = self
             .child
             .try_wait()
@@ -394,14 +434,22 @@ impl GuardProcess {
         {
             bail!("The safety guard exited with {status}");
         }
-        let pipe = self.heartbeats.as_mut().context("The guard was detached")?;
+        Ok(())
+    }
+
+    pub(crate) fn heartbeat(&mut self) -> anyhow::Result<()> {
+        self.check_child()?;
+        let GuardAttachment::Attached(pipe) = &mut self.attachment else {
+            bail!("The safety guard is not attached");
+        };
         write_heartbeat(pipe)
     }
 
     #[must_use]
     fn detach(&mut self) -> (bool, Vec<String>) {
         let mut cleanup_errors = Vec::new();
-        drop(self.heartbeats.take());
+        self.attachment = GuardAttachment::Detached;
+        drop(self.child.stdin.take());
         let mut deadline = Instant::now() + DETACH_WAIT;
         let mut killed = false;
         let reaped = loop {
@@ -456,6 +504,11 @@ impl<P: Plant> GuardedPlant<P> {
     #[must_use]
     pub fn inner(&self) -> &P {
         &self.inner
+    }
+    fn attach_spawned_guard(&mut self, guard: GuardProcess) -> anyhow::Result<()> {
+        // SAFETY: Keep ownership on readiness or first-heartbeat failure. The enable
+        // failure path releases torque before detaching any guard that may be live.
+        self.guard.insert(guard).attach()
     }
 }
 
@@ -512,21 +565,18 @@ impl<P: Plant> Plant for GuardedPlant<P> {
     }
 
     fn start_guard(&mut self) -> anyhow::Result<()> {
-        if let Some(previous) = &mut self.guard
-            && previous.heartbeats.is_none()
-        {
+        if let Some(previous) = &mut self.guard {
+            if matches!(previous.attachment, GuardAttachment::Attached(_)) {
+                return previous.heartbeat();
+            }
             anyhow::ensure!(
                 previous.child.try_wait()?.is_some(),
                 "The previous safety guard has not exited",
             );
             self.guard = None;
         }
-        if self.guard.is_none()
-            && let Some(config_path) = &self.config_path
-        {
-            let mut guard = GuardProcess::start(config_path)?;
-            guard.heartbeat()?;
-            self.guard = Some(guard);
+        if let Some(config_path) = &self.config_path {
+            self.attach_spawned_guard(GuardProcess::spawn(config_path)?)?;
         }
         Ok(())
     }
@@ -595,7 +645,7 @@ mod tests {
         let heartbeat_descriptor: std::os::fd::OwnedFd = writer.into();
         let mut guard = GuardProcess {
             child,
-            heartbeats: Some(ChildStdin::from(heartbeat_descriptor)),
+            attachment: GuardAttachment::Attached(ChildStdin::from(heartbeat_descriptor)),
         };
         let failure = guard.heartbeat().unwrap_err();
         assert!(failure.to_string().contains("safety guard exited"));
@@ -745,8 +795,47 @@ mod tests {
             make_heartbeat_nonblocking(pipe).unwrap();
         }
         let mut plant = GuardedPlant::new(StuckPlant { release_works }, None);
-        plant.guard = Some(GuardProcess { child, heartbeats });
+        plant.guard = Some(GuardProcess {
+            child,
+            attachment: GuardAttachment::Attached(heartbeats.unwrap()),
+        });
         plant
+    }
+
+    #[test]
+    fn a_guard_that_fails_startup_is_retained_until_torque_release() {
+        let child = Command::new("sh")
+            .args(["-c", "echo 'not ready'; exec cat >/dev/null"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let guard = GuardProcess {
+            child,
+            attachment: GuardAttachment::Starting,
+        };
+        let mut plant = GuardedPlant::new(
+            StuckPlant {
+                release_works: false,
+            },
+            None,
+        );
+        assert!(plant.attach_spawned_guard(guard).is_err());
+        assert!(
+            plant.start_guard().is_err(),
+            "a failed attachment cannot authorize enable"
+        );
+        assert!(plant.release().is_err());
+        assert!(
+            plant.guard.is_some(),
+            "the guard still owns a possible takeover"
+        );
+        plant.inner.release_works = true;
+        plant.release().unwrap();
+        assert!(
+            plant.guard.is_none(),
+            "the failed guard is detached and reaped"
+        );
     }
 
     #[test]
@@ -758,7 +847,8 @@ mod tests {
             "the guard stays to supervise the hold"
         );
         if let Some(mut guard) = stuck.guard.take() {
-            let _ = guard.child.kill();
+            guard.child.kill().unwrap();
+            let _ = guard.child.wait().unwrap();
         }
         let mut working = plant_with_a_stand_in_guard(true);
         working.release().unwrap();

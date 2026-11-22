@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
+import { apiSchemas } from "../src/generated/api-schemas.js";
 import {
   createRobotTools,
   createStationConnection,
@@ -7,7 +8,7 @@ import {
   type StationConnection,
   type StationState,
 } from "../src/index.js";
-import { fakeLease } from "./station-fakes.js";
+import { fakeLease, stateMessage } from "./station-fakes.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -26,10 +27,24 @@ function steerableConnection() {
   let interlocks: { kind: string }[] = [];
   const listeners = new Set<(state: StationState) => void>();
   const currentState = () =>
-    ({
+    apiSchemas.shape.StationState.parse({
+      ...stateMessage([{ mode }]).state,
       robot: "sim",
-      arms: [{ arm: "follower", mode, interlocks, revision: 0 }],
-    }) as StationState;
+      arms: stateMessage([{ mode }]).state.arms.map((arm) => ({
+        ...arm,
+        interlocks: interlocks.map(({ kind }) => ({ kind, motors: [] })),
+      })),
+    });
+  vi.spyOn(connection, "captureObservation").mockImplementation(
+    async (selection) => {
+      return apiSchemas.shape.ObservationAnswer.parse({
+        status: "observation_captured",
+        state: currentState(),
+        cameras: {},
+        missing_optional_cameras: selection.optional_cameras,
+      });
+    },
+  );
   vi.spyOn(connection, "getState").mockImplementation(currentState);
   vi.spyOn(connection, "waitForState").mockImplementation(
     async (predicate, options) => {

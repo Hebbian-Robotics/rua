@@ -9,8 +9,9 @@ See [camera setup](../docs/cameras.md) for the web preview.
 See [camera setup](../docs/cameras.md#rua-configuration) for prerequisites and
 build instructions. Recording additionally needs [FFmpeg](../docs/recording.md).
 
-Run the companion with `--help` to inspect its standalone subcommands. When using both publishing and snapshots,
-let one process open the physical camera and subscribe to the room for snapshots.
+The station starts one media service. With a LiveKit room configured, the
+service publishes native cameras and reads snapshot frames from the room.
+Without a room, it serves snapshots directly from the native cameras.
 
 Run `cargo test --locked -p livekit-cameras` to exercise synthetic video and telemetry
 against a simulated station. Verify device access, encoding, reconnects, and live
@@ -31,7 +32,7 @@ time. Submission age measures host receipt to WebRTC submission, not the complet
 camera-to-display delay. A running station must restart to use changed variables;
 follow the [hardware restart precautions](../docs/hardware.md) for a physical arm.
 
-When invoking `hebbian-robot-use-media publish` directly, the equivalent flags are
+When invoking `hebbian-robot-use-media serve` directly, the equivalent flags are
 `--video-codec h264 --camera-diagnostics`. The implementation and measurement
 limitations are documented in the [native publisher guide](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/native/publisher/README.md#codec-selection-and-diagnostics).
 

@@ -40,7 +40,10 @@ from hebbian_rua.client.contract.station_api import (
     LeaseStatus,
     LeaseToken,
     MoveArmsCommand,
+    ObservationAnswer,
+    ObservationRequest,
     OnInterruption,
+    OperationStatus,
     PhoneInvite,
     PhoneInviteRequest,
     PosePreviewBatchRequest,
@@ -61,6 +64,7 @@ from hebbian_rua.client.contract.station_api import (
     RunSpansMessage,
     RunSpansRequest,
     StationState,
+    StreamGoalUpdateRequest,
     TraceFile,
 )
 from hebbian_rua.client.contract.trace_spans import TraceSpan
@@ -209,34 +213,6 @@ class LeasedArm(ArmMotionCommands):
             expected_revision=expected_revision,
         )
 
-    async def rehome(
-        self, *, close_gripper: bool = True, expected_revision: int | None = None
-    ) -> CommandResult:
-        """Return to the enable-time pose, then close the gripper, at up to 2 rad/s.
-
-        Closing starts only after the home move completes and stops on contact.
-        Pass `close_gripper=False` to leave the gripper as it is.
-        """
-        rest_pose = (await self._client.arm(self.name).state()).rest_pose
-        if rest_pose is None:
-            return CommandResult.of(
-                CommandRefused(
-                    reason=RejectionReason.not_enabled,
-                    detail=f"{self.name} has no rest pose; enable it first",
-                )
-            )
-        rehome_speed = min(2.0, (await self._client.state()).max_joint_speed)
-        homed = await self.move_to_joints(
-            list(rest_pose),
-            max_joint_speed=rehome_speed,
-            expected_revision=expected_revision,
-        )
-        if not homed.completed or not close_gripper:
-            return homed
-        return await self.set_gripper(
-            0.0, max_joint_speed=rehome_speed, expected_revision=expected_revision
-        )
-
 
 class Lease:
     """The lease on the arms, held by one connection and yielded by
@@ -260,12 +236,14 @@ class Lease:
         command: MoveArmsCommand,
         *,
         expected_revisions: dict[str, int] | None = None,
+        operation_id: uuid.UUID | None = None,
     ) -> list[CommandResult]:
         """Move several arms together, planned before any moves."""
         return await self._client._run_group(
             command,
             expected_revisions=expected_revisions,
             expected_lease=self.grant.lease_token,
+            operation_id=operation_id,
         )
 
     async def start_action_sequence(
@@ -297,6 +275,7 @@ class Lease:
         command: StationCommand,
         *,
         expected_revision: int | None = None,
+        operation_id: uuid.UUID | None = None,
     ) -> CommandAccepted | CommandRefused:
         """Submit one arm's command and return the station's answer without
         waiting for its outcome."""
@@ -306,12 +285,50 @@ class Lease:
                 command,
                 expected_revision=expected_revision,
                 expected_lease=self.grant.lease_token,
+                operation_id=operation_id,
             )
         except LeaseLost:
             return CommandRefused(
                 reason=RejectionReason.lease_held_elsewhere,
                 detail="The lease is no longer held",
             )
+
+    async def update_stream_goal(
+        self,
+        operation_id: uuid.UUID,
+        sequence: int,
+        joints: list[float],
+        *,
+        gripper_opening: float | None = None,
+        expected_revision: int | None = None,
+    ) -> CommandAccepted | CommandRefused:
+        """Send the next goal to a running stream, using an increasing sequence."""
+        self._client._check_lease(self.grant.lease_token)
+        instance = await self._client._api.get_station_instance()
+        self._client._check_lease(self.grant.lease_token)
+        return await self._client._api.update_stream_goal_http(
+            str(operation_id),
+            StreamGoalUpdateRequest(
+                station_instance_id=instance.id,
+                lease_token=self.grant.lease_token,
+                sequence=sequence,
+                joints=joints,
+                gripper_opening=gripper_opening,
+                expected_revision=expected_revision,
+            ),
+        )
+
+    async def cancel_operation(self, operation_id: uuid.UUID) -> None:
+        """Cancel the exact operation, even before its admission reply arrives."""
+        self._client._check_lease(self.grant.lease_token)
+        instance = await self._client._api.get_station_instance()
+        self._client._check_lease(self.grant.lease_token)
+        await self._client._api.cancel_operation_http(
+            str(operation_id),
+            CommandCancellationRequest(
+                station_instance_id=instance.id, lease_token=self.grant.lease_token
+            ),
+        )
 
     async def report_camera(self, camera: str, available: bool) -> None:
         """Report whether a camera the lease requires gives frames; a fresh frame
@@ -454,6 +471,16 @@ class StationClient:
             camera.name for camera in await self._api.list_cameras() if camera.available
         ]
 
+    async def capture_observation(
+        self, selection: ObservationRequest
+    ) -> ObservationAnswer:
+        """Capture selected arm state and camera frames through the station."""
+        return await self._api.capture_observation_http(selection)
+
+    async def get_operation(self, operation_id: uuid.UUID) -> OperationStatus:
+        """Look up a motion operation using the ID that submitted it."""
+        return await self._api.get_operation(str(operation_id))
+
     async def camera_jpeg(
         self, name: str, *, maximum_bytes: int | None = None
     ) -> CameraJpeg:
@@ -478,7 +505,7 @@ class StationClient:
         )
 
     async def _camera_problem(self, name: str) -> str | None:
-        """The latest failure the station saw in the media programs' output for a
+        """The latest failure the station saw in the media service's output for a
         camera, or None when it has none or cannot be asked."""
         try:
             response = await self._station_http.get("/viewer/api/media-status")
@@ -711,6 +738,7 @@ class StationClient:
         *,
         expected_revision: int | None = None,
         expected_lease: str | None = None,
+        operation_id: uuid.UUID | None = None,
         await_completion: bool = False,
     ) -> CommandAccepted | CommandRefused:
         if expected_lease is not None:
@@ -729,7 +757,7 @@ class StationClient:
         request = CommandSubmissionRequest(
             arm=arm,
             command=command,
-            request_id=str(uuid.uuid4()),
+            operation_id=str(operation_id or uuid.uuid4()),
             station_instance_id=instance.id,
             lease_token=lease_token,
             trace_context=trace_context_for_commands.get(),
@@ -737,10 +765,9 @@ class StationClient:
         )
         return await self._submit_http_command(
             lambda: self._api.submit_command_http(request),
-            request_id=request.request_id,
+            operation_id=request.operation_id,
             station_instance_id=request.station_instance_id,
             lease_token=request.lease_token,
-            arms=[arm],
             await_completion=await_completion,
             expected_record_count=1,
         )
@@ -749,10 +776,9 @@ class StationClient:
         self,
         submit: Callable[[], Awaitable[CommandAccepted | CommandRefused]],
         *,
-        request_id: str,
+        operation_id: str,
         station_instance_id: str,
         lease_token: str | None,
-        arms: list[str],
         await_completion: bool,
         expected_record_count: int | None = None,
     ) -> CommandAccepted | CommandRefused:
@@ -792,19 +818,17 @@ class StationClient:
                     )
             return answer
         except (asyncio.CancelledError, TimeoutError):
-            if lease_token is not None and arms:
+            if lease_token is not None:
                 cancellation = CommandCancellationRequest(
-                    request_id=request_id,
                     station_instance_id=station_instance_id,
                     lease_token=lease_token,
-                    arms=arms,
                 )
                 try:
                     await asyncio.shield(
-                        self._api.cancel_command_submission_http(cancellation)
+                        self._api.cancel_operation_http(operation_id, cancellation)
                     )
                 except (httpx2.HTTPError, OSError) as error:
-                    log.warning("Could not cancel command %s: %s", request_id, error)
+                    log.warning("Could not cancel command %s: %s", operation_id, error)
             raise
 
     async def _run(
@@ -832,6 +856,7 @@ class StationClient:
         *,
         expected_revisions: dict[str, int] | None = None,
         expected_lease: str | None = None,
+        operation_id: uuid.UUID | None = None,
         await_completion: bool = False,
     ) -> CommandAccepted | CommandRefused:
         if expected_lease is not None:
@@ -840,7 +865,7 @@ class StationClient:
         instance = await self._api.get_station_instance()
         request = GroupCommandSubmissionRequest(
             command=command,
-            request_id=str(uuid.uuid4()),
+            operation_id=str(operation_id or uuid.uuid4()),
             station_instance_id=instance.id,
             lease_token=lease_token,
             trace_context=trace_context_for_commands.get(),
@@ -848,10 +873,9 @@ class StationClient:
         )
         return await self._submit_http_command(
             lambda: self._api.submit_group_command_http(request),
-            request_id=request.request_id,
+            operation_id=request.operation_id,
             station_instance_id=request.station_instance_id,
             lease_token=request.lease_token,
-            arms=list(command.targets),
             await_completion=await_completion,
         )
 
@@ -861,11 +885,13 @@ class StationClient:
         *,
         expected_revisions: dict[str, int] | None = None,
         expected_lease: str | None = None,
+        operation_id: uuid.UUID | None = None,
     ) -> list[CommandResult]:
         answer = await self._send_group(
             command,
             expected_revisions=expected_revisions,
             expected_lease=expected_lease,
+            operation_id=operation_id,
             await_completion=True,
         )
         if isinstance(answer, CommandRefused):

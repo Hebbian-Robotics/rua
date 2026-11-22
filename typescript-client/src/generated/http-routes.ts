@@ -11,6 +11,7 @@ import { type ApiSchemas, apiSchemas } from "./api-schemas.js";
 export function createStationApi(
   stationUrl: string | URL,
   mediaUrl: string | URL,
+  signal?: AbortSignal,
 ) {
   return {
     /** Start an action sequence under a lease. */
@@ -22,7 +23,7 @@ export function createStationApi(
         .parse(
           await stationRequest(
             new URL(`/action_sequence`, stationUrl),
-            jsonRequestInit("POST", body),
+            jsonRequestInit("POST", body, signal),
           ),
         );
     },
@@ -31,7 +32,7 @@ export function createStationApi(
       return apiSchemas.shape.ActionSequenceRecord.parse(
         await stationRequest(
           new URL(`/action_sequence/${encodeURIComponent(id)}`, stationUrl),
-          jsonRequestInit("GET"),
+          jsonRequestInit("GET", undefined, signal),
         ),
       );
     },
@@ -42,14 +43,14 @@ export function createStationApi(
           `/action_sequence/${encodeURIComponent(id)}/cancel`,
           stationUrl,
         ),
-        jsonRequestInit("POST"),
+        jsonRequestInit("POST", undefined, signal),
       );
     },
     /** Stop one arm while holding the lease. */
     async stopLeasedArmHttp(arm: string, body: ApiSchemas["LeaseToken"]) {
       await stationFetch(
         new URL(`/arms/${encodeURIComponent(arm)}/stop`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
       );
     },
     /** The cameras the media service knows. */
@@ -59,7 +60,7 @@ export function createStationApi(
         .parse(
           await stationRequest(
             new URL(`/cameras`, mediaUrl),
-            jsonRequestInit("GET"),
+            jsonRequestInit("GET", undefined, signal),
           ),
         );
     },
@@ -67,7 +68,7 @@ export function createStationApi(
     async getCamera(name: string) {
       return stationFetch(
         new URL(`/cameras/${encodeURIComponent(name)}`, mediaUrl),
-        jsonRequestInit("GET"),
+        jsonRequestInit("GET", undefined, signal),
       );
     },
     /** Submit an individual arm command. */
@@ -75,17 +76,8 @@ export function createStationApi(
       return apiSchemas.shape.CommandAnswer.parse(
         await stationRequest(
           new URL(`/commands`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
-      );
-    },
-    /** Cancel a submission and stop its arms while holding the lease. */
-    async cancelCommandSubmissionHttp(
-      body: ApiSchemas["CommandCancellationRequest"],
-    ) {
-      await stationFetch(
-        new URL(`/commands/cancel`, stationUrl),
-        jsonRequestInit("POST", body),
       );
     },
     /** Compile an action sequence without acquiring control or moving hardware. */
@@ -93,7 +85,7 @@ export function createStationApi(
       return apiSchemas.shape.CompilationOutcome.parse(
         await stationRequest(
           new URL(`/compilations/compile`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
       );
     },
@@ -102,7 +94,7 @@ export function createStationApi(
       return apiSchemas.shape.CompilationOutcome.parse(
         await stationRequest(
           new URL(`/compilations/import`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
       );
     },
@@ -115,7 +107,7 @@ export function createStationApi(
         .parse(
           await stationRequest(
             new URL(`/compilations/run`, stationUrl),
-            jsonRequestInit("POST", body),
+            jsonRequestInit("POST", body, signal),
           ),
         );
     },
@@ -124,7 +116,7 @@ export function createStationApi(
       return apiSchemas.shape.CompilationArtifact.parse(
         await stationRequest(
           new URL(`/compilations/${encodeURIComponent(id)}`, stationUrl),
-          jsonRequestInit("GET"),
+          jsonRequestInit("GET", undefined, signal),
         ),
       );
     },
@@ -135,7 +127,7 @@ export function createStationApi(
       return apiSchemas.shape.CommandAnswer.parse(
         await stationRequest(
           new URL(`/group_commands`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
       );
     },
@@ -144,7 +136,7 @@ export function createStationApi(
       return apiSchemas.shape.StationInstance.parse(
         await stationRequest(
           new URL(`/instance`, stationUrl),
-          jsonRequestInit("GET"),
+          jsonRequestInit("GET", undefined, signal),
         ),
       );
     },
@@ -153,7 +145,7 @@ export function createStationApi(
       return apiSchemas.shape.LeaseGrant.parse(
         await stationRequest(
           new URL(`/leases`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
       );
     },
@@ -161,21 +153,61 @@ export function createStationApi(
     async reportLeaseCameraHttp(body: ApiSchemas["LeaseCameraReport"]) {
       await stationFetch(
         new URL(`/leases/camera`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
       );
     },
     /** Release a current station lease. */
     async releaseLeaseHttp(body: ApiSchemas["LeaseToken"]) {
       await stationFetch(
         new URL(`/leases/release`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
       );
     },
     /** Renew a current station lease. */
     async renewLeaseHttp(body: ApiSchemas["LeaseToken"]) {
       await stationFetch(
         new URL(`/leases/renew`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
+      );
+    },
+    /** Capture selected arm state and camera frames under the same observation revisions. */
+    async captureObservationHttp(body: ApiSchemas["ObservationRequest"]) {
+      return apiSchemas.shape.ObservationAnswer.parse(
+        await stationRequest(
+          new URL(`/observations`, stationUrl),
+          jsonRequestInit("POST", body, signal),
+        ),
+      );
+    },
+    /** The retained status and outcomes of an operation. */
+    async getOperation(id: string) {
+      return apiSchemas.shape.OperationStatus.parse(
+        await stationRequest(
+          new URL(`/operations/${encodeURIComponent(id)}`, stationUrl),
+          jsonRequestInit("GET", undefined, signal),
+        ),
+      );
+    },
+    /** Cancel an operation while holding its lease. */
+    async cancelOperationHttp(
+      id: string,
+      body: ApiSchemas["CommandCancellationRequest"],
+    ) {
+      await stationFetch(
+        new URL(`/operations/${encodeURIComponent(id)}/cancel`, stationUrl),
+        jsonRequestInit("POST", body, signal),
+      );
+    },
+    /** Update a live stream using its operation identifier and a newer goal sequence. */
+    async updateStreamGoalHttp(
+      id: string,
+      body: ApiSchemas["StreamGoalUpdateRequest"],
+    ) {
+      return apiSchemas.shape.CommandAnswer.parse(
+        await stationRequest(
+          new URL(`/operations/${encodeURIComponent(id)}/goal`, stationUrl),
+          jsonRequestInit("POST", body, signal),
+        ),
       );
     },
     /** Preview independent pose candidates for one arm in input order. */
@@ -183,7 +215,7 @@ export function createStationApi(
       return apiSchemas.shape.PosePreviewBatchResponse.parse(
         await stationRequest(
           new URL(`/pose_previews`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
       );
     },
@@ -191,14 +223,14 @@ export function createStationApi(
     async recordRunEventHttp(body: ApiSchemas["RunEvent"]) {
       await stationFetch(
         new URL(`/run/events`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
       );
     },
     /** Record model-loop span updates. */
     async recordRunSpansHttp(body: ApiSchemas["RunSpansRequest"]) {
       await stationFetch(
         new URL(`/run/spans`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
       );
     },
     /** The whole station. */
@@ -206,7 +238,7 @@ export function createStationApi(
       return apiSchemas.shape.StationState.parse(
         await stationRequest(
           new URL(`/state`, stationUrl),
-          jsonRequestInit("GET"),
+          jsonRequestInit("GET", undefined, signal),
         ),
       );
     },
@@ -217,7 +249,7 @@ export function createStationApi(
         .parse(
           await stationRequest(
             new URL(`/traces`, stationUrl),
-            jsonRequestInit("GET"),
+            jsonRequestInit("GET", undefined, signal),
           ),
         );
     },
@@ -225,7 +257,7 @@ export function createStationApi(
     async getTraceFile(name: string) {
       return stationFetch(
         new URL(`/traces/${encodeURIComponent(name)}`, stationUrl),
-        jsonRequestInit("GET"),
+        jsonRequestInit("GET", undefined, signal),
       );
     },
     /** Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. */
@@ -233,7 +265,7 @@ export function createStationApi(
       return apiSchemas.shape.PhoneInvite.parse(
         await stationRequest(
           new URL(`/viewer/api/phone-invites`, stationUrl),
-          jsonRequestInit("POST", body),
+          jsonRequestInit("POST", body, signal),
         ),
       );
     },
@@ -244,7 +276,7 @@ export function createStationApi(
         .parse(
           await stationRequest(
             new URL(`/viewer/api/recording/start`, stationUrl),
-            jsonRequestInit("POST"),
+            jsonRequestInit("POST", undefined, signal),
           ),
         );
     },
@@ -253,7 +285,7 @@ export function createStationApi(
       return apiSchemas.shape.RecordingStatus.parse(
         await stationRequest(
           new URL(`/viewer/api/recording/status`, stationUrl),
-          jsonRequestInit("GET"),
+          jsonRequestInit("GET", undefined, signal),
         ),
       );
     },
@@ -261,14 +293,14 @@ export function createStationApi(
     async stopRecording() {
       await stationFetch(
         new URL(`/viewer/api/recording/stop`, stationUrl),
-        jsonRequestInit("POST"),
+        jsonRequestInit("POST", undefined, signal),
       );
     },
     /** Stop recording only while the token still holds the lease. */
     async stopRecordingForLease(body: ApiSchemas["LeaseToken"]) {
       await stationFetch(
         new URL(`/viewer/api/recording/stop-for-lease`, stationUrl),
-        jsonRequestInit("POST", body),
+        jsonRequestInit("POST", body, signal),
       );
     },
   };

@@ -37,6 +37,7 @@ enum Outgoing {
     Disconnected(u64),
     Snapshot(u64),
     FindRecord(String, tokio::sync::oneshot::Sender<Option<CommandRecord>>),
+    AwaitCompletion(String, tokio::sync::oneshot::Sender<CommandRecord>),
     LatestSample(tokio::sync::oneshot::Sender<Option<Sample>>),
     View(tokio::sync::oneshot::Sender<ArmView>),
 }
@@ -271,6 +272,15 @@ impl LinkHandle {
             .send(Outgoing::FindRecord(command_id, answer))
             .ok()?;
         answered.await.ok().flatten()
+    }
+
+    pub(crate) async fn await_completion(&self, command_id: String) -> Option<CommandRecord> {
+        let (complete, completion) = tokio::sync::oneshot::channel();
+        self.shared
+            .outgoing
+            .send(Outgoing::AwaitCompletion(command_id, complete))
+            .ok()?;
+        completion.await.ok()
     }
 
     pub fn snapshot(&self, client: u64) {
@@ -719,6 +729,7 @@ struct Hub {
     latest_sample_at: Option<Instant>,
     records: HashMap<String, CommandRecord>,
     record_order: VecDeque<String>,
+    completion_waiters: HashMap<String, Vec<tokio::sync::oneshot::Sender<CommandRecord>>>,
     // INVARIANT: The command that finished latest and still awaits the resting sample that
     // follows its completion, with its finish time. Commands can be logged out of
     // finish order (a release logs the motion it interrupted after its own record),
@@ -779,36 +790,7 @@ impl Hub {
                     self.announce_change();
                 }
             }
-            Outgoing::ControllerUnavailable(reason) => {
-                self.latest_sample_at = None;
-                if let Some(sample) = &mut self.latest_sample {
-                    sample.active_command = None;
-                }
-                self.log_event(Event::ControllerUnavailable {
-                    reason: reason.clone(),
-                });
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0.0, |duration| duration.as_secs_f64());
-                let interrupted: Vec<_> = self
-                    .records
-                    .values()
-                    .filter(|record| record.completion.is_none())
-                    .cloned()
-                    .collect();
-                for mut record in interrupted {
-                    record.completion = Some(hebbian_contracts::CommandCompletion {
-                        finished_at: now,
-                        outcome: hebbian_contracts::CommandOutcome::Interrupted,
-                        detail: Some(format!(
-                            "Controller lost; command outcome and arm torque are unknown: {reason}"
-                        )),
-                        gripper: None,
-                    });
-                    self.log_event(Event::Record(record));
-                }
-                self.announce_change();
-            }
+            Outgoing::ControllerUnavailable(reason) => self.controller_unavailable(reason),
             Outgoing::Connected(client, sink) => {
                 self.clients.insert(client, sink);
             }
@@ -836,7 +818,50 @@ impl Hub {
             Outgoing::FindRecord(command_id, answer) => {
                 let _ = answer.send(self.records.get(&command_id).cloned());
             }
+            Outgoing::AwaitCompletion(command_id, complete) => {
+                if let Some(record) = self.records.get(&command_id) {
+                    if record.completion.is_some() {
+                        let _ = complete.send(record.clone());
+                    } else {
+                        self.completion_waiters
+                            .entry(command_id)
+                            .or_default()
+                            .push(complete);
+                    }
+                }
+            }
         }
+    }
+
+    fn controller_unavailable(&mut self, reason: String) {
+        self.latest_sample_at = None;
+        if let Some(sample) = &mut self.latest_sample {
+            sample.active_command = None;
+        }
+        self.log_event(Event::ControllerUnavailable {
+            reason: reason.clone(),
+        });
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |duration| duration.as_secs_f64());
+        let interrupted: Vec<_> = self
+            .records
+            .values()
+            .filter(|record| record.completion.is_none())
+            .cloned()
+            .collect();
+        for mut record in interrupted {
+            record.completion = Some(hebbian_contracts::CommandCompletion {
+                finished_at: now,
+                outcome: hebbian_contracts::CommandOutcome::Interrupted,
+                detail: Some(format!(
+                    "Controller lost; command outcome and arm torque are unknown: {reason}"
+                )),
+                gripper: None,
+            });
+            self.log_event(Event::Record(record));
+        }
+        self.announce_change();
     }
 
     fn announce_change(&self) {
@@ -852,6 +877,13 @@ impl Hub {
     fn log_event(&mut self, event: Event) {
         match &event {
             Event::Record(record) => {
+                if record.completion.is_some()
+                    && let Some(waiters) = self.completion_waiters.remove(&record.command_id)
+                {
+                    for complete in waiters {
+                        let _ = complete.send(record.clone());
+                    }
+                }
                 if let Some(finished_at) = record.finished_at()
                     && self
                         .pending_finished

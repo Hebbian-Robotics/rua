@@ -18,7 +18,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 livekit-camera-frames = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "38267051b750c2a6d831603e3ebd8f843df83377" }
 livekit-camera-recorder = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "38267051b750c2a6d831603e3ebd8f843df83377" }
-nix = { version = "0.31", features = ["signal", "process"] }
 cameras = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "38267051b750c2a6d831603e3ebd8f843df83377" }
 livekit-camera-publisher = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "38267051b750c2a6d831603e3ebd8f843df83377" }
 clap = { version = "4.6.7", features = ["derive"] }

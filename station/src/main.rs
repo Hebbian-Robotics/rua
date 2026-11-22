@@ -27,6 +27,7 @@ fn main() -> anyhow::Result<()> {
         Command::Controller {
             arms,
             station_socket,
+            station_pid,
             instance,
             socket_directory,
             plant_lag_seconds,
@@ -34,6 +35,7 @@ fn main() -> anyhow::Result<()> {
         } => run::run_configured(
             &run::load_arms(&arms)?,
             &station_socket,
+            station_pid,
             instance,
             socket_directory,
             plant_lag_seconds,

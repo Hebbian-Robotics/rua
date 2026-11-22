@@ -476,3 +476,65 @@ async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn combined_media_service_lists_its_cameras_and_exits_with_its_supervisor()
+-> Result<(), Box<dyn std::error::Error>> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?.to_string();
+    drop(listener);
+    let unavailable_room = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let mut supervisor = tokio::process::Command::new("sh")
+        .args([
+            "-c",
+            r#""$1" serve --address "$2" --room test --camera wrist=missing-device --supervisor-pid "$$" & echo $!; wait"#,
+            "media-supervisor",
+            env!("CARGO_BIN_EXE_hebbian-robot-use-media"),
+            &address,
+        ])
+        .env("LIVEKIT_URL", format!("ws://{}", unavailable_room.local_addr()?))
+        .env("LIVEKIT_API_KEY", "test-api-key")
+        .env("LIVEKIT_API_SECRET", "test-api-secret")
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut output = BufReader::new(supervisor.stdout.take().ok_or("no stdout")?);
+    let mut line = String::new();
+    let deadline = Duration::from_secs(5);
+    tokio::time::timeout(deadline, output.read_line(&mut line)).await??;
+    let media_pid = line.trim().parse::<u32>()?.to_string();
+    let result = async {
+        tokio::time::timeout(deadline, async {
+            let client = reqwest::Client::new();
+            let cameras = format!("http://{address}/cameras");
+            loop {
+                if let Ok(response) = client.get(&cameras).send().await {
+                    let listing: serde_json::Value = response.error_for_status()?.json().await?;
+                    assert_eq!(
+                        listing,
+                        serde_json::json!([{"name": "wrist", "available": false}])
+                    );
+                    return Ok::<(), reqwest::Error>(());
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .map_err(|_| "the media service did not return its camera listing")??;
+        supervisor.kill().await?;
+        // WHY: EOF proves the child closed its inherited pipe even in containers that
+        // do not promptly reap orphans.
+        let mut remainder = Vec::new();
+        tokio::time::timeout(deadline, output.read_to_end(&mut remainder))
+            .await
+            .map_err(|_| "the media service outlived its supervisor")??;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    if result.is_err() {
+        let _ = Command::new("kill").args(["-KILL", &media_pid]).status();
+    }
+    result
+}

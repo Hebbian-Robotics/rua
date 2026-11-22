@@ -35,6 +35,7 @@ impl TestStation {
             &[ARM],
             || NoPhysicsStandIn::at(REST.to_vec(), 0.02).with_gripper(0.0),
             axum::Router::new(),
+            None,
         )
         .await
         .map(Self)

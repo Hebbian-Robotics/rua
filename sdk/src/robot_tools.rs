@@ -1,5 +1,7 @@
 //! Framework-independent robot tool definitions and execution.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use hebbian_contracts::{ObservationAnswer, ObservationRequest};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -380,19 +382,51 @@ impl<'a> RobotTools<'a> {
             return Ok(self.history_observation(call_id));
         }
         let station = self.lease.station();
-        let state = station.state().await?;
-        let mut cameras = BTreeMap::new();
-        for camera in &self.cameras {
-            let snapshot = station.camera_jpeg(camera).await?;
-            cameras.insert(camera.clone(), snapshot.jpeg.into());
-        }
+        let (state, frames) = match station
+            .capture_observation_http(&ObservationRequest {
+                arms: Vec::new(),
+                required_cameras: self.cameras.clone(),
+                optional_cameras: Vec::new(),
+            })
+            .await?
+        {
+            ObservationAnswer::ObservationCaptured { state, cameras, .. } => (state, cameras),
+            ObservationAnswer::ObservationArmDisconnected { arm } => {
+                return Err(crate::Error::Connection(format!(
+                    "Arm {arm} is disconnected"
+                )));
+            }
+            ObservationAnswer::ObservationRevisionChanged { arm } => {
+                return Err(crate::Error::Refused {
+                    reason: hebbian_contracts::RejectionReason::StaleRevision,
+                    detail: format!("Arm {arm} changed during observation"),
+                });
+            }
+            ObservationAnswer::ObservationRequiredCameraUnavailable { camera } => {
+                return Err(crate::Error::CameraUnavailable {
+                    name: camera,
+                    listed: Vec::new(),
+                    last_error: None,
+                });
+            }
+        };
+        let cameras = frames
+            .into_iter()
+            .map(|(name, frame)| {
+                STANDARD
+                    .decode(frame.jpeg_base64)
+                    .map(|jpeg| (name, jpeg.into()))
+                    .map_err(|error| {
+                        crate::Error::Connection(format!("Invalid observation frame: {error}"))
+                    })
+            })
+            .collect::<crate::Result<BTreeMap<_, _>>>()?;
+
         Ok(RobotToolResult {
             call_id,
             cameras,
             outcome: self
-                .operation_outcome(ToolOperationAnswer::Observation {
-                    state: Box::new(state),
-                })
+                .operation_outcome(ToolOperationAnswer::Observation { state })
                 .await?,
         })
     }
@@ -718,27 +752,34 @@ fn command_records_outcome(
 
 // Model-facing units are converted before station variants are parsed.
 fn convert_model_arguments_to_station_units(value: &mut Value) -> std::result::Result<(), String> {
+    use hebbian_contracts::{MODEL_INPUT_UNITS, ModelInputUnit};
+
     match value {
         Value::Object(object) => {
-            for field in ["position", "joints", "max_joint_speed"] {
-                if object.contains_key(field) {
-                    return Err(format!("use explicit model units for {field}"));
+            for ModelInputUnit { station_field, .. } in MODEL_INPUT_UNITS {
+                if object.contains_key(station_field) {
+                    return Err(format!("use explicit model units for {station_field}"));
                 }
             }
-            for child in object.values_mut() {
-                convert_model_arguments_to_station_units(child)?;
+            for (key, child) in &mut *object {
+                if matches!(key.as_str(), "arms" | "targets")
+                    && let Value::Object(targets) = child
+                {
+                    for target in targets.values_mut() {
+                        convert_model_arguments_to_station_units(target)?;
+                    }
+                } else {
+                    convert_model_arguments_to_station_units(child)?;
+                }
             }
-            for (model_field, station_field, factor) in [
-                ("position_mm", "position", 0.001),
-                ("joints_degrees", "joints", std::f64::consts::PI / 180.0),
-                (
-                    "max_joint_speed_degrees_per_second",
-                    "max_joint_speed",
-                    std::f64::consts::PI / 180.0,
-                ),
-            ] {
+            for ModelInputUnit {
+                model_field,
+                station_field,
+                scale_to_station,
+            } in MODEL_INPUT_UNITS
+            {
                 if let Some(mut field) = object.remove(model_field) {
-                    scale_argument(&mut field, factor)?;
+                    scale_argument(&mut field, scale_to_station)?;
                     object.insert(station_field.into(), field);
                 }
             }
@@ -832,6 +873,16 @@ fn normalize_movement(value: &mut Value) {
 mod outcome_tests {
     use super::{RobotToolOutcome, command_records_outcome};
     use hebbian_contracts::ArmRecord;
+
+    #[test]
+    fn tool_input_units_match_the_station_contract() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/model-input-units.json"))
+                .unwrap();
+        let mut arguments = fixture["arguments"].clone();
+        super::convert_model_arguments_to_station_units(&mut arguments).unwrap();
+        assert_eq!(arguments, fixture["station_command"]);
+    }
 
     #[test]
     fn group_outcomes_match_the_shared_examples() {
