@@ -7,7 +7,7 @@ The example supports Anthropic, OpenAI, and Gemini.
 
 ## Run the agent
 
-Start a station with [your SO-101 connected](../../../docs/getting-started.md).
+Start a station with [your arm connected](../../../docs/getting-started.md).
 For testing without hardware, use [MuJoCo](../../../docs/simulation.md). Use the
 Node.js version in the repository's `.nvmrc` and the pnpm version in `package.json`.
 

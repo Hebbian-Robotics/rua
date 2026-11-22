@@ -1,6 +1,6 @@
 # Python examples
 
-Start a station with [your SO-101 connected](../../docs/getting-started.md).
+Start a station with [your arm connected](../../docs/getting-started.md).
 For testing without hardware, use a [simulated station](../../docs/simulation.md).
 From the repository root:
 

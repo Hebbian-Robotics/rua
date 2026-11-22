@@ -1,8 +1,8 @@
 # Examples
 
-Set up an [SO-101 station](../docs/getting-started.md), then choose an example
-to control the arm or run an agent. Use [MuJoCo](../docs/simulation.md) to test
-without hardware.
+Set up a [station with a physical arm](../docs/getting-started.md), then choose
+an example to control the arm or run an agent. Use [MuJoCo](../docs/simulation.md)
+to test without hardware.
 
 | Example | What to try |
 | --- | --- |
