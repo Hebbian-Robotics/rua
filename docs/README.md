@@ -7,7 +7,7 @@ your own agent loop.
 ## Get started
 
 - [Get started with a physical arm](getting-started.md): calibrate an SO-101 and
-  run your first agent.
+  run your first agent in the browser viewer.
 - [Install from source](install-from-source.md): prerequisites and supported
   platforms for the current checkout.
 - [Windows with WSL2](windows-wsl.md): RUA requirements and USB setup considerations.
