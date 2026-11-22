@@ -1,7 +1,8 @@
 # Documentation
 
-Build robot-use agents that let an LLM observe and act through a robot. Set up
-an SO-101, try an example agent, then use an SDK to write your own loop.
+Build robot-use agents that let an LLM observe a robot, act through tools and
+adapt to the results. Start with a physical arm, then use the SDK to build
+your own agent loop.
 
 ## Get started
 
