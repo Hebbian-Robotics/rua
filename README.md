@@ -19,12 +19,6 @@ and robot tools, and let it observe and act in the real world.</p>
   <a href="https://discord.gg/vacepQvjmg">
     <img src="https://img.shields.io/badge/Discord-join%20us-5865F2?style=flat-square&amp;logo=discord&amp;logoColor=white" alt="Join the Discord community">
   </a>
-  <a href="https://pypi.org/project/hebbian-rua/">
-    <img src="https://img.shields.io/pypi/v/hebbian-rua?style=flat-square&amp;logo=pypi&amp;logoColor=white" alt="PyPI version">
-  </a>
-  <a href="https://github.com/Hebbian-Robotics/rua/actions/workflows/check.yml">
-    <img src="https://github.com/Hebbian-Robotics/rua/actions/workflows/check.yml/badge.svg?branch=main" alt="Checks on main">
-  </a>
 </p>
 
 ## Get started
