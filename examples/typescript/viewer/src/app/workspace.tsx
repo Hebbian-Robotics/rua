@@ -2,7 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import type { LiveRun, StationState } from "hebbian-rua";
 import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
 import { BotIcon, HandIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
@@ -11,28 +18,30 @@ import { stationJson } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { AgentControl } from "../features/agent/agent-control.js";
 import { useAgentRun } from "../features/agent/use-agent-run.js";
-import { CameraView, useCameraRoom } from "../features/cameras/live-cameras.js";
+import {
+  type CameraRoomState,
+  CameraView,
+} from "../features/cameras/live-cameras.js";
 import { PhoneCameraSetup } from "../features/cameras/phone-camera-setup.js";
 import { ArmControl } from "../features/control/arm-control.js";
 import { controlModeLockReason } from "../features/control/control-mode.js";
 import { ControllerRecovery } from "../features/control/controller-recovery.js";
 import { ManualControl } from "../features/control/manual-control.js";
 import {
-  RecordingControls,
-  useControlRecording,
-} from "../features/recordings/recording-controls.js";
-import {
   RobotScene,
   type SceneProjection,
 } from "../features/robot-scene/robot-scene.js";
 import { RunPanels } from "../features/run/run-panels.js";
 import { SettingsPage } from "../features/settings/settings-page.js";
-import { useViewerPreferences } from "../features/settings/use-viewer-preferences.js";
+import type { useViewerPreferences } from "../features/settings/use-viewer-preferences.js";
 import { LiveTelemetry } from "../features/telemetry/joint-charts.js";
 import { armControl, manualLease } from "../manual-lease.js";
-import { isRunActive, type RunRequest } from "../run-logic.js";
+import { isRunActive, type Run, type RunRequest } from "../run-logic.js";
 import { formatMotionDetail } from "../shared/measurements.js";
-import { ViewerShell } from "../shared/navigation.js";
+import {
+  type ViewerNavigationLink,
+  ViewerShell,
+} from "../shared/navigation.js";
 import { useStationState } from "../use-station-state.js";
 import { stationConnection } from "../viewer-connection.js";
 import "./ui.css";
@@ -138,7 +147,25 @@ function RecoveryControls({ state }: { state: StationState | null }) {
   );
 }
 
-export function WorkspaceApp() {
+type WorkspaceAppProps = {
+  viewerPreferences: ReturnType<typeof useViewerPreferences>;
+  cameras: CameraRoomState;
+  navigationLinks?: readonly ViewerNavigationLink[];
+  statusIndicator?: ReactNode;
+  renderAdditionalControls?: (run: Run | null) => ReactNode;
+  beforeAgentStart?: () => Promise<void>;
+  onManualControlStarted?: () => Promise<void>;
+};
+
+export function WorkspaceApp({
+  viewerPreferences,
+  cameras,
+  navigationLinks,
+  statusIndicator,
+  renderAdditionalControls,
+  beforeAgentStart,
+  onManualControlStarted,
+}: WorkspaceAppProps) {
   const [route, setRoute] = useState(() => location.hash);
   const [routePage, settingsSection] = route.split("/");
   const page = routePage === "#settings" ? "settings" : "workspace";
@@ -173,8 +200,7 @@ export function WorkspaceApp() {
   const [startingRun, setStartingRun] = useState(false);
   const [changingArmPower, setChangingArmPower] = useState(false);
   const [stoppingRun, setStoppingRun] = useState(false);
-  const { preferences, updatePreferences, colorScheme } =
-    useViewerPreferences();
+  const { preferences, updatePreferences, colorScheme } = viewerPreferences;
   const agentUrl = resolveAgentUrl(preferences.agentServerUrl);
   const agent = useAgentRun(agentUrl);
   const { run, setRun } = agent;
@@ -188,13 +214,11 @@ export function WorkspaceApp() {
   useEffect(() => {
     if (canSwitchMode) void manualLease.returnLease();
   }, [canSwitchMode]);
-  const recording = useControlRecording(preferences.recordWithControl);
   const armNames = stationState?.arms.map((arm) => arm.arm) ?? [];
   const armName = armNames.includes(selectedArm)
     ? selectedArm
     : (armNames[0] ?? "");
   const stopFollowing = useCallback(() => globalStopHandler.current?.(), []);
-  const cameras = useCameraRoom();
   const cameraNames = useMemo(
     () => cameras.feeds.map((feed) => feed.name),
     [cameras.feeds],
@@ -304,7 +328,7 @@ export function WorkspaceApp() {
     try {
       stopFollowing();
       await manualLease.returnLease();
-      await recording.startWithControl();
+      if (beforeAgentStart) await beforeAgentStart();
       setRun(await agentApi.startRun(agentUrl, request));
     } catch (error: unknown) {
       setRunError(`Could not start the run: ${errorMessage(error)}`);
@@ -321,7 +345,7 @@ export function WorkspaceApp() {
       globalStopHandler.current?.();
       void manualLease.returnLease();
       // The agent server only signals its loop to exit; its lease ends with
-      // the loop's connection, which stops the arms. Recording is untouched.
+      // the loop's connection, which stops the arms.
       if (isRunActive(run)) setRun(await agentApi.stopRun(agentUrl, run.id));
     } catch (error: unknown) {
       setRunError(`Could not stop the run: ${errorMessage(error)}`);
@@ -333,13 +357,8 @@ export function WorkspaceApp() {
     <ViewerShell
       current={page}
       onStop={stopFollowing}
-      recordingStatus={
-        recording.stopping
-          ? "Stopping recording…"
-          : recording.name || cameras.recording
-            ? "Recording"
-            : ""
-      }
+      navigationLinks={navigationLinks}
+      statusIndicator={statusIndicator}
     >
       <ControllerRecovery />
       <RecoveryControls state={connected ? stationState : null} />
@@ -484,7 +503,7 @@ export function WorkspaceApp() {
               }
               manualSelected={controlMode === "manual"}
               manualAvailable={manualMode === "enabled"}
-              onManualControlStarted={recording.startWithControl}
+              onManualControlStarted={onManualControlStarted}
               onStopFollowing={stopFollowing}
               onPowerTransition={setChangingArmPower}
             />
@@ -530,16 +549,7 @@ export function WorkspaceApp() {
                 </p>
               )}
             </div>
-            <div className="border-t border-border p-4">
-              <RecordingControls
-                recording={recording}
-                run={run}
-                autoRecord={preferences.recordWithControl}
-                onAutoRecordChange={(recordWithControl) =>
-                  updatePreferences({ ...preferences, recordWithControl })
-                }
-              />
-            </div>
+            {renderAdditionalControls?.(run)}
           </Card>
         </div>
         <details

@@ -14,6 +14,8 @@ import {
 import { decompress } from "fzstd";
 import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
 import * as z from "zod";
+import type { ArmTrack, StateTrack } from "./features/telemetry/state-track.js";
+import type { TraceSpan } from "./span-time.js";
 
 const MAXIMUM_EVENTS = 5000;
 const NANOSECONDS_PER_SECOND = 1_000_000_000;
@@ -50,7 +52,6 @@ const recordedSpanSchema = z
       status: span.status,
     }),
   );
-export type TraceSpan = z.infer<typeof apiSchemas.shape.TraceSpan>;
 
 const armSampleSchema = z.object({
   arm: z.string(),
@@ -65,23 +66,6 @@ const stationSampleSchema = z.object({
   arms: z.array(armSampleSchema),
 });
 type ArmSample = z.infer<typeof armSampleSchema>;
-
-interface ArmTrack {
-  arm: string;
-  basePose: ArmSample["base_pose"];
-
-  measuredJoints: (number | null)[][];
-  commandedJoints: (number | null)[][];
-  destinationJoints: (number[] | null)[];
-  destinationLimited: boolean[];
-  gripperOpening: (number | null)[];
-}
-
-export interface StateTrack {
-  times: number[];
-  jointNames: string[];
-  arms: ArmTrack[];
-}
 
 interface TimelineEvent {
   timestamp: number;

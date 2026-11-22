@@ -44,6 +44,7 @@ import type {
 import { useViewerPreferences } from "../settings/use-viewer-preferences.js";
 import { JointCharts } from "../telemetry/joint-charts.js";
 import { PlaybackVideo } from "./playback-video.js";
+import { recordingNavigationLinks } from "./recording-navigation.js";
 import "../../app/ui.css";
 import "../../app/workspace.css";
 import "./recordings.css";
@@ -373,7 +374,10 @@ export function RecordingsApp() {
     deleteMutation.mutate(recording.name);
   }
   return (
-    <ViewerShell current="recordings">
+    <ViewerShell
+      current="recordings"
+      navigationLinks={recordingNavigationLinks}
+    >
       <main className="recordings-page">
         <header className="recordings-heading">
           <div>

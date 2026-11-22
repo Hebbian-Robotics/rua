@@ -1,7 +1,7 @@
 import {
   CircleIcon,
-  FilmIcon,
   LayoutGridIcon,
+  type LucideIcon,
   SettingsIcon,
   SquareIcon,
 } from "lucide-react";
@@ -28,7 +28,14 @@ import { errorMessage } from "../errors.js";
 import { armControl } from "../manual-lease.js";
 import { useStationState } from "../use-station-state.js";
 
-const navigationLinks = [
+export type ViewerNavigationLink = {
+  page: string;
+  label: string;
+  href: string;
+  Icon: LucideIcon;
+};
+
+export const workspaceNavigationLinks = [
   {
     page: "workspace",
     label: "Workspace",
@@ -36,18 +43,12 @@ const navigationLinks = [
     Icon: LayoutGridIcon,
   },
   {
-    page: "recordings",
-    label: "Recordings",
-    href: "recording.html",
-    Icon: FilmIcon,
-  },
-  {
     page: "settings",
     label: "Settings",
     href: "./#settings",
     Icon: SettingsIcon,
   },
-] as const;
+] as const satisfies readonly ViewerNavigationLink[];
 
 function ViewerFooter() {
   return (
@@ -76,16 +77,18 @@ function ViewerFooter() {
 }
 
 type ViewerShellProps = {
-  current: "workspace" | "recordings" | "settings";
+  current: string;
   onStop?: () => void;
-  recordingStatus?: string;
+  navigationLinks?: readonly ViewerNavigationLink[];
+  statusIndicator?: ReactNode;
   children: ReactNode;
 };
 
 export function ViewerShell({
   current,
   onStop,
-  recordingStatus,
+  navigationLinks = workspaceNavigationLinks,
+  statusIndicator,
   children,
 }: ViewerShellProps) {
   return (
@@ -94,7 +97,8 @@ export function ViewerShell({
         <ViewerNavigation
           current={current}
           onStop={onStop}
-          recordingStatus={recordingStatus}
+          navigationLinks={navigationLinks}
+          statusIndicator={statusIndicator}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1">{children}</div>
@@ -108,8 +112,11 @@ export function ViewerShell({
 function ViewerNavigation({
   current,
   onStop,
-  recordingStatus,
-}: Pick<ViewerShellProps, "current" | "onStop" | "recordingStatus">) {
+  navigationLinks,
+  statusIndicator,
+}: Pick<ViewerShellProps, "current" | "onStop" | "statusIndicator"> & {
+  navigationLinks: readonly ViewerNavigationLink[];
+}) {
   const { isMobile, open, openMobile, setOpenMobile } = useSidebar();
   const { stationState, connected } = useStationState();
   const [stopMessage, setStopMessage] = useState("");
@@ -160,7 +167,7 @@ function ViewerNavigation({
             connected={connected}
             label={connected ? "Connected" : "Offline"}
           />
-          <RecordingStatus message={recordingStatus} />
+          {statusIndicator}
           <StopArmsButton
             className="ml-auto"
             disabled={stopDisabled}
@@ -232,7 +239,7 @@ function ViewerNavigation({
                 connected={connected}
                 label={connectionLabel}
               />
-              <RecordingStatus message={recordingStatus} />
+              {statusIndicator}
             </>
           )}
           <StopArmsButton
@@ -253,28 +260,6 @@ function ViewerNavigation({
         />
       )}
     </>
-  );
-}
-
-function RecordingStatus({ message }: { message?: string }) {
-  return (
-    <div className="empty:hidden" role="status">
-      {message && (
-        <Badge
-          variant="outline"
-          title={message}
-          className="group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:px-0"
-        >
-          <CircleIcon
-            aria-hidden="true"
-            className="fill-destructive text-destructive"
-          />
-          <span className="group-data-[collapsible=icon]:sr-only">
-            {message}
-          </span>
-        </Badge>
-      )}
-    </div>
   );
 }
 

@@ -2,9 +2,9 @@ import { memo, useEffect, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { commandPlan, commandWasLimited, type StationState } from "hebbian-rua";
-import type { StateTrack } from "../../recording-timeline.js";
 import { radiansToDegrees } from "../../shared/measurements.js";
 import { stationConnection } from "../../viewer-connection.js";
+import type { StateTrack } from "./state-track.js";
 
 const JOINT_TICK_INCREMENTS = [15, 30, 45, 90, 180].map(
   (degrees) => (degrees * Math.PI) / 180,

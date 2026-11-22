@@ -7,6 +7,12 @@ commands below from the repository root. Build/restart instructions live in
 
 ## Validation details
 
+Pull-request CI selects documentation, Python, TypeScript, Rust, and station
+integration checks from the changed paths. Station integration covers generated
+contracts and SDKs against the simulated station. Shared schemas, test fixtures,
+workflow changes, and unclassified paths select all checks. Pushes to `main`
+and manual runs always execute the full suite.
+
 Use `uv run rua-dev validate --help` for available lanes. Run
 `uv run rua-dev validate --lane viewer` for viewer checks and tests. Install
 the JavaScript dependencies with `pnpm install --frozen-lockfile` before running

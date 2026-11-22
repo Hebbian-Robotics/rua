@@ -1,6 +1,6 @@
-import type { TraceSpan } from "./recording-timeline.js";
+import type { LiveRun } from "hebbian-rua";
 
-export type { TraceSpan };
+export type TraceSpan = LiveRun["spans"][number];
 
 const NANOSECONDS_PER_SECOND = 1_000_000_000;
 

@@ -11,21 +11,20 @@ import { createActor } from "xstate";
 import { Button } from "@/components/ui/button.js";
 import { stationJson } from "../../api.js";
 import { errorMessage } from "../../errors.js";
-import { roomIsRecording } from "../../room-recording.js";
 import { createCameraConnectionMachine } from "./camera-connection-machine.js";
 
 export type CameraFeed = { name: string; track: RemoteTrack };
 export type CameraRoomState = {
   status: string;
   feeds: CameraFeed[];
-  recording: boolean;
+  roomMetadata: string | undefined;
 };
 
 export function useCameraRoom(): CameraRoomState {
   const [state, setState] = useState<CameraRoomState>({
     status: "Connecting to cameras…",
     feeds: [],
-    recording: false,
+    roomMetadata: undefined,
   });
 
   useEffect(() => {
@@ -82,7 +81,7 @@ export function useCameraRoom(): CameraRoomState {
           if (active)
             setState((previous) => ({
               ...previous,
-              recording: roomIsRecording(connecting),
+              roomMetadata: connecting.metadata,
             }));
         });
       try {
@@ -99,7 +98,7 @@ export function useCameraRoom(): CameraRoomState {
         updateFeeds();
         setState((previous) => ({
           ...previous,
-          recording: roomIsRecording(connecting),
+          roomMetadata: connecting.metadata,
         }));
         connecting.on(RoomEvent.Disconnected, () => {
           if (!active) return;
@@ -108,7 +107,7 @@ export function useCameraRoom(): CameraRoomState {
           setState({
             status: "Camera connection lost; reconnecting…",
             feeds: [],
-            recording: false,
+            roomMetadata: undefined,
           });
           cameraActor.send({ type: "DISCONNECTED" });
         });
@@ -119,7 +118,7 @@ export function useCameraRoom(): CameraRoomState {
         setState({
           status: `Cameras unavailable: ${errorMessage(error, "unknown error")}`,
           feeds: [],
-          recording: false,
+          roomMetadata: undefined,
         });
         cameraActor.send({ type: "FAILED" });
       }
