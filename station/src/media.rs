@@ -51,6 +51,18 @@ pub(crate) fn find_media(explicit: Option<PathBuf>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(PROGRAM))
 }
 
+pub(crate) fn list_camera_devices(explicit: Option<PathBuf>) -> anyhow::Result<()> {
+    use anyhow::{Context, ensure};
+
+    let executable = find_media(explicit);
+    let status = std::process::Command::new(&executable)
+        .arg("camera-devices")
+        .status()
+        .with_context(|| format!("Cannot run media companion {}", executable.display()))?;
+    ensure!(status.success(), "Camera discovery failed: {status}");
+    Ok(())
+}
+
 pub(crate) struct MediaPlan {
     pub executable: PathBuf,
     pub address: SocketAddr,

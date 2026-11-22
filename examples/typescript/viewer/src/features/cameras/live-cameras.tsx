@@ -1,5 +1,6 @@
 import { apiSchemas } from "hebbian-rua";
 import {
+  ConnectionState,
   type RemoteParticipant,
   type RemoteTrack,
   Room,
@@ -20,9 +21,35 @@ export type CameraRoomState = {
   roomMetadata: string | undefined;
 };
 
+type CameraConnection =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | { error: string };
+
+function connectionMessage(
+  connection: CameraConnection,
+  hasFeeds: boolean,
+): string {
+  switch (connection) {
+    case "connecting":
+      return "Connecting to LiveKit…";
+    case "connected":
+      return hasFeeds
+        ? "LiveKit connected."
+        : "LiveKit connected. Waiting for cameras.";
+    case "reconnecting":
+      return "Reconnecting to LiveKit…";
+    default:
+      return `Couldn’t connect to LiveKit. ${connection.error}`;
+  }
+}
+
 export function useCameraRoom(): CameraRoomState {
-  const [state, setState] = useState<CameraRoomState>({
-    status: "Connecting to LiveKit…",
+  const [state, setState] = useState<
+    Omit<CameraRoomState, "status"> & { connection: CameraConnection }
+  >({
+    connection: "connecting",
     feeds: [],
     roomMetadata: undefined,
   });
@@ -45,9 +72,6 @@ export function useCameraRoom(): CameraRoomState {
       setState((previous) => ({
         ...previous,
         feeds: orderedFeeds,
-        status: orderedFeeds.length
-          ? "LiveKit connected."
-          : "LiveKit connected. Waiting for cameras.",
       }));
     }
 
@@ -55,6 +79,20 @@ export function useCameraRoom(): CameraRoomState {
       const connecting = new Room({ adaptiveStream: true });
       room = connecting;
       connecting
+        .on(RoomEvent.ConnectionStateChanged, (connectionState) => {
+          if (!active) return;
+          if (connectionState === ConnectionState.Connected) {
+            setState((previous) => ({ ...previous, connection: "connected" }));
+          } else if (
+            connectionState === ConnectionState.Reconnecting ||
+            connectionState === ConnectionState.SignalReconnecting
+          ) {
+            setState((previous) => ({
+              ...previous,
+              connection: "reconnecting",
+            }));
+          }
+        })
         .on(
           RoomEvent.TrackSubscribed,
           (
@@ -107,7 +145,7 @@ export function useCameraRoom(): CameraRoomState {
           connecting.removeAllListeners();
           feeds.clear();
           setState({
-            status: "LiveKit disconnected. Reconnecting…",
+            connection: "reconnecting",
             feeds: [],
             roomMetadata: undefined,
           });
@@ -117,8 +155,9 @@ export function useCameraRoom(): CameraRoomState {
         connecting.removeAllListeners();
         await connecting.disconnect();
         if (!active) return;
+        feeds.clear();
         setState({
-          status: `Couldn’t connect to LiveKit. ${errorMessage(error, "Unknown error.")}`,
+          connection: { error: errorMessage(error, "Unknown error.") },
           feeds: [],
           roomMetadata: undefined,
         });
@@ -136,7 +175,11 @@ export function useCameraRoom(): CameraRoomState {
       void room?.disconnect();
     };
   }, []);
-  return state;
+  const { connection, ...roomState } = state;
+  return {
+    ...roomState,
+    status: connectionMessage(connection, state.feeds.length > 0),
+  };
 }
 
 function cameraTitle(name: string): string {
