@@ -1,7 +1,33 @@
-# Hebbian Robot-Use Agents (RUA)
+<p align="center">
+  <a href="https://hebbianrobotics.com/">
+    <img src="https://raw.githubusercontent.com/Hebbian-Robotics/rua/main/examples/typescript/viewer/public/hebbian-logo.svg" alt="Hebbian Robotics" width="128">
+  </a>
+  <br>
+  <strong>Hebbian Robotics (YC S26)</strong>
+</p>
 
-Build your own robot-use agents. Give an LLM a goal, camera views
-and robot tools, and let it observe, act and adjust.
+<h1 align="center">Hebbian Robot-Use Agents (RUA)</h1>
+
+<p align="center">Build your own robot-use agents. Give an LLM a goal, camera views
+and robot tools, and let it observe, act and adjust.</p>
+
+<p align="center">
+  <a href="https://www.ycombinator.com/companies/hebbian-robotics">
+    <img src="https://img.shields.io/badge/Y%20Combinator%20-S26-F26522?style=flat-square&amp;logo=ycombinator&amp;logoColor=white" alt="Y Combinator S26">
+  </a>
+  <a href="https://github.com/Hebbian-Robotics/rua/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT license">
+  </a>
+  <a href="https://discord.gg/vacepQvjmg">
+    <img src="https://img.shields.io/badge/Discord-join%20us-5865F2?style=flat-square&amp;logo=discord&amp;logoColor=white" alt="Join the Discord community">
+  </a>
+  <a href="https://pypi.org/project/hebbian-rua/">
+    <img src="https://img.shields.io/pypi/v/hebbian-rua?style=flat-square&amp;logo=pypi&amp;logoColor=white" alt="PyPI version">
+  </a>
+  <a href="https://github.com/Hebbian-Robotics/rua/actions/workflows/check.yml">
+    <img src="https://github.com/Hebbian-Robotics/rua/actions/workflows/check.yml/badge.svg?branch=main" alt="Checks on main">
+  </a>
+</p>
 
 ## Get started
 
@@ -103,9 +129,18 @@ Some reading and projects around robot-use agents:
 - [RAX](https://robot-agent-exploration.com/) — agents learning robot programs through online exploration.
 - [RoboColosseum](https://robocolosseum.ai/) — real-world robot evaluation.
 
-## Contributing and license
+## Community and contributing
 
-See [contributing](CONTRIBUTING.md) for contribution workflow, validation and style. The
-code is released under the [MIT License](LICENSE); robot models and dependencies
+- [Join the Hebbian Robotics Discord](https://discord.gg/vacepQvjmg) to ask questions,
+  share what you’re building, and discuss contributions.
+- [Open a GitHub issue](https://github.com/Hebbian-Robotics/rua/issues) for reproducible
+  bugs and focused feature requests.
+- [Contribute to RUA](CONTRIBUTING.md). You can try the project and contribute without
+  robot hardware using the [MuJoCo example](docs/simulation.md).
+- Read our [code of conduct](CODE_OF_CONDUCT.md) and use the
+  [security policy](SECURITY.md) to report vulnerabilities privately.
+
+## License
+
+RUA is released under the [MIT License](LICENSE). Robot models and dependencies
 keep their own licenses, listed in [third-party notices](THIRD_PARTY_NOTICES.md).
-To report a security problem, see [security](SECURITY.md).
