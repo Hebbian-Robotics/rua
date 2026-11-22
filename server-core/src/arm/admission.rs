@@ -1,15 +1,15 @@
 use super::motion_admission::{MotionScope, MoveDecision, MoveDisposition};
 use super::state::{ArmCore, new_identifier};
 use super::types::{
-    GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Job, Lifecycle, Now,
+    CommandState, GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Job, Now,
     PowerState, ReachGoal, Rejection, ShortOfTarget, ShutdownState, StreamGoal, rejection,
 };
-use crate::joint_limits::motion_speed;
 use crate::motion_values::{JointAngle, JointSpeed};
 use crate::planning::orientation::{from_xyzw, orientation_summary, pose_orientation_quaternion};
 use hebbian_contracts::{
-    Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandRecord, CornerPlan,
-    Event, GripperResult, PoseOrientation, RejectionReason, TargetStatus,
+    Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandPhase, CommandPose,
+    CommandRecord, ControlAction, CornerPlan, Event, GripperResult, KnownCommandOutcome,
+    NotStartedOutcome, PoseOrientation, RecordedCommand, RejectionReason,
 };
 
 pub(super) const RETAINED_RECORDS: usize = 200;
@@ -36,7 +36,7 @@ fn stopped_short_summary(achieved: &Achieved) -> Option<String> {
 
 impl ArmCore {
     pub(super) fn busy(&self) -> bool {
-        self.lifecycle != Lifecycle::Idle
+        self.command_state != CommandState::Idle
     }
 
     pub(super) fn faulted_rejection(&self) -> Rejection {
@@ -86,11 +86,11 @@ impl ArmCore {
 
     pub(super) fn new_record(
         &self,
-        kind: &str,
-        joint_speed: Option<f64>,
+        label: &str,
+        command: RecordedCommand,
         now: Now,
     ) -> CommandRecord {
-        let mut record = CommandRecord::new(new_identifier(), kind, now.unix_seconds, joint_speed);
+        let mut record = CommandRecord::new(new_identifier(), label, now.unix_seconds, command);
         record.trace_context.clone_from(&self.trace_context);
         record
     }
@@ -103,7 +103,7 @@ impl ArmCore {
                 let Some(completed) = self.record_order.iter().position(|id| {
                     self.records
                         .get(id)
-                        .is_some_and(|record| record.completion.is_some())
+                        .is_some_and(|record| !record.is_pending())
                 }) else {
                     break;
                 };
@@ -112,7 +112,7 @@ impl ArmCore {
                 }
             }
         }
-        if record.completion.is_some() {
+        if !record.is_pending() {
             self.last_finished = Some(id);
         }
         (self.publish)(Event::Record(record));
@@ -156,39 +156,75 @@ impl ArmCore {
         let Some(mut record) = self.records.get(command_id).cloned() else {
             return;
         };
-        let is_active = self.active_command_id() == Some(command_id);
-        record.achieved = if outcome == CommandOutcome::Interrupted {
-            None
-        } else {
-            self.achieved(&record)
-        };
-        let detail = match (outcome, &record.achieved) {
-            (CommandOutcome::StoppedShort, Some(achieved)) => {
-                stopped_short_summary(achieved).or(detail)
+        record.phase = match outcome.known() {
+            None => CommandPhase::OutcomeUnknown {
+                finished_at: now.unix_seconds,
+                detail,
+            },
+            Some(KnownCommandOutcome::Failed)
+                if !self.motion_advanced
+                    && matches!(
+                        record.command,
+                        RecordedCommand::Move { .. }
+                            | RecordedCommand::PolicyReach { .. }
+                            | RecordedCommand::JointStream { .. }
+                            | RecordedCommand::PoseStream { .. }
+                    ) =>
+            {
+                CommandPhase::NotStarted {
+                    finished_at: now.unix_seconds,
+                    outcome: NotStartedOutcome::Failed,
+                    detail,
+                }
             }
-            _ => detail,
-        };
-        record.completion = Some(CommandCompletion {
-            finished_at: now.unix_seconds,
-            outcome,
-            detail,
-            gripper,
-        });
-        record.target_status = record.target_joints.as_ref().and_then(|_| {
-            if outcome == CommandOutcome::Interrupted {
-                return None;
+            Some(outcome) => {
+                let achieved = self.achieved(&record);
+                let detail = if outcome == KnownCommandOutcome::StoppedShort {
+                    achieved.as_ref().and_then(stopped_short_summary).or(detail)
+                } else {
+                    detail
+                };
+                CommandPhase::Finished {
+                    completion: CommandCompletion {
+                        finished_at: now.unix_seconds,
+                        outcome,
+                        detail,
+                        gripper,
+                    },
+                    achieved: achieved.map(Box::new),
+                }
             }
-            Some(if outcome == CommandOutcome::Completed {
-                TargetStatus::Reached
-            } else if outcome == CommandOutcome::StoppedShort {
-                TargetStatus::StoppedShort
-            } else if !is_active || (outcome == CommandOutcome::Failed && !self.motion_advanced) {
-                TargetStatus::NotStarted
-            } else {
-                TargetStatus::Partial
-            })
-        });
+        };
         self.store(record);
+    }
+
+    fn stop_before_start(&mut self, command_id: &str, detail: &str, now: Now) {
+        if let Some(mut record) = self.records.get(command_id).cloned() {
+            record.phase = CommandPhase::NotStarted {
+                finished_at: now.unix_seconds,
+                outcome: NotStartedOutcome::Stopped,
+                detail: Some(detail.to_owned()),
+            };
+            self.store(record);
+        }
+    }
+
+    pub(super) fn stop_gripper_command(
+        &mut self,
+        command: &GripperCommand,
+        detail: &str,
+        now: Now,
+    ) {
+        if command.pending_target.is_some() {
+            self.stop_before_start(&command.command_id, detail, now);
+        } else {
+            self.finish(
+                &command.command_id,
+                CommandOutcome::Stopped,
+                Some(detail.to_owned()),
+                now,
+            );
+        }
     }
 
     pub(super) fn achieved(&self, record: &CommandRecord) -> Option<Achieved> {
@@ -201,33 +237,33 @@ impl ArmCore {
             });
         Some(Achieved {
             sampled_at: observed.sampled_at.unix_seconds,
-            joint_error_radians: record.target_joints.as_ref().map(|target| {
+            joint_error_radians: record.target_joints().map(|target| {
                 joints
                     .iter()
                     .zip(target)
                     .map(|(a, b)| (a - b).abs())
                     .fold(0.0, f64::max)
             }),
-            joint_errors_radians: record.target_joints.as_ref().map(|target| {
+            joint_errors_radians: record.target_joints().map(|target| {
                 joints
                     .iter()
                     .zip(target)
                     .map(|(a, b)| (a - b).abs())
                     .collect()
             }),
-            position_error_meters: position.zip(record.target_position).map(|(a, b)| {
+            position_error_meters: position.zip(record.target_position()).map(|(a, b)| {
                 a.iter()
                     .zip(&b)
                     .map(|(x, y)| (x - y) * (x - y))
                     .sum::<f64>()
                     .sqrt()
             }),
-            orientation_error_radians: quaternion.zip(record.target_quaternion).map(|(a, b)| {
+            orientation_error_radians: quaternion.zip(record.target_quaternion()).map(|(a, b)| {
                 let dot: f64 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
                 2.0 * dot.abs().min(1.0).acos()
             }),
             orientation: quaternion.map(|quaternion| {
-                let target = record.target_quaternion.map(from_xyzw);
+                let target = record.target_quaternion().map(from_xyzw);
                 orientation_summary(
                     &from_xyzw(quaternion),
                     self.limits.jaw_closing_axis,
@@ -282,10 +318,7 @@ impl ArmCore {
                 let record =
                     self.submit_stream_joints(positions, joint_speed, stream_command_id, now)?;
                 if let Some(target) = gripper {
-                    self.apply_gripper(target, now);
-                    if let Some(gripper) = &mut self.gripper_command {
-                        gripper.stream_id = Some(record.command_id.clone());
-                    }
+                    self.apply_gripper(target, Some(record.command_id.clone()), now);
                 }
                 Ok(record)
             }
@@ -306,10 +339,10 @@ impl ArmCore {
     }
 
     pub(super) fn enqueue(&mut self, record: &CommandRecord, job: Job, replacing: bool) {
-        self.lifecycle = if replacing {
-            Lifecycle::Superseding(Some(job))
+        self.command_state = if replacing {
+            CommandState::Superseding(Some(job))
         } else {
-            Lifecycle::Queued(job)
+            CommandState::Queued(job)
         };
         self.store(record.clone());
     }
@@ -328,7 +361,13 @@ impl ArmCore {
                 },
             ));
         }
-        let record = self.new_record("enable", None, now);
+        let record = self.new_record(
+            "enable",
+            RecordedCommand::Control {
+                action: ControlAction::Enable,
+            },
+            now,
+        );
         self.enqueue(
             &record,
             Job::Enable {
@@ -346,7 +385,13 @@ impl ArmCore {
                 "The arm is not waiting for recovery approval",
             ));
         }
-        let record = self.new_record("approve_recovery", None, now);
+        let record = self.new_record(
+            "approve_recovery",
+            RecordedCommand::Control {
+                action: ControlAction::ApproveRecovery,
+            },
+            now,
+        );
         self.enqueue(
             &record,
             Job::ApproveRecovery {
@@ -361,7 +406,13 @@ impl ArmCore {
         if let Some(refused) = self.mode_rejection() {
             return Err(refused);
         }
-        let record = self.new_record("release", None, now);
+        let record = self.new_record(
+            "release",
+            RecordedCommand::Control {
+                action: ControlAction::Disable,
+            },
+            now,
+        );
         self.enqueue(
             &record,
             Job::Release {
@@ -382,14 +433,15 @@ impl ArmCore {
         // INVARIANT: Stop includes the jaw: it must not keep moving toward its old target.
         self.gripper_stop_requested = true;
         if let Some(command) = self.gripper_command.take() {
-            self.finish(
-                &command.command_id,
-                CommandOutcome::Stopped,
-                Some("Stopped and holding".into()),
-                now,
-            );
+            self.stop_gripper_command(&command, "Stopped and holding", now);
         }
-        let record = self.new_record("stop", None, now);
+        let record = self.new_record(
+            "stop",
+            RecordedCommand::Control {
+                action: ControlAction::Stop,
+            },
+            now,
+        );
         let id = record.command_id.clone();
         self.store(record);
         self.finish(&id, CommandOutcome::Completed, None, now);
@@ -401,8 +453,8 @@ impl ArmCore {
             self.request_stop();
         }
         if matches!(
-            &self.lifecycle,
-            Lifecycle::Queued(job) | Lifecycle::Superseding(Some(job))
+            &self.command_state,
+            CommandState::Queued(job) | CommandState::Superseding(Some(job))
                 if job.command_id() == command_id
         ) {
             self.cancel_queued(now, "Cancelled before start");
@@ -412,42 +464,41 @@ impl ArmCore {
         }) && let Some(command) = self.gripper_command.take()
         {
             self.gripper_stop_requested = true;
-            self.finish(
-                &command.command_id,
-                CommandOutcome::Stopped,
-                Some("Cancelled and holding".into()),
-                now,
-            );
+            self.stop_gripper_command(&command, "Cancelled and holding", now);
         }
     }
 
     pub(super) fn request_stop(&mut self) {
-        if let Lifecycle::Starting(id) | Lifecycle::Executing { command_id: id, .. } =
-            &self.lifecycle
-            && self
-                .records
-                .get(id)
-                .is_some_and(|record| record.label != "enable" && record.label != "release")
+        if let CommandState::Starting(id) | CommandState::Executing { command_id: id, .. } =
+            &self.command_state
+            && self.records.get(id).is_some_and(|record| {
+                !matches!(
+                    record.command,
+                    RecordedCommand::Control {
+                        action: ControlAction::Enable | ControlAction::Disable
+                    }
+                )
+            })
         {
-            self.lifecycle = Lifecycle::Stopping(id.clone());
+            self.command_state = CommandState::Stopping(id.clone());
         }
     }
 
     pub(super) fn cancel_queued(&mut self, now: Now, detail: &str) {
-        let queued = match std::mem::replace(&mut self.lifecycle, Lifecycle::Idle) {
-            Lifecycle::Queued(job) => Some(job),
-            Lifecycle::Superseding(job) => {
-                self.lifecycle = Lifecycle::Superseding(None);
+        let queued = match std::mem::replace(&mut self.command_state, CommandState::Idle) {
+            CommandState::Queued(job) => Some(job),
+            CommandState::Superseding(job) => {
+                self.command_state = CommandState::Superseding(None);
                 job
             }
             other => {
-                self.lifecycle = other;
+                self.command_state = other;
                 None
             }
         };
         if let Some(job) = queued {
             let id = job.command_id().to_owned();
-            self.finish(&id, CommandOutcome::Stopped, Some(detail.to_owned()), now);
+            self.stop_before_start(&id, detail, now);
             if self
                 .stream
                 .as_ref()
@@ -484,7 +535,13 @@ impl ArmCore {
             }
             self.set_power(PowerState::Disabled);
         }
-        let record = self.new_record("clear_fault", None, now);
+        let record = self.new_record(
+            "clear_fault",
+            RecordedCommand::Control {
+                action: ControlAction::ClearFault,
+            },
+            now,
+        );
         let id = record.command_id.clone();
         self.store(record);
         self.finish(&id, CommandOutcome::Completed, None, now);
@@ -500,7 +557,13 @@ impl ArmCore {
                 self.stream = None;
             }
         }
-        let record = self.new_record("shutdown", None, now);
+        let record = self.new_record(
+            "shutdown",
+            RecordedCommand::Control {
+                action: ControlAction::Shutdown,
+            },
+            now,
+        );
         let id = record.command_id.clone();
         self.store(record);
         self.finish(&id, CommandOutcome::Completed, None, now);
@@ -508,8 +571,10 @@ impl ArmCore {
     }
 
     pub(super) fn replaces_settling_motion(&self) -> bool {
-        matches!(self.lifecycle, Lifecycle::Executing { settling: true, .. })
-            && !self.shutdown_requested()
+        matches!(
+            self.command_state,
+            CommandState::Executing { settling: true, .. }
+        ) && !self.shutdown_requested()
             && !self.mode().refuses_everything()
     }
 
@@ -550,13 +615,19 @@ impl ArmCore {
         } = decision;
         let replacing = matches!(disposition, MoveDisposition::ReplaceSettling { .. });
         let target = plan.final_segment();
-        let mut record = self.new_record(label, Some(speed.radians_per_second()), now);
-        record.target_joints = Some(plan.final_corner().to_vec());
-        record.target_position = target.target_position;
-        record.target_quaternion = target.target_quaternion;
-        record.path_limited = short.path_limited;
-        record.pose_limited = short.pose_limited;
-        record.group_id = group.as_ref().map(|group| group.id.as_str().to_owned());
+        let record = self.new_record(
+            label,
+            RecordedCommand::Move {
+                target_joints: plan.final_corner().to_vec(),
+                target_position: target.target_position,
+                target_quaternion: target.target_quaternion,
+                joint_speed: speed.radians_per_second(),
+                path_limited: short.path_limited,
+                pose_limited: short.pose_limited,
+                group_id: group.as_ref().map(|group| group.id.as_str().to_owned()),
+            },
+            now,
+        );
         let job = Job::Move {
             command_id: record.command_id.clone(),
             plan,
@@ -616,9 +687,16 @@ impl ArmCore {
     }
 
     pub(crate) fn apply_reach(&mut self, label: &str, goal: ReachGoal, now: Now) -> CommandRecord {
-        let mut record = self.new_record(label, None, now);
-        record.target_position = Some(goal.position);
-        record.target_quaternion = Some(goal.quaternion);
+        let record = self.new_record(
+            label,
+            RecordedCommand::PolicyReach {
+                target_pose: CommandPose {
+                    position: goal.position,
+                    quaternion: goal.quaternion,
+                },
+            },
+            now,
+        );
         let job = Job::Reach {
             command_id: record.command_id.clone(),
             goal,
@@ -634,16 +712,14 @@ impl ArmCore {
         stream_command_id: Option<String>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
-        if positions.len() != self.limits.joint_count || positions.iter().any(|v| !v.is_finite()) {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                format!(
-                    "A goal needs {} finite joint positions",
-                    self.limits.joint_count
-                ),
-            ));
-        }
-        let requested_speed = motion_speed(
+        let positions = crate::joint_limits::JointTarget::parse(
+            positions,
+            self.limits.joint_count,
+            &self.limits.lower,
+            &self.limits.upper,
+        )
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+        let requested_speed = JointSpeed::for_request(
             joint_speed,
             self.limits.default_joint_speed,
             self.limits.max_joint_speed,
@@ -658,13 +734,6 @@ impl ArmCore {
             })
             .and_then(|stream| stream.goal.joint_speed())
             .unwrap_or(requested_speed);
-        if let Some(detail) = crate::joint_limits::joint_target_limit_error(
-            &positions,
-            &self.limits.lower,
-            &self.limits.upper,
-        ) {
-            return Err(rejection(RejectionReason::InvalidTarget, detail));
-        }
         self.submit_stream(
             StreamGoal::Joints {
                 positions,
@@ -719,8 +788,7 @@ impl ArmCore {
         if let Some(refused) = self.mode_rejection() {
             return Err(refused);
         }
-        let mut record = self.new_record(goal.label(), goal.joint_speed(), now);
-        record.goal_joints = goal.joints().map(<[f64]>::to_vec);
+        let record = self.new_record(goal.label(), goal.recorded(), now);
         self.stream = Some(HeldStreamGoal {
             command_id: record.command_id.clone(),
             goal,
@@ -767,13 +835,7 @@ impl ArmCore {
             ));
         }
         let mut record = self.records[id].clone();
-        if record.label != goal.label() {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                "A stream cannot change its kind",
-            ));
-        }
-        record.goal_joints = goal.joints().map(<[f64]>::to_vec);
+        record.command = goal.recorded();
         stream.goal = goal;
         stream.last_goal_at = now.instant;
         self.store(record.clone());
@@ -814,7 +876,7 @@ impl ArmCore {
         requested_speed: Option<f64>,
     ) -> Result<GripperTarget, Rejection> {
         let angle = self.check_gripper(angle)?;
-        let speed = motion_speed(
+        let speed = JointSpeed::for_request(
             requested_speed,
             self.limits.default_joint_speed,
             self.limits.max_joint_speed,
@@ -824,7 +886,7 @@ impl ArmCore {
             |error: anyhow::Error| rejection(RejectionReason::InvalidTarget, error.to_string());
         Ok(GripperTarget {
             angle: JointAngle::new(angle).map_err(invalid)?,
-            speed: JointSpeed::new(speed).map_err(invalid)?,
+            speed,
         })
     }
 
@@ -835,23 +897,31 @@ impl ArmCore {
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         let target = self.check_gripper_target(angle, requested_speed)?;
-        Ok(self.apply_gripper(target, now))
+        Ok(self.apply_gripper(target, None, now))
     }
 
-    pub(crate) fn apply_gripper(&mut self, target: GripperTarget, now: Now) -> CommandRecord {
+    pub(crate) fn apply_gripper(
+        &mut self,
+        target: GripperTarget,
+        stream_command_id: Option<String>,
+        now: Now,
+    ) -> CommandRecord {
         if let Some(replaced) = self.gripper_command.take() {
-            self.finish(
-                &replaced.command_id,
-                CommandOutcome::Stopped,
-                Some("Replaced by a newer gripper target".into()),
-                now,
-            );
+            self.stop_gripper_command(&replaced, "Replaced by a newer gripper target", now);
         }
-        let record = self.new_record("set_gripper", Some(target.speed.radians_per_second()), now);
+        let record = self.new_record(
+            "set_gripper",
+            RecordedCommand::Gripper {
+                target_angle_radians: target.angle.radians(),
+                joint_speed: target.speed.radians_per_second(),
+                stream_command_id: stream_command_id.clone(),
+            },
+            now,
+        );
         self.gripper_command = Some(GripperCommand {
             command_id: record.command_id.clone(),
             pending_target: Some(target),
-            stream_id: None,
+            stream_id: stream_command_id,
         });
         self.store(record.clone());
         record

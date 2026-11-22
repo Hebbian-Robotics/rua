@@ -11,25 +11,15 @@ enum IncomingMessage {
     Unknown(serde_json::Value),
 }
 
-struct StationReplay {
-    arm_cursors: BTreeMap<String, u64>,
-    event_cursor: Option<String>,
-    run_after: Option<u64>,
-}
-
 pub(crate) async fn subscribe(
     url: &str,
     archive: Option<&RecordingArchive>,
     stopped: CancellationToken,
 ) -> Result<(), RecorderError> {
-    let mut replay = StationReplay {
-        arm_cursors: BTreeMap::new(),
-        event_cursor: None,
-        run_after: Some(0),
-    };
+    let mut event_cursor = None;
     let mut backoff = Backoff::new(Duration::from_secs(1));
     loop {
-        let result = connection(url, archive, &mut replay, &mut backoff, &stopped).await;
+        let result = connection(url, archive, &mut event_cursor, &mut backoff, &stopped).await;
         if stopped.is_cancelled() {
             return Ok(());
         }
@@ -52,7 +42,7 @@ pub(crate) async fn subscribe(
 async fn connection(
     base_url: &str,
     archive: Option<&RecordingArchive>,
-    replay: &mut StationReplay,
+    event_cursor: &mut Option<String>,
     backoff: &mut Backoff,
     stopped: &CancellationToken,
 ) -> Result<(), RecorderError> {
@@ -65,19 +55,27 @@ async fn connection(
     }
     base.set_path("/events");
     base.set_query(None);
-    let mut request = client.get(base.clone());
-    if let Some(cursor) = replay.event_cursor.as_deref() {
-        request = request.header("Last-Event-ID", cursor);
-    }
-    let mut response = tokio::select! { () = stopped.cancelled() => return Ok(()), result = request.send() => result? };
-    if response.status() == reqwest::StatusCode::CONFLICT && replay.event_cursor.is_some() {
-        replay.event_cursor = None;
-        replay.arm_cursors.clear();
-        return Err(RecorderError::InvalidData(
-            "station event history has a gap".into(),
-        ));
-    }
-    response.error_for_status_ref()?;
+    let mut response = loop {
+        let mut request = client.get(base.clone());
+        if let Some(cursor) = event_cursor.as_deref() {
+            request = request.header("Last-Event-ID", cursor);
+        }
+        let response = tokio::select! { () = stopped.cancelled() => return Ok(()), result = request.send() => result? };
+        if response.status() == reqwest::StatusCode::CONFLICT
+            && let Some(after) = event_cursor.take()
+        {
+            if let Some(archive) = archive {
+                record_gap(
+                    archive,
+                    "Station event history has a gap",
+                    Some(&after),
+                    None,
+                )?;
+            }
+        } else {
+            break response.error_for_status()?;
+        }
+    };
     let mut applied_station_event = false;
     let mut decoder = hebbian_contracts::server_sent_events::ServerSentEventDecoder::default();
     loop {
@@ -90,148 +88,123 @@ async fn connection(
             .next_event()
             .map_err(|error| RecorderError::InvalidData(error.to_string()))?
         {
-            apply_event(
-                &client,
-                &base,
-                (&event.kind, &event.data),
-                archive,
-                &mut replay.arm_cursors,
-                &mut replay.run_after,
-                &mut replay.event_cursor,
-            )
-            .await?;
+            if event.kind == "resync_required" {
+                // WHY: The last successfully archived event still determines
+                // whether the server can replay the stream or must report a gap.
+                return Ok(());
+            }
+            apply_event(&event.kind, &event.data, archive)?;
             if !applied_station_event && matches!(event.kind.as_str(), "snapshot" | "station") {
                 applied_station_event = true;
                 backoff.reset();
             }
             if let Some(identifier) = event.identifier.filter(|identifier| !identifier.is_empty()) {
-                replay.event_cursor = Some(identifier);
+                *event_cursor = Some(identifier);
             }
         }
     }
 }
 
-async fn apply_event(
-    client: &reqwest::Client,
-    base: &reqwest::Url,
-    event: (&str, &str),
+fn apply_event(
+    kind: &str,
+    data: &str,
     archive: Option<&RecordingArchive>,
-    arm_cursors: &mut BTreeMap<String, u64>,
-    run_after: &mut Option<u64>,
-    event_cursor: &mut Option<String>,
 ) -> Result<(), RecorderError> {
-    let (kind, data) = event;
-    if kind == "resync_required" {
-        *event_cursor = None;
-        arm_cursors.clear();
-        return Err(RecorderError::InvalidData(
-            "station event history has a gap".into(),
-        ));
-    }
+    let Some(archive) = archive else {
+        return Ok(());
+    };
     let payload: serde_json::Value = serde_json::from_str(data)?;
-    if payload.get("kind").and_then(serde_json::Value::as_str) == Some("resync_required") {
-        *event_cursor = None;
-        arm_cursors.clear();
-        return Err(RecorderError::InvalidData(
-            "station event history has a gap".into(),
-        ));
-    }
-    if kind == "snapshot" {
-        if let Some(after) = *run_after {
-            let mut url = base.clone();
-            url.set_path("/run/records");
-            let records: Vec<serde_json::Value> = client
-                .get(url)
-                .query(&[("after", after)])
-                .timeout(Duration::from_secs(10))
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
-            for record in records {
-                record_message(record, archive, arm_cursors, run_after)?;
+    match kind {
+        "snapshot" => {
+            let items = payload
+                .get("items")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| RecorderError::InvalidData("invalid station snapshot".into()))?;
+            for item in items {
+                record_message(item.clone(), archive, Delivery::Snapshot)?;
             }
         }
-        let items = payload
-            .get("items")
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| RecorderError::InvalidData("invalid station snapshot".into()))?;
-        for item in items {
-            record_message(item.clone(), archive, arm_cursors, run_after)?;
+        "station" => {
+            if payload.get("kind").and_then(serde_json::Value::as_str) == Some("resync_required") {
+                record_gap(
+                    archive,
+                    payload
+                        .get("detail")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("Station source history has a gap"),
+                    None,
+                    payload.get("arm").and_then(serde_json::Value::as_str),
+                )?;
+            } else {
+                record_message(payload, archive, Delivery::Event)?;
+            }
         }
-    } else if kind == "station" {
-        record_message(payload, archive, arm_cursors, run_after)?;
+        _ => {}
     }
     Ok(())
 }
 
+fn record_gap(
+    archive: &RecordingArchive,
+    detail: &str,
+    after: Option<&str>,
+    arm: Option<&str>,
+) -> Result<(), RecorderError> {
+    archive.json(
+        "/station/recording_errors",
+        &serde_json::json!({"source": "station", "detail": detail, "after": after, "arm": arm}),
+        unix_nanoseconds(),
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Delivery {
+    Snapshot,
+    Event,
+}
+
 fn record_message(
     payload: serde_json::Value,
-    archive: Option<&RecordingArchive>,
-    resume_after: &mut BTreeMap<String, u64>,
-    run_after: &mut Option<u64>,
+    archive: &RecordingArchive,
+    delivery: Delivery,
 ) -> Result<(), RecorderError> {
     let message = match serde_json::from_value::<IncomingMessage>(payload)? {
         IncomingMessage::Known(message) => *message,
         IncomingMessage::Unknown(raw) => {
-            if let Some(archive) = archive {
-                archive.json("/station/unknown_messages", &raw, unix_nanoseconds())?;
-            }
+            archive.json("/station/unknown_messages", &raw, unix_nanoseconds())?;
             return Ok(());
         }
     };
     match message {
-        ServerMessage::State { state } => {
-            if let Some(archive) = archive {
-                record_state(archive, &state)?;
-            }
-        }
-        ServerMessage::Frame { arm, frame } => record_frame(&arm, &frame, archive, resume_after)?,
-        ServerMessage::Run { run } => {
-            if let Some(archive) = archive {
-                archive.json(
-                    "/run/snapshot",
-                    &serde_json::to_value(&run)?,
-                    unix_nanoseconds(),
-                )?;
-            }
-        }
+        ServerMessage::State { state } => record_state(archive, &state)?,
+        ServerMessage::Frame { arm, frame } => record_frame(&arm, &frame, archive, delivery)?,
+        ServerMessage::Run { run } => archive.json(
+            "/run/snapshot",
+            &serde_json::to_value(&run)?,
+            unix_nanoseconds(),
+        )?,
         ServerMessage::RunEvent {
             seq,
             received_unix_nano,
             event,
         } => {
-            if run_after.is_none_or(|previous| seq > previous) {
-                if let Some(archive) = archive {
-                    archive.json("/model/events", &serde_json::json!({"seq": seq, "received_unix_nano": received_unix_nano, "event": event}), received_unix_nano.0)?;
-                }
-                *run_after = Some(seq);
-            }
+            archive.json("/model/events", &serde_json::json!({"seq": seq, "received_unix_nano": received_unix_nano, "event": event}), received_unix_nano.0)?;
         }
         ServerMessage::RunSpan {
             seq,
             received_unix_nano,
             span,
         } => {
-            if run_after.is_none_or(|previous| seq > previous) {
-                if let Some(archive) = archive {
-                    let mut output = serde_json::to_value(recorded_span(&span)?)?;
-                    output["received_unix_nano"] = serde_json::to_value(received_unix_nano)?;
-                    output["seq"] = seq.into();
-                    archive.json("/trace/spans", &output, received_unix_nano.0)?;
-                }
-                *run_after = Some(seq);
-            }
+            let mut output = serde_json::to_value(recorded_span(&span)?)?;
+            output["received_unix_nano"] = serde_json::to_value(received_unix_nano)?;
+            output["seq"] = seq.into();
+            archive.json("/trace/spans", &output, received_unix_nano.0)?;
         }
         ServerMessage::RunResync {
             oldest_retained,
             newest,
         } => {
-            if let Some(archive) = archive {
-                archive.json("/station/recording_errors", &serde_json::json!({"source": "run", "detail": "Run telemetry resume gap", "after": run_after, "oldest_retained": oldest_retained, "newest": newest}), unix_nanoseconds())?;
-            }
-            *run_after = Some(newest);
+            archive.json("/station/recording_errors", &serde_json::json!({"source": "run", "detail": "Run telemetry resume gap", "oldest_retained": oldest_retained, "newest": newest}), unix_nanoseconds())?;
         }
         _ => {}
     }
@@ -241,68 +214,59 @@ fn record_message(
 fn record_frame(
     arm: &str,
     frame: &Frame,
-    archive: Option<&RecordingArchive>,
-    resume_after: &mut BTreeMap<String, u64>,
+    archive: &RecordingArchive,
+    delivery: Delivery,
 ) -> Result<(), RecorderError> {
-    if frame.seq.is_some_and(|sequence| {
-        resume_after
-            .get(arm)
-            .is_some_and(|previous| sequence <= *previous)
-    }) {
-        return Ok(());
-    }
-    if let Some(archive) = archive {
-        match &frame.event {
-            Event::Record(record) => record_command(arm, record, archive, frame.emitted_unix_nano.0)?,
-            Event::State(sample) => archive.json(
-                &format!("/station/control/{arm}"),
-                &serde_json::to_value(sample)?,
-                frame.emitted_unix_nano.0,
-            )?,
-            Event::Snapshot {
-                seq, records, log, ..
-            } => {
-                for retained_frame in log {
-                    record_frame(arm, retained_frame, Some(archive), resume_after)?;
-                }
-                for record in records {
-                    record_command(arm, record, archive, frame.emitted_unix_nano.0)?;
-                }
-                if log.iter().rev().find_map(|frame| match frame.event {
-                    Event::ControllerUnavailable { .. } => Some(false),
-                    Event::ControllerAvailable => Some(true),
-                    _ => None,
-                }) == Some(false) {
-                    archive.mark_controller_interrupted(frame.emitted_unix_nano.0, true)?;
-                }
-                resume_after.insert(arm.into(), *seq);
+    let emitted_at = frame.emitted_unix_nano.0;
+    match &frame.event {
+        Event::Record(record) if delivery == Delivery::Event => record_command(arm, record, archive, emitted_at)?,
+        Event::State(sample) => archive.json(
+            &format!("/station/control/{arm}"),
+            &serde_json::to_value(sample)?,
+            emitted_at,
+        )?,
+        Event::Snapshot { log, .. } => {
+            // WHY: A snapshot is a baseline. Its embedded log overlaps the journal.
+            if let Some(status) = log.iter().rev().find(|entry| matches!(
+                entry.event, Event::ControllerAvailable | Event::ControllerUnavailable { .. }
+            )) {
+                record_controller(arm, &status.event, archive, emitted_at, true)?;
             }
-            Event::Resync { after, oldest_retained, newest } => archive.json(
-                "/station/recording_errors",
-                &serde_json::json!({"source": "station", "arm": arm, "detail": "Arm resume gap", "after": after, "oldest_retained": oldest_retained, "newest": newest}),
-                frame.emitted_unix_nano.0,
-            )?,
-            Event::Rejected { reason } | Event::Tripped { reason } => archive.json(
-                "/station/rejections",
-                &serde_json::json!({"arm": arm, "detail": reason}),
-                frame.emitted_unix_nano.0,
-            )?,
-            Event::ControllerUnavailable { reason } => {
-                archive.mark_controller_interrupted(frame.emitted_unix_nano.0, false)?;
-                archive.json("/station/controller", &serde_json::json!({"arm": arm, "state": "unavailable", "reason": reason}), frame.emitted_unix_nano.0)?;
-            }
-            Event::ControllerAvailable => archive.json("/station/controller", &serde_json::json!({"arm": arm, "state": "available"}), frame.emitted_unix_nano.0)?,
-            _ => {}
         }
-    }
-    let sequence = match &frame.event {
-        Event::Snapshot { seq, .. } => Some(*seq),
-        _ => frame.seq,
-    };
-    if let Some(sequence) = sequence {
-        resume_after.insert(arm.into(), sequence);
+        Event::Resync { after, oldest_retained, newest } => archive.json(
+            "/station/recording_errors",
+            &serde_json::json!({"source": "station", "arm": arm, "detail": "Arm resume gap", "after": after, "oldest_retained": oldest_retained, "newest": newest}),
+            emitted_at,
+        )?,
+        Event::Rejected { reason } | Event::Tripped { reason } => archive.json(
+            "/station/rejections",
+            &serde_json::json!({"arm": arm, "detail": reason}),
+            emitted_at,
+        )?,
+        Event::ControllerAvailable | Event::ControllerUnavailable { .. } => {
+            record_controller(arm, &frame.event, archive, emitted_at, false)?;
+        }
+        _ => {}
     }
     Ok(())
+}
+
+fn record_controller(
+    arm: &str,
+    event: &Event,
+    archive: &RecordingArchive,
+    emitted_at: u64,
+    baseline: bool,
+) -> Result<(), RecorderError> {
+    let state = match event {
+        Event::ControllerUnavailable { reason } => {
+            archive.mark_controller_interrupted(emitted_at, baseline)?;
+            serde_json::json!({"arm": arm, "state": "unavailable", "reason": reason})
+        }
+        Event::ControllerAvailable => serde_json::json!({"arm": arm, "state": "available"}),
+        _ => return Ok(()),
+    };
+    archive.json("/station/controller", &state, emitted_at)
 }
 
 // CONSTRAINT: MCAP stores spans in the viewer's OpenTelemetry JSON format.
@@ -405,7 +369,7 @@ fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> Recorde
             .finished_at()
             .map_or_else(|| "0".to_owned(), |time| ((time * 1e9) as u64).to_string()),
         attributes: BTreeMap::from([
-            ("hebbian.active".into(), record.completion.is_none().into()),
+            ("hebbian.active".into(), record.is_pending().into()),
             ("hebbian.kind".into(), "command".into()),
             ("arm".into(), arm.into()),
             ("command_id".into(), record.command_id.clone().into()),
@@ -479,7 +443,8 @@ mod tests {
     fn interrupted_commands_are_recorded_as_errors() -> Result<(), Box<dyn std::error::Error>> {
         let record: hebbian_contracts::CommandRecord = serde_json::from_value(serde_json::json!({
             "command_id": "command-1", "label": "move", "accepted_at": 1.0,
-            "completion": {"finished_at": 2.0, "outcome": "interrupted", "detail": "Disconnected"},
+            "command": {"kind": "joint_stream", "goal_joints": [0.1], "joint_speed": 1.0},
+            "phase": {"kind": "outcome_unknown", "finished_at": 2.0, "detail": "Disconnected"},
             "checkpoints": []
         }))?;
         let span = command_span("follower", &record);
@@ -493,21 +458,25 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let directory = tempfile::tempdir()?;
         let archive = RecordingArchive::create(directory.path())?;
-        let mut cursors = BTreeMap::new();
         let mut record: hebbian_contracts::CommandRecord = serde_json::from_value(
             serde_json::json!({
                 "command_id": "command-1", "label": "move", "accepted_at": 1.25,
+                "phase": {"kind": "pending"},
+                "command": {"kind": "joint_stream", "goal_joints": [0.1], "joint_speed": 1.0},
                 "checkpoints": [], "trace_context": {"traceparent": "00-11111111111111111111111111111111-2222222222222222-01"}
             }),
         )?;
         for (sequence, timestamp) in [(1, 1_300_000_000), (2, 2_600_000_000)] {
             if sequence == 2 {
-                record.completion = Some(hebbian_contracts::CommandCompletion {
-                    finished_at: 2.5,
-                    outcome: hebbian_contracts::CommandOutcome::Completed,
-                    detail: None,
-                    gripper: None,
-                });
+                record.phase = hebbian_contracts::CommandPhase::Finished {
+                    completion: hebbian_contracts::CommandCompletion {
+                        finished_at: 2.5,
+                        outcome: hebbian_contracts::KnownCommandOutcome::Completed,
+                        detail: None,
+                        gripper: None,
+                    },
+                    achieved: None,
+                };
             }
             record_frame(
                 "left",
@@ -516,8 +485,8 @@ mod tests {
                     emitted_unix_nano: hebbian_contracts::UnixNanos(timestamp),
                     event: Event::Record(record.clone()),
                 },
-                Some(&archive),
-                &mut cursors,
+                &archive,
+                Delivery::Event,
             )?;
         }
         record_frame(
@@ -531,8 +500,8 @@ mod tests {
                     newest: 10,
                 },
             },
-            Some(&archive),
-            &mut cursors,
+            &archive,
+            Delivery::Event,
         )?;
         archive.finish()?;
         let data = std::fs::read(directory.path().join("recording.mcap"))?;

@@ -63,6 +63,11 @@ export {
 } from "./station-http.js";
 export { stationRequest } from "./station-request.js";
 export type * from "./station-types.js";
+export {
+  commandPlan,
+  commandResult,
+  commandWasLimited,
+} from "./station-types.js";
 export type {
   RobotToolCapability,
   RobotToolCatalogConfiguration,

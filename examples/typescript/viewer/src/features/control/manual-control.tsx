@@ -1,8 +1,9 @@
-import type {
-  ArmState,
-  PreviewPose,
-  StationCommand,
-  StationState,
+import {
+  type ArmState,
+  commandPlan,
+  type PreviewPose,
+  type StationCommand,
+  type StationState,
 } from "hebbian-rua";
 import {
   type RefObject,
@@ -88,7 +89,7 @@ async function requestManualCommand(
     const answer = await sendArmCommand(arm, command);
     if (answer.status === "refused")
       return { kind: "rejected", message: answer.detail };
-    const limited = answer.records[0]?.record.pose_limited;
+    const limited = commandPlan(answer.records[0]?.record)?.pose_limited;
     return limited
       ? { kind: "closest_pose", advice: limited.advice }
       : { kind: "accepted" };

@@ -22,6 +22,8 @@ const angleFields: Readonly<Record<string, string>> = {
   joint_errors_radians: "joint_errors_degrees",
   orientation_error_radians: "orientation_error_degrees",
   orientation_shortfall_radians: "orientation_shortfall_degrees",
+  measured_angle_radians: "measured_angle_degrees",
+  target_angle_radians: "target_angle_degrees",
   joint_speed: "joint_speed_degrees_per_second",
   max_joint_speed: "max_joint_speed_degrees_per_second",
 };
@@ -37,6 +39,62 @@ function scaleNumbers(value: unknown, factor: number): unknown {
   return typeof value === "number" ? rounded(value * factor, 1) : value;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function modelCommandRecord(
+  record: Record<string, unknown>,
+): Record<string, unknown> {
+  const { command, phase, ...metadata } = record;
+  if (
+    !isObject(command) ||
+    !isObject(phase) ||
+    typeof record["command_id"] !== "string"
+  )
+    return record;
+  const { kind, target_pose: pose, ...target } = command;
+  const phaseKind = phase["kind"];
+  if (
+    typeof kind !== "string" ||
+    !["pending", "not_started", "finished", "outcome_unknown"].some(
+      (known) => known === phaseKind,
+    )
+  )
+    return record;
+  const result: Record<string, unknown> = { ...metadata, ...target };
+  if (isObject(pose)) {
+    result["target_position"] = pose["position"];
+    result["target_quaternion"] = pose["quaternion"];
+  }
+  if (phaseKind === "finished") {
+    result["completion"] = phase["completion"];
+    result["achieved"] = phase["achieved"];
+    const completion = phase["completion"];
+    if (kind === "move" && isObject(completion)) {
+      const outcome = completion["outcome"];
+      result["target_status"] =
+        outcome === "completed"
+          ? "reached"
+          : outcome === "stopped_short"
+            ? "stopped_short"
+            : "partial";
+    }
+  } else if (phaseKind === "not_started" || phaseKind === "outcome_unknown") {
+    result["completion"] = {
+      outcome:
+        phaseKind === "outcome_unknown" ? "interrupted" : phase["outcome"],
+      detail: phase["detail"],
+      finished_at: phase["finished_at"],
+    };
+    if (phaseKind === "not_started") {
+      if (kind === "move") result["target_status"] = "not_started";
+      else result["phase"] = "not_started";
+    }
+  }
+  return result;
+}
+
 /** Convert model-facing JSON, keeping copyable orientations at full precision. */
 export function modelResponse(value: unknown): unknown {
   return formatModelField(value, "");
@@ -48,8 +106,8 @@ function formatModelField(value: unknown, fieldName: string): unknown {
     return value.map((item) => formatModelField(item, fieldName));
   if (typeof value === "object" && value !== null) {
     const formatted: Record<string, unknown> = {};
-    const record = value as Record<string, unknown>;
-    for (const [key, item] of Object.entries(value)) {
+    const record = modelCommandRecord(value as Record<string, unknown>);
+    for (const [key, item] of Object.entries(record)) {
       if (
         item == null ||
         (key === "checkpoints" && Array.isArray(item) && item.length === 0)
@@ -107,6 +165,7 @@ const diagnosticFields = [
   "id",
   "command_id",
   "group_id",
+  "stream_command_id",
   "sequence_id",
   "action_sequence_id",
   "checkpoints",
@@ -146,13 +205,17 @@ function compactEarlierStep(value: unknown): unknown {
       return conciseOutput(item);
     return conciseOutput({
       ...keepFields(entry, ["arm"]),
-      record: keepFields(record as Record<string, unknown>, [
-        "label",
-        "completion",
-        "target_status",
-        "pose_limited",
-        "path_limited",
-      ]),
+      record: keepFields(
+        modelCommandRecord(record as Record<string, unknown>),
+        [
+          "label",
+          "completion",
+          "phase",
+          "target_status",
+          "pose_limited",
+          "path_limited",
+        ],
+      ),
     });
   });
 }
@@ -168,7 +231,7 @@ export function conciseOutput(
   if (Array.isArray(value))
     return value.map((item) => conciseOutput(item, options));
   if (typeof value !== "object" || value === null) return value;
-  const record = value as Record<string, unknown>;
+  const record = modelCommandRecord(value as Record<string, unknown>);
   if ("arms" in record && "joint_names" in record) {
     const arms = Array.isArray(record["arms"]) ? record["arms"] : [];
     return {

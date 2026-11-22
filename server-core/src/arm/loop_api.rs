@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use super::state::ArmCore;
 use super::types::{
-    ArmFault, GripperTarget, Job, Lifecycle, Now, Observation, Poses, PowerState, ShutdownState,
+    ArmFault, CommandState, GripperTarget, Job, Now, Observation, Poses, PowerState, ShutdownState,
 };
 use hebbian_contracts::{Checkpoint, CommandOutcome, GripperResult};
 
@@ -86,17 +86,17 @@ impl ArmCore {
     }
 
     pub(crate) fn next_job(&mut self) -> Option<Job> {
-        let job = match std::mem::replace(&mut self.lifecycle, Lifecycle::Idle) {
-            Lifecycle::Queued(job) => job,
+        let job = match std::mem::replace(&mut self.command_state, CommandState::Idle) {
+            CommandState::Queued(job) => job,
             other => {
-                self.lifecycle = other;
+                self.command_state = other;
                 return None;
             }
         };
         let id = job.command_id().to_owned();
         self.motion_origin.clear();
         self.motion_advanced = false;
-        self.lifecycle = Lifecycle::Starting(id.clone());
+        self.command_state = CommandState::Starting(id.clone());
         if let Some(record) = self.records.get(&id).cloned() {
             self.store(record);
         }
@@ -104,11 +104,11 @@ impl ArmCore {
     }
 
     pub(crate) fn begin_moving(&mut self) {
-        if let Lifecycle::Starting(id) = &self.lifecycle {
+        if let CommandState::Starting(id) = &self.command_state {
             if let Some(observed) = &self.observation {
                 self.motion_origin.extend_from_slice(&observed.positions);
             }
-            self.lifecycle = Lifecycle::Executing {
+            self.command_state = CommandState::Executing {
                 command_id: id.clone(),
                 settling: false,
             };
@@ -120,17 +120,19 @@ impl ArmCore {
     }
 
     pub(crate) fn set_settling(&mut self, settling: bool) {
-        if let Lifecycle::Executing {
+        if let CommandState::Executing {
             settling: current, ..
-        } = &mut self.lifecycle
+        } = &mut self.command_state
         {
             *current = settling;
         }
     }
 
     pub(crate) fn take_supersede(&mut self) -> bool {
-        if let Lifecycle::Superseding(queued) = &mut self.lifecycle {
-            self.lifecycle = queued.take().map_or(Lifecycle::Idle, Lifecycle::Queued);
+        if let CommandState::Superseding(queued) = &mut self.command_state {
+            self.command_state = queued
+                .take()
+                .map_or(CommandState::Idle, CommandState::Queued);
             true
         } else {
             false
@@ -193,12 +195,7 @@ impl ArmCore {
 
     pub fn released(&mut self, cleanup_errors: &[String], now: Now) {
         if let Some(command) = self.gripper_command.take() {
-            self.finish(
-                &command.command_id,
-                CommandOutcome::Stopped,
-                Some("The motors were released".into()),
-                now,
-            );
+            self.stop_gripper_command(&command, "The motors were released", now);
         }
         self.set_power(PowerState::Disabled);
         if cleanup_errors.is_empty() {
@@ -266,7 +263,7 @@ impl ArmCore {
         if let Some(id) = self.active_command_id().map(str::to_owned) {
             self.finish(&id, outcome, detail, now);
         }
-        self.lifecycle = Lifecycle::Idle;
+        self.command_state = CommandState::Idle;
         self.motion_origin.clear();
         self.motion_advanced = false;
         self.segment = None;

@@ -30,7 +30,14 @@ import {
   StationTimeoutError,
 } from "./station-errors.js";
 import { DEFAULT_MEDIA_URL } from "./station-http.js";
-import type { ArmState, CommandAnswer, StationState } from "./station-types.js";
+import {
+  type ArmState,
+  type CommandAnswer,
+  commandPlan,
+  commandResult,
+  commandWasLimited,
+  type StationState,
+} from "./station-types.js";
 import {
   configurationFromCapabilities,
   createRobotToolCatalog,
@@ -82,7 +89,7 @@ function result(
   };
 }
 
-function commandResult(
+function toolCommandResult(
   call: RobotToolCall,
   answer: CommandAnswer,
 ): RobotToolResult {
@@ -97,15 +104,13 @@ function commandResult(
       ),
     );
   const records = answer.records.map(({ record }) => record);
-  const outcomes = records.map((record) => record.completion?.outcome);
-  const limited = records.some(
-    (record) => record.pose_limited !== null || record.path_limited !== null,
-  );
+  const outcomes = records.map((record) => commandResult(record)?.outcome);
+  const limited = records.some(commandWasLimited);
   const payloads = records;
   const payload =
     call.name === "move_arms"
       ? {
-          group_id: records[0]?.group_id,
+          group_id: commandPlan(records[0])?.group_id,
           status: outcomes.every((outcome) => outcome === "completed")
             ? limited
               ? "limited"
@@ -516,7 +521,7 @@ function createRobotToolsCore(
                 );
               })
               .with({ kind: "rehome" }, async (item) => {
-                return commandResult(
+                return toolCommandResult(
                   item.call,
                   await lease
                     .arm(arm, { traceContext })
@@ -526,7 +531,7 @@ function createRobotToolsCore(
               .with(
                 { kind: "message", message: { kind: "move_arms" } },
                 async ({ call, message }) =>
-                  commandResult(
+                  toolCommandResult(
                     call,
                     await lease.runGroup(
                       message.command,
@@ -539,7 +544,7 @@ function createRobotToolsCore(
               .with(
                 { kind: "message", message: { kind: "command" } },
                 async ({ call, message }) =>
-                  commandResult(
+                  toolCommandResult(
                     call,
                     await lease.runCommand(
                       message.arm,
@@ -581,7 +586,7 @@ function createRobotToolsCore(
                   );
                   const outcomes = sequence.steps
                     .flat()
-                    .map((record) => record.record.completion?.outcome);
+                    .map((record) => commandResult(record.record)?.outcome);
                   const modes = (await stationState()).arms
                     .filter((candidate) =>
                       sequence.arms.includes(candidate.arm),

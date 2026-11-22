@@ -17,6 +17,7 @@ use crate::controller_transport::{
     ControllerAnswer, ControllerInstanceId, ControllerMessage, ControllerRequestId,
     ControllerTransport,
 };
+use crate::lease::Lease;
 
 const OUTBOUND_CAPACITY: usize = 512;
 const MAXIMUM_IN_FLIGHT_REQUESTS: usize = 128;
@@ -154,6 +155,17 @@ fn controller_connection_closed(error: &io::Error) -> bool {
     )
 }
 
+// INVARIANT: Issued only after readiness is received and the session is activated.
+pub struct ReadyController {
+    _verified: (),
+}
+
+impl ReadyController {
+    pub fn restore_motion_authority(&self, lease: &Lease) {
+        lease.controller_ready();
+    }
+}
+
 // SAFETY: The controller must exclusively own the bus and complete startup checks before admitting commands. Fence handoffs before invalidating the station lease on disconnect.
 pub fn serve_station_connection(
     socket: UnixStream,
@@ -161,7 +173,7 @@ pub fn serve_station_connection(
     session: &mut StationSession,
     links: &BTreeMap<String, Arc<Link>>,
     shutdown: &AtomicBool,
-    on_ready: impl FnOnce(),
+    on_ready: impl FnOnce(ReadyController),
     on_unavailable: impl FnOnce(),
 ) -> io::Result<()> {
     socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
@@ -173,7 +185,7 @@ pub fn serve_station_connection(
         let _ = socket.shutdown(Shutdown::Both);
         return Err(error);
     }
-    on_ready();
+    on_ready(ReadyController { _verified: () });
     let mut writer = ControllerTransport::new(writer_socket, instance);
     let started_at = Instant::now();
     let mut feedback_times: BTreeMap<String, Option<Instant>> =
@@ -610,7 +622,9 @@ mod tests {
     #[test]
     fn station_and_controller_exchange_a_command_and_fence_requests_on_unavailable() {
         let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
-        let station_link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
+        let station_lease = Arc::new(Lease::new(LEASE));
+        station_lease.controller_lost();
+        let station_link = Arc::new(Link::new(&config, Arc::clone(&station_lease)).unwrap());
         let controller_link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
         let controller_inbox = controller_link.take_loop_end().unwrap().inbox;
         let station_arm = station_link.take_controller_station_arm().unwrap();
@@ -620,8 +634,8 @@ mod tests {
         let (station_socket, controller_socket) = UnixStream::pair().unwrap();
         let disconnect_socket = station_socket.try_clone().unwrap();
         let instance = ControllerInstanceId([9; 16]);
-        let disconnected = Arc::new(AtomicBool::new(false));
-        let disconnect_observed = Arc::clone(&disconnected);
+        let callback_lease = Arc::clone(&station_lease);
+        let (notify_ready, readiness) = sync_channel(1);
         let station = thread::spawn(move || {
             serve_station_connection(
                 station_socket,
@@ -629,8 +643,11 @@ mod tests {
                 &mut session,
                 &station_links,
                 &AtomicBool::new(false),
-                || {},
-                || disconnect_observed.store(true, Ordering::Release),
+                |ready| {
+                    ready.restore_motion_authority(&callback_lease);
+                    notify_ready.send(()).unwrap();
+                },
+                || callback_lease.controller_lost(),
             )
         });
         let controller = thread::spawn(move || {
@@ -641,9 +658,12 @@ mod tests {
                 &AtomicBool::new(false),
             )
         });
+        assert!(!station_lease.with_captured_lease(None, &mut || {}));
         let publishing = Arc::new(AtomicBool::new(false));
         let publisher =
             publish_disabled_feedback(Arc::clone(&controller_link), Arc::clone(&publishing));
+        readiness.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert!(station_lease.with_captured_lease(None, &mut || {}));
         let deadline = Instant::now() + Duration::from_secs(3);
         let pending = loop {
             if let Ok(pending) =
@@ -686,7 +706,7 @@ mod tests {
             recorded.outcome(),
             Some(hebbian_contracts::CommandOutcome::Interrupted)
         );
-        assert!(disconnected.load(Ordering::Acquire));
+        assert!(!station_lease.with_captured_lease(None, &mut || {}));
         assert!(
             station_link
                 .controller_loop_arm()

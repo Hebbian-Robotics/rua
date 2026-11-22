@@ -29,10 +29,9 @@ pub struct Arguments {
     directory: PathBuf,
     #[arg(long, default_value = "http://127.0.0.1:8792")]
     pub(crate) station_url: String,
-    /// The process that started this recorder. When it is no longer this
-    /// process's parent, the recorder finalizes the file as incomplete and exits.
+    /// The launching station. If it exits, the recorder finalizes the file as incomplete.
     #[arg(long)]
-    pub(crate) supervisor_pid: Option<u32>,
+    pub(crate) station_pid: Option<u32>,
 }
 
 /// Record until Ctrl-C or SIGTERM, then finish the encoders and MCAP index.
@@ -54,16 +53,16 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
         tokio::select! { _ = interruption.recv() => {}, _ = termination.recv() => {} }
         signal_stopped.cancel();
     });
-    let supervisor_lost = Arc::new(AtomicBool::new(false));
-    let supervisor_task = arguments.supervisor_pid.map(|supervisor_pid| {
-        let supervisor_lost = supervisor_lost.clone();
+    let station_exit_detected = Arc::new(AtomicBool::new(false));
+    let station_exit_watcher = arguments.station_pid.map(|station_pid| {
+        let station_exit_detected = station_exit_detected.clone();
         let stopped = stopped.clone();
         tokio::spawn(async move {
             tokio::select! {
                 () = stopped.cancelled() => {}
-                () = crate::supervisor::exited(Some(supervisor_pid)) => {
-                    tracing::warn!(supervisor_pid, "Supervising station is gone; finalizing recording");
-                    supervisor_lost.store(true, Ordering::SeqCst);
+                () = crate::parent_process::wait_for_station_exit(Some(station_pid)) => {
+                    tracing::warn!(station_pid, "Supervising station is gone; finalizing recording");
+                    station_exit_detected.store(true, Ordering::SeqCst);
                     stopped.cancel();
                 }
             }
@@ -92,10 +91,10 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     stopped.cancel();
     let state_result = state_task.await;
     signal_task.abort();
-    if let Some(supervisor_task) = supervisor_task {
-        supervisor_task.abort();
+    if let Some(station_exit_watcher) = station_exit_watcher {
+        station_exit_watcher.abort();
     }
-    let lost_supervisor = supervisor_lost.load(Ordering::SeqCst);
+    let station_exited = station_exit_detected.load(Ordering::SeqCst);
     let state_result = state_result
         .map_err(RecorderError::from)
         .and_then(|state| state);
@@ -104,7 +103,7 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     if interruption_marker_exists {
         archive.json("/station/recording_errors", &json!({"source": "controller", "detail": "Motor controller unavailable during recording"}), unix_nanoseconds())?;
     }
-    let status = if lost_supervisor {
+    let status = if station_exited {
         json!({"status": "incomplete", "reason": "The supervising station exited; the recording ended before it was asked to stop"})
     } else if let Some(error) = result.as_ref().err().or(state_result.as_ref().err()) {
         json!({"status": "incomplete", "reason": error.to_string()})
@@ -116,11 +115,11 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     // INVARIANT: Written last, so a reader sees how the recording ended; a file without it was killed.
     let status_result = archive.json("/recording/status", &status, unix_nanoseconds());
     let finish_result = archive.finish();
-    if lost_supervisor {
+    if station_exited {
         // WHY: Distinct from a requested stop, so the exit status says it ended early.
         finish_result?;
         status_result?;
-        return Err(RecorderError::SupervisorLost);
+        return Err(RecorderError::StationExited);
     }
     if controller_interrupted {
         finish_result?;

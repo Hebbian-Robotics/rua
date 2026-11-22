@@ -177,9 +177,10 @@ try {
   assert.equal(rehomed.status, "accepted");
   const homeRecord = rehomed.records[0]?.record;
   assert.equal(homeRecord?.label, "rehome");
-  assert.equal(homeRecord?.completion?.outcome, "completed");
+  assert.ok(homeRecord?.phase.kind === "finished");
+  assert.equal(homeRecord.phase.completion.outcome, "completed");
   assert.ok(
-    homeRecord?.achieved?.joints.every(
+    homeRecord.phase.achieved?.joints.every(
       (joint, index) => Math.abs(joint - (homeJoints[index] ?? 0)) < 0.02,
     ),
   );

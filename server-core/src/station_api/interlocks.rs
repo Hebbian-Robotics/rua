@@ -6,24 +6,36 @@ use crate::control_link::LinkHandle;
 
 const FRESH_SAMPLE: Duration = Duration::from_secs(1);
 
-pub async fn watch_arm(link: LinkHandle) {
+pub(super) async fn watch_arm(link: LinkHandle, admission: super::admission::AdmissionOwner) {
     let mut changes = link.changes();
     loop {
-        update(&link).await;
+        if update(&link, &admission).await.is_err() {
+            return;
+        }
         if changes.changed().await.is_err() {
             return;
         }
     }
 }
 
-async fn update(link: &LinkHandle) {
+async fn update(
+    link: &LinkHandle,
+    admission: &super::admission::AdmissionOwner,
+) -> Result<(), super::admission::AdmissionClosed> {
     let Ok(Some(view)) = tokio::time::timeout(FRESH_SAMPLE, link.view()).await else {
-        return;
+        return Ok(());
     };
     if view.sample_age.is_none_or(|age| age > FRESH_SAMPLE) {
-        return;
+        return Ok(());
     }
-    let Some(sample) = view.sample else { return };
+    let Some(sample) = view.sample else {
+        return Ok(());
+    };
+    let link = link.clone();
+    admission.decide(move |_| apply_sample(&link, sample)).await
+}
+
+fn apply_sample(link: &LinkHandle, sample: hebbian_contracts::Sample) {
     match sample.mode {
         ArmMode::Disconnected => {
             if let Some(issue) = sample.recovery_issue {
@@ -72,6 +84,10 @@ mod tests {
                 .unwrap();
         let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
         let handle = link.handle();
+        let admission = super::super::admission::AdmissionOwner::start(
+            &tokio::runtime::Handle::current(),
+            Arc::new(super::super::events::EventJournal::default()),
+        );
         let mut sample = Sample::blank();
         sample.mode = ArmMode::Disconnected;
         sample.recovery_issue = Some(ArmRecoveryIssue {
@@ -79,7 +95,7 @@ mod tests {
             detail: "Motor lost torque".into(),
         });
         link.publish(Event::State(sample.clone()));
-        update(&handle).await;
+        update(&handle, &admission).await.unwrap();
         assert_eq!(
             handle.interlocks().0,
             vec![Interlock::RecoveryApprovalRequired {
@@ -90,7 +106,7 @@ mod tests {
         sample.recovery_issue = None;
         sample.cycle = 1;
         link.publish(Event::State(sample));
-        update(&handle).await;
+        update(&handle, &admission).await.unwrap();
         assert_eq!(handle.interlocks().0, vec![Interlock::ArmDisconnected]);
         link.close();
     }

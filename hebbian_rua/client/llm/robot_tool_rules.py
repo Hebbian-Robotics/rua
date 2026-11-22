@@ -27,6 +27,7 @@ from hebbian_rua.client.llm.types import (
 from hebbian_rua.client.station_types import (
     CameraJpeg,
     CommandResult,
+    command_record_outcome,
     command_record_was_limited,
 )
 
@@ -96,11 +97,8 @@ def records_result(
     """Report incomplete or limited commands as errors; group moves by status."""
     limited = any(command_record_was_limited(record) for record in records)
     payloads = [record.model_dump(mode="json") for record in records]
+    outcomes = {command_record_outcome(record) for record in records}
     if grouped:
-        outcomes = {
-            record.completion.outcome if record.completion else None
-            for record in records
-        }
         if outcomes == {CommandOutcome.completed} and limited:
             status = "limited"
         elif outcomes == {CommandOutcome.completed}:
@@ -109,8 +107,11 @@ def records_result(
             status = "stopped_short"
         else:
             status = "partial"
+        first_command = records[0].command
         payload = {
-            "group_id": records[0].group_id,
+            "group_id": first_command.group_id
+            if first_command.kind == "move"
+            else None,
             "status": status,
             "commands": payloads,
         }
@@ -121,22 +122,9 @@ def records_result(
     return result_from_data(
         call,
         payload,
-        is_error=limited
-        or any(
-            outcome_is_error(record.completion.outcome if record.completion else None)
-            for record in records
-        ),
-        halt=any(
-            outcome_halts_the_loop(
-                record.completion.outcome if record.completion else None
-            )
-            for record in records
-        ),
-        interrupted=any(
-            record.completion is not None
-            and record.completion.outcome is CommandOutcome.interrupted
-            for record in records
-        ),
+        is_error=limited or any(outcome_is_error(outcome) for outcome in outcomes),
+        halt=any(outcome_halts_the_loop(outcome) for outcome in outcomes),
+        interrupted=CommandOutcome.interrupted in outcomes,
     )
 
 

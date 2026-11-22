@@ -117,7 +117,7 @@ async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {},
                 _ = termination.recv() => {},
-                () = livekit_cameras::supervisor::exited(arguments.supervisor_pid) => {},
+                () = livekit_cameras::parent_process::wait_for_station_exit(arguments.station_pid) => {},
             }
             shutdown.cancel();
         })

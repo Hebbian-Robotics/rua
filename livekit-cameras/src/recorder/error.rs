@@ -28,7 +28,7 @@ pub enum RecorderError {
     #[error("{0} timed out")]
     Timeout(&'static str),
     #[error("the supervising station exited; the recording was finalized as incomplete")]
-    SupervisorLost,
+    StationExited,
     #[error("the motor controller was unavailable during the recording; arm telemetry has a gap")]
     ControllerInterrupted,
     #[error("MCAP writer lock was poisoned")]

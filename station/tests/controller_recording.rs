@@ -70,8 +70,12 @@ async fn recording_started_offline_stays_incomplete_after_controller_recovers()
         }
     })
     .await?;
-    manager.controller_unavailable();
     manager.stop_recording();
+    manager.stop_recording();
+    assert!(
+        matches!(manager.recording_status(), RecordingStatus::Stopping { name } if name == active_name)
+    );
+    manager.controller_unavailable();
     assert!(
         directory
             .path()

@@ -54,3 +54,42 @@ export const serverMessageSchema = apiSchemas.shape.ServerMessage;
 export type TraceContext = NonNullable<
   Extract<ClientMessage, { kind: "command" }>["trace_context"]
 >;
+
+/** The public outcome of a terminal command, including an interrupted controller. */
+export function commandResult(record: CommandRecord | null | undefined):
+  | {
+      outcome: ApiSchemas["CommandOutcome"];
+      finished_at: number;
+      detail?: string | null;
+    }
+  | undefined {
+  const phase = record?.phase;
+  if (!phase) return undefined;
+  switch (phase.kind) {
+    case "pending":
+      return undefined;
+    case "finished":
+      return phase.completion;
+    case "not_started":
+      return phase;
+    case "outcome_unknown":
+      return {
+        outcome: "interrupted",
+        finished_at: phase.finished_at,
+        detail: phase.detail,
+      };
+  }
+}
+
+/** The admitted path and its limits, when this command has a planned move. */
+export function commandPlan(record: CommandRecord | null | undefined) {
+  return record?.command.kind === "move" ? record.command : undefined;
+}
+
+/** Whether a planned move was adjusted before reaching the requested target. */
+export function commandWasLimited(
+  record: CommandRecord | null | undefined,
+): boolean {
+  const plan = commandPlan(record);
+  return plan?.pose_limited != null || plan?.path_limited != null;
+}

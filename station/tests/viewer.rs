@@ -480,11 +480,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     );
     loop {
         let record = get_json(address, &format!("/operations/{interrupted_command}"));
-        if !record["records"][0]["record"]["completion"].is_null() {
-            assert_eq!(
-                record["records"][0]["record"]["completion"]["outcome"], "interrupted",
-                "{record}"
-            );
+        if record["records"][0]["record"]["phase"]["kind"] == "outcome_unknown" {
             break;
         }
         assert!(

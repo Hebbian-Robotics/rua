@@ -11,8 +11,7 @@ use crate::arm::{PoseGoalSettings, ReachGoal};
 use crate::config::ControllerConfig;
 use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
 use crate::lease::{
-    AcquireError, AdmissionOptions, ArmGate, Lease, LeaseRequest, SharedInterlocks,
-    is_allowed_while_interlocked, is_always_allowed,
+    AcquireError, ArmGate, CommandAuthority, Lease, LeaseAdmission, LeaseRequest, SharedInterlocks,
 };
 use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
@@ -229,7 +228,12 @@ impl LinkHandle {
         self.shared.lease.camera_requirements()
     }
 
-    pub fn report_camera(&self, token: &str, camera: &str, available: bool) -> Result<(), String> {
+    pub fn report_camera(
+        &self,
+        token: &str,
+        camera: &str,
+        available: bool,
+    ) -> Result<(), crate::lease::CameraReportRefusal> {
         self.shared.lease.report_camera(token, camera, available)
     }
 
@@ -330,6 +334,10 @@ impl LinkHandle {
         &self.shared.config
     }
 
+    pub(crate) fn tick_lease(&self) {
+        self.shared.lease.tick(Instant::now());
+    }
+
     #[must_use]
     pub fn lease_status(&self) -> Option<LeaseStatus> {
         self.shared.lease.status(Instant::now())
@@ -373,29 +381,33 @@ impl LinkHandle {
         tokio::sync::oneshot::Receiver<Result<CommandRecord, crate::arm::Rejection>>,
         crate::arm::Rejection,
     > {
-        if matches!(command, hebbian_contracts::Command::ApproveRecovery) {
-            return self.shared.lease.admit_recovery_approval(generation, || {
-                self.shared.arm.submit_async(command, trace_context)
-            })?;
+        let authority = CommandAuthority::for_command(&command);
+        let enqueue = || self.shared.arm.submit_async(command, trace_context);
+        match authority {
+            CommandAuthority::Interrupt => self.shared.lease.interrupt_if_current(
+                &self.shared.generation,
+                generation,
+                enqueue,
+            )?,
+            CommandAuthority::ApproveRecovery => self
+                .shared
+                .lease
+                .admit_recovery_approval(generation, enqueue)?,
+            CommandAuthority::Lease(admission) => {
+                let gate = ArmGate {
+                    interlocks: Arc::clone(&self.shared.interlocks),
+                    expected_revision,
+                };
+                enqueue_with_lease(
+                    &self.shared,
+                    token,
+                    admission,
+                    std::slice::from_ref(&gate),
+                    generation,
+                    enqueue,
+                )
+            }
         }
-        let always_allowed = is_always_allowed(&command);
-        let options = AdmissionOptions {
-            allow_fault_recovery: matches!(command, hebbian_contracts::Command::ClearFault),
-            allow_while_interlocked: is_allowed_while_interlocked(&command),
-        };
-        let gate = ArmGate {
-            interlocks: Arc::clone(&self.shared.interlocks),
-            expected_revision,
-        };
-        enqueue_admitted(
-            &self.shared,
-            token,
-            always_allowed,
-            options,
-            std::slice::from_ref(&gate),
-            generation,
-            || self.shared.arm.submit_async(command, trace_context),
-        )
     }
 
     pub(crate) fn action_step_async(
@@ -411,11 +423,10 @@ impl LinkHandle {
         >,
         crate::arm::Rejection,
     > {
-        enqueue_admitted(
+        enqueue_with_lease(
             &self.shared,
             token,
-            false,
-            AdmissionOptions::default(),
+            LeaseAdmission::Normal,
             gates,
             generation,
             || {
@@ -443,11 +454,10 @@ impl LinkHandle {
         tokio::sync::oneshot::Receiver<Result<Vec<CommandRecord>, crate::arm::Rejection>>,
         crate::arm::Rejection,
     > {
-        enqueue_admitted(
+        enqueue_with_lease(
             &self.shared,
             token,
-            false,
-            AdmissionOptions::default(),
+            LeaseAdmission::Normal,
             gates,
             generation,
             || {
@@ -820,13 +830,13 @@ impl Hub {
             }
             Outgoing::AwaitCompletion(command_id, complete) => {
                 if let Some(record) = self.records.get(&command_id) {
-                    if record.completion.is_some() {
-                        let _ = complete.send(record.clone());
-                    } else {
+                    if record.is_pending() {
                         self.completion_waiters
                             .entry(command_id)
                             .or_default()
                             .push(complete);
+                    } else {
+                        let _ = complete.send(record.clone());
                     }
                 }
             }
@@ -847,18 +857,16 @@ impl Hub {
         let interrupted: Vec<_> = self
             .records
             .values()
-            .filter(|record| record.completion.is_none())
+            .filter(|record| record.is_pending())
             .cloned()
             .collect();
         for mut record in interrupted {
-            record.completion = Some(hebbian_contracts::CommandCompletion {
+            record.phase = hebbian_contracts::CommandPhase::OutcomeUnknown {
                 finished_at: now,
-                outcome: hebbian_contracts::CommandOutcome::Interrupted,
                 detail: Some(format!(
                     "Controller lost; command outcome and arm torque are unknown: {reason}"
                 )),
-                gripper: None,
-            });
+            };
             self.log_event(Event::Record(record));
         }
         self.announce_change();
@@ -877,7 +885,7 @@ impl Hub {
     fn log_event(&mut self, event: Event) {
         match &event {
             Event::Record(record) => {
-                if record.completion.is_some()
+                if !record.is_pending()
                     && let Some(waiters) = self.completion_waiters.remove(&record.command_id)
                 {
                     for complete in waiters {
@@ -903,7 +911,7 @@ impl Hub {
                     let Some(oldest_finished) = self.record_order.iter().position(|id| {
                         self.records
                             .get(id)
-                            .is_some_and(|record| record.completion.is_some())
+                            .is_some_and(|record| !record.is_pending())
                     }) else {
                         break;
                     };
@@ -957,30 +965,17 @@ impl Hub {
     }
 }
 
-fn enqueue_admitted<R>(
+fn enqueue_with_lease<R>(
     shared: &Shared,
     token: Option<&str>,
-    always_allowed: bool,
-    options: AdmissionOptions,
+    admission: LeaseAdmission,
     gates: &[ArmGate],
     generation: &[(Arc<AtomicU64>, u64)],
     enqueue: impl FnOnce() -> Result<R, crate::arm::Rejection>,
 ) -> Result<R, crate::arm::Rejection> {
-    let answer = if always_allowed {
-        shared
-            .lease
-            .interrupt_if_current(&shared.generation, generation, enqueue)??
-    } else {
-        shared.lease.admit_generation(
-            token,
-            Instant::now(),
-            gates,
-            generation,
-            options,
-            enqueue,
-        )??
-    };
-    Ok(answer)
+    shared
+        .lease
+        .admit_generation(token, Instant::now(), gates, generation, admission, enqueue)?
 }
 
 #[cfg(test)]

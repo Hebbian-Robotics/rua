@@ -4,7 +4,7 @@ Recording is optional and disabled by default. It captures station telemetry and
 LiveKit camera streams for playback. Camera streaming and robot control do not
 require recording to be enabled.
 
-RUA owns recording lifecycle, station telemetry and interruption status.
+RUA owns recording sessions, station telemetry and interruption status.
 [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras/tree/main/native/recorder)
 handles video capture/encoding; [MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools)
 handles file writing, video export and browser playback primitives. Their guides
@@ -97,6 +97,11 @@ recordings remain available for playback. The viewer reports recorder failures;
 camera streaming runs separately.
 If FFmpeg or LiveKit credentials are missing at startup, the station logs why
 recording is unavailable and continues serving control and cameras.
+
+The recorder starts with a station snapshot and follows one ordered event stream
+for arm and agent telemetry. It resumes from the last archived event after a
+disconnect. If the station can no longer replay from that event, the recorder
+writes a gap marker and starts from a fresh snapshot.
 
 See the [recording format](../recordings/README.md#recording-format) for
 topics, timestamps and gaps.

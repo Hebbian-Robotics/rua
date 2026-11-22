@@ -184,8 +184,8 @@ async fn submit_program(
             outcome,
             ProgramSubmissionError::Internal("Program worker failed; outcome is unknown".into()),
             |completion| {
-                tokio::task::spawn_blocking(move || {
-                    completion.publish(execute_submission(&station_state, request));
+                tokio::spawn(async move {
+                    completion.publish(execute_submission(station_state, request).await);
                 });
             },
         ),
@@ -215,13 +215,54 @@ async fn submit_program(
         .map_err(HttpFailure::from)
 }
 
-fn execute_submission(
-    station_state: &Arc<StationState>,
+async fn execute_submission(
+    station_state: Arc<StationState>,
     request: ProgramSubmissionRequest,
 ) -> Result<String, ProgramSubmissionError> {
-    check_admission(station_state)?;
-    let links = station_links(station_state)?;
-    let (token, artifact, expected_revisions, continuation) = match request {
+    check_admission(&station_state)?;
+    let links = station_links(&station_state)?.clone();
+    let worker_station = Arc::clone(&station_state);
+    let (token, artifact, expected_revisions, continuation) =
+        tokio::task::spawn_blocking(move || prepare_submission(&worker_station, request))
+            .await
+            .map_err(|error| ProgramSubmissionError::Internal(error.to_string()))??;
+    let owner = station_state.admission.clone();
+    station_state
+        .admission
+        .clone()
+        .decide(move |state| {
+            check_admission(&station_state)?;
+            let id = super::runtime::run_compiled_program(
+                owner,
+                &mut state.executions,
+                &links,
+                token,
+                artifact,
+                expected_revisions,
+                continuation,
+            )
+            .map_err(ProgramSubmissionError::Conflict)?;
+            if let Some(record) = state.executions.lookup(&id) {
+                state.publish_execution(record);
+            }
+            Ok(id)
+        })
+        .await
+        .map_err(|_| ProgramSubmissionError::Unavailable("Station admission is unavailable"))?
+}
+
+type PreparedProgram = (
+    String,
+    Arc<super::programs::ProgramArtifact>,
+    std::collections::BTreeMap<String, u64>,
+    Option<hebbian_contracts::ProgramContinuation>,
+);
+
+fn prepare_submission(
+    station_state: &StationState,
+    request: ProgramSubmissionRequest,
+) -> Result<PreparedProgram, ProgramSubmissionError> {
+    Ok(match request {
         ProgramSubmissionRequest::Source(request) => {
             let targets = station_state
                 .compilation_targets()
@@ -253,17 +294,7 @@ fn execute_submission(
                 request.continuation,
             )
         }
-    };
-    check_admission(station_state)?;
-    super::runtime::run_compiled_program(
-        &station_state.executions,
-        links,
-        token,
-        artifact,
-        expected_revisions,
-        continuation,
-    )
-    .map_err(ProgramSubmissionError::Conflict)
+    })
 }
 
 fn check_admission(station_state: &StationState) -> Result<(), ProgramSubmissionError> {

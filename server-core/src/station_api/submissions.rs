@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use hebbian_contracts::{
     ArmRecord, CommandAnswer, CommandSubmissionRequest, GroupCommandSubmissionRequest,
@@ -233,10 +233,59 @@ enum OperationState {
     Terminal(TerminalMotion),
 }
 
+enum CancellationEffect<'a> {
+    FenceAdmission(&'a watch::Sender<bool>),
+    AwaitAdmission,
+    StopActive(Vec<ArmRecord>),
+    RepeatStop(&'a [ArmRecord]),
+    NoMotion,
+}
+
+impl OperationState {
+    fn cancellation_effect(&self) -> CancellationEffect<'_> {
+        match self {
+            Self::Pending(fence) => CancellationEffect::FenceAdmission(fence),
+            Self::CancellingAdmission => CancellationEffect::AwaitAdmission,
+            Self::Active(records) => CancellationEffect::StopActive(records.clone()),
+            Self::Streaming { record, .. } => {
+                CancellationEffect::StopActive(vec![record.as_ref().clone()])
+            }
+            Self::Cancelling(records) => CancellationEffect::RepeatStop(records),
+            Self::Terminal(_) => CancellationEffect::NoMotion,
+        }
+    }
+}
+
 struct Operation {
     request: SubmissionRequest,
     admission: watch::Sender<Option<Admission>>,
     state: OperationState,
+}
+
+impl Operation {
+    fn cancel(&mut self) -> CancellationResult {
+        let target = match self.state.cancellation_effect() {
+            CancellationEffect::FenceAdmission(fence) => {
+                // INVARIANT: Enqueue holds the watch read lock. Cancellation either
+                // closes the fence first or receives the admitted controller IDs.
+                fence.send_replace(true);
+                self.state = OperationState::CancellingAdmission;
+                CancellationTarget::AwaitAdmission(self.admission.subscribe())
+            }
+            CancellationEffect::AwaitAdmission => {
+                CancellationTarget::AwaitAdmission(self.admission.subscribe())
+            }
+            CancellationEffect::StopActive(records) => {
+                self.state = OperationState::Cancelling(records.clone());
+                CancellationTarget::Commands(records)
+            }
+            CancellationEffect::RepeatStop(records) => {
+                CancellationTarget::Commands(records.to_vec())
+            }
+            CancellationEffect::NoMotion => return CancellationResult::AlreadyStopped,
+        };
+        CancellationResult::Requested(target)
+    }
 }
 
 enum Submission {
@@ -247,22 +296,48 @@ enum Submission {
 impl Submission {
     fn is_evictable(&self) -> bool {
         match self {
-            Self::Operation(operation) => {
-                matches!(operation.state, OperationState::Terminal(_))
-                    || matches!(*operation.admission.borrow(), Some(Err(_)))
-            }
+            Self::Operation(operation) => matches!(operation.state, OperationState::Terminal(_)),
             Self::CancelledBeforeArrival { .. } => true,
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Operations {
-    entries: Mutex<SubmissionHistory<Submission, OperationId>>,
+    entries: Arc<Mutex<SubmissionHistory<Submission, OperationId>>>,
+}
+
+// INVARIANT: Only the admission worker can commit its result, including on early exit.
+pub(super) struct PendingAdmission {
+    operations: Operations,
+    id: Option<OperationId>,
+}
+
+impl PendingAdmission {
+    pub(super) fn complete(mut self, answer: Admission) -> Vec<ArmRecord> {
+        self.id
+            .take()
+            .map_or_else(Vec::new, |id| self.operations.record_admission(id, answer))
+    }
+}
+
+impl Drop for PendingAdmission {
+    fn drop(&mut self) {
+        if let Some(id) = self.id.take() {
+            self.operations.record_admission(
+                id,
+                Err("Command worker failed; outcome is unknown".to_owned()),
+            );
+        }
+    }
 }
 
 pub(super) enum SubmissionReservation {
-    New(watch::Sender<Option<Admission>>, watch::Receiver<bool>),
+    New {
+        pending: PendingAdmission,
+        response: watch::Receiver<Option<Admission>>,
+        cancellation: watch::Receiver<bool>,
+    },
     Existing(watch::Receiver<Option<Admission>>),
     Cancelled,
     Conflict,
@@ -296,7 +371,7 @@ impl SubmissionRequest {
 }
 
 impl Operations {
-    pub(super) fn admitted(&self, id: OperationId, answer: &Admission) -> Vec<ArmRecord> {
+    fn record_admission(&self, id: OperationId, answer: Admission) -> Vec<ArmRecord> {
         let mut entries = self
             .entries
             .lock()
@@ -305,11 +380,9 @@ impl Operations {
             return Vec::new();
         };
         let mut unfinished = Vec::new();
-        operation.state = match answer {
+        operation.state = match &answer {
             Ok(CommandAnswer::Accepted { records })
-                if records
-                    .iter()
-                    .any(|entry| entry.record.completion.is_none()) =>
+                if records.iter().any(|entry| entry.record.is_pending()) =>
             {
                 unfinished.clone_from(records);
                 if matches!(operation.state, OperationState::CancellingAdmission) {
@@ -341,6 +414,7 @@ impl Operations {
             }
             Err(detail) => OperationState::Terminal(TerminalMotion::OutcomeUnknown(detail.clone())),
         };
+        operation.admission.send_replace(Some(answer));
         unfinished
     }
 
@@ -372,20 +446,10 @@ impl Operations {
         Some(match entries.retained.get(&id)? {
             Submission::CancelledBeforeArrival { .. } => OperationStatus::CancelledBeforeAdmission,
             Submission::Operation(operation) => match &operation.state {
-                OperationState::Pending(_) | OperationState::CancellingAdmission => {
-                    if let Some(Err(detail)) = &*operation.admission.borrow() {
-                        OperationStatus::OutcomeUnknown {
-                            detail: detail.clone(),
-                        }
-                    } else {
-                        match operation.state {
-                            OperationState::CancellingAdmission => OperationStatus::Cancelling {
-                                records: Vec::new(),
-                            },
-                            _ => OperationStatus::Pending,
-                        }
-                    }
-                }
+                OperationState::Pending(_) => OperationStatus::Pending,
+                OperationState::CancellingAdmission => OperationStatus::Cancelling {
+                    records: Vec::new(),
+                },
                 OperationState::Active(records) => OperationStatus::Active {
                     records: records.clone(),
                 },
@@ -483,17 +547,24 @@ impl Operations {
         if !entries.make_room(Submission::is_evictable) {
             return SubmissionReservation::Full;
         }
-        let (admission, _) = watch::channel(None);
+        let (admission, response) = watch::channel(None);
         let (cancelled, cancellation) = watch::channel(false);
         entries.insert(
             id,
             Submission::Operation(Box::new(Operation {
                 request,
-                admission: admission.clone(),
+                admission,
                 state: OperationState::Pending(cancelled),
             })),
         );
-        SubmissionReservation::New(admission, cancellation)
+        SubmissionReservation::New {
+            pending: PendingAdmission {
+                operations: self.clone(),
+                id: Some(id),
+            },
+            response,
+            cancellation,
+        }
     }
 
     pub(super) fn cancel(&self, id: OperationId, token: &str) -> CancellationResult {
@@ -505,42 +576,7 @@ impl Operations {
             Some(Submission::Operation(operation))
                 if operation.request.lease_token() == Some(token) =>
             {
-                match &operation.state {
-                    OperationState::Pending(fence) => {
-                        // INVARIANT: Enqueue holds the watch read lock. Cancellation either
-                        // closes the fence first or receives the admitted controller IDs.
-                        fence.send_replace(true);
-                        operation.state = OperationState::CancellingAdmission;
-                        return CancellationResult::Requested(CancellationTarget::AwaitAdmission(
-                            operation.admission.subscribe(),
-                        ));
-                    }
-                    OperationState::CancellingAdmission => {
-                        return CancellationResult::Requested(CancellationTarget::AwaitAdmission(
-                            operation.admission.subscribe(),
-                        ));
-                    }
-                    OperationState::Active(records) => {
-                        let targets = records.clone();
-                        operation.state = OperationState::Cancelling(records.clone());
-                        return CancellationResult::Requested(CancellationTarget::Commands(
-                            targets,
-                        ));
-                    }
-                    OperationState::Streaming { record, .. } => {
-                        let records = vec![record.as_ref().clone()];
-                        operation.state = OperationState::Cancelling(records.clone());
-                        return CancellationResult::Requested(CancellationTarget::Commands(
-                            records,
-                        ));
-                    }
-                    OperationState::Cancelling(records) => {
-                        return CancellationResult::Requested(CancellationTarget::Commands(
-                            records.clone(),
-                        ));
-                    }
-                    OperationState::Terminal(_) => return CancellationResult::AlreadyStopped,
-                }
+                return operation.cancel();
             }
             Some(Submission::CancelledBeforeArrival { lease_token }) if lease_token == token => {
                 return CancellationResult::AlreadyStopped;
@@ -681,7 +717,7 @@ mod tests {
             expected_revision: None,
             trace_context: None,
         };
-        let SubmissionReservation::New(sender, _) = submissions.reserve(
+        let SubmissionReservation::New { pending, .. } = submissions.reserve(
             super::OperationId(id),
             SubmissionRequest::Single(request.clone()),
         ) else {
@@ -697,7 +733,7 @@ mod tests {
             reason: RejectionReason::ArmBusy,
             detail: "busy".into(),
         };
-        sender.send_replace(Some(Ok(outcome.clone())));
+        pending.complete(Ok(outcome.clone()));
         assert_eq!(*receiver.borrow(), Some(Ok(outcome.clone())));
         let SubmissionReservation::Existing(later) = submissions.reserve(
             super::OperationId(id),
@@ -711,6 +747,43 @@ mod tests {
         assert!(matches!(
             submissions.reserve(super::OperationId(id), SubmissionRequest::Single(changed)),
             SubmissionReservation::Conflict
+        ));
+    }
+
+    #[test]
+    fn an_abandoned_admission_is_terminal_for_retries_status_and_cancellation() {
+        let submissions = Operations::default();
+        let id = Uuid::new_v4();
+        let operation = super::OperationId(id);
+        let request = SubmissionRequest::Single(CommandSubmissionRequest {
+            operation_id: id.to_string(),
+            station_instance_id: Uuid::new_v4().to_string(),
+            arm: "left".into(),
+            command: StationCommand::Enable,
+            lease_token: Some("lease".into()),
+            expected_revision: None,
+            trace_context: None,
+        });
+        let SubmissionReservation::New {
+            pending, response, ..
+        } = submissions.reserve(operation, request.clone())
+        else {
+            panic!("first submission must be new");
+        };
+        drop(pending);
+        let Some(hebbian_contracts::OperationStatus::OutcomeUnknown { detail }) =
+            submissions.status(operation)
+        else {
+            panic!("the abandoned operation must be terminal");
+        };
+        let SubmissionReservation::Existing(retry) = submissions.reserve(operation, request) else {
+            panic!("retry must follow the original");
+        };
+        assert_eq!(*response.borrow(), Some(Err(detail.clone())));
+        assert_eq!(*retry.borrow(), Some(Err(detail)));
+        assert!(matches!(
+            submissions.cancel(operation, "lease"),
+            CancellationResult::AlreadyStopped
         ));
     }
 
@@ -729,7 +802,7 @@ mod tests {
                 expected_revision: None,
                 trace_context: None,
             };
-            let SubmissionReservation::New(sender, _) = submissions.reserve(
+            let SubmissionReservation::New { pending, .. } = submissions.reserve(
                 super::OperationId(id),
                 SubmissionRequest::Single(request.clone()),
             ) else {
@@ -737,7 +810,7 @@ mod tests {
                     "new commands must remain available after completed outcomes fill the cache"
                 );
             };
-            sender.send_replace(Some(Err("completed".into())));
+            pending.complete(Err("completed".into()));
             requests.push((id, request));
         }
         assert!(requests.into_iter().any(|(id, request)| matches!(
@@ -767,30 +840,30 @@ mod tests {
             })
         };
         let reserve = |id| {
-            let SubmissionReservation::New(sender, _) =
+            let SubmissionReservation::New { pending, .. } =
                 submissions.reserve(super::OperationId(id), request(id))
             else {
                 panic!("stream updates must be admitted when retention has room");
             };
-            sender
+            pending
         };
         let accepted = || {
-            Some(Ok(CommandAnswer::Accepted {
+            Ok(CommandAnswer::Accepted {
                 records: vec![hebbian_contracts::ArmRecord {
                     arm: "left".into(),
                     record: hebbian_contracts::CommandRecord::new(
                         command_id.clone(),
                         "stream_joints",
                         0.0,
-                        None,
+                        hebbian_contracts::RecordedCommand::JointStream {
+                            goal_joints: vec![0.0],
+                            joint_speed: 1.0,
+                        },
                     ),
                 }],
-            }))
+            })
         };
-        let answer = accepted().expect("accepted stream");
-        let first = reserve(start_id);
-        submissions.admitted(super::OperationId(start_id), &answer);
-        first.send_replace(Some(answer));
+        reserve(start_id).complete(accepted());
         let pending: Vec<_> = (1..super::MAX_RETAINED_SUBMISSIONS)
             .map(|_| reserve(Uuid::new_v4()))
             .collect();
@@ -801,10 +874,10 @@ mod tests {
             submissions.reserve(super::OperationId(next_id), request(next_id)),
             SubmissionReservation::Full
         ));
-        for sender in pending {
-            sender.send_replace(Some(Err("completed update".into())));
+        for admission in pending {
+            admission.complete(Err("completed update".into()));
         }
-        reserve(next_id).send_replace(accepted());
+        reserve(next_id).complete(accepted());
         let CancellationResult::Requested(CancellationTarget::Commands(records)) =
             submissions.cancel(super::OperationId(start_id), "lease")
         else {
@@ -845,6 +918,7 @@ mod tests {
     #[test]
     fn cancellation_fences_when_all_outcomes_are_in_flight() {
         let submissions = Operations::default();
+        let mut pending_admissions = Vec::new();
         let mut request = CommandSubmissionRequest {
             operation_id: String::new(),
             station_instance_id: Uuid::nil().to_string(),
@@ -857,13 +931,13 @@ mod tests {
         for _ in 0..super::MAX_RETAINED_SUBMISSIONS {
             let id = Uuid::new_v4();
             request.operation_id = id.to_string();
-            assert!(matches!(
-                submissions.reserve(
-                    super::OperationId(id),
-                    SubmissionRequest::Single(request.clone())
-                ),
-                SubmissionReservation::New(..)
-            ));
+            let SubmissionReservation::New { pending, .. } = submissions.reserve(
+                super::OperationId(id),
+                SubmissionRequest::Single(request.clone()),
+            ) else {
+                panic!("the history has room for this pending admission");
+            };
+            pending_admissions.push(pending);
         }
         let cancelled_id = Uuid::new_v4();
         request.operation_id = cancelled_id.to_string();

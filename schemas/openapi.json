@@ -1225,7 +1225,7 @@
         "type": "object"
       },
       "CommandCompletion": {
-        "description": "The outcome and timestamp are recorded together when a command ends.",
+        "description": "The outcome and timestamp for a command with a known end.",
         "properties": {
           "detail": {
             "type": [
@@ -1246,10 +1246,10 @@
                 "type": "null"
               }
             ],
-            "description": "How a gripper command ended; null for every other command."
+            "description": "How a gripper command ended, when jaw feedback was available."
           },
           "outcome": {
-            "$ref": "#/components/schemas/CommandOutcome"
+            "$ref": "#/components/schemas/KnownCommandOutcome"
           }
         },
         "required": [
@@ -1273,6 +1273,138 @@
         ],
         "type": "string"
       },
+      "CommandPhase": {
+        "description": "Evidence of how an accepted command ended.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "Accepted and awaiting a terminal result.",
+            "properties": {
+              "kind": {
+                "const": "pending",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "title": "PendingCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "finished_at": {
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "const": "not_started",
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/NotStartedOutcome"
+              }
+            },
+            "required": [
+              "kind",
+              "finished_at",
+              "outcome"
+            ],
+            "title": "CommandNotStarted",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "achieved": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Achieved"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completion": {
+                "$ref": "#/components/schemas/CommandCompletion"
+              },
+              "kind": {
+                "const": "finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "completion"
+            ],
+            "title": "FinishedCommand",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Control was interrupted and the final arm position could not be confirmed.",
+            "properties": {
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "finished_at": {
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "const": "outcome_unknown",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "finished_at"
+            ],
+            "title": "CommandOutcomeUnknown",
+            "type": "object"
+          }
+        ]
+      },
+      "CommandPose": {
+        "additionalProperties": false,
+        "description": "The target pose or streamed goal in the station world frame.",
+        "properties": {
+          "position": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          },
+          "quaternion": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": [
+          "position",
+          "quaternion"
+        ],
+        "type": "object"
+      },
       "CommandRecord": {
         "additionalProperties": false,
         "description": "One command, from acceptance to its end.",
@@ -1281,128 +1413,24 @@
             "format": "double",
             "type": "number"
           },
-          "achieved": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Achieved"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "checkpoints": {
             "items": {
               "$ref": "#/components/schemas/Checkpoint"
             },
             "type": "array"
           },
+          "command": {
+            "$ref": "#/components/schemas/RecordedCommand"
+          },
           "command_id": {
             "type": "string"
           },
-          "completion": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CommandCompletion"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "goal_joints": {
-            "description": "The newest goal of a joint stream, after clamping to the joint limits.",
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "group_id": {
-            "description": "The grouped motion this command is one arm's part of, if it is.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "joint_speed": {
-            "description": "Speed actually used, after clamping, for motions.",
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
-          },
           "label": {
-            "description": "What the command is: `enable`, `stream_joints`, or the label a move carried.",
+            "description": "A readable description, including the originating operation's name.",
             "type": "string"
           },
-          "path_limited": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PathLimited"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pose_limited": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PoseLimited"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "target_joints": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "target_position": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 3,
-            "minItems": 3,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "target_quaternion": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 4,
-            "minItems": 4,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "target_status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TargetStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "phase": {
+            "$ref": "#/components/schemas/CommandPhase"
           },
           "trace_context": {
             "anyOf": [
@@ -1412,14 +1440,15 @@
               {
                 "type": "null"
               }
-            ],
-            "description": "The trace context the command arrived with, if any."
+            ]
           }
         },
         "required": [
           "command_id",
           "label",
           "accepted_at",
+          "command",
+          "phase",
           "checkpoints"
         ],
         "type": "object"
@@ -1791,6 +1820,18 @@
         ],
         "type": "object"
       },
+      "ControlAction": {
+        "description": "State-changing commands with no position target.",
+        "enum": [
+          "enable",
+          "disable",
+          "approve_recovery",
+          "clear_fault",
+          "stop",
+          "shutdown"
+        ],
+        "type": "string"
+      },
       "ControllerKind": {
         "enum": [
           "ik",
@@ -2144,132 +2185,28 @@
                 "format": "double",
                 "type": "number"
               },
-              "achieved": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/Achieved"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "checkpoints": {
                 "items": {
                   "$ref": "#/components/schemas/Checkpoint"
                 },
                 "type": "array"
               },
+              "command": {
+                "$ref": "#/components/schemas/RecordedCommand"
+              },
               "command_id": {
                 "type": "string"
-              },
-              "completion": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/CommandCompletion"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "goal_joints": {
-                "description": "The newest goal of a joint stream, after clamping to the joint limits.",
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "type": [
-                  "array",
-                  "null"
-                ]
-              },
-              "group_id": {
-                "description": "The grouped motion this command is one arm's part of, if it is.",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "joint_speed": {
-                "description": "Speed actually used, after clamping, for motions.",
-                "format": "double",
-                "type": [
-                  "number",
-                  "null"
-                ]
               },
               "kind": {
                 "const": "record",
                 "type": "string"
               },
               "label": {
-                "description": "What the command is: `enable`, `stream_joints`, or the label a move carried.",
+                "description": "A readable description, including the originating operation's name.",
                 "type": "string"
               },
-              "path_limited": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/PathLimited"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "pose_limited": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/PoseLimited"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "target_joints": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "type": [
-                  "array",
-                  "null"
-                ]
-              },
-              "target_position": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": [
-                  "array",
-                  "null"
-                ]
-              },
-              "target_quaternion": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "maxItems": 4,
-                "minItems": 4,
-                "type": [
-                  "array",
-                  "null"
-                ]
-              },
-              "target_status": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/TargetStatus"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+              "phase": {
+                "$ref": "#/components/schemas/CommandPhase"
               },
               "trace_context": {
                 "anyOf": [
@@ -2279,8 +2216,7 @@
                   {
                     "type": "null"
                   }
-                ],
-                "description": "The trace context the command arrived with, if any."
+                ]
               }
             },
             "required": [
@@ -2288,6 +2224,8 @@
               "command_id",
               "label",
               "accepted_at",
+              "command",
+              "phase",
               "checkpoints"
             ],
             "title": "Record",
@@ -2901,6 +2839,20 @@
         ],
         "type": "string"
       },
+      "KnownCommandOutcome": {
+        "description": "A command outcome established by the controller.",
+        "enum": [
+          "completed",
+          "stopped",
+          "tripped",
+          "timed_out",
+          "stopped_short",
+          "superseded",
+          "faulted",
+          "failed"
+        ],
+        "type": "string"
+      },
       "KnownRunEvent": {
         "description": "A run event the server acts on.",
         "oneOf": [
@@ -3329,6 +3281,14 @@
             "type": "string"
           }
         ]
+      },
+      "NotStartedOutcome": {
+        "description": "The command was stopped or failed before it started.",
+        "enum": [
+          "stopped",
+          "failed"
+        ],
+        "type": "string"
       },
       "ObservationAnswer": {
         "oneOf": [
@@ -4212,6 +4172,200 @@
           "supported"
         ],
         "type": "object"
+      },
+      "RecordedCommand": {
+        "description": "Data specific to the command the controller accepted.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "group_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "joint_speed": {
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "const": "move",
+                "type": "string"
+              },
+              "path_limited": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PathLimited"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pose_limited": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PoseLimited"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "target_joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "target_position": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "target_quaternion": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 4,
+                "minItems": 4,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "target_joints",
+              "joint_speed"
+            ],
+            "title": "RecordedMove",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "policy_reach",
+                "type": "string"
+              },
+              "target_pose": {
+                "$ref": "#/components/schemas/CommandPose"
+              }
+            },
+            "required": [
+              "kind",
+              "target_pose"
+            ],
+            "title": "RecordedPolicyReach",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "goal_joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "joint_speed": {
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "const": "joint_stream",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "goal_joints",
+              "joint_speed"
+            ],
+            "title": "RecordedJointStream",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "goal_pose": {
+                "$ref": "#/components/schemas/CommandPose"
+              },
+              "kind": {
+                "const": "pose_stream",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "goal_pose"
+            ],
+            "title": "RecordedPoseStream",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "joint_speed": {
+                "format": "double",
+                "type": "number"
+              },
+              "kind": {
+                "const": "gripper",
+                "type": "string"
+              },
+              "stream_command_id": {
+                "description": "The joint stream that issued this jaw goal, if any.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "target_angle_radians": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "kind",
+              "target_angle_radians",
+              "joint_speed"
+            ],
+            "title": "RecordedGripper",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "$ref": "#/components/schemas/ControlAction"
+              },
+              "kind": {
+                "const": "control",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "action"
+            ],
+            "title": "RecordedControl",
+            "type": "object"
+          }
+        ]
       },
       "Recording": {
         "description": "One recording directory. Its data, video included, is `recording.mcap`.",
@@ -5533,16 +5687,6 @@
           "orientation_error_degrees"
         ],
         "type": "object"
-      },
-      "TargetStatus": {
-        "description": "Whether the arm ended where the command was aimed.",
-        "enum": [
-          "reached",
-          "stopped_short",
-          "partial",
-          "not_started"
-        ],
-        "type": "string"
       },
       "ToolOrientation": {
         "description": "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",

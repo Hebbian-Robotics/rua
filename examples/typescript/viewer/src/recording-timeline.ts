@@ -12,7 +12,7 @@ import {
   McapStreamReader,
 } from "@mcap/core";
 import { decompress } from "fzstd";
-import { apiSchemas } from "hebbian-rua";
+import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
 import * as z from "zod";
 
 const MAXIMUM_EVENTS = 5000;
@@ -58,13 +58,7 @@ const armSampleSchema = z.object({
   measured_joints: z.array(z.number()),
   commanded_joints: z.array(z.number()).nullish(),
   gripper_opening: z.number().nullish(),
-  active_command: z
-    .object({
-      target_joints: z.array(z.number()).nullish(),
-      path_limited: z.unknown().nullish(),
-      pose_limited: z.unknown().nullish(),
-    })
-    .nullish(),
+  active_command: apiSchemas.shape.CommandRecord.nullish(),
 });
 const stationSampleSchema = z.object({
   joint_names: z.array(z.string()),
@@ -167,13 +161,11 @@ function armTrack(
     measuredJoints: joints((snapshot) => snapshot.measured_joints),
     commandedJoints: joints((snapshot) => snapshot.commanded_joints),
     destinationJoints: snapshots.map((snapshot) => {
-      const target = snapshot?.active_command?.target_joints;
+      const target = commandPlan(snapshot?.active_command)?.target_joints;
       return target && target.length === jointCount ? target : null;
     }),
-    destinationLimited: snapshots.map(
-      (snapshot) =>
-        snapshot?.active_command?.path_limited != null ||
-        snapshot?.active_command?.pose_limited != null,
+    destinationLimited: snapshots.map((snapshot) =>
+      commandWasLimited(snapshot?.active_command),
     ),
     gripperOpening: snapshots.map(
       (snapshot) => snapshot?.gripper_opening ?? null,

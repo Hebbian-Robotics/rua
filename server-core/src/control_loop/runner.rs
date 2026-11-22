@@ -497,6 +497,88 @@ impl<P: Plant> Runner<'_, P> {
     }
 
     // INVARIANT: Step each grouped trajectory between the read and command halves, after every member has supplied this cycle’s reading.
+    // WHY: Enabling may take longer than a cycle; restart the cycle timer after a long admission.
+    pub(super) fn dispatch_next_command(&mut self, now: Now) -> bool {
+        let (job, mode) = {
+            let arm = self.state.arm();
+            (arm.next_job(), arm.mode())
+        };
+        let Some(job) = job else {
+            return self.shutdown_step(now);
+        };
+        match job {
+            Job::ApproveRecovery { .. } => {
+                self.state
+                    .arm()
+                    .failed("The arm is not waiting for recovery approval", now);
+                false
+            }
+            Job::Enable { .. } => {
+                if mode.accepts_enable() {
+                    self.enable(now);
+                } else {
+                    self.state.arm().failed("The arm is already enabled", now);
+                }
+                true
+            }
+            Job::Release { .. } => {
+                if self.state.powered {
+                    self.release(now);
+                } else {
+                    self.state.arm().failed(
+                        "The arm is not enabled; send enable, then repeat the command",
+                        now,
+                    );
+                }
+                true
+            }
+            Job::Move { .. } | Job::Stream { .. } | Job::Reach { .. } if !self.state.powered => {
+                self.state.arm().failed(
+                    "The arm is not enabled; send enable, then repeat the command",
+                    now,
+                );
+                false
+            }
+            Job::Move { .. } | Job::Stream { .. } | Job::Reach { .. }
+                if self.state.tripped.is_some() =>
+            {
+                let reason = self.state.tripped.clone().unwrap_or_default();
+                self.state
+                    .arm()
+                    .failed(&format!("The arm is tripped: {reason}"), now);
+                false
+            }
+            Job::Move {
+                plan,
+                group: Some(group),
+                ..
+            } => {
+                self.state.start_group_member(plan, group);
+                self.state.arm().begin_moving();
+                false
+            }
+            Job::Move { plan, .. } => {
+                match self.state.start_motion(plan) {
+                    Ok(()) => self.state.arm().begin_moving(),
+                    Err(reason) => self.state.arm().failed(&format!("{reason:#}"), now),
+                }
+                false
+            }
+            Job::Reach { goal, .. } => {
+                match self.state.start_reach(goal) {
+                    Ok(()) => self.state.arm().begin_moving(),
+                    Err(reason) => self.state.arm().failed(&format!("{reason:#}"), now),
+                }
+                false
+            }
+            Job::Stream { command_id } => {
+                self.state.start_stream(command_id);
+                self.state.arm().begin_moving();
+                false
+            }
+        }
+    }
+
     pub(super) fn begin_cycle(
         &mut self,
         cycle: Duration,
@@ -586,7 +668,7 @@ impl<P: Plant> Runner<'_, P> {
         }
         let start_next_began = Instant::now();
         let restart_timer = if matches!(self.state.activity, Activity::Idle) {
-            self.start_next(now)
+            self.dispatch_next_command(now)
         } else {
             false
         };

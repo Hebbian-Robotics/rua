@@ -378,8 +378,8 @@ fn a_grouped_move_takes_every_arm_to_its_target() {
     let mut arms = two_arms();
     let records = move_arms(&arms.left, [[0.6, 0.0], [0.0, -0.3]]);
     assert_eq!(records.len(), 2);
-    assert!(records[0].group_id.is_some());
-    assert_eq!(records[0].group_id, records[1].group_id);
+    assert!(records[0].group_id().is_some());
+    assert_eq!(records[0].group_id(), records[1].group_id());
 
     let left = ended_record(&mut arms.left);
     let right = ended_record(&mut arms.right);
@@ -391,8 +391,7 @@ fn a_grouped_move_takes_every_arm_to_its_target() {
     );
     let joints_error = |record: &hebbian_contracts::CommandRecord| {
         record
-            .achieved
-            .as_ref()
+            .achieved()
             .and_then(|achieved| achieved.joint_error_radians)
             .unwrap()
     };

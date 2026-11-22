@@ -545,6 +545,7 @@ pub fn openapi_json() -> String {
     // WHY: These shared message types also drive SDK convenience APIs and SSE parsing.
     let _ = generator.subschema_for::<ClientMessage>();
     let _ = generator.subschema_for::<ServerMessage>();
+    let _ = generator.subschema_for::<hebbian_contracts::CommandOutcome>();
     let mut paths: Map<String, Value> = Map::new();
     for route in routes() {
         let mut operation = json!({

@@ -12,20 +12,18 @@ def command_record(command_id: str, finished_at: float | None = None) -> dict[st
         "command_id": command_id,
         "label": "enable",
         "accepted_at": 1,
-        "joint_speed": None,
-        "completion": None
+        "command": {"kind": "control", "action": "enable"},
+        "phase": {"kind": "pending"}
         if finished_at is None
-        else {"outcome": "completed", "finished_at": finished_at, "detail": None},
+        else {
+            "kind": "finished",
+            "completion": {
+                "outcome": "completed",
+                "finished_at": finished_at,
+                "detail": None,
+            },
+        },
         "checkpoints": [],
-        "goal_joints": None,
-        "target_joints": None,
-        "target_position": None,
-        "target_quaternion": None,
-        "target_status": None,
-        "path_limited": None,
-        "pose_limited": None,
-        "achieved": None,
-        "group_id": None,
         "trace_context": None,
     }
 

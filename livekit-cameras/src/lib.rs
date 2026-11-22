@@ -1,7 +1,7 @@
 pub mod error;
-pub mod recorder;
 #[doc(hidden)]
-pub mod supervisor;
+pub mod parent_process;
+pub mod recorder;
 
 pub(crate) mod station;
 

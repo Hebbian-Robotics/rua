@@ -25,6 +25,7 @@ from hebbian_rua.client.station_events import (
     StationStreamEvent,
     stream_station_events,
 )
+from hebbian_rua.client.station_types import command_record_finished_at
 
 log = logging.getLogger(__name__)
 # How long to wait for a connection, or for the first state.
@@ -264,7 +265,7 @@ class StationConnection:
         async with self._condition:
             while True:
                 arm_record = self._records.get(command_id)
-                if arm_record is not None and arm_record.record.completion is not None:
+                if arm_record is not None and arm_record.record.phase.kind != "pending":
                     await self._condition.wait_for(
                         lambda arm_record=arm_record: (
                             self._state_reflects(arm_record)
@@ -300,8 +301,8 @@ class StationConnection:
         Commands that finish in one cycle show only the latest on that arm.
         """
         record = arm_record.record
-        assert record.completion is not None
-        if self._state is None:
+        finished_at = command_record_finished_at(record)
+        if self._state is None or finished_at is None:
             return False
         arm = next((arm for arm in self._state.arms if arm.arm == arm_record.arm), None)
         if arm is None or (
@@ -309,14 +310,12 @@ class StationConnection:
             and arm.active_command.command_id == record.command_id
         ):
             return False
-        return (
-            arm.last_command is not None
-            and arm.last_command.completion is not None
-            and (
-                arm.last_command.command_id == record.command_id
-                or arm.last_command.completion.finished_at
-                >= record.completion.finished_at
-            )
+        if arm.last_command is None:
+            return False
+        last_finished_at = command_record_finished_at(arm.last_command)
+        return last_finished_at is not None and (
+            arm.last_command.command_id == record.command_id
+            or last_finished_at >= finished_at
         )
 
     def _keep_record(self, arm_record: ArmRecord) -> None:
@@ -324,8 +323,8 @@ class StationConnection:
         previous = self._records.get(record.command_id)
         if (
             previous is not None
-            and previous.record.completion is not None
-            and record.completion is None
+            and previous.record.phase.kind != "pending"
+            and record.phase.kind == "pending"
         ):
             return
         self._records[record.command_id] = arm_record

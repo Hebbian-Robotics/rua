@@ -350,7 +350,10 @@ test.each(["c", "newer"])(
       publish("station", stateMessage([{ sampledAt: 3, lastCommandId }]));
       const answer = await command;
       assert.equal(answer.status, "accepted");
-      expect(answer.records[0]?.record.completion?.outcome).toBe("completed");
+      expect(answer.records[0]?.record.phase).toMatchObject({
+        kind: "finished",
+        completion: { outcome: "completed" },
+      });
     } finally {
       connection.close();
       server.closeAllConnections();

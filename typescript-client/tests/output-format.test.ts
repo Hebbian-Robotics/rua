@@ -14,19 +14,38 @@ import {
 } from "../src/index.js";
 import { commandRecord, fakeLease, stateMessage } from "./station-fakes.js";
 
-test("formatting views retain full motion history, units and interruption flags", async () => {
+test("formatting views retain full history and measured progress from a failed motion", async () => {
   const record = apiSchemas.shape.CommandRecord.parse({
-    ...commandRecord("move", 2, "interrupted"),
-    achieved: {
-      joints: [0.123456789],
-      sampled_at: 2.123456789,
-      joint_error_radians: null,
-      joint_errors_radians: null,
-      orientation: null,
-      orientation_error_radians: null,
-      position: null,
-      position_error_meters: null,
-      quaternion: null,
+    ...commandRecord("move"),
+    command: {
+      kind: "move",
+      target_joints: [0.3],
+      joint_speed: 1,
+      group_id: null,
+      target_position: null,
+      target_quaternion: null,
+      path_limited: null,
+      pose_limited: null,
+    },
+    phase: {
+      kind: "finished",
+      completion: {
+        outcome: "failed",
+        finished_at: 2,
+        detail: "Motion failed",
+        gripper: null,
+      },
+      achieved: {
+        joints: [0.123456789],
+        sampled_at: 2.123456789,
+        joint_error_radians: null,
+        joint_errors_radians: null,
+        orientation: null,
+        orientation_error_radians: null,
+        position: null,
+        position_error_meters: null,
+        quaternion: null,
+      },
     },
     checkpoints: [
       {
@@ -69,7 +88,7 @@ test("formatting views retain full motion history, units and interruption flags"
     expect(full?.data).toEqual(summary?.data);
     expect(full).toMatchObject({
       isError: true,
-      interrupted: true,
+      interrupted: false,
       halt: false,
     });
 

@@ -22,13 +22,15 @@ from hebbian_rua.client.contract.station_api import (
     PreviewPose,
     ProgramCompiled,
     ProgramContinuation,
+    RecordedGripper,
+    RecordedMove,
     RejectionReason,
 )
 from hebbian_rua.client.llm.robot_tools import RobotTools
 from hebbian_rua.client.llm.tool_catalog import RobotToolConfiguration
 from hebbian_rua.client.llm.types import RobotToolCall
 from hebbian_rua.client.station_client import LeaseHeldElsewhere, StationClient
-from hebbian_rua.client.station_types import LeaseLost
+from hebbian_rua.client.station_types import LeaseLost, command_record_outcome
 from tests.fixture_station import (
     ARM,
     running_station,
@@ -77,7 +79,7 @@ def test_model_can_return_to_the_enable_time_pose(server_binary: Path) -> None:
                 assert not outcome.is_error, outcome.text
                 assert isinstance(outcome.data, dict)
                 assert outcome.data["label"] == "rehome"
-                assert outcome.data["achieved"]["joints"] == pytest.approx(
+                assert outcome.data["phase"]["achieved"]["joints"] == pytest.approx(
                     original, abs=0.02
                 )
                 assert (await client.arm(ARM).state()).gripper_opening == pytest.approx(
@@ -558,13 +560,14 @@ def test_late_command_cancellation_leaves_a_new_move_running(
                         lambda state: (
                             (record := state.arms[0].last_command) is not None
                             and record.command_id == command_id
-                            and record.completion is not None
+                            and record.phase.kind != "pending"
                         )
                     )
                     record = state.arms[0].last_command
                     assert record is not None
-                    assert record.completion is not None
-                    return record.completion.outcome.value
+                    outcome = command_record_outcome(record)
+                    assert outcome is not None
+                    return outcome.value
 
                 original = str(uuid4())
                 assert (
@@ -631,13 +634,12 @@ def test_one_operation_can_fence_admission_and_order_stream_updates(
                     state.arms[0].last_command is not None
                     and state.arms[0].last_command.command_id
                     == admitted.records[0].record.command_id
-                    and state.arms[0].last_command.completion is not None
+                    and state.arms[0].last_command.phase.kind != "pending"
                 )
             )
             final = (await client.get_operation(operation)).root
             assert final.state == "finished"
-            assert final.records[0].record.completion is not None
-            assert final.records[0].record.completion.outcome.value == "stopped"
+            assert command_record_outcome(final.records[0].record) == "stopped"
 
     with running_station(server_binary) as station:
         asyncio.run(asyncio.wait_for(exercise(station.server), timeout=10))
@@ -751,7 +753,8 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                 direct = await arm.set_gripper(0.005, max_joint_speed=0.04)
                 assert direct.completed
                 assert not isinstance(direct.record, CommandRefused)
-                assert direct.record.joint_speed == pytest.approx(0.04)
+                assert direct.record.command.kind == "gripper"
+                assert direct.record.command.joint_speed == pytest.approx(0.04)
                 joints = (await client.arm(ARM).state()).measured_joints
                 combined = await arm.run_action_sequence(
                     [
@@ -766,9 +769,14 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                 )
                 assert combined.phase.state == "completed"
                 assert len(combined.steps[0]) == 2
-                assert {record.record.joint_speed for record in combined.steps[0]} == {
-                    0.02
+                assert {record.record.command.kind for record in combined.steps[0]} == {
+                    "move",
+                    "gripper",
                 }
+                for entry in combined.steps[0]:
+                    command = entry.record.command
+                    assert isinstance(command, (RecordedMove, RecordedGripper))
+                    assert command.joint_speed == pytest.approx(0.02)
                 tools = RobotTools(
                     client,
                     lease,
@@ -848,9 +856,9 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                 assert not gripper_result[0].is_error
                 assert isinstance(gripper_result[0].data, dict)
                 profile_speed = (await client.state()).max_joint_speed
-                assert gripper_result[0].data["joint_speed"] == pytest.approx(
-                    profile_speed
-                )
+                assert gripper_result[0].data["command"][
+                    "joint_speed"
+                ] == pytest.approx(profile_speed)
                 assert isinstance(gripper_result[0].model_data, dict)
                 assert gripper_result[0].model_data[
                     "joint_speed_degrees_per_second"

@@ -1,47 +1,86 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct InvalidSpeed;
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct JointTarget<Positions>(Positions);
 
-impl std::fmt::Display for InvalidSpeed {
+impl<Positions: AsRef<[f64]>> JointTarget<Positions> {
+    pub(crate) fn parse(
+        positions: Positions,
+        expected: usize,
+        lower_limits: &[f64],
+        upper_limits: &[f64],
+    ) -> Result<Self, JointTargetError> {
+        let values = positions.as_ref();
+        if values.len() != expected {
+            return Err(JointTargetError::Count {
+                expected,
+                actual: values.len(),
+            });
+        }
+        if lower_limits.len() != expected || upper_limits.len() != expected {
+            return Err(JointTargetError::InconsistentLimits);
+        }
+        for (index, (&position, (&lower, &upper))) in values
+            .iter()
+            .zip(lower_limits.iter().zip(upper_limits))
+            .enumerate()
+        {
+            if !position.is_finite() {
+                return Err(JointTargetError::NonFinite { index });
+            }
+            if !(lower..=upper).contains(&position) {
+                return Err(JointTargetError::OutsideLimits {
+                    index,
+                    position,
+                    lower,
+                    upper,
+                });
+            }
+        }
+        Ok(Self(positions))
+    }
+
+    pub(crate) fn as_slice(&self) -> &[f64] {
+        self.0.as_ref()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum JointTargetError {
+    Count {
+        expected: usize,
+        actual: usize,
+    },
+    InconsistentLimits,
+    NonFinite {
+        index: usize,
+    },
+    OutsideLimits {
+        index: usize,
+        position: f64,
+        lower: f64,
+        upper: f64,
+    },
+}
+
+impl std::fmt::Display for JointTargetError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("A joint speed must be positive and finite")
-    }
-}
-
-pub(crate) fn motion_speed(
-    requested: Option<f64>,
-    default: f64,
-    maximum: f64,
-) -> Result<f64, InvalidSpeed> {
-    match requested {
-        Some(speed) if !(speed.is_finite() && speed > 0.0) => Err(InvalidSpeed),
-        requested => Ok(requested.unwrap_or(default).min(maximum)),
-    }
-}
-
-pub(crate) fn joint_target_limit_error(
-    positions: &[f64],
-    lower_limits: &[f64],
-    upper_limits: &[f64],
-) -> Option<String> {
-    positions
-        .iter()
-        .zip(lower_limits.iter().zip(upper_limits))
-        .enumerate()
-        .find(|(_, (position, (lower, upper)))| position < lower || position > upper)
-        .map(|(index, (position, (lower, upper)))| {
-            format!("Joint {index} target {position} rad is outside [{lower}, {upper}] rad")
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_over_speed_request_runs_at_the_maximum_and_a_nonsense_one_is_refused() {
-        assert_eq!(motion_speed(Some(9.0), 1.0, 2.0), Ok(2.0));
-        assert_eq!(motion_speed(None, 1.0, 2.0), Ok(1.0));
-        assert_eq!(motion_speed(Some(0.0), 1.0, 2.0), Err(InvalidSpeed));
-        assert_eq!(motion_speed(Some(f64::NAN), 1.0, 2.0), Err(InvalidSpeed));
+        match self {
+            Self::Count { expected, actual } => write!(
+                formatter,
+                "Expected {expected} joint positions, got {actual}"
+            ),
+            Self::InconsistentLimits => {
+                formatter.write_str("Arm limits do not match its joint count")
+            }
+            Self::NonFinite { index } => write!(formatter, "Joint {index} target must be finite"),
+            Self::OutsideLimits {
+                index,
+                position,
+                lower,
+                upper,
+            } => write!(
+                formatter,
+                "Joint {index} target {position} rad is outside [{lower}, {upper}] rad"
+            ),
+        }
     }
 }

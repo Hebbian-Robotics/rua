@@ -253,7 +253,7 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
         let (status, record) = request(address, "GET", &format!("/operations/{id}"), None);
         assert_eq!(status, 200);
         assert_eq!(
-            record["records"][0]["record"]["completion"]["outcome"], "stopped",
+            record["records"][0]["record"]["phase"]["completion"]["outcome"], "stopped",
             "{record}"
         );
     }

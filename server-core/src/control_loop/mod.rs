@@ -7,14 +7,14 @@ mod activity;
 mod group;
 mod guards;
 mod learned;
-mod lifecycle;
+mod power;
 mod recovery;
 mod runner;
 mod tool_pose;
 mod trajectory;
 
 #[cfg(test)]
-mod lifecycle_tests;
+mod runner_tests;
 #[cfg(test)]
 mod tests;
 

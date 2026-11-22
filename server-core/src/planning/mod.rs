@@ -10,7 +10,7 @@ use nalgebra::{UnitQuaternion, Vector3};
 use crate::config::ControllerConfig;
 use crate::control_loop::{build_guard, build_self_collision, load_shared_robot};
 use crate::ik::IkSolver;
-use crate::joint_limits::motion_speed;
+use crate::motion_values::JointSpeed;
 use crate::robot::PathCheck;
 use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
@@ -106,7 +106,7 @@ impl Planner {
             ));
         }
         self.require_joint_shape(start)?;
-        let joint_speed = motion_speed(
+        let joint_speed = JointSpeed::for_request(
             requested_speed,
             self.default_joint_speed,
             self.max_joint_speed,
@@ -118,15 +118,14 @@ impl Planner {
             let label = format!("waypoint_{index}");
             let (mut corner, target_position, target_quaternion, pose_limited) = match waypoint {
                 Waypoint::Joints { joints } => {
-                    self.require_joint_shape(joints)?;
-                    if let Some(detail) = crate::joint_limits::joint_target_limit_error(
-                        joints,
+                    let target = crate::joint_limits::JointTarget::parse(
+                        joints.as_slice(),
+                        self.joint_names.len(),
                         &self.lower,
                         &self.upper,
-                    ) {
-                        return Err(refusal(RejectionReason::InvalidTarget, detail));
-                    }
-                    (joints.clone(), None, None, None)
+                    )
+                    .map_err(|error| refusal(RejectionReason::InvalidTarget, error.to_string()))?;
+                    (target.as_slice().to_vec(), None, None, None)
                 }
                 Waypoint::Pose {
                     position,
@@ -167,7 +166,7 @@ impl Planner {
             return Ok(PlannedMotion {
                 plan: CornerPlan {
                     segments,
-                    peak_speed: joint_speed,
+                    peak_speed: joint_speed.radians_per_second(),
                 },
                 path_limited,
                 pose_limited,
@@ -176,7 +175,7 @@ impl Planner {
         Ok(PlannedMotion {
             plan: CornerPlan {
                 segments,
-                peak_speed: joint_speed,
+                peak_speed: joint_speed.radians_per_second(),
             },
             path_limited: None,
             pose_limited: None,

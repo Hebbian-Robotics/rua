@@ -1,3 +1,4 @@
+mod admission;
 mod artifact_workspace;
 mod commands;
 mod events;

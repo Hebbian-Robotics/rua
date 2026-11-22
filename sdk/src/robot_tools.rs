@@ -652,12 +652,10 @@ impl<'a> RobotTools<'a> {
                     .wait_for_action_sequence(&action_sequence_id)
                     .await?;
                 interrupted = sequence.steps.iter().flatten().any(|record| {
-                    record.record.completion.as_ref().is_some_and(|completion| {
-                        matches!(
-                            completion.outcome,
-                            CommandOutcome::Faulted | CommandOutcome::Interrupted
-                        )
-                    })
+                    matches!(
+                        record.record.outcome(),
+                        Some(CommandOutcome::Faulted | CommandOutcome::Interrupted)
+                    )
                 });
                 let incomplete = !matches!(sequence.phase, ActionSequencePhase::Completed);
                 (serde_json::to_value(sequence), incomplete)
@@ -707,14 +705,11 @@ fn command_records_outcome(
     let mut interrupted = false;
     let group_id = records
         .first()
-        .and_then(|record| record.record.group_id.clone());
+        .and_then(|record| record.record.group_id())
+        .map(str::to_owned);
     for record in records {
-        limited |= record.record.pose_limited.is_some() || record.record.path_limited.is_some();
-        let outcome = record
-            .record
-            .completion
-            .as_ref()
-            .map(|completion| completion.outcome);
+        limited |= record.record.was_limited();
+        let outcome = record.record.outcome();
         complete &= outcome == Some(CommandOutcome::Completed);
         stopped_short |= outcome == Some(CommandOutcome::StoppedShort);
         interrupted |= matches!(
@@ -893,8 +888,8 @@ mod outcome_tests {
         for example in examples {
             for grouped in [true, false] {
                 let mut record_data = example["record"].clone();
-                record_data["goal_joints"] = serde_json::json!([0.123_456_789]);
-                record_data["joint_speed"] = serde_json::json!(0.123_456_789);
+                record_data["command"]["target_joints"] = serde_json::json!([0.123_456_789]);
+                record_data["command"]["joint_speed"] = serde_json::json!(0.123_456_789);
                 let record = serde_json::from_value(record_data.clone()).unwrap();
                 let outcome = command_records_outcome(
                     vec![ArmRecord {
@@ -935,7 +930,7 @@ mod outcome_tests {
                 assert!(model_record.get("checkpoints").is_none());
                 assert!(model_record.get("accepted_at").is_none());
                 assert_eq!(
-                    model_record["goal_joints_degrees"],
+                    model_record["target_joints_degrees"],
                     serde_json::json!([7.1])
                 );
                 assert_eq!(model_record["joint_speed_degrees_per_second"], 7.1);
@@ -943,8 +938,8 @@ mod outcome_tests {
                     assert_eq!(value["status"], example["expected_status"]);
                 } else {
                     assert_eq!(
-                        value["completion"]["outcome"],
-                        example["record"]["completion"]["outcome"]
+                        value["phase"]["completion"]["outcome"],
+                        example["record"]["phase"]["completion"]["outcome"]
                     );
                 }
             }

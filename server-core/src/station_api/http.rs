@@ -25,7 +25,8 @@ use tower_http::set_header::SetResponseHeader;
 
 use crate::control_link::LinkHandle;
 
-use super::submissions::{OperationId, SubmissionCompletion, wait_for_outcome};
+use super::admission::{AdmissionClosed, AdmissionOwner, AdmissionState};
+use super::submissions::{OperationId, PendingAdmission, SubmissionCompletion, wait_for_outcome};
 
 const WORKER_THREADS: usize = 2;
 const PREVIEW_WORKERS: usize = 4;
@@ -46,9 +47,8 @@ pub(crate) struct StationState {
     trace_directories: Vec<PathBuf>,
     pub(crate) arms: OnceLock<BTreeMap<String, LinkHandle>>,
     pub(crate) telemetry: Arc<dyn crate::station_api::telemetry::RunTelemetry>,
-    pub(crate) executions: crate::station_api::runtime::ExecutionRegistry,
+    pub(super) admission: AdmissionOwner,
     pub(crate) instance_id: String,
-    pub(crate) operations: crate::station_api::submissions::Operations,
     pub(crate) lease_submissions: crate::station_api::submissions::LeaseSubmissions,
     pub(crate) events: Arc<crate::station_api::events::EventJournal>,
 }
@@ -109,6 +109,7 @@ impl HttpServer {
             .block_on(tokio::net::TcpListener::bind(address))
             .with_context(|| format!("Cannot listen for HTTP on {address}"))?;
         let bound = listener.local_addr()?;
+        let events = Arc::new(super::events::EventJournal::default());
         let station_state = Arc::new(StationState {
             shutdown_requested,
             program_submissions: crate::station_api::submissions::ProgramSubmissions::default(),
@@ -117,11 +118,10 @@ impl HttpServer {
             trace_directories,
             arms: OnceLock::new(),
             telemetry,
-            executions: crate::station_api::runtime::ExecutionRegistry::default(),
+            admission: AdmissionOwner::start(runtime.handle(), Arc::clone(&events)),
             instance_id: uuid::Uuid::new_v4().to_string(),
-            operations: crate::station_api::submissions::Operations::default(),
             lease_submissions: crate::station_api::submissions::LeaseSubmissions::default(),
-            events: Arc::new(crate::station_api::events::EventJournal::default()),
+            events,
         });
         let extra = extra_routes(runtime.handle(), bound)?;
         let router = router(Arc::clone(&station_state), viewer_directory).merge(extra);
@@ -191,27 +191,6 @@ impl HttpServer {
                 }
             }
         });
-        let sequence_station = Arc::clone(&self.station_state);
-        runtime.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            let mut previous = BTreeMap::new();
-            loop {
-                interval.tick().await;
-                let records = sequence_station.executions.snapshots();
-                let mut current = BTreeMap::new();
-                for record in records {
-                    if previous.get(&record.id) != Some(&record) {
-                        sequence_station
-                            .events
-                            .publish(ServerMessage::ActionSequenceState {
-                                action_sequence: Some(record.clone()),
-                            });
-                    }
-                    current.insert(record.id.clone(), record);
-                }
-                previous = current;
-            }
-        });
         let telemetry = Arc::clone(&self.station_state.telemetry);
         let journal = Arc::clone(&self.station_state.events);
         runtime.spawn(async move {
@@ -230,11 +209,19 @@ impl HttpServer {
             }
         });
         if let Some(lease_link) = arms.values().next().cloned() {
+            let admission = self.station_state.admission.clone();
             runtime.spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
                 loop {
                     interval.tick().await;
-                    let _ = lease_link.lease_status();
+                    let lease_link = lease_link.clone();
+                    if admission
+                        .decide(move |_| lease_link.tick_lease())
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
                 }
             });
         }
@@ -256,7 +243,10 @@ impl HttpServer {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             });
-            runtime.spawn(crate::station_api::interlocks::watch_arm(link));
+            runtime.spawn(crate::station_api::interlocks::watch_arm(
+                link,
+                self.station_state.admission.clone(),
+            ));
         }
     }
 
@@ -379,20 +369,33 @@ async fn read_state(State(station_state): State<Arc<StationState>>) -> Response 
 }
 
 async fn read_action_sequence(State(station_state): State<Arc<StationState>>) -> Response {
-    let current = station_state
-        .executions
-        .current()
-        .map(|receiver| receiver.borrow().clone());
-    Json(current).into_response()
+    match station_state
+        .admission
+        .decide(|state| {
+            state
+                .executions
+                .current()
+                .map(|receiver| receiver.borrow().clone())
+        })
+        .await
+    {
+        Ok(current) => Json(current).into_response(),
+        Err(error) => admission_unavailable(error).into_response(),
+    }
 }
 
 async fn read_action_sequence_by_id(
     State(station_state): State<Arc<StationState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Response {
-    match station_state.executions.lookup(&id) {
-        Some(action_sequence) => Json(action_sequence).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
+    match station_state
+        .admission
+        .decide(move |state| state.executions.lookup(&id))
+        .await
+    {
+        Ok(Some(action_sequence)) => Json(action_sequence).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => admission_unavailable(error).into_response(),
     }
 }
 
@@ -407,9 +410,12 @@ async fn read_operation(
     State(station_state): State<Arc<StationState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<Json<hebbian_contracts::OperationStatus>, (StatusCode, String)> {
+    let operation_id = parse_operation_id(&id)?;
     station_state
-        .operations
-        .status(parse_operation_id(&id)?)
+        .admission
+        .decide(move |state| state.operations.status(operation_id))
+        .await
+        .map_err(admission_unavailable)?
         .map(Json)
         .ok_or((
             StatusCode::NOT_FOUND,
@@ -459,7 +465,12 @@ async fn cancel_action_sequence(
     State(station_state): State<Arc<StationState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    if station_state.executions.cancel(&id) {
+    if station_state
+        .admission
+        .decide(move |state| state.executions.cancel(&id))
+        .await
+        .map_err(admission_unavailable)?
+    {
         Ok(axum::http::StatusCode::NO_CONTENT)
     } else {
         Err((
@@ -473,20 +484,26 @@ async fn report_lease_camera(
     State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseCameraReport>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let link = station_state.lease_link()?;
-    link.report_camera(&input.lease_token, &input.camera, input.available)
-        .map(|()| axum::http::StatusCode::NO_CONTENT)
-        .map_err(|detail| {
-            let still_holds = link
-                .camera_requirements()
-                .is_some_and(|requirements| requirements.token == input.lease_token);
-            let status = if still_holds {
-                axum::http::StatusCode::CONFLICT
-            } else {
-                axum::http::StatusCode::FORBIDDEN
-            };
-            (status, detail)
-        })
+    use crate::lease::CameraReportRefusal;
+
+    let link = station_state.lease_link()?.clone();
+    let camera = input.camera.clone();
+    match station_state
+        .admission
+        .decide(move |_| link.report_camera(&input.lease_token, &input.camera, input.available))
+        .await
+        .map_err(admission_unavailable)?
+    {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(CameraReportRefusal::LeaseLost) => Err((
+            StatusCode::FORBIDDEN,
+            "This token does not hold the lease".to_owned(),
+        )),
+        Err(CameraReportRefusal::CameraNotRequired) => Err((
+            StatusCode::CONFLICT,
+            format!("The lease does not require camera {camera}"),
+        )),
+    }
 }
 
 async fn stop_leased_arm(
@@ -542,10 +559,17 @@ async fn release_lease(
     State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let link = station_state.lease_link()?;
-    if link.release_lease_with(&input.lease_token, || {
-        station_state.executions.cancel_owner(&input.lease_token)
-    }) {
+    let link = station_state.lease_link()?.clone();
+    if station_state
+        .admission
+        .decide(move |state| {
+            link.release_lease_with(&input.lease_token, || {
+                state.executions.cancel_owner(&input.lease_token)
+            })
+        })
+        .await
+        .map_err(admission_unavailable)?
+    {
         Ok(axum::http::StatusCode::NO_CONTENT)
     } else {
         Err((
@@ -559,15 +583,21 @@ async fn renew_lease(
     State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
-    let link = station_state.lease_link()?;
-    if link.retain_lease(&input.lease_token) {
-        Ok(axum::http::StatusCode::NO_CONTENT)
-    } else {
-        Err((
-            axum::http::StatusCode::CONFLICT,
-            "The lease has expired or is no longer held".to_owned(),
-        ))
-    }
+    let link = station_state.lease_link()?.clone();
+    station_state
+        .admission
+        .decide(move |_| {
+            if link.retain_lease(&input.lease_token) {
+                Ok(axum::http::StatusCode::NO_CONTENT)
+            } else {
+                Err((
+                    axum::http::StatusCode::CONFLICT,
+                    "The lease has expired or is no longer held".to_owned(),
+                ))
+            }
+        })
+        .await
+        .map_err(admission_unavailable)?
 }
 
 fn require_station_instance(
@@ -613,31 +643,38 @@ async fn cancel_operation(
 
     let id = parse_operation_id(&id)?;
     require_station_instance(&station_state, &input.station_instance_id)?;
-    if !station_state
-        .lease_link()?
-        .with_lease(&input.lease_token, &mut || {})
-    {
-        return Err((StatusCode::CONFLICT, "Lease lost".to_owned()));
-    }
-    let cancellation = match station_state.operations.cancel(id, &input.lease_token) {
-        CancellationResult::AlreadyStopped => return Ok(StatusCode::NO_CONTENT),
-        CancellationResult::Expired => {
-            return Err((
-                StatusCode::GONE,
-                "Operation outcome is no longer retained".to_owned(),
-            ));
-        }
-        CancellationResult::Conflict => {
-            return Err((
-                StatusCode::CONFLICT,
-                "Operation belongs to another lease".to_owned(),
-            ));
-        }
-        CancellationResult::Requested(target) => target,
-    };
-
-    // INVARIANT: After accepting cancellation, finish processing it even if the HTTP caller disconnects.
+    let lease_link = station_state.lease_link()?.clone();
+    // INVARIANT: A cancellation handed to the station survives its HTTP caller.
     tokio::spawn(async move {
+        let token = input.lease_token.clone();
+        let cancellation = match station_state
+            .admission
+            .decide(move |state| {
+                if lease_link.with_lease(&token, &mut || {}) {
+                    Ok(state.operations.cancel(id, &token))
+                } else {
+                    Err((StatusCode::CONFLICT, "Lease lost".to_owned()))
+                }
+            })
+            .await
+            .map_err(admission_unavailable)??
+        {
+            CancellationResult::AlreadyStopped => return Ok(StatusCode::NO_CONTENT),
+            CancellationResult::Expired => {
+                return Err((
+                    StatusCode::GONE,
+                    "Operation outcome is no longer retained".to_owned(),
+                ));
+            }
+            CancellationResult::Conflict => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Operation belongs to another lease".to_owned(),
+                ));
+            }
+            CancellationResult::Requested(target) => target,
+        };
+
         let records = match cancellation {
             CancellationTarget::Commands(records) => records,
             CancellationTarget::AwaitAdmission(response) => {
@@ -656,25 +693,31 @@ async fn cancel_operation(
                 }
             }
         };
-        let arms = station_state.arms.get().ok_or((
+        let arms = station_state.arms.get().cloned().ok_or((
             StatusCode::SERVICE_UNAVAILABLE,
             "Station arms are not ready".to_owned(),
         ))?;
-        let mut failure = None;
-        for entry in records
-            .into_iter()
-            .filter(|entry| entry.record.completion.is_none())
-        {
-            if let Some(link) = arms.get(&entry.arm)
-                && let Err(error) = leased_stop_response(
-                    link.cancel_leased_command(&input.lease_token, entry.record.command_id),
-                    StatusCode::CONFLICT,
-                )
-            {
-                failure.get_or_insert(error);
-            }
-        }
-        failure.map_or(Ok(StatusCode::NO_CONTENT), Err)
+        station_state
+            .admission
+            .decide(move |_| {
+                let mut failure = None;
+                for entry in records
+                    .into_iter()
+                    .filter(|entry| entry.record.is_pending())
+                {
+                    if let Some(link) = arms.get(&entry.arm)
+                        && let Err(error) = leased_stop_response(
+                            link.cancel_leased_command(&input.lease_token, entry.record.command_id),
+                            StatusCode::CONFLICT,
+                        )
+                    {
+                        failure.get_or_insert(error);
+                    }
+                }
+                failure.map_or(Ok(StatusCode::NO_CONTENT), Err)
+            })
+            .await
+            .map_err(admission_unavailable)?
     })
     .await
     .map_err(|_| {
@@ -689,10 +732,7 @@ type CommandSubmissionOutcome = Option<Result<hebbian_contracts::CommandAnswer, 
 
 fn follow_or_start_submission(
     reservation: crate::station_api::submissions::SubmissionReservation,
-    start: impl FnOnce(
-        tokio::sync::watch::Sender<CommandSubmissionOutcome>,
-        tokio::sync::watch::Receiver<bool>,
-    ) -> tokio::sync::watch::Receiver<CommandSubmissionOutcome>,
+    start: impl FnOnce(PendingAdmission, tokio::sync::watch::Receiver<bool>),
 ) -> Result<tokio::sync::watch::Receiver<CommandSubmissionOutcome>, (StatusCode, String)> {
     use crate::station_api::submissions::SubmissionReservation;
     match reservation {
@@ -717,7 +757,14 @@ fn follow_or_start_submission(
                 })));
             Ok(response)
         }
-        SubmissionReservation::New(sender, cancellation) => Ok(start(sender, cancellation)),
+        SubmissionReservation::New {
+            pending,
+            response,
+            cancellation,
+        } => {
+            start(pending, cancellation);
+            Ok(response)
+        }
     }
 }
 
@@ -730,7 +777,7 @@ type CommandAdmission<ReplyContext, ReplyRecords> = Result<
 >;
 
 async fn command_submission_outcome<ReplyContext, ReplyRecords>(
-    admitted: Result<CommandAdmission<ReplyContext, ReplyRecords>, tokio::task::JoinError>,
+    admitted: Result<CommandAdmission<ReplyContext, ReplyRecords>, AdmissionClosed>,
     into_arm_records: impl FnOnce(
         ReplyContext,
         ReplyRecords,
@@ -756,15 +803,27 @@ async fn command_submission_outcome<ReplyContext, ReplyRecords>(
 
 type SubmissionGeneration = (Arc<std::sync::atomic::AtomicU64>, u64);
 
-async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send + 'static>(
+type CommandRefusal = (hebbian_contracts::RejectionReason, String);
+
+fn admission_unavailable(_: AdmissionClosed) -> (StatusCode, String) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Station admission is unavailable".to_owned(),
+    )
+}
+
+async fn submit_station_command<
+    ReplyContext: Send + 'static,
+    ReplyRecords: Send + 'static,
+    Commit: FnOnce(&mut AdmissionState) -> CommandAdmission<ReplyContext, ReplyRecords> + Send + 'static,
+>(
     station: Arc<StationState>,
     request: super::submissions::SubmissionRequest,
-    admit: impl FnOnce(
-        &StationState,
+    prepare: impl FnOnce(
         &BTreeMap<String, LinkHandle>,
         Vec<SubmissionGeneration>,
         tokio::sync::watch::Receiver<bool>,
-    ) -> CommandAdmission<ReplyContext, ReplyRecords>
+    ) -> Result<Commit, CommandRefusal>
     + Send
     + 'static,
     into_arm_records: impl FnOnce(
@@ -798,31 +857,44 @@ async fn submit_station_command<ReplyContext: Send + 'static, ReplyRecords: Send
         .filter_map(|arm| links.get(arm))
         .map(LinkHandle::submission_generation)
         .collect();
-    let reservation = station.operations.reserve(id, request);
-    let response = follow_or_start_submission(reservation, |sender, cancellation| {
-        SubmissionCompletion::start(
-            sender,
-            "Command worker failed; outcome is unknown".to_owned(),
-            |completion| {
+    let response = station
+        .admission
+        .clone()
+        .decide(move |state| {
+            let reservation = state.operations.reserve(id, request);
+            follow_or_start_submission(reservation, |pending, cancellation| {
                 tokio::spawn(async move {
-                    let admission_station = Arc::clone(&station);
-                    let admitted = tokio::task::spawn_blocking(move || {
-                        admit(&admission_station, &links, generation, cancellation)
+                    let prepared = tokio::task::spawn_blocking(move || {
+                        prepare(&links, generation, cancellation)
                     })
                     .await;
+                    let admitted = match prepared {
+                        Ok(Ok(commit)) => station.admission.decide(commit).await,
+                        Ok(Err(refusal)) => Ok(Err(refusal)),
+                        Err(_) => Err(AdmissionClosed),
+                    };
                     let outcome = command_submission_outcome(admitted, into_arm_records).await;
-                    let unfinished = station.operations.admitted(id, &outcome);
-                    completion.publish(outcome);
+                    let Ok(unfinished) = station
+                        .admission
+                        .decide(move |_| pending.complete(outcome))
+                        .await
+                    else {
+                        return;
+                    };
                     if !unfinished.is_empty()
                         && let Some(links) = station.arms.get()
                     {
                         let result = await_motion_completion(links, unfinished).await;
-                        station.operations.motion_finished(id, result);
+                        let _ = station
+                            .admission
+                            .decide(move |state| state.operations.motion_finished(id, result))
+                            .await;
                     }
                 });
-            },
-        )
-    })?;
+            })
+        })
+        .await
+        .map_err(admission_unavailable)??;
     wait_for_outcome(response)
         .await
         .map_err(|_| {
@@ -846,7 +918,7 @@ async fn await_motion_completion(
     for (index, entry) in records
         .iter()
         .enumerate()
-        .filter(|(_, entry)| entry.record.completion.is_none())
+        .filter(|(_, entry)| entry.record.is_pending())
     {
         let link = links
             .get(&entry.arm)
@@ -884,6 +956,13 @@ fn fence_cancelled_submission(
     Ok(cancelled)
 }
 
+fn arm_busy(detail: &str) -> CommandRefusal {
+    (
+        hebbian_contracts::RejectionReason::ArmBusy,
+        detail.to_owned(),
+    )
+}
+
 async fn submit_group_command(
     State(station_state): State<Arc<StationState>>,
     Json(input): Json<hebbian_contracts::GroupCommandSubmissionRequest>,
@@ -891,37 +970,30 @@ async fn submit_group_command(
     submit_station_command(
         station_state,
         super::submissions::SubmissionRequest::Group(input.clone()),
-        move |station, links, generation, cancellation| {
-            let token = input.lease_token.as_deref();
-            let targets = input
-                .command
-                .targets
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>();
-            station
-                .executions
-                .check_command_conflict(token, &targets)
-                .map_err(|detail| {
-                    (
-                        hebbian_contracts::RejectionReason::ArmBusy,
-                        detail.to_owned(),
-                    )
-                })?;
-            let (link, moves, gates) = crate::station_api::commands::plan_group_move(
-                links,
-                &input.command,
-                &input.expected_revisions,
-            )?;
-            let arms = moves
-                .iter()
-                .map(|part| part.arm.clone())
-                .collect::<Vec<_>>();
-            let _admission = fence_cancelled_submission(&cancellation)?;
-            let reply = link
-                .move_arms_async(moves, token, input.trace_context, &gates, &generation)
-                .map_err(|error| (error.reason, error.detail))?;
-            Ok::<_, (hebbian_contracts::RejectionReason, String)>((arms, reply))
+        move |links, generation, cancellation| {
+            let (link, moves, gates) =
+                super::commands::plan_group_move(links, &input.command, &input.expected_revisions)?;
+            let link = link.clone();
+            Ok(move |state: &mut AdmissionState| {
+                let token = input.lease_token.as_deref();
+                let targets = moves
+                    .iter()
+                    .map(|part| part.arm.as_str())
+                    .collect::<Vec<_>>();
+                state
+                    .executions
+                    .check_command_conflict(token, &targets)
+                    .map_err(arm_busy)?;
+                let arms = moves
+                    .iter()
+                    .map(|part| part.arm.clone())
+                    .collect::<Vec<_>>();
+                let _admission = fence_cancelled_submission(&cancellation)?;
+                let reply = link
+                    .move_arms_async(moves, token, input.trace_context, &gates, &generation)
+                    .map_err(|error| (error.reason, error.detail))?;
+                Ok((arms, reply))
+            })
         },
         |arms, records| {
             if arms.len() != records.len() {
@@ -944,48 +1016,52 @@ async fn submit_command(
     submit_station_command(
         station_state,
         super::submissions::SubmissionRequest::Single(input.clone()),
-        move |station, links, mut generation, cancellation| {
-            let token = input.lease_token.as_deref();
-            let link = links.get(&input.arm).ok_or((
-                hebbian_contracts::RejectionReason::InvalidTarget,
-                "Unknown arm".to_owned(),
-            ))?;
-            if matches!(input.command, hebbian_contracts::StationCommand::Stop) {
+        move |links, mut generation, cancellation| {
+            let link = links
+                .get(&input.arm)
+                .ok_or((
+                    hebbian_contracts::RejectionReason::InvalidTarget,
+                    "Unknown arm".to_owned(),
+                ))?
+                .clone();
+            let command = super::commands::arm_command(&link, &input.arm, input.command)?;
+            Ok(move |state: &mut AdmissionState| {
                 let _admission = fence_cancelled_submission(&cancellation)?;
-                return link
-                    .interrupt_async(input.trace_context)
-                    .map(|reply| (input.arm, reply))
-                    .map_err(|error| (error.reason, error.detail));
-            }
-            let disabling = matches!(input.command, hebbian_contracts::StationCommand::Disable);
-            if !disabling
-                && let Err(detail) = station
-                    .executions
-                    .check_command_conflict(token, &[&input.arm])
-            {
-                return Err((
-                    hebbian_contracts::RejectionReason::ArmBusy,
-                    detail.to_owned(),
-                ));
-            }
-            let command =
-                crate::station_api::commands::arm_command(link, &input.arm, input.command)?;
-            let _admission = fence_cancelled_submission(&cancellation)?;
-            if disabling && let Some(token) = token {
-                link.stop_leased_motion_for_submission(token, &mut generation, || {
-                    station.executions.cancel_owner(token)
-                })
+                let token = input.lease_token.as_deref();
+                let reply = match command {
+                    hebbian_contracts::Command::Stop => link.interrupt_async(input.trace_context),
+                    hebbian_contracts::Command::Disable => {
+                        if let Some(token) = token {
+                            link.stop_leased_motion_for_submission(token, &mut generation, || {
+                                state.executions.cancel_owner(token)
+                            })
+                            .map_err(|error| (error.reason, error.detail))?;
+                        }
+                        link.submit_command_async(
+                            command,
+                            token,
+                            input.trace_context,
+                            input.expected_revision,
+                            &generation,
+                        )
+                    }
+                    command => {
+                        state
+                            .executions
+                            .check_command_conflict(token, &[&input.arm])
+                            .map_err(arm_busy)?;
+                        link.submit_command_async(
+                            command,
+                            token,
+                            input.trace_context,
+                            input.expected_revision,
+                            &generation,
+                        )
+                    }
+                }
                 .map_err(|error| (error.reason, error.detail))?;
-            }
-            link.submit_command_async(
-                command,
-                token,
-                input.trace_context,
-                input.expected_revision,
-                &generation,
-            )
-            .map(|reply| (input.arm, reply))
-            .map_err(|error| (error.reason, error.detail))
+                Ok((input.arm, reply))
+            })
         },
         |arm, record| Ok(vec![hebbian_contracts::ArmRecord { arm, record }]),
     )
@@ -1000,43 +1076,44 @@ async fn update_stream_goal(
     use hebbian_contracts::{ArmRecord, RejectionReason};
     require_station_instance(&station, &input.station_instance_id)?;
     let id = parse_operation_id(&id)?;
-    let admitted = tokio::task::spawn_blocking(move || {
-        station.operations.update_stream(
-            id,
-            &input.lease_token,
-            input.sequence,
-            |arm, controller_stream| {
-                station
-                    .executions
-                    .check_command_conflict(Some(&input.lease_token), &[arm])
-                    .map_err(|detail| (RejectionReason::ArmBusy, detail.to_owned()))?;
-                let link = station
-                    .arms
-                    .get()
-                    .and_then(|links| links.get(arm))
-                    .ok_or((RejectionReason::InvalidTarget, "Unknown arm".to_owned()))?;
-                let generation = [link.submission_generation()];
-                let command = super::commands::joint_stream(
-                    link,
-                    arm,
-                    input.joints,
-                    input.gripper_opening,
-                    super::commands::StreamAdmission::Update(controller_stream),
-                )?;
-                let reply = link
-                    .submit_command_async(
-                        command,
-                        Some(&input.lease_token),
-                        None,
-                        input.expected_revision,
-                        &generation,
-                    )
-                    .map_err(|error| (error.reason, error.detail))?;
-                Ok((arm.to_owned(), reply))
-            },
-        )
-    })
-    .await;
+    let links = station.arms.get().cloned().unwrap_or_default();
+    let admitted = station
+        .admission
+        .decide(move |state| {
+            state.operations.update_stream(
+                id,
+                &input.lease_token,
+                input.sequence,
+                |arm, controller_stream| {
+                    state
+                        .executions
+                        .check_command_conflict(Some(&input.lease_token), &[arm])
+                        .map_err(arm_busy)?;
+                    let link = links
+                        .get(arm)
+                        .ok_or((RejectionReason::InvalidTarget, "Unknown arm".to_owned()))?;
+                    let generation = [link.submission_generation()];
+                    let command = super::commands::joint_stream(
+                        link,
+                        arm,
+                        input.joints,
+                        input.gripper_opening,
+                        super::commands::StreamAdmission::Update(controller_stream),
+                    )?;
+                    let reply = link
+                        .submit_command_async(
+                            command,
+                            Some(&input.lease_token),
+                            None,
+                            input.expected_revision,
+                            &generation,
+                        )
+                        .map_err(|error| (error.reason, error.detail))?;
+                    Ok((arm.to_owned(), reply))
+                },
+            )
+        })
+        .await;
     let outcome =
         command_submission_outcome(admitted, |arm, record| Ok(vec![ArmRecord { arm, record }]))
             .await;
@@ -1474,7 +1551,7 @@ pub fn trace_directories<'a>(directories: impl IntoIterator<Item = &'a Path>) ->
 
 #[cfg(test)]
 mod event_stream_tests {
-    use super::{HttpServer, ServerMessage, StationState, stream_events};
+    use super::{AdmissionOwner, HttpServer, ServerMessage, StationState, stream_events};
     use axum::extract::State;
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use std::sync::{Arc, OnceLock};
@@ -1495,6 +1572,7 @@ mod event_stream_tests {
     }
 
     fn station() -> Arc<StationState> {
+        let events = Arc::new(super::super::events::EventJournal::default());
         Arc::new(StationState {
             shutdown_requested: Arc::default(),
             program_submissions: crate::station_api::submissions::ProgramSubmissions::default(),
@@ -1503,11 +1581,13 @@ mod event_stream_tests {
             trace_directories: vec![],
             arms: OnceLock::new(),
             telemetry: Arc::new(crate::station_api::telemetry::DiscardTelemetry),
-            executions: crate::station_api::runtime::ExecutionRegistry::default(),
+            admission: AdmissionOwner::start(
+                &tokio::runtime::Handle::current(),
+                Arc::clone(&events),
+            ),
             instance_id: "instance-a".into(),
-            operations: crate::station_api::submissions::Operations::default(),
             lease_submissions: crate::station_api::submissions::LeaseSubmissions::default(),
-            events: Arc::new(crate::station_api::events::EventJournal::default()),
+            events,
         })
     }
 

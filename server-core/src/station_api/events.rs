@@ -302,24 +302,14 @@ mod tests {
     }
 
     fn record(command_id: &str) -> Event {
-        Event::Record(CommandRecord {
-            command_id: command_id.to_owned(),
-            label: "move".to_owned(),
-            accepted_at: 0.0,
-            joint_speed: None,
-            completion: None,
-            checkpoints: vec![],
-            goal_joints: None,
-            target_joints: None,
-            target_position: None,
-            target_quaternion: None,
-            target_status: None,
-            path_limited: None,
-            pose_limited: None,
-            achieved: None,
-            group_id: None,
-            trace_context: None,
-        })
+        Event::Record(CommandRecord::new(
+            command_id.to_owned(),
+            "stop",
+            0.0,
+            hebbian_contracts::RecordedCommand::Control {
+                action: hebbian_contracts::ControlAction::Stop,
+            },
+        ))
     }
 
     fn snapshot_items(journal: &EventJournal) -> (u64, Vec<serde_json::Value>) {

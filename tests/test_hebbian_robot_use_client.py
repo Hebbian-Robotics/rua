@@ -9,13 +9,19 @@ import pytest
 from hebbian_rua.client.contract.station_api import (
     ArmMode,
     CommandCompletion,
-    CommandOutcome,
+    CommandOutcomeUnknown,
     CommandRecord,
     CommandRefused,
+    ControlAction,
+    FinishedCommand,
     IkFailure,
+    KnownCommandOutcome,
     LeaseHolder,
     PathLimited,
+    PendingCommand,
     PoseLimited,
+    RecordedControl,
+    RecordedMove,
     RejectionReason,
 )
 from hebbian_rua.client.rotations import quaternion_from_roll_pitch_yaw
@@ -65,7 +71,11 @@ def test_enable_move_and_stop_round_trip(server_binary: Path) -> None:
                 moved = await lease.arm(ARM).move_to_joints(joints)
                 assert moved.completed, moved
                 assert isinstance(moved.record, CommandRecord)
-                assert moved.record.target_status == "reached"
+                assert moved.record.phase.kind == "finished"
+                assert (
+                    moved.record.phase.completion.outcome
+                    is KnownCommandOutcome.completed
+                )
                 assert (await arm.stop()).completed
 
         asyncio.run(exercise())
@@ -100,7 +110,12 @@ def test_rpy_quaternion_matches_known_rotations() -> None:
 
 def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
     unfinished = CommandRecord(
-        command_id="c", label="enable", accepted_at=0.0, checkpoints=[]
+        command_id="c",
+        label="enable",
+        accepted_at=0.0,
+        checkpoints=[],
+        command=RecordedControl(action=ControlAction.enable),
+        phase=PendingCommand(),
     )
     assert CommandResult.of(unfinished).outcome is ResultOutcome.UNFINISHED
     refused = CommandRefused(
@@ -110,29 +125,25 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
     assert rejected.outcome is ResultOutcome.REJECTED
     assert not rejected.completed
     assert "not_enabled" in (rejected.detail or "")
-    tripped = unfinished.model_copy(
-        update={
-            "completion": CommandCompletion(
-                finished_at=1.0, outcome=CommandOutcome.tripped
-            )
-        }
-    )
-    assert CommandResult.of(tripped).outcome is ResultOutcome.TRIPPED
-    completed = unfinished.model_copy(
-        update={
-            "completion": CommandCompletion(
-                finished_at=1.0, outcome=CommandOutcome.completed
-            )
-        }
-    )
-    assert CommandResult.of(completed).completed
+    for outcome, expected in [
+        (KnownCommandOutcome.tripped, ResultOutcome.TRIPPED),
+        (KnownCommandOutcome.completed, ResultOutcome.COMPLETED),
+    ]:
+        terminal = unfinished.model_copy(
+            update={
+                "phase": FinishedCommand(
+                    completion=CommandCompletion(finished_at=1.0, outcome=outcome),
+                )
+            }
+        )
+        result = CommandResult.of(terminal)
+        assert result.outcome is expected
+        assert result.completed == (expected is ResultOutcome.COMPLETED)
     interrupted = unfinished.model_copy(
         update={
-            "completion": CommandCompletion(
-                finished_at=1.0,
-                outcome=CommandOutcome.interrupted,
-                detail="Controller connection lost",
-            )
+            "phase": CommandOutcomeUnknown(
+                finished_at=1.0, detail="Controller connection lost"
+            ),
         }
     )
     result = CommandResult.of(interrupted)
@@ -147,7 +158,12 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
         label="move_to_pose",
         accepted_at=0.0,
         checkpoints=[],
-        completion=CommandCompletion(finished_at=1.0, outcome=CommandOutcome.completed),
+        command=RecordedMove(target_joints=[0.2], joint_speed=1.0),
+        phase=FinishedCommand(
+            completion=CommandCompletion(
+                finished_at=1.0, outcome=KnownCommandOutcome.completed
+            )
+        ),
     )
     assert CommandResult.of(completed).completed
     assert not CommandResult.of(completed).was_limited
@@ -164,7 +180,11 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
         },
     ]
     for limit in limits:
-        result = CommandResult.of(completed.model_copy(update=limit))
+        assert isinstance(completed.command, RecordedMove)
+        record = completed.model_copy(
+            update={"command": completed.command.model_copy(update=limit)}
+        )
+        result = CommandResult.of(record)
         assert result.completed
         assert result.was_limited
     refused = CommandResult.of(

@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use super::types::{
-    GripperCommand, HeldStreamGoal, Lifecycle, Limits, Observation, Poses, PowerState, Rejection,
-    ShutdownState, StreamGoal,
+    CommandState, GripperCommand, HeldStreamGoal, Limits, Observation, Poses, PowerState,
+    Rejection, ShutdownState, StreamGoal,
 };
 use hebbian_contracts::{ArmMode, CommandRecord, Event, TraceContext};
 
@@ -14,7 +14,7 @@ pub struct ArmCore {
     pub(super) limits: Limits,
     pub(super) publish: Box<dyn Fn(Event) + Send>,
     pub(super) power: PowerState,
-    pub(super) lifecycle: Lifecycle,
+    pub(super) command_state: CommandState,
     pub(super) records: HashMap<String, CommandRecord>,
     pub(super) record_order: VecDeque<String>,
     pub(super) last_finished: Option<String>,
@@ -51,7 +51,7 @@ impl ArmCore {
             limits,
             publish: Box::new(publish),
             power: PowerState::Disabled,
-            lifecycle: Lifecycle::Idle,
+            command_state: CommandState::Idle,
             records: HashMap::new(),
             record_order: VecDeque::new(),
             last_finished: None,
@@ -101,7 +101,7 @@ impl ArmCore {
     }
 
     pub(crate) fn stationary_joints(&self) -> Option<&[f64]> {
-        if self.mode() != ArmMode::Holding || self.lifecycle != Lifecycle::Idle {
+        if self.mode() != ArmMode::Holding || self.command_state != CommandState::Idle {
             return None;
         }
         self.observation
@@ -127,11 +127,11 @@ impl ArmCore {
 
     #[must_use]
     pub(crate) fn active_command_id(&self) -> Option<&str> {
-        match &self.lifecycle {
-            Lifecycle::Starting(id)
-            | Lifecycle::Executing { command_id: id, .. }
-            | Lifecycle::Stopping(id) => Some(id),
-            Lifecycle::Idle | Lifecycle::Queued(_) | Lifecycle::Superseding(_) => None,
+        match &self.command_state {
+            CommandState::Starting(id)
+            | CommandState::Executing { command_id: id, .. }
+            | CommandState::Stopping(id) => Some(id),
+            CommandState::Idle | CommandState::Queued(_) | CommandState::Superseding(_) => None,
         }
     }
 
@@ -158,7 +158,8 @@ impl ArmCore {
 
     #[must_use]
     pub(crate) fn stop_requested(&self) -> bool {
-        self.shutdown == ShutdownState::Stopping || matches!(self.lifecycle, Lifecycle::Stopping(_))
+        self.shutdown == ShutdownState::Stopping
+            || matches!(self.command_state, CommandState::Stopping(_))
     }
 
     #[must_use]

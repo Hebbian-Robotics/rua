@@ -1,4 +1,10 @@
-import type { CommandAnswer, CommandRecord, StationState } from "hebbian-rua";
+import {
+  type CommandAnswer,
+  type CommandRecord,
+  commandResult,
+  commandWasLimited,
+  type StationState,
+} from "hebbian-rua";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -25,11 +31,10 @@ function completedArmCommand(
   const record = answer.records.find((entry) => entry.arm === armName)?.record;
   if (!record)
     throw new Error("The station did not return an arm command record.");
-  if (record.completion?.outcome !== "completed")
-    throw new Error(
-      record.completion?.detail ?? "The command did not complete.",
-    );
-  if (record.path_limited !== null || record.pose_limited !== null)
+  const completion = commandResult(record);
+  if (completion?.outcome !== "completed")
+    throw new Error(completion?.detail ?? "The command did not complete.");
+  if (commandWasLimited(record))
     throw new Error("The arm could not reach the requested home pose.");
   return record;
 }
@@ -66,9 +71,10 @@ async function stopAndWaitForArms(armNames: string[]): Promise<void> {
     )?.record;
     if (!stopRecord)
       throw new Error(`${armName}: no stop command record returned.`);
-    if (stopRecord.completion?.outcome !== "completed")
+    const completion = commandResult(stopRecord);
+    if (completion?.outcome !== "completed")
       throw new Error(
-        `${armName}: ${stopRecord.completion?.detail ?? "Stop was not accepted."}`,
+        `${armName}: ${completion?.detail ?? "Stop was not accepted."}`,
       );
     await waitForStationState((state) =>
       state.arms.some(
@@ -226,12 +232,13 @@ export function ArmControl({
           (item) =>
             item.arm === arm.arm &&
             item.last_command?.command_id === commandId &&
-            item.last_command.completion !== null,
+            item.last_command.phase.kind !== "pending",
         ),
       );
-      const completion = stationConnection
-        .getState()
-        ?.arms.find((item) => item.arm === arm.arm)?.last_command?.completion;
+      const completion = commandResult(
+        stationConnection.getState()?.arms.find((item) => item.arm === arm.arm)
+          ?.last_command,
+      );
       if (completion?.outcome !== "completed")
         throw new Error(completion?.detail ?? `Arm ${kind} did not complete.`);
       if (kind === "enable" && manualSelected) await onManualControlStarted();
@@ -298,7 +305,7 @@ export function ArmControl({
       {arm && <InterlockStatus arm={arm} onMessage={setMessage} />}
       {lastOutcome?.text &&
         (lastOutcome.isError ||
-          arm?.last_command?.completion?.outcome === "stopped_short") &&
+          commandResult(arm?.last_command)?.outcome === "stopped_short") &&
         !arm?.fault &&
         !arm?.active_trip && <p>{lastOutcome.text}</p>}
       {powerOff && (

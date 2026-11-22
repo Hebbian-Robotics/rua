@@ -596,7 +596,7 @@ pub(crate) fn admit_action_step(
         if let Some(target) = action.gripper {
             records.push(ArmRecord {
                 arm: action.arm,
-                record: core.apply_gripper(target, now),
+                record: core.apply_gripper(target, None, now),
             });
         }
     }
@@ -661,8 +661,10 @@ mod tests {
 
     #[test]
     fn an_expired_manual_lease_allows_enable_only_after_every_arm_has_stopped() {
-        use crate::lease::{AdmissionOptions, Lease, SharedInterlocks};
-        use hebbian_contracts::{CommandOutcome, LeaseHolder, LeaseRequest, OnInterruption};
+        use crate::lease::{Lease, LeaseAdmission, SharedInterlocks};
+        use hebbian_contracts::{
+            CommandOutcome, LeaseHolder, LeaseRequest, OnInterruption, RejectionReason,
+        };
         use std::sync::atomic::AtomicU64;
         use std::time::{Duration, Instant};
 
@@ -677,13 +679,18 @@ mod tests {
         let expired = Instant::now() + Duration::from_secs(2);
         let (disabled_handle, disabled_inbox) = arm_channel();
         let (moving_handle, moving_inbox) = arm_channel();
-        for handle in [disabled_handle, moving_handle] {
-            lease.register_arm(
-                handle,
-                Arc::new(AtomicU64::new(0)),
-                SharedInterlocks::default(),
-            );
-        }
+        let moving_generation = Arc::new(AtomicU64::new(0));
+        lease.register_arm(
+            disabled_handle,
+            Arc::new(AtomicU64::new(0)),
+            SharedInterlocks::default(),
+        );
+        lease.register_arm(
+            moving_handle,
+            Arc::clone(&moving_generation),
+            SharedInterlocks::default(),
+        );
+        let prepared_before_expiry = [(moving_generation, 0)];
         let mut disabled = core();
         let mut moving = holding_core();
         let movement = part("moving", [0.5, 0.0]);
@@ -705,8 +712,14 @@ mod tests {
 
         assert!(lease.status(expired).is_some());
         assert!(
+            moving_inbox.next().is_none(),
+            "reading status may not stop motion"
+        );
+        lease.tick(expired);
+        assert!(lease.status(expired).is_some());
+        assert!(
             lease
-                .admit_generation(None, expired, &[], &[], AdmissionOptions::default(), || ())
+                .admit_generation(None, expired, &[], &[], LeaseAdmission::Normal, || ())
                 .is_err()
         );
         for (name, inbox) in [("disabled", &disabled_inbox), ("moving", &moving_inbox)] {
@@ -715,6 +728,7 @@ mod tests {
             }
         }
         // WHY: The stop was accepted, but the active movement has not ended yet.
+        lease.tick(expired);
         assert!(lease.status(expired).is_some());
         cores.get_mut("moving").unwrap().motion_ended(
             CommandOutcome::Stopped,
@@ -725,10 +739,11 @@ mod tests {
         while let Some(request) = moving_inbox.next() {
             apply_single_request(request, cores.get_mut("moving").unwrap());
         }
+        lease.tick(expired);
         assert!(lease.status(expired).is_none());
         assert!(!lease.retain(Some(&grant.lease_token), expired));
         let enabled = lease
-            .admit_generation(None, expired, &[], &[], AdmissionOptions::default(), || {
+            .admit_generation(None, expired, &[], &[], LeaseAdmission::Normal, || {
                 cores
                     .get_mut("disabled")
                     .unwrap()
@@ -739,6 +754,15 @@ mod tests {
         assert_eq!(enabled.label, "enable");
         let fresh = lease.acquire_stopping_arms(request, false).unwrap();
         assert_ne!(fresh.lease_token, grant.lease_token);
+        let late_plan = lease.admit_generation(
+            Some(&grant.lease_token),
+            expired,
+            &[],
+            &prepared_before_expiry,
+            LeaseAdmission::Normal,
+            || (),
+        );
+        assert!(matches!(late_plan, Err(error) if error.reason == RejectionReason::ArmBusy));
     }
 
     #[test]
@@ -940,8 +964,8 @@ mod tests {
             if accepted {
                 let records = outcome.unwrap();
                 assert_eq!(records.len(), 2);
-                assert_eq!(records[0].group_id, records[1].group_id);
-                assert!(records[0].group_id.is_some());
+                assert_eq!(records[0].group_id(), records[1].group_id());
+                assert!(records[0].group_id().is_some());
             } else {
                 assert!(outcome.unwrap_err().detail.contains("allowed penetration"));
             }

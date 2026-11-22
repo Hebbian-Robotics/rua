@@ -235,13 +235,13 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .env("LIVEKIT_API_SECRET", "test-secret")
         .kill_on_drop(true)
         .spawn()?;
+    wait_for_recorded_message(&mut child, &recording, "/station/state", |_, state| {
+        state["arms"][0]["sampled_at_unix_seconds"].is_number()
+    })
+    .await?;
     send_run_history(server.local_address()).await?;
     wait_for_recorded_message(&mut child, &recording, "/trace/spans", |_, span| {
         span["endTimeUnixNano"] == "1500000000"
-    })
-    .await?;
-    wait_for_recorded_message(&mut child, &recording, "/station/state", |_, state| {
-        state["arms"][0]["sampled_at_unix_seconds"].is_number()
     })
     .await?;
     wait_for_recorded_message(
@@ -262,6 +262,16 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
     server.attach_arms(arm_links);
     wait_for_recorded_message(&mut child, &recording, "/station/state", |timestamp, _| {
         timestamp > restarted_at
+    })
+    .await?;
+    reqwest::Client::new()
+        .post(format!("http://{}/run/events", server.local_address()))
+        .json(&serde_json::json!({"type": "notes_update", "notes": ["after restart"]}))
+        .send()
+        .await?
+        .error_for_status()?;
+    wait_for_recorded_message(&mut child, &recording, "/model/events", |_, event| {
+        event["event"]["notes"][0] == "after restart"
     })
     .await?;
     let status = Command::new("kill")
@@ -365,7 +375,7 @@ fn verify_run_history(messages: &[mcap::Message<'_>]) -> Result<(), Box<dyn std:
     }
     assert!(messages.iter().any(
         |message| message.channel.topic == "/station/recording_errors"
-            && String::from_utf8_lossy(&message.data).contains("Run telemetry resume gap")
+            && String::from_utf8_lossy(&message.data).contains("Station event history has a gap")
     ));
     let events = messages
         .iter()
@@ -377,9 +387,10 @@ fn verify_run_history(messages: &[mcap::Message<'_>]) -> Result<(), Box<dyn std:
             ))
         })
         .collect::<Result<Vec<_>, serde_json::Error>>()?;
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 3);
     assert_eq!(events[0].1["event"]["notes"][0], "first");
     assert_eq!(events[1].1["event"]["notes"][0], "second");
+    assert_eq!(events[2].1["event"]["notes"][0], "after restart");
     assert!(events[0].1["seq"].as_u64() < events[1].1["seq"].as_u64());
     for (timestamp, event) in events {
         assert_eq!(
@@ -413,20 +424,19 @@ async fn send_run_history(address: std::net::SocketAddr) -> Result<(), Box<dyn s
 /// The station can die without a chance to stop its recorder (a crash, SIGKILL).
 /// The recorder must notice, finalize a readable file, and say it is incomplete.
 #[tokio::test]
-async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
+async fn recorder_finalizes_as_incomplete_when_its_station_is_killed()
 -> Result<(), Box<dyn std::error::Error>> {
     use tokio::io::{AsyncBufReadExt, BufReader};
     let directory = tempfile::tempdir()?;
     let recording = directory.path().join("recording");
     let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-media");
-    // WHY: The shell stands in for the station: it starts the recorder, names itself
-    // as supervisor, prints the recorder's pid and then idles until killed.
+    // WHY: The shell gives the recorder a station PID that the test can kill directly.
     let script = format!(
         "\"{executable}\" record --room test --directory \"{}\" \
-         --station-url http://127.0.0.1:1 --supervisor-pid $$ & echo $!; wait",
+         --station-url http://127.0.0.1:1 --station-pid $$ & echo $!; wait",
         recording.display()
     );
-    let mut supervisor = tokio::process::Command::new("sh")
+    let mut station = tokio::process::Command::new("sh")
         .args(["-c", &script])
         .env("LIVEKIT_URL", "ws://127.0.0.1:1")
         .env("LIVEKIT_API_KEY", "test-key")
@@ -435,18 +445,18 @@ async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
         .kill_on_drop(true)
         .spawn()?;
     let mut line = String::new();
-    BufReader::new(supervisor.stdout.take().ok_or("no stdout")?)
+    BufReader::new(station.stdout.take().ok_or("no stdout")?)
         .read_line(&mut line)
         .await?;
     let recorder_pid: i32 = line.trim().parse()?;
     wait_for_recorded_message(
-        &mut supervisor,
+        &mut station,
         &recording,
         "/station/recording_errors",
         |_, error| error["source"] == "station",
     )
     .await?;
-    supervisor.kill().await?;
+    station.kill().await?;
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while Command::new("kill")
         .args(["-0", &recorder_pid.to_string()])
@@ -456,7 +466,7 @@ async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
     {
         assert!(
             std::time::Instant::now() < deadline,
-            "the recorder outlived its supervisor"
+            "the recorder outlived its station"
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -478,7 +488,7 @@ async fn recorder_finalizes_as_incomplete_when_its_supervisor_is_killed()
 }
 
 #[tokio::test]
-async fn combined_media_service_lists_its_cameras_and_exits_with_its_supervisor()
+async fn combined_media_service_lists_its_cameras_and_exits_with_its_station()
 -> Result<(), Box<dyn std::error::Error>> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
@@ -486,11 +496,11 @@ async fn combined_media_service_lists_its_cameras_and_exits_with_its_supervisor(
     let address = listener.local_addr()?.to_string();
     drop(listener);
     let unavailable_room = std::net::TcpListener::bind("127.0.0.1:0")?;
-    let mut supervisor = tokio::process::Command::new("sh")
+    let mut station = tokio::process::Command::new("sh")
         .args([
             "-c",
-            r#""$1" serve --address "$2" --room test --camera wrist=missing-device --supervisor-pid "$$" & echo $!; wait"#,
-            "media-supervisor",
+            r#""$1" serve --address "$2" --room test --camera wrist=missing-device --station-pid "$$" & echo $!; wait"#,
+            "media-station",
             env!("CARGO_BIN_EXE_hebbian-robot-use-media"),
             &address,
         ])
@@ -500,7 +510,7 @@ async fn combined_media_service_lists_its_cameras_and_exits_with_its_supervisor(
         .stdout(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
-    let mut output = BufReader::new(supervisor.stdout.take().ok_or("no stdout")?);
+    let mut output = BufReader::new(station.stdout.take().ok_or("no stdout")?);
     let mut line = String::new();
     let deadline = Duration::from_secs(5);
     tokio::time::timeout(deadline, output.read_line(&mut line)).await??;
@@ -523,13 +533,13 @@ async fn combined_media_service_lists_its_cameras_and_exits_with_its_supervisor(
         })
         .await
         .map_err(|_| "the media service did not return its camera listing")??;
-        supervisor.kill().await?;
+        station.kill().await?;
         // WHY: EOF proves the child closed its inherited pipe even in containers that
         // do not promptly reap orphans.
         let mut remainder = Vec::new();
         tokio::time::timeout(deadline, output.read_to_end(&mut remainder))
             .await
-            .map_err(|_| "the media service outlived its supervisor")??;
+            .map_err(|_| "the media service outlived its station")??;
         Ok::<(), Box<dyn std::error::Error>>(())
     }
     .await;

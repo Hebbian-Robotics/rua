@@ -1,31 +1,33 @@
 // Builders for station events and model-facing lease test doubles.
 
 import { vi } from "vitest";
-import type { Lease } from "../src/index.js";
+import type { ApiSchemas, CommandRecord, Lease } from "../src/index.js";
 export function commandRecord(
   commandId: string,
   finishedAt: number | null = null,
-  outcome = "completed",
-) {
+  outcome: ApiSchemas["CommandOutcome"] = "completed",
+): CommandRecord {
   return {
     command_id: commandId,
     label: "enable",
     accepted_at: 1,
-    joint_speed: null,
-    completion:
+    command: { kind: "control", action: "enable" },
+    phase:
       finishedAt === null
-        ? null
-        : { outcome, finished_at: finishedAt, detail: null, gripper: null },
+        ? { kind: "pending" }
+        : outcome === "interrupted"
+          ? { kind: "outcome_unknown", finished_at: finishedAt, detail: null }
+          : {
+              kind: "finished",
+              achieved: null,
+              completion: {
+                outcome,
+                finished_at: finishedAt,
+                detail: null,
+                gripper: null,
+              },
+            },
     checkpoints: [],
-    goal_joints: null,
-    target_joints: null,
-    target_position: null,
-    target_quaternion: null,
-    target_status: null,
-    path_limited: null,
-    pose_limited: null,
-    achieved: null,
-    group_id: null,
     trace_context: null,
   };
 }

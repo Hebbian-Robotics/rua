@@ -21,7 +21,7 @@ impl<P: Plant> Runner<'_, P> {
     pub(super) fn last_group_failure(&self, group_id: &GroupId) -> Option<String> {
         let arm = &self.state.core;
         let record = arm.last_finished()?;
-        if record.group_id.as_deref() != Some(group_id.as_str()) {
+        if record.group_id() != Some(group_id.as_str()) {
             return None;
         }
         let outcome = record

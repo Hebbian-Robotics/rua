@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from cyclopts import App, Parameter
 
@@ -38,13 +38,7 @@ def check_architecture() -> None:
 
 def validate(
     *,
-    lane: Literal[
-        ValidationLane.PYTHON,
-        ValidationLane.FAST,
-        ValidationLane.SERVER,
-        ValidationLane.CONTRACTS,
-        ValidationLane.FULL,
-    ] = ValidationLane.FULL,
+    lane: ValidationLane = ValidationLane.FULL,
 ) -> None:
     from rua_dev.validation import validate as run_validation
 
@@ -87,8 +81,7 @@ def create_app() -> App:
         contracts,
         help="Generate schemas and SDKs; default to the SDK components in this checkout.",
     )
-    # WHY: Component-specific command composition is optional. The shared entrypoint
-    # and operations are identical in source distributions of any size.
+    app.command(validate, help="Validate RUA source components by lane.")
     module_name = "rua_dev.workspace_commands"
     if importlib.util.find_spec(module_name) is not None:
         importlib.import_module(module_name).register_commands(app, package_app)
@@ -97,10 +90,6 @@ def create_app() -> App:
             package_rua,
             name="rua",
             help="Build the hebbian-rua release wheel; never publish it.",
-        )
-        app.command(
-            validate,
-            help="Validate the Python, Rust and contract components in this checkout.",
         )
     return app
 
