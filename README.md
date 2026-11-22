@@ -109,6 +109,8 @@ RUA supports single-arm and bimanual SO-101 setups. It also supports
 [learned pose control](docs/hardware.md#learned-policies) on a single arm through
 a compatible ONNX policy supplied by the user.
 
+Use the [MuJoCo example](docs/simulation.md) when you need to test without hardware.
+
 The API can move a real arm. Run it on a trusted network, verify clearance,
 supervise initial motions and keep a physical power cutoff accessible. Support
 the arm before disabling it. Follow the [hardware operating guide](docs/so101-manual-control.md).
@@ -133,8 +135,7 @@ Some reading and projects around robot-use agents:
   share what you’re building, and discuss contributions.
 - [Open a GitHub issue](https://github.com/Hebbian-Robotics/rua/issues) for reproducible
   bugs and focused feature requests.
-- [Contribute to RUA](CONTRIBUTING.md). You can try the project and contribute without
-  robot hardware using the [MuJoCo example](docs/simulation.md).
+- See the [contribution guide](CONTRIBUTING.md) for how to get involved.
 - Read our [code of conduct](CODE_OF_CONDUCT.md) and use the
   [security policy](SECURITY.md) to report vulnerabilities privately.
 
