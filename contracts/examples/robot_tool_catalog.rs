@@ -12,12 +12,12 @@ fn main() -> Result<(), serde_json::Error> {
                     name,
                     {
                         let class = hebbian_contracts::ModelOutcome::from(outcome);
-                        serde_json::json!({"class": class, "target": class.target_status(false), "limited_target": class.target_status(true)})
+                        serde_json::json!({"class": class, "target": class.goal_status(false), "limited_target": class.goal_status(true)})
                     },
                 );
             }
             let incomplete = hebbian_contracts::ModelOutcome::Incomplete;
-            rules.insert("pending".into(), serde_json::json!({"class": incomplete, "target": incomplete.target_status(false), "limited_target": incomplete.target_status(true)}));
+            rules.insert("pending".into(), serde_json::json!({"class": incomplete, "target": incomplete.goal_status(false), "limited_target": incomplete.goal_status(true)}));
             serde_json::json!({"commands": rules, "status_priority": hebbian_contracts::MODEL_GROUP_STATUSES})
         }
         Some("--output-units") => serde_json::to_value(hebbian_contracts::MODEL_OUTPUT_UNITS)?,

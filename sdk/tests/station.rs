@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant, PlantWritePermit};
 use hebbian_rua::contracts::{
-    ActionSequenceArmAction, ActionSequenceMovement, ActionSequencePhase, ActionSequenceRequest,
+    ActionSequenceArmAction, ActionSequenceGoal, ActionSequencePhase, ActionSequenceRequest,
     ActionSequenceStep, CommandOutcome, CompilationOutcome, GripperResult, LeaseHolder,
     PoseOrientation, PosePreviewBatchRequest, PosePreviewCandidate, PreviewAnswer, PreviewPose,
     ProjectionOutcome, RejectionReason, RunEvent, TraceContext,
@@ -378,7 +378,8 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
         ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
-                movement: ActionSequenceMovement::Joints {
+                waypoints: vec![],
+                goal: ActionSequenceGoal::Joints {
                     joints,
                     max_joint_speed: None,
                 },
@@ -425,7 +426,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert_eq!(explicit.phase, ActionSequencePhase::Completed);
     assert_eq!(explicit.steps.len(), 2);
     assert_eq!(
-        explicit.steps[1][0].record.target_joints(),
+        explicit.steps[1][0].record.destination_joints(),
         Some([-0.2, -0.5, 0.5, 0.0, 0.0].as_slice())
     );
     let mut revised_source = source;
@@ -453,7 +454,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert_eq!(continued.continuation, Some(continuation));
     assert_eq!(continued.steps.len(), 1);
     assert_eq!(
-        continued.steps[0][0].record.target_joints(),
+        continued.steps[0][0].record.destination_joints(),
         Some([0.1, -0.5, 0.5, 0.0, 0.0].as_slice())
     );
     let repeated = lease
@@ -511,10 +512,10 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
         }
     );
     assert!(client.get_state().await?.lease.is_none());
-    assert_eq!(exported.schema_version, 2);
+    assert_eq!(exported.schema_version, 3);
     let mut legacy = serde_json::to_value(&exported)?;
     legacy["schema_version"] = json!(1);
-    legacy["source"]["steps"][0]["arms"][ARM]["movement"] = serde_json::Value::Null;
+    legacy["source"]["steps"][0]["arms"][ARM]["goal"] = serde_json::Value::Null;
     let rejected = reqwest::Client::new()
         .post(format!("{}/compilations/import", station.url))
         .json(&legacy)
@@ -908,7 +909,8 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
-                movement: ActionSequenceMovement::Joints {
+                waypoints: vec![],
+                goal: ActionSequenceGoal::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
                     max_joint_speed: Some(0.05),
                 },
@@ -943,7 +945,8 @@ async fn taking_the_lease_stops_the_previous_holders_action_sequence() -> TestRe
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
-                movement: ActionSequenceMovement::Joints {
+                waypoints: vec![],
+                goal: ActionSequenceGoal::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
                     max_joint_speed: Some(0.05),
                 },
@@ -973,7 +976,8 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
             ActionSequenceStep::single(
                 ARM,
                 ActionSequenceArmAction::Move {
-                    movement: ActionSequenceMovement::Joints {
+                    waypoints: vec![],
+                    goal: ActionSequenceGoal::Joints {
                         joints,
                         max_joint_speed: None,
                     },
@@ -1079,7 +1083,7 @@ async fn assert_constrained_tool_move(tools: &RobotTools<'_>, client: &Station) 
         .clone()
         .ok_or("missing tool pose")?;
     let limited = within(tools.execute(
-        RobotToolCall { id: "limited".into(), name: "move_arms".into(), arguments: json!({"targets": { (ARM): {"position_mm": examples["limited_position_millimeters"], "orientation": {"quaternion": tool_pose.quaternion}}}}) },
+        RobotToolCall { id: "limited".into(), name: "move_arms".into(), arguments: json!({"goals": { (ARM): {"position_mm": examples["limited_position_millimeters"], "orientation": {"quaternion": tool_pose.quaternion}}}}) },
         CommandOptions::default(),
     )).await??;
     let RobotToolOutcome::Incomplete(limited) = limited.outcome else {
@@ -1205,7 +1209,7 @@ async fn assert_specialized_model_tools(tools: &RobotTools<'_>) -> TestResult {
     assert!(!sequence_schema.contains("joints_degrees"));
     let rejected = specialized.execute(RobotToolCall {
         id: "hidden-joints".into(), name: "action_sequence".into(),
-        arguments: serde_json::json!({"steps": [{"movement": {"joints_degrees": [0, 0, 0, 0, 0]}}]}),
+        arguments: serde_json::json!({"steps": [{"goal": {"joints_degrees": [0, 0, 0, 0, 0]}}]}),
     }, CommandOptions::default()).await?;
     assert!(matches!(
         rejected.outcome,
@@ -1293,15 +1297,15 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
             .zip(REST)
             .all(|(actual, expected)| (actual - expected).abs() < 0.02)
     );
-    let movement = within(tools.execute(
+    let goal = within(tools.execute(
         call(
             "action_sequence",
-            json!({"steps": [{"movement": {"joints_degrees": REST.map(f64::to_degrees)}}]}),
+            json!({"steps": [{"goal": {"joints_degrees": REST.map(f64::to_degrees)}}]}),
         ),
         CommandOptions::default(),
     ))
     .await??;
-    let RobotToolOutcome::Returned(sequence) = movement.outcome else {
+    let RobotToolOutcome::Returned(sequence) = goal.outcome else {
         return Err("sequence did not return".into());
     };
     assert_eq!(sequence["phase"]["state"], "completed");
@@ -1406,7 +1410,8 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
     within(client.enable("left")).await??;
     let action = |pan, gripper_opening| ActionSequenceArmAction::Move {
-        movement: ActionSequenceMovement::Joints {
+        waypoints: vec![],
+        goal: ActionSequenceGoal::Joints {
             joints: vec![pan, -0.5, 0.5, 0.0, 0.0],
             max_joint_speed: None,
         },
@@ -1579,5 +1584,121 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
     );
     lease.return_lease().await?;
     media_task.abort();
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("waypoints"))).await??;
+    within(client.enable(ARM)).await??;
+    let mut waypoint = REST.to_vec();
+    waypoint[0] += 0.1;
+    let mut goal = REST.to_vec();
+    goal[0] += 0.23;
+    let execution = within(lease.start_action_sequence(ActionSequenceRequest {
+        steps: vec![ActionSequenceStep::single(
+            ARM,
+            ActionSequenceArmAction::Move {
+                goal: ActionSequenceGoal::Joints {
+                    joints: goal.clone(),
+                    max_joint_speed: None,
+                },
+                waypoints: vec![hebbian_contracts::ActionSequenceWaypoint {
+                    at: hebbian_contracts::CompiledGoal::Joints { joints: waypoint },
+                    gripper_opening: Some(0.35.try_into()?),
+                }],
+                gripper_opening: None,
+                max_joint_speed: None,
+            },
+        )],
+        expected_revisions: BTreeMap::new(),
+    }))
+    .await??;
+    let before_waypoint = within(
+        client.wait_for_state(|state| (0.02..0.08).contains(&state.arms[0].measured_joints[0])),
+    )
+    .await??;
+    assert!(
+        before_waypoint.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| opening < 0.01)
+    );
+    within(client.wait_for_state(|state| {
+        let arm = &state.arms[0];
+        (0.1..0.22).contains(&arm.measured_joints[0])
+            && arm.gripper_opening.is_some_and(|opening| opening > 0.01)
+    }))
+    .await??;
+    let result = within(client.wait_for_action_sequence(&execution)).await??;
+    assert_eq!(result.phase, ActionSequencePhase::Completed);
+    assert_eq!(
+        result.steps[0][0].record.destination_joints(),
+        Some(goal.as_slice())
+    );
+    let state = within(client.get_state()).await??;
+    assert!(
+        state.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| (opening - 0.35).abs() < 0.05)
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_before_a_waypoint_leaves_the_gripper_closed() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("cancel before release"))).await??;
+    within(client.enable(ARM)).await??;
+    let source: ActionSequenceRequest = serde_json::from_value(json!({"steps":[{"arms":{(ARM):{
+        "goal":{"kind":"joints","joints":[0.4,-0.5,0.5,0.0,0.0]},
+        "waypoints":[{"at":{"kind":"joints","joints":[0.22,-0.5,0.5,0.0,0.0]},"gripper_opening":1.0}]
+    }}}]}))?;
+    let execution = within(lease.start_action_sequence(source)).await??;
+    within(client.wait_for_state(|state| (0.01..0.08).contains(&state.arms[0].measured_joints[0])))
+        .await??;
+    within(client.cancel_action_sequence(&execution)).await??;
+    let result = within(client.wait_for_action_sequence(&execution)).await??;
+    assert!(matches!(result.phase, ActionSequencePhase::Stopped { .. }));
+    let state = within(client.get_state()).await??;
+    assert!(state.arms[0].measured_joints[0] < 0.22);
+    assert!(
+        state.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| opening < 0.01)
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_waypoint_can_reverse_an_unfinished_step_gripper_move() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("reverse jaw during move"))).await??;
+    within(client.enable(ARM)).await??;
+    let source = serde_json::from_value(json!({"steps":[{"arms":{(ARM):{
+        "goal":{"kind":"joints","joints":[0.02,-0.5,0.5,0.0,0.0]},
+        "gripper_opening":1.0,
+        "max_joint_speed":0.15,
+        "waypoints":[{"at":{"kind":"joints","joints":[0.01,-0.5,0.5,0.0,0.0]},"gripper_opening":0.0}]
+    }}}]}))?;
+    let execution = within(lease.start_action_sequence(source)).await??;
+    let result = within(client.wait_for_action_sequence(&execution)).await??;
+    assert_eq!(result.phase, ActionSequencePhase::Completed);
+    assert_eq!(result.steps[0].len(), 2);
+    assert!(
+        result.steps[0]
+            .iter()
+            .all(|entry| entry.record.outcome()
+                == Some(hebbian_contracts::CommandOutcome::Completed))
+    );
+    let state = within(client.get_state()).await??;
+    assert!(
+        state.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| opening < 0.02)
+    );
     Ok(())
 }

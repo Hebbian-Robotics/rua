@@ -152,7 +152,7 @@ def convert_model_arguments_to_station_units(value: object) -> object:
         if key in _MODEL_INPUT_CONVERSIONS:
             station_field, factor = _MODEL_INPUT_CONVERSIONS[key]
             converted[station_field] = scale_model_input_numbers(item, factor)
-        elif key in {"arms", "targets"} and isinstance(item, dict):
+        elif key in {"arms", "goals"} and isinstance(item, dict):
             converted[key] = {
                 arm: convert_model_arguments_to_station_units(target)
                 for arm, target in item.items()

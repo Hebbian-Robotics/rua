@@ -22,7 +22,7 @@ export function manualMoveBlockedReason({
   if (ownershipReason !== null) return ownershipReason;
   if (armMode === null) return "Waiting for robot state.";
   if (armMode !== "holding") return "Enable the arm and wait for it to hold.";
-  if (!hasTarget) return "Set a target first.";
+  if (!hasTarget) return "Set a goal first.";
   if (!hasConfirmedPreview) return "Waiting for a confirmed preview.";
   if (projectionValidity === null) return "Checking preview safety.";
   if (!projectionValidity)

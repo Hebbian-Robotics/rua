@@ -98,8 +98,8 @@ export function interpretProjection(
     joints: pose.joints,
     withinTolerance: outcome.within_tolerance,
     message: outcome.within_tolerance
-      ? "Target reached within tolerance. The ghost shows the proposed pose."
-      : `Preview ready. The ghost shows an approximate pose: ${outcome.reason ?? "The target was not met within tolerance."}`,
+      ? "Goal reachable within tolerance. The ghost shows the proposed pose."
+      : `Preview ready. The ghost shows an approximate pose: ${outcome.reason ?? "The goal was not met within tolerance."}`,
     confirmedPose: confirm
       ? {
           joints: pose.joints,

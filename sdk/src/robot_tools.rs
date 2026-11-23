@@ -683,7 +683,7 @@ fn command_records_outcome(
             .record
             .outcome()
             .map_or(ModelOutcome::Incomplete, ModelOutcome::from);
-        targets.push(class.target_status(record.record.was_limited()));
+        targets.push(class.goal_status(record.record.was_limited()));
         payloads.push(serde_json::to_value(&record.record).map_err(|error| {
             Error::Connection(format!("cannot serialize tool result: {error}"))
         })?);
@@ -692,8 +692,8 @@ fn command_records_outcome(
         .into_iter()
         .rev()
         .find(|status| targets.contains(status))
-        .unwrap_or(hebbian_contracts::TargetStatus::Partial);
-    let incomplete = status != hebbian_contracts::TargetStatus::Reached;
+        .unwrap_or(hebbian_contracts::GoalStatus::Partial);
+    let incomplete = status != hebbian_contracts::GoalStatus::Reached;
     let value = if grouped {
         serde_json::json!({ "group_id": group_id, "status": status, "commands": payloads })
     } else {
@@ -742,7 +742,7 @@ fn convert_model_arguments_to_station_units(value: &mut Value) -> std::result::R
                 }
             }
             for (key, child) in &mut *object {
-                if matches!(key.as_str(), "arms" | "targets")
+                if matches!(key.as_str(), "arms" | "goals")
                     && let Value::Object(targets) = child
                 {
                     for target in targets.values_mut() {
@@ -797,10 +797,13 @@ fn scale_argument(value: &mut Value, factor: f64) -> std::result::Result<(), Str
 fn normalize_arguments(value: &mut Value) {
     match value {
         Value::Object(object) => {
-            if let Some(movement) = object.get_mut("movement") {
-                normalize_movement(movement);
+            if let Some(at) = object.get_mut("at") {
+                normalize_movement(at);
             }
-            if let Some(Value::Object(targets)) = object.get_mut("targets") {
+            if let Some(goal) = object.get_mut("goal") {
+                normalize_movement(goal);
+            }
+            if let Some(Value::Object(targets)) = object.get_mut("goals") {
                 for target in targets.values_mut() {
                     normalize_movement(target);
                 }
@@ -833,18 +836,18 @@ fn normalize_arguments(value: &mut Value) {
 }
 
 fn normalize_movement(value: &mut Value) {
-    if let Value::Object(movement) = value
-        && !movement.contains_key("kind")
+    if let Value::Object(goal) = value
+        && !goal.contains_key("kind")
     {
-        let kind = if movement.contains_key("joints") {
+        let kind = if goal.contains_key("joints") {
             Some("joints")
-        } else if movement.contains_key("position") {
+        } else if goal.contains_key("position") {
             Some("pose")
         } else {
             None
         };
         if let Some(kind) = kind {
-            movement.insert("kind".into(), Value::String(kind.into()));
+            goal.insert("kind".into(), Value::String(kind.into()));
         }
     }
 }
@@ -911,12 +914,12 @@ mod outcome_tests {
         for example in examples {
             for grouped in [true, false] {
                 let mut record_data = example["record"].clone();
-                record_data["command"]["target_joints"] = serde_json::json!([0.123_456_789]);
+                record_data["command"]["destination_joints"] = serde_json::json!([0.123_456_789]);
                 record_data["command"]["joint_speed"] = serde_json::json!(0.123_456_789);
                 let record: hebbian_contracts::CommandRecord =
                     serde_json::from_value(record_data.clone()).unwrap();
                 assert_eq!(
-                    serde_json::to_value(record.target_status()).unwrap(),
+                    serde_json::to_value(record.goal_status()).unwrap(),
                     example["expected_status"],
                 );
                 let outcome = command_records_outcome(
@@ -958,7 +961,7 @@ mod outcome_tests {
                 assert!(model_record.get("checkpoints").is_none());
                 assert!(model_record.get("accepted_unix_nano").is_none());
                 assert_eq!(
-                    model_record["target_joints_degrees"],
+                    model_record["destination_joints_degrees"],
                     serde_json::json!([7.1])
                 );
                 assert_eq!(model_record["joint_speed_degrees_per_second"], 7.1);

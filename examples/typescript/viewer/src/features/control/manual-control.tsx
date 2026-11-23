@@ -118,7 +118,7 @@ export function ManualControl({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [previewStatus, setPreviewStatus] = useState(
-    "Set a target to preview its reachable arm pose. Previewing never moves the motors.",
+    "Set a goal to preview its reachable arm pose. Previewing never moves the motors.",
   );
   const [previewUnavailable, setPreviewUnavailable] = useState(false);
   const [confirmed, setConfirmed] = useState<{
@@ -218,7 +218,7 @@ export function ManualControl({
         liveFollow.setGoal(null);
         setProjection(null);
         setPreviewUnavailable(false);
-        setPreviewStatus("Set a target to preview its reachable arm pose.");
+        setPreviewStatus("Set a goal to preview its reachable arm pose.");
       },
       onFailure: (detail) => {
         setPreviewUnavailable(true);
@@ -475,7 +475,7 @@ export function ManualControl({
     );
     if (!command) {
       setMessage(
-        "Command not sent: the station gave no orientation for this target.",
+        "Command not sent: the station gave no orientation for this goal.",
       );
       return;
     }
@@ -511,14 +511,14 @@ export function ManualControl({
       )}
       {held && armCanBeManuallyControlled && (
         <>
-          <h3>Target</h3>
+          <h3>Goal</h3>
           <div className="control-actions">
             <Button
               variant="outline"
               disabled={!arm?.tool || blockedReason !== null}
               onClick={setCurrentTarget}
             >
-              Target current pose
+              Use current position
             </Button>
             {target && (
               <Button
@@ -529,7 +529,7 @@ export function ManualControl({
                   setProjection(null);
                 }}
               >
-                Clear target
+                Clear goal
               </Button>
             )}
           </div>
@@ -560,12 +560,12 @@ export function ManualControl({
             <summary>Motion options</summary>
             <form
               className="target-coordinates"
-              aria-label="Target coordinates"
+              aria-label="Goal coordinates"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (blockedReason !== null) return;
                 if (positionDraft.some((value) => value.trim() === "")) {
-                  setMessage("Enter all three target coordinates.");
+                  setMessage("Enter all three goal coordinates.");
                   return;
                 }
                 const [x, y, z] = positionDraft;
@@ -575,7 +575,7 @@ export function ManualControl({
                   millimetersToMeters(Number(z)),
                 ];
                 if (!coordinates.every(Number.isFinite)) {
-                  setMessage("Target coordinates must be finite numbers.");
+                  setMessage("Goal coordinates must be finite numbers.");
                   return;
                 }
                 setTarget(coordinates);
@@ -686,7 +686,7 @@ export function ManualControl({
           </details>
           <div className="control-actions">
             <Button disabled={moveBlocked !== null || pending} onClick={move}>
-              {pending ? "Sending move…" : "Move to target"}
+              {pending ? "Sending move…" : "Move to goal"}
             </Button>
           </div>
           <p className="manual-target-status">
@@ -694,14 +694,14 @@ export function ManualControl({
               previewUnavailable
                 ? previewStatus
                 : dragging
-                  ? "Release the target to check the preview."
+                  ? "Release the goal to check the preview."
                   : target
                     ? projectionValidity === false ||
                       arm?.mode !== "holding" ||
                       (confirmedForSelection && projectionValidity === null)
                       ? (moveBlocked ?? previewStatus)
                       : previewStatus
-                    : "Drag a target in the robot view or use the current pose.",
+                    : "Drag a goal in the robot view or use the current pose.",
             )}
           </p>
           <label className="flex items-center gap-2" htmlFor="follow-target">
@@ -720,7 +720,7 @@ export function ManualControl({
                 follow.current?.setEnabled(enabled);
               }}
             />
-            Follow target while dragging
+            Follow goal while dragging
           </label>
         </>
       )}

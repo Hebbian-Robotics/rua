@@ -180,6 +180,23 @@ def _schema_list(value: JsonValue) -> list[JsonValue]:
     return value
 
 
+def select_configurations(
+    goal: dict[str, JsonValue], configuration: RobotToolConfiguration
+) -> JsonValue:
+    variants = _schema_list(goal.get("oneOf", [goal]))
+    available = [
+        variant
+        for variant in variants
+        if (
+            "joints"
+            if "joints_degrees" in _schema_object(variant, "properties")
+            else "pose"
+        )
+        in configuration.sequence_actions
+    ]
+    return available[0] if len(available) == 1 else {"oneOf": available}
+
+
 def create_robot_tool_catalog(
     configuration: RobotToolConfiguration | Sequence[RobotToolCapability] | None = None,
 ) -> list[RobotToolSpec]:
@@ -199,23 +216,18 @@ def create_robot_tool_catalog(
             action = _schema_object(steps, "items")
             properties = _schema_object(action, "properties")
             if configuration.sequence_actions & {"pose", "joints"}:
-                movement = _schema_object(properties, "movement")
-                variants = _schema_list(movement.get("oneOf", [movement]))
-                available = [
-                    variant
-                    for variant in variants
-                    if (
-                        "joints"
-                        if "joints_degrees" in _schema_object(variant, "properties")
-                        else "pose"
-                    )
-                    in configuration.sequence_actions
-                ]
-                properties["movement"] = (
-                    available[0] if len(available) == 1 else {"oneOf": available}
+                properties["goal"] = select_configurations(
+                    _schema_object(properties, "goal"), configuration
                 )
+                point = _schema_object(properties, "waypoints", "items", "properties")
+                point["at"] = select_configurations(
+                    _schema_object(point, "at"), configuration
+                )
+                if "gripper" not in configuration.sequence_actions:
+                    point.pop("gripper_opening", None)
             else:
-                properties.pop("movement", None)
+                properties.pop("goal", None)
+                properties.pop("waypoints", None)
             if "gripper" not in configuration.sequence_actions:
                 properties.pop("gripper_opening", None)
             action["anyOf"] = [
@@ -272,7 +284,17 @@ def parse_sequence_arguments(
                 raise ValueError(f"Arm {arm} is not available in this sequence")
             if (
                 isinstance(action, ActionSequenceMove)
-                and action.movement.kind not in configuration.sequence_actions
+                and (
+                    action.goal.kind not in configuration.sequence_actions
+                    or any(
+                        point.at.kind not in configuration.sequence_actions
+                        or (
+                            point.gripper_opening is not None
+                            and "gripper" not in configuration.sequence_actions
+                        )
+                        for point in action.waypoints or []
+                    )
+                )
             ) or (
                 action.gripper_opening is not None
                 and "gripper" not in configuration.sequence_actions

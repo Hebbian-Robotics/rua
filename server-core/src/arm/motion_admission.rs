@@ -70,11 +70,12 @@ impl ArmCore {
         let poses = self.poses().ok_or_else(|| anyhow::anyhow!("Not holding"))?;
         let plan = CornerPlan {
             segments: vec![Segment {
+                pass_through: None,
                 label: "return_to_rest".into(),
                 corners: vec![poses.hold.clone(), home_target],
                 minimum_duration_seconds: None,
-                target_position: None,
-                target_quaternion: None,
+                destination_position: None,
+                destination_quaternion: None,
             }],
             peak_speed: self.limits.default_joint_speed,
         };
@@ -139,6 +140,13 @@ impl MoveDecision {
                 RejectionReason::InvalidTarget,
                 "A grouped move needs one straight section",
             ));
+        }
+        for angle in plan
+            .segments
+            .iter()
+            .filter_map(|segment| segment.pass_through?.gripper_angle)
+        {
+            core.check_gripper_target(angle, Some(speed))?;
         }
         let start = if replacing {
             core.observation

@@ -82,8 +82,8 @@
                 "measured_joints": [
                   0.123456789
                 ],
-                "target_position": null,
-                "target_quaternion": null
+                "destination_position": null,
+                "destination_quaternion": null
               }
             ],
             "command": {
@@ -98,16 +98,16 @@
                 "reason": "at_joint_limit",
                 "waypoint": 0
               },
-              "target_joints": [
+              "destination_joints": [
                 0.1,
                 -0.2
               ],
-              "target_position": [
+              "destination_position": [
                 0.2,
                 0.0,
                 0.1
               ],
-              "target_quaternion": [
+              "destination_quaternion": [
                 0.0,
                 0.7071067811865476,
                 0.0,
@@ -136,7 +136,7 @@
                   "degrees_from_down": 0.5,
                   "jaw_yaw_degrees": 90.1,
                   "jaw_yaw_reference": "world_x",
-                  "target": null
+                  "goal": null
                 },
                 "orientation_error_radians": null,
                 "position": [
@@ -378,8 +378,8 @@
                 "measured_joints": [
                   0.123456789
                 ],
-                "target_position": null,
-                "target_quaternion": null
+                "destination_position": null,
+                "destination_quaternion": null
               }
             ],
             "command": {
@@ -394,16 +394,16 @@
                 "reason": "at_joint_limit",
                 "waypoint": 0
               },
-              "target_joints": [
+              "destination_joints": [
                 0.1,
                 -0.2
               ],
-              "target_position": [
+              "destination_position": [
                 0.2,
                 0.0,
                 0.1
               ],
-              "target_quaternion": [
+              "destination_quaternion": [
                 0.0,
                 0.7071067811865476,
                 0.0,
@@ -432,7 +432,7 @@
                   "degrees_from_down": 0.5,
                   "jaw_yaw_degrees": 90.1,
                   "jaw_yaw_reference": "world_x",
-                  "target": null
+                  "goal": null
                 },
                 "orientation_error_radians": null,
                 "position": [
@@ -682,7 +682,7 @@
                 ],
                 "sampled_at": 4.5
               },
-              "target_status": "partial",
+              "goal_status": "partial",
               "trace_context": {
                 "trace_id": "t"
               }
@@ -742,7 +742,7 @@
                 ],
                 "sampled_at": 4.5
               },
-              "target_status": "partial"
+              "goal_status": "partial"
             }
           }
         ]
@@ -795,7 +795,7 @@
                 ],
                 "sampled_at": 4.5
               },
-              "target_status": "partial"
+              "goal_status": "partial"
             }
           }
         ]
@@ -817,8 +817,8 @@
               "measured_joints": [
                 0.123456789
               ],
-              "target_position": null,
-              "target_quaternion": null
+              "destination_position": null,
+              "destination_quaternion": null
             }
           ],
           "command": {
@@ -833,16 +833,16 @@
               "reason": "at_joint_limit",
               "waypoint": 0
             },
-            "target_joints": [
+            "destination_joints": [
               0.1,
               -0.2
             ],
-            "target_position": [
+            "destination_position": [
               0.2,
               0.0,
               0.1
             ],
-            "target_quaternion": [
+            "destination_quaternion": [
               0.0,
               0.7071067811865476,
               0.0,
@@ -871,7 +871,7 @@
                 "degrees_from_down": 0.5,
                 "jaw_yaw_degrees": 90.1,
                 "jaw_yaw_reference": "world_x",
-                "target": null
+                "goal": null
               },
               "orientation_error_radians": null,
               "position": [
@@ -917,16 +917,16 @@
             "reason": "at_joint_limit",
             "waypoint": 0
           },
-          "target_joints": [
+          "destination_joints": [
             0.1,
             -0.2
           ],
-          "target_position": [
+          "destination_position": [
             0.2,
             0.0,
             0.1
           ],
-          "target_quaternion": [
+          "destination_quaternion": [
             0.0,
             0.7071067811865476,
             0.0,
@@ -956,7 +956,7 @@
               "degrees_from_down": 0.5,
               "jaw_yaw_degrees": 90.1,
               "jaw_yaw_reference": "world_x",
-              "target": null
+              "goal": null
             },
             "orientation_error_radians": null,
             "position": [
@@ -973,7 +973,7 @@
             ],
             "sampled_at": 1236.123456
           },
-          "target_status": "stopped_short"
+          "goal_status": "stopped_short"
         }
       ]
     },
@@ -990,16 +990,16 @@
             "reason": "at_joint_limit",
             "waypoint": 0
           },
-          "target_joints_degrees": [
+          "destination_joints_degrees": [
             5.7,
             -11.5
           ],
-          "target_position_mm": [
+          "destination_position_mm": [
             200.0,
             0.0,
             100.0
           ],
-          "target_quaternion": [
+          "destination_quaternion": [
             0.0,
             0.7071,
             0.0,
@@ -1042,7 +1042,7 @@
             ],
             "sampled_at": 1236.123
           },
-          "target_status": "stopped_short"
+          "goal_status": "stopped_short"
         }
       ]
     }

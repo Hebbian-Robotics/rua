@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::compiler::{CompilationTarget, RobotUseCompiler};
 use crate::control_link::LinkHandle;
 
-pub(super) const COMPILATION_SCHEMA_VERSION: u32 = 2;
+pub(super) const COMPILATION_SCHEMA_VERSION: u32 = 3;
 
 const MAXIMUM_RETAINED_EXECUTION_COMPILATIONS: usize = 128;
 const MAXIMUM_RETAINED_INSPECTION_COMPILATIONS: usize = 128;

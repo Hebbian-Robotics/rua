@@ -73,7 +73,7 @@ test("preview move", async () => {
           degrees_from_down: 0,
           jaw_yaw_degrees: 0,
           jaw_yaw_reference: "world_x",
-          target: null,
+          goal: null,
         },
         model_points: [],
       },

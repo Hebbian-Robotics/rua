@@ -219,14 +219,14 @@ class Checkpoint(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    label: str
-    measured_joints: list[StrictFloat]
-    target_position: Annotated[
+    destination_position: Annotated[
         list[StrictFloat] | None, Field(max_length=3, min_length=3)
     ] = None
-    target_quaternion: Annotated[
+    destination_quaternion: Annotated[
         list[StrictFloat] | None, Field(max_length=4, min_length=4)
     ] = None
+    label: str
+    measured_joints: list[StrictFloat]
 
 
 class CancelActionSequence(BaseModel):
@@ -375,7 +375,7 @@ class CompiledArmAction2(BaseModel):
     opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0, title="GripperOpening")]
 
 
-class CompiledMovement1(BaseModel):
+class CompiledGoal1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -1047,18 +1047,18 @@ class RecordedMove(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    destination_joints: list[StrictFloat]
+    destination_position: Annotated[
+        list[StrictFloat] | None, Field(max_length=3, min_length=3)
+    ] = None
+    destination_quaternion: Annotated[
+        list[StrictFloat] | None, Field(max_length=4, min_length=4)
+    ] = None
     group_id: str | None = None
     joint_speed: StrictFloat
     kind: Literal["move"] = "move"
     path_limited: PathLimited | None = None
     pose_limited: PoseLimited | None = None
-    target_joints: list[StrictFloat]
-    target_position: Annotated[
-        list[StrictFloat] | None, Field(max_length=3, min_length=3)
-    ] = None
-    target_quaternion: Annotated[
-        list[StrictFloat] | None, Field(max_length=4, min_length=4)
-    ] = None
 
 
 class RecordedPolicyReach(BaseModel):
@@ -1066,8 +1066,8 @@ class RecordedPolicyReach(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    goal_pose: CommandPose
     kind: Literal["policy_reach"] = "policy_reach"
-    target_pose: CommandPose
 
 
 class RecordedJointStream(BaseModel):
@@ -1098,7 +1098,9 @@ class RecordedGripper(BaseModel):
     kind: Literal["gripper"] = "gripper"
     stream_command_id: Annotated[
         str | None,
-        Field(description="The joint stream that issued this jaw goal, if any."),
+        Field(
+            description="The motion or joint stream that owns this jaw command, if any."
+        ),
     ] = None
     target_angle_radians: StrictFloat
 
@@ -1508,17 +1510,6 @@ class SurfaceGuardConfig(BaseModel):
     surface_height_meters: StrictFloat
 
 
-class TargetComparison(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    approach_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
-    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
-    jaw_yaw_reference: JawYawReference
-    orientation_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
-
-
 class ToolOrientation(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1689,6 +1680,17 @@ class AdmissionFailure(BaseModel):
     step: Annotated[int, Field(ge=0)]
 
 
+class GoalComparison(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    approach_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
+    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
+    jaw_yaw_reference: JawYawReference
+    orientation_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
+
+
 class UsageUpdateEvent(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1746,9 +1748,9 @@ class OrientationSummary(BaseModel):
     )
     approach: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
     degrees_from_down: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
+    goal: GoalComparison | None = None
     jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
     jaw_yaw_reference: JawYawReference
-    target: TargetComparison | None = None
 
 
 class PlanStep(BaseModel):
@@ -2003,6 +2005,42 @@ class ActionSequenceStopped(BaseModel):
     state: Literal["stopped"] = "stopped"
 
 
+class ArmCommand(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arm: str
+    command: Annotated[
+        EnableCommand
+        | ApproveRecoveryCommand
+        | DisableCommand
+        | StopCommand
+        | ClearFaultCommand
+        | RehomeCommand
+        | MoveToJointsCommand
+        | MoveToPoseCommand
+        | StationStreamJointsCommand
+        | StationSetGripperCommand,
+        Field(description="A command for one arm."),
+    ]
+    expected_revision: Annotated[
+        int | None,
+        Field(
+            description="Refuse the command as `stale_revision` if the arm's revision moved on.",
+            ge=0,
+        ),
+    ] = None
+    kind: Literal["command"] = "command"
+    request_id: str | None = None
+    trace_context: Annotated[
+        TraceContext | None,
+        Field(
+            description="The caller's trace context; the command's record carries it."
+        ),
+    ] = None
+
+
 class Preview(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2068,7 +2106,45 @@ class CommandRecord(BaseModel):
     trace_context: TraceContext | None = None
 
 
-class CompiledMovement2(BaseModel):
+class CommandSubmissionRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arm: str
+    command: Annotated[
+        EnableCommand
+        | ApproveRecoveryCommand
+        | DisableCommand
+        | StopCommand
+        | ClearFaultCommand
+        | RehomeCommand
+        | MoveToJointsCommand
+        | MoveToPoseCommand
+        | StationStreamJointsCommand
+        | StationSetGripperCommand,
+        Field(description="A command for one arm."),
+    ]
+    expected_revision: Annotated[int | None, Field(ge=0)] = None
+    lease_token: Annotated[
+        str | None,
+        Field(
+            description="The active lease token, when one is required for this command."
+        ),
+    ] = None
+    operation_id: Annotated[
+        str, Field(description="A caller-generated UUID v4 identifying this operation.")
+    ]
+    station_instance_id: Annotated[
+        str,
+        Field(
+            description="The server instance the caller observed when creating this request."
+        ),
+    ]
+    trace_context: TraceContext | None = None
+
+
+class CompiledGoal2(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -2193,10 +2269,10 @@ class MoveArmsCommand(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    goals: Annotated[dict[str, JointsWaypoint | PoseWaypoint], Field(min_length=1)]
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
-    targets: Annotated[dict[str, JointsWaypoint | PoseWaypoint], Field(min_length=1)]
 
 
 class PosePreviewCandidate(BaseModel):
@@ -2319,44 +2395,21 @@ class RunMessage(BaseModel):
     run: LiveRun
 
 
-class FollowPathCommand(BaseModel):
+class ActionSequenceWaypoint(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
     )
-    kind: Literal["follow_path"] = "follow_path"
-    max_joint_speed: Annotated[
-        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
-    ] = None
-    waypoints: list[JointsWaypoint | PoseWaypoint]
-
-
-class ActionSequenceMove(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
-    max_joint_speed: Annotated[
+    at: CompiledGoal1 | CompiledGoal2
+    gripper_opening: Annotated[
         StrictFloat | None,
         Field(
-            description="Speed for both resources in rad/s; overrides the movement speed when provided."
+            description="Start moving the gripper when passing this waypoint.",
+            ge=0.0,
+            le=1.0,
+            title="GripperOpening",
         ),
     ] = None
-    movement: Annotated[
-        ActionSequenceJointsMovement | ActionSequencePoseMovement,
-        Field(
-            description="One movement in an action sequence. The arm settles at each target."
-        ),
-    ]
-
-
-class ActionSequenceStep(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    arms: dict[str, ActionSequenceMove | ActionSequenceGripper]
 
 
 class ArmRecord(BaseModel):
@@ -2454,43 +2507,6 @@ class ArmState(BaseModel):
     ] = None
 
 
-class ArmCommand(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    arm: str
-    command: Annotated[
-        EnableCommand
-        | ApproveRecoveryCommand
-        | DisableCommand
-        | StopCommand
-        | ClearFaultCommand
-        | RehomeCommand
-        | MoveToJointsCommand
-        | MoveToPoseCommand
-        | FollowPathCommand
-        | StationStreamJointsCommand
-        | StationSetGripperCommand,
-        Field(description="A command for one arm."),
-    ]
-    expected_revision: Annotated[
-        int | None,
-        Field(
-            description="Refuse the command as `stale_revision` if the arm's revision moved on.",
-            ge=0,
-        ),
-    ] = None
-    kind: Literal["command"] = "command"
-    request_id: str | None = None
-    trace_context: Annotated[
-        TraceContext | None,
-        Field(
-            description="The caller's trace context; the command's record carries it."
-        ),
-    ] = None
-
-
 class MoveArms(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2534,50 +2550,12 @@ class CommandAccepted(BaseModel):
     status: Literal["accepted"] = "accepted"
 
 
-class CommandSubmissionRequest(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    arm: str
-    command: Annotated[
-        EnableCommand
-        | ApproveRecoveryCommand
-        | DisableCommand
-        | StopCommand
-        | ClearFaultCommand
-        | RehomeCommand
-        | MoveToJointsCommand
-        | MoveToPoseCommand
-        | FollowPathCommand
-        | StationStreamJointsCommand
-        | StationSetGripperCommand,
-        Field(description="A command for one arm."),
-    ]
-    expected_revision: Annotated[int | None, Field(ge=0)] = None
-    lease_token: Annotated[
-        str | None,
-        Field(
-            description="The active lease token, when one is required for this command."
-        ),
-    ] = None
-    operation_id: Annotated[
-        str, Field(description="A caller-generated UUID v4 identifying this operation.")
-    ]
-    station_instance_id: Annotated[
-        str,
-        Field(
-            description="The server instance the caller observed when creating this request."
-        ),
-    ]
-    trace_context: TraceContext | None = None
-
-
 class CompiledArmAction1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
     )
+    goal: CompiledGoal1 | CompiledGoal2
     gripper_opening: Annotated[
         StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
     ] = None
@@ -2585,7 +2563,13 @@ class CompiledArmAction1(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
-    movement: CompiledMovement1 | CompiledMovement2
+    waypoints: Annotated[
+        list[ActionSequenceWaypoint],
+        Field(
+            description="Pass through these intermediate configurations before settling at the goal.",
+            validate_default=True,
+        ),
+    ] = []
 
 
 class CompiledOperation(BaseModel):
@@ -2748,6 +2732,91 @@ class StationState(BaseModel):
     ] = None
 
 
+class ActionSequenceMove(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    goal: Annotated[
+        ActionSequenceJointsMovement | ActionSequencePoseMovement,
+        Field(
+            description="The final pose or joint configuration where this move settles."
+        ),
+    ]
+    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
+    max_joint_speed: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Speed for both resources in rad/s; overrides the goal speed when provided."
+        ),
+    ] = None
+    waypoints: Annotated[
+        list[ActionSequenceWaypoint],
+        Field(
+            description="Pass through these intermediate configurations before settling at the goal.",
+            validate_default=True,
+        ),
+    ] = []
+
+
+class ActionSequenceStep(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arms: dict[str, ActionSequenceMove | ActionSequenceGripper]
+
+
+class ObservationAnswer1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    cameras: dict[str, ObservationFrame]
+    missing_optional_cameras: list[str]
+    state: StationState
+    status: Literal["observation_captured"] = "observation_captured"
+
+
+class ObservationAnswer(
+    RootModel[
+        ObservationAnswer1
+        | ObservationAnswer2
+        | ObservationAnswer3
+        | ObservationAnswer4
+    ]
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: (
+        ObservationAnswer1
+        | ObservationAnswer2
+        | ObservationAnswer3
+        | ObservationAnswer4
+    )
+
+
+class PosePreviewBatchResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    results: Annotated[
+        list[PosePreviewCandidateResult],
+        Field(description="One answer per candidate, in request order."),
+    ]
+
+
+class StateMessage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    kind: Literal["state"] = "state"
+    state: StationState
+
+
 class ActionSequenceRecord(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2883,56 +2952,6 @@ class CompilationOutcome(RootModel[ProgramCompiled | ProgramRejected]):
         ProgramCompiled | ProgramRejected,
         Field(description="Compilation does not acquire a lease or command hardware."),
     ]
-
-
-class ObservationAnswer1(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    cameras: dict[str, ObservationFrame]
-    missing_optional_cameras: list[str]
-    state: StationState
-    status: Literal["observation_captured"] = "observation_captured"
-
-
-class ObservationAnswer(
-    RootModel[
-        ObservationAnswer1
-        | ObservationAnswer2
-        | ObservationAnswer3
-        | ObservationAnswer4
-    ]
-):
-    model_config = ConfigDict(
-        frozen=True,
-    )
-    root: (
-        ObservationAnswer1
-        | ObservationAnswer2
-        | ObservationAnswer3
-        | ObservationAnswer4
-    )
-
-
-class PosePreviewBatchResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    results: Annotated[
-        list[PosePreviewCandidateResult],
-        Field(description="One answer per candidate, in request order."),
-    ]
-
-
-class StateMessage(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    kind: Literal["state"] = "state"
-    state: StationState
 
 
 class ActionSequenceState(BaseModel):
