@@ -51,7 +51,9 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-Run `pnpm start:viewer` to serve the built viewer and run the example agent backend.
+Configure a model-provider key before running `pnpm start:viewer` to serve
+the built viewer and run the example agent backend. See the
+[viewer setup](../examples/typescript/viewer/README.md).
 The station runs independently. Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend

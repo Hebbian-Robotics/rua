@@ -122,7 +122,11 @@ export function SettingsPage({
           <BotIcon aria-hidden="true" /> Agent connection
         </h2>
         <p role="status">
-          {status === "unreachable" ? connectionError : status}
+          {status === "unreachable"
+            ? connectionError
+            : status === "disabled"
+              ? "Disabled in manual-only mode"
+              : status}
         </p>
       </Card>
     </main>

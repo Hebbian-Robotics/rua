@@ -14,14 +14,15 @@ import {
 const IDLE_POLL_MILLISECONDS = 3000;
 const OUTPUT_LINE_LIMIT = 200;
 
-type AgentServerStatus = "checking" | "reachable" | "unreachable";
+type AgentServerStatus = "disabled" | "checking" | "reachable" | "unreachable";
 
-export function useAgentRun(baseUrl: string) {
+export function useAgentRun(baseUrl: string, enabled = true) {
   const queryClient = useQueryClient();
   const [recovery, setRecovery] = useState<RunStreamRecovery>("ready");
   const runQuery = useQuery({
     queryKey: ["agent-run", baseUrl],
     queryFn: () => agentApi.currentRun(baseUrl),
+    enabled,
     retry: false,
     refetchInterval: (query) => {
       const current = query.state.data ?? null;
@@ -32,16 +33,18 @@ export function useAgentRun(baseUrl: string) {
     },
     refetchIntervalInBackground: true,
   });
-  const run = runQuery.data ?? null;
+  const run = enabled ? (runQuery.data ?? null) : null;
   const activeId = runStreamId(
     isRunActive(run) ? (run?.id ?? null) : null,
     recovery,
   );
-  const status: AgentServerStatus = runQuery.isError
-    ? "unreachable"
-    : runQuery.isPending
-      ? "checking"
-      : "reachable";
+  const status: AgentServerStatus = !enabled
+    ? "disabled"
+    : runQuery.isError
+      ? "unreachable"
+      : runQuery.isPending
+        ? "checking"
+        : "reachable";
   const providersQuery = useQuery({
     queryKey: ["agent-providers", baseUrl],
     queryFn: () => agentApi.providers(baseUrl),

@@ -11,6 +11,37 @@ import pytest
 from tests.fixture_station import REPOSITORY_ROOT, running_station
 from tests.fixture_wait import wait_until
 
+VIEWER_COMMAND = [
+    "node",
+    "--import",
+    "tsx",
+    "--conditions=development",
+    "examples/typescript/viewer/server/src/main.ts",
+]
+
+
+@pytest.mark.typescript
+def test_viewer_requires_a_model_provider_key() -> None:
+    result = subprocess.run(
+        VIEWER_COMMAND,
+        env={
+            **os.environ,
+            "OPENAI_API_KEY": "",
+            "ANTHROPIC_API_KEY": " ",
+            "GEMINI_API_KEY": "",
+            "GOOGLE_API_KEY": "",
+            "AGENT_PORT": "0",
+        },
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "OPENAI_API_KEY" in result.stderr
+    assert "--manual-only" in result.stderr
+
 
 @contextmanager
 def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
@@ -22,13 +53,7 @@ def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
         "AGENT_RUNS_DIR": str(run_directory),
     }
     with subprocess.Popen(
-        [
-            "node",
-            "--import",
-            "tsx",
-            "--conditions=development",
-            "examples/typescript/viewer/server/src/main.ts",
-        ],
+        [*VIEWER_COMMAND, "--manual-only"],
         env=environment,
         cwd=REPOSITORY_ROOT,
         stdout=subprocess.PIPE,

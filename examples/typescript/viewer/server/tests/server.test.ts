@@ -9,7 +9,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function app() {
+function app(manualOnly = false) {
   new ScriptedStation().install();
   const manager = new RunManager({
     stationUrl: "http://station",
@@ -32,7 +32,8 @@ function app() {
   return createApp({
     manager,
     allowedOrigins: ["http://station:8792"],
-    configuredProviders: () => ["openai"],
+    manualOnly,
+    configuredProviders: ["openai"],
   });
 }
 
@@ -46,6 +47,16 @@ const post = {
   headers: { "Content-Type": "application/json" },
   body,
 };
+
+test("manual-only mode refuses agent runs even with a configured provider", async () => {
+  const server = app(true);
+  expect(await (await server.request("/api/health")).json()).toEqual({
+    ok: true,
+    manualOnly: true,
+  });
+  expect((await server.request("/api/runs", post)).status).toBe(403);
+  expect(await (await server.request("/api/runs/current")).json()).toBeNull();
+});
 
 test("a run is created and started in one call, then conflicts", async () => {
   const server = app();

@@ -72,7 +72,10 @@ export const currentRunSchema = runSchema.nullable();
 export const modelProvidersSchema = z.array(
   z.object({ provider: providerSchema, defaultModel: z.string().min(1) }),
 );
-export const healthSchema = z.object({ ok: z.literal(true) });
+export const healthSchema = z.object({
+  ok: z.literal(true),
+  manualOnly: z.boolean(),
+});
 
 export const runEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("snapshot"), run: runSchema }),

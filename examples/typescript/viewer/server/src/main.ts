@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createRecordingClient } from "hebbian-rua";
 import type { Context } from "hono";
 import { proxy } from "hono/proxy";
-import type { Provider } from "../../shared/run-api.js";
+import {
+  API_KEY_VARIABLES,
+  PROVIDERS,
+} from "../../../agent/src/providers/types.js";
+import { configuredApiKey } from "../../../agent/src/run.js";
 import { manualSessions } from "./manual-sessions.js";
 import { allowedViewerOrigins } from "./origins.js";
 import { RunManager } from "./run-manager.js";
@@ -19,7 +24,20 @@ try {
   // No .env file.
 }
 
+const { values } = parseArgs({
+  options: { "manual-only": { type: "boolean", default: false } },
+});
+const manualOnly = values["manual-only"];
 const environment = process.env;
+const configuredProviders = PROVIDERS.filter(
+  (provider) => configuredApiKey(provider, environment) !== undefined,
+);
+if (!manualOnly && configuredProviders.length === 0) {
+  console.error(
+    `Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env to start the viewer. For manual control only, run pnpm start:viewer --manual-only.`,
+  );
+  process.exit(1);
+}
 const port = Number(environment["AGENT_PORT"] ?? 8793);
 const host = environment["AGENT_HOST"] ?? "127.0.0.1";
 const stationUrl =
@@ -28,12 +46,6 @@ const allowedOrigins = allowedViewerOrigins(
   `http://${host}:${port}`,
   environment["AGENT_ALLOWED_ORIGINS"],
 );
-
-const providerKeys: [Provider, string][] = [
-  ["openai", "OPENAI_API_KEY"],
-  ["gemini", "GEMINI_API_KEY"],
-  ["anthropic", "ANTHROPIC_API_KEY"],
-];
 
 const manager = new RunManager({
   stationUrl,
@@ -48,11 +60,8 @@ await manager.open();
 const app = createApp({
   manager,
   allowedOrigins,
-  // Report only whether a key exists, never its value.
-  configuredProviders: () =>
-    providerKeys
-      .filter(([, variable]) => (environment[variable] ?? "").trim() !== "")
-      .map(([provider]) => provider),
+  manualOnly,
+  configuredProviders,
 });
 const recording = createRecordingClient(stationUrl);
 app.get("/api/recording/status", async (context) =>

@@ -1,7 +1,9 @@
 # Example viewer
 
-The example Node server hosts the React viewer and agent loop. Run `pnpm build`
-and `pnpm start:viewer`, then open <http://127.0.0.1:8793/viewer/>. Set
+The example Node server hosts the React viewer and agent loop. Set at least
+one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in your
+environment or the repository’s `.env`. Run `pnpm build` and
+`pnpm start:viewer`, then open <http://127.0.0.1:8793/viewer/>. Set
 `HEBBIAN_STATION_URL` to connect to a station other than the local default. Follow the
 [viewer build instructions](../../../docs/install-from-source.md#optional-viewer)
 and start a station with [your arm connected](../../../docs/getting-started.md).
@@ -24,6 +26,13 @@ served through the example backend. The station owns capture and storage.
   **Recordings** opens saved sessions. See [Recording](../../../docs/recording.md).
 - **Settings** controls appearance, pose overlays, camera labels, and agent
   connection status.
+
+## Start without an agent
+
+For manual-control testing without a model-provider key, run
+`pnpm start:viewer --manual-only`. Start the station with `--manual-control`
+to enable manual pose controls. The viewer opens in **Manual** and disables
+**Agent** for the session.
 
 ## Develop the viewer
 
