@@ -44,6 +44,7 @@ v4l = "0.14"
 nusb = "0.2.9"
 
 [dev-dependencies]
+futures-util = { version = "0.3", default-features = false }
 prost = "0.14"
 hebbian-robot-use-core = { path = "../server-core" }
 # The run telemetry buffer lives in the station; the recorder test needs a real one.

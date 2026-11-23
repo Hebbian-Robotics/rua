@@ -79,6 +79,24 @@ pub(super) struct MotionProgress {
     pub(super) final_pose: Vec<f64>,
 }
 
+#[derive(Default)]
+pub(super) struct MotionEffects {
+    checkpoints: Vec<Checkpoint>,
+    completion: Option<MotionCompletion>,
+}
+
+struct MotionCompletion {
+    outcome: CommandOutcome,
+    detail: String,
+    hold: Vec<f64>,
+}
+
+impl MotionEffects {
+    pub(super) fn ends_motion(&self) -> bool {
+        self.completion.is_some()
+    }
+}
+
 pub(super) struct GroupReference {
     pub(super) reference: Reference,
     pub(super) checkpoints: Vec<Checkpoint>,
@@ -114,11 +132,26 @@ impl Loop<'_> {
         interval: f64,
         feedback: &Feedback,
         stop: bool,
-        now: Now,
-    ) -> Result<(), Trip> {
+    ) -> Result<MotionEffects, Trip> {
+        let Activity::Motion(active) = &mut self.activity else {
+            return Err(Trip::Trajectory("No motion is running".into()));
+        };
         if stop {
-            self.end_stopped(now);
-            return Ok(());
+            let hold = self
+                .hold_at
+                .get_or_insert_with(|| self.filter.stopping_position());
+            self.reference.set_at_rest(hold, None);
+            return Ok(MotionEffects {
+                checkpoints: active
+                    .supervisor
+                    .new_checkpoints(active.checkpoints_sent)
+                    .to_vec(),
+                completion: Some(MotionCompletion {
+                    outcome: CommandOutcome::Stopped,
+                    detail: "Stopped".to_owned(),
+                    hold: hold.clone(),
+                }),
+            });
         }
         if self.core.take_supersede() {
             // INVARIANT: A new command replaced this one while it only settled; the arm holds
@@ -128,11 +161,8 @@ impl Loop<'_> {
             self.core.superseded_motion_ended(&feedback.positions);
             self.activity = Activity::Idle;
             self.reference.set_at_rest(&feedback.positions, None);
-            return Ok(());
+            return Ok(MotionEffects::default());
         }
-        let Activity::Motion(active) = &mut self.activity else {
-            return Err(Trip::Trajectory("No motion is running".into()));
-        };
         let speed_fraction = if self.config.feetech.is_some() {
             tracking_speed_fraction(
                 feedback,
@@ -157,7 +187,6 @@ impl Loop<'_> {
             .supervisor
             .new_checkpoints(active.checkpoints_sent)
             .to_vec();
-        active.checkpoints_sent += new.len();
         let status = MotionStatus::of(&active.supervisor);
         self.core.set_segment(active.supervisor.segment_label());
         let progress = MotionProgress {
@@ -170,20 +199,26 @@ impl Loop<'_> {
             },
         };
         self.core.set_settling(settling_at_end);
-        self.motion_progress(feedback, progress, now)
+        Ok(self.prepare_motion_effects(feedback, progress))
     }
 
-    pub(super) fn motion_progress(
+    fn prepare_motion_effects(
         &mut self,
         feedback: &Feedback,
         progress: MotionProgress,
-        now: Now,
-    ) -> Result<(), Trip> {
-        for checkpoint in progress.checkpoints {
-            self.core.add_checkpoint(checkpoint);
-        }
-        let (outcome, detail) = match progress.status {
-            MotionStatus::Running => return Ok(()),
+    ) -> MotionEffects {
+        let MotionProgress {
+            checkpoints,
+            status,
+            final_pose,
+        } = progress;
+        let (outcome, detail) = match status {
+            MotionStatus::Running => {
+                return MotionEffects {
+                    checkpoints,
+                    completion: None,
+                };
+            }
             // WHY: The last rest point may have stalled short; the outcome says so and
             // the record carries each joint's error.
             MotionStatus::StoppedShort => {
@@ -210,8 +245,32 @@ impl Loop<'_> {
                 )
             }
         };
-        self.end_activity(outcome, Some(detail), Some(progress.final_pose), now);
-        Ok(())
+        self.reference.set_at_rest(&final_pose, None);
+        MotionEffects {
+            checkpoints,
+            completion: Some(MotionCompletion {
+                outcome,
+                detail,
+                hold: final_pose,
+            }),
+        }
+    }
+
+    pub(super) fn commit_motion_effects(&mut self, effects: MotionEffects, now: Now) {
+        if let Activity::Motion(active) = &mut self.activity {
+            active.checkpoints_sent += effects.checkpoints.len();
+        }
+        for checkpoint in effects.checkpoints {
+            self.core.add_checkpoint(checkpoint);
+        }
+        if let Some(completion) = effects.completion {
+            self.end_activity(
+                completion.outcome,
+                Some(completion.detail),
+                Some(completion.hold),
+                now,
+            );
+        }
     }
 
     pub(super) fn group_reference(
@@ -232,15 +291,16 @@ impl Loop<'_> {
         let share = share.map_err(Clone::clone)?;
         self.reference.copy_from(&share.reference);
         self.core.set_segment(share.segment);
-        self.motion_progress(
+        let effects = self.prepare_motion_effects(
             feedback,
             MotionProgress {
                 checkpoints: share.checkpoints.clone(),
                 status: share.status,
                 final_pose: share.final_pose.clone(),
             },
-            now,
-        )
+        );
+        self.commit_motion_effects(effects, now);
+        Ok(())
     }
 }
 

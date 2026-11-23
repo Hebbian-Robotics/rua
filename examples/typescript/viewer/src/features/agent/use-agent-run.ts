@@ -1,13 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { match } from "ts-pattern";
-import {
-  isRunActive,
-  type Run,
-  runEventSchema,
-} from "../../../shared/run-api.js";
+import { isRunActive, type Run } from "../../../shared/run-api.js";
 import { agentApi } from "../../agent-api.js";
 import { errorMessage } from "../../errors.js";
+import {
+  openRunEventStream,
+  type RunStreamRecovery,
+  runStreamId,
+  runStreamRecovery,
+} from "./run-event-stream.js";
 
 const IDLE_POLL_MILLISECONDS = 3000;
 const OUTPUT_LINE_LIMIT = 200;
@@ -16,19 +18,25 @@ type AgentServerStatus = "checking" | "reachable" | "unreachable";
 
 export function useAgentRun(baseUrl: string) {
   const queryClient = useQueryClient();
-  const [streamFailed, setStreamFailed] = useState(false);
+  const [recovery, setRecovery] = useState<RunStreamRecovery>("ready");
   const runQuery = useQuery({
     queryKey: ["agent-run", baseUrl],
     queryFn: () => agentApi.currentRun(baseUrl),
     retry: false,
-    refetchInterval: (query) =>
-      isRunActive(query.state.data ?? null) && !streamFailed
-        ? false
-        : IDLE_POLL_MILLISECONDS,
+    refetchInterval: (query) => {
+      const current = query.state.data ?? null;
+      const activeRunId = isRunActive(current) ? (current?.id ?? null) : null;
+      return runStreamId(activeRunId, recovery) === null
+        ? IDLE_POLL_MILLISECONDS
+        : false;
+    },
     refetchIntervalInBackground: true,
   });
   const run = runQuery.data ?? null;
-  const activeId = isRunActive(run) ? (run?.id ?? null) : null;
+  const activeId = runStreamId(
+    isRunActive(run) ? (run?.id ?? null) : null,
+    recovery,
+  );
   const status: AgentServerStatus = runQuery.isError
     ? "unreachable"
     : runQuery.isPending
@@ -53,53 +61,43 @@ export function useAgentRun(baseUrl: string) {
 
   // A successful poll after a stream error lets the stream reconnect.
   useEffect(() => {
-    if (runQuery.dataUpdatedAt) setStreamFailed(false);
+    if (runQuery.dataUpdatedAt)
+      setRecovery(runStreamRecovery("poll_succeeded"));
   }, [runQuery.dataUpdatedAt]);
 
   useEffect(() => {
-    if (activeId === null || streamFailed) return;
-    const source = new EventSource(`${baseUrl}/api/runs/${activeId}/events`);
-    source.onmessage = (message) => {
-      let payload: unknown;
-      try {
-        payload = JSON.parse(message.data);
-      } catch {
-        return;
-      }
-      const event = runEventSchema.safeParse(payload);
-      if (!event.success) return;
-      match(event.data)
-        .with({ type: "snapshot" }, ({ run }) => setRun(run))
-        .with({ type: "phase" }, ({ phase }) => {
-          setRun((previous) => previous && { ...previous, phase });
-          if (phase.state === "ended") source.close();
-        })
-        .with({ type: "persistence_error" }, ({ detail }) =>
-          setRun(
-            (previous) =>
-              previous && {
-                ...previous,
-                persistenceError: detail ?? undefined,
-              },
-          ),
-        )
-        .with({ type: "output" }, ({ line }) =>
-          setRun(
-            (previous) =>
-              previous && {
-                ...previous,
-                output: [...previous.output, line].slice(-OUTPUT_LINE_LIMIT),
-              },
-          ),
-        )
-        .exhaustive();
-    };
-    source.onerror = () => {
-      source.close();
-      setStreamFailed(true);
-    };
-    return () => source.close();
-  }, [baseUrl, activeId, streamFailed, setRun]);
+    if (activeId === null) return;
+    return openRunEventStream(
+      `${baseUrl}/api/runs/${activeId}/events`,
+      (event) => {
+        match(event)
+          .with({ type: "snapshot" }, ({ run }) => setRun(run))
+          .with({ type: "phase" }, ({ phase }) => {
+            setRun((previous) => previous && { ...previous, phase });
+          })
+          .with({ type: "persistence_error" }, ({ detail }) =>
+            setRun(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  persistenceError: detail ?? undefined,
+                },
+            ),
+          )
+          .with({ type: "output" }, ({ line }) =>
+            setRun(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  output: [...previous.output, line].slice(-OUTPUT_LINE_LIMIT),
+                },
+            ),
+          )
+          .exhaustive();
+      },
+      () => setRecovery(runStreamRecovery("stream_lost")),
+    );
+  }, [baseUrl, activeId, setRun]);
 
   return {
     run,

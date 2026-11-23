@@ -216,23 +216,12 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
     let mut longest_cycle = Duration::ZERO;
     for _ in 0..250 {
         let began = Instant::now();
-        let observation = runner.plant.read_feedback().unwrap();
-        runner.dispatch_next_command(Now::current());
-        runner
-            .drive_gripper(&observation, 0.02, Now::current())
-            .unwrap();
-        runner
-            .state
-            .command(0.02, &observation, false, None, Now::current())
-            .unwrap();
-        runner
-            .plant
-            .command(&runner.state.next_command, 0.02)
-            .unwrap();
-        runner
-            .state
-            .previous_command
-            .clone_from(&runner.state.next_command);
+        let super::runner::Begun::Pending(pending) =
+            runner.begin_cycle(Duration::from_millis(20), None)
+        else {
+            panic!("expected a powered control cycle");
+        };
+        runner.finish_cycle(pending, None);
         longest_cycle = longest_cycle.max(began.elapsed());
     }
     eprintln!("longest combined motor cycle: {longest_cycle:?}");

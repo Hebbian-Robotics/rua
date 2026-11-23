@@ -16,10 +16,38 @@ pub(crate) async fn subscribe(
     archive: Option<&RecordingArchive>,
     stopped: CancellationToken,
 ) -> Result<(), RecorderError> {
+    let mut base =
+        reqwest::Url::parse(url).map_err(|error| RecorderError::InvalidData(error.to_string()))?;
+    match base.scheme() {
+        "http" | "https" => {}
+        _ => return Err(RecorderError::InvalidData("unsupported station URL".into())),
+    }
+    base.set_path("/events");
+    base.set_query(None);
+    let client = reqwest::Client::builder()
+        .read_timeout(Duration::from_secs(30))
+        .build()?;
+    subscribe_to_events(&client, &base, archive, stopped).await
+}
+
+async fn subscribe_to_events(
+    client: &reqwest::Client,
+    events_url: &reqwest::Url,
+    archive: Option<&RecordingArchive>,
+    stopped: CancellationToken,
+) -> Result<(), RecorderError> {
     let mut event_cursor = None;
     let mut backoff = Backoff::new(Duration::from_secs(1));
     loop {
-        let result = connection(url, archive, &mut event_cursor, &mut backoff, &stopped).await;
+        let result = connection(
+            client,
+            events_url,
+            archive,
+            &mut event_cursor,
+            &mut backoff,
+            &stopped,
+        )
+        .await;
         if stopped.is_cancelled() {
             return Ok(());
         }
@@ -40,27 +68,24 @@ pub(crate) async fn subscribe(
 }
 
 async fn connection(
-    base_url: &str,
+    client: &reqwest::Client,
+    events_url: &reqwest::Url,
     archive: Option<&RecordingArchive>,
     event_cursor: &mut Option<String>,
     backoff: &mut Backoff,
     stopped: &CancellationToken,
 ) -> Result<(), RecorderError> {
-    let client = reqwest::Client::new();
-    let mut base = reqwest::Url::parse(base_url)
-        .map_err(|error| RecorderError::InvalidData(error.to_string()))?;
-    match base.scheme() {
-        "http" | "https" => {}
-        _ => return Err(RecorderError::InvalidData("unsupported station URL".into())),
-    }
-    base.set_path("/events");
-    base.set_query(None);
     let mut response = loop {
-        let mut request = client.get(base.clone());
+        let mut request = client.get(events_url.clone());
         if let Some(cursor) = event_cursor.as_deref() {
             request = request.header("Last-Event-ID", cursor);
         }
-        let response = tokio::select! { () = stopped.cancelled() => return Ok(()), result = request.send() => result? };
+        let response = tokio::select! {
+            () = stopped.cancelled() => return Ok(()),
+            result = tokio::time::timeout(Duration::from_secs(5), request.send()) => {
+                result.map_err(|_| RecorderError::Timeout("station event stream handshake"))??
+            }
+        };
         if response.status() == reqwest::StatusCode::CONFLICT
             && let Some(after) = event_cursor.take()
         {
@@ -438,6 +463,64 @@ fn record_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_silent_event_stream_reconnects_with_its_last_cursor()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use axum::{
+            Router,
+            http::HeaderMap,
+            response::sse::{Event as SseEvent, Sse},
+            routing::get,
+        };
+
+        let (cursors, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route(
+            "/events",
+            get(move |headers: HeaderMap| {
+                let cursors = cursors.clone();
+                async move {
+                    let cursor = headers
+                        .get("last-event-id")
+                        .and_then(|header| header.to_str().ok())
+                        .map(str::to_owned);
+                    let _ = cursors.send(cursor);
+                    let mut event = Some(
+                        SseEvent::default()
+                            .id("event-42")
+                            .event("station")
+                            .data("{}"),
+                    );
+                    Sse::new(futures_util::stream::poll_fn(move |_| match event.take() {
+                        Some(event) => {
+                            std::task::Poll::Ready(Some(Ok::<_, std::convert::Infallible>(event)))
+                        }
+                        None => std::task::Poll::Pending,
+                    }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let events_url = reqwest::Url::parse(&format!("http://{}/events", listener.local_addr()?))?;
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let stopped = CancellationToken::new();
+        let client = reqwest::Client::builder()
+            .read_timeout(Duration::from_millis(300))
+            .build()?;
+        let client_stopped = stopped.clone();
+        let subscriber = tokio::spawn(async move {
+            subscribe_to_events(&client, &events_url, None, client_stopped).await
+        });
+        let observed = tokio::time::timeout(Duration::from_secs(5), async {
+            (requests.recv().await, requests.recv().await)
+        })
+        .await;
+        stopped.cancel();
+        subscriber.await??;
+        server.abort();
+        assert_eq!(observed?, (Some(None), Some(Some("event-42".to_owned()))));
+        Ok(())
+    }
 
     #[test]
     fn interrupted_commands_are_recorded_as_errors() -> Result<(), Box<dyn std::error::Error>> {

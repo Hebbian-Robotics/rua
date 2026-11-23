@@ -1,5 +1,5 @@
 use super::tool_pose::ToolPose;
-use super::trajectory::{ActiveGroupMember, ActiveMotion, GroupReference};
+use super::trajectory::{ActiveGroupMember, ActiveMotion, GroupReference, MotionEffects};
 use super::{build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot};
 use crate::arm::{ArmCore, Now, StreamGoal};
 use crate::config::ControllerConfig;
@@ -282,28 +282,39 @@ impl Loop<'_> {
         stop: bool,
         group: Option<Result<&GroupReference, &Trip>>,
         now: Now,
-    ) -> Result<(), Trip> {
+    ) -> Result<MotionEffects, Trip> {
         if let Some(runtime) = &mut self.policy {
             runtime.begin_cycle();
         }
         let policy_reach = matches!(self.activity, Activity::Reach(_));
-        match self.activity {
-            Activity::Motion(_) => self.motion_reference(interval, feedback, stop, now)?,
-            Activity::Group(_) => self.group_reference(feedback, stop, group, now)?,
-            Activity::Stream(_) => self.stream_reference(feedback, stop, now)?,
-            Activity::Reach(_) => self.reach_reference(interval, feedback, stop, now)?,
+        let effects = match self.activity {
+            Activity::Motion(_) => self.motion_reference(interval, feedback, stop)?,
+            Activity::Group(_) => {
+                self.group_reference(feedback, stop, group, now)?;
+                MotionEffects::default()
+            }
+            Activity::Stream(_) => {
+                self.stream_reference(feedback, stop, now)?;
+                MotionEffects::default()
+            }
+            Activity::Reach(_) => {
+                self.reach_reference(interval, feedback, stop, now)?;
+                MotionEffects::default()
+            }
             Activity::Idle => {
                 let hold = self
                     .hold_at
                     .get_or_insert_with(|| self.filter.positions().to_vec());
                 self.reference.set_at_rest(hold, None);
+                MotionEffects::default()
             }
-        }
+        };
         let policy_command = policy_reach
             || matches!(&self.activity, Activity::Stream(stream) if stream.policy_engaged);
-        // WHY: A motion that ended this cycle is Idle now: its stop or hold is smoothed
-        // from the commanded velocity, so a stop brakes instead of freezing.
-        let smooth_destination = matches!(self.activity, Activity::Stream(_) | Activity::Idle);
+        // WHY: Smooth the terminal hold from the commanded velocity so a stop brakes
+        // instead of freezing, including when completion still awaits the write.
+        let smooth_destination =
+            effects.ends_motion() || matches!(self.activity, Activity::Stream(_) | Activity::Idle);
         if smooth_destination && !policy_command {
             self.filter
                 .apply(&self.reference, interval, &mut self.next_command)?;
@@ -319,7 +330,8 @@ impl Loop<'_> {
             &self.next_command,
             &self.previous_command,
             feedback,
-        )
+        )?;
+        Ok(effects)
     }
 }
 

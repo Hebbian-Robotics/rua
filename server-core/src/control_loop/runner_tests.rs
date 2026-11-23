@@ -29,6 +29,7 @@ struct ScriptedPlant {
     readings: VecDeque<Feedback>,
     last: Feedback,
     heartbeat_fails: bool,
+    position_write_fails: bool,
     unanswered_reads: u32,
     recovery_unanswered_reads: u32,
     recovery_torque: Vec<bool>,
@@ -41,6 +42,7 @@ impl ScriptedPlant {
             last: readings[0].clone(),
             readings: readings.into(),
             heartbeat_fails: false,
+            position_write_fails: false,
             unanswered_reads: 0,
             recovery_unanswered_reads: 0,
             recovery_torque: vec![true, true],
@@ -77,6 +79,7 @@ impl Plant for ScriptedPlant {
 
     fn command(&mut self, _positions: &[f64], _seconds: f64) -> anyhow::Result<()> {
         self.calls.position_writes.fetch_add(1, Ordering::SeqCst);
+        anyhow::ensure!(!self.position_write_fails, "position write failed");
         Ok(())
     }
 
@@ -746,6 +749,112 @@ fn every_enable_reading_must_have_the_arms_finite_joint_count() {
             assert_eq!(count(&calls.enable), u32::from(invalid_stage == 3));
         }
     }
+}
+
+fn start_short_move(runner: &mut Runner<'_, ScriptedPlant>) -> String {
+    let now = Now::current();
+    let plan = hebbian_contracts::CornerPlan {
+        peak_speed: 0.5,
+        segments: vec![hebbian_contracts::Segment {
+            label: "target".into(),
+            corners: vec![vec![0.0, 0.0], vec![0.01, 0.0]],
+            minimum_duration_seconds: None,
+            target_position: None,
+            target_quaternion: None,
+        }],
+    };
+    runner
+        .state
+        .core
+        .submit_move(
+            "move",
+            plan,
+            hebbian_contracts::JointSpeed::new(0.5).unwrap(),
+            crate::arm::ShortOfTarget::default(),
+            None,
+            now,
+        )
+        .unwrap()
+        .command_id
+}
+
+fn run_motion_cycle(runner: &mut Runner<'_, ScriptedPlant>) {
+    let Begun::Pending(pending) = runner.begin_cycle(Duration::from_millis(10), None) else {
+        panic!("expected a powered control cycle");
+    };
+    runner.finish_cycle(pending, None);
+}
+
+#[test]
+fn the_completion_and_checkpoint_wait_for_the_confirming_plant_write() {
+    use hebbian_contracts::CommandOutcome;
+
+    let config = config("confirm-motion-write");
+    let completing_cycle = {
+        let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+        let link = test_link(&config);
+        let mut runner = powered_runner(&mut plant, &config, &link);
+        let command_id = start_short_move(&mut runner);
+        (1..100)
+            .find(|_| {
+                run_motion_cycle(&mut runner);
+                runner.state.core.record(&command_id).unwrap().outcome()
+                    == Some(CommandOutcome::Completed)
+            })
+            .unwrap()
+    };
+
+    for outcome in [CommandOutcome::Completed, CommandOutcome::Stopped] {
+        let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+        let link = test_link(&config);
+        let mut runner = powered_runner(&mut plant, &config, &link);
+        let command_id = start_short_move(&mut runner);
+        for _ in 1..completing_cycle {
+            run_motion_cycle(&mut runner);
+        }
+        runner.plant.position_write_fails = true;
+        run_motion_cycle(&mut runner);
+        let record = runner.state.core.record(&command_id).unwrap();
+        assert!(record.is_pending(), "{record:?}");
+        assert!(record.checkpoints.is_empty(), "{record:?}");
+
+        if outcome == CommandOutcome::Stopped {
+            runner
+                .state
+                .core
+                .submit(Command::Stop, Now::current())
+                .unwrap();
+        }
+        runner.plant.position_write_fails = false;
+        run_motion_cycle(&mut runner);
+        let record = runner.state.core.record(&command_id).unwrap();
+        assert_eq!(record.outcome(), Some(outcome));
+        assert_eq!(record.checkpoints.len(), 1);
+    }
+}
+
+#[test]
+fn a_stop_with_unconfirmed_writes_ends_as_interrupted_on_bus_loss() {
+    let config = config("unconfirmed-motion-stop");
+    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
+    let command_id = start_short_move(&mut runner);
+    run_motion_cycle(&mut runner);
+    runner
+        .state
+        .core
+        .submit(Command::Stop, Now::current())
+        .unwrap();
+    runner.plant.position_write_fails = true;
+    for _ in 0..50 {
+        run_motion_cycle(&mut runner);
+    }
+    let record = runner.state.core.record(&command_id).unwrap();
+    assert_eq!(
+        record.outcome(),
+        Some(hebbian_contracts::CommandOutcome::Interrupted)
+    );
 }
 
 #[test]
