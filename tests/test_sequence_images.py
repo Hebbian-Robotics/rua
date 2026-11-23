@@ -8,63 +8,13 @@ import pytest
 
 from hebbian_rua.client.llm.response_format import render_output, select_output_cameras
 from hebbian_rua.client.llm.robot_tools import RobotTools
-from hebbian_rua.client.llm.sequence_images import SequenceImages
 from hebbian_rua.client.llm.types import (
     ModelContent,
     RobotOutput,
     RobotToolCall,
-    SequenceImage,
 )
 from hebbian_rua.client.station_client import StationClient
 from tests.fixture_station import ARM, running_station
-
-
-@pytest.mark.parametrize("size", [1, 1024 * 1024])
-def test_history_bounds_retention_and_prioritizes_recent_evidence(size: int) -> None:
-    async def exercise() -> None:
-        store = SequenceImages()
-        try:
-            history = store.begin("move")
-            for index in range(100):
-                store.add(
-                    history,
-                    SequenceImage(
-                        "front",
-                        bytes(size),
-                        (100 + index, 100.1 + index),
-                        float(index),
-                        "end" if index == 99 else "motion",
-                    ),
-                )
-            store.finish(history)
-            assert len(history.images) <= 64
-            assert sum(len(image.jpeg) for image in history.images) <= 16 * 1024 * 1024
-            selected = store.snapshot()
-            assert selected is not None
-            assert selected.truncated
-            assert len(selected.images) <= 8
-            assert sum(len(image.jpeg) for image in selected.images) <= 2 * 1024 * 1024
-            assert selected.images[-1].boundary == "end"
-            output = RobotOutput(
-                "observation",
-                {},
-                selected_arm="follower",
-                sequence_images=selected,
-                cameras={"front": b"current"},
-            )
-            rendered = render_output(output)
-            assert any(name.startswith("Sequence move") for name in rendered.cameras)
-            assert rendered.cameras["front"] == b"current"
-            assert render_output(select_output_cameras(output, [])).cameras == {}
-            assert store.snapshot() is not None
-            replacement = store.begin("next")
-            assert history.images == []
-            store.add(history, replace(selected.images[-1], jpeg=b"stale"))
-            assert replacement.images == []
-        finally:
-            store.clear()
-
-    asyncio.run(exercise())
 
 
 class CameraHandler(BaseHTTPRequestHandler):

@@ -9,15 +9,16 @@ docs/control-model.md.
 import asyncio
 import logging
 
+from hebbian_rua.bindings._native import CommandRefused as NativeCommandRefused
+from hebbian_rua.bindings._native import HttpError
 from hebbian_rua.client.contract.station_api import ArmMode, ArmState
-from hebbian_rua.client.llm.robot_tool_rules import CapturedObservation
 from hebbian_rua.client.llm.robot_tools import (
     ArmCommunicationInterrupted,
+    CapturedObservation,
     RequiredCameraUnavailable,
     RobotTools,
 )
 from hebbian_rua.client.station_client import StationClient
-from hebbian_rua.client.station_connection import MessageRefused
 from hebbian_rua.client.station_types import LeaseLost
 
 log = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ class ArmRecoveryEnded(Exception):
 
 
 async def _wait_for_change_or_lease_loss(
-    client: StationClient, observed: tuple[object, ...]
+    client: StationClient, observed: tuple[int, int]
 ) -> None:
     change = asyncio.create_task(client.wait_for_change(observed))
     lost = asyncio.create_task(client.lease_lost.wait())
@@ -113,7 +114,8 @@ async def capture_when_ready(
                     await robot.lease.report_camera(error.camera, False)
                 except (
                     LeaseLost,
-                    MessageRefused,
+                    NativeCommandRefused,
+                    HttpError,
                     ConnectionError,
                     TimeoutError,
                 ) as report_error:
@@ -137,7 +139,8 @@ async def capture_when_ready(
             await robot.lease.report_camera(camera, True)
         except (
             LeaseLost,
-            MessageRefused,
+            NativeCommandRefused,
+            HttpError,
             ConnectionError,
             TimeoutError,
         ) as report_error:

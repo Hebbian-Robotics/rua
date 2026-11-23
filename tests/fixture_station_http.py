@@ -112,6 +112,7 @@ class ScriptedHttpStation:
         self.grant_lease = asyncio.Event()
         self.lease_released = asyncio.Event()
         self.refuse_lease = False
+        self.retained_run_records: list[dict[str, object]] = []
 
     async def handle(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -163,7 +164,7 @@ class ScriptedHttpStation:
                     "missing_optional_cameras": [],
                 }
             elif path.startswith("/run/records?"):
-                result = []
+                result = self.retained_run_records
             elif method == "POST" and path == "/leases":
                 if self.refuse_lease:
                     body = b"The lease is held by 'x'."

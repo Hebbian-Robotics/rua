@@ -635,10 +635,8 @@ name = "hebbian-rua"
 version = "0.1.4"
 source = { editable = "." }
 dependencies = [
-    { name = "httpx2" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "tenacity" },
 ]
 
 [package.optional-dependencies]
@@ -657,6 +655,7 @@ dev = [
     { name = "anthropic" },
     { name = "datamodel-code-generator" },
     { name = "google-genai" },
+    { name = "httpx2" },
     { name = "import-linter" },
     { name = "mujoco" },
     { name = "numpy" },
@@ -673,11 +672,9 @@ dev = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=2.8.0" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=3.1.0" },
-    { name = "httpx2", specifier = ">=2.16.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=3.49.0" },
     { name = "pydantic", specifier = ">=2.11" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
-    { name = "tenacity", specifier = ">=9.1.4" },
 ]
 provides-extras = ["openai", "anthropic", "gemini"]
 
@@ -686,6 +683,7 @@ dev = [
     { name = "anthropic", specifier = ">=2.8.0" },
     { name = "datamodel-code-generator", specifier = ">=0.89.0" },
     { name = "google-genai", specifier = ">=3.1.0" },
+    { name = "httpx2", specifier = ">=2.16.0" },
     { name = "import-linter", specifier = ">=2.15" },
     { name = "mujoco", specifier = ">=3.17.0" },
     { name = "numpy", specifier = ">=2" },

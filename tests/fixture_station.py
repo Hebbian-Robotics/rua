@@ -47,7 +47,7 @@ def resolve_simulator_arm(
 class StationProcess:
     def __init__(self, arguments: list[str], executable: Path) -> None:
         self.process = subprocess.Popen(
-            [str(executable), "serve", *arguments],
+            [str(executable), "serve", "--headless", *arguments],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,

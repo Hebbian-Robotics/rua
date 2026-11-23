@@ -61,6 +61,7 @@ impl Failure {
                 }
                 Error::Refused { .. }
                 | Error::Incomplete { .. }
+                | Error::FrameTooLarge(_)
                 | Error::CameraUnavailable { .. }
                 | Error::Http { .. } => 1,
             },
@@ -118,6 +119,7 @@ impl Failure {
                         put("outcome", json!(outcome));
                         put("record", json!(record));
                     }
+                    Error::FrameTooLarge(_) => put("kind", json!("frame_too_large")),
                     Error::CameraUnavailable {
                         name,
                         listed,
