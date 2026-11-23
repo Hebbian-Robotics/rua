@@ -509,11 +509,22 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
         }
     );
     assert!(client.get_state().await?.lease.is_none());
-    exported.schema_version = 99;
-    assert!(matches!(
-        client.import_compilation(&exported).await,
-        Err(Error::Http { status: 422, .. })
-    ));
+    assert_eq!(exported.schema_version, 2);
+    let mut legacy = serde_json::to_value(&exported)?;
+    legacy["schema_version"] = json!(1);
+    legacy["source"]["steps"][0]["arms"][ARM]["movement"] = serde_json::Value::Null;
+    let rejected = reqwest::Client::new()
+        .post(format!("{}/compilations/import", station.url))
+        .json(&legacy)
+        .send()
+        .await?;
+    assert_eq!(rejected.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        rejected
+            .text()
+            .await?
+            .contains("Unsupported compilation schema")
+    );
     Ok(())
 }
 

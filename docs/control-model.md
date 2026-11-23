@@ -136,9 +136,11 @@ imported = await station.import_compilation(saved)
 ```
 
 Run this after the successful-compilation branch above. Import accepts schema
-version 1 and always recompiles the saved source against this station. Saved
-operations, configuration identities and compiler versions grant no authority.
-The imported result has a new compilation ID and still requires explicit execution.
+version 2 and always recompiles the saved source against this station. For a
+version 1 export, extract `source`, omit `movement: null` on gripper-only
+actions, and compile the source to create a new export. Saved operations,
+configuration identities and compiler versions grant no authority. The imported
+result has a new compilation ID and still requires explicit execution.
 
 To continue a finished execution, compile the revised full action sequence and pass an
 explicit `ProgramContinuation(prior_execution_id=execution_id, next_step=N)` to

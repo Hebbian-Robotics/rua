@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 use crate::compiler::{CompilationTarget, RobotUseCompiler};
 use crate::control_link::LinkHandle;
 
+pub(super) const COMPILATION_SCHEMA_VERSION: u32 = 2;
+
 const MAXIMUM_RETAINED_EXECUTION_COMPILATIONS: usize = 128;
 const MAXIMUM_RETAINED_INSPECTION_COMPILATIONS: usize = 128;
 
@@ -120,7 +122,7 @@ impl ProgramStore {
         };
         let artifact = Arc::new(ProgramArtifact {
             compilation: CompilationArtifact {
-                schema_version: 1,
+                schema_version: COMPILATION_SCHEMA_VERSION,
                 compiler_version: env!("CARGO_PKG_VERSION").into(),
                 structural_compilation_seconds,
                 compilation_id: id,
@@ -278,7 +280,7 @@ impl ProgramArtifact {
             prepared_actions: &'a [crate::action_step::PreparedArmAction],
         }
         let contents = serde_json::to_vec(&PreparedStepSnapshot {
-            schema_version: 1,
+            schema_version: COMPILATION_SCHEMA_VERSION,
             compilation_id: &self.compilation.compilation_id,
             execution_id,
             source_step,
@@ -310,7 +312,7 @@ impl ProgramArtifact {
             admission_seconds: f64,
         }
         let contents = serde_json::to_vec(&StepTiming {
-            schema_version: 1,
+            schema_version: COMPILATION_SCHEMA_VERSION,
             compilation_id: &self.compilation.compilation_id,
             execution_id,
             source_step,
@@ -361,7 +363,7 @@ impl ProgramArtifact {
             return Ok(());
         };
         let contents = serde_json::to_vec(&ExecutionManifest {
-            schema_version: 1,
+            schema_version: COMPILATION_SCHEMA_VERSION,
             compilation_id: &self.compilation.compilation_id,
             execution,
         })?;
