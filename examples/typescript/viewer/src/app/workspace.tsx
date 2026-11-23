@@ -356,19 +356,19 @@ export function WorkspaceApp({
                   <summary>Add remote camera</summary>
                   <div className="grid gap-3">
                     <p className="m-0 text-sm text-muted-foreground">
-                      Create an invite on the station laptop. Open its link on
-                      your phone or scan the QR code.
+                      Create an invite on the station laptop. Phones, tablets,
+                      and laptop webcams can join the room.
                     </p>
                     <PhoneCameraSetup />
                   </div>
                 </details>
               )}
               <details className="camera-setup">
-                <summary>Set up a USB camera</summary>
+                <summary>Set up a local camera</summary>
                 <p className="m-0 text-sm text-muted-foreground">
                   Connect the wrist camera to the station. RUA uses the arm’s
                   registered wrist camera selector to find the matching device.
-                  To choose a camera yourself, run{" "}
+                  To choose another local camera, such as a built-in webcam, run{" "}
                   <code>rua camera-devices</code> on the station laptop and pass{" "}
                   <code>--camera wrist=DEVICE</code> at startup.
                 </p>

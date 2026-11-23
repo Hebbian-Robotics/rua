@@ -35,7 +35,7 @@ function connectionMessage(
 ): string {
   switch (connection) {
     case "local":
-      return "USB cameras only. Local snapshots are available from the station.";
+      return "Local cameras only. Snapshots are available from the station.";
     case "connecting":
       return "Connecting to LiveKit…";
     case "connected":

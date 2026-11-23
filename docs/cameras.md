@@ -112,7 +112,7 @@ Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
 ## Local snapshots
 
-For USB cameras only, add `--local-cameras-only` to the station’s `serve` command.
+For local cameras such as a built-in webcam or a USB camera, add `--local-cameras-only` to the station’s `serve` command.
 Phone invites and room streaming require LiveKit. The media companion captures frames directly. The CLI
 and SDKs still use the station URL for discovery and snapshots.
 
