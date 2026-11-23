@@ -57,6 +57,8 @@ fn the_openapi_document_matches_the_routers() {
     std::fs::create_dir_all(&scratch).unwrap();
     std::fs::write(scratch.join("index.html"), "viewer").unwrap();
     let settings = WebSettings {
+        viewer_directory: None,
+        local_cameras_only: false,
         recordings_directory: scratch.join("recordings"),
         enable_recording: false,
         media_address: None,

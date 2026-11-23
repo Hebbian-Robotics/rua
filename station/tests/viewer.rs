@@ -250,6 +250,8 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let scratch = scratch_directory("station");
     let media_status = hebbian_robot_use_server::media_status::MediaStatus::default();
     let settings = WebSettings {
+        viewer_directory: None,
+        local_cameras_only: false,
         recordings_directory: scratch.join("recordings"),
         enable_recording: true,
         media_address: Some("127.0.0.1:8784".parse().unwrap()),
@@ -542,4 +544,25 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     server.close();
     shutdown_requested.store(true, Ordering::Relaxed);
     loop_thread.join().unwrap();
+}
+
+#[test]
+fn viewer_startup_reports_only_missing_credentials_before_loading_the_arm() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-server"))
+        .current_dir(directory.path())
+        .env("HEBBIAN_VIEWER_DIRECTORY", directory.path())
+        .env("LIVEKIT_URL", "wss://example.invalid")
+        .env("LIVEKIT_API_KEY", "example-key")
+        .env("LIVEKIT_API_SECRET", "  ")
+        .args(["serve", "--profile", "missing-profile"])
+        .output()
+        .unwrap();
+    let message = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success());
+    assert!(message.contains("LIVEKIT_API_SECRET"));
+    assert!(message.contains(".env"));
+    assert!(!message.contains("LIVEKIT_API_KEY"));
+    assert!(!message.contains("example-key"));
+    assert!(!message.contains("--local-cameras-only"));
 }

@@ -23,7 +23,8 @@ repository lockfile.
 ## Develop the viewer
 
 From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the
-station first and add `--manual-control` to exercise manual motion in simulation.
+station first with `HEBBIAN_VIEWER_DIRECTORY="$PWD/dist/viewer"` in its environment
+so it validates the viewer configuration even during frontend development. Add `--manual-control` to exercise manual motion in simulation.
 Use `pnpm check` and `pnpm test:viewer` to check changes.
 
 - [`src/app/`](src/app/) contains the page entry points and workspace. The full
