@@ -164,7 +164,6 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
             && arm["active_trip"]
                 .as_str()
                 .is_some_and(|reason| !reason.is_empty())
-            && arm["status"] == arm["active_trip"]
     });
     overloaded.store(false, Ordering::Relaxed);
     wait_for_state(address, |state| {

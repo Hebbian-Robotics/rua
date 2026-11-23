@@ -314,8 +314,8 @@ class StationConnection:
         Commands that finish in one cycle show only the latest on that arm.
         """
         record = arm_record.record
-        finished_at = command_record_finished_at(record)
-        if self._state is None or finished_at is None:
+        finished_at_unix_nano = command_record_finished_at(record)
+        if self._state is None or finished_at_unix_nano is None:
             return False
         arm = next((arm for arm in self._state.arms if arm.arm == arm_record.arm), None)
         if arm is None or (
@@ -328,7 +328,7 @@ class StationConnection:
         last_finished_at = command_record_finished_at(arm.last_command)
         return last_finished_at is not None and (
             arm.last_command.command_id == record.command_id
-            or last_finished_at >= finished_at
+            or last_finished_at >= finished_at_unix_nano
         )
 
     def _keep_record(self, arm_record: ArmRecord) -> None:
@@ -489,7 +489,7 @@ class StationConnection:
                     ArmRecord(
                         arm=arm,
                         record=CommandRecord(
-                            accepted_at=event.accepted_at,
+                            accepted_at_unix_nano=event.accepted_at_unix_nano,
                             checkpoints=event.checkpoints,
                             command=event.command,
                             command_id=event.command_id,

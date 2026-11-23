@@ -89,7 +89,11 @@ async fn check_arm_feedback(
                     "{} is {:?} ({})",
                     sample.arm,
                     sample.mode,
-                    sample.status
+                    sample
+                        .fault
+                        .as_deref()
+                        .or(sample.active_trip.as_deref())
+                        .unwrap_or("No diagnostic detail")
                 );
                 if feedback_advanced(arm, sample) {
                     modes.push(format!("{} ({:?})", sample.arm, sample.mode));

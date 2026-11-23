@@ -218,7 +218,7 @@ fn wait_for_enable(
     panic!("Enable did not finish");
 }
 
-fn request_enable(runner: &mut Runner<'_, ScriptedPlant>) -> String {
+fn request_enable(runner: &mut Runner<'_, ScriptedPlant>) -> hebbian_contracts::CommandId {
     runner
         .state
         .arm()
@@ -798,7 +798,7 @@ fn every_enable_reading_must_have_the_arms_finite_joint_count() {
 fn start_short_move(
     runner: &mut Runner<'_, ScriptedPlant>,
     group: Option<crate::arm::GroupMembership>,
-) -> String {
+) -> hebbian_contracts::CommandId {
     let now = Now::current();
     let plan = hebbian_contracts::CornerPlan {
         peak_speed: 0.5,

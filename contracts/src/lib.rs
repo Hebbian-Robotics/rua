@@ -337,20 +337,66 @@ pub enum RecordedCommand {
         target_angle_radians: f64,
         joint_speed: f64,
         /// The joint stream that issued this jaw goal, if any.
-        stream_command_id: Option<String>,
+        stream_command_id: Option<crate::CommandId>,
     },
     #[schemars(title = "RecordedControl")]
     Control { action: ControlAction },
+}
+
+/// Station identifier for one accepted command and its subsequent records.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+#[schemars(inline)]
+pub struct CommandId(String);
+
+impl CommandId {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for CommandId {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::borrow::Borrow<str> for CommandId {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl From<String> for CommandId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for CommandId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl std::fmt::Display for CommandId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// One command, from acceptance to its end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CommandRecord {
-    pub command_id: String,
+    pub command_id: crate::CommandId,
     /// A readable description, including the originating operation's name.
     pub label: String,
-    pub accepted_at: f64,
+    pub accepted_at_unix_nano: UnixNanos,
     pub command: RecordedCommand,
     pub phase: CommandPhase,
     pub checkpoints: Vec<Checkpoint>,
@@ -447,7 +493,7 @@ pub enum NotStartedOutcome {
 /// The outcome and timestamp for a command with a known end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandCompletion {
-    pub finished_at: f64,
+    pub finished_at_unix_nano: UnixNanos,
     pub outcome: KnownCommandOutcome,
     pub detail: Option<String>,
     /// How a gripper command ended, when jaw feedback was available.
@@ -463,7 +509,7 @@ pub enum CommandPhase {
     Pending,
     #[schemars(title = "CommandNotStarted")]
     NotStarted {
-        finished_at: f64,
+        finished_at_unix_nano: UnixNanos,
         outcome: NotStartedOutcome,
         detail: Option<String>,
     },
@@ -475,7 +521,7 @@ pub enum CommandPhase {
     /// Control was interrupted and the final arm position could not be confirmed.
     #[schemars(title = "CommandOutcomeUnknown")]
     OutcomeUnknown {
-        finished_at: f64,
+        finished_at_unix_nano: UnixNanos,
         detail: Option<String>,
     },
 }
@@ -483,15 +529,15 @@ pub enum CommandPhase {
 impl CommandRecord {
     #[must_use]
     pub fn new(
-        command_id: String,
+        command_id: crate::CommandId,
         label: &str,
-        accepted_at: f64,
+        accepted_at_unix_nano: UnixNanos,
         command: RecordedCommand,
     ) -> Self {
         Self {
             command_id,
             label: label.to_owned(),
-            accepted_at,
+            accepted_at_unix_nano,
             command,
             phase: CommandPhase::Pending,
             checkpoints: Vec::new(),
@@ -513,12 +559,18 @@ impl CommandRecord {
     }
 
     #[must_use]
-    pub fn finished_at(&self) -> Option<f64> {
+    pub fn finished_at_unix_nano(&self) -> Option<UnixNanos> {
         match &self.phase {
             CommandPhase::Pending => None,
-            CommandPhase::NotStarted { finished_at, .. }
-            | CommandPhase::OutcomeUnknown { finished_at, .. } => Some(*finished_at),
-            CommandPhase::Finished { completion, .. } => Some(completion.finished_at),
+            CommandPhase::NotStarted {
+                finished_at_unix_nano,
+                ..
+            }
+            | CommandPhase::OutcomeUnknown {
+                finished_at_unix_nano,
+                ..
+            } => Some(*finished_at_unix_nano),
+            CommandPhase::Finished { completion, .. } => Some(completion.finished_at_unix_nano),
         }
     }
 
@@ -655,8 +707,6 @@ pub struct ArmState {
     pub tool: Option<PoseDescription>,
     /// Which controller turns commands into motion.
     pub controller: ControllerKind,
-    /// Why the arm is as it is, in a few words.
-    pub status: String,
     /// The pose the arm was enabled at; shutdown returns there first.
     pub rest_pose: Option<Vec<f64>>,
     pub segment: Option<String>,

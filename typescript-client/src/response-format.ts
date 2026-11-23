@@ -1,5 +1,7 @@
+import { apiSchemas } from "./generated/api-schemas.js";
 /** Readable model responses; station records retain their original SI values. */
 import {
+  modelOutcomes,
   modelOutputUnits,
   modelResponseFields,
 } from "./generated/robot-tools.js";
@@ -22,60 +24,48 @@ function scaleNumbers(value: unknown, factor: number): unknown {
   return typeof value === "number" ? rounded(value * factor, 1) : value;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function modelCommandRecord(
   record: Record<string, unknown>,
 ): Record<string, unknown> {
-  const { command, phase, ...metadata } = record;
-  if (
-    !isObject(command) ||
-    !isObject(phase) ||
-    typeof record["command_id"] !== "string"
-  )
-    return record;
-  const { kind, target_pose: pose, ...target } = command;
-  const phaseKind = phase["kind"];
-  if (
-    typeof kind !== "string" ||
-    !["pending", "not_started", "finished", "outcome_unknown"].some(
-      (known) => known === phaseKind,
-    )
-  )
-    return record;
+  if (!("command_id" in record)) return record;
+  const parsed = apiSchemas.shape.CommandRecord.safeParse(record);
+  if (!parsed.success) return record;
+  const { command, phase, ...metadata } = parsed.data;
+  const { kind, ...target } = command;
   const result: Record<string, unknown> = { ...metadata, ...target };
-  if (isObject(pose)) {
-    result["target_position"] = pose["position"];
-    result["target_quaternion"] = pose["quaternion"];
+  if (command.kind === "policy_reach") {
+    delete result["target_pose"];
+    result["target_position"] = command.target_pose.position;
+    result["target_quaternion"] = command.target_pose.quaternion;
   }
-  if (phaseKind === "finished") {
-    result["completion"] = phase["completion"];
-    result["achieved"] = phase["achieved"];
-    const completion = phase["completion"];
-    if (kind === "move" && isObject(completion)) {
-      const outcome = completion["outcome"];
-      if (outcome === "completed") {
-        const limited =
-          command["pose_limited"] != null || command["path_limited"] != null;
-        result["target_status"] = limited ? "limited" : "reached";
-      } else {
+  switch (phase.kind) {
+    case "pending":
+      break;
+    case "finished": {
+      result["completion"] = phase.completion;
+      result["achieved"] = phase.achieved;
+      if (command.kind === "move") {
+        const rule = modelOutcomes.commands[phase.completion.outcome];
         result["target_status"] =
-          outcome === "stopped_short" ? "stopped_short" : "partial";
+          command.pose_limited || command.path_limited
+            ? rule.limited_target
+            : rule.target;
       }
+      break;
     }
-  } else if (phaseKind === "not_started" || phaseKind === "outcome_unknown") {
-    result["completion"] = {
-      outcome:
-        phaseKind === "outcome_unknown" ? "interrupted" : phase["outcome"],
-      detail: phase["detail"],
-      finished_at: phase["finished_at"],
-    };
-    if (phaseKind === "not_started") {
-      if (kind === "move") result["target_status"] = "not_started";
-      else result["phase"] = "not_started";
-    }
+    case "not_started":
+    case "outcome_unknown":
+      result["completion"] = {
+        outcome:
+          phase.kind === "outcome_unknown" ? "interrupted" : phase.outcome,
+        detail: phase.detail,
+        finished_at_unix_nano: phase.finished_at_unix_nano,
+      };
+      if (phase.kind === "not_started")
+        result[kind === "move" ? "target_status" : "phase"] = "not_started";
+      break;
+    default:
+      throw new Error(`Unknown phase ${JSON.stringify(phase satisfies never)}`);
   }
   return result;
 }
@@ -107,8 +97,7 @@ function formatModelField(value: unknown, fieldName: string): unknown {
   }
   if (typeof value === "number" && !Number.isInteger(value)) {
     const timestamp =
-      fieldName.includes("unix_seconds") ||
-      ["accepted_at", "sampled_at", "finished_at"].includes(fieldName);
+      fieldName.includes("unix_seconds") || ["sampled_at"].includes(fieldName);
     return rounded(value, timestamp ? 3 : 4);
   }
   return value;

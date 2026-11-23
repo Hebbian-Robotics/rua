@@ -419,15 +419,15 @@ fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> Recorde
         span_id: digest[32..48].into(),
         parent_span_id: parent.map(|(_, span)| span),
         name: format!("{arm}: {}", record.label),
-        start_time_unix_nano: ((record.accepted_at * 1e9) as u64).to_string(),
+        start_time_unix_nano: record.accepted_at_unix_nano.0.to_string(),
         end_time_unix_nano: record
-            .finished_at()
-            .map_or_else(|| "0".to_owned(), |time| ((time * 1e9) as u64).to_string()),
+            .finished_at_unix_nano()
+            .map_or_else(|| "0".to_owned(), |time| time.0.to_string()),
         attributes: BTreeMap::from([
             ("hebbian.active".into(), record.is_pending().into()),
             ("hebbian.kind".into(), "command".into()),
             ("arm".into(), arm.into()),
-            ("command_id".into(), record.command_id.clone().into()),
+            ("command_id".into(), record.command_id.to_string().into()),
             ("outcome".into(), serde_json::json!(record.outcome())),
             (
                 "trace_context".into(),
@@ -603,9 +603,9 @@ mod tests {
     #[test]
     fn interrupted_commands_are_recorded_as_errors() -> Result<(), Box<dyn std::error::Error>> {
         let record: hebbian_contracts::CommandRecord = serde_json::from_value(serde_json::json!({
-            "command_id": "command-1", "label": "move", "accepted_at": 1.0,
+            "command_id": "command-1", "label": "move", "accepted_at_unix_nano": "1000000000",
             "command": {"kind": "joint_stream", "goal_joints": [0.1], "joint_speed": 1.0},
-            "phase": {"kind": "outcome_unknown", "finished_at": 2.0, "detail": "Disconnected"},
+            "phase": {"kind": "outcome_unknown", "finished_at_unix_nano": "2000000000", "detail": "Disconnected"},
             "checkpoints": []
         }))?;
         let span = command_span("follower", &record);
@@ -621,7 +621,7 @@ mod tests {
         let archive = RecordingArchive::create(directory.path())?;
         let mut record: hebbian_contracts::CommandRecord = serde_json::from_value(
             serde_json::json!({
-                "command_id": "command-1", "label": "move", "accepted_at": 1.25,
+                "command_id": "command-1", "label": "move", "accepted_at_unix_nano": "1250000000",
                 "phase": {"kind": "pending"},
                 "command": {"kind": "joint_stream", "goal_joints": [0.1], "joint_speed": 1.0},
                 "checkpoints": [], "trace_context": {"traceparent": "00-11111111111111111111111111111111-2222222222222222-01"}
@@ -631,7 +631,7 @@ mod tests {
             if sequence == 2 {
                 record.phase = hebbian_contracts::CommandPhase::Finished {
                     completion: hebbian_contracts::CommandCompletion {
-                        finished_at: 2.5,
+                        finished_at_unix_nano: hebbian_contracts::UnixNanos(2_500_000_000),
                         outcome: hebbian_contracts::KnownCommandOutcome::Completed,
                         detail: None,
                         gripper: None,

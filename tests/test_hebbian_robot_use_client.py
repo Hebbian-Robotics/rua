@@ -112,7 +112,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
     unfinished = CommandRecord(
         command_id="c",
         label="enable",
-        accepted_at=0.0,
+        accepted_at_unix_nano="0",
         checkpoints=[],
         command=RecordedControl(action=ControlAction.enable),
         phase=PendingCommand(),
@@ -132,7 +132,9 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
         terminal = unfinished.model_copy(
             update={
                 "phase": FinishedCommand(
-                    completion=CommandCompletion(finished_at=1.0, outcome=outcome),
+                    completion=CommandCompletion(
+                        finished_at_unix_nano="1000000000", outcome=outcome
+                    ),
                 )
             }
         )
@@ -142,7 +144,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
     interrupted = unfinished.model_copy(
         update={
             "phase": CommandOutcomeUnknown(
-                finished_at=1.0, detail="Controller connection lost"
+                finished_at_unix_nano="1000000000", detail="Controller connection lost"
             ),
         }
     )
@@ -156,12 +158,13 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
     completed = CommandRecord(
         command_id="move",
         label="move_to_pose",
-        accepted_at=0.0,
+        accepted_at_unix_nano="0",
         checkpoints=[],
         command=RecordedMove(target_joints=[0.2], joint_speed=1.0),
         phase=FinishedCommand(
             completion=CommandCompletion(
-                finished_at=1.0, outcome=KnownCommandOutcome.completed
+                finished_at_unix_nano="1000000000",
+                outcome=KnownCommandOutcome.completed,
             )
         ),
     )

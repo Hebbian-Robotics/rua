@@ -2,7 +2,6 @@
   "arm": [
     "arm",
     "mode",
-    "status",
     "fault",
     "active_trip",
     "interlocks",
@@ -23,8 +22,8 @@
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at",
-    "finished_at"
+    "accepted_at_unix_nano",
+    "finished_at_unix_nano"
   ],
   "earlier_step": [
     "label",

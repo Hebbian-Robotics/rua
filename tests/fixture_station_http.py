@@ -7,19 +7,21 @@ from typing import Any
 STATION_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def command_record(command_id: str, finished_at: float | None = None) -> dict[str, Any]:
+def command_record(
+    command_id: str, finished_at_unix_nano: float | None = None
+) -> dict[str, Any]:
     return {
         "command_id": command_id,
         "label": "enable",
-        "accepted_at": 1,
+        "accepted_at_unix_nano": "1000000000",
         "command": {"kind": "control", "action": "enable"},
         "phase": {"kind": "pending"}
-        if finished_at is None
+        if finished_at_unix_nano is None
         else {
             "kind": "finished",
             "completion": {
                 "outcome": "completed",
-                "finished_at": finished_at,
+                "finished_at_unix_nano": str(round(finished_at_unix_nano * 1e9)),
                 "detail": None,
             },
         },
@@ -71,7 +73,6 @@ def state_message(
                     "rest_pose": None,
                     "sampled_at_unix_seconds": sampled_at,
                     "segment": None,
-                    "status": "",
                     "tool": None,
                     "interlocks": [],
                     "revision": 0,

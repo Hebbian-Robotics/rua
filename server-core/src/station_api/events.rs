@@ -51,7 +51,7 @@ struct JournalState {
     next_sequence: u64,
     events: VecDeque<StationEvent>,
     snapshots: BTreeMap<SnapshotKey, StationEvent>,
-    records: VecDeque<((String, String), StationEvent)>,
+    records: VecDeque<((String, hebbian_contracts::CommandId), StationEvent)>,
 }
 
 // INVARIANT: Events and subscription are captured under one lock to avoid replay gaps.
@@ -303,9 +303,9 @@ mod tests {
 
     fn record(command_id: &str) -> Event {
         Event::Record(CommandRecord::new(
-            command_id.to_owned(),
+            command_id.into(),
             "stop",
-            0.0,
+            hebbian_contracts::UnixNanos(0),
             hebbian_contracts::RecordedCommand::Control {
                 action: hebbian_contracts::ControlAction::Stop,
             },

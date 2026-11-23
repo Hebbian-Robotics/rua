@@ -700,31 +700,28 @@ fn command_records_outcome(
     grouped: bool,
 ) -> crate::Result<RobotToolOutcome> {
     let mut payloads = Vec::with_capacity(records.len());
-    let mut limited = false;
-    let mut complete = true;
-    let mut stopped_short = false;
+    let mut targets = Vec::with_capacity(records.len());
     let group_id = records
         .first()
         .and_then(|record| record.record.group_id())
         .map(str::to_owned);
     for record in &records {
-        limited |= record.record.was_limited();
-        let outcome = record.record.outcome().map(ModelOutcome::from);
-        complete &= outcome == Some(ModelOutcome::Completed);
-        stopped_short |= outcome == Some(ModelOutcome::StoppedShort);
+        let class = record
+            .record
+            .outcome()
+            .map_or(ModelOutcome::Incomplete, ModelOutcome::from);
+        targets.push(class.target_status(record.record.was_limited()));
         payloads.push(serde_json::to_value(&record.record).map_err(|error| {
             Error::Connection(format!("cannot serialize tool result: {error}"))
         })?);
     }
-    let incomplete = limited || !complete;
+    let status = hebbian_contracts::MODEL_GROUP_STATUSES
+        .into_iter()
+        .rev()
+        .find(|status| targets.contains(status))
+        .unwrap_or(hebbian_contracts::TargetStatus::Partial);
+    let incomplete = status != hebbian_contracts::TargetStatus::Reached;
     let value = if grouped {
-        let status = if complete {
-            if limited { "limited" } else { "reached" }
-        } else if stopped_short {
-            "stopped_short"
-        } else {
-            "partial"
-        };
         serde_json::json!({ "group_id": group_id, "status": status, "commands": payloads })
     } else {
         payloads
@@ -905,7 +902,7 @@ mod outcome_tests {
             if outcome == "interrupted" {
                 record["phase"] = serde_json::json!({
                     "kind": "outcome_unknown",
-                    "finished_at": 2.0
+                    "finished_at_unix_nano": "2000000000"
                 });
             } else {
                 record["phase"]["completion"]["outcome"] = serde_json::json!(outcome);
@@ -986,7 +983,7 @@ mod outcome_tests {
                     &model
                 };
                 assert!(model_record.get("checkpoints").is_none());
-                assert!(model_record.get("accepted_at").is_none());
+                assert!(model_record.get("accepted_at_unix_nano").is_none());
                 assert_eq!(
                     model_record["target_joints_degrees"],
                     serde_json::json!([7.1])

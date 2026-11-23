@@ -151,6 +151,64 @@ fn poll_stops(pending: &mut Vec<PendingArmStop>) -> Settling {
     }
 }
 
+enum MotionPermission<'a> {
+    Held(&'a Held),
+    Unleased,
+    Interrupted,
+}
+
+impl<'a> MotionPermission<'a> {
+    fn check(
+        held: Option<&'a Held>,
+        token: Option<&str>,
+        admission: LeaseAdmission,
+        now: Instant,
+    ) -> Result<Self, Rejection> {
+        if let Some(claim) = held {
+            if matches!(
+                claim.phase,
+                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
+            ) && admission.permits_interrupted_lease()
+            {
+                return Ok(Self::Interrupted);
+            }
+            if !claim.active_at(now) {
+                return Err(Rejection {
+                    reason: RejectionReason::ArmBusy,
+                    detail: "The lease transfer has not finished; retry taking the lease"
+                        .to_owned(),
+                });
+            }
+            if !claim.is_held_by(token) {
+                return Err(Rejection {
+                    reason: RejectionReason::LeaseHeldElsewhere,
+                    detail: format!(
+                        "The lease is held by {} '{}'. Stop is always accepted; \
+                         otherwise wait for it to finish, or take the lease.",
+                        match claim.request.holder {
+                            LeaseHolder::Agent => "agent",
+                            LeaseHolder::Manual => "manual",
+                        },
+                        claim.request.label
+                    ),
+                });
+            }
+            return Ok(Self::Held(claim));
+        }
+        if token.is_some() {
+            return Err(Rejection {
+                reason: RejectionReason::LeaseHeldElsewhere,
+                detail: "The lease has ended; acquire it again".to_owned(),
+            });
+        }
+        Ok(Self::Unleased)
+    }
+
+    fn is_manual_holder(&self) -> bool {
+        matches!(self, Self::Held(claim) if claim.request.holder == LeaseHolder::Manual)
+    }
+}
+
 impl Held {
     fn status(&self, now: Instant) -> LeaseStatus {
         LeaseStatus {
@@ -1006,15 +1064,15 @@ impl Lease {
         }
         // WHY: Sample after acquiring the authority and interlock locks: contention can outlast a lease.
         let now = clock();
-        let (manual_holder, cameras_unavailable) = held.as_ref().map_or((false, false), |claim| {
-            (
-                claim.active_at(now)
-                    && claim.is_held_by(token)
-                    && claim.request.holder == LeaseHolder::Manual,
-                !claim.unavailable_cameras.is_empty(),
-            )
-        });
-        if admission.blocks_on_interlocks() && cameras_unavailable && !manual_holder {
+        let permission = MotionPermission::check(held.as_ref(), token, admission, now);
+        if admission.blocks_on_interlocks()
+            && held
+                .as_ref()
+                .is_some_and(|claim| !claim.unavailable_cameras.is_empty())
+            && !permission
+                .as_ref()
+                .is_ok_and(MotionPermission::is_manual_holder)
+        {
             return Err(Rejection {
                 reason: RejectionReason::Interlocked,
                 detail: "A camera the lease requires is unavailable. Motion resumes when it gives a fresh frame".to_owned(),
@@ -1026,42 +1084,7 @@ impl Lease {
                 detail: "The command was superseded by a stop".to_owned(),
             });
         }
-        if let Some(claim) = held.as_ref() {
-            if matches!(
-                claim.phase,
-                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
-            ) && admission.permits_interrupted_lease()
-            {
-                return Ok(act());
-            }
-            if !claim.active_at(now) {
-                return Err(Rejection {
-                    reason: RejectionReason::ArmBusy,
-                    detail: "The lease transfer has not finished; retry taking the lease"
-                        .to_owned(),
-                });
-            }
-            if !claim.is_held_by(token) {
-                return Err(Rejection {
-                    reason: RejectionReason::LeaseHeldElsewhere,
-                    detail: format!(
-                        "The lease is held by {} '{}'. Stop is always accepted; \
-                         otherwise wait for it to finish, or take the lease.",
-                        match claim.request.holder {
-                            LeaseHolder::Agent => "agent",
-                            LeaseHolder::Manual => "manual",
-                        },
-                        claim.request.label
-                    ),
-                });
-            }
-        } else if token.is_some() {
-            return Err(Rejection {
-                reason: RejectionReason::LeaseHeldElsewhere,
-                detail: "The lease has ended; acquire it again".to_owned(),
-            });
-        }
-        Ok(act())
+        permission.map(|_| act())
     }
 }
 

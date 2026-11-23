@@ -732,15 +732,64 @@ MODEL_OUTPUT_UNITS = json.loads(r"""
 
 MODEL_OUTCOMES = json.loads(r"""
 {
-  "completed": "completed",
-  "failed": "incomplete",
-  "faulted": "faulted",
-  "interrupted": "interrupted",
-  "stopped": "incomplete",
-  "stopped_short": "stopped_short",
-  "superseded": "incomplete",
-  "timed_out": "incomplete",
-  "tripped": "incomplete"
+  "commands": {
+    "completed": {
+      "class": "completed",
+      "limited_target": "limited",
+      "target": "reached"
+    },
+    "failed": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "faulted": {
+      "class": "faulted",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "interrupted": {
+      "class": "interrupted",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "pending": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "stopped": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "stopped_short": {
+      "class": "stopped_short",
+      "limited_target": "stopped_short",
+      "target": "stopped_short"
+    },
+    "superseded": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "timed_out": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "tripped": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    }
+  },
+  "status_priority": [
+    "reached",
+    "limited",
+    "partial",
+    "stopped_short"
+  ]
 }
 """)
 
@@ -749,7 +798,6 @@ MODEL_RESPONSE_FIELDS = json.loads(r"""
   "arm": [
     "arm",
     "mode",
-    "status",
     "fault",
     "active_trip",
     "interlocks",
@@ -770,8 +818,8 @@ MODEL_RESPONSE_FIELDS = json.loads(r"""
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at",
-    "finished_at"
+    "accepted_at_unix_nano",
+    "finished_at_unix_nano"
   ],
   "earlier_step": [
     "label",

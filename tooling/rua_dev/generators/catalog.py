@@ -12,7 +12,7 @@ def generate(
     context: dict,
     input_units: list[dict],
     output_units: list[list],
-    outcomes: dict[str, str],
+    outcomes: dict,
     response_fields: dict[str, list[str]],
     targets: frozenset[SdkTarget],
 ) -> None:

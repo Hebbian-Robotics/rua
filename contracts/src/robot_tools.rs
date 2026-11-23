@@ -236,6 +236,27 @@ impl From<crate::CommandOutcome> for ModelOutcome {
     }
 }
 
+/// Lowest to highest priority when combining command records into a group result.
+pub const MODEL_GROUP_STATUSES: [crate::TargetStatus; 4] = [
+    crate::TargetStatus::Reached,
+    crate::TargetStatus::Limited,
+    crate::TargetStatus::Partial,
+    crate::TargetStatus::StoppedShort,
+];
+
+impl ModelOutcome {
+    #[must_use]
+    pub fn target_status(self, limited: bool) -> crate::TargetStatus {
+        use crate::TargetStatus;
+        match self {
+            Self::Completed if limited => TargetStatus::Limited,
+            Self::Completed => TargetStatus::Reached,
+            Self::StoppedShort => TargetStatus::StoppedShort,
+            Self::Incomplete | Self::Faulted | Self::Interrupted => TargetStatus::Partial,
+        }
+    }
+}
+
 /// Fields selected by the concise model response formatter.
 #[derive(Debug, Serialize)]
 pub struct ModelResponseFields {
@@ -253,7 +274,6 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
     arm: &[
         "arm",
         "mode",
-        "status",
         "fault",
         "active_trip",
         "interlocks",
@@ -274,8 +294,8 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
         "checkpoints",
         "trace_context",
         "model_points",
-        "accepted_at",
-        "finished_at",
+        "accepted_at_unix_nano",
+        "finished_at_unix_nano",
     ],
     earlier_step: &[
         "label",

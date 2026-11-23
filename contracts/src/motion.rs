@@ -203,14 +203,14 @@ pub enum Command {
         gripper_angle: Option<JawAngle>,
         positions: Vec<f64>,
         joint_speed: Option<JointSpeed>,
-        stream_command_id: Option<String>,
+        stream_command_id: Option<crate::CommandId>,
     },
     /// Reach this tool pose with the learned policy; later goals carry the id.
     #[schemars(title = "StreamPoseCommand")]
     StreamPose {
         position: [f64; 3],
         quaternion: [f64; 4],
-        stream_command_id: Option<String>,
+        stream_command_id: Option<crate::CommandId>,
     },
     /// Reach this tool pose with the learned policy and finish: the command ends
     /// once the tool has stayed within both tolerances and the arm has come to

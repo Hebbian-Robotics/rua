@@ -557,7 +557,7 @@ impl Station {
         // came to rest. Commands that finish in one cycle show only the latest, so the
         // wait ends at that arm's last command that finished at or after this one. A lost
         // connection ends it too.
-        let finished_at = record.finished_at();
+        let finished_at_unix_nano = record.finished_at_unix_nano();
         self.shared
             .wait_for(|inner| {
                 let Some(state) = &inner.state else {
@@ -567,14 +567,15 @@ impl Station {
                 if arm
                     .active_command
                     .as_ref()
-                    .is_some_and(|active| active.command_id == command_id)
+                    .is_some_and(|active| active.command_id.as_str() == command_id)
                 {
                     return None;
                 }
                 arm.last_command
                     .as_ref()
                     .is_some_and(|last| {
-                        last.command_id == command_id || last.finished_at() >= finished_at
+                        last.command_id.as_str() == command_id
+                            || last.finished_at_unix_nano() >= finished_at_unix_nano
                     })
                     .then_some(())
             })

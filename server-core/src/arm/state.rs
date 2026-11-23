@@ -15,9 +15,9 @@ pub struct ArmCore {
     pub(super) publish: Box<dyn Fn(LoggedEvent) + Send>,
     pub(super) power: PowerState,
     pub(super) command_state: CommandState,
-    pub(super) records: HashMap<String, CommandRecord>,
-    pub(super) record_order: VecDeque<String>,
-    pub(super) last_finished: Option<String>,
+    pub(super) records: HashMap<hebbian_contracts::CommandId, CommandRecord>,
+    pub(super) record_order: VecDeque<hebbian_contracts::CommandId>,
+    pub(super) last_finished: Option<hebbian_contracts::CommandId>,
     pub(super) stream: Option<HeldStreamGoal>,
     pub(super) gripper_command: Option<GripperCommand>,
     // INVARIANT: Stop asks the jaw to hold where it is; the loop acts on it once.
@@ -173,7 +173,7 @@ impl ArmCore {
     pub(crate) fn stream_goal(&self, command_id: &str) -> Option<(&StreamGoal, Instant)> {
         self.stream
             .as_ref()
-            .filter(|stream| stream.command_id == command_id)
+            .filter(|stream| stream.command_id.as_str() == command_id)
             .map(|stream| (&stream.goal, stream.last_goal_at))
     }
 }

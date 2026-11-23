@@ -30,15 +30,6 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
         (Some(_), _) | (None, None) => ArmMode::Faulted,
         (None, Some(sample)) => sample.mode,
     };
-    let status = stale.clone().unwrap_or_else(|| {
-        sample.as_ref().map_or_else(String::new, |sample| {
-            sample
-                .fault
-                .clone()
-                .or_else(|| sample.active_trip.clone())
-                .unwrap_or_else(|| format!("{:?}", sample.mode).to_lowercase())
-        })
-    });
     let tool = sample.as_ref().and_then(|sample| {
         link.planner()
             .and_then(|planner| planner.describe(&sample.positions).ok())
@@ -79,7 +70,6 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
         recovery_issue: sample
             .as_ref()
             .and_then(|sample| sample.recovery_issue.clone()),
-        status,
         rest_pose: sample.as_ref().and_then(|sample| sample.rest_pose.clone()),
         segment: sample.as_ref().and_then(|sample| sample.segment.clone()),
         active_command: view.as_ref().and_then(|view| view.active_record.clone()),

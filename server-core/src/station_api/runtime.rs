@@ -36,12 +36,14 @@ fn prepare_step(
                 detail: format!("No arm named {arm}"),
             })?;
         let action = super::commands::prepare_compiled_action(link, arm, &commands.action)
-            .map_err(|(reason, detail)| ExecutionFailure::Preparation {
-                step: source_step,
-                arm: arm.clone(),
-                reason,
-                detail,
-            })?;
+            .map_err(
+                |crate::arm::Rejection { reason, detail }| ExecutionFailure::Preparation {
+                    step: source_step,
+                    arm: arm.clone(),
+                    reason,
+                    detail,
+                },
+            )?;
         actions.push(action);
     }
     Ok(actions)
@@ -1039,7 +1041,7 @@ mod tests {
         let mut attempted = CommandRecord::new(
             "command".into(),
             "set_gripper",
-            0.0,
+            hebbian_contracts::UnixNanos(0),
             RecordedCommand::Gripper {
                 target_angle_radians: 0.2,
                 joint_speed: 1.0,
@@ -1047,7 +1049,7 @@ mod tests {
             },
         );
         attempted.phase = CommandPhase::OutcomeUnknown {
-            finished_at: 1.0,
+            finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: Some("Canceled while moving".into()),
         };
         let mut prior = ActionSequenceRecord {
@@ -1178,7 +1180,7 @@ mod tests {
         let mut command = CommandRecord::new(
             "1".into(),
             "move_to_pose",
-            0.0,
+            hebbian_contracts::UnixNanos(0),
             RecordedCommand::PolicyReach {
                 target_pose: CommandPose {
                     position: [0.0; 3],
@@ -1189,7 +1191,7 @@ mod tests {
         assert!(!command_allows_next_step(&command));
         command.phase = CommandPhase::Finished {
             completion: CommandCompletion {
-                finished_at: 1.0,
+                finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
                 outcome: KnownCommandOutcome::Completed,
                 detail: None,
                 gripper: None,
@@ -1198,7 +1200,7 @@ mod tests {
         };
         assert!(command_allows_next_step(&command));
         command.phase = CommandPhase::OutcomeUnknown {
-            finished_at: 1.0,
+            finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: None,
         };
         assert!(!command_allows_next_step(&command));
@@ -1218,7 +1220,7 @@ mod tests {
         let mut command = CommandRecord::new(
             "1".into(),
             "move_to_pose",
-            0.0,
+            hebbian_contracts::UnixNanos(0),
             RecordedCommand::PolicyReach {
                 target_pose: CommandPose {
                     position: [0.0; 3],
@@ -1228,7 +1230,7 @@ mod tests {
         );
         command.phase = CommandPhase::Finished {
             completion: CommandCompletion {
-                finished_at: 1.0,
+                finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
                 outcome: KnownCommandOutcome::Completed,
                 detail: None,
                 gripper: None,
@@ -1268,7 +1270,7 @@ mod tests {
         ));
         assert_eq!(after_lease_loss.steps.len(), 2);
         command.phase = CommandPhase::OutcomeUnknown {
-            finished_at: 1.0,
+            finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: None,
         };
         assert_eq!(

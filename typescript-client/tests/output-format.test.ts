@@ -31,7 +31,7 @@ test("formatting views retain full history and measured progress from a failed m
       kind: "finished",
       completion: {
         outcome: "failed",
-        finished_at: 2,
+        finished_at_unix_nano: "2000000000",
         detail: "Motion failed",
         gripper: null,
       },
