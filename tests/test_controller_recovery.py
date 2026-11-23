@@ -286,13 +286,13 @@ def test_short_delay_recovers_but_a_stalled_controller_is_stopped(
             try:
                 os.kill(process_id, signal.SIGSTOP)
                 time.sleep(0.1)
-                resumed_at = time.time()
+                resumed_at = time.time_ns()
                 os.kill(process_id, signal.SIGCONT)
 
                 def fresh_state() -> bool:
                     arm = client.get("/state").json()["arms"][0]
-                    sampled_at = arm["sampled_at_unix_seconds"]
-                    return sampled_at is not None and sampled_at > resumed_at
+                    sampled_at = arm["sampled_unix_nano"]
+                    return sampled_at is not None and int(sampled_at) > resumed_at
 
                 wait_until(fresh_state, timeout=5)
                 assert controller_pid(station.process.pid) == process_id

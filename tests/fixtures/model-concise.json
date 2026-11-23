@@ -19,7 +19,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -78,7 +78,7 @@
           "last_command": {
             "command_id": "move-1",
             "label": "move_to_pose",
-            "accepted_at": 1234.56789,
+            "accepted_unix_nano": "1234567890000",
             "trace_context": {
               "trace_id": "abc",
               "span_id": "def"
@@ -121,7 +121,7 @@
               "kind": "finished",
               "completion": {
                 "outcome": "stopped_short",
-                "finished_at": 1236.123456,
+                "finished_unix_nano": "1236123456000",
                 "detail": "Object contact"
               },
               "achieved": {
@@ -191,7 +191,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -248,7 +248,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.587,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [
             -3.2,
             -104.4
@@ -309,7 +309,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -368,7 +368,7 @@
           "last_command": {
             "command_id": "move-1",
             "label": "move_to_pose",
-            "accepted_at": 1234.56789,
+            "accepted_unix_nano": "1234567890000",
             "trace_context": {
               "trace_id": "abc",
               "span_id": "def"
@@ -411,7 +411,7 @@
               "kind": "finished",
               "completion": {
                 "outcome": "stopped_short",
-                "finished_at": 1236.123456,
+                "finished_unix_nano": "1236123456000",
                 "detail": "Object contact"
               },
               "achieved": {
@@ -485,7 +485,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -546,7 +546,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.587,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [
             -3.2,
             -104.4
@@ -628,10 +628,10 @@
             "arm": "left",
             "record": {
               "command_id": "a",
-              "accepted_at": 1.5,
+              "accepted_unix_nano": "1500000000",
               "completion": {
                 "outcome": "completed",
-                "finished_at": 2.5,
+                "finished_unix_nano": "2500000000",
                 "detail": null,
                 "gripper": {
                   "kind": "stopped_short",
@@ -656,10 +656,10 @@
             "arm": "left",
             "record": {
               "command_id": "b",
-              "accepted_at": 3.5,
+              "accepted_unix_nano": "3500000000",
               "completion": {
                 "outcome": "stopped_short",
-                "finished_at": 4.5,
+                "finished_unix_nano": "4500000000",
                 "detail": "Object contact"
               },
               "achieved": {
@@ -800,7 +800,7 @@
         {
           "command_id": "move-1",
           "label": "move_to_pose",
-          "accepted_at": 1234.56789,
+          "accepted_unix_nano": "1234567890000",
           "trace_context": {
             "trace_id": "abc",
             "span_id": "def"
@@ -843,7 +843,7 @@
             "kind": "finished",
             "completion": {
               "outcome": "stopped_short",
-              "finished_at": 1236.123456,
+              "finished_unix_nano": "1236123456000",
               "detail": "Object contact"
             },
             "achieved": {

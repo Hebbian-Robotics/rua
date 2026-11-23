@@ -241,7 +241,7 @@ mod tests {
     fn span(id: &str, attributes: &serde_json::Value) -> TraceSpan {
         serde_json::from_value(serde_json::json!({
             "trace_id": "t", "span_id": id, "name": id,
-            "start_time_unix_nano": "1", "end_time_unix_nano": 2,
+            "start_time_unix_nano": "1", "end_time_unix_nano": "2",
             "attributes": attributes,
         }))
         .unwrap()

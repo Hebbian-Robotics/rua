@@ -16,7 +16,7 @@ that sent them.
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field, JsonValue, PlainSerializer
+from pydantic import Field, JsonValue
 
 from hebbian_rua.client.contract.wire_types import CamelCaseModel
 
@@ -24,13 +24,8 @@ TRACE_SPANS_TOPIC = "/trace/spans"
 # What a span is, for the viewer's lanes: run, observe, model, tool, command.
 KIND_ATTRIBUTE = "hebbian.kind"
 
-# Unix nanoseconds outgrow JavaScript's exact integers, so in JSON they are
-# decimal strings, as OTLP/JSON writes 64-bit integers; either form is read.
-UnixNanoseconds = Annotated[
-    int,
-    BeforeValidator(lambda value: int(value) if isinstance(value, str) else value),
-    PlainSerializer(str, return_type=str, when_used="json"),
-]
+# Unix nanoseconds are decimal strings on the wire, as in OTLP/JSON.
+UnixNanoseconds = Annotated[str, Field(pattern=r"^[0-9]+$")]
 HexTraceId = Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
 HexSpanId = Annotated[str, Field(pattern=r"^[0-9a-f]{16}$")]
 

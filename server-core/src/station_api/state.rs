@@ -43,10 +43,7 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
         link.planner()
             .and_then(|planner| planner.describe(&sample.positions).ok())
     });
-    let sampled_at_unix_seconds = view
-        .as_ref()
-        .and_then(|view| view.sample_received_at)
-        .map(|at| Duration::from_nanos(at.0).as_secs_f64());
+    let sampled_unix_nano = view.as_ref().and_then(|view| view.sample_received_at);
     let (interlocks, revision) = link.interlocks();
     ArmState {
         arm: arm.to_owned(),
@@ -54,7 +51,7 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
         interlocks,
         revision,
         mode,
-        sampled_at_unix_seconds,
+        sampled_unix_nano,
         measured_joints: sample
             .as_ref()
             .map(|sample| sample.positions.clone())

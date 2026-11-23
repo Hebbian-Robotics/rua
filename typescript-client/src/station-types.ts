@@ -59,7 +59,7 @@ export type TraceContext = NonNullable<
 export function commandResult(record: CommandRecord | null | undefined):
   | {
       outcome: ApiSchemas["CommandOutcome"];
-      finished_at: number;
+      finished_unix_nano: string;
       detail?: string | null;
     }
   | undefined {
@@ -75,7 +75,7 @@ export function commandResult(record: CommandRecord | null | undefined):
     case "outcome_unknown":
       return {
         outcome: "interrupted",
-        finished_at: phase.finished_at,
+        finished_unix_nano: phase.finished_unix_nano,
         detail: phase.detail,
       };
   }

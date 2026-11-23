@@ -104,7 +104,7 @@ def _model_command_record(record: dict) -> dict:
             if phase_kind == "outcome_unknown"
             else phase.get("outcome"),
             "detail": phase.get("detail"),
-            "finished_at": phase.get("finished_at"),
+            "finished_unix_nano": phase.get("finished_unix_nano"),
         }
         if phase_kind == "not_started":
             key = "target_status" if command["kind"] == "move" else "phase"
@@ -139,10 +139,7 @@ def _format_model_field(value: object, field_name: str) -> object:
         # Rounded quaternion components are normalized by station parsing on reuse.
         return _round_half_away_from_zero(
             value,
-            3
-            if "unix_seconds" in field_name
-            or field_name in {"accepted_at", "sampled_at", "finished_at"}
-            else 4,
+            3 if "unix_seconds" in field_name or field_name == "sampled_at" else 4,
         )
     return value
 
@@ -158,7 +155,7 @@ _ARM_FIELDS = {
     "interlocks",
     "recovery_issue",
     "revision",
-    "sampled_at_unix_seconds",
+    "sampled_unix_nano",
     "measured_joints",
     "tool",
     "gripper_opening",
@@ -173,8 +170,8 @@ _DIAGNOSTIC_FIELDS = {
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at",
-    "finished_at",
+    "accepted_unix_nano",
+    "finished_unix_nano",
 }
 
 

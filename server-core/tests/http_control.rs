@@ -209,10 +209,7 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let address = server.local_address();
     wait_for_state(address, |state| {
         state["arms"].as_array().is_some_and(|arms| {
-            arms.len() == 2
-                && arms
-                    .iter()
-                    .all(|arm| !arm["sampled_at_unix_seconds"].is_null())
+            arms.len() == 2 && arms.iter().all(|arm| !arm["sampled_unix_nano"].is_null())
         })
     });
     let (_, identity) = request(address, "GET", "/instance", None);

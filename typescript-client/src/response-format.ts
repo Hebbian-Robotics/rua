@@ -87,7 +87,7 @@ function modelCommandRecord(
       outcome:
         phaseKind === "outcome_unknown" ? "interrupted" : phase["outcome"],
       detail: phase["detail"],
-      finished_at: phase["finished_at"],
+      finished_unix_nano: phase["finished_unix_nano"],
     };
     if (phaseKind === "not_started") {
       if (kind === "move") result["target_status"] = "not_started";
@@ -127,8 +127,7 @@ function formatModelField(value: unknown, fieldName: string): unknown {
   }
   if (typeof value === "number" && !Number.isInteger(value)) {
     const timestamp =
-      fieldName.includes("unix_seconds") ||
-      ["accepted_at", "sampled_at", "finished_at"].includes(fieldName);
+      fieldName.includes("unix_seconds") || fieldName === "sampled_at";
     return rounded(value, timestamp ? 3 : 4);
   }
   return value;
@@ -150,7 +149,7 @@ const armFields = [
   "interlocks",
   "recovery_issue",
   "revision",
-  "sampled_at_unix_seconds",
+  "sampled_unix_nano",
   "measured_joints",
   "tool",
   "gripper_opening",
@@ -165,8 +164,8 @@ const diagnosticFields = [
   "checkpoints",
   "trace_context",
   "model_points",
-  "accepted_at",
-  "finished_at",
+  "accepted_unix_nano",
+  "finished_unix_nano",
 ];
 
 export interface ConciseOptions {

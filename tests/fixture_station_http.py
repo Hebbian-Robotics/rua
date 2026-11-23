@@ -7,19 +7,21 @@ from typing import Any
 STATION_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def command_record(command_id: str, finished_at: float | None = None) -> dict[str, Any]:
+def command_record(
+    command_id: str, finished_unix_nano: str | None = None
+) -> dict[str, Any]:
     return {
         "command_id": command_id,
         "label": "enable",
-        "accepted_at": 1,
+        "accepted_unix_nano": "1000000000",
         "command": {"kind": "control", "action": "enable"},
         "phase": {"kind": "pending"}
-        if finished_at is None
+        if finished_unix_nano is None
         else {
             "kind": "finished",
             "completion": {
                 "outcome": "completed",
-                "finished_at": finished_at,
+                "finished_unix_nano": finished_unix_nano,
                 "detail": None,
             },
         },
@@ -62,14 +64,18 @@ def state_message(
                     "controller": "ik",
                     "fault": None,
                     "gripper_opening": None,
-                    "last_command": None if last is None else command_record(last, 2),
+                    "last_command": None
+                    if last is None
+                    else command_record(last, "2000000000"),
                     "measured_joint_efforts": [],
                     "measured_joint_velocities": [],
                     "measured_joints": [],
                     "mode": mode,
                     "recovery_issue": None,
                     "rest_pose": None,
-                    "sampled_at_unix_seconds": sampled_at,
+                    "sampled_unix_nano": None
+                    if sampled_at is None
+                    else str(round(sampled_at * 1_000_000_000)),
                     "segment": None,
                     "status": "",
                     "tool": None,

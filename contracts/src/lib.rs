@@ -352,7 +352,7 @@ pub struct CommandRecord {
     pub command_id: String,
     /// A readable description, including the originating operation's name.
     pub label: String,
-    pub accepted_at: f64,
+    pub accepted_unix_nano: UnixNanos,
     pub command: RecordedCommand,
     pub phase: CommandPhase,
     pub checkpoints: Vec<Checkpoint>,
@@ -449,7 +449,7 @@ pub enum NotStartedOutcome {
 /// The outcome and timestamp for a command with a known end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CommandCompletion {
-    pub finished_at: f64,
+    pub finished_unix_nano: UnixNanos,
     pub outcome: KnownCommandOutcome,
     pub detail: Option<String>,
     /// How a gripper command ended, when jaw feedback was available.
@@ -465,7 +465,7 @@ pub enum CommandPhase {
     Pending,
     #[schemars(title = "CommandNotStarted")]
     NotStarted {
-        finished_at: f64,
+        finished_unix_nano: UnixNanos,
         outcome: NotStartedOutcome,
         detail: Option<String>,
     },
@@ -477,7 +477,7 @@ pub enum CommandPhase {
     /// Control was interrupted and the final arm position could not be confirmed.
     #[schemars(title = "CommandOutcomeUnknown")]
     OutcomeUnknown {
-        finished_at: f64,
+        finished_unix_nano: UnixNanos,
         detail: Option<String>,
     },
 }
@@ -487,13 +487,13 @@ impl CommandRecord {
     pub fn new(
         command_id: String,
         label: &str,
-        accepted_at: f64,
+        accepted_unix_nano: UnixNanos,
         command: RecordedCommand,
     ) -> Self {
         Self {
             command_id,
             label: label.to_owned(),
-            accepted_at,
+            accepted_unix_nano,
             command,
             phase: CommandPhase::Pending,
             checkpoints: Vec::new(),
@@ -515,12 +515,16 @@ impl CommandRecord {
     }
 
     #[must_use]
-    pub fn finished_at(&self) -> Option<f64> {
+    pub fn finished_unix_nano(&self) -> Option<UnixNanos> {
         match &self.phase {
             CommandPhase::Pending => None,
-            CommandPhase::NotStarted { finished_at, .. }
-            | CommandPhase::OutcomeUnknown { finished_at, .. } => Some(*finished_at),
-            CommandPhase::Finished { completion, .. } => Some(completion.finished_at),
+            CommandPhase::NotStarted {
+                finished_unix_nano, ..
+            }
+            | CommandPhase::OutcomeUnknown {
+                finished_unix_nano, ..
+            } => Some(*finished_unix_nano),
+            CommandPhase::Finished { completion, .. } => Some(completion.finished_unix_nano),
         }
     }
 
@@ -642,8 +646,8 @@ pub struct ArmState {
     #[serde(default)]
     pub base_pose: Option<BasePose>,
     pub mode: ArmMode,
-    /// When the newest sample was taken, in Unix seconds; none before the first.
-    pub sampled_at_unix_seconds: Option<f64>,
+    /// Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.
+    pub sampled_unix_nano: Option<UnixNanos>,
     pub measured_joints: Vec<f64>,
     /// Measured joint velocities in radians per second, in `measured_joints` order.
     pub measured_joint_velocities: Vec<f64>,

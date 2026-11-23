@@ -46,7 +46,7 @@ pub struct Limits {
 // CONSTRAINT: Use wall time for records and monotonic time for deadlines; callers supply both.
 #[derive(Debug, Clone, Copy)]
 pub struct Now {
-    pub unix_seconds: f64,
+    pub unix_nano: hebbian_contracts::UnixNanos,
     pub instant: Instant,
 }
 
@@ -54,9 +54,7 @@ impl Now {
     #[must_use]
     pub(crate) fn current() -> Self {
         Self {
-            unix_seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0.0, |elapsed| elapsed.as_secs_f64()),
+            unix_nano: hebbian_contracts::UnixNanos::now(),
             instant: Instant::now(),
         }
     }

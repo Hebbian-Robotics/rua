@@ -889,7 +889,7 @@ mod tests {
                     record: hebbian_contracts::CommandRecord::new(
                         command_id.clone(),
                         "stream_joints",
-                        0.0,
+                        hebbian_contracts::UnixNanos(0),
                         hebbian_contracts::RecordedCommand::JointStream {
                             goal_joints: vec![0.0],
                             joint_speed: 1.0,

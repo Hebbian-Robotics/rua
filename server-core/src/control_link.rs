@@ -750,8 +750,8 @@ struct Hub {
     // follows its completion, with its finish time. Commands can be logged out of
     // finish order (a release logs the motion it interrupted after its own record),
     // so the latest finish time wins, not the last record logged.
-    pending_finished: Option<(String, f64)>,
-    settled_last: Option<(String, f64)>,
+    pending_finished: Option<(String, UnixNanos)>,
+    settled_last: Option<(String, UnixNanos)>,
     mode: Option<(ArmMode, Option<String>)>,
     recycle_sample: Option<SyncSender<Sample>>,
     changes: Option<Arc<tokio::sync::watch::Sender<Option<ArmMode>>>>,
@@ -881,9 +881,7 @@ impl Hub {
         self.log_event(Event::ControllerUnavailable {
             reason: reason.to_owned(),
         });
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0.0, |duration| duration.as_secs_f64());
+        let now = UnixNanos::now();
         let interrupted: Vec<_> = self
             .records
             .values()
@@ -892,7 +890,7 @@ impl Hub {
             .collect();
         for mut record in interrupted {
             record.phase = hebbian_contracts::CommandPhase::OutcomeUnknown {
-                finished_at: now,
+                finished_unix_nano: now,
                 detail: Some(format!(
                     "Controller lost; command outcome and arm torque are unknown: {reason}"
                 )),
@@ -922,13 +920,13 @@ impl Hub {
                         let _ = complete.send(record.clone());
                     }
                 }
-                if let Some(finished_at) = record.finished_at()
+                if let Some(finished_unix_nano) = record.finished_unix_nano()
                     && self
                         .pending_finished
                         .as_ref()
-                        .is_none_or(|(_, pending_at)| finished_at >= *pending_at)
+                        .is_none_or(|(_, pending_at)| finished_unix_nano >= *pending_at)
                 {
-                    self.pending_finished = Some((record.command_id.clone(), finished_at));
+                    self.pending_finished = Some((record.command_id.clone(), finished_unix_nano));
                 }
                 if self
                     .records
@@ -1049,12 +1047,12 @@ mod tests {
         let first = station_state(&links).await.unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         let unchanged = station_state(&links).await.unwrap();
-        let sampled_at = first.arms[0].sampled_at_unix_seconds.unwrap();
-        assert_eq!(unchanged.arms[0].sampled_at_unix_seconds, Some(sampled_at));
+        let sampled_at = first.arms[0].sampled_unix_nano.unwrap();
+        assert_eq!(unchanged.arms[0].sampled_unix_nano, Some(sampled_at));
 
         link.publish_sample(Sample::blank());
         let next = station_state(&links).await.unwrap();
-        assert!(next.arms[0].sampled_at_unix_seconds.unwrap() > sampled_at);
+        assert!(next.arms[0].sampled_unix_nano.unwrap() > sampled_at);
         link.close();
     }
 

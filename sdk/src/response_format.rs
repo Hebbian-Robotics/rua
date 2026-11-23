@@ -35,7 +35,7 @@ const ARM_FIELDS: [&str; 12] = [
     "interlocks",
     "recovery_issue",
     "revision",
-    "sampled_at_unix_seconds",
+    "sampled_unix_nano",
     "measured_joints",
     "tool",
     "gripper_opening",
@@ -50,8 +50,8 @@ const DIAGNOSTIC_FIELDS: [&str; 11] = [
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at",
-    "finished_at",
+    "accepted_unix_nano",
+    "finished_unix_nano",
 ];
 
 fn keep_fields(object: &Map<String, Value>, kept: &[&str]) -> Map<String, Value> {
@@ -123,7 +123,7 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
                 serde_json::json!({
                     "outcome": outcome,
                     "detail": phase["detail"],
-                    "finished_at": phase["finished_at"],
+                    "finished_unix_nano": phase["finished_unix_nano"],
                 }),
             );
             if kind == "not_started" {
@@ -339,9 +339,7 @@ fn format_model_field(value: Value, field: &str) -> Value {
                 .collect(),
         ),
         Value::Number(number) if number.is_f64() => {
-            let scale = if field.contains("unix_seconds")
-                || matches!(field, "accepted_at" | "sampled_at" | "finished_at")
-            {
+            let scale = if field.contains("unix_seconds") || field == "sampled_at" {
                 1000.0
             } else {
                 10_000.0

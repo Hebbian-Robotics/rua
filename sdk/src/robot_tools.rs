@@ -161,11 +161,7 @@ impl<'a> RobotTools<'a> {
 
     /// Select independently available tools, including standalone operations.
     #[must_use]
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "Keep the public consuming builder compatible with existing callers."
-    )]
-    pub fn with_operations(mut self, operations: BTreeSet<RobotToolOperation>) -> Self {
+    pub fn with_operations(mut self, operations: &BTreeSet<RobotToolOperation>) -> Self {
         self.capabilities = hebbian_contracts::all_robot_tool_capabilities()
             .into_iter()
             .filter(|capability| operations.contains(&capability.operation()))
@@ -875,7 +871,7 @@ mod outcome_tests {
             if outcome == "interrupted" {
                 record["phase"] = serde_json::json!({
                     "kind": "outcome_unknown",
-                    "finished_at": 2.0
+                    "finished_unix_nano": "2000000000"
                 });
             } else {
                 record["phase"]["completion"]["outcome"] = serde_json::json!(outcome);
@@ -956,7 +952,7 @@ mod outcome_tests {
                     &model
                 };
                 assert!(model_record.get("checkpoints").is_none());
-                assert!(model_record.get("accepted_at").is_none());
+                assert!(model_record.get("accepted_unix_nano").is_none());
                 assert_eq!(
                     model_record["target_joints_degrees"],
                     serde_json::json!([7.1])

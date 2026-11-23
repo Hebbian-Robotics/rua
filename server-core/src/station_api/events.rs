@@ -305,7 +305,7 @@ mod tests {
         Event::Record(CommandRecord::new(
             command_id.to_owned(),
             "stop",
-            0.0,
+            hebbian_contracts::UnixNanos(0),
             hebbian_contracts::RecordedCommand::Control {
                 action: hebbian_contracts::ControlAction::Stop,
             },

@@ -91,7 +91,7 @@ impl ArmCore {
         command: RecordedCommand,
         now: Now,
     ) -> CommandRecord {
-        let mut record = CommandRecord::new(new_identifier(), label, now.unix_seconds, command);
+        let mut record = CommandRecord::new(new_identifier(), label, now.unix_nano, command);
         record.trace_context.clone_from(&self.trace_context);
         record
     }
@@ -156,7 +156,7 @@ impl ArmCore {
         };
         record.phase = match outcome.known() {
             None => CommandPhase::OutcomeUnknown {
-                finished_at: now.unix_seconds,
+                finished_unix_nano: now.unix_nano,
                 detail,
             },
             Some(KnownCommandOutcome::Failed)
@@ -170,7 +170,7 @@ impl ArmCore {
                     ) =>
             {
                 CommandPhase::NotStarted {
-                    finished_at: now.unix_seconds,
+                    finished_unix_nano: now.unix_nano,
                     outcome: NotStartedOutcome::Failed,
                     detail,
                 }
@@ -184,7 +184,7 @@ impl ArmCore {
                 };
                 CommandPhase::Finished {
                     completion: CommandCompletion {
-                        finished_at: now.unix_seconds,
+                        finished_unix_nano: now.unix_nano,
                         outcome,
                         detail,
                         gripper,
@@ -199,7 +199,7 @@ impl ArmCore {
     fn stop_before_start(&mut self, command_id: &str, detail: &str, now: Now) {
         if let Some(mut record) = self.records.get(command_id).cloned() {
             record.phase = CommandPhase::NotStarted {
-                finished_at: now.unix_seconds,
+                finished_unix_nano: now.unix_nano,
                 outcome: NotStartedOutcome::Stopped,
                 detail: Some(detail.to_owned()),
             };
@@ -234,7 +234,7 @@ impl ArmCore {
                 (Some(position), Some(quaternion))
             });
         Some(Achieved {
-            sampled_at: observed.sampled_at.unix_seconds,
+            sampled_at: observed.sampled_at.unix_nano.as_unix_seconds(),
             joint_error_radians: record.target_joints().map(|target| {
                 joints
                     .iter()

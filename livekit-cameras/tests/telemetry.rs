@@ -236,7 +236,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .kill_on_drop(true)
         .spawn()?;
     wait_for_recorded_message(&mut child, &recording, "/station/state", |_, state| {
-        state["arms"][0]["sampled_at_unix_seconds"].is_number()
+        state["arms"][0]["sampled_unix_nano"].is_string()
     })
     .await?;
     send_run_history(server.local_address()).await?;
