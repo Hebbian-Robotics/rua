@@ -469,7 +469,7 @@ mod tests {
                 &[crate::action_step::PreparedArmAction::gripper(
                     "left".into(),
                     crate::action_step::PreparedGripper {
-                        angle: 0.6,
+                        angle: hebbian_contracts::JawAngle::try_from(0.6).unwrap(),
                         joint_speed: None,
                     },
                 )],

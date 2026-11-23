@@ -51,7 +51,9 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   `set_gripper`, plus `run_arms`, `start_action_sequence`, `run_action_sequence`,
   `move_to_pose_keeping_orientation` and `rehome`. Power and the lease are independent:
   the lease can be held with the arm disabled, and a move on a disabled arm is refused
-  as `NotEnabled` with the way on.
+  as `NotEnabled` with the way on. Use `GripperOpening::try_from(0.5)?` for a
+  half-open gripper target in a direct command or stream update, and
+  `JointSpeed::new(0.5)?` for a speed of 0.5 rad/s.
 - Requests use HTTP; an event-stream task reconnects using the station cursor.
   Each command submission has a request ID that the station uses to avoid
   executing a repeated submission twice. A command's

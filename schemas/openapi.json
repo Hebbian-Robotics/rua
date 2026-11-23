@@ -1668,7 +1668,9 @@
             "additionalProperties": false,
             "properties": {
               "gripper_opening": {
-                "format": "double",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": [
                   "number",
                   "null"
@@ -1679,7 +1681,8 @@
                 "type": "string"
               },
               "max_joint_speed": {
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -1703,14 +1706,17 @@
                 "type": "string"
               },
               "max_joint_speed": {
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
                 ]
               },
               "opening": {
-                "format": "double",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": "number"
               }
             },
@@ -3248,7 +3254,8 @@
         "properties": {
           "max_joint_speed": {
             "default": null,
-            "format": "double",
+            "exclusiveMinimum": 0.0,
+            "title": "JointSpeed",
             "type": [
               "number",
               "null"
@@ -5356,7 +5363,8 @@
               "max_joint_speed": {
                 "default": null,
                 "description": "Peak joint speed in rad/s; clamped to the profile's maximum.",
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5380,7 +5388,8 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5417,7 +5426,8 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5444,9 +5454,9 @@
               "gripper_opening": {
                 "default": null,
                 "description": "The initial gripper target, 0 closed to 1 open, if the stream drives it.",
-                "format": "double",
                 "maximum": 1.0,
                 "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": [
                   "number",
                   "null"
@@ -5465,7 +5475,8 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5490,16 +5501,17 @@
               "max_joint_speed": {
                 "default": null,
                 "description": "Peak gripper speed in rad/s; uses the arm default and maximum.",
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
                 ]
               },
               "opening": {
-                "format": "double",
                 "maximum": 1.0,
                 "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": "number"
               }
             },
@@ -5607,9 +5619,9 @@
           },
           "gripper_opening": {
             "default": null,
-            "format": "double",
             "maximum": 1.0,
             "minimum": 0.0,
+            "title": "GripperOpening",
             "type": [
               "number",
               "null"

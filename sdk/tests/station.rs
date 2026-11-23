@@ -293,7 +293,7 @@ async fn a_stopped_move_is_an_incomplete_error() -> TestResult {
 
     // A slow move that a stop from another connection cuts short.
     let stopper = station.connect().await?;
-    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05));
+    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05.try_into()?));
     let stopping = async {
         // Stop once the move is the arm's active command.
         loop {
@@ -326,7 +326,7 @@ async fn a_refused_command_does_not_stop_the_holders_motion() -> TestResult {
 
     // The holder starts a slow move that is still under way when the former holder's
     // guard, whose lease was taken, probes.
-    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05));
+    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05.try_into()?));
     let probing = async {
         former
             .wait_for_state(|state| state.arms[0].active_command.is_some())
@@ -505,7 +505,7 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
     assert_eq!(
         imported.compiled.steps[0][ARM].action,
         hebbian_rua::contracts::CompiledArmAction::Gripper {
-            opening: 0.8,
+            opening: 0.8.try_into().unwrap(),
             max_joint_speed: None,
         }
     );
@@ -1305,7 +1305,7 @@ async fn a_gripper_command_reports_whether_the_jaw_arrived_or_stopped_short() ->
     let lease = within(client.acquire_lease(agent("jaw"))).await??;
     within(client.enable(ARM)).await??;
 
-    let opened = within(lease.set_gripper(ARM, 0.5, None)).await??;
+    let opened = within(lease.set_gripper(ARM, 0.5.try_into()?, None)).await??;
     if !matches!(
         opened.phase,
         hebbian_contracts::CommandPhase::Finished {
@@ -1318,7 +1318,7 @@ async fn a_gripper_command_reports_whether_the_jaw_arrived_or_stopped_short() ->
     ) {
         return Err(format!("opening should arrive: {:?}", opened.phase).into());
     }
-    let closed = within(lease.set_gripper(ARM, 0.0, None)).await??;
+    let closed = within(lease.set_gripper(ARM, 0.0.try_into()?, None)).await??;
     let hebbian_contracts::CommandPhase::Finished { completion, .. } = closed.phase else {
         return Err("the close did not finish".into());
     };

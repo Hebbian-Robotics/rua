@@ -49,27 +49,25 @@ fn hold_pose(sample: Sample) -> Result<Vec<f64>, Refusal> {
     }
 }
 
-fn jaw_angle(link: &LinkHandle, arm: &str, opening: f64) -> Result<f64, Refusal> {
-    if !(0.0..=1.0).contains(&opening) {
-        return Err(refused(
+fn jaw_angle(
+    link: &LinkHandle,
+    arm: &str,
+    opening: hebbian_contracts::GripperOpening,
+) -> Result<hebbian_contracts::JawAngle, Refusal> {
+    let gripper = link.gripper().ok_or_else(|| {
+        refused(
             RejectionReason::InvalidTarget,
-            "A gripper opening must be a finite number from 0 (closed) to 1 (open)",
-        ));
-    }
-    link.gripper()
-        .map(|gripper| gripper.angle(opening))
-        .ok_or_else(|| {
-            refused(
-                RejectionReason::InvalidTarget,
-                format!("{arm} has no gripper"),
-            )
-        })
+            format!("{arm} has no gripper"),
+        )
+    })?;
+    hebbian_contracts::JawAngle::try_from(gripper.angle(f64::from(opening)))
+        .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
 }
 
 fn planned_move(
     link: &LinkHandle,
     waypoints: &[Waypoint],
-    max_joint_speed: Option<f64>,
+    max_joint_speed: Option<hebbian_contracts::JointSpeed>,
 ) -> Result<PlannedMotion, Refusal> {
     plan_from_sample(link, latest_sample(link)?, waypoints, max_joint_speed)
 }
@@ -78,7 +76,7 @@ fn plan_from_sample(
     link: &LinkHandle,
     sample: Sample,
     waypoints: &[Waypoint],
-    max_joint_speed: Option<f64>,
+    max_joint_speed: Option<hebbian_contracts::JointSpeed>,
 ) -> Result<PlannedMotion, Refusal> {
     let planner = link.planner().ok_or_else(|| {
         refused(
@@ -93,14 +91,19 @@ fn plan_from_sample(
         .map_err(|refusal| (refusal.reason, refusal.detail))
 }
 
-fn move_command(label: &str, motion: PlannedMotion) -> Command {
-    Command::Move {
+fn planned_speed(motion: &PlannedMotion) -> Result<hebbian_contracts::JointSpeed, Refusal> {
+    hebbian_contracts::JointSpeed::new(motion.plan.peak_speed)
+        .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
+}
+
+fn move_command(label: &str, motion: PlannedMotion) -> Result<Command, Refusal> {
+    Ok(Command::Move {
         label: label.to_owned(),
-        joint_speed: motion.plan.peak_speed,
+        joint_speed: planned_speed(&motion)?,
         plan: motion.plan,
         path_limited: motion.path_limited,
         pose_limited: motion.pose_limited,
-    }
+    })
 }
 
 const POLICY_POSES_ONLY: &str = "With learned control, send one pose at a time using move_to_pose";
@@ -135,9 +138,10 @@ pub(crate) fn arm_command(
                     format!("Saved home pose: {error}"),
                 )
             })?;
-            let speed = config.max_joint_speed.min(2.0);
+            let speed = hebbian_contracts::JointSpeed::new(config.max_joint_speed.min(2.0))
+                .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))?;
             plan_from_sample(link, sample, &[Waypoint::Joints { joints }], Some(speed))
-                .map(|motion| move_command("rehome", motion))
+                .and_then(|motion| move_command("rehome", motion))
         }
         StationCommand::MoveToJoints {
             joints,
@@ -147,7 +151,7 @@ pub(crate) fn arm_command(
                 return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
             }
             planned_move(link, &[Waypoint::Joints { joints }], max_joint_speed)
-                .map(|motion| move_command("move_to_joints", motion))
+                .and_then(|motion| move_command("move_to_joints", motion))
         }
         StationCommand::MoveToPose {
             position,
@@ -170,7 +174,7 @@ pub(crate) fn arm_command(
                 }],
                 max_joint_speed,
             )
-            .map(|motion| move_command("move_to_pose", motion))
+            .and_then(|motion| move_command("move_to_pose", motion))
         }
         StationCommand::FollowPath {
             waypoints,
@@ -180,7 +184,7 @@ pub(crate) fn arm_command(
                 return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
             }
             planned_move(link, &waypoints, max_joint_speed)
-                .map(|motion| move_command("follow_path", motion))
+                .and_then(|motion| move_command("follow_path", motion))
         }
         StationCommand::StreamJoints {
             joints,
@@ -204,7 +208,9 @@ pub(crate) fn arm_command(
 }
 
 pub(super) enum StreamAdmission {
-    Start { max_joint_speed: Option<f64> },
+    Start {
+        max_joint_speed: Option<hebbian_contracts::JointSpeed>,
+    },
     Update(ControllerStreamCommand),
 }
 
@@ -212,7 +218,7 @@ pub(super) fn joint_stream(
     link: &LinkHandle,
     arm: &str,
     positions: Vec<f64>,
-    gripper_opening: Option<f64>,
+    gripper_opening: Option<hebbian_contracts::GripperOpening>,
     admission: StreamAdmission,
 ) -> Result<Command, Refusal> {
     if link.has_policy() {
@@ -261,7 +267,7 @@ pub(crate) fn plan_group_move<'a>(
             command.max_joint_speed,
         )
         .map_err(prefixed)?;
-        let joint_speed = motion.plan.peak_speed;
+        let joint_speed = planned_speed(&motion).map_err(prefixed)?;
         let PlannedMotion {
             plan,
             path_limited,

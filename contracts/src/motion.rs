@@ -9,6 +9,138 @@ use crate::{PathLimited, PoseLimited};
 /// Above this absolute normalized approach X, jaw yaw zero uses world Y.
 pub const JAW_REFERENCE_SWITCH_APPROACH_X: f64 = 0.95;
 
+/// A positive, finite joint speed in radians per second.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct JointSpeed(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidSpeed;
+
+impl std::fmt::Display for InvalidSpeed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A joint speed must be positive and finite")
+    }
+}
+
+impl std::error::Error for InvalidSpeed {}
+
+impl TryFrom<f64> for JointSpeed {
+    type Error = InvalidSpeed;
+
+    fn try_from(speed: f64) -> Result<Self, Self::Error> {
+        Self::new(speed)
+    }
+}
+
+impl From<JointSpeed> for f64 {
+    fn from(speed: JointSpeed) -> Self {
+        speed.radians_per_second()
+    }
+}
+
+impl JointSpeed {
+    /// # Errors
+    /// Refuses zero, negative, and non-finite speeds.
+    pub fn new(radians_per_second: f64) -> Result<Self, InvalidSpeed> {
+        if radians_per_second.is_finite() && radians_per_second > 0.0 {
+            Ok(Self(radians_per_second))
+        } else {
+            Err(InvalidSpeed)
+        }
+    }
+
+    /// # Errors
+    /// # Errors
+    /// Refuses invalid default or maximum speeds.
+    pub fn for_request(
+        requested: Option<Self>,
+        default: f64,
+        maximum: f64,
+    ) -> Result<Self, InvalidSpeed> {
+        let speed = match requested {
+            Some(speed) => speed,
+            None => Self::new(default)?,
+        };
+        let cap = Self::new(maximum)?;
+        Ok(Self(speed.0.min(cap.0)))
+    }
+
+    #[must_use]
+    pub fn radians_per_second(self) -> f64 {
+        self.0
+    }
+}
+
+impl JsonSchema for JointSpeed {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "JointSpeed".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"title": "JointSpeed", "type": "number", "exclusiveMinimum": 0.0})
+    }
+}
+
+/// A finite gripper joint target in radians.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct JawAngle(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidJawAngle;
+
+impl std::fmt::Display for InvalidJawAngle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A gripper goal must be finite")
+    }
+}
+
+impl std::error::Error for InvalidJawAngle {}
+
+impl TryFrom<f64> for JawAngle {
+    type Error = InvalidJawAngle;
+
+    fn try_from(radians: f64) -> Result<Self, Self::Error> {
+        if radians.is_finite() {
+            Ok(Self(radians))
+        } else {
+            Err(InvalidJawAngle)
+        }
+    }
+}
+
+impl From<JawAngle> for f64 {
+    fn from(angle: JawAngle) -> Self {
+        angle.radians()
+    }
+}
+
+impl JawAngle {
+    #[must_use]
+    pub fn radians(self) -> f64 {
+        self.0
+    }
+}
+
+impl JsonSchema for JawAngle {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "JawAngle".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        f64::json_schema(generator)
+    }
+}
+
 /// Why a command was not accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -60,7 +192,7 @@ pub enum Command {
         label: String,
         plan: CornerPlan,
         /// The speed the plan was made at, after clamping; recorded.
-        joint_speed: f64,
+        joint_speed: JointSpeed,
         path_limited: Option<PathLimited>,
         pose_limited: Option<PoseLimited>,
     },
@@ -68,9 +200,9 @@ pub enum Command {
     #[schemars(title = "StreamJointsCommand")]
     StreamJoints {
         /// The gripper's newest target, applied together with the joints.
-        gripper_angle: Option<f64>,
+        gripper_angle: Option<JawAngle>,
         positions: Vec<f64>,
-        joint_speed: Option<f64>,
+        joint_speed: Option<JointSpeed>,
         stream_command_id: Option<String>,
     },
     /// Reach this tool pose with the learned policy; later goals carry the id.
@@ -93,8 +225,8 @@ pub enum Command {
     /// Move the jaw to this angle (the URDF gripper joint's).
     #[schemars(title = "SetGripperCommand")]
     SetGripper {
-        angle: f64,
-        joint_speed: Option<f64>,
+        angle: JawAngle,
+        joint_speed: Option<JointSpeed>,
     },
 }
 

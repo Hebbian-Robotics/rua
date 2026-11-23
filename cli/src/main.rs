@@ -115,6 +115,10 @@ async fn dispatch(
             Ok(lease.rehome_with(&arm, options()).await?)
         })?),
         Command::MoveJoints { arm, joints, speed } => {
+            let speed = speed
+                .map(hebbian_rua::contracts::JointSpeed::new)
+                .transpose()
+                .map_err(|error| Failure::Usage(error.to_string()))?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
                     .move_to_joints_with(&arm, joints, speed, options())
@@ -122,6 +126,10 @@ async fn dispatch(
             })?)
         }
         Command::MovePose { arm, pose, speed } => {
+            let speed = speed
+                .map(hebbian_rua::contracts::JointSpeed::new)
+                .transpose()
+                .map_err(|error| Failure::Usage(error.to_string()))?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
                     .move_to_pose_keeping_orientation_with(
@@ -141,6 +149,8 @@ async fn dispatch(
             })?)
         }
         Command::Gripper { arm, opening } => {
+            let opening = hebbian_rua::contracts::GripperOpening::try_from(opening)
+                .map_err(|error| Failure::Usage(error.to_string()))?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
                     .set_gripper_with(&arm, opening, None, options())

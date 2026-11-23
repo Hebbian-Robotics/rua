@@ -96,7 +96,7 @@ impl Planner {
         &self,
         start: &[f64],
         waypoints: &[Waypoint],
-        requested_speed: Option<f64>,
+        requested_speed: Option<JointSpeed>,
         gripper_angle: Option<f64>,
     ) -> Result<PlannedMotion, PlanRefusal> {
         if waypoints.is_empty() {
