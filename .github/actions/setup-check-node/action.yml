@@ -7,6 +7,10 @@ runs:
     - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
       with:
         node-version-file: .nvmrc
+        package-manager-cache: false
+    - name: Attach the pnpm cache volume
+      uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
+      with:
         cache: pnpm
     - run: pnpm install --frozen-lockfile
       shell: bash
