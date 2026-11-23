@@ -6,7 +6,7 @@
 
 // SAFETY: Start the separate guard before torque goes on. If heartbeats stop it takes over the bus and supervises the hold; faults, effort, drift or the hold deadline release the arm.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -27,6 +27,8 @@ use crate::plant::{Feedback, Plant, PlantWritePermit, Reconnection};
 use crate::so101::driver::{SerialBus, Servos};
 
 const CONTROLLER_EXIT: Duration = Duration::from_secs(2);
+const BUS_TAKEOVER_GRACE: Duration = Duration::from_millis(100);
+const BUS_TAKEOVER_RETRY: Duration = Duration::from_millis(10);
 const SUPERVISOR_START: Duration = Duration::from_secs(10);
 const DETACH_WAIT: Duration = Duration::from_secs(3);
 const HEARTBEAT_READ_BUFFER_BYTES: usize = 4096;
@@ -172,6 +174,44 @@ fn kill_controller(controller_pid: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn temporary_bus_open_error(error: &anyhow::Error) -> bool {
+    let retryable_io_kind = |kind| {
+        matches!(
+            kind,
+            io::ErrorKind::WouldBlock | io::ErrorKind::ResourceBusy
+        )
+    };
+    error
+        .downcast_ref::<io::Error>()
+        .is_some_and(|error| retryable_io_kind(error.kind()))
+        || error
+            .downcast_ref::<serialport::Error>()
+            .is_some_and(|error| match error.kind() {
+                // WHY: serialport also maps failures to acquire exclusivity to NoDevice.
+                serialport::ErrorKind::NoDevice => true,
+                serialport::ErrorKind::Io(kind) => retryable_io_kind(kind),
+                serialport::ErrorKind::InvalidInput | serialport::ErrorKind::Unknown => false,
+            })
+}
+
+fn take_over_bus<A>(open_arm: &mut impl FnMut() -> anyhow::Result<A>) -> anyhow::Result<A> {
+    // SAFETY: Reparenting confirms process exit, but the OS can still be closing the
+    // exclusive descriptor. Keep taking the exclusive path and retry only briefly.
+    let deadline = Instant::now() + BUS_TAKEOVER_GRACE;
+    loop {
+        match open_arm() {
+            Err(error) if temporary_bus_open_error(&error) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(error);
+                }
+                std::thread::sleep(remaining.min(BUS_TAKEOVER_RETRY));
+            }
+            outcome => return outcome,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum GuardOutcome {
     ControllerDetached,
@@ -282,7 +322,7 @@ pub fn guard<A: GuardedArm>(
                         "Controller (pid {controller_pid}) is gone; taking over the bus"
                     ));
                 }
-                arm = Some(open_arm().context(
+                arm = Some(take_over_bus(&mut open_arm).context(
                     "Could not open the bus to take over; the arm may still be powered and is unsupervised",
                 )?);
             }

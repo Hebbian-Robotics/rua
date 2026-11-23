@@ -105,16 +105,24 @@ fn run_guard(directory: &Path) {
         .unwrap()
         .parse()
         .unwrap();
+    let mut descriptor_closing = true;
     let result = guard(
         &guard_configuration(),
         controller_pid,
         std::io::stdin(),
         || {
+            // WHY: Reproduce the busy interval observed after the controller exits.
+            if std::mem::take(&mut descriptor_closing) {
+                return Err(std::io::Error::from(std::io::ErrorKind::WouldBlock).into());
+            }
             let bus = LockedBus::open(directory)?;
             std::fs::write(directory.join("guard-acquired"), "yes")?;
             Ok(bus)
         },
     );
+    if let Err(error) = &result {
+        std::fs::write(directory.join("guard-error"), format!("{error:#}")).unwrap();
+    }
     assert!(result.is_ok(), "guard failed: {result:?}");
 }
 
@@ -151,6 +159,13 @@ fn run_controller(directory: &Path) {
         thread::sleep(Duration::from_millis(20));
     }
     let _ = guard_process.wait();
+}
+
+fn guard_acquired_bus(directory: &Path) -> bool {
+    if let Ok(error) = std::fs::read_to_string(directory.join("guard-error")) {
+        panic!("guard subprocess failed: {error}");
+    }
+    directory.join("guard-acquired").exists()
 }
 
 struct CleanupChild(Child);
@@ -221,7 +236,7 @@ fn simulated_guard_takes_over_after_controller_stalls() {
     // SAFETY: this pid is the simulated controller spawned by this test.
     assert_eq!(unsafe { libc::kill(controller_pid, libc::SIGSTOP) }, 0);
     wait_until(
-        || directory.join("guard-acquired").exists(),
+        || guard_acquired_bus(&directory),
         "guard did not take over the bus",
     );
     let status = controller
@@ -292,7 +307,7 @@ fn guard_releases_the_arm_even_when_the_stations_report_pipe_disappears() {
     // SAFETY: this pid is the simulated controller spawned by this test.
     assert_eq!(unsafe { libc::kill(controller_pid, libc::SIGSTOP) }, 0);
     wait_until(
-        || directory.join("guard-acquired").exists(),
+        || guard_acquired_bus(&directory),
         "guard did not acquire the simulated bus",
     );
     wait_until(
