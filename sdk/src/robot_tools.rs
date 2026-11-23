@@ -389,7 +389,11 @@ impl<'a> RobotTools<'a> {
         let (state, frames) = match station
             .capture_observation_http(&ObservationRequest {
                 arms: Vec::new(),
-                required_cameras: self.cameras.clone(),
+                required_cameras: self
+                    .cameras
+                    .iter()
+                    .map(|name| hebbian_contracts::SnapshotName::try_from(name.clone()))
+                    .collect::<Result<_, _>>()?,
                 optional_cameras: Vec::new(),
             })
             .await?

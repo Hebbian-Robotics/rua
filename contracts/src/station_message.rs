@@ -48,7 +48,7 @@ pub enum ClientMessage {
         label: String,
         /// Cameras the holder cannot work without.
         #[serde(default)]
-        required_cameras: Vec<String>,
+        required_cameras: Vec<crate::SnapshotName>,
         #[serde(default)]
         on_interruption: OnInterruption,
     },
@@ -61,7 +61,7 @@ pub enum ClientMessage {
         label: String,
         /// Cameras the holder cannot work without.
         #[serde(default)]
-        required_cameras: Vec<String>,
+        required_cameras: Vec<crate::SnapshotName>,
         #[serde(default)]
         on_interruption: OnInterruption,
     },
@@ -100,7 +100,7 @@ pub enum ClientMessage {
     ReportCamera {
         #[serde(default)]
         request_id: Option<String>,
-        camera: String,
+        camera: crate::SnapshotName,
         available: bool,
     },
     /// Move several arms together, answered by `command_answer`.

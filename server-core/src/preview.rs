@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use crate::arm::ReachGoal;
 use crate::config::ControllerConfig;
 use crate::control_loop::{build_guard, build_self_collision, guard_command, load_shared_robot};
-use crate::kinematics::pose_from_xyzw;
 use crate::plant::{Feedback, NoPhysicsStandIn, Plant};
 use crate::policy::{ActiveReach, PolicyRuntime, ReachStatus};
 use crate::self_collision::SelfCollisionGuard;
@@ -86,7 +85,7 @@ impl Preview {
             request.joints.len()
         );
         let interval = 1.0 / config.frequency_hertz;
-        let target = pose_from_xyzw(request.goal.position, request.goal.quaternion)?;
+        let target = request.goal.target;
         let settings = config
             .policy
             .as_ref()
@@ -201,16 +200,8 @@ impl Preview {
 }
 
 fn pose_errors(tool: &nalgebra::Isometry3<f64>, goal: &ReachGoal) -> (f64, f64) {
-    let rotation = tool.rotation;
-    let alignment = [rotation.i, rotation.j, rotation.k, rotation.w]
-        .iter()
-        .zip(goal.quaternion)
-        .map(|(a, b)| a * b)
-        .sum::<f64>()
-        .abs()
-        .min(1.0);
     (
-        (tool.translation.vector - nalgebra::Vector3::from(goal.position)).norm(),
-        2.0 * alignment.acos(),
+        (tool.translation.vector - goal.target.translation.vector).norm(),
+        tool.rotation.angle_to(&goal.target.rotation),
     )
 }

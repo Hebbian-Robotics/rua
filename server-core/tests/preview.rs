@@ -109,12 +109,10 @@ fn goal_near_start(offset: [f64; 3]) -> ReachGoal {
     let position = pose.translation.vector;
     let rotation = pose.rotation;
     ReachGoal {
-        position: [
-            position.x + offset[0],
-            position.y + offset[1],
-            position.z + offset[2],
-        ],
-        quaternion: [rotation.i, rotation.j, rotation.k, rotation.w],
+        target: nalgebra::Isometry3::from_parts(
+            (position + nalgebra::Vector3::from(offset)).into(),
+            rotation,
+        ),
         position_tolerance_meters: 0.02,
         orientation_tolerance_radians: 0.1,
     }
@@ -212,9 +210,9 @@ fn a_rehearsal_over_the_link_leaves_the_arm_and_its_records_alone() {
     let goal = goal_near_start([0.06, 0.0, 0.0]);
     let outcome = handle
         .project(
-            goal.position,
+            goal.target.translation.vector.into(),
             Some(hebbian_contracts::PoseOrientation::Quaternion {
-                quaternion: goal.quaternion,
+                quaternion: goal.target.rotation.coords.into(),
             }),
             &START,
             Some(0.0),
@@ -287,12 +285,10 @@ fn orientation_study() {
             for roll in [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0] {
                 let rotated = here.rotation * UnitQuaternion::from_scaled_axis(axis_local * roll);
                 let goal = ReachGoal {
-                    position: [
-                        here.translation.x + offset[0],
-                        here.translation.y + offset[1],
-                        here.translation.z + offset[2],
-                    ],
-                    quaternion: [rotated.i, rotated.j, rotated.k, rotated.w],
+                    target: nalgebra::Isometry3::from_parts(
+                        (here.translation.vector + nalgebra::Vector3::from(offset)).into(),
+                        rotated,
+                    ),
                     position_tolerance_meters: 0.02,
                     orientation_tolerance_radians: 0.1,
                 };
@@ -361,12 +357,10 @@ fn orientation_ignored_study() {
         let rotated = here.rotation * turn;
         for offset in [[0.04, 0.0, 0.0], [0.0, 0.0, -0.03]] {
             let goal = ReachGoal {
-                position: [
-                    here.translation.x + offset[0],
-                    here.translation.y + offset[1],
-                    here.translation.z + offset[2],
-                ],
-                quaternion: [rotated.i, rotated.j, rotated.k, rotated.w],
+                target: nalgebra::Isometry3::from_parts(
+                    (here.translation.vector + nalgebra::Vector3::from(offset)).into(),
+                    rotated,
+                ),
                 position_tolerance_meters: 0.02,
                 orientation_tolerance_radians: 0.1,
             };
@@ -422,9 +416,9 @@ fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation()
     let goal = goal_near_start([0.06, 0.0, 0.0]);
     client.command(hebbian_contracts::Command::ReachPose {
         label: "policy_move".into(),
-        position: goal.position,
+        position: goal.target.translation.vector.into(),
         orientation: hebbian_contracts::PoseOrientation::Quaternion {
-            quaternion: goal.quaternion,
+            quaternion: goal.target.rotation.coords.into(),
         },
     });
     let ended = client.read_until(|event| {

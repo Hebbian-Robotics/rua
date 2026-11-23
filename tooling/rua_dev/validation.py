@@ -25,6 +25,27 @@ def prepare_server() -> None:
 
 
 def check_rust_architecture() -> None:
+    subprocess.run(
+        [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--lib",
+            "--all-features",
+            "-p",
+            "hebbian-robot-use-core",
+            "-p",
+            "hebbian-robot-use-server",
+            "--",
+            "-A",
+            "clippy::disallowed_methods",
+        ],
+        env={
+            **os.environ,
+            "CLIPPY_CONF_DIR": str(Path("tooling/architecture/decisions").resolve()),
+        },
+        check=True,
+    )
     manifests = [
         ("server-core/Cargo.toml", "server"),
         ("station/Cargo.toml", "server"),

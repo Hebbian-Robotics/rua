@@ -115,14 +115,12 @@ impl TrackingFailure {
 
 pub(crate) fn validated_tracking_error(
     config: &ControllerConfig,
-    measured: &[f64],
+    measured: crate::motion_values::MeasuredPositions<'_>,
     commanded: &[f64],
     commanded_velocities: &[f64],
     interval_seconds: f64,
 ) -> Result<(), TrackingFailure> {
-    if !is_finite_joint_vector(measured, config.joint_count) {
-        return Err(TrackingFailure::InvalidFeedback("Invalid feedback joints"));
-    }
+    let measured = measured.as_slice();
     if !(interval_seconds.is_finite()
         && (0.0..=config.loop_deadline_seconds).contains(&interval_seconds))
     {
@@ -198,7 +196,13 @@ mod tests {
         let margin = config.tracking_static_margin_radians;
         let lag = config.tracking_following_lag_seconds;
         let past_margin = [margin + 0.01, 0.0];
-        let trip = validated_tracking_error(&config, &[0.0, 0.0], &past_margin, &at_rest, 0.01);
+        let trip = validated_tracking_error(
+            &config,
+            crate::motion_values::MeasuredPositions::new(&[0.0, 0.0], config.joint_count).unwrap(),
+            &past_margin,
+            &at_rest,
+            0.01,
+        );
         let trip = trip.unwrap_err().into_trip(
             &config,
             &crate::plant::Feedback {
@@ -226,8 +230,15 @@ mod tests {
         );
         let fast_enough = [0.01 / lag + 0.1, 0.0];
         assert!(
-            validated_tracking_error(&config, &[0.0, 0.0], &past_margin, &fast_enough, 0.01)
-                .is_ok()
+            validated_tracking_error(
+                &config,
+                crate::motion_values::MeasuredPositions::new(&[0.0, 0.0], config.joint_count)
+                    .unwrap(),
+                &past_margin,
+                &fast_enough,
+                0.01
+            )
+            .is_ok()
         );
     }
 
@@ -254,7 +265,15 @@ mod tests {
         let at_rest = [0.0; 5];
         let trips = |config: &ControllerConfig, error: f64| {
             let commanded = [error, 0.0, 0.0, 0.0, 0.0];
-            validated_tracking_error(config, &measured, &commanded, &at_rest, 0.01).is_err()
+            validated_tracking_error(
+                config,
+                crate::motion_values::MeasuredPositions::new(&measured, config.joint_count)
+                    .unwrap(),
+                &commanded,
+                &at_rest,
+                0.01,
+            )
+            .is_err()
         };
         assert!(trips(&without_policy, margin + lead - 0.01));
         assert!(!trips(&with_policy, margin + lead - 0.01));
@@ -262,16 +281,36 @@ mod tests {
     }
 
     #[test]
-    fn malformed_feedback_and_intervals_trip_instead_of_panicking() {
+    fn malformed_feedback_and_intervals_are_rejected() {
         let config = config();
         assert!(
-            validated_tracking_error(&config, &[f64::NAN, 0.0], &[0.0, 0.0], &[0.0, 0.0], 0.01)
+            crate::motion_values::MeasuredPositions::new(&[f64::NAN, 0.0], config.joint_count)
                 .is_err()
         );
-        assert!(validated_tracking_error(&config, &[0.0], &[0.0, 0.0], &[0.0, 0.0], 0.01).is_err());
+        assert!(crate::motion_values::MeasuredPositions::new(&[0.0], config.joint_count).is_err());
+        let positions =
+            crate::motion_values::MeasuredPositions::new(&[0.0, 0.0], config.joint_count).unwrap();
         assert!(
-            validated_tracking_error(&config, &[0.0, 0.0], &[0.0, 0.0], &[0.0, 0.0], 0.5).is_err()
+            validated_tracking_error(&config, positions, &[0.0, 0.0], &[0.0, 0.0], 0.5).is_err()
         );
+    }
+
+    #[test]
+    fn missing_or_nonfinite_motion_feedback_cannot_enter_the_cycle() {
+        let config = config();
+        let mut feedback = crate::plant::Feedback {
+            positions: vec![0.0; 2],
+            velocities: vec![0.0; 2],
+            efforts: vec![0.0; 2],
+            gripper_angle: Some(0.0),
+            ..Default::default()
+        };
+        assert!(feedback.validate_for_cycle(&config).is_ok());
+        feedback.velocities.pop();
+        assert!(feedback.validate_for_cycle(&config).is_err());
+        feedback.velocities.push(0.0);
+        feedback.efforts[0] = f64::NAN;
+        assert!(feedback.validate_for_cycle(&config).is_err());
     }
 
     #[test]

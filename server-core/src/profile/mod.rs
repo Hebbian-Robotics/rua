@@ -406,7 +406,14 @@ fn profile_tables(directory: &Path, name: &str, depth: usize) -> anyhow::Result<
             .into_iter()
             .map(|base| match base {
                 toml::Value::String(base) => Ok(base),
-                other => bail!("{}: extends names a non-string {other}", path.display()),
+                other @ (toml::Value::Integer(_)
+                | toml::Value::Float(_)
+                | toml::Value::Boolean(_)
+                | toml::Value::Datetime(_)
+                | toml::Value::Array(_)
+                | toml::Value::Table(_)) => {
+                    bail!("{}: extends names a non-string {other}", path.display())
+                }
             })
             .collect::<anyhow::Result<_>>()?,
         Some(other) => bail!(
@@ -542,9 +549,20 @@ fn check_rest_reference(tables: &ProfileTables) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn validate_arm_names<'a>(names: impl IntoIterator<Item = &'a str>) -> anyhow::Result<()> {
-    let mut unique_names = HashSet::new();
-    for name in names {
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ArmName(String);
+
+impl std::str::FromStr for ArmName {
+    type Err = anyhow::Error;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Self::validate(name)?;
+        Ok(Self(name.to_owned()))
+    }
+}
+
+impl ArmName {
+    fn validate(name: &str) -> anyhow::Result<()> {
         ensure!(
             !name.is_empty()
                 && name.bytes().all(|character| {
@@ -552,6 +570,19 @@ pub fn validate_arm_names<'a>(names: impl IntoIterator<Item = &'a str>) -> anyho
                 }),
             "Invalid arm name {name:?}: use letters, digits, underscores or hyphens"
         );
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+pub fn validate_arm_names<'a>(names: impl IntoIterator<Item = &'a str>) -> anyhow::Result<()> {
+    let mut unique_names = HashSet::new();
+    for name in names {
+        ArmName::validate(name)?;
         ensure!(unique_names.insert(name), "Duplicate arm name {name:?}");
     }
     Ok(())

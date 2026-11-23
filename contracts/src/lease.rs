@@ -33,7 +33,7 @@ pub struct LeaseRequest {
     pub holder: LeaseHolder,
     pub label: String,
     #[serde(default)]
-    pub required_cameras: Vec<String>,
+    pub required_cameras: Vec<crate::SnapshotName>,
     #[serde(default)]
     pub on_interruption: OnInterruption,
 }
@@ -56,7 +56,7 @@ pub struct LeaseAcquireRequest {
 #[serde(deny_unknown_fields)]
 pub struct LeaseCameraReport {
     pub lease_token: String,
-    pub camera: String,
+    pub camera: crate::SnapshotName,
     pub available: bool,
 }
 
@@ -66,7 +66,7 @@ pub struct LeaseStatus {
     pub holder: LeaseHolder,
     pub label: String,
     /// Cameras the holder cannot work without.
-    pub required_cameras: Vec<String>,
+    pub required_cameras: Vec<crate::SnapshotName>,
     pub on_interruption: OnInterruption,
     /// The lease lapses this long after its grant or last explicit renewal.
     pub expires_in_seconds: f64,

@@ -31,7 +31,7 @@ const MAX_SIMULATOR_FRAME_BYTES: usize = 8 * 1024 * 1024;
 #[derive(Clone, Default)]
 pub struct Snapshots {
     frames: CameraFrames,
-    local_status: Arc<Mutex<BTreeMap<String, CameraStatus>>>,
+    local_status: Arc<Mutex<BTreeMap<hebbian_contracts::CameraName, CameraStatus>>>,
     socket: Option<PathBuf>,
 }
 #[derive(Deserialize)]
@@ -43,7 +43,11 @@ struct SocketReply {
 }
 
 impl Snapshots {
-    pub fn start(names: Vec<String>, socket: Option<PathBuf>, room: Option<String>) -> Self {
+    pub fn start(
+        names: Vec<hebbian_contracts::CameraName>,
+        socket: Option<PathBuf>,
+        room: Option<String>,
+    ) -> Self {
         let snapshots = Self {
             frames: CameraFrames::default(),
             local_status: Arc::new(Mutex::new(
@@ -198,7 +202,7 @@ async fn list(State(state): State<Snapshots>) -> Json<Vec<hebbian_contracts::Cam
         .unwrap_or_else(PoisonError::into_inner)
         .keys()
     {
-        names.insert(name.clone(), false);
+        names.insert(name.to_string(), false);
     }
     let now = Instant::now();
     for track in state.frames.tracks() {
@@ -267,7 +271,11 @@ mod tests {
     #[tokio::test]
     async fn an_expected_camera_that_never_publishes_is_listed_unavailable()
     -> Result<(), Box<dyn std::error::Error>> {
-        let snapshots = Snapshots::start(vec!["wrist".into()], None, None);
+        let snapshots = Snapshots::start(
+            vec![hebbian_contracts::CameraName::try_from("wrist").unwrap()],
+            None,
+            None,
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let router = snapshots.router();

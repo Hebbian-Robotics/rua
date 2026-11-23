@@ -406,7 +406,7 @@ mod tests {
                 let feedback = plant.read_feedback().unwrap();
                 if validated_tracking_error(
                     &config,
-                    &feedback.positions,
+                    feedback.measured_positions(&config).unwrap(),
                     &previous,
                     &velocity,
                     interval,

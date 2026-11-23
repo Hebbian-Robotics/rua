@@ -175,7 +175,7 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
         let config_path = directory.join(format!("{arm}.json"));
         write_config(&config_path, &config)?;
         arms.push(ConfiguredArm {
-            name: arm,
+            name: arm.parse()?,
             config,
             config_path,
         });

@@ -180,7 +180,9 @@ impl StationSession {
                     std::iter::repeat_n(action.arm().to_owned(), action.record_count())
                 })
                 .collect(),
-            _ => vec![arm.clone()],
+            ControllerRequest::ControlHandoffReadiness
+            | ControllerRequest::CancelCommand { .. }
+            | ControllerRequest::Submit { .. } => vec![arm.clone()],
         };
         active.pending.insert(
             request_id,

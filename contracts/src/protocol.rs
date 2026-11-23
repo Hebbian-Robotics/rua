@@ -4,8 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArmMode, ArmRecoveryIssue, CommandRecord, CornerPlan, IkResult, JointSpeed, LeaseAnswer,
-    PathLimited, PlannedMotion, PoseDescription, PoseLimited, PoseProjection, RejectionReason,
+    ArmMode, ArmRecoveryIssue, CommandRecord, CornerPlan, JointSpeed, PathLimited, PoseLimited,
     UnixNanos,
 };
 
@@ -82,8 +81,7 @@ impl Sample {
     }
 }
 
-/// One line from the controller: a log event with its sequence number, or an
-/// unsequenced sample or reply.
+/// One line from the controller: a sequenced log event or an unsequenced feedback frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Frame {
     /// Present on log events only; numbers rise by one with no gaps.
@@ -112,30 +110,6 @@ impl Frame {
 pub enum Event {
     #[schemars(title = "State")]
     State(Sample),
-    /// The one answer to a request that carried a request id: the command's
-    /// record when it was accepted, or the reason it was not.
-    #[schemars(title = "Reply")]
-    Reply {
-        request_id: String,
-        accepted: bool,
-        record: Option<CommandRecord>,
-        /// The records of a grouped move, one per arm in the order asked; empty
-        /// for any other request.
-        #[serde(default)]
-        records: Vec<CommandRecord>,
-        /// The plan a `plan_motion` made.
-        plan: Option<Box<PlannedMotion>>,
-        /// The answer to a `project_pose`.
-        projection: Option<Box<PoseProjection>>,
-        /// The answer to a `describe_pose`.
-        description: Option<Box<PoseDescription>>,
-        /// How a `solve_pose` ended.
-        ik: Option<Box<IkResult>>,
-        /// The answer to a request about the lease.
-        lease: Option<Box<LeaseAnswer>>,
-        reason: Option<RejectionReason>,
-        detail: Option<String>,
-    },
     /// The answer to `snapshot`, and to `subscribe` when events were lost.
     #[schemars(title = "SnapshotTaken")]
     Snapshot {
@@ -187,7 +161,7 @@ impl Event {
     #[must_use]
     pub fn is_logged(&self) -> bool {
         match self {
-            Self::State(_) | Self::Reply { .. } | Self::Snapshot { .. } => false,
+            Self::State(_) | Self::Snapshot { .. } => false,
             Self::Resync { .. }
             | Self::Record(_)
             | Self::Mode { .. }

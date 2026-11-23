@@ -101,6 +101,10 @@ for phone controls and custom hosting.
 
 ## Check a camera from the CLI
 
+LiveKit camera names use 1–40 lowercase ASCII letters, digits or underscores.
+Simulator snapshots use `sim_` followed by the renderer's view name. Use the
+name returned by the camera list for snapshot, observation and lease requests.
+
 With the station running, list available camera names and save a JPEG:
 
 ```sh

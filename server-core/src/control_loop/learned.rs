@@ -3,7 +3,6 @@
 use super::activity::{Activity, Loop};
 use super::trajectory::MotionOutput;
 use crate::arm::ReachGoal;
-use crate::kinematics::pose_from_xyzw;
 use crate::limits::Trip;
 use crate::plant::Feedback;
 use crate::policy::{ActiveReach, ReachStatus};
@@ -11,6 +10,7 @@ use anyhow::Context;
 use hebbian_contracts::CommandOutcome;
 use nalgebra::Isometry3;
 
+#[derive(Clone, Copy)]
 pub(super) enum PolicySession {
     Continue,
     Reset,
@@ -24,19 +24,6 @@ pub(super) struct PolicyRequest {
 pub(super) enum MotionPlan {
     ReferenceReady(MotionOutput),
     Infer(PolicyRequest),
-}
-
-impl PolicyRequest {
-    pub(super) fn new(
-        session: PolicySession,
-        position: [f64; 3],
-        quaternion: [f64; 4],
-    ) -> Result<Self, Trip> {
-        Ok(Self {
-            session,
-            target: pose_from_xyzw(position, quaternion).map_err(policy_failure)?,
-        })
-    }
 }
 
 pub(super) fn policy_failure(error: anyhow::Error) -> Trip {
@@ -96,13 +83,15 @@ impl Loop<'_> {
             }
         }
         let goal = active.goal();
-        PolicyRequest::new(PolicySession::Continue, goal.position, goal.quaternion)
-            .map(MotionPlan::Infer)
+        Ok(MotionPlan::Infer(PolicyRequest {
+            session: PolicySession::Continue,
+            target: goal.target,
+        }))
     }
 
     pub(super) fn adopt_policy_target(&mut self, joint_goal: &[f64]) -> MotionOutput {
         if let Activity::Stream(stream) = &mut self.activity {
-            stream.policy_engaged = true;
+            stream.policy_session = PolicySession::Continue;
         }
         self.reference
             .set_at_rest(joint_goal, Some(self.config.max_joint_speed));

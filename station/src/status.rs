@@ -1,7 +1,7 @@
 use std::{path::PathBuf, process::Stdio, time::Duration};
 
 use anyhow::{Context, Result, ensure};
-use hebbian_contracts::{ArmState, CameraName, RoomAccess, StationState};
+use hebbian_contracts::{ArmState, RoomAccess, SnapshotName, StationState};
 use reqwest::{Client, StatusCode, Url, header};
 use serde::Deserialize;
 use tokio::{io::AsyncWriteExt, process::Command, time::Instant};
@@ -16,7 +16,9 @@ pub(crate) async fn check(
     media_server: Option<&Url>,
     camera: Option<&str>,
 ) -> Result<()> {
-    let camera = camera.map(CameraName::try_from).transpose()?;
+    let camera = camera
+        .map(|name| SnapshotName::try_from(name.to_owned()))
+        .transpose()?;
     let client = Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
@@ -32,7 +34,7 @@ pub(crate) async fn check(
         async {
             let camera = camera?;
             let result =
-                check_camera(&client, server, media_server.unwrap_or(server), camera).await;
+                check_camera(&client, server, media_server.unwrap_or(server), &camera).await;
             Some((camera, result))
         },
         check_livekit(&client, server),
@@ -120,7 +122,7 @@ async fn check_camera(
     client: &Client,
     station: &Url,
     media: &Url,
-    name: CameraName<'_>,
+    name: &SnapshotName,
 ) -> Result<String> {
     let url = endpoint(media, &["cameras", name.as_str()])?;
     let response = client.get(url).send().await?;
@@ -142,7 +144,7 @@ async fn check_camera(
     Ok("fresh snapshot available".to_owned())
 }
 
-async fn camera_problem(client: &Client, station: &Url, name: CameraName<'_>) -> Option<String> {
+async fn camera_problem(client: &Client, station: &Url, name: &SnapshotName) -> Option<String> {
     use hebbian_contracts::MediaStatusReport;
 
     let url = endpoint(station, &["viewer", "api", "media-status"]).ok()?;
