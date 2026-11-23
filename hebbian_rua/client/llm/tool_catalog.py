@@ -1,18 +1,12 @@
 """Compose the Rust-owned action schema and constrain its execution interface."""
 
 from collections.abc import Callable, Iterable, Sequence
-from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import TypeAdapter
 
-from hebbian_rua.client.contract.station_api import (
-    ActionSequenceGripper,
-    ActionSequenceMove,
-    ActionSequenceStep,
-)
-from hebbian_rua.client.llm.tools import ROBOT_TOOLS, ActionSequenceInput
+from hebbian_rua.bindings import _native
 from hebbian_rua.client.llm.types import RobotToolSpec
 
 SequenceAction = Literal["pose", "joints", "gripper"]
@@ -25,11 +19,6 @@ RobotToolName = Literal[
     "stop",
     "observe",
 ]
-
-
-class SingleArmInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    steps: list[ActionSequenceMove | ActionSequenceGripper] = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -105,9 +94,9 @@ def all_robot_tool_capabilities() -> tuple[RobotToolCapability, ...]:
     name_adapter = TypeAdapter(StandaloneToolName)
     return tuple(
         ActionSequenceTool()
-        if tool.name == "action_sequence"
-        else StandaloneTool(name_adapter.validate_python(tool.name))
-        for tool in ROBOT_TOOLS
+        if name == "action_sequence"
+        else StandaloneTool(name_adapter.validate_python(name))
+        for name in _native.tool_names()
     )
 
 
@@ -164,142 +153,23 @@ def filter_sequence_actions(
     return transform
 
 
-def _schema_object(value: JsonValue, *path: str) -> dict[str, JsonValue]:
-    for property_name in path:
-        if not isinstance(value, dict):
-            raise ValueError(f"Expected schema object before {property_name!r}")
-        value = value[property_name]
-    if not isinstance(value, dict):
-        raise ValueError(f"Expected schema object at {path!r}")
-    return value
-
-
-def _schema_list(value: JsonValue) -> list[JsonValue]:
-    if not isinstance(value, list):
-        raise ValueError("Expected a list in the generated tool schema")
-    return value
-
-
-def select_configurations(
-    goal: dict[str, JsonValue], configuration: RobotToolConfiguration
-) -> JsonValue:
-    variants = _schema_list(goal.get("oneOf", [goal]))
-    available = [
-        variant
-        for variant in variants
-        if (
-            "joints"
-            if "joints_degrees" in _schema_object(variant, "properties")
-            else "pose"
-        )
-        in configuration.sequence_actions
-    ]
-    return available[0] if len(available) == 1 else {"oneOf": available}
+def native_configuration(configuration: RobotToolConfiguration) -> dict[str, object]:
+    scope = configuration.sequence_scope
+    return {
+        "tools": configuration.tools,
+        "actions": sorted(configuration.sequence_actions),
+        "arms": scope.arms if isinstance(scope, NamedArmSequence) else None,
+    }
 
 
 def create_robot_tool_catalog(
     configuration: RobotToolConfiguration | Sequence[RobotToolCapability] | None = None,
 ) -> list[RobotToolSpec]:
     if configuration is None:
-        configuration = default_robot_tool_mapping(all_robot_tool_capabilities())
-    if not isinstance(configuration, RobotToolConfiguration):
+        configuration = RobotToolConfiguration()
+    elif not isinstance(configuration, RobotToolConfiguration):
         configuration = configuration_from_capabilities(configuration)
-    specifications_by_name = {tool.name: tool for tool in ROBOT_TOOLS}
-    if any(name not in specifications_by_name for name in configuration.tools):
-        raise ValueError("Unknown tool in catalog configuration")
-    catalog = []
-    for name in configuration.tools:
-        tool = specifications_by_name[name]
-        schema = deepcopy(tool.parameters_schema)
-        if tool.name == "action_sequence":
-            steps = _schema_object(schema, "properties", "steps")
-            action = _schema_object(steps, "items")
-            properties = _schema_object(action, "properties")
-            if configuration.sequence_actions & {"pose", "joints"}:
-                properties["goal"] = select_configurations(
-                    _schema_object(properties, "goal"), configuration
-                )
-                point = _schema_object(properties, "waypoints", "items", "properties")
-                point["at"] = select_configurations(
-                    _schema_object(point, "at"), configuration
-                )
-                if "gripper" not in configuration.sequence_actions:
-                    point.pop("gripper_opening", None)
-            else:
-                properties.pop("goal", None)
-                properties.pop("waypoints", None)
-            if "gripper" not in configuration.sequence_actions:
-                properties.pop("gripper_opening", None)
-            action["anyOf"] = [
-                requirement
-                for requirement in _schema_list(action["anyOf"])
-                if all(
-                    isinstance(name, str) and name in properties
-                    for name in _schema_list(_schema_object(requirement)["required"])
-                )
-            ]
-            if isinstance(configuration.sequence_scope, NamedArmSequence):
-                steps["items"] = {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["arms"],
-                    "properties": {
-                        "arms": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "minProperties": 1,
-                            "properties": {
-                                arm: deepcopy(action)
-                                for arm in configuration.sequence_scope.arms
-                            },
-                        }
-                    },
-                }
-        catalog.append(RobotToolSpec(tool.name, tool.description, schema))
-    return catalog
-
-
-def parse_sequence_arguments(
-    arguments: object, configuration: RobotToolConfiguration, selected_arm: str
-) -> ActionSequenceInput:
-    if isinstance(configuration.sequence_scope, SingleArmSequence):
-        # Parse through the canonical action model, then supply the implicit arm.
-        single = SingleArmInput.model_validate(arguments)
-        parsed = ActionSequenceInput(
-            steps=[
-                ActionSequenceStep(arms={selected_arm: action})
-                for action in single.steps
-            ]
-        )
-    else:
-        parsed = ActionSequenceInput.model_validate(arguments)
-    for step in parsed.steps:
-        if not step.arms:
-            raise ValueError("A step needs at least one arm")
-        for arm, action in step.arms.items():
-            if (
-                isinstance(configuration.sequence_scope, NamedArmSequence)
-                and arm not in configuration.sequence_scope.arms
-            ):
-                raise ValueError(f"Arm {arm} is not available in this sequence")
-            if (
-                isinstance(action, ActionSequenceMove)
-                and (
-                    action.goal.kind not in configuration.sequence_actions
-                    or any(
-                        point.at.kind not in configuration.sequence_actions
-                        or (
-                            point.gripper_opening is not None
-                            and "gripper" not in configuration.sequence_actions
-                        )
-                        for point in action.waypoints or []
-                    )
-                )
-            ) or (
-                action.gripper_opening is not None
-                and "gripper" not in configuration.sequence_actions
-            ):
-                raise ValueError(
-                    "This action is not available in the configured sequence"
-                )
-    return parsed
+    return [
+        RobotToolSpec(tool["name"], tool["description"], tool["parameters"])
+        for tool in _native.tool_catalog(native_configuration(configuration))
+    ]

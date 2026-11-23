@@ -48,7 +48,8 @@ impl Default for ConnectOptions {
 }
 
 /// What a command carries beyond its arm and body.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct CommandOptions {
     /// The operation identity to use for retries, status, and cancellation.
     pub operation_id: Option<uuid::Uuid>,
@@ -61,7 +62,7 @@ pub struct CommandOptions {
 }
 
 /// What a client asks for when it acquires or takes the lease on every arm.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct LeaseRequest {
     pub holder: LeaseHolder,
     pub label: String,
@@ -95,7 +96,7 @@ impl Drop for AbortOnDrop {
 #[derive(Clone)]
 pub struct Station {
     pub(crate) shared: Arc<Shared>,
-    _reader: Arc<AbortOnDrop>,
+    reader: Arc<AbortOnDrop>,
     pub(crate) http: reqwest::Client,
     pub(crate) server: String,
     pub(crate) media_server: String,
@@ -122,6 +123,17 @@ impl Station {
     pub async fn connect_with(
         options: ConnectOptions,
     ) -> Result<(Self, broadcast::Receiver<RunUpdate>)> {
+        let (station, run_updates) = Self::open(options)?;
+        station.wait_until_connected().await?;
+        Ok((station, run_updates))
+    }
+
+    /// Start the event reader on the current Tokio runtime. Call
+    /// `wait_until_connected` to await the first handshake.
+    ///
+    /// # Errors
+    /// The server URL is invalid or the HTTP client could not be built.
+    pub fn open(options: ConnectOptions) -> Result<(Self, broadcast::Receiver<RunUpdate>)> {
         let url = reqwest::Url::parse(&options.server)
             .map_err(|error| Error::Connection(error.to_string()))?;
         if !matches!(url.scheme(), "http" | "https") {
@@ -129,45 +141,61 @@ impl Station {
                 "expected an http:// or https:// URL".into(),
             ));
         }
-        let url = options.server.trim_end_matches('/').to_owned();
+        let mut server = options.server;
+        server.truncate(server.trim_end_matches('/').len());
         let media_server = if options.media_server.is_empty() {
-            url.clone()
+            server.clone()
         } else {
             options.media_server.trim_end_matches('/').to_owned()
         };
-        let shared = Arc::new(Shared::new(url, options.run_after));
+        let shared = Arc::new(Shared::new(server.clone(), options.run_after));
         let run_updates = shared.subscribe_run();
         let task = Arc::clone(&shared);
         let reader = tokio::spawn(async move { task.keep_connected().await });
         let station = Self {
             shared,
-            _reader: Arc::new(AbortOnDrop(reader)),
+            reader: Arc::new(AbortOnDrop(reader)),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()?,
-            server: options.server.trim_end_matches('/').to_owned(),
+            server,
             media_server,
         };
+        Ok((station, run_updates))
+    }
+
+    /// Stop the event reader for this station and its clones.
+    pub fn close_event_stream(&self) {
+        self.reader.0.abort();
+    }
+
+    /// Wait for the first usable stream handshake.
+    ///
+    /// # Errors
+    /// The initial connection failed or the connection deadline elapsed.
+    pub async fn wait_until_connected(&self) -> Result<()> {
         // A refused connection fails at once; a slow one gets CONNECT_TIMEOUT.
         let connected = tokio::time::timeout(
             CONNECT_TIMEOUT,
-            station.shared.wait_for(|inner| {
+            self.shared.wait_for(|inner| {
                 if inner.connected {
                     Some(Ok(()))
-                } else {
+                } else if inner.connection_generation == 0 {
                     inner.last_error.clone().map(Err)
+                } else {
+                    None
                 }
             }),
         )
         .await
-        .map_err(|_| Error::Connection(format!("no connection to {}", station.shared.url)))?;
+        .map_err(|_| Error::Connection(format!("no connection to {}", self.shared.url)))?;
         connected.map_err(|error| {
             Error::Connection(format!(
                 "no station answered at {}: {error}. Check that `serve` is running and the station URL and port are right",
-                station.shared.url
+                self.shared.url
             ))
         })?;
-        Ok((station, run_updates))
+        Ok(())
     }
 
     /// The station's latest state: pushed ten times a second, so this is cached.
@@ -200,6 +228,36 @@ impl Station {
         )
         .await
         .map_err(|_| Error::Timeout("the awaited station state"))
+    }
+
+    /// Current state frame and reconnect generation, captured under one lock.
+    #[must_use]
+    pub fn observation_cursor(&self) -> (u64, u64) {
+        self.shared
+            .read(|inner| (inner.state_count, inner.connection_generation))
+    }
+
+    /// Wait until a state frame arrives or the connection drops.
+    pub async fn wait_for_observation(&self, cursor: (u64, u64)) {
+        self.shared
+            .wait_for(|inner| {
+                ((inner.state_count, inner.connection_generation) != cursor).then_some(())
+            })
+            .await;
+    }
+
+    /// Wait for the next sequence snapshot after a caller's last revision.
+    pub async fn next_sequence(&self, revision: u64) -> (u64, Option<ActionSequenceRecord>) {
+        self.shared
+            .wait_for(|inner| {
+                (inner.action_sequence_revision > revision).then(|| {
+                    (
+                        inner.action_sequence_revision,
+                        inner.action_sequence.clone(),
+                    )
+                })
+            })
+            .await
     }
 
     /// Who holds the lease now, if anyone.
@@ -533,11 +591,34 @@ impl Station {
         completed(finished.record)
     }
 
+    /// Run one of the station's power or recovery commands.
+    ///
+    /// # Errors
+    /// Motion requires a lease. Other failures are reported by the station.
+    pub async fn run_station_command(
+        &self,
+        arm: &str,
+        command: StationCommand,
+        options: CommandOptions,
+    ) -> Result<CommandRecord> {
+        match command {
+            StationCommand::Enable
+            | StationCommand::Disable
+            | StationCommand::Stop
+            | StationCommand::ClearFault
+            | StationCommand::ApproveRecovery => self.run_with(arm, command, options).await,
+            _ => Err(Error::Refused {
+                reason: RejectionReason::LeaseHeldElsewhere,
+                detail: "Motion requires a lease guard".into(),
+            }),
+        }
+    }
+
     /// Wait for a command's record to finish, across reconnects.
     ///
     /// # Errors
     /// [`Error::Connection`] when the station stays unreachable for 30 s.
-    async fn wait_for_outcome(&self, command_id: &str) -> Result<CommandRecord> {
+    pub async fn wait_for_outcome(&self, command_id: &str) -> Result<CommandRecord> {
         let finished = self.shared.wait_for(|inner| {
             inner
                 .record(command_id)
@@ -770,7 +851,10 @@ pub struct LeaseGuard {
 }
 
 impl LeaseGuard {
-    pub(crate) async fn run_with_lease(
+    ///
+    /// # Errors
+    /// The lease is stale, the station refused the command, or the command did not complete.
+    pub async fn run_with_lease(
         &self,
         arm: &str,
         command: StationCommand,
@@ -806,7 +890,10 @@ impl LeaseGuard {
         Ok(finished)
     }
 
-    pub(crate) async fn run_arms_records(
+    ///
+    /// # Errors
+    /// The station refused the group or the connection failed before all outcomes arrived.
+    pub async fn run_arms_records(
         &self,
         command: MoveArmsCommand,
         options: CommandOptions,
@@ -934,7 +1021,10 @@ impl LeaseGuard {
             .await
     }
 
-    async fn submit_compiled_sequence(
+    ///
+    /// # Errors
+    /// The compilation or lease is no longer valid, or the station refused admission.
+    pub async fn submit_compiled_sequence(
         &self,
         compilation_id: &str,
         expected_revisions: BTreeMap<String, u64>,
@@ -1067,21 +1157,12 @@ impl LeaseGuard {
     /// Resolves when the lease was taken, revoked, returned for an
     /// interruption, lapsed, or the connection dropped.
     pub async fn lost(&self) {
-        let mut lost = self.station.lease_lost();
-        loop {
-            let lease_was_lost = *lost.borrow_and_update();
-            if lease_was_lost
-                || self
-                    .station
-                    .shared
-                    .read(|inner| inner.lease_state.token() != Some(self.lease_token.as_str()))
-            {
-                return;
-            }
-            if lost.changed().await.is_err() {
-                return;
-            }
-        }
+        self.station
+            .shared
+            .wait_for(|inner| {
+                (inner.lease_state.token() != Some(self.lease_token.as_str())).then_some(())
+            })
+            .await;
     }
 
     /// Report whether a camera the lease requires gives frames; a fresh frame
@@ -1134,17 +1215,36 @@ impl LeaseGuard {
     /// The arms keep doing what they were told.
     ///
     /// # Errors
-    /// Returns an error if the release request fails. Dropping the guard then
-    /// makes a best-effort background retry.
-    pub async fn return_lease(self) -> Result<()> {
+    /// Returns an error if the release request fails. The local lease is cleared
+    /// and a single best-effort release retry runs in the background.
+    pub async fn return_lease(&self) -> Result<()> {
         self.renewal.abort();
-        self.station
+        let result = self
+            .station
             .release_lease_http(&LeaseToken {
                 lease_token: self.lease_token.clone(),
             })
-            .await?;
+            .await;
         self.clear_local_lease();
-        Ok(())
+        match result {
+            Ok(()) | Err(Error::Http { status: 409, .. }) => Ok(()),
+            Err(error) => {
+                self.release_in_background();
+                Err(error)
+            }
+        }
+    }
+
+    fn release_in_background(&self) {
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let station = self.station.clone();
+            let token = LeaseToken {
+                lease_token: self.lease_token.clone(),
+            };
+            runtime.spawn(async move {
+                let _ = station.release_lease_http(&token).await;
+            });
+        }
     }
 
     fn clear_local_lease(&self) -> bool {
@@ -1157,15 +1257,8 @@ impl LeaseGuard {
 impl Drop for LeaseGuard {
     fn drop(&mut self) {
         self.renewal.abort();
-        let holding = self.clear_local_lease();
-        if holding && let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            let station = self.station.clone();
-            let token = LeaseToken {
-                lease_token: self.lease_token.clone(),
-            };
-            runtime.spawn(async move {
-                let _ = station.release_lease_http(&token).await;
-            });
+        if self.clear_local_lease() {
+            self.release_in_background();
         }
     }
 }

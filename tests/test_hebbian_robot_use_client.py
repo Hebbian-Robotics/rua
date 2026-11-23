@@ -34,20 +34,16 @@ from hebbian_rua.client.station_types import CameraUnavailable
 from tests.fixture_station import ARM, running_station
 
 
-def test_close_releases_http_clients_when_connection_close_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_closing_a_client_ends_its_telemetry_stream() -> None:
     async def exercise() -> None:
         client = StationClient("http://127.0.0.1:9")
-
-        async def fail_close() -> None:
-            raise RuntimeError("connection close failed")
-
-        monkeypatch.setattr(client._connection, "close", fail_close)
-        with pytest.raises(RuntimeError, match="connection close failed"):
-            await client.close()
-        assert client._api._station.is_closed
-        assert client._api._media.is_closed
+        telemetry = client.run_telemetry()
+        pending = asyncio.create_task(anext(telemetry, None))
+        await asyncio.sleep(0)
+        await client.close()
+        assert await asyncio.wait_for(pending, 2) is None
+        with pytest.raises(ConnectionError):
+            await client.state()
 
     asyncio.run(exercise())
 
@@ -81,13 +77,7 @@ def test_enable_move_and_stop_round_trip(server_binary: Path) -> None:
         asyncio.run(exercise())
 
 
-def test_an_unreachable_station_fails_on_the_first_call(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "hebbian_rua.client.station_connection.CONNECT_TIMEOUT_SECONDS", 0.5
-    )
-
+def test_an_unreachable_station_fails_on_the_first_call() -> None:
     async def exercise() -> None:
         async with StationClient("http://127.0.0.1:9") as client:
             with pytest.raises(ConnectionError, match=r"127\.0\.0\.1:9"):
@@ -117,11 +107,11 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
         command=RecordedControl(action=ControlAction.enable),
         phase=PendingCommand(),
     )
-    assert CommandResult.of(unfinished).outcome is ResultOutcome.UNFINISHED
+    assert CommandResult(unfinished).outcome is ResultOutcome.UNFINISHED
     refused = CommandRefused(
         reason=RejectionReason.not_enabled, detail="enable it first"
     )
-    rejected = CommandResult.of(refused)
+    rejected = CommandResult(refused)
     assert rejected.outcome is ResultOutcome.REJECTED
     assert not rejected.completed
     assert "not_enabled" in (rejected.detail or "")
@@ -138,7 +128,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
                 )
             }
         )
-        result = CommandResult.of(terminal)
+        result = CommandResult(terminal)
         assert result.outcome is expected
         assert result.completed == (expected is ResultOutcome.COMPLETED)
     interrupted = unfinished.model_copy(
@@ -148,7 +138,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
             ),
         }
     )
-    result = CommandResult.of(interrupted)
+    result = CommandResult(interrupted)
     assert result.outcome.value == "interrupted"
     assert not result.completed
     assert result.detail == "Controller connection lost"
@@ -168,8 +158,8 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
             )
         ),
     )
-    assert CommandResult.of(completed).completed
-    assert not CommandResult.of(completed).was_limited
+    assert CommandResult(completed).completed
+    assert not CommandResult(completed).was_limited
     limits = [
         {"path_limited": PathLimited(reason="self-collision")},
         {
@@ -187,10 +177,10 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
         record = completed.model_copy(
             update={"command": completed.command.model_copy(update=limit)}
         )
-        result = CommandResult.of(record)
+        result = CommandResult(record)
         assert result.completed
         assert result.was_limited
-    refused = CommandResult.of(
+    refused = CommandResult(
         CommandRefused(reason=RejectionReason.not_enabled, detail="enable it first")
     )
     assert not refused.completed

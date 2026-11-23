@@ -84,8 +84,6 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
     repository.mkdir()
     (repository / "pyproject.toml").write_text(
         '[project]\nname = "hebbian-rua"\nversion = "0.1.0"\n'
-        '[build-system]\nrequires = ["uv_build>=0.13.6,<0.14"]\n'
-        'build-backend = "uv_build"\n'
     )
     (repository / "hebbian_rua").mkdir()
     (repository / "hebbian_rua/__init__.py").write_text("")
@@ -132,7 +130,14 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
             b"media executable",
         )
     output_directory = tmp_path / "dist"
-    release = assemble_bundle(repository, server_wheel, media_wheel, output_directory)
+    sdk_wheel = tmp_path / "hebbian_rua-0.1.0-cp312-abi3-linux_x86_64.whl"
+    with ZipFile(sdk_wheel, "w") as archive:
+        archive.writestr(
+            "hebbian_rua-0.1.0.dist-info/WHEEL", "Tag: cp312-abi3-linux_x86_64\n"
+        )
+    release = assemble_bundle(
+        repository, sdk_wheel, server_wheel, media_wheel, output_directory
+    )
     previous_release = release.read_bytes()
     with ZipFile(release) as archive:
         assert (
@@ -153,6 +158,8 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
             b"conflicting executable",
         )
     with pytest.raises(ValueError, match="Conflicting bundled wheel file"):
-        assemble_bundle(repository, server_wheel, media_wheel, output_directory)
+        assemble_bundle(
+            repository, sdk_wheel, server_wheel, media_wheel, output_directory
+        )
     assert release.read_bytes() == previous_release
     assert list(output_directory.iterdir()) == [release]

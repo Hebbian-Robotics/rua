@@ -22,9 +22,7 @@ exclude = [
     "**/sdk/**",
     "**/generated/**",
     "**/station_api.py",
-    "**/http_routes.py",
     "**/arm_commands.py",
-    "**/generated_robot_tools.py",
 ]
 
 [public_interface]

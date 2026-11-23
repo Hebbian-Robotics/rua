@@ -41,6 +41,9 @@ pub enum Error {
         listed: Vec<CameraListing>,
         last_error: Option<String>,
     },
+    /// The camera frame exceeds the requested in-memory limit.
+    #[error("camera response exceeds maximum of {0} bytes")]
+    FrameTooLarge(usize),
     /// An HTTP route answered with an error status.
     #[error("HTTP {status}: {body}")]
     Http { status: u16, body: String },

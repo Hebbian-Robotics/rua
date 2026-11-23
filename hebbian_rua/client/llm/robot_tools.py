@@ -4,36 +4,20 @@ import asyncio
 from base64 import b64decode
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import copy, deepcopy
-from dataclasses import replace
-from math import degrees
-from typing import Self, assert_never
-from uuid import uuid4
+from dataclasses import dataclass, field, replace
+from typing import Self
 
+from pydantic import TypeAdapter
+
+from hebbian_rua.bindings import _native
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceRequest,
-    ArmMode,
     ObservationAnswer1,
     ObservationRequest,
-    PosePreviewCandidate,
+    StationState,
 )
-from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_CONTEXT
 from hebbian_rua.client.llm.response_format import (
     default_formatter,
-    model_response,
     result_from_data,
-)
-from hebbian_rua.client.llm.robot_tool_rules import (
-    CapturedObservation,
-    RobotToolRules,
-    command_results,
-    model_record_outcome,
-)
-from hebbian_rua.client.llm.robot_tool_rules import (
-    records_result as records_result,
-)
-from hebbian_rua.client.llm.sequence_images import (
-    SequenceImages,
-    capture_sequence_images,
 )
 from hebbian_rua.client.llm.tool_catalog import (
     RobotToolConfiguration,
@@ -43,16 +27,7 @@ from hebbian_rua.client.llm.tool_catalog import (
     configuration_from_capabilities,
     create_robot_tool_catalog,
     default_robot_tool_mapping,
-)
-from hebbian_rua.client.llm.tools import (
-    ActionSequenceInput,
-    ArmGripperInput,
-    MoveArmsInput,
-    ObserveInput,
-    PreviewPoseInput,
-    RehomeInput,
-    RobotToolInput,
-    StopInput,
+    native_configuration,
 )
 from hebbian_rua.client.llm.types import (
     OutputFormatter,
@@ -67,8 +42,8 @@ from hebbian_rua.client.station_client import (
     CameraJpeg,
     Lease,
     StationClient,
+    _command_options,
 )
-from hebbian_rua.client.station_connection import MessageRefused
 
 type CallWrapper = Callable[
     [RobotToolCall, Callable[[], Awaitable[RobotToolResult]]],
@@ -86,7 +61,16 @@ class ArmCommunicationInterrupted(Exception):
     """An arm observation is unavailable until communication recovers."""
 
 
-class RobotTools(RobotToolRules):
+@dataclass(frozen=True)
+class CapturedObservation:
+    observation: RobotObservation
+    captures: dict[str, CameraJpeg] = field(default_factory=dict)
+
+
+_history = TypeAdapter(SequenceImageHistory | None)
+
+
+class RobotTools:
     """Model tools backed by the async station client."""
 
     def __init__(
@@ -104,7 +88,6 @@ class RobotTools(RobotToolRules):
         if len(set(names)) != len(names):
             raise ValueError(f"Camera names repeat: {names}")
         self._output_formatter: OutputFormatter = default_formatter
-        self._sequence_images = SequenceImages()
         self.station = station
         self.lease = lease
         self.arm = arm
@@ -119,6 +102,9 @@ class RobotTools(RobotToolRules):
             )
         )
         self._catalog = create_robot_tool_catalog(self.configuration)
+        self._native = _native.NativeTools(
+            lease._guard, arm, self.cameras, self.optional_cameras
+        ).configured(native_configuration(self.configuration))
 
     def map_tools(self, transform: ToolTransformation) -> Self:
         """Return a capability view sharing this connection, lease and output formatter."""
@@ -130,6 +116,7 @@ class RobotTools(RobotToolRules):
         mapped = copy(self)
         mapped.configuration = configuration
         mapped._catalog = catalog
+        mapped._native = self._native.configured(native_configuration(configuration))
         return mapped
 
     def with_output_formatter(self, formatter: OutputFormatter) -> Self:
@@ -145,23 +132,7 @@ class RobotTools(RobotToolRules):
 
     async def context(self) -> dict[str, object]:
         """Return factual conventions and the current station's robot description."""
-        state = await self.station.state()
-        return {
-            "conventions": dict(ROBOT_TOOL_CONTEXT),
-            "profile": state.robot,
-            "description": state.description,
-            "joint_names": list(state.joint_names),
-            "arms": [
-                {"name": arm.arm, "has_gripper": arm.gripper_opening is not None}
-                for arm in state.arms
-            ],
-            "max_joint_speed_degrees_per_second": degrees(state.max_joint_speed),
-            "jaw_closing_axis": state.jaw_closing_axis.value,
-            "surface_guard": model_response(state.surface_guard.model_dump(mode="json"))
-            if state.surface_guard is not None
-            else None,
-            "model_result_units": "Fields ending in _mm use millimeters and fields ending in _degrees use degrees; speeds use degrees per second in both inputs and outputs.",
-        }
+        return await self._native.context()
 
     @property
     def tools(self) -> list[RobotToolSpec]:
@@ -176,7 +147,7 @@ class RobotTools(RobotToolRules):
 
     def sequence_images(self) -> SequenceImageHistory | None:
         """Selected images from the latest sequence, available for five minutes."""
-        return self._sequence_images.snapshot()
+        return _history.validate_python(self._native.history())
 
     async def observe(self, note: str = "") -> RobotObservation:
         return (await self.capture(note)).observation
@@ -264,15 +235,32 @@ class RobotTools(RobotToolRules):
                 if started:
                     raise RuntimeError("A tool wrapper may run its call only once")
                 started = True
-                parsed = self.parse(current_call)
-                if isinstance(parsed, RobotToolResult):
-                    return parsed
-                try:
-                    return await self._execute_individual(
-                        current_call, parsed, revisions
-                    )
-                except MessageRefused as refusal:
-                    return result_from_data(current_call, refusal.detail, is_error=True)
+                outcome = await self._native.execute(
+                    current_call.call_id,
+                    current_call.name,
+                    current_call.arguments,
+                    _command_options(revisions),
+                )
+                history = _history.validate_python(outcome["sequence_images"])
+                data = outcome["data"]
+                observed_revisions = None
+                if (
+                    current_call.name == "observe"
+                    and isinstance(data, dict)
+                    and "arms" in data
+                ):
+                    state = StationState.model_validate(data)
+                    observed_revisions = {arm.arm: arm.revision for arm in state.arms}
+                return result_from_data(
+                    current_call,
+                    data,
+                    is_error=outcome["is_error"],
+                    halt=outcome["halt"],
+                    interrupted=outcome["interrupted"],
+                    cameras=outcome["cameras"] if history is None else None,
+                    sequence_images=history,
+                    observed_revisions=observed_revisions,
+                )
 
             return await wrap(call, run) if wrap is not None else await run()
 
@@ -324,116 +312,6 @@ class RobotTools(RobotToolRules):
             )
         return formatted_results
 
-    async def _execute_individual(
-        self,
-        call: RobotToolCall,
-        tool_input: RobotToolInput,
-        expected_revisions: Mapping[str, int],
-    ) -> RobotToolResult:
-        expected_revision = expected_revisions.get(self.arm)
-        match tool_input:
-            case PreviewPoseInput(poses=poses):
-                candidates = [
-                    PosePreviewCandidate(id=str(uuid4()), pose=candidate.pose)
-                    for candidate in poses
-                ]
-                response = await self.station.preview_poses(self.arm, candidates)
-                answers_by_id = {
-                    candidate.id: candidate.answer for candidate in response.results
-                }
-                return result_from_data(
-                    call,
-                    {
-                        "results": [
-                            {
-                                "answer": answers_by_id[candidate.id].model_dump(
-                                    mode="json"
-                                )
-                            }
-                            for candidate in candidates
-                        ]
-                    },
-                    is_error=False,
-                )
-            case ObserveInput():
-                return await self._observe_tool(call, tool_input)
-            case MoveArmsInput():
-                records = await self.lease.move_arms(
-                    tool_input,
-                    expected_revisions=dict(expected_revisions),
-                )
-                return command_results(call, records, grouped=True)
-            case ArmGripperInput(arm=arm, opening=opening, max_joint_speed=speed):
-                record = await self.lease.arm(arm).set_gripper(
-                    opening,
-                    max_joint_speed=speed,
-                    expected_revision=expected_revisions.get(arm),
-                )
-                return command_results(call, [record], grouped=False)
-            case StopInput():
-                record = await self.station._run(self.arm, tool_input)
-                return command_results(call, [record], grouped=False)
-            case RehomeInput():
-                record = await self.lease.arm(self.arm).rehome(
-                    expected_revision=expected_revision
-                )
-                return command_results(call, [record], grouped=False)
-            case ActionSequenceInput(steps=steps):
-                async with capture_sequence_images(
-                    self._sequence_images,
-                    call.call_id,
-                    [*self.cameras, *self.optional_cameras],
-                    self.station,
-                ) as set_sequence_id:
-                    sequence_id = await self.lease.start_action_sequence(
-                        ActionSequenceRequest(
-                            steps=steps,
-                            expected_revisions=dict(expected_revisions),
-                        )
-                    )
-                    set_sequence_id(sequence_id)
-                    return await self._action_sequence_result(call, sequence_id)
-
-            case _ as unreachable:
-                assert_never(unreachable)
-
-    async def _observe_tool(
-        self, call: RobotToolCall, request: ObserveInput
-    ) -> RobotToolResult:
-        await asyncio.sleep(request.wait_seconds)
-        if request.source == "last_sequence":
-            history = self.sequence_images()
-            if history is None:
-                return result_from_data(
-                    call,
-                    "No sequence image history is available; none was captured or it expired.",
-                    is_error=True,
-                )
-            data = {
-                "source": "last_sequence",
-                "sequence_call_id": history.call_id,
-                "missed_samples": history.missed_samples,
-                "truncated": history.truncated,
-                "images": [
-                    {
-                        "camera": image.camera,
-                        "elapsed_seconds": image.elapsed_seconds,
-                        "retrieved_between_unix_seconds": image.retrieved_between_unix_seconds,
-                        "boundary": image.boundary,
-                    }
-                    for image in history.images
-                ],
-            }
-            return result_from_data(call, data, is_error=False, sequence_images=history)
-        output, _captures, revisions = await self._capture_output()
-        return result_from_data(
-            call,
-            output.data,
-            is_error=False,
-            cameras=output.cameras,
-            observed_revisions=revisions,
-        )
-
     async def execute_one(
         self,
         call: RobotToolCall,
@@ -448,28 +326,3 @@ class RobotTools(RobotToolRules):
                 expected_revisions=expected_revisions,
             )
         )[0]
-
-    async def _action_sequence_result(
-        self, call: RobotToolCall, action_sequence_id: str
-    ) -> RobotToolResult:
-        action_sequence = await self.station.wait_for_action_sequence(
-            action_sequence_id
-        )
-        outcomes = {
-            model_record_outcome(record.record)
-            for step in action_sequence.steps
-            for record in step
-        }
-        modes = {
-            arm.mode
-            for arm in (await self.station.state()).arms
-            if arm.arm in action_sequence.arms
-        }
-        return result_from_data(
-            call,
-            action_sequence.model_dump(mode="json"),
-            is_error=action_sequence.phase.state != "completed",
-            halt="faulted" in outcomes or ArmMode.faulted in modes,
-            interrupted="interrupted" in outcomes
-            or bool(modes & {ArmMode.disconnected, ArmMode.reconnected}),
-        )
