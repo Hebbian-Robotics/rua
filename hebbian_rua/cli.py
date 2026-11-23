@@ -7,6 +7,7 @@ from pathlib import Path
 
 def main() -> None:
     executable_name = "hebbian-robot-use-server"
+    installed_executable = Path(sysconfig.get_path("scripts")) / executable_name
     override = os.environ.get("HEBBIAN_ROBOT_USE_SERVER")
     if override:
         candidates = [Path(override)]
@@ -14,7 +15,7 @@ def main() -> None:
         checkout = Path(__file__).resolve().parent.parent
         on_path = shutil.which(executable_name)
         candidates = [
-            Path(sysconfig.get_path("scripts")) / executable_name,
+            installed_executable,
             checkout / "target/debug" / executable_name,
             *([Path(on_path)] if on_path else []),
             checkout / "target/release" / executable_name,
@@ -26,4 +27,8 @@ def main() -> None:
         raise SystemExit(
             "RUA server binary is missing. Install a hebbian-rua wheel for your platform, or build the server from source."
         )
-    os.execv(str(executable), ["rua", *sys.argv[1:]])
+    environment = os.environ.copy()
+    if not override and executable == installed_executable:
+        # WHY: A symlink install can resolve the executable into a package cache.
+        environment["HEBBIAN_RUA_INSTALL_DATA"] = sysconfig.get_path("data")
+    os.execve(str(executable), ["rua", *sys.argv[1:]], environment)

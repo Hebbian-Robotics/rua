@@ -318,6 +318,12 @@ pub fn default_profile_directory() -> anyhow::Result<PathBuf> {
     {
         return Ok(PathBuf::from(directory));
     }
+    if let Some(directory) = std::env::var_os("HEBBIAN_RUA_INSTALL_DATA")
+        .map(|directory| PathBuf::from(directory).join("share/hebbian-robot-use/profiles"))
+        .filter(|directory| directory.is_dir())
+    {
+        return Ok(directory);
+    }
     // WHY: A build in target/<profile>/ and an installed copy beside a checkout both
     // find it above the binary; a run from a checkout finds it above the cwd.
     let mut starts = Vec::new();
