@@ -18,18 +18,38 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
    LIVEKIT_API_SECRET=your-api-secret
    ```
 
-3. Add `--camera wrist=0` to your usual station start command. `wrist` is a
-   label you choose, and `0` is the camera device index. You can also use a
-   device path such as `/dev/video0`. Repeat the flag for each USB camera.
-   The station publishes each named feed when it starts.
+3. Connect the wrist camera and start the station. For a registered arm whose
+   config includes a wrist-camera selector, RUA finds the capture device by
+   USB vendor, product and serial. It waits if the camera is disconnected
+   or if several physical devices match. A replug can be picked up while
+   the station and viewer are running.
 
-If you need to identify the wrist camera, run `rua camera-devices` on the
-station laptop before starting the station. Each result includes the camera
-`name` and a `device` value, such as `2` for `--camera wrist=2`. From a source
-checkout with the media companion built, use
-`cargo run -p hebbian-robot-use-server -- camera-devices`.
-With the arm disabled, briefly cover the wrist lens and confirm that the
-`wrist` feed darkens.
+Use `rua status --camera wrist` to see if a wrist snapshot is available and
+why a camera is missing. If you bring your own camera or several match the
+selector, run `rua camera-devices` on the station laptop. Each result includes
+a `name` and a `device` value. Pass the chosen device to the station, for
+example `--camera wrist=2`. Repeat the flag for each extra camera. On Linux, a
+device path or a persistent symlink can also be used. Pass `--camera wrist=none`
+to turn off an automatic camera.
+
+From a source checkout with the media companion built, use
+`cargo run -p hebbian-robot-use-server -- camera-devices`. With the arm disabled,
+briefly cover the wrist lens and confirm that the `wrist` feed darkens.
+
+### Registered arm camera selectors
+
+The arm registry can supply shared selectors in `camera-defaults.toml`, keyed
+by model variant. Each `arms/<USB-controller-serial>/cameras.toml` can override
+an individual camera without changing calibration. For example:
+
+```toml
+[soft-gripper-camera]
+wrist = "1234:abcd:CAMERA_SERIAL"
+```
+
+For a per-arm file, omit the model-variant heading. Use hexadecimal vendor
+and product IDs followed by the USB serial. An explicit `--camera` flag takes
+precedence over these files.
 
 ## Watch a USB camera
 

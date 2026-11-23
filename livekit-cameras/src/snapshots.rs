@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{config::CameraConfiguration, error::PublisherError};
+use crate::{config::CameraInput, error::PublisherError};
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -45,7 +45,7 @@ struct SocketReply {
 impl Snapshots {
     /// `expected` names known room cameras that should be listed even before frames arrive.
     pub fn start(
-        cameras: Vec<CameraConfiguration>,
+        cameras: Vec<CameraInput>,
         expected: Vec<String>,
         socket: Option<PathBuf>,
         room: Option<String>,
@@ -74,7 +74,13 @@ impl Snapshots {
                 let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
                 loop {
                     // PROTOCOL: The station reads camera failures from this stderr format.
-                    match CaptureWorker::start(&camera) {
+                    let worker = match camera.resolve().await {
+                        Ok(resolved) => {
+                            CaptureWorker::start(&resolved).map_err(PublisherError::from)
+                        }
+                        Err(error) => Err(error),
+                    };
+                    match worker {
                         Ok(mut worker) => {
                             if state.forward_local_frames(&name, &mut worker).await {
                                 backoff.reset();

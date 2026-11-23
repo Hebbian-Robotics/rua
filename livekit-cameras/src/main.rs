@@ -1,5 +1,6 @@
 mod config;
 mod snapshots;
+mod usb_camera;
 
 use livekit_cameras::error;
 
@@ -22,7 +23,7 @@ enum MediaCommand {
     Serve(config::ServeArguments),
 }
 
-use config::{CameraConfiguration, ServeArguments};
+use config::{CameraInput, ServeArguments};
 use error::PublisherError;
 use livekit_camera_publisher::{capture, publisher};
 use station_access::Credentials;
@@ -30,7 +31,7 @@ use std::{io, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 async fn publish_camera_until_stopped(
-    camera: CameraConfiguration,
+    camera: CameraInput,
     room: String,
     credentials: Arc<Credentials>,
     stopped: CancellationToken,
@@ -43,9 +44,7 @@ async fn publish_camera_until_stopped(
                 camera.name(),
                 station_access::CameraLifetime::Station,
             )?;
-            let mut publishing_camera =
-                CameraConfiguration::new(camera.name().to_owned(), camera.device().to_owned())?;
-            publishing_camera.publishing = camera.publishing;
+            let publishing_camera = camera.resolve().await?;
             publisher::publish_camera(
                 publishing_camera,
                 &access.server_url,

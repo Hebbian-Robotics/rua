@@ -31,7 +31,8 @@ pub(crate) async fn check(
         check_arm_feedback(&client, &state_url, &initial_state),
         async {
             let camera = camera?;
-            let result = check_camera(&client, media_server.unwrap_or(server), camera).await;
+            let result =
+                check_camera(&client, server, media_server.unwrap_or(server), camera).await;
             Some((camera, result))
         },
         check_livekit(&client, server),
@@ -115,10 +116,18 @@ fn feedback_advanced(initial: &ArmState, current: &ArmState) -> bool {
         })
 }
 
-async fn check_camera(client: &Client, server: &Url, name: CameraName<'_>) -> Result<String> {
-    let url = endpoint(server, &["cameras", name.as_str()])?;
+async fn check_camera(
+    client: &Client,
+    station: &Url,
+    media: &Url,
+    name: CameraName<'_>,
+) -> Result<String> {
+    let url = endpoint(media, &["cameras", name.as_str()])?;
     let response = client.get(url).send().await?;
     if response.status() == StatusCode::NOT_FOUND {
+        if let Some(detail) = camera_problem(client, station, name).await {
+            anyhow::bail!("No fresh snapshot. {detail}");
+        }
         anyhow::bail!("No fresh snapshot");
     }
     let response = response.error_for_status()?;
@@ -131,6 +140,23 @@ async fn check_camera(client: &Client, server: &Url, name: CameraName<'_>) -> Re
         "Snapshot response was not a JPEG"
     );
     Ok("fresh snapshot available".to_owned())
+}
+
+async fn camera_problem(client: &Client, station: &Url, name: CameraName<'_>) -> Option<String> {
+    let url = endpoint(station, &["viewer", "api", "media-status"]).ok()?;
+    let status: serde_json::Value = client
+        .get(url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    status["cameras"][name.as_str()]["detail"]
+        .as_str()
+        .map(str::to_owned)
 }
 
 #[derive(Deserialize)]

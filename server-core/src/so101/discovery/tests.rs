@@ -78,6 +78,38 @@ fn profiles() -> PathBuf {
 }
 
 #[test]
+fn registered_camera_defaults_follow_model_and_read_arm_overrides() {
+    let fixture = RegistryFixture::new();
+    let entry = fixture.register("ARM_A");
+    std::fs::write(
+        fixture.0.join("camera-defaults.toml"),
+        "[soft-gripper-camera]\nwrist = \"1234:abcd:TEAM_CAMERA\"\n",
+    )
+    .unwrap();
+    let soft_cameras = registered_cameras(&entry, ModelVariant::SoftGripperCamera).unwrap();
+    assert_eq!(soft_cameras["wrist"], "1234:abcd:TEAM_CAMERA");
+    assert!(
+        registered_cameras(&entry, ModelVariant::Stock)
+            .unwrap()
+            .is_empty()
+    );
+
+    std::fs::write(
+        entry.join("cameras.toml"),
+        "wrist = \"4321:dcba:REPLACEMENT\"\n",
+    )
+    .unwrap();
+    let overrides = registered_cameras(&entry, ModelVariant::SoftGripperCamera).unwrap();
+    assert_eq!(overrides["wrist"], "4321:dcba:REPLACEMENT");
+    std::fs::write(entry.join("cameras.toml"), "wrist = \"none\"\n").unwrap();
+    assert!(
+        registered_cameras(&entry, ModelVariant::SoftGripperCamera)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn native_setup_selects_model_and_preserves_arm_settings() {
     let fixture = RegistryFixture::new();
     let entry = fixture.register("ARM_A");
