@@ -47,6 +47,7 @@ fn at(seconds: f64) -> Now {
 fn plan(from: [f64; 2], to: [f64; 2]) -> CornerPlan {
     CornerPlan {
         segments: vec![Segment {
+            pass_through: None,
             label: "go".into(),
             corners: vec![from.to_vec(), to.to_vec()],
             minimum_duration_seconds: None,

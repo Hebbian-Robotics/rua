@@ -577,6 +577,7 @@ mod tests {
             arm: arm.to_owned(),
             plan: CornerPlan {
                 segments: vec![Segment {
+                    pass_through: None,
                     label: "go".into(),
                     corners: vec![vec![0.0, 0.0], target.to_vec()],
                     minimum_duration_seconds: None,

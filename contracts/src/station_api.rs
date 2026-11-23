@@ -132,7 +132,7 @@ pub enum StationCommand {
     },
 }
 
-/// One goal in an action sequence. The arm settles at each target.
+/// The final pose or joint configuration where this move settles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ActionSequenceGoal {
@@ -151,13 +151,26 @@ pub enum ActionSequenceGoal {
     },
 }
 
-/// An arm action must name a goal or gripper target. When both are present they start together.
+/// An intermediate configuration along one continuous move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionSequenceWaypoint {
+    pub at: crate::CompiledGoal,
+    /// Start moving the gripper when passing this waypoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gripper_opening: Option<GripperOpening>,
+}
+
+/// An arm action must name a goal or gripper opening. When both are present they start together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum ActionSequenceArmAction {
     #[schemars(title = "ActionSequenceMove")]
     Move {
         goal: ActionSequenceGoal,
+        /// Pass through these intermediate configurations before settling at the goal.
+        #[serde(default)]
+        waypoints: Vec<crate::ActionSequenceWaypoint>,
         #[serde(default)]
         #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
@@ -338,13 +351,13 @@ pub struct ActionSequenceRecord {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveArmsCommand {
-    #[schemars(schema_with = "nonempty_arm_targets")]
-    pub targets: BTreeMap<String, Waypoint>,
+    #[schemars(schema_with = "nonempty_arm_goals")]
+    pub goals: BTreeMap<String, Waypoint>,
     #[serde(default)]
     pub max_joint_speed: Option<JointSpeed>,
 }
 
-fn nonempty_arm_targets(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+fn nonempty_arm_goals(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut schema = <BTreeMap<String, Waypoint>>::json_schema(generator);
     schema.insert("minProperties".into(), 1.into());
     schema

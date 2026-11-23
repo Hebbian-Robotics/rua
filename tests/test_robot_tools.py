@@ -144,7 +144,7 @@ def test_mistakes_come_back_as_errors_the_model_can_fix(robot: RobotTools) -> No
                 RobotToolCall(
                     "old-joints",
                     "move_arms",
-                    {"targets": {"arm": {"joints": [0, 0, 0, 0, 0]}}},
+                    {"goals": {"arm": {"joints": [0, 0, 0, 0, 0]}}},
                 ),
                 RobotToolCall(
                     "old-speed",
@@ -396,7 +396,7 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
     [
         (
             "move_arms",
-            {"targets": {"arm": {"joints_degrees": [True, 0, 0, 0, 0]}}},
+            {"goals": {"arm": {"joints_degrees": [True, 0, 0, 0, 0]}}},
         ),
         (
             "set_arm_gripper",

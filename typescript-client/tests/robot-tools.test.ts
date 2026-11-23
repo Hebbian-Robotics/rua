@@ -295,7 +295,7 @@ test("group outcomes match the shared examples", async () => {
           id: example.name,
           name: "move_arms",
           arguments: {
-            targets: { follower: { joints_degrees: [0, 0, 0, 0, 0] } },
+            goals: { follower: { joints_degrees: [0, 0, 0, 0, 0] } },
           },
         },
       ]);

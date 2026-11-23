@@ -208,7 +208,7 @@ try {
       id: "group",
       name: "move_arms",
       arguments: {
-        targets: {
+        goals: {
           arm: {
             joints_degrees: joints.map((joint) => (joint * 180) / Math.PI),
           },
@@ -233,7 +233,7 @@ try {
       id: "limited",
       name: "move_arms",
       arguments: {
-        targets: {
+        goals: {
           arm: {
             position_mm: examples.limited_position_millimeters,
             orientation: { quaternion: currentPose.quaternion },

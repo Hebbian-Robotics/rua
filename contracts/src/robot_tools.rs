@@ -553,7 +553,7 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         RobotToolDefinition {
             name: "move_arms",
             operation: RobotToolOperation::MoveArms,
-            description: "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.".into(),
+            description: "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.".into(),
             parameters: model_arguments::<MoveArmsCommand>(),
         },
         RobotToolDefinition {
@@ -589,12 +589,63 @@ pub fn robot_tool_context() -> Value {
     json!({
         "frames": "Positions are in the station world frame. Tool inputs and outputs use millimeters, degrees, and degrees per second.",
         "orientation": format!("Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds {}. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.", crate::JAW_REFERENCE_SWITCH_APPROACH_X),
-        "motion": "A pose target is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
+        "motion": "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
         "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
-        "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its goal speed for both goal and gripper.",
+        "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
         "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
         "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified."
     })
+}
+
+#[expect(
+    clippy::expect_used,
+    reason = "Schema references are local to the generated contract."
+)]
+fn inline_schema(value: &Value, definitions: &Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                let name = reference
+                    .strip_prefix("#/$defs/")
+                    .expect("local schema reference");
+                return inline_schema(&definitions[name], definitions);
+            }
+            Value::Object(
+                object
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "$defs")
+                    .map(|(key, value)| (key.clone(), inline_schema(value, definitions)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| inline_schema(item, definitions))
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+#[expect(
+    clippy::expect_used,
+    reason = "Pose and joint schemas define the two goal variants."
+)]
+fn select_goal_variants(goal: &mut Value, configuration: &SequenceToolConfiguration) {
+    let mut variants = goal["oneOf"].as_array().expect("goal variants").clone();
+    variants.retain(|variant| {
+        let capability = if variant["properties"].get("joints_degrees").is_some() {
+            SequenceAction::Joints
+        } else {
+            SequenceAction::Pose
+        };
+        configuration.actions.contains(&capability)
+    });
+    *goal = if variants.len() == 1 {
+        variants.remove(0)
+    } else {
+        json!({"oneOf": variants})
+    };
 }
 
 /// Compose the model's sequence schema without exposing unused actions or arm selectors.
@@ -608,32 +659,9 @@ pub fn robot_tool_context() -> Value {
 pub fn action_sequence_tool_schema(
     configuration: &SequenceToolConfiguration,
 ) -> Result<Value, String> {
-    fn inline(value: &Value, definitions: &Value) -> Value {
-        match value {
-            Value::Object(object) => {
-                if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
-                    let name = reference
-                        .strip_prefix("#/$defs/")
-                        .expect("local schema reference");
-                    return inline(&definitions[name], definitions);
-                }
-                Value::Object(
-                    object
-                        .iter()
-                        .filter(|(key, _)| key.as_str() != "$defs")
-                        .map(|(key, value)| (key.clone(), inline(value, definitions)))
-                        .collect(),
-                )
-            }
-            Value::Array(items) => {
-                Value::Array(items.iter().map(|item| inline(item, definitions)).collect())
-            }
-            _ => value.clone(),
-        }
-    }
     configuration.validate()?;
     let source = model_arguments::<ActionSequenceArmAction>();
-    let variants = inline(&source, &source["$defs"]);
+    let variants = inline_schema(&source, &source["$defs"]);
     let mut action = variants["anyOf"]
         .as_array()
         .expect("arm action variants")
@@ -652,22 +680,22 @@ pub fn action_sequence_tool_schema(
         || configuration.actions.contains(&SequenceAction::Joints)
     {
         let goal = properties.get_mut("goal").expect("goal schema");
-        let mut variants = goal["oneOf"].as_array().expect("goal variants").clone();
-        variants.retain(|variant| {
-            let capability = if variant["properties"].get("joints_degrees").is_some() {
-                SequenceAction::Joints
-            } else {
-                SequenceAction::Pose
-            };
-            configuration.actions.contains(&capability)
-        });
-        *goal = if variants.len() == 1 {
-            variants.remove(0)
-        } else {
-            json!({"oneOf": variants})
-        };
+        select_goal_variants(goal, configuration);
     } else {
         properties.remove("goal");
+        properties.remove("waypoints");
+    }
+    if let Some(points) = properties.get_mut("waypoints") {
+        let fields = points["items"]["properties"]
+            .as_object_mut()
+            .expect("waypoint fields");
+        select_goal_variants(
+            fields.get_mut("at").expect("waypoint configuration"),
+            configuration,
+        );
+        if !configuration.actions.contains(&SequenceAction::Gripper) {
+            fields.remove("gripper_opening");
+        }
     }
     if configuration.actions.contains(&SequenceAction::Gripper) {
         let opening = properties
@@ -743,6 +771,23 @@ pub fn parse_sequence_tool_arguments(
                 && !arms.contains(arm)
             {
                 return Err(format!("Arm {arm} is not available in this sequence"));
+            }
+            if let crate::ActionSequenceArmAction::Move { waypoints, .. } = action {
+                for point in waypoints {
+                    let capability = match point.at {
+                        crate::CompiledGoal::Joints { .. } => SequenceAction::Joints,
+                        crate::CompiledGoal::Pose { .. } => SequenceAction::Pose,
+                    };
+                    if !configuration.actions.contains(&capability)
+                        || (point.gripper_opening.is_some()
+                            && !configuration.actions.contains(&SequenceAction::Gripper))
+                    {
+                        return Err(
+                            "This waypoint action is not available in the configured sequence"
+                                .into(),
+                        );
+                    }
+                }
             }
             let movement_capability = action.goal().map(|goal| match goal {
                 crate::ActionSequenceGoal::Pose { .. } => SequenceAction::Pose,

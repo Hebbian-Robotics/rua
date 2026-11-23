@@ -378,6 +378,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
         ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                waypoints: vec![],
                 goal: ActionSequenceGoal::Joints {
                     joints,
                     max_joint_speed: None,
@@ -908,6 +909,7 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                waypoints: vec![],
                 goal: ActionSequenceGoal::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
                     max_joint_speed: Some(0.05),
@@ -943,6 +945,7 @@ async fn taking_the_lease_stops_the_previous_holders_action_sequence() -> TestRe
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                waypoints: vec![],
                 goal: ActionSequenceGoal::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
                     max_joint_speed: Some(0.05),
@@ -973,6 +976,7 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
             ActionSequenceStep::single(
                 ARM,
                 ActionSequenceArmAction::Move {
+                    waypoints: vec![],
                     goal: ActionSequenceGoal::Joints {
                         joints,
                         max_joint_speed: None,
@@ -1079,7 +1083,7 @@ async fn assert_constrained_tool_move(tools: &RobotTools<'_>, client: &Station) 
         .clone()
         .ok_or("missing tool pose")?;
     let limited = within(tools.execute(
-        RobotToolCall { id: "limited".into(), name: "move_arms".into(), arguments: json!({"targets": { (ARM): {"position_mm": examples["limited_position_millimeters"], "orientation": {"quaternion": tool_pose.quaternion}}}}) },
+        RobotToolCall { id: "limited".into(), name: "move_arms".into(), arguments: json!({"goals": { (ARM): {"position_mm": examples["limited_position_millimeters"], "orientation": {"quaternion": tool_pose.quaternion}}}}) },
         CommandOptions::default(),
     )).await??;
     let RobotToolOutcome::Incomplete(limited) = limited.outcome else {
@@ -1406,6 +1410,7 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
     within(client.enable("left")).await??;
     let action = |pan, gripper_opening| ActionSequenceArmAction::Move {
+        waypoints: vec![],
         goal: ActionSequenceGoal::Joints {
             joints: vec![pan, -0.5, 0.5, 0.0, 0.0],
             max_joint_speed: None,
@@ -1579,5 +1584,49 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
     );
     lease.return_lease().await?;
     media_task.abort();
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("waypoints"))).await??;
+    within(client.enable(ARM)).await??;
+    let mut waypoint = REST.to_vec();
+    waypoint[0] += 0.1;
+    let mut goal = REST.to_vec();
+    goal[0] += 0.23;
+    let execution = within(lease.start_action_sequence(ActionSequenceRequest {
+        steps: vec![ActionSequenceStep::single(
+            ARM,
+            ActionSequenceArmAction::Move {
+                goal: ActionSequenceGoal::Joints {
+                    joints: goal.clone(),
+                    max_joint_speed: None,
+                },
+                waypoints: vec![hebbian_contracts::ActionSequenceWaypoint {
+                    at: hebbian_contracts::CompiledGoal::Joints { joints: waypoint },
+                    gripper_opening: Some(0.35.try_into()?),
+                }],
+                gripper_opening: None,
+                max_joint_speed: None,
+            },
+        )],
+        expected_revisions: BTreeMap::new(),
+    }))
+    .await??;
+    let result = within(client.wait_for_action_sequence(&execution)).await??;
+    assert_eq!(result.phase, ActionSequencePhase::Completed);
+    assert_eq!(
+        result.steps[0][0].record.target_joints(),
+        Some(goal.as_slice())
+    );
+    let state = within(client.get_state()).await??;
+    assert!(
+        state.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| (opening - 0.35).abs() < 0.05)
+    );
     Ok(())
 }

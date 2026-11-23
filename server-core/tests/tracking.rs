@@ -28,6 +28,7 @@ fn config() -> ControllerConfig {
 fn plan() -> CornerPlan {
     CornerPlan {
         segments: vec![Segment {
+            pass_through: None,
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.6, -0.3]],
             minimum_duration_seconds: None,
@@ -309,4 +310,33 @@ fn a_constant_target_preserves_the_continuous_jerk_limited_profile() {
         }
         command = reference.positions;
     }
+}
+
+#[test]
+fn pass_through_keeps_velocity_at_a_waypoint_and_settles_at_the_goal() {
+    let config = config();
+    let mut path = plan();
+    let mut final_section = path.segments[0].clone();
+    final_section.corners = vec![vec![0.6, -0.3], vec![1.0, -0.1]];
+    path.segments[0].pass_through = Some(hebbian_contracts::PassThrough {
+        gripper_angle: None,
+    });
+    path.segments.push(final_section);
+    let mut motion = MotionSupervisor::new(path, &config.motion, 2).unwrap();
+    let mut measured = vec![0.0; 2];
+    let mut crossed = false;
+    for _ in 0..2000 {
+        let reference = motion.step(&measured, 0.01).unwrap();
+        if measured[0] < 0.6 && reference.positions[0] >= 0.6 {
+            assert!(reference.velocities[0] > 0.01);
+            assert_eq!(motion.stage(), Stage::Moving);
+            crossed = true;
+        }
+        measured = reference.positions;
+        if motion.done() {
+            break;
+        }
+    }
+    assert!(crossed && motion.done());
+    assert_eq!(measured, vec![1.0, -0.1]);
 }

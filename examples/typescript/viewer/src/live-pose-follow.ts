@@ -160,7 +160,7 @@ export function createLivePoseFollow(
       lifecycle.send({ type: value ? "ENABLE" : "DISABLE" });
       if (value)
         report(
-          "Follow mode armed. Drag a reachable target to move; release to stop.",
+          "Follow mode armed. Drag a reachable goal to move. Release to stop.",
         );
     },
     setDragging(value: boolean): void {

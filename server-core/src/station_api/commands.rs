@@ -293,24 +293,86 @@ pub(super) fn prepare_compiled_action(
 ) -> Result<PreparedArmAction, Refusal> {
     match action {
         CompiledArmAction::Move {
+            waypoints,
             goal,
             gripper_opening,
             max_joint_speed,
         } => {
-            let movement = match goal {
-                CompiledGoal::Joints { joints } => {
-                    StationMovement::joints(joints.clone(), *max_joint_speed)
+            let movement = if waypoints.is_empty() {
+                match goal {
+                    CompiledGoal::Joints { joints } => {
+                        StationMovement::joints(joints.clone(), *max_joint_speed)
+                    }
+                    CompiledGoal::Pose {
+                        position,
+                        orientation,
+                    } => StationMovement::Pose {
+                        position: *position,
+                        orientation: *orientation,
+                        max_joint_speed: *max_joint_speed,
+                    },
                 }
-                CompiledGoal::Pose {
-                    position,
-                    orientation,
-                } => StationMovement::Pose {
-                    position: *position,
-                    orientation: *orientation,
+            } else {
+                StationMovement::Trajectory {
+                    label: "continuous_move",
+                    waypoints: waypoints
+                        .iter()
+                        .map(|point| &point.at)
+                        .chain(std::iter::once(goal))
+                        .map(|point| match point {
+                            CompiledGoal::Pose {
+                                position,
+                                orientation,
+                            } => Waypoint::Pose {
+                                position: *position,
+                                orientation: *orientation,
+                            },
+                            CompiledGoal::Joints { joints } => Waypoint::Joints {
+                                joints: joints.clone(),
+                            },
+                        })
+                        .collect(),
                     max_joint_speed: *max_joint_speed,
-                },
+                }
             };
-            let movement = prepare_movement(link, movement)?;
+            let mut movement = prepare_movement(link, movement)?;
+            if !waypoints.is_empty() {
+                let PreparedMovement::Trajectory {
+                    plan,
+                    path_limited,
+                    pose_limited,
+                    ..
+                } = &mut movement
+                else {
+                    return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+                };
+                if path_limited.is_some() || pose_limited.is_some() {
+                    return Err(refused(
+                        RejectionReason::InvalidTarget,
+                        "Continuous move cannot reach its requested path",
+                    ));
+                }
+                for (segment, point) in plan.segments.iter_mut().zip(waypoints) {
+                    segment.pass_through = Some(hebbian_contracts::PassThrough {
+                        gripper_angle: point
+                            .gripper_opening
+                            .map(|opening| jaw_angle(link, arm, opening))
+                            .transpose()?,
+                    });
+                }
+                let initial_jaw_goal = gripper_opening
+                    .map(|opening| jaw_angle(link, arm, opening))
+                    .transpose()?
+                    .map(hebbian_contracts::JawAngle::radians);
+                planner_or_refuse(link.planner())?
+                    .check_continuous_path(
+                        plan,
+                        &link.config().motion,
+                        latest_sample(link)?.gripper_angle,
+                        initial_jaw_goal,
+                    )
+                    .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))?;
+            }
             let action = match gripper_opening {
                 Some(opening) => {
                     let gripper = prepare_gripper(link, arm, *opening, *max_joint_speed)?;
@@ -377,7 +439,7 @@ pub(crate) fn plan_group_move<'a>(
     let mut moves = Vec::new();
     let mut gates = Vec::new();
     let mut first_link = None;
-    for (arm, waypoint) in &command.targets {
+    for (arm, waypoint) in &command.goals {
         let link = links.get(arm).ok_or_else(|| {
             refused(
                 RejectionReason::InvalidTarget,

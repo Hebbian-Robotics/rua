@@ -182,6 +182,66 @@ impl Planner {
         })
     }
 
+    // SAFETY: Check the curve the controller will sample, including the possible jaw
+    // positions while an opening command is still in flight.
+    pub(crate) fn check_continuous_path(
+        &self,
+        plan: &CornerPlan,
+        limits: &crate::config::MotionLimits,
+        measured_jaw: Option<f64>,
+        initial_jaw_goal: Option<f64>,
+    ) -> anyhow::Result<()> {
+        let path = crate::continuous_path::ContinuousPath::new(plan, limits)?;
+        let mut reference =
+            crate::reference_filter::Reference::at_rest(&plan.segments[0].corners[0], None);
+        let mut previous = reference.positions.clone();
+        let mut jaw_range = measured_jaw.map(|angle| (angle, angle));
+        for (index, segment) in plan.segments.iter().enumerate() {
+            let jaw_command = if index == 0 {
+                initial_jaw_goal
+            } else {
+                plan.segments[index - 1]
+                    .pass_through
+                    .and_then(|point| point.gripper_angle)
+                    .map(hebbian_contracts::JawAngle::radians)
+            };
+            if let Some(angle) = jaw_command {
+                let (minimum, maximum) = jaw_range.as_mut().ok_or_else(|| {
+                    anyhow::anyhow!("Missing jaw measurement for a continuous move")
+                })?;
+                *minimum = minimum.min(angle);
+                *maximum = maximum.max(angle);
+            }
+            // WHY: The largest first difference of a degree-five Bernstein curve is
+            // at most five times the section displacement, bounding sample spacing.
+            let extent =
+                5.0 * crate::limits::max_joint_deviation(&segment.corners[0], &segment.corners[1]);
+            for fraction in crate::robot::path_sample_fractions(&[0.0], &[extent]) {
+                path.sample(index, fraction, &mut reference);
+                let check = |jaw| -> anyhow::Result<()> {
+                    if let Some(reason) = self
+                        .path_check(&previous, &reference.positions, jaw)?
+                        .refusal()
+                    {
+                        anyhow::bail!("Continuous section {index}: {reason}");
+                    }
+                    Ok(())
+                };
+                check(jaw_range.map(|range| range.0))?;
+                if let Some((minimum, maximum)) = jaw_range
+                    && maximum > minimum
+                {
+                    for jaw_fraction in crate::robot::path_sample_fractions(&[minimum], &[maximum])
+                    {
+                        check(Some(minimum + jaw_fraction * (maximum - minimum)))?;
+                    }
+                }
+                previous.clone_from(&reference.positions);
+            }
+        }
+        Ok(())
+    }
+
     pub fn describe(&self, joints: &[f64]) -> Result<PoseDescription, String> {
         self.require_joint_shape(joints)
             .map_err(|refused| refused.detail)?;
@@ -397,6 +457,7 @@ fn segment(
     target_quaternion: Option<[f64; 4]>,
 ) -> Segment {
     Segment {
+        pass_through: None,
         label,
         corners: vec![from, to],
         minimum_duration_seconds: None,

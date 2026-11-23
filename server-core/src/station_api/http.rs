@@ -855,7 +855,7 @@ async fn submit_station_command<
         .clone();
     let targets = match &request {
         SubmissionRequest::Single(input) => vec![&input.arm],
-        SubmissionRequest::Group(input) => input.command.targets.keys().collect(),
+        SubmissionRequest::Group(input) => input.command.goals.keys().collect(),
     };
     let generation = targets
         .into_iter()

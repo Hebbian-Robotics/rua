@@ -139,7 +139,7 @@ pub enum Command {
     /// one rejection means no arm moves, and if one arm stops the others stop too. Takes a JSON
     /// MoveArmsCommand from a file, or `-` for stdin.
     ///
-    /// Example: echo '{"targets":{"left":{"kind":"pose","position":[0.2,0.15,0.08],"orientation":{"kind":"quaternion","quaternion":[0,0,0,1]}}},"max_joint_speed":0.5}' | hebbian-robot-use move-arms -
+    /// Example: echo '{"goals":{"left":{"kind":"pose","position":[0.2,0.15,0.08],"orientation":{"kind":"quaternion","quaternion":[0,0,0,1]}}},"max_joint_speed":0.5}' | hebbian-robot-use move-arms -
     MoveArms {
         /// A JSON file, or `-` for stdin.
         input: PathBuf,

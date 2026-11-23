@@ -32,6 +32,20 @@ pub fn validate_plan(plan: &CornerPlan, joint_count: usize) -> anyhow::Result<()
         plan.peak_speed.is_finite() && plan.peak_speed > 0.0,
         "Path speed must be positive"
     );
+    ensure!(
+        plan.segments
+            .iter()
+            .enumerate()
+            .all(|(index, segment)| segment.pass_through.is_some()
+                == (plan.is_continuous() && index + 1 < plan.segments.len()))
+            && (!plan.is_continuous()
+                || plan
+                    .segments
+                    .iter()
+                    .all(|segment| segment.corners.len() == 2
+                        && segment.minimum_duration_seconds.is_none())),
+        "Invalid continuous path boundaries"
+    );
     let mut previous = plan_initial_corner(plan)?;
     for segment in &plan.segments {
         ensure!(
@@ -90,6 +104,11 @@ impl ValidatedPlan {
             initial.len() == self.initial_corner().len()
                 && initial.iter().all(|value| value.is_finite()),
             "A motion start must have the plan's joint count and finite positions"
+        );
+        ensure!(
+            !self.0.is_continuous()
+                || max_joint_deviation(self.initial_corner(), &initial) <= CONTINUITY_RADIANS,
+            "Continuous path start changed after planning"
         );
         self.0.segments[0].corners[0] = initial;
         Ok(())
@@ -316,6 +335,8 @@ struct CornerPathTracker {
     reference: Reference,
     segment_index: usize,
     trajectories: Vec<SmoothTrajectory>,
+    continuous_path: Option<crate::continuous_path::ContinuousPath>,
+    section_elapsed: f64,
     corner_index: usize,
     section: Option<OnlineSection>,
     checkpoints: Vec<Checkpoint>,
@@ -337,6 +358,10 @@ impl CornerPathTracker {
                 )
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
+        let continuous_path = plan
+            .is_continuous()
+            .then(|| crate::continuous_path::ContinuousPath::new(&plan, &limits))
+            .transpose()?;
         let reference = Reference::at_rest(plan.initial_corner(), None);
         Ok(Self {
             plan,
@@ -345,6 +370,8 @@ impl CornerPathTracker {
             reference,
             segment_index: 0,
             trajectories,
+            continuous_path,
+            section_elapsed: 0.0,
             corner_index: 1,
             section: None,
             checkpoints: Vec::new(),
@@ -356,7 +383,54 @@ impl CornerPathTracker {
         (self.stage != Stage::Done).then(|| self.plan.segments[self.segment_index].label.as_str())
     }
 
-    fn advance(&mut self, interval: f64, speed_fraction: f64) -> anyhow::Result<()> {
+    fn advance(
+        &mut self,
+        measured: &[f64],
+        interval: f64,
+        speed_fraction: f64,
+    ) -> anyhow::Result<()> {
+        if let Some(path) = &self.continuous_path {
+            // SAFETY: A changing velocity cap needs a new time parameterization. Stop a
+            // continuous move when tracking calls for slowing down.
+            ensure!(
+                speed_fraction >= 1.0,
+                "Continuous motion exceeded its tracking margin"
+            );
+            let duration = path.section_seconds();
+            ensure!(
+                interval.is_finite() && interval > 0.0 && interval < duration,
+                "Controller interval exceeds the continuous section duration"
+            );
+            self.section_elapsed += interval;
+            if self.section_elapsed >= duration {
+                let segment = &self.plan.segments[self.segment_index];
+                if self.segment_index + 1 == self.plan.segments.len() {
+                    self.reference.set_at_rest(&segment.corners[1], None);
+                    self.stage = Stage::Settling;
+                    return Ok(());
+                }
+                ensure!(
+                    max_joint_deviation(measured, &segment.corners[1])
+                        <= self.limits.settled_error_radians,
+                    "Arm missed pass-through waypoint {}",
+                    self.segment_index
+                );
+                self.checkpoints.push(Checkpoint {
+                    label: segment.label.clone(),
+                    measured_joints: measured.to_vec(),
+                    target_position: segment.target_position,
+                    target_quaternion: segment.target_quaternion,
+                });
+                self.segment_index += 1;
+                self.section_elapsed -= duration;
+            }
+            path.sample(
+                self.segment_index,
+                self.section_elapsed / duration,
+                &mut self.reference,
+            );
+            return Ok(());
+        }
         let corners = &self.trajectories[self.segment_index].waypoints;
         if corners.len() <= 1 {
             self.reference.set_at_rest(&corners[0], None);
@@ -493,6 +567,18 @@ impl MotionSupervisor {
         self.tracker.plan.final_corner()
     }
 
+    pub(crate) fn waypoint_gripper(
+        &self,
+        checkpoint: usize,
+    ) -> Option<hebbian_contracts::JawAngle> {
+        self.tracker
+            .plan
+            .segments
+            .get(checkpoint)?
+            .pass_through?
+            .gripper_angle
+    }
+
     pub(crate) fn new_checkpoints(&self, already_taken: usize) -> &[Checkpoint] {
         &self.tracker.checkpoints[already_taken.min(self.tracker.checkpoints.len())..]
     }
@@ -546,7 +632,7 @@ impl MotionSupervisor {
         if self.tracker.stage == Stage::Moving {
             let previous_corner = self.tracker.corner_index;
             self.tracker
-                .advance(interval, speed_fraction)
+                .advance(measured, interval, speed_fraction)
                 .map_err(|e| Self::internal(&e))?;
             if self.tracker.stage != Stage::Moving || self.tracker.corner_index != previous_corner {
                 self.restart_stage();

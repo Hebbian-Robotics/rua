@@ -230,9 +230,18 @@ pub enum Command {
     },
 }
 
+/// Continue through this configuration and optionally begin a jaw move.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct PassThrough {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gripper_angle: Option<JawAngle>,
+}
+
 /// One straight run between corners, with where it is meant to end.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct Segment {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass_through: Option<PassThrough>,
     pub label: String,
     pub corners: Vec<Vec<f64>>,
     /// Slows the section to last at least this long, so arms moving together
@@ -251,6 +260,15 @@ pub struct CornerPlan {
     pub segments: Vec<Segment>,
     #[schemars(range(min = 0.0))]
     pub peak_speed: f64,
+}
+
+impl CornerPlan {
+    #[must_use]
+    pub fn is_continuous(&self) -> bool {
+        self.segments
+            .first()
+            .is_some_and(|segment| segment.pass_through.is_some())
+    }
 }
 
 /// One corner of a move: joints, or a tool pose solved for joints.

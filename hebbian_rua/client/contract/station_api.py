@@ -942,6 +942,14 @@ class OperationStatus7(BaseModel):
     state: Literal["outcome_unknown"] = "outcome_unknown"
 
 
+class PassThrough(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    gripper_angle: StrictFloat | None = None
+
+
 class PathLimited(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1337,6 +1345,7 @@ class Segment(BaseModel):
             ge=0.0,
         ),
     ] = None
+    pass_through: PassThrough | None = None
     target_position: Annotated[
         list[StrictFloat] | None, Field(max_length=3, min_length=3)
     ] = None
@@ -2210,10 +2219,10 @@ class MoveArmsCommand(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    goals: Annotated[dict[str, JointsWaypoint | PoseWaypoint], Field(min_length=1)]
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
-    targets: Annotated[dict[str, JointsWaypoint | PoseWaypoint], Field(min_length=1)]
 
 
 class PosePreviewCandidate(BaseModel):
@@ -2348,32 +2357,21 @@ class FollowPathCommand(BaseModel):
     waypoints: list[JointsWaypoint | PoseWaypoint]
 
 
-class ActionSequenceMove(BaseModel):
+class ActionSequenceWaypoint(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
     )
-    goal: Annotated[
-        ActionSequenceJointsMovement | ActionSequencePoseMovement,
-        Field(
-            description="One goal in an action sequence. The arm settles at each target."
-        ),
-    ]
-    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
-    max_joint_speed: Annotated[
+    at: CompiledGoal1 | CompiledGoal2
+    gripper_opening: Annotated[
         StrictFloat | None,
         Field(
-            description="Speed for both resources in rad/s; overrides the goal speed when provided."
+            description="Start moving the gripper when passing this waypoint.",
+            ge=0.0,
+            le=1.0,
+            title="GripperOpening",
         ),
     ] = None
-
-
-class ActionSequenceStep(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    arms: dict[str, ActionSequenceMove | ActionSequenceGripper]
 
 
 class ArmRecord(BaseModel):
@@ -2606,6 +2604,12 @@ class CompiledArmAction1(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
+    waypoints: Annotated[
+        list[ActionSequenceWaypoint] | None,
+        Field(
+            description="Pass through these intermediate configurations before settling at the goal."
+        ),
+    ] = None
 
 
 class CompiledOperation(BaseModel):
@@ -2804,6 +2808,90 @@ class StationState(BaseModel):
     ] = None
 
 
+class ActionSequenceMove(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    goal: Annotated[
+        ActionSequenceJointsMovement | ActionSequencePoseMovement,
+        Field(
+            description="The final pose or joint configuration where this move settles."
+        ),
+    ]
+    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
+    max_joint_speed: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Speed for both resources in rad/s; overrides the goal speed when provided."
+        ),
+    ] = None
+    waypoints: Annotated[
+        list[ActionSequenceWaypoint] | None,
+        Field(
+            description="Pass through these intermediate configurations before settling at the goal."
+        ),
+    ] = None
+
+
+class ActionSequenceStep(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arms: dict[str, ActionSequenceMove | ActionSequenceGripper]
+
+
+class ObservationAnswer1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    cameras: dict[str, ObservationFrame]
+    missing_optional_cameras: list[str]
+    state: StationState
+    status: Literal["observation_captured"] = "observation_captured"
+
+
+class ObservationAnswer(
+    RootModel[
+        ObservationAnswer1
+        | ObservationAnswer2
+        | ObservationAnswer3
+        | ObservationAnswer4
+    ]
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: (
+        ObservationAnswer1
+        | ObservationAnswer2
+        | ObservationAnswer3
+        | ObservationAnswer4
+    )
+
+
+class PosePreviewBatchResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    results: Annotated[
+        list[PosePreviewCandidateResult],
+        Field(description="One answer per candidate, in request order."),
+    ]
+
+
+class StateMessage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    kind: Literal["state"] = "state"
+    state: StationState
+
+
 class ActionSequenceRecord(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2939,56 +3027,6 @@ class CompilationOutcome(RootModel[ProgramCompiled | ProgramRejected]):
         ProgramCompiled | ProgramRejected,
         Field(description="Compilation does not acquire a lease or command hardware."),
     ]
-
-
-class ObservationAnswer1(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    cameras: dict[str, ObservationFrame]
-    missing_optional_cameras: list[str]
-    state: StationState
-    status: Literal["observation_captured"] = "observation_captured"
-
-
-class ObservationAnswer(
-    RootModel[
-        ObservationAnswer1
-        | ObservationAnswer2
-        | ObservationAnswer3
-        | ObservationAnswer4
-    ]
-):
-    model_config = ConfigDict(
-        frozen=True,
-    )
-    root: (
-        ObservationAnswer1
-        | ObservationAnswer2
-        | ObservationAnswer3
-        | ObservationAnswer4
-    )
-
-
-class PosePreviewBatchResponse(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    results: Annotated[
-        list[PosePreviewCandidateResult],
-        Field(description="One answer per candidate, in request order."),
-    ]
-
-
-class StateMessage(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    kind: Literal["state"] = "state"
-    state: StationState
 
 
 class ActionSequenceState(BaseModel):

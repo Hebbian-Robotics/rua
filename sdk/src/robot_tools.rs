@@ -772,7 +772,7 @@ fn convert_model_arguments_to_station_units(value: &mut Value) -> std::result::R
                 }
             }
             for (key, child) in &mut *object {
-                if matches!(key.as_str(), "arms" | "targets")
+                if matches!(key.as_str(), "arms" | "goals")
                     && let Value::Object(targets) = child
                 {
                     for target in targets.values_mut() {
@@ -827,10 +827,13 @@ fn scale_argument(value: &mut Value, factor: f64) -> std::result::Result<(), Str
 fn normalize_arguments(value: &mut Value) {
     match value {
         Value::Object(object) => {
+            if let Some(at) = object.get_mut("at") {
+                normalize_movement(at);
+            }
             if let Some(goal) = object.get_mut("goal") {
                 normalize_movement(goal);
             }
-            if let Some(Value::Object(targets)) = object.get_mut("targets") {
+            if let Some(Value::Object(targets)) = object.get_mut("goals") {
                 for target in targets.values_mut() {
                     normalize_movement(target);
                 }

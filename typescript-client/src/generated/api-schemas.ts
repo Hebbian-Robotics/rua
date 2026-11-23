@@ -140,7 +140,7 @@ export const apiSchemas = z.object({
                 .strict(),
             ])
             .describe(
-              "One goal in an action sequence. The arm settles at each target.",
+              "The final pose or joint configuration where this move settles.",
             ),
           gripper_opening: z
             .union([z.number().gte(0).lte(1), z.null()])
@@ -162,6 +162,86 @@ export const apiSchemas = z.object({
               "Speed for both resources in rad/s; overrides the goal speed when provided.",
             )
             .default(null),
+          waypoints: z
+            .array(
+              z
+                .object({
+                  at: z.union([
+                    z
+                      .object({
+                        joints: z.array(z.number()),
+                        kind: z.literal("joints"),
+                      })
+                      .strict(),
+                    z
+                      .object({
+                        kind: z.literal("pose"),
+                        orientation: z
+                          .union([
+                            z
+                              .object({
+                                approach: z
+                                  .union([
+                                    z
+                                      .union([
+                                        z.literal("down").describe("World -Z."),
+                                        z
+                                          .literal("forward")
+                                          .describe("World +X."),
+                                      ])
+                                      .describe("A named approach direction."),
+                                    z.array(z.number()).min(3).max(3),
+                                  ])
+                                  .describe(
+                                    "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                  ),
+                                jaw_yaw_degrees: z.number(),
+                                kind: z.literal("grasp"),
+                              })
+                              .describe(
+                                "The approach direction and the jaw yaw about it, in degrees.",
+                              ),
+                            z
+                              .object({
+                                kind: z.literal("quaternion"),
+                                quaternion: z.array(z.number()).min(4).max(4),
+                              })
+                              .describe("A raw quaternion, `[x, y, z, w]`."),
+                          ])
+                          .describe("A tool orientation as a client gives it."),
+                        position: z.array(z.number()).min(3).max(3),
+                      })
+                      .strict(),
+                  ]),
+                  gripper_opening: z
+                    .union([
+                      z
+                        .number()
+                        .gte(0)
+                        .lte(1)
+                        .describe(
+                          "Start moving the gripper when passing this waypoint.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Start moving the gripper when passing this waypoint.",
+                        ),
+                    ])
+                    .describe(
+                      "Start moving the gripper when passing this waypoint.",
+                    )
+                    .optional(),
+                })
+                .strict()
+                .describe(
+                  "An intermediate configuration along one continuous move.",
+                ),
+            )
+            .describe(
+              "Pass through these intermediate configurations before settling at the goal.",
+            )
+            .optional(),
         })
         .strict(),
       z
@@ -178,7 +258,7 @@ export const apiSchemas = z.object({
         .strict(),
     ])
     .describe(
-      "An arm action must name a goal or gripper target. When both are present they start together.",
+      "An arm action must name a goal or gripper opening. When both are present they start together.",
     ),
   ActionSequenceGoal: z
     .union([
@@ -228,9 +308,7 @@ export const apiSchemas = z.object({
         })
         .strict(),
     ])
-    .describe(
-      "One goal in an action sequence. The arm settles at each target.",
-    ),
+    .describe("The final pose or joint configuration where this move settles."),
   ActionSequencePhase: z
     .union([
       z.object({ state: z.literal("running"), step: z.number().int().gte(0) }),
@@ -489,7 +567,7 @@ export const apiSchemas = z.object({
                               .strict(),
                           ])
                           .describe(
-                            "One goal in an action sequence. The arm settles at each target.",
+                            "The final pose or joint configuration where this move settles.",
                           ),
                         gripper_opening: z
                           .union([z.number().gte(0).lte(1), z.null()])
@@ -511,6 +589,102 @@ export const apiSchemas = z.object({
                             "Speed for both resources in rad/s; overrides the goal speed when provided.",
                           )
                           .default(null),
+                        waypoints: z
+                          .array(
+                            z
+                              .object({
+                                at: z.union([
+                                  z
+                                    .object({
+                                      joints: z.array(z.number()),
+                                      kind: z.literal("joints"),
+                                    })
+                                    .strict(),
+                                  z
+                                    .object({
+                                      kind: z.literal("pose"),
+                                      orientation: z
+                                        .union([
+                                          z
+                                            .object({
+                                              approach: z
+                                                .union([
+                                                  z
+                                                    .union([
+                                                      z
+                                                        .literal("down")
+                                                        .describe("World -Z."),
+                                                      z
+                                                        .literal("forward")
+                                                        .describe("World +X."),
+                                                    ])
+                                                    .describe(
+                                                      "A named approach direction.",
+                                                    ),
+                                                  z
+                                                    .array(z.number())
+                                                    .min(3)
+                                                    .max(3),
+                                                ])
+                                                .describe(
+                                                  "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                ),
+                                              jaw_yaw_degrees: z.number(),
+                                              kind: z.literal("grasp"),
+                                            })
+                                            .describe(
+                                              "The approach direction and the jaw yaw about it, in degrees.",
+                                            ),
+                                          z
+                                            .object({
+                                              kind: z.literal("quaternion"),
+                                              quaternion: z
+                                                .array(z.number())
+                                                .min(4)
+                                                .max(4),
+                                            })
+                                            .describe(
+                                              "A raw quaternion, `[x, y, z, w]`.",
+                                            ),
+                                        ])
+                                        .describe(
+                                          "A tool orientation as a client gives it.",
+                                        ),
+                                      position: z
+                                        .array(z.number())
+                                        .min(3)
+                                        .max(3),
+                                    })
+                                    .strict(),
+                                ]),
+                                gripper_opening: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .gte(0)
+                                      .lte(1)
+                                      .describe(
+                                        "Start moving the gripper when passing this waypoint.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Start moving the gripper when passing this waypoint.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "Start moving the gripper when passing this waypoint.",
+                                  ),
+                              })
+                              .strict()
+                              .describe(
+                                "An intermediate configuration along one continuous move.",
+                              ),
+                          )
+                          .describe(
+                            "Pass through these intermediate configurations before settling at the goal.",
+                          )
+                          .optional(),
                       })
                       .strict(),
                     z
@@ -527,7 +701,7 @@ export const apiSchemas = z.object({
                       .strict(),
                   ])
                   .describe(
-                    "An arm action must name a goal or gripper target. When both are present they start together.",
+                    "An arm action must name a goal or gripper opening. When both are present they start together.",
                   ),
               ),
             })
@@ -1048,7 +1222,7 @@ export const apiSchemas = z.object({
                             .strict(),
                         ])
                         .describe(
-                          "One goal in an action sequence. The arm settles at each target.",
+                          "The final pose or joint configuration where this move settles.",
                         ),
                       gripper_opening: z
                         .union([z.number().gte(0).lte(1), z.null()])
@@ -1070,6 +1244,100 @@ export const apiSchemas = z.object({
                           "Speed for both resources in rad/s; overrides the goal speed when provided.",
                         )
                         .default(null),
+                      waypoints: z
+                        .array(
+                          z
+                            .object({
+                              at: z.union([
+                                z
+                                  .object({
+                                    joints: z.array(z.number()),
+                                    kind: z.literal("joints"),
+                                  })
+                                  .strict(),
+                                z
+                                  .object({
+                                    kind: z.literal("pose"),
+                                    orientation: z
+                                      .union([
+                                        z
+                                          .object({
+                                            approach: z
+                                              .union([
+                                                z
+                                                  .union([
+                                                    z
+                                                      .literal("down")
+                                                      .describe("World -Z."),
+                                                    z
+                                                      .literal("forward")
+                                                      .describe("World +X."),
+                                                  ])
+                                                  .describe(
+                                                    "A named approach direction.",
+                                                  ),
+                                                z
+                                                  .array(z.number())
+                                                  .min(3)
+                                                  .max(3),
+                                              ])
+                                              .describe(
+                                                "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                              ),
+                                            jaw_yaw_degrees: z.number(),
+                                            kind: z.literal("grasp"),
+                                          })
+                                          .describe(
+                                            "The approach direction and the jaw yaw about it, in degrees.",
+                                          ),
+                                        z
+                                          .object({
+                                            kind: z.literal("quaternion"),
+                                            quaternion: z
+                                              .array(z.number())
+                                              .min(4)
+                                              .max(4),
+                                          })
+                                          .describe(
+                                            "A raw quaternion, `[x, y, z, w]`.",
+                                          ),
+                                      ])
+                                      .describe(
+                                        "A tool orientation as a client gives it.",
+                                      ),
+                                    position: z.array(z.number()).min(3).max(3),
+                                  })
+                                  .strict(),
+                              ]),
+                              gripper_opening: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gte(0)
+                                    .lte(1)
+                                    .describe(
+                                      "Start moving the gripper when passing this waypoint.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Start moving the gripper when passing this waypoint.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Start moving the gripper when passing this waypoint.",
+                                )
+                                .optional(),
+                            })
+                            .strict()
+                            .describe(
+                              "An intermediate configuration along one continuous move.",
+                            ),
+                        )
+                        .describe(
+                          "Pass through these intermediate configurations before settling at the goal.",
+                        )
+                        .optional(),
                     })
                     .strict(),
                   z
@@ -1086,7 +1354,7 @@ export const apiSchemas = z.object({
                     .strict(),
                 ])
                 .describe(
-                  "An arm action must name a goal or gripper target. When both are present they start together.",
+                  "An arm action must name a goal or gripper opening. When both are present they start together.",
                 ),
             ),
           })
@@ -1183,7 +1451,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "One goal in an action sequence. The arm settles at each target.",
+                              "The final pose or joint configuration where this move settles.",
                             ),
                           gripper_opening: z
                             .union([z.number().gte(0).lte(1), z.null()])
@@ -1205,6 +1473,107 @@ export const apiSchemas = z.object({
                               "Speed for both resources in rad/s; overrides the goal speed when provided.",
                             )
                             .default(null),
+                          waypoints: z
+                            .array(
+                              z
+                                .object({
+                                  at: z.union([
+                                    z
+                                      .object({
+                                        joints: z.array(z.number()),
+                                        kind: z.literal("joints"),
+                                      })
+                                      .strict(),
+                                    z
+                                      .object({
+                                        kind: z.literal("pose"),
+                                        orientation: z
+                                          .union([
+                                            z
+                                              .object({
+                                                approach: z
+                                                  .union([
+                                                    z
+                                                      .union([
+                                                        z
+                                                          .literal("down")
+                                                          .describe(
+                                                            "World -Z.",
+                                                          ),
+                                                        z
+                                                          .literal("forward")
+                                                          .describe(
+                                                            "World +X.",
+                                                          ),
+                                                      ])
+                                                      .describe(
+                                                        "A named approach direction.",
+                                                      ),
+                                                    z
+                                                      .array(z.number())
+                                                      .min(3)
+                                                      .max(3),
+                                                  ])
+                                                  .describe(
+                                                    "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                  ),
+                                                jaw_yaw_degrees: z.number(),
+                                                kind: z.literal("grasp"),
+                                              })
+                                              .describe(
+                                                "The approach direction and the jaw yaw about it, in degrees.",
+                                              ),
+                                            z
+                                              .object({
+                                                kind: z.literal("quaternion"),
+                                                quaternion: z
+                                                  .array(z.number())
+                                                  .min(4)
+                                                  .max(4),
+                                              })
+                                              .describe(
+                                                "A raw quaternion, `[x, y, z, w]`.",
+                                              ),
+                                          ])
+                                          .describe(
+                                            "A tool orientation as a client gives it.",
+                                          ),
+                                        position: z
+                                          .array(z.number())
+                                          .min(3)
+                                          .max(3),
+                                      })
+                                      .strict(),
+                                  ]),
+                                  gripper_opening: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gte(0)
+                                        .lte(1)
+                                        .describe(
+                                          "Start moving the gripper when passing this waypoint.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Start moving the gripper when passing this waypoint.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Start moving the gripper when passing this waypoint.",
+                                    )
+                                    .optional(),
+                                })
+                                .strict()
+                                .describe(
+                                  "An intermediate configuration along one continuous move.",
+                                ),
+                            )
+                            .describe(
+                              "Pass through these intermediate configurations before settling at the goal.",
+                            )
+                            .optional(),
                         })
                         .strict(),
                       z
@@ -1221,7 +1590,7 @@ export const apiSchemas = z.object({
                         .strict(),
                     ])
                     .describe(
-                      "An arm action must name a goal or gripper target. When both are present they start together.",
+                      "An arm action must name a goal or gripper opening. When both are present they start together.",
                     ),
                 ),
               })
@@ -1304,7 +1673,7 @@ export const apiSchemas = z.object({
                       .strict(),
                   ])
                   .describe(
-                    "One goal in an action sequence. The arm settles at each target.",
+                    "The final pose or joint configuration where this move settles.",
                   ),
                 gripper_opening: z
                   .union([z.number().gte(0).lte(1), z.null()])
@@ -1326,6 +1695,97 @@ export const apiSchemas = z.object({
                     "Speed for both resources in rad/s; overrides the goal speed when provided.",
                   )
                   .default(null),
+                waypoints: z
+                  .array(
+                    z
+                      .object({
+                        at: z.union([
+                          z
+                            .object({
+                              joints: z.array(z.number()),
+                              kind: z.literal("joints"),
+                            })
+                            .strict(),
+                          z
+                            .object({
+                              kind: z.literal("pose"),
+                              orientation: z
+                                .union([
+                                  z
+                                    .object({
+                                      approach: z
+                                        .union([
+                                          z
+                                            .union([
+                                              z
+                                                .literal("down")
+                                                .describe("World -Z."),
+                                              z
+                                                .literal("forward")
+                                                .describe("World +X."),
+                                            ])
+                                            .describe(
+                                              "A named approach direction.",
+                                            ),
+                                          z.array(z.number()).min(3).max(3),
+                                        ])
+                                        .describe(
+                                          "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                        ),
+                                      jaw_yaw_degrees: z.number(),
+                                      kind: z.literal("grasp"),
+                                    })
+                                    .describe(
+                                      "The approach direction and the jaw yaw about it, in degrees.",
+                                    ),
+                                  z
+                                    .object({
+                                      kind: z.literal("quaternion"),
+                                      quaternion: z
+                                        .array(z.number())
+                                        .min(4)
+                                        .max(4),
+                                    })
+                                    .describe(
+                                      "A raw quaternion, `[x, y, z, w]`.",
+                                    ),
+                                ])
+                                .describe(
+                                  "A tool orientation as a client gives it.",
+                                ),
+                              position: z.array(z.number()).min(3).max(3),
+                            })
+                            .strict(),
+                        ]),
+                        gripper_opening: z
+                          .union([
+                            z
+                              .number()
+                              .gte(0)
+                              .lte(1)
+                              .describe(
+                                "Start moving the gripper when passing this waypoint.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Start moving the gripper when passing this waypoint.",
+                              ),
+                          ])
+                          .describe(
+                            "Start moving the gripper when passing this waypoint.",
+                          )
+                          .optional(),
+                      })
+                      .strict()
+                      .describe(
+                        "An intermediate configuration along one continuous move.",
+                      ),
+                  )
+                  .describe(
+                    "Pass through these intermediate configurations before settling at the goal.",
+                  )
+                  .optional(),
               })
               .strict(),
             z
@@ -1342,7 +1802,7 @@ export const apiSchemas = z.object({
               .strict(),
           ])
           .describe(
-            "An arm action must name a goal or gripper target. When both are present they start together.",
+            "An arm action must name a goal or gripper opening. When both are present they start together.",
           ),
       ),
     })
@@ -1350,6 +1810,66 @@ export const apiSchemas = z.object({
     .describe(
       "One synchronized step; a single-arm action is a map with one entry.",
     ),
+  ActionSequenceWaypoint: z
+    .object({
+      at: z.union([
+        z
+          .object({ joints: z.array(z.number()), kind: z.literal("joints") })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("pose"),
+            orientation: z
+              .union([
+                z
+                  .object({
+                    approach: z
+                      .union([
+                        z
+                          .union([
+                            z.literal("down").describe("World -Z."),
+                            z.literal("forward").describe("World +X."),
+                          ])
+                          .describe("A named approach direction."),
+                        z.array(z.number()).min(3).max(3),
+                      ])
+                      .describe(
+                        "The direction the jaws point along: a named one, or a nonzero world direction.",
+                      ),
+                    jaw_yaw_degrees: z.number(),
+                    kind: z.literal("grasp"),
+                  })
+                  .describe(
+                    "The approach direction and the jaw yaw about it, in degrees.",
+                  ),
+                z
+                  .object({
+                    kind: z.literal("quaternion"),
+                    quaternion: z.array(z.number()).min(4).max(4),
+                  })
+                  .describe("A raw quaternion, `[x, y, z, w]`."),
+              ])
+              .describe("A tool orientation as a client gives it."),
+            position: z.array(z.number()).min(3).max(3),
+          })
+          .strict(),
+      ]),
+      gripper_opening: z
+        .union([
+          z
+            .number()
+            .gte(0)
+            .lte(1)
+            .describe("Start moving the gripper when passing this waypoint."),
+          z
+            .null()
+            .describe("Start moving the gripper when passing this waypoint."),
+        ])
+        .describe("Start moving the gripper when passing this waypoint.")
+        .optional(),
+    })
+    .strict()
+    .describe("An intermediate configuration along one continuous move."),
   Approach: z
     .union([
       z
@@ -3053,7 +3573,7 @@ export const apiSchemas = z.object({
                                     .strict(),
                                 ])
                                 .describe(
-                                  "One goal in an action sequence. The arm settles at each target.",
+                                  "The final pose or joint configuration where this move settles.",
                                 ),
                               gripper_opening: z
                                 .union([z.number().gte(0).lte(1), z.null()])
@@ -3075,6 +3595,111 @@ export const apiSchemas = z.object({
                                   "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                 )
                                 .default(null),
+                              waypoints: z
+                                .array(
+                                  z
+                                    .object({
+                                      at: z.union([
+                                        z
+                                          .object({
+                                            joints: z.array(z.number()),
+                                            kind: z.literal("joints"),
+                                          })
+                                          .strict(),
+                                        z
+                                          .object({
+                                            kind: z.literal("pose"),
+                                            orientation: z
+                                              .union([
+                                                z
+                                                  .object({
+                                                    approach: z
+                                                      .union([
+                                                        z
+                                                          .union([
+                                                            z
+                                                              .literal("down")
+                                                              .describe(
+                                                                "World -Z.",
+                                                              ),
+                                                            z
+                                                              .literal(
+                                                                "forward",
+                                                              )
+                                                              .describe(
+                                                                "World +X.",
+                                                              ),
+                                                          ])
+                                                          .describe(
+                                                            "A named approach direction.",
+                                                          ),
+                                                        z
+                                                          .array(z.number())
+                                                          .min(3)
+                                                          .max(3),
+                                                      ])
+                                                      .describe(
+                                                        "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                      ),
+                                                    jaw_yaw_degrees: z.number(),
+                                                    kind: z.literal("grasp"),
+                                                  })
+                                                  .describe(
+                                                    "The approach direction and the jaw yaw about it, in degrees.",
+                                                  ),
+                                                z
+                                                  .object({
+                                                    kind: z.literal(
+                                                      "quaternion",
+                                                    ),
+                                                    quaternion: z
+                                                      .array(z.number())
+                                                      .min(4)
+                                                      .max(4),
+                                                  })
+                                                  .describe(
+                                                    "A raw quaternion, `[x, y, z, w]`.",
+                                                  ),
+                                              ])
+                                              .describe(
+                                                "A tool orientation as a client gives it.",
+                                              ),
+                                            position: z
+                                              .array(z.number())
+                                              .min(3)
+                                              .max(3),
+                                          })
+                                          .strict(),
+                                      ]),
+                                      gripper_opening: z
+                                        .union([
+                                          z
+                                            .number()
+                                            .gte(0)
+                                            .lte(1)
+                                            .describe(
+                                              "Start moving the gripper when passing this waypoint.",
+                                            ),
+                                          z
+                                            .null()
+                                            .describe(
+                                              "Start moving the gripper when passing this waypoint.",
+                                            ),
+                                        ])
+                                        .describe(
+                                          "Start moving the gripper when passing this waypoint.",
+                                        )
+                                        .optional(),
+                                    })
+                                    .strict()
+                                    .describe(
+                                      "An intermediate configuration along one continuous move.",
+                                    ),
+                                )
+                                .describe(
+                                  "Pass through these intermediate configurations before settling at the goal.",
+                                )
+                                .optional(),
                             })
                             .strict(),
                           z
@@ -3093,7 +3718,7 @@ export const apiSchemas = z.object({
                             .strict(),
                         ])
                         .describe(
-                          "An arm action must name a goal or gripper target. When both are present they start together.",
+                          "An arm action must name a goal or gripper opening. When both are present they start together.",
                         ),
                     ),
                   })
@@ -3542,10 +4167,7 @@ export const apiSchemas = z.object({
         .object({
           command: z
             .object({
-              max_joint_speed: z
-                .union([z.number().gt(0), z.null()])
-                .default(null),
-              targets: z.record(
+              goals: z.record(
                 z.string(),
                 z
                   .union([
@@ -3595,6 +4217,9 @@ export const apiSchemas = z.object({
                     "One corner of a move: joints, or a tool pose solved for joints.",
                   ),
               ),
+              max_joint_speed: z
+                .union([z.number().gt(0), z.null()])
+                .default(null),
             })
             .strict()
             .describe(
@@ -5245,6 +5870,100 @@ export const apiSchemas = z.object({
                       max_joint_speed: z
                         .union([z.number().gt(0), z.null()])
                         .optional(),
+                      waypoints: z
+                        .array(
+                          z
+                            .object({
+                              at: z.union([
+                                z
+                                  .object({
+                                    joints: z.array(z.number()),
+                                    kind: z.literal("joints"),
+                                  })
+                                  .strict(),
+                                z
+                                  .object({
+                                    kind: z.literal("pose"),
+                                    orientation: z
+                                      .union([
+                                        z
+                                          .object({
+                                            approach: z
+                                              .union([
+                                                z
+                                                  .union([
+                                                    z
+                                                      .literal("down")
+                                                      .describe("World -Z."),
+                                                    z
+                                                      .literal("forward")
+                                                      .describe("World +X."),
+                                                  ])
+                                                  .describe(
+                                                    "A named approach direction.",
+                                                  ),
+                                                z
+                                                  .array(z.number())
+                                                  .min(3)
+                                                  .max(3),
+                                              ])
+                                              .describe(
+                                                "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                              ),
+                                            jaw_yaw_degrees: z.number(),
+                                            kind: z.literal("grasp"),
+                                          })
+                                          .describe(
+                                            "The approach direction and the jaw yaw about it, in degrees.",
+                                          ),
+                                        z
+                                          .object({
+                                            kind: z.literal("quaternion"),
+                                            quaternion: z
+                                              .array(z.number())
+                                              .min(4)
+                                              .max(4),
+                                          })
+                                          .describe(
+                                            "A raw quaternion, `[x, y, z, w]`.",
+                                          ),
+                                      ])
+                                      .describe(
+                                        "A tool orientation as a client gives it.",
+                                      ),
+                                    position: z.array(z.number()).min(3).max(3),
+                                  })
+                                  .strict(),
+                              ]),
+                              gripper_opening: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gte(0)
+                                    .lte(1)
+                                    .describe(
+                                      "Start moving the gripper when passing this waypoint.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Start moving the gripper when passing this waypoint.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Start moving the gripper when passing this waypoint.",
+                                )
+                                .optional(),
+                            })
+                            .strict()
+                            .describe(
+                              "An intermediate configuration along one continuous move.",
+                            ),
+                        )
+                        .describe(
+                          "Pass through these intermediate configurations before settling at the goal.",
+                        )
+                        .optional(),
                     })
                     .strict(),
                   z
@@ -5359,7 +6078,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "One goal in an action sequence. The arm settles at each target.",
+                              "The final pose or joint configuration where this move settles.",
                             ),
                           gripper_opening: z
                             .union([z.number().gte(0).lte(1), z.null()])
@@ -5381,6 +6100,107 @@ export const apiSchemas = z.object({
                               "Speed for both resources in rad/s; overrides the goal speed when provided.",
                             )
                             .default(null),
+                          waypoints: z
+                            .array(
+                              z
+                                .object({
+                                  at: z.union([
+                                    z
+                                      .object({
+                                        joints: z.array(z.number()),
+                                        kind: z.literal("joints"),
+                                      })
+                                      .strict(),
+                                    z
+                                      .object({
+                                        kind: z.literal("pose"),
+                                        orientation: z
+                                          .union([
+                                            z
+                                              .object({
+                                                approach: z
+                                                  .union([
+                                                    z
+                                                      .union([
+                                                        z
+                                                          .literal("down")
+                                                          .describe(
+                                                            "World -Z.",
+                                                          ),
+                                                        z
+                                                          .literal("forward")
+                                                          .describe(
+                                                            "World +X.",
+                                                          ),
+                                                      ])
+                                                      .describe(
+                                                        "A named approach direction.",
+                                                      ),
+                                                    z
+                                                      .array(z.number())
+                                                      .min(3)
+                                                      .max(3),
+                                                  ])
+                                                  .describe(
+                                                    "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                  ),
+                                                jaw_yaw_degrees: z.number(),
+                                                kind: z.literal("grasp"),
+                                              })
+                                              .describe(
+                                                "The approach direction and the jaw yaw about it, in degrees.",
+                                              ),
+                                            z
+                                              .object({
+                                                kind: z.literal("quaternion"),
+                                                quaternion: z
+                                                  .array(z.number())
+                                                  .min(4)
+                                                  .max(4),
+                                              })
+                                              .describe(
+                                                "A raw quaternion, `[x, y, z, w]`.",
+                                              ),
+                                          ])
+                                          .describe(
+                                            "A tool orientation as a client gives it.",
+                                          ),
+                                        position: z
+                                          .array(z.number())
+                                          .min(3)
+                                          .max(3),
+                                      })
+                                      .strict(),
+                                  ]),
+                                  gripper_opening: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gte(0)
+                                        .lte(1)
+                                        .describe(
+                                          "Start moving the gripper when passing this waypoint.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Start moving the gripper when passing this waypoint.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Start moving the gripper when passing this waypoint.",
+                                    )
+                                    .optional(),
+                                })
+                                .strict()
+                                .describe(
+                                  "An intermediate configuration along one continuous move.",
+                                ),
+                            )
+                            .describe(
+                              "Pass through these intermediate configurations before settling at the goal.",
+                            )
+                            .optional(),
                         })
                         .strict(),
                       z
@@ -5397,7 +6217,7 @@ export const apiSchemas = z.object({
                         .strict(),
                     ])
                     .describe(
-                      "An arm action must name a goal or gripper target. When both are present they start together.",
+                      "An arm action must name a goal or gripper opening. When both are present they start together.",
                     ),
                 ),
               })
@@ -5518,6 +6338,107 @@ export const apiSchemas = z.object({
                             kind: z.literal("move"),
                             max_joint_speed: z
                               .union([z.number().gt(0), z.null()])
+                              .optional(),
+                            waypoints: z
+                              .array(
+                                z
+                                  .object({
+                                    at: z.union([
+                                      z
+                                        .object({
+                                          joints: z.array(z.number()),
+                                          kind: z.literal("joints"),
+                                        })
+                                        .strict(),
+                                      z
+                                        .object({
+                                          kind: z.literal("pose"),
+                                          orientation: z
+                                            .union([
+                                              z
+                                                .object({
+                                                  approach: z
+                                                    .union([
+                                                      z
+                                                        .union([
+                                                          z
+                                                            .literal("down")
+                                                            .describe(
+                                                              "World -Z.",
+                                                            ),
+                                                          z
+                                                            .literal("forward")
+                                                            .describe(
+                                                              "World +X.",
+                                                            ),
+                                                        ])
+                                                        .describe(
+                                                          "A named approach direction.",
+                                                        ),
+                                                      z
+                                                        .array(z.number())
+                                                        .min(3)
+                                                        .max(3),
+                                                    ])
+                                                    .describe(
+                                                      "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                    ),
+                                                  jaw_yaw_degrees: z.number(),
+                                                  kind: z.literal("grasp"),
+                                                })
+                                                .describe(
+                                                  "The approach direction and the jaw yaw about it, in degrees.",
+                                                ),
+                                              z
+                                                .object({
+                                                  kind: z.literal("quaternion"),
+                                                  quaternion: z
+                                                    .array(z.number())
+                                                    .min(4)
+                                                    .max(4),
+                                                })
+                                                .describe(
+                                                  "A raw quaternion, `[x, y, z, w]`.",
+                                                ),
+                                            ])
+                                            .describe(
+                                              "A tool orientation as a client gives it.",
+                                            ),
+                                          position: z
+                                            .array(z.number())
+                                            .min(3)
+                                            .max(3),
+                                        })
+                                        .strict(),
+                                    ]),
+                                    gripper_opening: z
+                                      .union([
+                                        z
+                                          .number()
+                                          .gte(0)
+                                          .lte(1)
+                                          .describe(
+                                            "Start moving the gripper when passing this waypoint.",
+                                          ),
+                                        z
+                                          .null()
+                                          .describe(
+                                            "Start moving the gripper when passing this waypoint.",
+                                          ),
+                                      ])
+                                      .describe(
+                                        "Start moving the gripper when passing this waypoint.",
+                                      )
+                                      .optional(),
+                                  })
+                                  .strict()
+                                  .describe(
+                                    "An intermediate configuration along one continuous move.",
+                                  ),
+                              )
+                              .describe(
+                                "Pass through these intermediate configurations before settling at the goal.",
+                              )
                               .optional(),
                           })
                           .strict(),
@@ -5645,7 +6566,7 @@ export const apiSchemas = z.object({
                                       .strict(),
                                   ])
                                   .describe(
-                                    "One goal in an action sequence. The arm settles at each target.",
+                                    "The final pose or joint configuration where this move settles.",
                                   ),
                                 gripper_opening: z
                                   .union([z.number().gte(0).lte(1), z.null()])
@@ -5667,6 +6588,112 @@ export const apiSchemas = z.object({
                                     "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                   )
                                   .default(null),
+                                waypoints: z
+                                  .array(
+                                    z
+                                      .object({
+                                        at: z.union([
+                                          z
+                                            .object({
+                                              joints: z.array(z.number()),
+                                              kind: z.literal("joints"),
+                                            })
+                                            .strict(),
+                                          z
+                                            .object({
+                                              kind: z.literal("pose"),
+                                              orientation: z
+                                                .union([
+                                                  z
+                                                    .object({
+                                                      approach: z
+                                                        .union([
+                                                          z
+                                                            .union([
+                                                              z
+                                                                .literal("down")
+                                                                .describe(
+                                                                  "World -Z.",
+                                                                ),
+                                                              z
+                                                                .literal(
+                                                                  "forward",
+                                                                )
+                                                                .describe(
+                                                                  "World +X.",
+                                                                ),
+                                                            ])
+                                                            .describe(
+                                                              "A named approach direction.",
+                                                            ),
+                                                          z
+                                                            .array(z.number())
+                                                            .min(3)
+                                                            .max(3),
+                                                        ])
+                                                        .describe(
+                                                          "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                        ),
+                                                      jaw_yaw_degrees:
+                                                        z.number(),
+                                                      kind: z.literal("grasp"),
+                                                    })
+                                                    .describe(
+                                                      "The approach direction and the jaw yaw about it, in degrees.",
+                                                    ),
+                                                  z
+                                                    .object({
+                                                      kind: z.literal(
+                                                        "quaternion",
+                                                      ),
+                                                      quaternion: z
+                                                        .array(z.number())
+                                                        .min(4)
+                                                        .max(4),
+                                                    })
+                                                    .describe(
+                                                      "A raw quaternion, `[x, y, z, w]`.",
+                                                    ),
+                                                ])
+                                                .describe(
+                                                  "A tool orientation as a client gives it.",
+                                                ),
+                                              position: z
+                                                .array(z.number())
+                                                .min(3)
+                                                .max(3),
+                                            })
+                                            .strict(),
+                                        ]),
+                                        gripper_opening: z
+                                          .union([
+                                            z
+                                              .number()
+                                              .gte(0)
+                                              .lte(1)
+                                              .describe(
+                                                "Start moving the gripper when passing this waypoint.",
+                                              ),
+                                            z
+                                              .null()
+                                              .describe(
+                                                "Start moving the gripper when passing this waypoint.",
+                                              ),
+                                          ])
+                                          .describe(
+                                            "Start moving the gripper when passing this waypoint.",
+                                          )
+                                          .optional(),
+                                      })
+                                      .strict()
+                                      .describe(
+                                        "An intermediate configuration along one continuous move.",
+                                      ),
+                                  )
+                                  .describe(
+                                    "Pass through these intermediate configurations before settling at the goal.",
+                                  )
+                                  .optional(),
                               })
                               .strict(),
                             z
@@ -5687,7 +6714,7 @@ export const apiSchemas = z.object({
                               .strict(),
                           ])
                           .describe(
-                            "An arm action must name a goal or gripper target. When both are present they start together.",
+                            "An arm action must name a goal or gripper opening. When both are present they start together.",
                           ),
                       ),
                     })
@@ -5800,6 +6827,86 @@ export const apiSchemas = z.object({
           .optional(),
         kind: z.literal("move"),
         max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
+        waypoints: z
+          .array(
+            z
+              .object({
+                at: z.union([
+                  z
+                    .object({
+                      joints: z.array(z.number()),
+                      kind: z.literal("joints"),
+                    })
+                    .strict(),
+                  z
+                    .object({
+                      kind: z.literal("pose"),
+                      orientation: z
+                        .union([
+                          z
+                            .object({
+                              approach: z
+                                .union([
+                                  z
+                                    .union([
+                                      z.literal("down").describe("World -Z."),
+                                      z
+                                        .literal("forward")
+                                        .describe("World +X."),
+                                    ])
+                                    .describe("A named approach direction."),
+                                  z.array(z.number()).min(3).max(3),
+                                ])
+                                .describe(
+                                  "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                ),
+                              jaw_yaw_degrees: z.number(),
+                              kind: z.literal("grasp"),
+                            })
+                            .describe(
+                              "The approach direction and the jaw yaw about it, in degrees.",
+                            ),
+                          z
+                            .object({
+                              kind: z.literal("quaternion"),
+                              quaternion: z.array(z.number()).min(4).max(4),
+                            })
+                            .describe("A raw quaternion, `[x, y, z, w]`."),
+                        ])
+                        .describe("A tool orientation as a client gives it."),
+                      position: z.array(z.number()).min(3).max(3),
+                    })
+                    .strict(),
+                ]),
+                gripper_opening: z
+                  .union([
+                    z
+                      .number()
+                      .gte(0)
+                      .lte(1)
+                      .describe(
+                        "Start moving the gripper when passing this waypoint.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Start moving the gripper when passing this waypoint.",
+                      ),
+                  ])
+                  .describe(
+                    "Start moving the gripper when passing this waypoint.",
+                  )
+                  .optional(),
+              })
+              .strict()
+              .describe(
+                "An intermediate configuration along one continuous move.",
+              ),
+          )
+          .describe(
+            "Pass through these intermediate configurations before settling at the goal.",
+          )
+          .optional(),
       })
       .strict(),
     z
@@ -5907,6 +7014,92 @@ export const apiSchemas = z.object({
               .optional(),
             kind: z.literal("move"),
             max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
+            waypoints: z
+              .array(
+                z
+                  .object({
+                    at: z.union([
+                      z
+                        .object({
+                          joints: z.array(z.number()),
+                          kind: z.literal("joints"),
+                        })
+                        .strict(),
+                      z
+                        .object({
+                          kind: z.literal("pose"),
+                          orientation: z
+                            .union([
+                              z
+                                .object({
+                                  approach: z
+                                    .union([
+                                      z
+                                        .union([
+                                          z
+                                            .literal("down")
+                                            .describe("World -Z."),
+                                          z
+                                            .literal("forward")
+                                            .describe("World +X."),
+                                        ])
+                                        .describe(
+                                          "A named approach direction.",
+                                        ),
+                                      z.array(z.number()).min(3).max(3),
+                                    ])
+                                    .describe(
+                                      "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                    ),
+                                  jaw_yaw_degrees: z.number(),
+                                  kind: z.literal("grasp"),
+                                })
+                                .describe(
+                                  "The approach direction and the jaw yaw about it, in degrees.",
+                                ),
+                              z
+                                .object({
+                                  kind: z.literal("quaternion"),
+                                  quaternion: z.array(z.number()).min(4).max(4),
+                                })
+                                .describe("A raw quaternion, `[x, y, z, w]`."),
+                            ])
+                            .describe(
+                              "A tool orientation as a client gives it.",
+                            ),
+                          position: z.array(z.number()).min(3).max(3),
+                        })
+                        .strict(),
+                    ]),
+                    gripper_opening: z
+                      .union([
+                        z
+                          .number()
+                          .gte(0)
+                          .lte(1)
+                          .describe(
+                            "Start moving the gripper when passing this waypoint.",
+                          ),
+                        z
+                          .null()
+                          .describe(
+                            "Start moving the gripper when passing this waypoint.",
+                          ),
+                      ])
+                      .describe(
+                        "Start moving the gripper when passing this waypoint.",
+                      )
+                      .optional(),
+                  })
+                  .strict()
+                  .describe(
+                    "An intermediate configuration along one continuous move.",
+                  ),
+              )
+              .describe(
+                "Pass through these intermediate configurations before settling at the goal.",
+              )
+              .optional(),
           })
           .strict(),
         z
@@ -5987,6 +7180,97 @@ export const apiSchemas = z.object({
                   max_joint_speed: z
                     .union([z.number().gt(0), z.null()])
                     .optional(),
+                  waypoints: z
+                    .array(
+                      z
+                        .object({
+                          at: z.union([
+                            z
+                              .object({
+                                joints: z.array(z.number()),
+                                kind: z.literal("joints"),
+                              })
+                              .strict(),
+                            z
+                              .object({
+                                kind: z.literal("pose"),
+                                orientation: z
+                                  .union([
+                                    z
+                                      .object({
+                                        approach: z
+                                          .union([
+                                            z
+                                              .union([
+                                                z
+                                                  .literal("down")
+                                                  .describe("World -Z."),
+                                                z
+                                                  .literal("forward")
+                                                  .describe("World +X."),
+                                              ])
+                                              .describe(
+                                                "A named approach direction.",
+                                              ),
+                                            z.array(z.number()).min(3).max(3),
+                                          ])
+                                          .describe(
+                                            "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                          ),
+                                        jaw_yaw_degrees: z.number(),
+                                        kind: z.literal("grasp"),
+                                      })
+                                      .describe(
+                                        "The approach direction and the jaw yaw about it, in degrees.",
+                                      ),
+                                    z
+                                      .object({
+                                        kind: z.literal("quaternion"),
+                                        quaternion: z
+                                          .array(z.number())
+                                          .min(4)
+                                          .max(4),
+                                      })
+                                      .describe(
+                                        "A raw quaternion, `[x, y, z, w]`.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "A tool orientation as a client gives it.",
+                                  ),
+                                position: z.array(z.number()).min(3).max(3),
+                              })
+                              .strict(),
+                          ]),
+                          gripper_opening: z
+                            .union([
+                              z
+                                .number()
+                                .gte(0)
+                                .lte(1)
+                                .describe(
+                                  "Start moving the gripper when passing this waypoint.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Start moving the gripper when passing this waypoint.",
+                                ),
+                            ])
+                            .describe(
+                              "Start moving the gripper when passing this waypoint.",
+                            )
+                            .optional(),
+                        })
+                        .strict()
+                        .describe(
+                          "An intermediate configuration along one continuous move.",
+                        ),
+                    )
+                    .describe(
+                      "Pass through these intermediate configurations before settling at the goal.",
+                    )
+                    .optional(),
                 })
                 .strict(),
               z
@@ -6060,6 +7344,18 @@ export const apiSchemas = z.object({
               "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
             )
             .default(null),
+          pass_through: z
+            .union([
+              z
+                .object({
+                  gripper_angle: z.union([z.number(), z.null()]).optional(),
+                })
+                .describe(
+                  "Continue through this configuration and optionally begin a jaw move.",
+                ),
+              z.null(),
+            ])
+            .optional(),
           target_position: z
             .union([z.array(z.number()).min(3).max(3), z.null()])
             .default(null),
@@ -6534,6 +7830,20 @@ export const apiSchemas = z.object({
                               "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
                             )
                             .default(null),
+                          pass_through: z
+                            .union([
+                              z
+                                .object({
+                                  gripper_angle: z
+                                    .union([z.number(), z.null()])
+                                    .optional(),
+                                })
+                                .describe(
+                                  "Continue through this configuration and optionally begin a jaw move.",
+                                ),
+                              z.null(),
+                            ])
+                            .optional(),
                           target_position: z
                             .union([
                               z.array(z.number()).min(3).max(3),
@@ -9399,6 +10709,20 @@ export const apiSchemas = z.object({
                                   "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
                                 )
                                 .default(null),
+                              pass_through: z
+                                .union([
+                                  z
+                                    .object({
+                                      gripper_angle: z
+                                        .union([z.number(), z.null()])
+                                        .optional(),
+                                    })
+                                    .describe(
+                                      "Continue through this configuration and optionally begin a jaw move.",
+                                    ),
+                                  z.null(),
+                                ])
+                                .optional(),
                               target_position: z
                                 .union([
                                   z.array(z.number()).min(3).max(3),
@@ -11794,8 +13118,7 @@ export const apiSchemas = z.object({
     .object({
       command: z
         .object({
-          max_joint_speed: z.union([z.number().gt(0), z.null()]).default(null),
-          targets: z.record(
+          goals: z.record(
             z.string(),
             z
               .union([
@@ -11843,6 +13166,7 @@ export const apiSchemas = z.object({
                 "One corner of a move: joints, or a tool pose solved for joints.",
               ),
           ),
+          max_joint_speed: z.union([z.number().gt(0), z.null()]).default(null),
         })
         .strict()
         .describe(
@@ -12481,8 +13805,7 @@ export const apiSchemas = z.object({
     ),
   MoveArmsCommand: z
     .object({
-      max_joint_speed: z.union([z.number().gt(0), z.null()]).default(null),
-      targets: z.record(
+      goals: z.record(
         z.string(),
         z
           .union([
@@ -12530,6 +13853,7 @@ export const apiSchemas = z.object({
             "One corner of a move: joints, or a tool pose solved for joints.",
           ),
       ),
+      max_joint_speed: z.union([z.number().gt(0), z.null()]).default(null),
     })
     .strict()
     .describe(
@@ -15331,6 +16655,11 @@ export const apiSchemas = z.object({
     .describe(
       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
     ),
+  PassThrough: z
+    .object({ gripper_angle: z.union([z.number(), z.null()]).optional() })
+    .describe(
+      "Continue through this configuration and optionally begin a jaw move.",
+    ),
   PathLimited: z
     .object({ reason: z.string() })
     .describe(
@@ -15392,6 +16721,18 @@ export const apiSchemas = z.object({
                   "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
                 )
                 .default(null),
+              pass_through: z
+                .union([
+                  z
+                    .object({
+                      gripper_angle: z.union([z.number(), z.null()]).optional(),
+                    })
+                    .describe(
+                      "Continue through this configuration and optionally begin a jaw move.",
+                    ),
+                  z.null(),
+                ])
+                .optional(),
               target_position: z
                 .union([z.array(z.number()).min(3).max(3), z.null()])
                 .default(null),
@@ -17001,6 +18342,18 @@ export const apiSchemas = z.object({
           "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
         )
         .default(null),
+      pass_through: z
+        .union([
+          z
+            .object({
+              gripper_angle: z.union([z.number(), z.null()]).optional(),
+            })
+            .describe(
+              "Continue through this configuration and optionally begin a jaw move.",
+            ),
+          z.null(),
+        ])
+        .optional(),
       target_position: z
         .union([z.array(z.number()).min(3).max(3), z.null()])
         .default(null),
@@ -17516,6 +18869,19 @@ export const apiSchemas = z.object({
                                           "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
                                         )
                                         .default(null),
+                                      pass_through: z.union([
+                                        z
+                                          .object({
+                                            gripper_angle: z.union([
+                                              z.number(),
+                                              z.null(),
+                                            ]),
+                                          })
+                                          .describe(
+                                            "Continue through this configuration and optionally begin a jaw move.",
+                                          ),
+                                        z.null(),
+                                      ]),
                                       target_position: z
                                         .union([
                                           z.array(z.number()).min(3).max(3),
@@ -22074,7 +23440,7 @@ export const apiSchemas = z.object({
                                         .strict(),
                                     ])
                                     .describe(
-                                      "One goal in an action sequence. The arm settles at each target.",
+                                      "The final pose or joint configuration where this move settles.",
                                     ),
                                   gripper_opening: z
                                     .union([z.number().gte(0).lte(1), z.null()])
@@ -22096,6 +23462,115 @@ export const apiSchemas = z.object({
                                       "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                     )
                                     .default(null),
+                                  waypoints: z
+                                    .array(
+                                      z
+                                        .object({
+                                          at: z.union([
+                                            z
+                                              .object({
+                                                joints: z.array(z.number()),
+                                                kind: z.literal("joints"),
+                                              })
+                                              .strict(),
+                                            z
+                                              .object({
+                                                kind: z.literal("pose"),
+                                                orientation: z
+                                                  .union([
+                                                    z
+                                                      .object({
+                                                        approach: z
+                                                          .union([
+                                                            z
+                                                              .union([
+                                                                z
+                                                                  .literal(
+                                                                    "down",
+                                                                  )
+                                                                  .describe(
+                                                                    "World -Z.",
+                                                                  ),
+                                                                z
+                                                                  .literal(
+                                                                    "forward",
+                                                                  )
+                                                                  .describe(
+                                                                    "World +X.",
+                                                                  ),
+                                                              ])
+                                                              .describe(
+                                                                "A named approach direction.",
+                                                              ),
+                                                            z
+                                                              .array(z.number())
+                                                              .min(3)
+                                                              .max(3),
+                                                          ])
+                                                          .describe(
+                                                            "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                                          ),
+                                                        jaw_yaw_degrees:
+                                                          z.number(),
+                                                        kind: z.literal(
+                                                          "grasp",
+                                                        ),
+                                                      })
+                                                      .describe(
+                                                        "The approach direction and the jaw yaw about it, in degrees.",
+                                                      ),
+                                                    z
+                                                      .object({
+                                                        kind: z.literal(
+                                                          "quaternion",
+                                                        ),
+                                                        quaternion: z
+                                                          .array(z.number())
+                                                          .min(4)
+                                                          .max(4),
+                                                      })
+                                                      .describe(
+                                                        "A raw quaternion, `[x, y, z, w]`.",
+                                                      ),
+                                                  ])
+                                                  .describe(
+                                                    "A tool orientation as a client gives it.",
+                                                  ),
+                                                position: z
+                                                  .array(z.number())
+                                                  .min(3)
+                                                  .max(3),
+                                              })
+                                              .strict(),
+                                          ]),
+                                          gripper_opening: z
+                                            .union([
+                                              z
+                                                .number()
+                                                .gte(0)
+                                                .lte(1)
+                                                .describe(
+                                                  "Start moving the gripper when passing this waypoint.",
+                                                ),
+                                              z
+                                                .null()
+                                                .describe(
+                                                  "Start moving the gripper when passing this waypoint.",
+                                                ),
+                                            ])
+                                            .describe(
+                                              "Start moving the gripper when passing this waypoint.",
+                                            ),
+                                        })
+                                        .strict()
+                                        .describe(
+                                          "An intermediate configuration along one continuous move.",
+                                        ),
+                                    )
+                                    .describe(
+                                      "Pass through these intermediate configurations before settling at the goal.",
+                                    )
+                                    .optional(),
                                 })
                                 .strict(),
                               z
@@ -22116,7 +23591,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "An arm action must name a goal or gripper target. When both are present they start together.",
+                              "An arm action must name a goal or gripper opening. When both are present they start together.",
                             ),
                         ),
                       })

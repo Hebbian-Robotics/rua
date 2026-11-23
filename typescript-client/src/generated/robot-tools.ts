@@ -30,7 +30,7 @@ export const robotToolSpecifications = [
               },
             ],
             description:
-              "An arm action must name a goal or gripper target. When both are present they start together.",
+              "An arm action must name a goal or gripper opening. When both are present they start together.",
             properties: {
               goal: {
                 oneOf: [
@@ -172,6 +172,133 @@ export const robotToolSpecifications = [
                 default: null,
                 description:
                   "Peak speed in degrees per second; clamped to the profile maximum.",
+              },
+              waypoints: {
+                description:
+                  "Pass through these intermediate configurations before settling at the goal.",
+                items: {
+                  additionalProperties: false,
+                  description:
+                    "An intermediate configuration along one continuous move.",
+                  properties: {
+                    at: {
+                      oneOf: [
+                        {
+                          additionalProperties: false,
+                          properties: {
+                            joints_degrees: {
+                              items: {
+                                type: "number",
+                              },
+                              type: "array",
+                            },
+                          },
+                          required: ["joints_degrees"],
+                          type: "object",
+                        },
+                        {
+                          additionalProperties: false,
+                          properties: {
+                            orientation: {
+                              description:
+                                "A tool orientation as a client gives it.",
+                              oneOf: [
+                                {
+                                  description:
+                                    "The approach direction and the jaw yaw about it, in degrees.",
+                                  properties: {
+                                    approach: {
+                                      anyOf: [
+                                        {
+                                          description:
+                                            "A named approach direction.",
+                                          oneOf: [
+                                            {
+                                              const: "down",
+                                              description: "World -Z.",
+                                              type: "string",
+                                            },
+                                            {
+                                              const: "forward",
+                                              description: "World +X.",
+                                              type: "string",
+                                            },
+                                          ],
+                                        },
+                                        {
+                                          items: {
+                                            type: "number",
+                                          },
+                                          maxItems: 3,
+                                          minItems: 3,
+                                          title: "ApproachDirection",
+                                          type: "array",
+                                        },
+                                      ],
+                                      description:
+                                        "The direction the jaws point along: a named one, or a nonzero world direction.",
+                                    },
+                                    jaw_yaw_degrees: {
+                                      type: "number",
+                                    },
+                                  },
+                                  required: ["approach", "jaw_yaw_degrees"],
+                                  title: "GraspOrientation",
+                                  type: "object",
+                                },
+                                {
+                                  description:
+                                    "A raw quaternion, `[x, y, z, w]`.",
+                                  properties: {
+                                    quaternion: {
+                                      items: {
+                                        type: "number",
+                                      },
+                                      maxItems: 4,
+                                      minItems: 4,
+                                      type: "array",
+                                    },
+                                  },
+                                  required: ["quaternion"],
+                                  title: "QuaternionOrientation",
+                                  type: "object",
+                                },
+                              ],
+                            },
+                            position_mm: {
+                              items: {
+                                type: "number",
+                              },
+                              maxItems: 3,
+                              minItems: 3,
+                              type: "array",
+                            },
+                          },
+                          required: ["position_mm", "orientation"],
+                          type: "object",
+                        },
+                      ],
+                    },
+                    gripper_opening: {
+                      anyOf: [
+                        {
+                          type: "number",
+                        },
+                        {
+                          type: "null",
+                        },
+                      ],
+                      description:
+                        "Start moving the gripper when passing this waypoint.",
+                      maximum: 1.0,
+                      minimum: 0.0,
+                      title: "GripperOpening",
+                    },
+                  },
+                  required: ["at"],
+                  type: "object",
+                },
+                type: "array",
               },
             },
             type: "object",
@@ -316,7 +443,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+      "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
     name: "move_arms",
     operation: "move_arms",
     parameters: {
@@ -432,6 +559,13 @@ export const robotToolSpecifications = [
       description:
         "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
       properties: {
+        goals: {
+          additionalProperties: {
+            $ref: "#/$defs/Waypoint",
+          },
+          minProperties: 1,
+          type: "object",
+        },
         max_joint_speed_degrees_per_second: {
           anyOf: [
             {
@@ -447,15 +581,8 @@ export const robotToolSpecifications = [
           exclusiveMinimum: 0.0,
           title: "JointSpeed",
         },
-        targets: {
-          additionalProperties: {
-            $ref: "#/$defs/Waypoint",
-          },
-          minProperties: 1,
-          type: "object",
-        },
       },
-      required: ["targets"],
+      required: ["goals"],
       type: "object",
     },
   },
@@ -554,11 +681,11 @@ export const robotToolContext = {
   frames:
     "Positions are in the station world frame. Tool inputs and outputs use millimeters, degrees, and degrees per second.",
   gripper:
-    "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its goal speed for both goal and gripper.",
+    "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
   limitations:
     "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
   motion:
-    "A pose target is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
+    "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
   orientation:
     "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
   outcomes:

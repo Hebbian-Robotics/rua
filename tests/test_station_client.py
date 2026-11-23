@@ -703,7 +703,7 @@ def test_cancelling_a_move_stops_the_simulated_arm(server_binary: Path) -> None:
                                 "move",
                                 "move_arms",
                                 {
-                                    "targets": {
+                                    "goals": {
                                         ARM: {
                                             "joints_degrees": [
                                                 math.degrees(joint) for joint in joints
@@ -887,7 +887,7 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                             "limited",
                             "move_arms",
                             {
-                                "targets": {
+                                "goals": {
                                     ARM: {
                                         "position_mm": examples[
                                             "limited_position_millimeters"

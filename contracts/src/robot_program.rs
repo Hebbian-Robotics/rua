@@ -32,6 +32,9 @@ pub enum CompiledGoal {
 pub enum CompiledArmAction {
     Move {
         goal: CompiledGoal,
+        /// Pass through these intermediate configurations before settling at the goal.
+        #[serde(default)]
+        waypoints: Vec<crate::ActionSequenceWaypoint>,
         gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<JointSpeed>,
     },

@@ -112,7 +112,7 @@ function JointChart({
       });
     for (const [index, name] of names.entries())
       series.push({
-        label: `${name} target`,
+        label: `${name} destination`,
         stroke: () => jointColor(index),
         width: 1,
         dash: [4, 4],
@@ -191,7 +191,7 @@ function JointChart({
           </span>
         ))}
       </div>
-      <p>Measured · target dashed · commanded dotted</p>
+      <p>Measured · destination dashed · commanded dotted</p>
       <div className="chart-plot" ref={container} />
     </section>
   );

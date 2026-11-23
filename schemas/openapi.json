@@ -119,6 +119,14 @@
                   "number",
                   "null"
                 ]
+              },
+              "waypoints": {
+                "default": [],
+                "description": "Pass through these intermediate configurations before settling at the goal.",
+                "items": {
+                  "$ref": "#/components/schemas/ActionSequenceWaypoint"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -153,10 +161,10 @@
             "type": "object"
           }
         ],
-        "description": "An arm action must name a goal or gripper target. When both are present they start together."
+        "description": "An arm action must name a goal or gripper opening. When both are present they start together."
       },
       "ActionSequenceGoal": {
-        "description": "One goal in an action sequence. The arm settles at each target.",
+        "description": "The final pose or joint configuration where this move settles.",
         "oneOf": [
           {
             "additionalProperties": false,
@@ -400,6 +408,29 @@
         },
         "required": [
           "arms"
+        ],
+        "type": "object"
+      },
+      "ActionSequenceWaypoint": {
+        "additionalProperties": false,
+        "description": "An intermediate configuration along one continuous move.",
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/CompiledGoal"
+          },
+          "gripper_opening": {
+            "description": "Start moving the gripper when passing this waypoint.",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "GripperOpening",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "at"
         ],
         "type": "object"
       },
@@ -1856,6 +1887,14 @@
                   "number",
                   "null"
                 ]
+              },
+              "waypoints": {
+                "default": [],
+                "description": "Pass through these intermediate configurations before settling at the goal.",
+                "items": {
+                  "$ref": "#/components/schemas/ActionSequenceWaypoint"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -3423,6 +3462,13 @@
         "additionalProperties": false,
         "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
         "properties": {
+          "goals": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Waypoint"
+            },
+            "minProperties": 1,
+            "type": "object"
+          },
           "max_joint_speed": {
             "default": null,
             "exclusiveMinimum": 0.0,
@@ -3431,17 +3477,10 @@
               "number",
               "null"
             ]
-          },
-          "targets": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/Waypoint"
-            },
-            "minProperties": 1,
-            "type": "object"
           }
         },
         "required": [
-          "targets"
+          "goals"
         ],
         "type": "object"
       },
@@ -3789,6 +3828,19 @@
           "jaw_yaw_degrees",
           "jaw_yaw_reference"
         ],
+        "type": "object"
+      },
+      "PassThrough": {
+        "description": "Continue through this configuration and optionally begin a jaw move.",
+        "properties": {
+          "gripper_angle": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "PathLimited": {
@@ -5047,6 +5099,16 @@
             "type": [
               "number",
               "null"
+            ]
+          },
+          "pass_through": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PassThrough"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "target_position": {
