@@ -87,21 +87,36 @@ export function createRobotToolCatalog(
       const action = schemaObject(steps["items"]);
       const properties = schemaObject(action["properties"]);
       if (sequenceActions.has("pose") || sequenceActions.has("joints")) {
-        const movement = schemaObject(properties["movement"]);
-        const variants = Array.isArray(movement["oneOf"])
-          ? movement["oneOf"]
-          : [movement];
-        const available = variants.filter((variant) => {
-          const movementProperties = schemaObject(
-            schemaObject(variant)["properties"],
-          );
-          return sequenceActions.has(
-            "joints_degrees" in movementProperties ? "joints" : "pose",
-          );
-        });
-        properties["movement"] =
-          available.length === 1 ? (available[0] ?? {}) : { oneOf: available };
-      } else delete properties["movement"];
+        const selectConfigurations = (goal: JsonObject) => {
+          const variants = Array.isArray(goal["oneOf"])
+            ? goal["oneOf"]
+            : [goal];
+          const available = variants.filter((variant) => {
+            const movementProperties = schemaObject(
+              schemaObject(variant)["properties"],
+            );
+            return sequenceActions.has(
+              "joints_degrees" in movementProperties ? "joints" : "pose",
+            );
+          });
+          return available.length === 1
+            ? (available[0] ?? {})
+            : { oneOf: available };
+        };
+        properties["goal"] = selectConfigurations(
+          schemaObject(properties["goal"]),
+        );
+        const point = schemaObject(
+          schemaObject(schemaObject(properties["waypoints"])["items"])[
+            "properties"
+          ],
+        );
+        point["at"] = selectConfigurations(schemaObject(point["at"]));
+        if (!sequenceActions.has("gripper")) delete point["gripper_opening"];
+      } else {
+        delete properties["goal"];
+        delete properties["waypoints"];
+      }
       if (!sequenceActions.has("gripper")) delete properties["gripper_opening"];
       const requirements = action["anyOf"];
       if (Array.isArray(requirements))

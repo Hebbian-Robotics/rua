@@ -92,11 +92,11 @@ async def main():
             result = await lease.arm("arm").run_action_sequence(
                 [
                     ActionSequenceMove(
-                        movement=ActionSequenceJointsMovement(joints=[0.1, 0, 0, 0, 0]),
+                        goal=ActionSequenceJointsMovement(joints=[0.1, 0, 0, 0, 0]),
                         gripper_opening=1.0,
                     ),
                     ActionSequenceMove(
-                        movement=ActionSequenceJointsMovement(joints=[0.0, 0, 0, 0, 0])
+                        goal=ActionSequenceJointsMovement(joints=[0.0, 0, 0, 0, 0])
                     ),
                 ]
             )
@@ -130,8 +130,13 @@ For OpenAI, Anthropic and Gemini, use the adapters from `hebbian_rua.client.llm.
 `.observe(wait_for_recovery=True)` returns a native message with its arm
 revisions. Send `observation.message` to the model and pass
 `expected_revisions=observation.revisions` to `.execute(response, ...)`.
-Append `turn.messages` and stop on `turn.should_stop` or empty `turn.results`.
-See the [three-provider example](../examples/python/agent_quickstart.py).
+For server-managed history, use `OpenAIRobotTools.execute(..., include_model_output=False)`
+with Responses, `AnthropicThreadRobotTools` with Claude Message Threads, or
+`GeminiInteractionRobotTools` with Gemini Interactions. Pass `turn.messages`
+directly to the provider's next request with the continuation ID or SDK thread.
+The [three-provider example](../examples/python/agent_quickstart.py) shows each
+loop. For a client-managed transcript, append `turn.messages` to your history.
+Stop on `turn.should_stop` or empty `turn.results`.
 For other SDKs or mixed toolsets, use the provider-neutral types above and route
 calls yourself. Stop on a result's `halt` or `interrupted` flag.
 For interruptions, `capture_when_ready(robot)` waits for arm and required-camera
@@ -172,12 +177,12 @@ changes the original view. TypeScript provides `mapTools` and
 
 For multiple arms, replace the sequence capability's scope with
 `NamedArmSequence(("left", "right"))`. Each step then has an `arms` map; every
-participating target is planned before the step is admitted together. TypeScript
+participating goal is planned before the step is admitted together. TypeScript
 uses `{ kind: "named", arms: ["left", "right"] }`; Rust uses `SequenceScope`.
 
 To replace the default mapping, select capabilities from
 `all_robot_tool_capabilities()` (TypeScript: `allRobotToolCapabilities()`), which
-also includes standalone movement, gripper and rehome tools. The default mapping
+also includes standalone move, gripper and rehome tools. The default mapping
 selects sequences, previews, observation and immediate stop. Individual SDK
 methods remain available regardless of the model catalog. Model speeds use
 degrees per second and are clamped to the profile maximum; SDK station arguments

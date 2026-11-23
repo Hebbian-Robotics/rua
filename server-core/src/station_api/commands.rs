@@ -6,9 +6,9 @@ use crate::config::ControllerConfig;
 use crate::control_link::LinkHandle;
 use crate::planning::Planner;
 use hebbian_contracts::{
-    ArmMode, Command, CompiledArmAction, CompiledMovement, GripperOpening, JointSpeed,
-    MoveArmsCommand, PlannedMotion, PoseOrientation, PoseProjection, PreviewPose, RejectionReason,
-    Sample, StationCommand, Waypoint,
+    ActionSequenceWaypoint, ArmMode, Command, CompiledArmAction, CompiledGoal, GripperOpening,
+    JointSpeed, MoveArmsCommand, PlannedMotion, PoseOrientation, PoseProjection, PreviewPose,
+    RejectionReason, Sample, StationCommand, Waypoint,
 };
 
 use crate::arm::{Rejection, rejection};
@@ -250,14 +250,6 @@ pub(crate) fn arm_command(
             orientation,
             max_joint_speed,
         },
-        StationCommand::FollowPath {
-            waypoints,
-            max_joint_speed,
-        } => StationMovement::Trajectory {
-            label: "follow_path",
-            waypoints,
-            max_joint_speed,
-        },
         StationCommand::StreamJoints {
             joints,
             max_joint_speed,
@@ -282,6 +274,51 @@ pub(crate) fn arm_command(
     prepare_movement(link, movement).map(PreparedMovement::into_command)
 }
 
+fn prepare_waypoint_crossings(
+    link: &LinkHandle,
+    arm: &str,
+    movement: &mut PreparedMovement,
+    waypoints: &[ActionSequenceWaypoint],
+    gripper_opening: Option<GripperOpening>,
+) -> Result<(), Rejection> {
+    let PreparedMovement::Trajectory {
+        plan,
+        path_limited,
+        pose_limited,
+        ..
+    } = movement
+    else {
+        return Err(rejection(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+    };
+    if path_limited.is_some() || pose_limited.is_some() {
+        return Err(rejection(
+            RejectionReason::InvalidTarget,
+            "Continuous move cannot reach its requested path",
+        ));
+    }
+    for (segment, point) in plan.segments.iter_mut().zip(waypoints) {
+        segment.pass_through = Some(hebbian_contracts::PassThrough {
+            gripper_angle: point
+                .gripper_opening
+                .map(|opening| jaw_angle(link, arm, opening))
+                .transpose()?,
+        });
+    }
+    let initial_jaw_goal = gripper_opening
+        .map(|opening| jaw_angle(link, arm, opening))
+        .transpose()?
+        .map(hebbian_contracts::JawAngle::radians);
+    planner_or_refuse(link.planner())?
+        .check_continuous_path(
+            plan,
+            &link.config().motion,
+            latest_sample(link)?.gripper_angle,
+            initial_jaw_goal,
+        )
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+    Ok(())
+}
+
 pub(super) fn prepare_compiled_action(
     link: &LinkHandle,
     arm: &str,
@@ -289,24 +326,52 @@ pub(super) fn prepare_compiled_action(
 ) -> Result<PreparedArmAction, Rejection> {
     match action {
         CompiledArmAction::Move {
-            movement,
+            waypoints,
+            goal,
             gripper_opening,
             max_joint_speed,
         } => {
-            let movement = match movement {
-                CompiledMovement::Joints { joints } => {
-                    StationMovement::joints(joints.clone(), *max_joint_speed)
+            let movement = if waypoints.is_empty() {
+                match goal {
+                    CompiledGoal::Joints { joints } => {
+                        StationMovement::joints(joints.clone(), *max_joint_speed)
+                    }
+                    CompiledGoal::Pose {
+                        position,
+                        orientation,
+                    } => StationMovement::Pose {
+                        position: *position,
+                        orientation: *orientation,
+                        max_joint_speed: *max_joint_speed,
+                    },
                 }
-                CompiledMovement::Pose {
-                    position,
-                    orientation,
-                } => StationMovement::Pose {
-                    position: *position,
-                    orientation: *orientation,
+            } else {
+                StationMovement::Trajectory {
+                    label: "continuous_move",
+                    waypoints: waypoints
+                        .iter()
+                        .map(|point| &point.at)
+                        .chain(std::iter::once(goal))
+                        .map(|point| match point {
+                            CompiledGoal::Pose {
+                                position,
+                                orientation,
+                            } => Waypoint::Pose {
+                                position: *position,
+                                orientation: *orientation,
+                            },
+                            CompiledGoal::Joints { joints } => Waypoint::Joints {
+                                joints: joints.clone(),
+                            },
+                        })
+                        .collect(),
                     max_joint_speed: *max_joint_speed,
-                },
+                }
             };
-            let movement = prepare_movement(link, movement)?;
+            let mut movement = prepare_movement(link, movement)?;
+            if !waypoints.is_empty() {
+                prepare_waypoint_crossings(link, arm, &mut movement, waypoints, *gripper_opening)?;
+            }
             let action = match gripper_opening {
                 Some(opening) => {
                     let gripper = prepare_gripper(link, arm, *opening, *max_joint_speed)?;
@@ -373,7 +438,7 @@ pub(crate) fn plan_group_move<'a>(
     let mut moves = Vec::new();
     let mut gates = Vec::new();
     let mut first_link = None;
-    for (arm, waypoint) in &command.targets {
+    for (arm, waypoint) in &command.goals {
         let link = links.get(arm).ok_or_else(|| {
             rejection(
                 RejectionReason::InvalidTarget,

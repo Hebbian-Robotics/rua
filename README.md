@@ -41,26 +41,35 @@ connection, lease and arm setup, plus loops for Claude and Gemini.
 from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
 robot_tools = OpenAIRobotTools(robot)
-messages = [{"role": "user", "content": "Wave hello"}]
+pending_input = [{"role": "user", "content": "Wave hello"}]
+previous_response_id = None
 for _ in range(20):
     observation = await robot_tools.observe(wait_for_recovery=True)
-    messages.append(observation.message)
+    pending_input.append(observation.message)
     response = await client.responses.create(
         model=model,
         instructions=instructions,
         tools=robot_tools.tools,
-        input=messages,
+        input=pending_input,
+        previous_response_id=previous_response_id,
+        store=True,
     )
-    turn = await robot_tools.execute(response, expected_revisions=observation.revisions)
-    messages.extend(turn.messages)
+    turn = await robot_tools.execute(
+        response,
+        expected_revisions=observation.revisions,
+        include_model_output=False,
+    )
     if turn.should_stop or not turn.results:
         break
+    previous_response_id = response.id
+    pending_input = turn.messages
 ```
 
 The model chooses tools, RUA executes them, and fresh camera frames and robot
 state come back for the next turn. You can change the prompt, model and loop.
-Use `AnthropicRobotTools` from `hebbian_rua.client.llm.anthropic` or `GeminiRobotTools` from
-`hebbian_rua.client.llm.gemini` with the corresponding SDK. See the
+Use `AnthropicThreadRobotTools` from `hebbian_rua.client.llm.anthropic` with
+Claude Message Threads or `GeminiInteractionRobotTools` from
+`hebbian_rua.client.llm.gemini` with Gemini Interactions. See the
 [Python examples](examples/python/README.md).
 Choose what reaches the model with [output formatters](docs/model-output.md).
 

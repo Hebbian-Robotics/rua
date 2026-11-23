@@ -47,7 +47,7 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
 - One method per command, generated from the contracts. `Station` has the ones that
   need no lease: `enable`, `approve_recovery`, `disable`, `stop`, `clear_fault`.
   `LeaseGuard`, which `acquire_lease` and `take_lease` return, has every command that
-  moves the arm: `move_to_joints`, `move_to_pose`, `follow_path`, `stream_joints`,
+  moves the arm: `move_to_joints`, `move_to_pose`, `stream_joints`,
   `set_gripper`, plus `run_arms`, `start_action_sequence`, `run_action_sequence`,
   `move_to_pose_keeping_orientation` and `rehome`. Power and the lease are independent:
   the lease can be held with the arm disabled, and a move on a disabled arm is refused

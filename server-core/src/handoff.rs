@@ -499,7 +499,9 @@ pub(crate) fn admit_action_step(
         let core = cores
             .get_mut(action.arm.as_str())
             .expect("all arms validated");
+        let mut jaw_motion_owner = None;
         if let Some(movement) = action.movement {
+            let has_waypoint_jaw = matches!(&movement, AdmittedMovement::Trajectory { decision, .. } if decision.plan.segments.iter().any(|section| section.pass_through.is_some_and(|point| point.gripper_angle.is_some())));
             let record = match movement {
                 AdmittedMovement::Trajectory {
                     label,
@@ -514,6 +516,9 @@ pub(crate) fn admit_action_step(
                 ),
                 AdmittedMovement::PolicyPose { label, goal } => core.apply_reach(&label, goal, now),
             };
+            if has_waypoint_jaw {
+                jaw_motion_owner = Some(record.command_id.clone());
+            }
             records.push(ArmRecord {
                 arm: action.arm.clone(),
                 record,
@@ -522,7 +527,7 @@ pub(crate) fn admit_action_step(
         if let Some(target) = action.gripper {
             records.push(ArmRecord {
                 arm: action.arm,
-                record: core.apply_gripper(target, None, now),
+                record: core.apply_gripper(target, jaw_motion_owner, now),
             });
         }
     }
@@ -579,11 +584,12 @@ mod tests {
             arm: arm.to_owned(),
             plan: CornerPlan {
                 segments: vec![Segment {
+                    pass_through: None,
                     label: "go".into(),
                     corners: vec![vec![0.0, 0.0], target.to_vec()],
                     minimum_duration_seconds: None,
-                    target_position: None,
-                    target_quaternion: None,
+                    destination_position: None,
+                    destination_quaternion: None,
                 }],
                 peak_speed: 1.0,
             },

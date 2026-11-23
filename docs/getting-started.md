@@ -28,7 +28,7 @@ The API can respond before arm feedback arrives. With torque off, open the
 [check that its 3D view matches the arm](so101-manual-control.md#set-up-each-so-101).
 Choose **Manual**, then select **Enable arm** to hold its current pose and
 acquire manual control.
-Select **Target current pose** to preview a target, and use **Move to target**
+Select **Use current position** to preview a goal, and use **Move to goal**
 only after checking the preview and physical clearance.
 See [viewer controls](so101-manual-control.md#controls) for details and
 [fault recovery](so101-manual-control.md#recovering-from-a-fault) if needed.

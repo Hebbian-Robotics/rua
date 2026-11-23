@@ -47,3 +47,8 @@ uv run agent_quickstart.py "Describe the robot state. Keep the arm still."
 Run `uv run agent_quickstart.py --help` for arm, camera, station, and model
 options. See [Write your own loop](../../docs/write-your-own-loop.md) and
 [Model output](../../docs/model-output.md) when adapting the example.
+
+The agent continues each run using OpenAI Responses, Claude Message Threads,
+or Gemini Interactions. Each provider holds the conversation history. Subsequent
+turns send the new tool results and observations. The Claude SDK can replay
+the conversation to restore an expired or interrupted thread.

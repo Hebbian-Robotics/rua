@@ -117,7 +117,7 @@ function JointChart({
       });
     for (const [index, name] of names.entries())
       series.push({
-        label: `${name} target`,
+        label: `${name} destination`,
         show: visibility.showTarget,
         stroke: () => jointColor(index),
         width: 1,
@@ -197,7 +197,7 @@ function JointChart({
           </span>
         ))}
       </div>
-      <p>Measured · target dashed · commanded dotted</p>
+      <p>Measured · destination dashed · commanded dotted</p>
       <div className="chart-plot" ref={container} />
     </section>
   );
@@ -343,7 +343,7 @@ function appendState(
       series.push(arm?.commanded_joints?.[index] ?? null);
     });
     sample.destinationJoints.push(
-      commandPlan(arm?.active_command)?.target_joints ?? null,
+      commandPlan(arm?.active_command)?.destination_joints ?? null,
     );
     sample.destinationLimited.push(commandWasLimited(arm?.active_command));
     sample.gripperOpening.push(arm?.gripper_opening ?? null);

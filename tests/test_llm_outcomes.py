@@ -42,7 +42,7 @@ def test_an_interrupted_move_requires_recovery_not_a_hard_fault_stop() -> None:
                 label="move_to_joints",
                 accepted_unix_nano="0",
                 checkpoints=[],
-                command=RecordedMove(target_joints=[0.1], joint_speed=1.0),
+                command=RecordedMove(destination_joints=[0.1], joint_speed=1.0),
                 phase=CommandOutcomeUnknown(finished_unix_nano="1000000000"),
             )
         ],

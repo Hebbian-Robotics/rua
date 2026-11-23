@@ -34,9 +34,9 @@ function modelCommandRecord(
   const { kind, ...target } = command;
   const result: Record<string, unknown> = { ...metadata, ...target };
   if (command.kind === "policy_reach") {
-    delete result["target_pose"];
-    result["target_position"] = command.target_pose.position;
-    result["target_quaternion"] = command.target_pose.quaternion;
+    delete result["goal_pose"];
+    result["goal_position"] = command.goal_pose.position;
+    result["goal_quaternion"] = command.goal_pose.quaternion;
   }
   switch (phase.kind) {
     case "pending":
@@ -46,7 +46,7 @@ function modelCommandRecord(
       result["achieved"] = phase.achieved;
       if (command.kind === "move") {
         const rule = modelOutcomes.commands[phase.completion.outcome];
-        result["target_status"] =
+        result["goal_status"] =
           command.pose_limited || command.path_limited
             ? rule.limited_target
             : rule.target;
@@ -62,7 +62,7 @@ function modelCommandRecord(
         finished_unix_nano: phase.finished_unix_nano,
       };
       if (phase.kind === "not_started")
-        result[kind === "move" ? "target_status" : "phase"] = "not_started";
+        result[kind === "move" ? "goal_status" : "phase"] = "not_started";
       break;
     default:
       throw new Error(`Unknown phase ${JSON.stringify(phase satisfies never)}`);

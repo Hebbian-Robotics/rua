@@ -70,14 +70,14 @@ function LiveActionSequence() {
                 : "pending";
           const action = Object.entries(step.arms)
             .map(([arm, armAction]) => {
-              const movement =
-                "movement" in armAction
-                  ? armAction.movement.kind === "pose"
+              const move =
+                "goal" in armAction
+                  ? armAction.goal.kind === "pose"
                     ? "Move to pose"
                     : "Move joints"
                   : "";
               return `${arm}: ${[
-                movement,
+                move,
                 armAction.gripper_opening != null
                   ? `Gripper ${(armAction.gripper_opening * 100).toFixed(0)}%`
                   : "",

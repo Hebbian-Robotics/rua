@@ -17,7 +17,7 @@ pub struct CompiledOperation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompiledMovement {
+pub enum CompiledGoal {
     Joints {
         joints: Vec<f64>,
     },
@@ -31,7 +31,10 @@ pub enum CompiledMovement {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CompiledArmAction {
     Move {
-        movement: CompiledMovement,
+        goal: CompiledGoal,
+        /// Pass through these intermediate configurations before settling at the goal.
+        #[serde(default)]
+        waypoints: Vec<crate::ActionSequenceWaypoint>,
         gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<JointSpeed>,
     },

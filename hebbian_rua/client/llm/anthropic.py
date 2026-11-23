@@ -2,7 +2,20 @@
 
 from collections.abc import Mapping
 
-from anthropic.types import Message, MessageParam, ToolParam, ToolResultBlockParam
+from anthropic.types import (
+    ImageBlockParam,
+    Message,
+    MessageParam,
+    TextBlockParam,
+    ToolParam,
+    ToolResultBlockParam,
+)
+from anthropic.types.beta import (
+    BetaContentBlockParam,
+    BetaMessage,
+    BetaMessageParam,
+    BetaToolParam,
+)
 from anthropic.types.content_block_param import ContentBlockParam
 from pydantic import TypeAdapter
 
@@ -94,8 +107,84 @@ class AnthropicRobotTools:
         return RobotToolTurn(messages, results)
 
 
+class AnthropicThreadRobotTools:
+    """Translate robot tools and new inputs for the SDK's Messages thread helper."""
+
+    def __init__(self, robot: RobotTools) -> None:
+        self.robot = robot
+
+    @property
+    def tools(self) -> list[BetaToolParam]:
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": dict[str, object](tool.parameters_schema),
+            }
+            for tool in self.robot.tools
+        ]
+
+    async def observe(
+        self, *, wait_for_recovery: bool = False
+    ) -> ModelObservation[BetaMessageParam]:
+        if wait_for_recovery:
+            captured, _ = await capture_when_ready(self.robot)
+            observation = captured.observation
+        else:
+            observation = await self.robot.observe()
+        message: BetaMessageParam = {
+            "role": "user",
+            "content": _observation_blocks(observation.text, observation.cameras),
+        }
+        return ModelObservation(message, observation.revisions)
+
+    async def execute(
+        self, response: BetaMessage, *, expected_revisions: Mapping[str, int]
+    ) -> RobotToolTurn[BetaMessageParam]:
+        """Execute a completed reply and return new messages for thread.send()."""
+        if response.stop_reason == "refusal":
+            return RobotToolTurn([], [])
+        if response.stop_reason not in {"tool_use", "end_turn", "stop_sequence"}:
+            raise ValueError(
+                f"Cannot execute an incomplete model response: {response.stop_reason}"
+            )
+        calls = [
+            RobotToolCall(call_id=block.id, name=block.name, arguments=block.input)
+            for block in response.content
+            if block.type == "tool_use"
+        ]
+        results = await self.robot.execute(calls, expected_revisions=expected_revisions)
+        content: list[BetaContentBlockParam] = [
+            {
+                "type": "tool_result",
+                "tool_use_id": result.call.call_id,
+                "content": result.text,
+                "is_error": result.is_error,
+            }
+            for result in results
+        ]
+        for result in results:
+            if result.cameras:
+                content.extend(
+                    _observation_blocks(
+                        f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                        result.cameras,
+                    )
+                )
+        messages: list[BetaMessageParam] = (
+            [{"role": "user", "content": content}] if content else []
+        )
+        return RobotToolTurn(messages, results)
+
+
 def _image_message(text: str, cameras: Mapping[str, bytes]) -> MessageParam:
-    content: list[ContentBlockParam] = [{"type": "text", "text": text}]
+    return {"role": "user", "content": _observation_blocks(text, cameras)}
+
+
+def _observation_blocks(
+    text: str, cameras: Mapping[str, bytes]
+) -> list[TextBlockParam | ImageBlockParam]:
+    content: list[TextBlockParam | ImageBlockParam] = [{"type": "text", "text": text}]
     for name, jpeg in cameras.items():
         content.append({"type": "text", "text": f"Camera: {name}"})
         content.append(
@@ -108,4 +197,4 @@ def _image_message(text: str, cameras: Mapping[str, bytes]) -> MessageParam:
                 },
             }
         )
-    return {"role": "user", "content": content}
+    return content

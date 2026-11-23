@@ -1,24 +1,23 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use hebbian_contracts::{
-    CompilationDiagnostic, CompiledArmAction, CompiledMovement, CompiledOperation,
+    CompilationDiagnostic, CompiledArmAction, CompiledGoal, CompiledOperation,
 };
 pub(crate) use hebbian_contracts::{CompilationTarget, CompiledProgram, CompiledStep};
 use sha2::{Digest, Sha256};
 
 use hebbian_contracts::{
-    ActionSequenceArmAction, ActionSequenceMovement, ActionSequenceRequest, GripperOpening,
-    JointSpeed,
+    ActionSequenceArmAction, ActionSequenceGoal, ActionSequenceRequest, GripperOpening, JointSpeed,
 };
 
 pub(crate) fn requested_joints(action: &CompiledArmAction) -> Option<&[f64]> {
     match action {
         CompiledArmAction::Move {
-            movement: CompiledMovement::Joints { joints },
+            goal: CompiledGoal::Joints { joints },
             ..
         } => Some(joints),
         CompiledArmAction::Move {
-            movement: CompiledMovement::Pose { .. },
+            goal: CompiledGoal::Pose { .. },
             ..
         }
         | CompiledArmAction::Gripper { .. } => None,
@@ -167,41 +166,53 @@ fn check_support(
 ) -> Result<(), &'static str> {
     match action {
         CompiledArmAction::Move {
-            movement,
+            goal,
             gripper_opening,
+            waypoints,
             ..
         } => {
-            match movement {
-                CompiledMovement::Joints { joints } => {
-                    if !target.supports_joints {
-                        return Err("This arm does not support joint movements");
+            for goal in waypoints
+                .iter()
+                .map(|waypoint| &waypoint.at)
+                .chain(std::iter::once(goal))
+            {
+                match goal {
+                    CompiledGoal::Joints { joints } => {
+                        if !target.supports_joints {
+                            return Err("This arm does not support joint movements");
+                        }
+                        if joints.len() != target.joint_count
+                            || joints.iter().any(|joint| !joint.is_finite())
+                        {
+                            return Err(
+                                "Joint targets must be finite and match the configured joint count",
+                            );
+                        }
                     }
-                    if joints.len() != target.joint_count
-                        || joints.iter().any(|joint| !joint.is_finite())
-                    {
-                        return Err(
-                            "Joint targets must be finite and match the configured joint count",
-                        );
+                    CompiledGoal::Pose {
+                        position,
+                        orientation,
+                    } => {
+                        if !target.supports_pose {
+                            return Err("This arm does not support pose movements");
+                        }
+                        if position.iter().any(|coordinate| !coordinate.is_finite()) {
+                            return Err("Pose positions must be finite");
+                        }
+                        crate::planning::orientation::pose_orientation_rotation(
+                            *orientation,
+                            target.jaw_closing_axis,
+                        )
+                        .map_err(|_| "Invalid pose orientation")?;
                     }
-                }
-                CompiledMovement::Pose {
-                    position,
-                    orientation,
-                } => {
-                    if !target.supports_pose {
-                        return Err("This arm does not support pose movements");
-                    }
-                    if position.iter().any(|coordinate| !coordinate.is_finite()) {
-                        return Err("Pose positions must be finite");
-                    }
-                    crate::planning::orientation::pose_orientation_rotation(
-                        *orientation,
-                        target.jaw_closing_axis,
-                    )
-                    .map_err(|_| "Invalid pose orientation")?;
                 }
             }
-            if gripper_opening.is_some() && !target.has_gripper {
+            if (gripper_opening.is_some()
+                || waypoints
+                    .iter()
+                    .any(|point| point.gripper_opening.is_some()))
+                && !target.has_gripper
+            {
                 return Err("This arm has no gripper");
             }
         }
@@ -226,21 +237,22 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
     };
     match action {
         ActionSequenceArmAction::Move {
-            movement,
+            waypoints,
+            goal,
             gripper_opening,
             max_joint_speed,
         } => {
-            let (movement, movement_speed) = match movement {
-                ActionSequenceMovement::Joints {
+            let (goal, movement_speed) = match goal {
+                ActionSequenceGoal::Joints {
                     joints,
                     max_joint_speed,
-                } => (CompiledMovement::Joints { joints }, max_joint_speed),
-                ActionSequenceMovement::Pose {
+                } => (CompiledGoal::Joints { joints }, max_joint_speed),
+                ActionSequenceGoal::Pose {
                     position,
                     orientation,
                     max_joint_speed,
                 } => (
-                    CompiledMovement::Pose {
+                    CompiledGoal::Pose {
                         position,
                         orientation,
                     },
@@ -249,7 +261,8 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
             };
             let max_joint_speed = speed(max_joint_speed.or(movement_speed))?;
             Ok(CompiledArmAction::Move {
-                movement,
+                waypoints,
+                goal,
                 gripper_opening: gripper_opening.map(opening).transpose()?,
                 max_joint_speed,
             })
@@ -382,7 +395,8 @@ mod tests {
     #[test]
     fn both_resources_use_the_same_effective_step_speed() {
         let step = |gripper_speed| ActionSequenceArmAction::Move {
-            movement: ActionSequenceMovement::Joints {
+            waypoints: vec![],
+            goal: ActionSequenceGoal::Joints {
                 joints: vec![0.1],
                 max_joint_speed: Some(0.7),
             },
@@ -394,9 +408,10 @@ mod tests {
             assert!(matches!(
                 compiled,
                 CompiledArmAction::Move {
-                    movement: CompiledMovement::Joints { .. },
+                    goal: CompiledGoal::Joints { .. },
                     gripper_opening: Some(_),
                     max_joint_speed: Some(speed),
+                    ..
                 } if (speed.radians_per_second() - expected).abs() < f64::EPSILON
             ));
         }

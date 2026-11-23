@@ -3,6 +3,7 @@ pub mod action_step;
 pub mod arm;
 mod compiler;
 pub mod config;
+mod continuous_path;
 pub mod control_link;
 pub mod control_loop;
 pub mod controller_bridge;

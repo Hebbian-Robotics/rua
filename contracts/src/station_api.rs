@@ -102,13 +102,6 @@ pub enum StationCommand {
         #[serde(default)]
         max_joint_speed: Option<JointSpeed>,
     },
-    /// Waypoints are corners: the arm comes to rest and settles at each one.
-    #[schemars(title = "FollowPathCommand")]
-    FollowPath {
-        waypoints: Vec<Waypoint>,
-        #[serde(default)]
-        max_joint_speed: Option<JointSpeed>,
-    },
     /// Start streaming joint destinations while the arm is holding. Send
     /// later goals to the operation's goal endpoint. The stream ends when
     /// goals stop arriving, on stop, or on a trip.
@@ -132,10 +125,10 @@ pub enum StationCommand {
     },
 }
 
-/// One movement in an action sequence. The arm settles at each target.
+/// The final pose or joint configuration where this move settles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ActionSequenceMovement {
+pub enum ActionSequenceGoal {
     #[schemars(title = "ActionSequenceJointsMovement")]
     Joints {
         joints: Vec<f64>,
@@ -151,17 +144,31 @@ pub enum ActionSequenceMovement {
     },
 }
 
-/// An arm action must name a movement or gripper target. When both are present they start together.
+/// An intermediate configuration along one continuous move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionSequenceWaypoint {
+    pub at: crate::CompiledGoal,
+    /// Start moving the gripper when passing this waypoint.
+    #[schemars(extend("x-omit-when-none" = true))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gripper_opening: Option<GripperOpening>,
+}
+
+/// An arm action must name a goal or gripper opening. When both are present they start together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum ActionSequenceArmAction {
     #[schemars(title = "ActionSequenceMove")]
     Move {
-        movement: ActionSequenceMovement,
+        goal: ActionSequenceGoal,
+        /// Pass through these intermediate configurations before settling at the goal.
+        #[serde(default)]
+        waypoints: Vec<crate::ActionSequenceWaypoint>,
         #[serde(default)]
         #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
-        /// Speed for both resources in rad/s; overrides the movement speed when provided.
+        /// Speed for both resources in rad/s; overrides the goal speed when provided.
         #[serde(default)]
         max_joint_speed: Option<f64>,
     },
@@ -177,9 +184,9 @@ pub enum ActionSequenceArmAction {
 
 impl ActionSequenceArmAction {
     #[must_use]
-    pub fn movement(&self) -> Option<&ActionSequenceMovement> {
+    pub fn goal(&self) -> Option<&ActionSequenceGoal> {
         match self {
-            Self::Move { movement, .. } => Some(movement),
+            Self::Move { goal, .. } => Some(goal),
             Self::Gripper { .. } => None,
         }
     }
@@ -338,13 +345,13 @@ pub struct ActionSequenceRecord {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveArmsCommand {
-    #[schemars(schema_with = "nonempty_arm_targets")]
-    pub targets: BTreeMap<String, Waypoint>,
+    #[schemars(schema_with = "nonempty_arm_goals")]
+    pub goals: BTreeMap<String, Waypoint>,
     #[serde(default)]
     pub max_joint_speed: Option<JointSpeed>,
 }
 
-fn nonempty_arm_targets(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+fn nonempty_arm_goals(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let mut schema = <BTreeMap<String, Waypoint>>::json_schema(generator);
     schema.insert("minProperties".into(), 1.into());
     schema

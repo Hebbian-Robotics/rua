@@ -145,7 +145,7 @@ function armTrack(
     measuredJoints: joints((snapshot) => snapshot.measured_joints),
     commandedJoints: joints((snapshot) => snapshot.commanded_joints),
     destinationJoints: snapshots.map((snapshot) => {
-      const target = commandPlan(snapshot?.active_command)?.target_joints;
+      const target = commandPlan(snapshot?.active_command)?.destination_joints;
       return target && target.length === jointCount ? target : null;
     }),
     destinationLimited: snapshots.map((snapshot) =>

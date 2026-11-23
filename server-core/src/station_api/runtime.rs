@@ -744,7 +744,7 @@ fn finish_step(
             .get(&record.arm)
             .and_then(|operation| requested_joints(&operation.action))
             .is_some_and(|requested| {
-                record.record.target_joints().is_some_and(|target| {
+                record.record.destination_joints().is_some_and(|target| {
                     target.len() != requested.len()
                         || target
                             .iter()
@@ -1223,7 +1223,7 @@ mod tests {
             "move_to_pose",
             hebbian_contracts::UnixNanos(0),
             RecordedCommand::PolicyReach {
-                target_pose: CommandPose {
+                goal_pose: CommandPose {
                     position: [0.0; 3],
                     quaternion: [0.0, 0.0, 0.0, 1.0],
                 },
@@ -1263,7 +1263,7 @@ mod tests {
             "move_to_pose",
             hebbian_contracts::UnixNanos(0),
             RecordedCommand::PolicyReach {
-                target_pose: CommandPose {
+                goal_pose: CommandPose {
                     position: [0.0; 3],
                     quaternion: [0.0, 0.0, 0.0, 1.0],
                 },

@@ -1,8 +1,8 @@
 // CONSTRAINT: Tool +Z points palm-to-fingertips. Jaw yaw turns right-handed about minus approach; zero projects world +X, switching to +Y near parallel. See the public orientation contract.
 
 use hebbian_contracts::{
-    Approach, JawClosingAxis, JawYawReference, NamedApproach, OrientationSummary, PoseOrientation,
-    TargetComparison, ToolOrientation,
+    Approach, GoalComparison, JawClosingAxis, JawYawReference, NamedApproach, OrientationSummary,
+    PoseOrientation, ToolOrientation,
 };
 use nalgebra::{Matrix3, Quaternion, Rotation3, Unit, UnitQuaternion, Vector3};
 
@@ -182,7 +182,7 @@ fn degrees_between(first: &Vector3<f64>, second: &Vector3<f64>) -> f64 {
 pub fn orientation_summary(
     rotation: &UnitQuaternion<f64>,
     axis: JawClosingAxis,
-    target: Option<&UnitQuaternion<f64>>,
+    goal: Option<&UnitQuaternion<f64>>,
 ) -> OrientationSummary {
     let matrix = rotation.to_rotation_matrix().into_inner();
     let direction = matrix.column(2).into_owned();
@@ -192,14 +192,14 @@ pub fn orientation_summary(
         degrees_from_down: rounded(degrees_between(&direction, &-Vector3::z()), 1),
         jaw_yaw_degrees: rounded_in_full_turn(jaw_yaw_degrees(&matrix, axis)),
         jaw_yaw_reference: reference,
-        target: target.map(|target| {
-            let target_matrix = target.to_rotation_matrix().into_inner();
-            let target_direction = target_matrix.column(2).into_owned();
-            TargetComparison {
-                jaw_yaw_degrees: rounded_in_full_turn(jaw_yaw_degrees(&target_matrix, axis)),
-                jaw_yaw_reference: jaw_reference(&target_direction).0,
-                approach_error_degrees: rounded(degrees_between(&direction, &target_direction), 1),
-                orientation_error_degrees: rounded(rotation.angle_to(target).to_degrees(), 1),
+        goal: goal.map(|goal| {
+            let goal_matrix = goal.to_rotation_matrix().into_inner();
+            let goal_direction = goal_matrix.column(2).into_owned();
+            GoalComparison {
+                jaw_yaw_degrees: rounded_in_full_turn(jaw_yaw_degrees(&goal_matrix, axis)),
+                jaw_yaw_reference: jaw_reference(&goal_direction).0,
+                approach_error_degrees: rounded(degrees_between(&direction, &goal_direction), 1),
+                orientation_error_degrees: rounded(rotation.angle_to(goal).to_degrees(), 1),
             }
         }),
     }
@@ -306,7 +306,7 @@ mod tests {
         let summary = orientation_summary(&rotation, JawClosingAxis::Y, Some(&target));
         assert!((summary.degrees_from_down - 12.0).abs() < 1e-9);
         assert!((summary.jaw_yaw_degrees - 87.0).abs() < 1e-9);
-        let comparison = summary.target.unwrap();
+        let comparison = summary.goal.unwrap();
         assert!((comparison.jaw_yaw_degrees - 90.0).abs() < 1e-9);
         assert!((comparison.approach_error_degrees - 12.0).abs() < 1e-9);
         assert!(comparison.orientation_error_degrees > 12.0);
@@ -394,7 +394,7 @@ mod tests {
         let achieved = grasp_rotation(down, 10.0, JawClosingAxis::X).unwrap();
         let target = grasp_rotation(down, 40.0, JawClosingAxis::X).unwrap();
         let summary = orientation_summary(&achieved, JawClosingAxis::X, Some(&target));
-        let comparison = summary.target.unwrap();
+        let comparison = summary.goal.unwrap();
         assert!((summary.jaw_yaw_degrees - 10.0).abs() < 1e-9);
         assert!((comparison.jaw_yaw_degrees - 40.0).abs() < 1e-9);
         assert!(comparison.approach_error_degrees.abs() < 1e-9);

@@ -235,33 +235,35 @@ impl ArmCore {
         Some(Achieved {
             sampled_at: std::time::Duration::from_nanos(observed.sampled_at.unix_nano.0)
                 .as_secs_f64(),
-            joint_error_radians: record.target_joints().map(|target| {
+            joint_error_radians: record.destination_joints().map(|target| {
                 joints
                     .iter()
                     .zip(target)
                     .map(|(a, b)| (a - b).abs())
                     .fold(0.0, f64::max)
             }),
-            joint_errors_radians: record.target_joints().map(|target| {
+            joint_errors_radians: record.destination_joints().map(|target| {
                 joints
                     .iter()
                     .zip(target)
                     .map(|(a, b)| (a - b).abs())
                     .collect()
             }),
-            position_error_meters: position.zip(record.target_position()).map(|(a, b)| {
+            position_error_meters: position.zip(record.destination_position()).map(|(a, b)| {
                 a.iter()
                     .zip(&b)
                     .map(|(x, y)| (x - y) * (x - y))
                     .sum::<f64>()
                     .sqrt()
             }),
-            orientation_error_radians: quaternion.zip(record.target_quaternion()).map(|(a, b)| {
-                let dot: f64 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
-                2.0 * dot.abs().min(1.0).acos()
-            }),
+            orientation_error_radians: quaternion.zip(record.destination_quaternion()).map(
+                |(a, b)| {
+                    let dot: f64 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
+                    2.0 * dot.abs().min(1.0).acos()
+                },
+            ),
             orientation: quaternion.map(|quaternion| {
-                let target = record.target_quaternion().map(from_xyzw);
+                let target = record.destination_quaternion().map(from_xyzw);
                 orientation_summary(
                     &from_xyzw(quaternion),
                     self.limits.jaw_closing_axis,
@@ -620,9 +622,9 @@ impl ArmCore {
         let record = self.new_record(
             label,
             RecordedCommand::Move {
-                target_joints: plan.final_corner().to_vec(),
-                target_position: target.target_position,
-                target_quaternion: target.target_quaternion,
+                destination_joints: plan.final_corner().to_vec(),
+                destination_position: target.destination_position,
+                destination_quaternion: target.destination_quaternion,
                 joint_speed: speed.radians_per_second(),
                 path_limited: short.path_limited,
                 pose_limited: short.pose_limited,
@@ -686,7 +688,7 @@ impl ArmCore {
         let record = self.new_record(
             label,
             RecordedCommand::PolicyReach {
-                target_pose: CommandPose {
+                goal_pose: CommandPose {
                     position: goal.target.translation.vector.into(),
                     quaternion: goal.target.rotation.coords.into(),
                 },
@@ -871,6 +873,35 @@ impl ArmCore {
     ) -> Result<CommandRecord, Rejection> {
         let target = self.check_gripper_target(angle, requested_speed)?;
         Ok(self.apply_gripper(target, None, now))
+    }
+
+    pub(crate) fn apply_waypoint_gripper(
+        &mut self,
+        target: GripperTarget,
+        now: Now,
+    ) -> hebbian_contracts::CommandId {
+        let motion_id = self
+            .active_command_id()
+            .map(hebbian_contracts::CommandId::from);
+        if let Some(command) = self.gripper_command.as_mut()
+            && motion_id.is_some()
+            && command.stream_id == motion_id
+            && let Some(mut record) = self.records.get(&command.command_id).cloned()
+            && let RecordedCommand::Gripper {
+                target_angle_radians,
+                joint_speed,
+                ..
+            } = &mut record.command
+        {
+            // INVARIANT: The sequence waits on this receipt across all jaw goals owned by the move.
+            command.pending_target = Some(target);
+            *target_angle_radians = target.angle.radians();
+            *joint_speed = target.speed.radians_per_second();
+            let id = record.command_id.clone();
+            self.store(record);
+            return id;
+        }
+        self.apply_gripper(target, motion_id, now).command_id
     }
 
     pub(crate) fn apply_gripper(

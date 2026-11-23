@@ -176,7 +176,18 @@ test.each(["stream", "retained", "close during lookup"] as const)(
       arms: ["follower"],
       id: "sequence",
       phase: { state: "completed" },
-      requested_steps: [],
+      requested_steps: [
+        {
+          arms: {
+            follower: {
+              goal: { kind: "joints", joints: [1], max_joint_speed: null },
+              waypoints: [{ at: { kind: "joints", joints: [0.5] } }],
+              gripper_opening: null,
+              max_joint_speed: null,
+            },
+          },
+        },
+      ],
       compilation_id: "compilation",
       continuation: null,
       steps: [],

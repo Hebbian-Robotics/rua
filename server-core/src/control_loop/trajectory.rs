@@ -47,6 +47,7 @@ pub(super) struct ActiveMotion {
     pub(super) speed_fraction: f64,
     pub(super) supervisor: MotionSupervisor,
     pub(super) checkpoints_sent: usize,
+    waypoint_gripper_command: Option<hebbian_contracts::CommandId>,
 }
 
 // INVARIANT: This arm's part of a grouped motion. The group's one trajectory is stepped
@@ -82,6 +83,7 @@ pub(super) struct MotionProgress {
 
 #[derive(Default)]
 pub(super) struct MotionEffects {
+    waypoint_gripper: Option<crate::arm::GripperTarget>,
     checkpoints: Vec<Checkpoint>,
     completion: Option<MotionCompletion>,
 }
@@ -134,6 +136,7 @@ impl Loop<'_> {
             supervisor,
             speed_fraction: 1.0,
             checkpoints_sent: 0,
+            waypoint_gripper_command: None,
         }));
         Ok(())
     }
@@ -201,8 +204,40 @@ impl Loop<'_> {
             .supervisor
             .new_checkpoints(active.checkpoints_sent)
             .to_vec();
-        let status = MotionStatus::of(&active.supervisor);
+        let mut status = MotionStatus::of(&active.supervisor);
+        if let Some(command_id) = &active.waypoint_gripper_command {
+            match self
+                .core
+                .record(command_id)
+                .ok_or_else(|| Trip::Gripper("Lost the waypoint jaw command record".into()))?
+                .outcome()
+            {
+                Some(CommandOutcome::Completed) => active.waypoint_gripper_command = None,
+                Some(outcome) => {
+                    return Err(Trip::Trajectory(format!(
+                        "Waypoint gripper command ended with {outcome:?}"
+                    )));
+                }
+                None if status == MotionStatus::Reached => status = MotionStatus::Running,
+                None => {}
+            }
+        }
         self.core.set_segment(active.supervisor.segment_label());
+        let waypoint_gripper = if new.is_empty() {
+            None
+        } else {
+            active
+                .supervisor
+                .waypoint_gripper(active.checkpoints_sent)
+                .map(|angle| {
+                    let speed = hebbian_contracts::JointSpeed::new(active.supervisor.peak_speed())
+                        .map_err(|e| Trip::Trajectory(e.to_string()))?;
+                    self.core
+                        .check_gripper_target(angle, Some(speed))
+                        .map_err(|failure| Trip::Gripper(failure.detail))
+                })
+                .transpose()?
+        };
         let progress = MotionProgress {
             checkpoints: new,
             status,
@@ -212,8 +247,11 @@ impl Loop<'_> {
                 active.supervisor.final_pose().to_vec()
             },
         };
-        self.core.set_settling(settling_at_end);
-        Ok(self.prepare_motion_effects(feedback, progress))
+        self.core
+            .set_settling(settling_at_end && active.waypoint_gripper_command.is_none());
+        let mut effects = self.prepare_motion_effects(feedback, progress);
+        effects.waypoint_gripper = waypoint_gripper;
+        Ok(effects)
     }
 
     pub(super) fn prepare_stop_write(
@@ -226,6 +264,7 @@ impl Loop<'_> {
             .get_or_insert_with(|| self.filter.stopping_position());
         self.reference.set_at_rest(hold, None);
         MotionEffects {
+            waypoint_gripper: None,
             checkpoints,
             completion: Some(MotionCompletion {
                 outcome: CommandOutcome::Stopped,
@@ -248,6 +287,7 @@ impl Loop<'_> {
         let (outcome, detail) = match status {
             MotionStatus::Running => {
                 return MotionEffects {
+                    waypoint_gripper: None,
                     checkpoints,
                     completion: None,
                 };
@@ -280,6 +320,7 @@ impl Loop<'_> {
         };
         self.reference.set_at_rest(&final_pose, None);
         MotionEffects {
+            waypoint_gripper: None,
             checkpoints,
             completion: Some(MotionCompletion {
                 outcome,
@@ -299,6 +340,7 @@ impl Loop<'_> {
         self.filter.reset(&hold);
         self.reference.set_at_rest(&hold, None);
         MotionEffects {
+            waypoint_gripper: None,
             checkpoints: Vec::new(),
             completion: Some(MotionCompletion {
                 outcome,
@@ -310,6 +352,10 @@ impl Loop<'_> {
 
     pub(super) fn commit_motion_effects(&mut self, effects: MotionEffects, now: Now) {
         if let Activity::Motion(active) = &mut self.activity {
+            if let Some(target) = effects.waypoint_gripper {
+                active.waypoint_gripper_command =
+                    Some(self.core.apply_waypoint_gripper(target, now));
+            }
             active.checkpoints_sent += effects.checkpoints.len();
         }
         for checkpoint in effects.checkpoints {
@@ -387,11 +433,12 @@ mod tests {
                 CornerPlan {
                     peak_speed: 2.0,
                     segments: vec![Segment {
+                        pass_through: None,
                         label: "sweep".into(),
                         corners: vec![vec![0.0, 0.0], vec![1.8, 0.5]],
                         minimum_duration_seconds: None,
-                        target_position: None,
-                        target_quaternion: None,
+                        destination_position: None,
+                        destination_quaternion: None,
                     }],
                 },
                 &config.motion,
