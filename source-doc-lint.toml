@@ -33,6 +33,7 @@ directories = [
     "hebbian_rua/simulator",
     "typescript-client",
     "sdk",
+    "server-core/src/plant.rs",
     "contracts",
     "cli/src/commands",
     "station/src/commands",

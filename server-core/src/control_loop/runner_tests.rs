@@ -3,12 +3,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use super::runner::{Begun, BusRecovery, Flow, Runner};
-use super::runner_for;
+use super::{Begun, BusRecovery, Flow, Runner, runner_for};
 use crate::arm::Now;
 use crate::config::{ControllerConfig, EnableChecks};
 use crate::control_link::Link;
-use crate::plant::{Feedback, Plant, RecoveryObservation};
+use crate::plant::{Feedback, Plant, PlantWritePermit, RecoveryObservation};
 use hebbian_contracts::{ArmMode, Command};
 
 #[derive(Default, Clone)]
@@ -77,13 +76,18 @@ impl Plant for ScriptedPlant {
         Ok(())
     }
 
-    fn command(&mut self, _positions: &[f64], _seconds: f64) -> anyhow::Result<()> {
+    fn command(
+        &mut self,
+        _permit: &PlantWritePermit,
+        _positions: &[f64],
+        _seconds: f64,
+    ) -> anyhow::Result<()> {
         self.calls.position_writes.fetch_add(1, Ordering::SeqCst);
         anyhow::ensure!(!self.position_write_fails, "position write failed");
         Ok(())
     }
 
-    fn command_gripper(&mut self, _angle: f64) -> anyhow::Result<()> {
+    fn command_gripper(&mut self, _permit: &PlantWritePermit, _angle: f64) -> anyhow::Result<()> {
         self.calls.gripper_writes.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -92,12 +96,12 @@ impl Plant for ScriptedPlant {
         Ok(())
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
+    fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.calls.enable.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
+    fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.calls.release.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -129,7 +133,7 @@ impl Plant for ScriptedPlant {
         })
     }
 
-    fn hold_recovery(&mut self) -> anyhow::Result<RecoveryObservation> {
+    fn hold_recovery(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<RecoveryObservation> {
         self.calls.recovery_hold.fetch_add(1, Ordering::SeqCst);
         let observation = self.observe_recovery()?;
         anyhow::ensure!(
@@ -141,6 +145,7 @@ impl Plant for ScriptedPlant {
 
     fn enable_recovery(
         &mut self,
+        _permit: &PlantWritePermit,
         _drift_limit_radians: f64,
     ) -> anyhow::Result<RecoveryObservation> {
         self.calls.enable.fetch_add(1, Ordering::SeqCst);
@@ -714,7 +719,7 @@ fn the_loop_answers_a_bounded_number_of_requests_each_cycle_and_the_rest_next_cy
             .count()
     };
 
-    super::serve_requests(
+    crate::control_loop::serve_requests(
         std::slice::from_mut(&mut runner),
         Duration::from_millis(10),
         &mut 0,
@@ -723,7 +728,7 @@ fn the_loop_answers_a_bounded_number_of_requests_each_cycle_and_the_rest_next_cy
         answered(&answers),
         crate::handoff::MAXIMUM_REQUESTS_PER_CYCLE
     );
-    super::serve_requests(
+    crate::control_loop::serve_requests(
         std::slice::from_mut(&mut runner),
         Duration::from_millis(10),
         &mut 0,
@@ -740,7 +745,7 @@ fn a_cycle_with_nothing_asked_of_it_serves_nothing_and_does_not_wait() {
     let mut runner = runner(&mut plant, &config, &link);
     let (_handle, inbox) = crate::handoff::arm_channel();
     runner.inbox = inbox;
-    super::serve_requests(
+    crate::control_loop::serve_requests(
         std::slice::from_mut(&mut runner),
         Duration::from_millis(10),
         &mut 0,
@@ -945,9 +950,9 @@ fn a_stream_reports_stopped_only_after_its_braking_write_succeeds() {
 
 #[test]
 fn a_group_retries_partial_writes_without_tripping_or_publishing_completion_early() {
-    use super::group::{confirm_group_writes, form_groups, step_groups};
-    use super::trajectory::MotionStatus;
     use crate::arm::GroupMembership;
+    use crate::control_loop::group::{confirm_group_writes, form_groups, step_groups};
+    use crate::control_loop::trajectory::MotionStatus;
     use hebbian_contracts::CommandOutcome;
 
     let mut left_input = config("confirm-group-write-left").into_input();
@@ -1100,16 +1105,13 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
     right.config = &mismatched_config;
     let mut runners = vec![left, right];
     let mut groups = Vec::new();
-    super::group::form_groups(&mut runners, &mut groups);
+    crate::control_loop::group::form_groups(&mut runners, &mut groups);
     assert!(groups.is_empty());
     for (runner, id) in runners.iter().zip(ids) {
         let record = runner.state.core.record(&id).unwrap();
         assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
         assert!(record.detail().unwrap().contains("grouped motion"));
-        assert!(matches!(
-            runner.state.activity,
-            super::activity::Activity::Idle
-        ));
+        assert!(matches!(runner.state.activity, super::Activity::Idle));
     }
 }
 

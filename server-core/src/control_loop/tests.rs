@@ -152,7 +152,7 @@ fn combined_motion_and_opening_meet_the_motor_cycle_deadline() {
 
 fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Duration) {
     use crate::arm::Now;
-    use crate::plant::{NoPhysicsStandIn, Plant};
+    use crate::plant::NoPhysicsStandIn;
     use hebbian_contracts::{Command, CommandOutcome, PoseOrientation, Waypoint};
     use std::time::{Duration, Instant};
 
@@ -236,7 +236,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
             Some(CommandOutcome::Completed)
         );
     }
-    assert!((runner.plant.read_feedback().unwrap().gripper_angle.unwrap() - 1.5).abs() < 0.01);
+    assert!((runner.read_plant_feedback().unwrap().gripper_angle.unwrap() - 1.5).abs() < 0.01);
     (
         longest_cycle,
         Duration::from_secs_f64(config.loop_deadline_seconds),

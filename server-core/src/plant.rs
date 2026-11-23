@@ -1,3 +1,23 @@
+/// Authority borrowed by an adapter while the controller applies a plant write.
+///
+/// Callers outside the controller runner cannot construct the authority.
+///
+/// ```compile_fail,E0451
+/// use hebbian_robot_use_core::plant::PlantWritePermit;
+///
+/// let permit = PlantWritePermit { _private: () };
+/// ```
+///
+/// An adapter needs a permit to apply a setpoint.
+///
+/// ```compile_fail,E0061
+/// use hebbian_robot_use_core::plant::{NoPhysicsStandIn, Plant};
+///
+/// let mut plant = NoPhysicsStandIn::at(vec![0.0], 0.1);
+/// plant.command(&[0.1], 0.01).unwrap();
+/// ```
+pub use crate::control_loop::PlantWritePermit;
+
 #[derive(Debug)]
 pub struct CommunicationFailure(pub String);
 
@@ -78,12 +98,13 @@ pub trait Plant {
         anyhow::bail!("Recovery inspection is not supported by this plant")
     }
 
-    fn hold_recovery(&mut self) -> anyhow::Result<RecoveryObservation> {
+    fn hold_recovery(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<RecoveryObservation> {
         anyhow::bail!("Energized recovery is not supported by this plant")
     }
     // SAFETY: Recovery may re-enable lost torque only after the operator supports the arm and configuration, health and stability checks pass.
     fn enable_recovery(
         &mut self,
+        _permit: &PlantWritePermit,
         _drift_limit_radians: f64,
     ) -> anyhow::Result<RecoveryObservation> {
         anyhow::bail!("Approved recovery is not supported by this plant")
@@ -96,11 +117,16 @@ pub trait Plant {
         self.read_feedback_into(&mut feedback)?;
         Ok(feedback)
     }
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()>;
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()>;
+    fn command(
+        &mut self,
+        _permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()>;
+    fn command_gripper(&mut self, _permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()>;
     fn preflight(&mut self) -> anyhow::Result<()>;
-    fn enable(&mut self) -> anyhow::Result<()>;
-    fn release(&mut self) -> anyhow::Result<()>;
+    fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()>;
+    fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()>;
 
     // SAFETY: Poll getting a plant back after it stopped answering, without blocking the
     // cycle. Torque is never turned on by it. A plant with no connection to
@@ -116,7 +142,7 @@ pub trait Plant {
         Pacing::Clock
     }
 
-    fn advance(&mut self, _seconds: f64) -> anyhow::Result<()> {
+    fn advance(&mut self, _permit: &PlantWritePermit, _seconds: f64) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -163,6 +189,14 @@ impl NoPhysicsStandIn {
         self.gripper_angle = Some(angle);
         self
     }
+    pub(crate) fn step(&mut self, positions: &[f64], seconds: f64) {
+        let blend = 1.0 - (-seconds / self.time_constant_seconds).exp();
+        for (index, target) in positions.iter().enumerate() {
+            let step = (target - self.positions[index]) * blend;
+            self.positions[index] += step;
+            self.velocities[index] = step / seconds;
+        }
+    }
 }
 
 impl Plant for NoPhysicsStandIn {
@@ -185,17 +219,17 @@ impl Plant for NoPhysicsStandIn {
         Ok(())
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        let blend = 1.0 - (-seconds / self.time_constant_seconds).exp();
-        for (index, target) in positions.iter().enumerate() {
-            let step = (target - self.positions[index]) * blend;
-            self.positions[index] += step;
-            self.velocities[index] = step / seconds;
-        }
+    fn command(
+        &mut self,
+        _permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.step(positions, seconds);
         Ok(())
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
+    fn command_gripper(&mut self, _permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
         anyhow::ensure!(self.gripper_angle.is_some(), "This arm has no gripper");
         self.gripper_angle = Some(angle);
         Ok(())
@@ -205,11 +239,11 @@ impl Plant for NoPhysicsStandIn {
         Ok(())
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
+    fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
+    fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         Ok(())
     }
 }

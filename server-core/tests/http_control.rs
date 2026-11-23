@@ -17,7 +17,7 @@ use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::control_loop::ArmSetup;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Plant};
+use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Plant, PlantWritePermit};
 use hebbian_robot_use_core::station_api::DiscardTelemetry;
 use hebbian_robot_use_core::station_api::HttpServer;
 use serde_json::{Value, json};
@@ -104,24 +104,29 @@ impl Plant for OverloadedPlant {
         Ok(())
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
-        self.inner.command_gripper(angle)
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(permit, angle)
     }
 
     fn preflight(&mut self) -> anyhow::Result<()> {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
-        self.inner.enable()
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.enable(permit)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
-        self.inner.release()
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.release(permit)
     }
 }
 

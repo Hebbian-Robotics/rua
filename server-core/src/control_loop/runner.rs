@@ -1,22 +1,36 @@
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use super::activity::Activity;
-use super::activity::Loop;
+use super::activity::{Loop, initialize_loop};
 use super::cycle::{CycleOutputs, GripperEffect};
 use super::learned::{MotionPlan, PolicyRequest, PolicySession, policy_failure};
-use super::power::StartupHold;
 use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
 use super::trajectory::{GroupReference, GroupWriteAttempt, MotionEffects, MotionOutput};
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
-use crate::arm::{Job, Now};
+use crate::arm::{ArmCore, Job, Now};
 use crate::config::ControllerConfig;
 use crate::control_link::{Link, SampleRecycler};
 use crate::handoff::ArmInbox;
 use crate::limits::Trip;
-use crate::plant::{Feedback, Plant, Reconnection};
+use crate::plant::{Feedback, Pacing, Plant, Reconnection};
 use crate::trace::TraceWriter;
 use hebbian_contracts::ArmRecoveryIssue;
 use hebbian_contracts::{ArmMode, CommandOutcome, LoggedEvent};
+use power::StartupHold;
+#[path = "power.rs"]
+mod power;
+#[cfg(test)]
+#[path = "runner_tests.rs"]
+mod runner_tests;
+
+// SAFETY: Only the runner creates a permit. Adapters borrow it for an actuation call.
+pub struct PlantWritePermit {
+    _private: (),
+}
+
+const WRITE_PERMIT: PlantWritePermit = PlantWritePermit { _private: () };
+
 const BUS_FAILURE_GRACE_SECONDS: f64 = 0.5;
 // SAFETY: A cycle longer than this many periods is fed to the generators as this
 // many, so a late cycle does not become a jump.
@@ -73,7 +87,7 @@ pub(super) enum Flow {
 
 pub(super) struct Runner<'a, P: Plant> {
     pub(super) name: String,
-    pub(super) plant: &'a mut P,
+    plant: &'a mut P,
     pub(super) link: &'a Link,
     pub(super) inbox: ArmInbox,
     pub(super) samples: SampleRecycler,
@@ -94,11 +108,74 @@ pub(super) struct Runner<'a, P: Plant> {
     pub(super) startup_hold: Option<StartupHold>,
 }
 
+pub(super) fn runner_for<'a, P: Plant>(
+    name: &str,
+    plant: &'a mut P,
+    link: &'a Link,
+    config: &'a ControllerConfig,
+    trace_directory: &Path,
+) -> Result<Runner<'a, P>, Box<Report>> {
+    let mut report = Report::empty();
+    let trace = match TraceWriter::open(trace_directory) {
+        Ok(trace) => trace,
+        Err(reason) => {
+            report.trip = Some(format!("{reason:#}"));
+            return Err(Box::new(report));
+        }
+    };
+    let core = ArmCore::new(config.arm_limits(), link.log_publisher());
+    let initialized = plant.read_feedback().and_then(|feedback| {
+        feedback.measured_positions(config)?;
+        let state = initialize_loop(config, core, &feedback)?;
+        Ok((state, feedback))
+    });
+    let (state, feedback) = match initialized {
+        Ok(initialized) => initialized,
+        Err(reason) => {
+            report.trip = Some(format!("{reason:#}"));
+            return Err(Box::new(report));
+        }
+    };
+    let Some(loop_end) = link.take_loop_end() else {
+        report.trip = Some(format!("The control link for {name} is already in use"));
+        return Err(Box::new(report));
+    };
+    Ok(Runner {
+        name: name.to_owned(),
+        plant,
+        link,
+        inbox: loop_end.inbox,
+        samples: loop_end.samples,
+        feedback,
+        feedback_scratch: Feedback::default(),
+        config,
+        state,
+        trace,
+        timings: crate::trace::CycleTimings::default(),
+        report,
+        started: Instant::now(),
+        cycle_number: 0,
+        plant_lost: false,
+        failed_cycles: 0,
+        last_reconnect_failure: None,
+        recovery: BusRecovery::Disabled,
+        startup_hold: None,
+    })
+}
+
 impl<P: Plant> Runner<'_, P> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "A plant failure may require releasing the motors before the runner exits."
-    )]
+    pub(super) fn pacing(&self) -> Pacing {
+        self.plant.pacing()
+    }
+
+    pub(super) fn advance_plant(&mut self, interval: f64) -> anyhow::Result<()> {
+        self.plant.advance(&WRITE_PERMIT, interval)
+    }
+
+    pub(super) fn read_plant_feedback(&mut self) -> anyhow::Result<Feedback> {
+        self.plant.read_feedback()
+    }
+
     pub(super) fn plant_failed(&mut self, failure: &anyhow::Error, now: Now) {
         self.plant_lost = self.plant.pacing().is_set_by_replies();
         let reason = format!("{failure:#}");
@@ -106,7 +183,7 @@ impl<P: Plant> Runner<'_, P> {
         if self.state.powered() {
             let cleanup_errors: Vec<String> = self
                 .plant
-                .release()
+                .release(&WRITE_PERMIT)
                 .err()
                 .map(|error| format!("{error:#}"))
                 .into_iter()
@@ -167,10 +244,6 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "An already powered arm needs a recovery hold before it can rejoin the loop."
-    )]
     fn inspect_reconnected_arm(&mut self) {
         if matches!(self.recovery, BusRecovery::Disabled) {
             self.finish_disabled_reconnection();
@@ -218,7 +291,7 @@ impl<P: Plant> Runner<'_, P> {
             });
             return;
         }
-        match self.plant.hold_recovery() {
+        match self.plant.hold_recovery(&WRITE_PERMIT) {
             Ok(observation) => {
                 self.recovery = match recovery_positions(self.config, &observation.feedback) {
                     Ok(_) => BusRecovery::VerifyingHold {
@@ -264,10 +337,6 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "Approved recovery can restore torque once the runner verifies feedback."
-    )]
     fn approve_recovery(&mut self, now: Now) {
         let attempt = (|| -> anyhow::Result<Feedback> {
             let observation = self.plant.observe_recovery()?;
@@ -284,7 +353,10 @@ impl<P: Plant> Runner<'_, P> {
                 .map_or(self.config.motion.settled_error_radians, |checks| {
                     checks.preflight_drift_limit_radians
                 });
-            let feedback = self.plant.enable_recovery(drift_limit)?.feedback;
+            let feedback = self
+                .plant
+                .enable_recovery(&WRITE_PERMIT, drift_limit)?
+                .feedback;
             recovery_positions(self.config, &feedback)?;
             Ok(feedback)
         })();
@@ -609,7 +681,7 @@ impl<P: Plant> Runner<'_, P> {
     ) -> CycleReading {
         self.failed_cycles = 0;
         // CONSTRAINT: A paced plant (a simulator) moves time on only when told to.
-        if let Err(failure) = self.plant.advance(interval) {
+        if let Err(failure) = self.advance_plant(interval) {
             if self.startup_hold.is_some() {
                 self.fail_enable(&format!("{failure:#}"), now);
             }
@@ -803,10 +875,6 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "The runner sends guarded joint and jaw setpoints to the plant."
-    )]
     fn write_setpoints(
         &mut self,
         gripper: &GripperEffect,
@@ -815,14 +883,14 @@ impl<P: Plant> Runner<'_, P> {
         // CONSTRAINT: The simulator includes its queued jaw target in the joint step.
         if let Some(angle) = gripper.setpoint() {
             let gripper_started = Instant::now();
-            let written = self.plant.command_gripper(angle);
+            let written = self.plant.command_gripper(&WRITE_PERMIT, angle);
             self.timings.gripper_write_seconds = gripper_started.elapsed().as_secs_f64();
             written.map_err(SetpointFailure::Gripper)?;
         }
         let write_started = Instant::now();
         let written = self
             .plant
-            .command(&self.state.next_command, interval)
+            .command(&WRITE_PERMIT, &self.state.next_command, interval)
             .and_then(|()| self.plant.heartbeat());
         self.timings.command_write_seconds = write_started.elapsed().as_secs_f64();
         written.map_err(SetpointFailure::Arm)

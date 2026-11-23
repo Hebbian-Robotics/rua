@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant};
+use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant, PlantWritePermit};
 use hebbian_rua::contracts::{
     ActionSequenceArmAction, ActionSequenceMovement, ActionSequencePhase, ActionSequenceRequest,
     ActionSequenceStep, CommandOutcome, CompilationOutcome, GripperResult, LeaseHolder,
@@ -39,10 +39,6 @@ struct ObstructedJawPlant {
     blocked_at: Option<f64>,
 }
 
-#[allow(
-    clippy::disallowed_methods,
-    reason = "This test adapter forwards operations to its simulated plant."
-)]
 impl Plant for ObstructedJawPlant {
     fn pacing(&self) -> Pacing {
         self.inner.pacing()
@@ -52,12 +48,18 @@ impl Plant for ObstructedJawPlant {
         self.inner.read_feedback_into(feedback)
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
         self.inner.command_gripper(
+            permit,
             self.blocked_at
                 .map_or(angle, |blocked_at| angle.max(blocked_at)),
         )
@@ -67,12 +69,12 @@ impl Plant for ObstructedJawPlant {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
-        self.inner.enable()
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.enable(permit)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
-        self.inner.release()
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.release(permit)
     }
 }
 
