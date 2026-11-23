@@ -1,5 +1,7 @@
 //! Shared station state and command-record contracts.
 
+#![warn(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 mod controller_config;
 pub use controller_config::*;
 mod backoff;

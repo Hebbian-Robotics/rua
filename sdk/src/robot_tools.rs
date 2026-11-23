@@ -8,8 +8,8 @@ use std::sync::Arc;
 use hebbian_contracts::{
     ActionSequencePhase, ActionSequenceRequest, ArmRecord, CommandOutcome, ObservationSource,
     ObserveArguments, PreviewPoseArguments, RobotToolDefinition, RobotToolOperation,
-    SequenceToolConfiguration, StationCommand, StopArguments, action_sequence_tool_schema,
-    parse_sequence_tool_arguments, robot_tool_catalog, robot_tool_context,
+    SequenceToolConfiguration, StationCommand, StopArguments, parse_sequence_tool_arguments,
+    robot_tool_context,
 };
 use serde_json::Value;
 
@@ -103,33 +103,25 @@ pub struct RobotTools<'a> {
     arm: String,
     descriptions: BTreeMap<String, String>,
     sequence: SequenceToolConfiguration,
-    operations: Vec<RobotToolOperation>,
+    capabilities: Vec<hebbian_contracts::RobotToolCapability>,
     cameras: Vec<String>,
     sequence_images: SequenceImages,
 }
 
 impl<'a> RobotTools<'a> {
     #[must_use]
-    #[expect(
-        clippy::expect_used,
-        reason = "The built-in default mapping selects unique catalog operations and a valid default sequence."
-    )]
     pub fn new(lease: &'a LeaseGuard, arm: impl Into<String>) -> Self {
-        let tools = Self {
+        Self {
             lease,
             arm: arm.into(),
             descriptions: BTreeMap::new(),
             cameras: Vec::new(),
             sequence_images: SequenceImages::default(),
             sequence: SequenceToolConfiguration::default(),
-            operations: hebbian_contracts::all_robot_tool_capabilities()
-                .iter()
-                .map(hebbian_contracts::RobotToolCapability::operation)
-                .collect(),
-        };
-        tools
-            .map_tools(hebbian_contracts::default_robot_tool_mapping)
-            .expect("default tool mapping")
+            capabilities: hebbian_contracts::default_robot_tool_mapping(
+                hebbian_contracts::all_robot_tool_capabilities(),
+            ),
+        }
     }
 
     /// Select cameras sampled during model action sequences, independently of recording.
@@ -156,6 +148,13 @@ impl<'a> RobotTools<'a> {
         sequence: SequenceToolConfiguration,
     ) -> std::result::Result<Self, String> {
         sequence.validate()?;
+        for capability in &mut self.capabilities {
+            if let hebbian_contracts::RobotToolCapability::ActionSequence(configuration) =
+                capability
+            {
+                configuration.clone_from(&sequence);
+            }
+        }
         self.sequence = sequence;
         Ok(self)
     }
@@ -163,10 +162,15 @@ impl<'a> RobotTools<'a> {
     /// Select independently available tools, including standalone operations.
     #[must_use]
     pub fn with_operations(mut self, operations: BTreeSet<RobotToolOperation>) -> Self {
-        self.operations = hebbian_contracts::all_robot_tool_capabilities()
+        self.capabilities = hebbian_contracts::all_robot_tool_capabilities()
             .into_iter()
-            .map(|capability| capability.operation())
-            .filter(|operation| operations.contains(operation))
+            .filter(|capability| operations.contains(&capability.operation()))
+            .map(|capability| match capability {
+                hebbian_contracts::RobotToolCapability::ActionSequence(_) => {
+                    hebbian_contracts::RobotToolCapability::ActionSequence(self.sequence.clone())
+                }
+                other => other,
+            })
             .collect();
         self
     }
@@ -175,10 +179,6 @@ impl<'a> RobotTools<'a> {
     ///
     /// # Errors
     /// The transformation repeats a tool or leaves an invalid sequence definition.
-    #[expect(
-        clippy::expect_used,
-        reason = "Private operations are selected from the shared catalog and remain unique after validated transformations."
-    )]
     pub fn map_tools(
         mut self,
         transform: impl FnOnce(
@@ -186,41 +186,19 @@ impl<'a> RobotTools<'a> {
         ) -> Vec<hebbian_contracts::RobotToolCapability>,
     ) -> std::result::Result<Self, String> {
         use hebbian_contracts::RobotToolCapability;
-        let mut capabilities_by_operation: BTreeMap<_, _> =
-            hebbian_contracts::all_robot_tool_capabilities()
-                .into_iter()
-                .map(|capability| (capability.operation(), capability))
-                .collect();
-        let capabilities = self
-            .operations
-            .iter()
-            .map(|operation| {
-                match capabilities_by_operation
-                    .remove(operation)
-                    .expect("operations come from the shared tool catalog")
-                {
-                    RobotToolCapability::ActionSequence(_) => {
-                        RobotToolCapability::ActionSequence(self.sequence.clone())
-                    }
-                    capability => capability,
-                }
-            })
-            .collect();
-        let transformed = transform(capabilities);
-        let mut operations = Vec::with_capacity(transformed.len());
+        let transformed = transform(self.capabilities);
         let mut seen_operations = BTreeSet::new();
-        for capability in transformed {
+        for capability in &transformed {
             let operation = capability.operation();
             if !seen_operations.insert(operation) {
                 return Err("A tool appears more than once".into());
             }
             if let RobotToolCapability::ActionSequence(sequence) = capability {
                 sequence.validate()?;
-                self.sequence = sequence;
+                self.sequence.clone_from(sequence);
             }
-            operations.push(operation);
         }
-        self.operations = operations;
+        self.capabilities = transformed;
         Ok(self)
     }
 
@@ -231,28 +209,20 @@ impl<'a> RobotTools<'a> {
         self
     }
 
+    /// # Panics
+    /// Panics if the built-in catalog cannot describe a selected operation or a validated sequence.
     #[must_use]
     #[expect(
         clippy::expect_used,
-        reason = "Private operations come from the catalog; sequence configuration is validated before storage."
+        reason = "All sequence configurations are validated before storage."
     )]
     pub fn definitions(&self) -> Vec<RobotToolDefinition> {
-        let mut definitions_by_operation: BTreeMap<_, _> = robot_tool_catalog()
-            .into_iter()
-            .map(|definition| (definition.operation, definition))
-            .collect();
-        self.operations
+        self.capabilities
             .iter()
-            .map(|operation| {
-                definitions_by_operation
-                    .remove(operation)
-                    .expect("operations come from the shared tool catalog")
-            })
-            .map(|mut definition| {
-                if definition.name == "action_sequence" {
-                    definition.parameters = action_sequence_tool_schema(&self.sequence)
-                        .expect("validated sequence configuration");
-                }
+            .map(|capability| {
+                let mut definition = capability
+                    .definition()
+                    .expect("validated sequence configuration");
                 if let Some(description) = self.descriptions.get(definition.name) {
                     definition.description.clone_from(description);
                 }

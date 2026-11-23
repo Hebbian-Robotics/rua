@@ -369,56 +369,75 @@ fn gripper_arguments_schema() -> Value {
 }
 
 /// The explicit set of robot capabilities exposed to model frameworks.
+///
+/// # Panics
+/// Panics if the built-in default sequence or generated command schemas are inconsistent.
 #[must_use]
 #[expect(
     clippy::expect_used,
     reason = "The default sequence configuration is valid and covered by the catalog contract tests."
 )]
 pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
-    vec![
-        RobotToolDefinition {
-            name: "action_sequence",
-            operation: RobotToolOperation::StartActionSequence,
-            description: "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.".into(),
-            parameters: action_sequence_tool_schema(&SequenceToolConfiguration::default()).expect("default sequence configuration"),
-        },
-        RobotToolDefinition {
-            name: "preview_pose",
-            operation: RobotToolOperation::Preview,
-            description: "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.".into(),
-            parameters: model_arguments::<PreviewPoseArguments>(),
-        },
-        RobotToolDefinition {
-            name: "move_arms",
-            operation: RobotToolOperation::MoveArms,
-            description: "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.".into(),
-            parameters: model_arguments::<MoveArmsCommand>(),
-        },
-        RobotToolDefinition {
-            name: "set_arm_gripper",
-            operation: RobotToolOperation::SetGripper,
-            description: "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.".into(),
-            parameters: gripper_arguments_schema(),
-        },
-        RobotToolDefinition {
-            name: "rehome",
-            operation: RobotToolOperation::Rehome,
-            description: "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.".into(),
-            parameters: model_arguments::<StopArguments>(),
-        },
-        RobotToolDefinition {
-            name: "stop",
-            operation: RobotToolOperation::Stop,
-            description: "Stop this arm's motion; it holds where it stops.".into(),
-            parameters: model_arguments::<StopArguments>(),
-        },
-        RobotToolDefinition {
-            name: "observe",
-            operation: RobotToolOperation::Observe,
-            description: "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.".into(),
-            parameters: model_arguments::<ObserveArguments>(),
-        },
-    ]
+    all_robot_tool_capabilities()
+        .into_iter()
+        .map(|capability| {
+            capability
+                .definition()
+                .expect("default sequence configuration")
+        })
+        .collect()
+}
+
+impl RobotToolCapability {
+    /// Build the model-facing definition with the selected sequence configuration.
+    ///
+    /// # Errors
+    /// Returns an error for invalid sequence actions or arm names.
+    pub fn definition(&self) -> Result<RobotToolDefinition, String> {
+        let (name, description, parameters) = match self {
+            Self::ActionSequence(configuration) => (
+                "action_sequence",
+                "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.",
+                action_sequence_tool_schema(configuration)?,
+            ),
+            Self::PreviewPose => (
+                "preview_pose",
+                "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.",
+                model_arguments::<PreviewPoseArguments>(),
+            ),
+            Self::MoveArms => (
+                "move_arms",
+                "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+                model_arguments::<MoveArmsCommand>(),
+            ),
+            Self::SetArmGripper => (
+                "set_arm_gripper",
+                "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.",
+                gripper_arguments_schema(),
+            ),
+            Self::Rehome => (
+                "rehome",
+                "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
+                model_arguments::<StopArguments>(),
+            ),
+            Self::Stop => (
+                "stop",
+                "Stop this arm's motion; it holds where it stops.",
+                model_arguments::<StopArguments>(),
+            ),
+            Self::Observe => (
+                "observe",
+                "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.",
+                model_arguments::<ObserveArguments>(),
+            ),
+        };
+        Ok(RobotToolDefinition {
+            name,
+            description: description.into(),
+            parameters,
+            operation: self.operation(),
+        })
+    }
 }
 
 /// Robot conventions and limitations independent of a particular station.
@@ -439,6 +458,9 @@ pub fn robot_tool_context() -> Value {
 ///
 /// # Errors
 /// The configuration enables no actions or contains invalid arm names.
+///
+/// # Panics
+/// Panics if the generated station schema lacks the action fields or local references used here.
 #[expect(
     clippy::expect_used,
     reason = "Local references and action fields come from our generated schema; contract tests guard its shape."
