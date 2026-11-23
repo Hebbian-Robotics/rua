@@ -13,6 +13,7 @@ fn recorder_fixture(name: &str) -> std::path::PathBuf {
 fn recording_manager(
     root: &std::path::Path,
     executable: std::path::PathBuf,
+    controller_available: impl Fn() -> bool + Send + Sync + 'static,
 ) -> Result<RecordingManager, Box<dyn std::error::Error>> {
     let credentials = Credentials::from_values([
         Some("ws://127.0.0.1:1".into()),
@@ -27,6 +28,7 @@ fn recording_manager(
             executable,
         }),
         "http://127.0.0.1:1".into(),
+        controller_available,
     ))
 }
 
@@ -36,8 +38,8 @@ async fn recording_started_offline_stays_incomplete_after_controller_recovers()
     let directory = tempfile::tempdir()?;
     let executable = recorder_fixture("offline-recorder.sh");
     let ready = directory.path().join("recorder-ready");
-    let manager = recording_manager(directory.path(), executable)?;
-    manager.controller_unavailable();
+    let (availability, controller) = tokio::sync::watch::channel(false);
+    let manager = recording_manager(directory.path(), executable, move || *controller.borrow())?;
     let name = manager.start_recording()?;
     assert!(
         directory
@@ -47,7 +49,7 @@ async fn recording_started_offline_stays_incomplete_after_controller_recovers()
             .join(CONTROLLER_INTERRUPTION_MARKER)
             .exists()
     );
-    manager.controller_ready();
+    availability.send_replace(true);
     tokio::time::timeout(Duration::from_secs(5), async {
         while !ready.exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -72,7 +74,9 @@ async fn recording_started_offline_stays_incomplete_after_controller_recovers()
     assert!(
         matches!(manager.recording_status(), RecordingStatus::Stopping { name } if name == active_name)
     );
-    manager.controller_unavailable();
+    availability.send_replace(false);
+    manager.mark_controller_interruption();
+    availability.send_replace(true);
     assert!(
         directory
             .path()
@@ -132,7 +136,7 @@ async fn exercise_recorder_cleanup(
     );
     let mut worker_output =
         tokio::net::unix::pipe::OpenOptions::new().open_receiver(&worker_pipe)?;
-    let manager = recording_manager(directory.path(), executable)?;
+    let manager = recording_manager(directory.path(), executable, || true)?;
 
     let name = manager.start_recording()?;
     let deadline = Duration::from_secs(5);

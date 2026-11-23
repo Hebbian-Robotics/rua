@@ -267,7 +267,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         live_run.clone(),
         Arc::default(),
         |runtime, bound| {
-            let (routes, opened) = web::mount(runtime, bound, settings);
+            let (routes, opened) = web::mount(runtime, bound, settings, || true);
             mounted = Some(opened);
             Ok(routes.merge(hebbian_robot_use_server::run_telemetry::routes(live_run)))
         },

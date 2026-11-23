@@ -114,41 +114,41 @@ impl ControllerSupervisor {
             .status()
     }
 
+    pub fn availability_reader(&self) -> impl Fn() -> bool + Send + Sync + 'static + use<> {
+        let phase = Arc::clone(&self.phase);
+        move || {
+            phase
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_available()
+        }
+    }
+
     fn set_phase(&self, phase: ControllerPhase) {
-        let mut current = self
+        let available = phase.is_available();
+        *self
             .phase
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(recording) = self
-            .recording
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
-            if phase.is_available() {
-                recording.controller_ready();
-            } else {
-                recording.controller_unavailable();
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = phase;
+        // INVARIANT: Recording reads availability under its state lock, so release the
+        // phase lock before marking an interruption.
+        if !available {
+            let recording = self
+                .recording
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            if let Some(recording) = recording {
+                recording.mark_controller_interruption();
             }
         }
-        *current = phase;
     }
 
     pub fn attach_recording(&self, recording: RecordingManager) {
-        let status = self
-            .phase
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut slot = self
+        *self
             .recording
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if status.is_available() {
-            recording.controller_ready();
-        } else {
-            recording.controller_unavailable();
-        }
-        *slot = Some(recording);
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(recording);
     }
 
     pub fn reconnect(&self) -> Result<(), &'static str> {

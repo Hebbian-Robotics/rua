@@ -152,6 +152,7 @@ pub fn mount(
     runtime: &tokio::runtime::Handle,
     address: SocketAddr,
     settings: WebSettings,
+    controller_available: impl Fn() -> bool + Send + Sync + 'static,
 ) -> (Router, Mounted) {
     let room = settings.room.unwrap_or_else(new_room_name);
     let recording_library =
@@ -189,7 +190,7 @@ pub fn mount(
     let media_connect_address = settings.media_address.map(connectable_local_address);
     // WHY: The manager spawns its recording announcer, so it needs the server's runtime.
     let _runtime = runtime.enter();
-    let manager = RecordingManager::new(recording, station_url);
+    let manager = RecordingManager::new(recording, station_url, controller_available);
     let arms = ServedArms::default();
     let recording_manager = manager.clone();
     let recording_library =

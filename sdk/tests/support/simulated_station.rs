@@ -110,6 +110,7 @@ impl SimulatedStation {
                             manual_control: false,
                             media_status: MediaStatus::default(),
                         },
+                        || true,
                     );
                     mounted = Some(web);
                     Ok(routes.fallback_service(web_routes))

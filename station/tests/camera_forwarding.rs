@@ -44,6 +44,7 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
                     manual_control: false,
                     media_status: MediaStatus::default(),
                 },
+                || true,
             );
             Ok(router)
         },

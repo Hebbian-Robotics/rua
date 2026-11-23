@@ -40,6 +40,7 @@ async fn shutdown_waits_for_the_final_room_announcement() -> Result<(), Box<dyn 
             executable: PathBuf::from("unused"),
         }),
         "http://127.0.0.1:1".into(),
+        || true,
     );
     manager.announce(false);
     tokio::time::timeout(Duration::from_secs(2), requests.recv())
