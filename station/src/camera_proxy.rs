@@ -80,15 +80,16 @@ impl CameraProxy {
         &self,
     ) -> reqwest::Result<std::collections::BTreeMap<String, hebbian_contracts::CameraStatus>> {
         let mut url = self.camera_list_url.clone();
-        url.set_path("/camera-status");
+        url.set_path("/viewer/api/media-status");
         self.client
             .get(url)
             .timeout(Duration::from_secs(1))
             .send()
             .await?
             .error_for_status()?
-            .json()
+            .json::<hebbian_contracts::MediaStatusReport>()
             .await
+            .map(|status| status.cameras)
     }
 
     async fn fetch(&self, request: CameraRequest<'_>) -> anyhow::Result<ForwardingOutcome> {

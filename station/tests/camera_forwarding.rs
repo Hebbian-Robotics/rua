@@ -82,11 +82,14 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
     let upstream_requests = Arc::new(Semaphore::new(0));
     let media = axum::Router::new()
         .route(
-            "/camera-status",
+            "/viewer/api/media-status",
             get(|| async {
                 axum::Json(json!({
-                    "wrist": {"state": "ambiguous"},
-                    "front": {"state": "capturing", "publication": {"state": "reconnecting", "detail": null}}
+                    "service": {"state": "running"},
+                    "cameras": {
+                        "wrist": {"state": "ambiguous"},
+                        "front": {"state": "capturing", "publication": {"state": "reconnecting", "detail": null}}
+                    }
                 }))
             }),
         )

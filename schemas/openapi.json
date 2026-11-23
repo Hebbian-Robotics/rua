@@ -7737,7 +7737,8 @@
             "description": "An error: {\"detail\": ...}"
           }
         },
-        "summary": "Every media program's state by name, and each camera's latest problem.",
+        "summary": "The media service and the current state of each configured camera.",
+        "x-direct-media": true,
         "x-sdk": false,
         "x-server": "station"
       }

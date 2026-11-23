@@ -13,7 +13,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use hebbian_contracts::{CameraStatus, unix_nanoseconds};
+use hebbian_contracts::{CameraStatus, MediaState, MediaStatusReport, unix_nanoseconds};
 use livekit::webrtc::video_frame::VideoRotation;
 use livekit_camera_frames::{CameraFrame, CameraFrames, LatestFrame, TrackIdentity, camera_frame};
 use livekit_camera_publisher::capture::CapturedI420Frame;
@@ -107,7 +107,7 @@ impl Snapshots {
     pub fn router(self) -> Router {
         Router::new()
             .route("/cameras", get(list))
-            .route("/camera-status", get(camera_status))
+            .route("/viewer/api/media-status", get(camera_status))
             .route("/cameras/{name}", get(snapshot))
             .with_state(self)
     }
@@ -179,14 +179,15 @@ fn frame_is_fresh(received_at: Instant, now: Instant) -> bool {
     now.saturating_duration_since(received_at) <= Duration::from_secs(3)
 }
 
-async fn camera_status(State(state): State<Snapshots>) -> Json<BTreeMap<String, CameraStatus>> {
-    Json(
-        state
+async fn camera_status(State(state): State<Snapshots>) -> Json<MediaStatusReport> {
+    Json(MediaStatusReport {
+        service: MediaState::Running,
+        cameras: state
             .local_status
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone(),
-    )
+    })
 }
 
 async fn list(State(state): State<Snapshots>) -> Json<Vec<hebbian_contracts::CameraListing>> {
