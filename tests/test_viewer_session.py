@@ -20,29 +20,6 @@ VIEWER_COMMAND = [
 ]
 
 
-@pytest.mark.typescript
-def test_viewer_requires_a_model_provider_key() -> None:
-    result = subprocess.run(
-        VIEWER_COMMAND,
-        env={
-            **os.environ,
-            "OPENAI_API_KEY": "",
-            "ANTHROPIC_API_KEY": " ",
-            "GEMINI_API_KEY": "",
-            "GOOGLE_API_KEY": "",
-            "AGENT_PORT": "0",
-        },
-        cwd=REPOSITORY_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    assert result.returncode == 1, result.stderr
-    assert "OPENAI_API_KEY" in result.stderr
-    assert "--manual-only" in result.stderr
-
-
 @contextmanager
 def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
     environment = {
@@ -133,3 +110,28 @@ def test_manual_sessions_release_control_on_disconnect(
         )
         request(observer_id, kind="acquire", label="observer").raise_for_status()
         assert request(operator_id, kind="heartbeat").status_code == 409
+
+
+@pytest.mark.typescript
+def test_viewer_abort_stops_an_admitted_move(
+    server_binary: Path, tmp_path: Path
+) -> None:
+    with (
+        running_station(server_binary) as station,
+        viewer_backend(station.server, tmp_path) as viewer,
+    ):
+        subprocess.run(
+            [
+                "node",
+                "--experimental-eventsource",
+                "--import",
+                "tsx",
+                "--conditions=development",
+                "examples/typescript/viewer/tests/simulated-viewer-cancellation.ts",
+                viewer,
+                station.server,
+            ],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            timeout=20,
+        )

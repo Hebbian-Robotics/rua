@@ -5,6 +5,7 @@
       "entry": [
         "examples/typescript/viewer/src/app/{main,recordings-main}.tsx",
         "examples/typescript/viewer/tests/*.test.ts",
+        "examples/typescript/viewer/tests/simulated-viewer-cancellation.ts",
         "examples/typescript/viewer/server/tests/*.test.ts"
       ],
       "project": ["examples/typescript/viewer/**/*.{ts,tsx}"]

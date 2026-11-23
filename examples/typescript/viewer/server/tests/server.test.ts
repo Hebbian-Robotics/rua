@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScriptedStation } from "../../../agent/tests/station-harness.js";
 import { runSchema } from "../../shared/run-api.js";
@@ -47,6 +48,33 @@ const post = {
   headers: { "Content-Type": "application/json" },
   body,
 };
+
+test("viewer startup requires a model-provider key by default", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--conditions=development",
+      "examples/typescript/viewer/server/src/main.ts",
+    ],
+    {
+      env: {
+        ...process.env,
+        OPENAI_API_KEY: "",
+        ANTHROPIC_API_KEY: " ",
+        GEMINI_API_KEY: "",
+        GOOGLE_API_KEY: "",
+        AGENT_PORT: "0",
+      },
+      encoding: "utf-8",
+      timeout: 5_000,
+    },
+  );
+  expect(result.status, result.stderr).toBe(1);
+  expect(result.stderr).toContain("OPENAI_API_KEY");
+  expect(result.stderr).toContain("--manual-only");
+});
 
 test("manual-only mode refuses agent runs even with a configured provider", async () => {
   const server = app(true);
