@@ -565,12 +565,10 @@ impl CommandRecord {
         match &self.phase {
             CommandPhase::Pending => None,
             CommandPhase::NotStarted {
-                finished_unix_nano,
-                ..
+                finished_unix_nano, ..
             }
             | CommandPhase::OutcomeUnknown {
-                finished_unix_nano,
-                ..
+                finished_unix_nano, ..
             } => Some(*finished_unix_nano),
             CommandPhase::Finished { completion, .. } => Some(completion.finished_unix_nano),
         }

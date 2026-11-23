@@ -9,8 +9,7 @@ use hebbian_contracts::{
     ActionSequencePhase, ActionSequenceRequest, ArmRecord, CommandOutcome, ModelOutcome,
     ObservationSource, ObserveArguments, PreviewPoseArguments, RobotToolDefinition,
     RobotToolOperation, SequenceToolConfiguration, StationCommand, StopArguments,
-    parse_sequence_tool_arguments,
-    robot_tool_context,
+    parse_sequence_tool_arguments, robot_tool_context,
 };
 use serde_json::Value;
 

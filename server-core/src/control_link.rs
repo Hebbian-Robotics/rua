@@ -912,8 +912,7 @@ impl Hub {
                         .as_ref()
                         .is_none_or(|(_, pending_at)| finished_unix_nano >= *pending_at)
                 {
-                    self.pending_finished =
-                        Some((record.command_id.clone(), finished_unix_nano));
+                    self.pending_finished = Some((record.command_id.clone(), finished_unix_nano));
                 }
                 if self
                     .records

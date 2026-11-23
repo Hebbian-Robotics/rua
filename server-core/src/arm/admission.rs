@@ -91,8 +91,7 @@ impl ArmCore {
         command: RecordedCommand,
         now: Now,
     ) -> CommandRecord {
-        let mut record =
-            CommandRecord::new(new_identifier().into(), label, now.unix_nano, command);
+        let mut record = CommandRecord::new(new_identifier().into(), label, now.unix_nano, command);
         record.trace_context.clone_from(&self.trace_context);
         record
     }
