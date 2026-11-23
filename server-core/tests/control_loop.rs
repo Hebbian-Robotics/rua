@@ -17,7 +17,7 @@ use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::control_loop::{ArmSetup, run, run_arms};
 use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant};
+use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant, PlantWritePermit};
 use serde_json::{Value, json};
 
 mod support;
@@ -52,10 +52,6 @@ struct FaultingPlant {
     fault_active: Arc<AtomicBool>,
 }
 
-#[allow(
-    clippy::disallowed_methods,
-    reason = "This test adapter forwards operations to its simulated plant."
-)]
 impl Plant for FaultingPlant {
     fn pacing(&self) -> Pacing {
         self.inner.pacing()
@@ -73,25 +69,30 @@ impl Plant for FaultingPlant {
         Ok(())
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
-        self.inner.command_gripper(angle)
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(permit, angle)
     }
 
     fn preflight(&mut self) -> anyhow::Result<()> {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.reads_since_enable = Some(0);
-        self.inner.enable()
+        self.inner.enable(permit)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
-        self.inner.release()
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.release(permit)
     }
 }
 
@@ -245,10 +246,6 @@ struct SwitchedFaultPlant {
     fault: Arc<AtomicBool>,
 }
 
-#[allow(
-    clippy::disallowed_methods,
-    reason = "This test adapter forwards operations to its simulated plant."
-)]
 impl Plant for SwitchedFaultPlant {
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         self.inner.read_feedback_into(feedback)?;
@@ -258,24 +255,29 @@ impl Plant for SwitchedFaultPlant {
         Ok(())
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
-        self.inner.command_gripper(angle)
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(permit, angle)
     }
 
     fn preflight(&mut self) -> anyhow::Result<()> {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
-        self.inner.enable()
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.enable(permit)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
-        self.inner.release()
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.release(permit)
     }
 }
 
@@ -626,10 +628,6 @@ struct SwitchedBusPlant {
     released: Arc<AtomicBool>,
 }
 
-#[allow(
-    clippy::disallowed_methods,
-    reason = "This test adapter forwards operations to its simulated plant."
-)]
 impl Plant for SwitchedBusPlant {
     // CONSTRAINT: Model a hardware bus: simulator pacing deliberately treats a lost peer
     // as terminal instead of exercising hardware reconnection and torque hold.
@@ -638,25 +636,30 @@ impl Plant for SwitchedBusPlant {
         self.inner.read_feedback_into(feedback)
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
-        self.inner.command_gripper(angle)
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(permit, angle)
     }
 
     fn preflight(&mut self) -> anyhow::Result<()> {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
-        self.inner.enable()
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.enable(permit)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.released.store(true, Ordering::Relaxed);
-        self.inner.release()
+        self.inner.release(permit)
     }
 }
 

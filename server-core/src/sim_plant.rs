@@ -9,7 +9,7 @@ use hebbian_contracts::{SimHello, SimPlantConfig, SimPlantContract, SimState, Si
 use serde::Deserialize;
 
 use crate::numeric::positive_clock_duration;
-use crate::plant::{Feedback, Pacing, Plant};
+use crate::plant::{Feedback, Pacing, Plant, PlantWritePermit};
 
 pub(crate) const PROTOCOL_VERSION: u32 = 1;
 
@@ -262,11 +262,16 @@ impl Plant for SocketPlant {
         Ok(())
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
+    fn command(
+        &mut self,
+        _permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
         self.send_step(positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
+    fn command_gripper(&mut self, _permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
         ensure!(self.gripper_target.is_some(), "This arm has no gripper");
         self.gripper_target = Some(angle);
         Ok(())
@@ -276,12 +281,12 @@ impl Plant for SocketPlant {
         Ok(())
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
+    fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.powered = true;
         Ok(())
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
+    fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.powered = false;
         Ok(())
     }
@@ -294,7 +299,7 @@ impl Plant for SocketPlant {
         }
     }
 
-    fn advance(&mut self, seconds: f64) -> anyhow::Result<()> {
+    fn advance(&mut self, _permit: &PlantWritePermit, seconds: f64) -> anyhow::Result<()> {
         // WHY: An arm whose loop has ended is not read any more; take its last reply
         // before the next step so the simulator is not left waiting.
         if self.awaiting_reply {
@@ -306,10 +311,6 @@ impl Plant for SocketPlant {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::disallowed_methods,
-    reason = "These tests command only a simulated plant over local sockets."
-)]
 mod tests {
     use std::os::unix::net::UnixStream;
 
@@ -367,8 +368,8 @@ mod tests {
     fn the_simulator_drives_each_step_and_the_reply_is_read_next_cycle() {
         let (mut plant, mut sim, mut sim_reader) = connected("steps");
         assert_eq!(plant.read_feedback().unwrap().positions, vec![0.25; 2]);
-        plant.enable().unwrap();
-        plant.command(&[0.5, -0.5], 0.01).unwrap();
+        plant.powered = true;
+        plant.send_step(&[0.5, -0.5], 0.01).unwrap();
         let step: SimStep = read_line(&mut sim_reader).unwrap();
         assert_eq!(step.positions, vec![0.5, -0.5]);
         assert!(step.powered);
@@ -380,14 +381,14 @@ mod tests {
     #[test]
     fn two_steps_without_a_reply_between_are_refused() {
         let (mut plant, _sim, _sim_reader) = connected("double");
-        plant.command(&[0.0, 0.0], 0.01).unwrap();
-        assert!(plant.command(&[0.0, 0.0], 0.01).is_err());
+        plant.send_step(&[0.0, 0.0], 0.01).unwrap();
+        assert!(plant.send_step(&[0.0, 0.0], 0.01).is_err());
     }
 
     #[test]
     fn a_silent_simulator_is_an_error_not_a_hang() {
         let (mut plant, _sim, _sim_reader) = connected("silent");
-        plant.command(&[0.0, 0.0], 0.01).unwrap();
+        plant.send_step(&[0.0, 0.0], 0.01).unwrap();
         let error = plant.read_feedback().err().unwrap();
         assert!(format!("{error:#}").contains("did not answer"));
     }
@@ -395,7 +396,7 @@ mod tests {
     #[test]
     fn a_disconnected_simulator_is_an_error() {
         let (mut plant, sim, sim_reader) = connected("gone");
-        plant.command(&[0.0, 0.0], 0.01).unwrap();
+        plant.send_step(&[0.0, 0.0], 0.01).unwrap();
         drop(sim);
         drop(sim_reader);
         let error = plant.read_feedback().err().unwrap();

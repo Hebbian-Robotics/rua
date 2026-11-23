@@ -40,6 +40,8 @@ Planning uses a snapshot, so the loop still checks live feedback. A protective
 trip can override normal trajectory braking.
 
 Each powered cycle computes its joint and jaw setpoints before writing either.
+The runner owns the writable plant. Actuation methods on `Plant` require a
+permit that the runner creates and lends to adapters for the duration of a call.
 The runner publishes motion completion and checkpoints after the write is
 confirmed. A grouped step waits for confirmation from every member. Protective
 trips are reported even if the hold write fails.

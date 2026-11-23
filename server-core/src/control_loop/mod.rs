@@ -3,23 +3,20 @@ mod cycle;
 mod group;
 mod guards;
 mod learned;
-mod power;
 mod recovery;
 mod runner;
 mod tool_pose;
 mod trajectory;
 
 #[cfg(test)]
-mod runner_tests;
-#[cfg(test)]
 mod tests;
 
-use activity::initialize_loop;
 use group::{ActiveGroup, confirm_group_writes, form_groups, settle_groups, step_groups};
 pub(crate) use guards::{
     build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot,
 };
-use runner::{Begun, Flow, PendingCycle, Runner};
+pub use runner::PlantWritePermit;
+use runner::{Begun, Flow, PendingCycle, Runner, runner_for};
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -34,8 +31,8 @@ use crate::config::ControllerConfig;
 use crate::control_link::Link;
 use crate::cycle::CycleTimer;
 use crate::handoff::{ArmRequest, MAXIMUM_REQUESTS_PER_CYCLE};
-use crate::plant::{Feedback, Pacing, Plant};
-use crate::trace::{TraceSummary, TraceWriter};
+use crate::plant::{Pacing, Plant};
+use crate::trace::TraceSummary;
 use hebbian_contracts::Command;
 
 // CONSTRAINT: Cycle times are recorded in microseconds up to a minute, to three
@@ -227,61 +224,6 @@ pub fn run_arms<P: Plant>(
         .collect()
 }
 
-fn runner_for<'a, P: Plant>(
-    name: &str,
-    plant: &'a mut P,
-    link: &'a Link,
-    config: &'a ControllerConfig,
-    trace_directory: &Path,
-) -> Result<Runner<'a, P>, Box<Report>> {
-    let mut report = Report::empty();
-    let trace = match TraceWriter::open(trace_directory) {
-        Ok(trace) => trace,
-        Err(reason) => {
-            report.trip = Some(format!("{reason:#}"));
-            return Err(Box::new(report));
-        }
-    };
-    let core = ArmCore::new(config.arm_limits(), link.log_publisher());
-    let initialized = plant.read_feedback().and_then(|feedback| {
-        feedback.measured_positions(config)?;
-        let state = initialize_loop(config, core, &feedback)?;
-        Ok((state, feedback))
-    });
-    let (state, feedback) = match initialized {
-        Ok(initialized) => initialized,
-        Err(reason) => {
-            report.trip = Some(format!("{reason:#}"));
-            return Err(Box::new(report));
-        }
-    };
-    let Some(loop_end) = link.take_loop_end() else {
-        report.trip = Some(format!("The control link for {name} is already in use"));
-        return Err(Box::new(report));
-    };
-    Ok(Runner {
-        name: name.to_owned(),
-        plant,
-        link,
-        inbox: loop_end.inbox,
-        samples: loop_end.samples,
-        feedback,
-        feedback_scratch: Feedback::default(),
-        config,
-        state,
-        trace,
-        timings: crate::trace::CycleTimings::default(),
-        report,
-        started: Instant::now(),
-        cycle_number: 0,
-        plant_lost: false,
-        failed_cycles: 0,
-        last_reconnect_failure: None,
-        recovery: runner::BusRecovery::Disabled,
-        startup_hold: None,
-    })
-}
-
 fn refuse_mixed_pacing<P: Plant>(runners: Vec<Runner<'_, P>>) -> Vec<Report> {
     runners
         .into_iter()
@@ -372,11 +314,11 @@ fn run_runners<P: Plant>(
     // cycle lasts the nominal period, and wall time cannot miss a deadline.
     let plant_paced = runners
         .iter()
-        .all(|runner| runner.plant.pacing().is_set_by_replies());
+        .all(|runner| runner.pacing().is_set_by_replies());
     if !plant_paced
         && runners
             .iter()
-            .any(|runner| runner.plant.pacing().is_set_by_replies())
+            .any(|runner| runner.pacing().is_set_by_replies())
     {
         return refuse_mixed_pacing(runners);
     }
@@ -412,7 +354,7 @@ fn run_runners<P: Plant>(
         let (cycle, deadline_missed) = if plant_paced {
             if runners
                 .iter()
-                .all(|runner| runner.plant.pacing() == Pacing::RepliesAtClockSpeed)
+                .all(|runner| runner.pacing() == Pacing::RepliesAtClockSpeed)
             {
                 // CONSTRAINT: Simulated time follows the clock; a simulator slower than that
                 // simply makes the cycles late, which no deadline judges.
@@ -443,7 +385,7 @@ fn run_runners<P: Plant>(
             if ended[index] {
                 // CONSTRAINT: A simulator shared with arms still running waits for this
                 // arm's step too; an arm that is done keeps time moving.
-                let _ = runner.plant.advance(nominal_cycle.as_secs_f64());
+                let _ = runner.advance_plant(nominal_cycle.as_secs_f64());
                 begun.push(None);
                 continue;
             }

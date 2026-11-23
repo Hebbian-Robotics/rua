@@ -17,7 +17,9 @@ use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::control_loop::run;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Plant, RecoveryObservation};
+use hebbian_robot_use_core::plant::{
+    Feedback, NoPhysicsStandIn, Plant, PlantWritePermit, RecoveryObservation,
+};
 use hebbian_robot_use_core::station_api::HttpServer;
 use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
 use serde_json::{Value, json};
@@ -33,10 +35,6 @@ struct FailingPlant {
     releases: Arc<AtomicU32>,
 }
 
-#[allow(
-    clippy::disallowed_methods,
-    reason = "This test adapter forwards operations to its simulated plant."
-)]
 impl Plant for FailingPlant {
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         anyhow::ensure!(!self.failed.load(Ordering::Relaxed), "bus unavailable");
@@ -57,7 +55,7 @@ impl Plant for FailingPlant {
         })
     }
 
-    fn hold_recovery(&mut self) -> anyhow::Result<RecoveryObservation> {
+    fn hold_recovery(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<RecoveryObservation> {
         let observation = self.observe_recovery()?;
         anyhow::ensure!(
             observation.motor_torque.iter().all(|(_, enabled)| *enabled),
@@ -68,6 +66,7 @@ impl Plant for FailingPlant {
 
     fn enable_recovery(
         &mut self,
+        _permit: &PlantWritePermit,
         _drift_limit_radians: f64,
     ) -> anyhow::Result<RecoveryObservation> {
         self.recovery_enables.fetch_add(1, Ordering::Relaxed);
@@ -75,25 +74,30 @@ impl Plant for FailingPlant {
         self.observe_recovery()
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
-        self.inner.command_gripper(angle)
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(permit, angle)
     }
 
     fn preflight(&mut self) -> anyhow::Result<()> {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
-        self.inner.enable()
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.enable(permit)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
         self.releases.fetch_add(1, Ordering::Relaxed);
-        self.inner.release()
+        self.inner.release(permit)
     }
 }
 
