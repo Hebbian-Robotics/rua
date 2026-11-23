@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 hebbian-contracts = { package = "hebbian-rua-contracts", path = "../contracts" }
 livekit-api = { version = "=0.10.2", default-features = false, features = ["access-token", "services", "rustls-tls-native-roots"] }
-livekit-camera-invite = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "06682e38e90094068d852349c598b5354456b927" }
+livekit-camera-invite = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "9eec0c193399865e7138afc62f4f51710e25ca1e" }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
