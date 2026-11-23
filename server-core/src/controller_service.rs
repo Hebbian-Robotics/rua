@@ -350,7 +350,14 @@ fn write_controller_messages(
                         ),
                     );
                 }
-                event => {
+                event @ (Event::Snapshot { .. }
+                | Event::Resync { .. }
+                | Event::Record(_)
+                | Event::Mode { .. }
+                | Event::Rejected { .. }
+                | Event::Tripped { .. }
+                | Event::ControllerUnavailable { .. }
+                | Event::ControllerAvailable) => {
                     if startup_events.len() >= OUTBOUND_CAPACITY {
                         return Err(io::Error::other("Too many controller startup events"));
                     }
@@ -360,7 +367,10 @@ fn write_controller_messages(
                     });
                 }
             },
-            _ => {
+            ControllerMessage::Ready
+            | ControllerMessage::Shutdown
+            | ControllerMessage::Request { .. }
+            | ControllerMessage::Answer { .. } => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "Unexpected message before controller readiness",

@@ -426,7 +426,8 @@
             "type": [
               "number",
               "null"
-            ]
+            ],
+            "x-omit-when-none": true
           }
         },
         "required": [
@@ -1059,6 +1060,8 @@
                 "default": [],
                 "description": "Cameras the holder cannot work without.",
                 "items": {
+                  "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                  "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
                   "type": "string"
                 },
                 "type": "array"
@@ -1101,6 +1104,8 @@
                 "default": [],
                 "description": "Cameras the holder cannot work without.",
                 "items": {
+                  "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                  "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
                   "type": "string"
                 },
                 "type": "array"
@@ -1215,6 +1220,8 @@
                 "type": "boolean"
               },
               "camera": {
+                "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
                 "type": "string"
               },
               "kind": {
@@ -2152,26 +2159,6 @@
           }
         ]
       },
-      "CornerPlan": {
-        "properties": {
-          "peak_speed": {
-            "format": "double",
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "segments": {
-            "items": {
-              "$ref": "#/components/schemas/Segment"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "segments",
-          "peak_speed"
-        ],
-        "type": "object"
-      },
       "Event": {
         "description": "Controller to client.",
         "oneOf": [
@@ -2187,117 +2174,6 @@
               "kind"
             ],
             "title": "State",
-            "type": "object"
-          },
-          {
-            "description": "The one answer to a request that carried a request id: the command's\nrecord when it was accepted, or the reason it was not.",
-            "properties": {
-              "accepted": {
-                "type": "boolean"
-              },
-              "description": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/PoseDescription"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "The answer to a `describe_pose`."
-              },
-              "detail": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "ik": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/IkResult"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "How a `solve_pose` ended."
-              },
-              "kind": {
-                "const": "reply",
-                "type": "string"
-              },
-              "lease": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/LeaseAnswer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "The answer to a request about the lease."
-              },
-              "plan": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/PlannedMotion"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "The plan a `plan_motion` made."
-              },
-              "projection": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/PoseProjection"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "The answer to a `project_pose`."
-              },
-              "reason": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/RejectionReason"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "record": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/CommandRecord"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "records": {
-                "default": [],
-                "description": "The records of a grouped move, one per arm in the order asked; empty\nfor any other request.",
-                "items": {
-                  "$ref": "#/components/schemas/CommandRecord"
-                },
-                "type": "array"
-              },
-              "request_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "request_id",
-              "accepted"
-            ],
-            "title": "Reply",
             "type": "object"
           },
           {
@@ -2715,7 +2591,7 @@
         ]
       },
       "Frame": {
-        "description": "One line from the controller: a log event with its sequence number, or an\nunsequenced sample or reply.",
+        "description": "One line from the controller: a sequenced log event or an unsequenced feedback frame.",
         "properties": {
           "emitted_unix_nano": {
             "$ref": "#/components/schemas/UnixNanos",
@@ -2890,95 +2766,6 @@
             "const": "out_of_reach",
             "description": "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
             "type": "string"
-          }
-        ]
-      },
-      "IkPose": {
-        "description": "Where a solve left the arm.",
-        "properties": {
-          "joints": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "type": "array"
-          },
-          "orientation_error_radians": {
-            "description": "From the required orientation, or from the seed's when it was free.",
-            "format": "double",
-            "type": "number"
-          },
-          "position_error_meters": {
-            "format": "double",
-            "type": "number"
-          },
-          "tool_position": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 3,
-            "minItems": 3,
-            "type": "array"
-          },
-          "tool_quaternion": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 4,
-            "minItems": 4,
-            "type": "array"
-          }
-        },
-        "required": [
-          "joints",
-          "tool_position",
-          "tool_quaternion",
-          "position_error_meters",
-          "orientation_error_radians"
-        ],
-        "type": "object"
-      },
-      "IkResult": {
-        "description": "A solve's outcome.",
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/IkPose",
-            "description": "The tool is within tolerance of the target.",
-            "properties": {
-              "outcome": {
-                "const": "solved",
-                "type": "string"
-              }
-            },
-            "required": [
-              "outcome"
-            ],
-            "title": "IkSolved",
-            "type": "object"
-          },
-          {
-            "description": "It is not; `best` is the pose with the smallest position error found,\nalways inside the joint limits.",
-            "properties": {
-              "best": {
-                "$ref": "#/components/schemas/IkPose"
-              },
-              "outcome": {
-                "const": "failed",
-                "type": "string"
-              },
-              "reason": {
-                "$ref": "#/components/schemas/IkFailure"
-              }
-            },
-            "required": [
-              "outcome",
-              "reason",
-              "best"
-            ],
-            "title": "IkFailed",
-            "type": "object"
           }
         ]
       },
@@ -3263,6 +3050,8 @@
             "type": "boolean"
           },
           "camera": {
+            "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
             "type": "string"
           },
           "lease_token": {
@@ -3329,6 +3118,8 @@
           "required_cameras": {
             "default": [],
             "items": {
+              "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+              "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
               "type": "string"
             },
             "type": "array"
@@ -3360,6 +3151,8 @@
           "required_cameras": {
             "description": "Cameras the holder cannot work without.",
             "items": {
+              "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+              "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
               "type": "string"
             },
             "type": "array"
@@ -3476,8 +3269,11 @@
         "description": "`GET /viewer/api/media-status`: the media service and its configured cameras.",
         "properties": {
           "cameras": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/CameraStatus"
+            "additionalProperties": false,
+            "patternProperties": {
+              "^[a-z0-9_]{1,40}$": {
+                "$ref": "#/components/schemas/CameraStatus"
+              }
             },
             "type": "object"
           },
@@ -3666,6 +3462,8 @@
           "optional_cameras": {
             "default": [],
             "items": {
+              "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+              "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
               "type": "string"
             },
             "type": "array"
@@ -3673,6 +3471,8 @@
           "required_cameras": {
             "default": [],
             "items": {
+              "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+              "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
               "type": "string"
             },
             "type": "array"
@@ -3863,19 +3663,6 @@
         ],
         "type": "object"
       },
-      "PassThrough": {
-        "description": "Continue through this configuration and optionally begin a jaw move.",
-        "properties": {
-          "gripper_angle": {
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
-          }
-        },
-        "type": "object"
-      },
       "PathLimited": {
         "description": "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
         "properties": {
@@ -3944,38 +3731,6 @@
           "failed"
         ],
         "type": "string"
-      },
-      "PlannedMotion": {
-        "description": "What the arm is asked to run, and why it stops short of the target if it does.",
-        "properties": {
-          "path_limited": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PathLimited"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "plan": {
-            "$ref": "#/components/schemas/CornerPlan"
-          },
-          "pose_limited": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PoseLimited"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "plan"
-        ],
-        "type": "object"
       },
       "PoseDescription": {
         "description": "The tool's pose at some joints, in the station's world frame.",
@@ -4600,7 +4355,7 @@
                 "type": "string"
               },
               "stream_command_id": {
-                "description": "The joint stream that issued this jaw goal, if any.",
+                "description": "The motion or joint stream that owns this jaw command, if any.",
                 "type": [
                   "string",
                   "null"
@@ -5105,75 +4860,6 @@
           "temperatures_celsius",
           "voltages_volts",
           "cycle_seconds"
-        ],
-        "type": "object"
-      },
-      "Segment": {
-        "description": "One straight run between corners, with where it is meant to end.",
-        "properties": {
-          "corners": {
-            "items": {
-              "items": {
-                "format": "double",
-                "type": "number"
-              },
-              "type": "array"
-            },
-            "type": "array"
-          },
-          "destination_position": {
-            "default": null,
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 3,
-            "minItems": 3,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "destination_quaternion": {
-            "default": null,
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 4,
-            "minItems": 4,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "label": {
-            "type": "string"
-          },
-          "minimum_duration_seconds": {
-            "default": null,
-            "description": "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-            "format": "double",
-            "minimum": 0.0,
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "pass_through": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PassThrough"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "label",
-          "corners"
         ],
         "type": "object"
       },
@@ -6439,6 +6125,7 @@
             "name": "name",
             "required": true,
             "schema": {
+              "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
               "type": "string"
             }
           }

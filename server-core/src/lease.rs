@@ -92,7 +92,7 @@ impl CommandAuthority {
 pub use hebbian_contracts::LeaseRequest;
 
 struct Held {
-    token: String,
+    token: LeaseSecret,
     request: LeaseRequest,
     unavailable_cameras: BTreeSet<String>,
     expires_at: Instant,
@@ -100,7 +100,7 @@ struct Held {
 }
 
 struct TakeoverReservation {
-    token: String,
+    token: LeaseSecret,
     controller_epoch: ControllerEpoch,
 }
 
@@ -151,6 +151,76 @@ fn poll_stops(pending: &mut Vec<PendingArmStop>) -> Settling {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum MotionClaim<'a> {
+    Unleased,
+    Token(&'a str),
+}
+
+impl<'a> From<Option<&'a str>> for MotionClaim<'a> {
+    fn from(token: Option<&'a str>) -> Self {
+        token.map_or(Self::Unleased, Self::Token)
+    }
+}
+
+enum MotionPermission<'a> {
+    Held(&'a Held),
+    Unleased,
+    Interrupted,
+}
+
+impl<'a> MotionPermission<'a> {
+    fn check(
+        held: Option<&'a Held>,
+        presented: MotionClaim<'_>,
+        admission: LeaseAdmission,
+        now: Instant,
+    ) -> Result<Self, Rejection> {
+        if let Some(claim) = held {
+            if matches!(
+                claim.phase,
+                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
+            ) && admission.permits_interrupted_lease()
+            {
+                return Ok(Self::Interrupted);
+            }
+            if !claim.active_at(now) {
+                return Err(Rejection {
+                    reason: RejectionReason::ArmBusy,
+                    detail: "The lease transfer has not finished; retry taking the lease"
+                        .to_owned(),
+                });
+            }
+            if !matches!(presented, MotionClaim::Token(token) if claim.token.matches(token)) {
+                return Err(Rejection {
+                    reason: RejectionReason::LeaseHeldElsewhere,
+                    detail: format!(
+                        "The lease is held by {} '{}'. Stop is always accepted; \
+                         otherwise wait for it to finish, or take the lease.",
+                        match claim.request.holder {
+                            LeaseHolder::Agent => "agent",
+                            LeaseHolder::Manual => "manual",
+                        },
+                        claim.request.label
+                    ),
+                });
+            }
+            return Ok(Self::Held(claim));
+        }
+        if matches!(presented, MotionClaim::Token(_)) {
+            return Err(Rejection {
+                reason: RejectionReason::LeaseHeldElsewhere,
+                detail: "The lease has ended; acquire it again".to_owned(),
+            });
+        }
+        Ok(Self::Unleased)
+    }
+
+    fn is_manual_holder(&self) -> bool {
+        matches!(self, Self::Held(claim) if claim.request.holder == LeaseHolder::Manual)
+    }
+}
+
 impl Held {
     fn status(&self, now: Instant) -> LeaseStatus {
         LeaseStatus {
@@ -163,7 +233,7 @@ impl Held {
     }
 
     fn is_held_by(&self, token: Option<&str>) -> bool {
-        token.is_some_and(|token| same_token(&self.token, token))
+        token.is_some_and(|token| self.token.matches(token))
     }
 
     fn active_at(&self, now: Instant) -> bool {
@@ -175,24 +245,30 @@ impl Held {
     }
 }
 
-fn same_token(held: &str, presented: &str) -> bool {
-    held.len() == presented.len()
-        && held
-            .bytes()
-            .zip(presented.bytes())
-            .fold(0_u8, |difference, (held, presented)| {
-                difference | (held ^ presented)
-            })
-            == 0
-}
+#[derive(Clone)]
+struct LeaseSecret(String);
 
-fn new_token() -> std::io::Result<String> {
-    let mut bytes = [0_u8; 24];
-    std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
-    Ok(bytes.iter().fold(String::new(), |mut hex, byte| {
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    }))
+impl LeaseSecret {
+    fn matches(&self, presented: &str) -> bool {
+        let held = &self.0;
+        held.len() == presented.len()
+            && held
+                .bytes()
+                .zip(presented.bytes())
+                .fold(0_u8, |difference, (held, presented)| {
+                    difference | (held ^ presented)
+                })
+                == 0
+    }
+
+    fn generate() -> std::io::Result<Self> {
+        let mut bytes = [0_u8; 24];
+        std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
+        Ok(Self(bytes.iter().fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -638,8 +714,13 @@ impl Lease {
             .as_ref()
             .filter(|claim| matches!(claim.phase, LeasePhase::Active) && claim.expires_at > now)
             .map(|claim| CameraRequirements {
-                token: claim.token.clone(),
-                cameras: claim.request.required_cameras.clone(),
+                token: claim.token.0.clone(),
+                cameras: claim
+                    .request
+                    .required_cameras
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
             })
     }
 
@@ -662,7 +743,7 @@ impl Lease {
             .request
             .required_cameras
             .iter()
-            .any(|name| name == camera)
+            .any(|name| name.as_str() == camera)
         {
             return Err(CameraReportRefusal::CameraNotRequired);
         }
@@ -764,14 +845,14 @@ impl Lease {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let claim = Held {
-            token: new_token().map_err(AcquireError::Unavailable)?,
+            token: LeaseSecret::generate().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
             phase: LeasePhase::Active,
         };
         let grant = LeaseGrant {
-            lease_token: claim.token.clone(),
+            lease_token: claim.token.0.clone(),
             lease_seconds: self.duration.as_secs_f64(),
             status: claim.status(now),
         };
@@ -801,7 +882,7 @@ impl Lease {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let reservation = Held {
-            token: new_token().map_err(AcquireError::Unavailable)?,
+            token: LeaseSecret::generate().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
@@ -831,7 +912,7 @@ impl Lease {
         let held = &mut authority.held;
         let reservation = held
             .as_mut()
-            .filter(|reservation| reservation.is_held_by(Some(&token.token)))?;
+            .filter(|reservation| reservation.token.matches(&token.token.0))?;
         let completion = reservation.phase.finish_takeover(result)?;
         self.authority_changes.send_replace(());
         match completion {
@@ -840,7 +921,7 @@ impl Lease {
         }
         reservation.expires_at = now + self.duration;
         Some(LeaseGrant {
-            lease_token: reservation.token.clone(),
+            lease_token: reservation.token.0.clone(),
             lease_seconds: self.duration.as_secs_f64(),
             status: reservation.status(now),
         })
@@ -967,7 +1048,7 @@ impl Lease {
 
     pub(crate) fn admit_generation<T>(
         &self,
-        token: Option<&str>,
+        claim: MotionClaim<'_>,
         clock: impl FnOnce() -> Instant,
         gates: &[ArmGate],
         generations: &[GenerationTicket],
@@ -1006,15 +1087,15 @@ impl Lease {
         }
         // WHY: Sample after acquiring the authority and interlock locks: contention can outlast a lease.
         let now = clock();
-        let (manual_holder, cameras_unavailable) = held.as_ref().map_or((false, false), |claim| {
-            (
-                claim.active_at(now)
-                    && claim.is_held_by(token)
-                    && claim.request.holder == LeaseHolder::Manual,
-                !claim.unavailable_cameras.is_empty(),
-            )
-        });
-        if admission.blocks_on_interlocks() && cameras_unavailable && !manual_holder {
+        let permission = MotionPermission::check(held.as_ref(), claim, admission, now);
+        if admission.blocks_on_interlocks()
+            && held
+                .as_ref()
+                .is_some_and(|claim| !claim.unavailable_cameras.is_empty())
+            && !permission
+                .as_ref()
+                .is_ok_and(MotionPermission::is_manual_holder)
+        {
             return Err(Rejection {
                 reason: RejectionReason::Interlocked,
                 detail: "A camera the lease requires is unavailable. Motion resumes when it gives a fresh frame".to_owned(),
@@ -1026,42 +1107,7 @@ impl Lease {
                 detail: "The command was superseded by a stop".to_owned(),
             });
         }
-        if let Some(claim) = held.as_ref() {
-            if matches!(
-                claim.phase,
-                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
-            ) && admission.permits_interrupted_lease()
-            {
-                return Ok(act());
-            }
-            if !claim.active_at(now) {
-                return Err(Rejection {
-                    reason: RejectionReason::ArmBusy,
-                    detail: "The lease transfer has not finished; retry taking the lease"
-                        .to_owned(),
-                });
-            }
-            if !claim.is_held_by(token) {
-                return Err(Rejection {
-                    reason: RejectionReason::LeaseHeldElsewhere,
-                    detail: format!(
-                        "The lease is held by {} '{}'. Stop is always accepted; \
-                         otherwise wait for it to finish, or take the lease.",
-                        match claim.request.holder {
-                            LeaseHolder::Agent => "agent",
-                            LeaseHolder::Manual => "manual",
-                        },
-                        claim.request.label
-                    ),
-                });
-            }
-        } else if token.is_some() {
-            return Err(Rejection {
-                reason: RejectionReason::LeaseHeldElsewhere,
-                detail: "The lease has ended; acquire it again".to_owned(),
-            });
-        }
-        Ok(act())
+        permission.map(|_| act())
     }
 }
 
@@ -1098,7 +1144,9 @@ mod tests {
         LeaseRequest {
             holder,
             label: label.into(),
-            required_cameras: vec!["front".into()],
+            required_cameras: vec![
+                hebbian_contracts::SnapshotName::try_from("front".to_owned()).unwrap(),
+            ],
             on_interruption: OnInterruption::WaitForApproval,
         }
     }
@@ -1125,7 +1173,14 @@ mod tests {
     }
 
     fn command(lease: &Lease, token: Option<&str>, now: Instant) -> Result<(), Rejection> {
-        lease.admit_generation(token, || now, &[], &[], LeaseAdmission::Normal, || ())
+        lease.admit_generation(
+            token.into(),
+            || now,
+            &[],
+            &[],
+            LeaseAdmission::Normal,
+            || (),
+        )
     }
 
     fn gated(
@@ -1135,7 +1190,7 @@ mod tests {
         expected_revision: Option<u64>,
     ) -> Result<(), Rejection> {
         lease.admit_generation(
-            token,
+            token.into(),
             Instant::now,
             &[ArmGate {
                 interlocks: arm.clone(),
@@ -1384,7 +1439,7 @@ mod tests {
         for token in [
             None,
             Some(old_token.as_str()),
-            Some(reservation.token.as_str()),
+            Some(reservation.token.0.as_str()),
         ] {
             assert_eq!(
                 command(&lease, token, now).unwrap_err().reason,
@@ -1513,7 +1568,7 @@ mod tests {
         assert!(
             lease
                 .admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || now,
                     &[],
                     &first_submission,
@@ -1525,7 +1580,7 @@ mod tests {
         assert!(
             lease
                 .admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || now,
                     &[],
                     &second_submission,
@@ -1556,7 +1611,14 @@ mod tests {
         assert!(command(&lease, None, later).is_err());
         assert!(
             lease
-                .admit_generation(None, || later, &[], &[], LeaseAdmission::ClearFault, || ())
+                .admit_generation(
+                    None.into(),
+                    || later,
+                    &[],
+                    &[],
+                    LeaseAdmission::ClearFault,
+                    || ()
+                )
                 .is_ok()
         );
         let (retry, ()) = lease
@@ -1647,7 +1709,7 @@ mod tests {
             let interlock_guard = gate.interlocks.lock_unpoisoned();
             let submission = scope.spawn(|| {
                 lease.admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || *current_time.lock_unpoisoned(),
                     std::slice::from_ref(&gate),
                     &[],
@@ -1681,7 +1743,7 @@ mod tests {
         acquire_agent(&lease, now);
         let mut ran = false;
         let _ = lease.admit_generation(
-            None,
+            None.into(),
             || now,
             &[],
             &[],

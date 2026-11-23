@@ -674,7 +674,8 @@ export const apiSchemas = z.object({
                                   ])
                                   .describe(
                                     "Start moving the gripper when passing this waypoint.",
-                                  ),
+                                  )
+                                  .optional(),
                               })
                               .strict()
                               .describe(
@@ -865,16 +866,16 @@ export const apiSchemas = z.object({
                                 z
                                   .string()
                                   .describe(
-                                    "The joint stream that issued this jaw goal, if any.",
+                                    "The motion or joint stream that owns this jaw command, if any.",
                                   ),
                                 z
                                   .null()
                                   .describe(
-                                    "The joint stream that issued this jaw goal, if any.",
+                                    "The motion or joint stream that owns this jaw command, if any.",
                                   ),
                               ])
                               .describe(
-                                "The joint stream that issued this jaw goal, if any.",
+                                "The motion or joint stream that owns this jaw command, if any.",
                               ),
                             target_angle_radians: z.number(),
                           })
@@ -2056,16 +2057,16 @@ export const apiSchemas = z.object({
                       z
                         .string()
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         ),
                       z
                         .null()
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         ),
                     ])
                     .describe(
-                      "The joint stream that issued this jaw goal, if any.",
+                      "The motion or joint stream that owns this jaw command, if any.",
                     )
                     .optional(),
                   target_angle_radians: z.number(),
@@ -2478,16 +2479,16 @@ export const apiSchemas = z.object({
                           z
                             .string()
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                           z
                             .null()
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                         ])
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         )
                         .optional(),
                       target_angle_radians: z.number(),
@@ -2996,16 +2997,16 @@ export const apiSchemas = z.object({
                           z
                             .string()
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                           z
                             .null()
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                         ])
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         )
                         .optional(),
                       target_angle_radians: z.number(),
@@ -3810,7 +3811,14 @@ export const apiSchemas = z.object({
             .default("wait_for_approval"),
           request_id: z.union([z.string(), z.null()]).default(null),
           required_cameras: z
-            .array(z.string())
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
             .describe("Cameras the holder cannot work without.")
             .default([]),
         })
@@ -3851,7 +3859,14 @@ export const apiSchemas = z.object({
             .default("wait_for_approval"),
           request_id: z.union([z.string(), z.null()]).default(null),
           required_cameras: z
-            .array(z.string())
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
             .describe("Cameras the holder cannot work without.")
             .default([]),
         })
@@ -4089,7 +4104,12 @@ export const apiSchemas = z.object({
       z
         .object({
           available: z.boolean(),
-          camera: z.string(),
+          camera: z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
           kind: z.literal("report_camera"),
           request_id: z.union([z.string(), z.null()]).default(null),
         })
@@ -4490,16 +4510,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             )
                             .optional(),
                           target_angle_radians: z.number(),
@@ -5208,16 +5228,16 @@ export const apiSchemas = z.object({
                   z
                     .string()
                     .describe(
-                      "The joint stream that issued this jaw goal, if any.",
+                      "The motion or joint stream that owns this jaw command, if any.",
                     ),
                   z
                     .null()
                     .describe(
-                      "The joint stream that issued this jaw goal, if any.",
+                      "The motion or joint stream that owns this jaw command, if any.",
                     ),
                 ])
                 .describe(
-                  "The joint stream that issued this jaw goal, if any.",
+                  "The motion or joint stream that owns this jaw command, if any.",
                 ),
               target_angle_radians: z.number(),
             })
@@ -7193,55 +7213,6 @@ export const apiSchemas = z.object({
       reports: z.array(z.string()),
     }),
   ]),
-  CornerPlan: z.object({
-    peak_speed: z.number().gte(0),
-    segments: z.array(
-      z
-        .object({
-          corners: z.array(z.array(z.number())),
-          destination_position: z
-            .union([z.array(z.number()).min(3).max(3), z.null()])
-            .default(null),
-          destination_quaternion: z
-            .union([z.array(z.number()).min(4).max(4), z.null()])
-            .default(null),
-          label: z.string(),
-          minimum_duration_seconds: z
-            .union([
-              z
-                .number()
-                .gte(0)
-                .describe(
-                  "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                ),
-              z
-                .null()
-                .describe(
-                  "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                ),
-            ])
-            .describe(
-              "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-            )
-            .default(null),
-          pass_through: z
-            .union([
-              z
-                .object({
-                  gripper_angle: z.union([z.number(), z.null()]).optional(),
-                })
-                .describe(
-                  "Continue through this configuration and optionally begin a jaw move.",
-                ),
-              z.null(),
-            ])
-            .optional(),
-        })
-        .describe(
-          "One straight run between corners, with where it is meant to end.",
-        ),
-    ),
-  }),
   Event: z
     .union([
       z
@@ -7417,1425 +7388,6 @@ export const apiSchemas = z.object({
         ),
       z
         .object({
-          accepted: z.boolean(),
-          description: z
-            .union([
-              z
-                .object({
-                  model_points: z
-                    .array(z.array(z.number()).min(3).max(3))
-                    .describe(
-                      "Each joint's origin, then the tool's: the points a viewer draws the arm through.",
-                    ),
-                  orientation: z
-                    .object({
-                      approach: z.array(z.number()).min(3).max(3),
-                      degrees_from_down: z.number().gte(0).lte(180),
-                      goal: z
-                        .union([
-                          z
-                            .object({
-                              approach_error_degrees: z
-                                .number()
-                                .gte(0)
-                                .lte(180),
-                              jaw_yaw_degrees: z.number().gte(0).lt(360),
-                              jaw_yaw_reference: z
-                                .enum(["world_x", "world_y"])
-                                .describe(
-                                  "The world axis jaw yaw zero is projected from.",
-                                ),
-                              orientation_error_degrees: z
-                                .number()
-                                .gte(0)
-                                .lte(180),
-                            })
-                            .describe(
-                              "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                            ),
-                          z.null(),
-                        ])
-                        .optional(),
-                      jaw_yaw_degrees: z.number().gte(0).lt(360),
-                      jaw_yaw_reference: z
-                        .enum(["world_x", "world_y"])
-                        .describe(
-                          "The world axis jaw yaw zero is projected from.",
-                        ),
-                    })
-                    .describe(
-                      "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                    ),
-                  position: z.array(z.number()).min(3).max(3),
-                  quaternion: z.array(z.number()).min(4).max(4),
-                })
-                .describe(
-                  "The tool's pose at some joints, in the station's world frame.",
-                ),
-              z.null(),
-            ])
-            .describe("The answer to a `describe_pose`.")
-            .optional(),
-          detail: z.union([z.string(), z.null()]).optional(),
-          ik: z
-            .union([
-              z
-                .union([
-                  z
-                    .object({
-                      joints: z.array(z.number()),
-                      orientation_error_radians: z
-                        .number()
-                        .describe(
-                          "From the required orientation, or from the seed's when it was free.",
-                        ),
-                      position_error_meters: z.number(),
-                      tool_position: z.array(z.number()).min(3).max(3),
-                      tool_quaternion: z.array(z.number()).min(4).max(4),
-                      outcome: z.literal("solved"),
-                    })
-                    .describe("The tool is within tolerance of the target."),
-                  z
-                    .object({
-                      best: z
-                        .object({
-                          joints: z.array(z.number()),
-                          orientation_error_radians: z
-                            .number()
-                            .describe(
-                              "From the required orientation, or from the seed's when it was free.",
-                            ),
-                          position_error_meters: z.number(),
-                          tool_position: z.array(z.number()).min(3).max(3),
-                          tool_quaternion: z.array(z.number()).min(4).max(4),
-                        })
-                        .describe("Where a solve left the arm."),
-                      outcome: z.literal("failed"),
-                      reason: z
-                        .union([
-                          z
-                            .literal("at_joint_limit")
-                            .describe(
-                              "The best pose it found has a joint at its limit, and no step improves it.",
-                            ),
-                          z
-                            .literal("stalled")
-                            .describe(
-                              "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                            ),
-                          z
-                            .literal("iteration_limit")
-                            .describe(
-                              "It was still improving when it ran out of iterations.",
-                            ),
-                          z
-                            .literal("out_of_reach")
-                            .describe(
-                              "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                            ),
-                        ])
-                        .describe("Why a solve stopped short."),
-                    })
-                    .describe(
-                      "It is not; `best` is the pose with the smallest position error found,\nalways inside the joint limits.",
-                    ),
-                ])
-                .describe("A solve's outcome."),
-              z.null(),
-            ])
-            .describe("How a `solve_pose` ended.")
-            .optional(),
-          kind: z.literal("reply"),
-          lease: z
-            .union([
-              z
-                .union([
-                  z
-                    .object({
-                      lease_seconds: z.number(),
-                      lease_token: z.string(),
-                      status: z
-                        .object({
-                          expires_in_seconds: z
-                            .number()
-                            .describe(
-                              "The lease lapses this long after its grant or last explicit renewal.",
-                            ),
-                          holder: z
-                            .union([
-                              z
-                                .literal("agent")
-                                .describe(
-                                  "A model loop, started from the terminal or the agent server.",
-                                ),
-                              z
-                                .literal("manual")
-                                .describe(
-                                  "A person driving the arms from the viewer's manual controls.",
-                                ),
-                            ])
-                            .describe(
-                              "The kind of controller holding the lease.",
-                            ),
-                          label: z.string(),
-                          on_interruption: z
-                            .union([
-                              z
-                                .literal("wait_for_approval")
-                                .describe(
-                                  "Keep the lease and wait for an operator's `approve_recovery`.",
-                                ),
-                              z
-                                .literal("return_lease")
-                                .describe("Give the lease up."),
-                            ])
-                            .describe(
-                              "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
-                            ),
-                          required_cameras: z
-                            .array(z.string())
-                            .describe(
-                              "Cameras the holder cannot work without.",
-                            ),
-                        })
-                        .describe("The current lease, as everyone may see it."),
-                      kind: z.literal("granted"),
-                    })
-                    .describe("The lease is yours."),
-                  z
-                    .object({
-                      kind: z.literal("holder"),
-                      status: z
-                        .union([
-                          z
-                            .object({
-                              expires_in_seconds: z
-                                .number()
-                                .describe(
-                                  "The lease lapses this long after its grant or last explicit renewal.",
-                                ),
-                              holder: z
-                                .union([
-                                  z
-                                    .literal("agent")
-                                    .describe(
-                                      "A model loop, started from the terminal or the agent server.",
-                                    ),
-                                  z
-                                    .literal("manual")
-                                    .describe(
-                                      "A person driving the arms from the viewer's manual controls.",
-                                    ),
-                                ])
-                                .describe(
-                                  "The kind of controller holding the lease.",
-                                ),
-                              label: z.string(),
-                              on_interruption: z
-                                .union([
-                                  z
-                                    .literal("wait_for_approval")
-                                    .describe(
-                                      "Keep the lease and wait for an operator's `approve_recovery`.",
-                                    ),
-                                  z
-                                    .literal("return_lease")
-                                    .describe("Give the lease up."),
-                                ])
-                                .describe(
-                                  "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
-                                ),
-                              required_cameras: z
-                                .array(z.string())
-                                .describe(
-                                  "Cameras the holder cannot work without.",
-                                ),
-                            })
-                            .describe(
-                              "The current lease, as everyone may see it.",
-                            ),
-                          z.null(),
-                        ])
-                        .optional(),
-                    })
-                    .describe("Who holds the lease, if anyone."),
-                ])
-                .describe("What a request about the lease answers."),
-              z.null(),
-            ])
-            .describe("The answer to a request about the lease.")
-            .optional(),
-          plan: z
-            .union([
-              z
-                .object({
-                  path_limited: z
-                    .union([
-                      z
-                        .object({ reason: z.string() })
-                        .describe(
-                          "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                        ),
-                      z.null(),
-                    ])
-                    .optional(),
-                  plan: z.object({
-                    peak_speed: z.number().gte(0),
-                    segments: z.array(
-                      z
-                        .object({
-                          corners: z.array(z.array(z.number())),
-                          destination_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .default(null),
-                          destination_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .default(null),
-                          label: z.string(),
-                          minimum_duration_seconds: z
-                            .union([
-                              z
-                                .number()
-                                .gte(0)
-                                .describe(
-                                  "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                ),
-                            ])
-                            .describe(
-                              "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                            )
-                            .default(null),
-                          pass_through: z
-                            .union([
-                              z
-                                .object({
-                                  gripper_angle: z
-                                    .union([z.number(), z.null()])
-                                    .optional(),
-                                })
-                                .describe(
-                                  "Continue through this configuration and optionally begin a jaw move.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                        })
-                        .describe(
-                          "One straight run between corners, with where it is meant to end.",
-                        ),
-                    ),
-                  }),
-                  pose_limited: z
-                    .union([
-                      z
-                        .object({
-                          advice: z
-                            .string()
-                            .describe(
-                              "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                            ),
-                          orientation_shortfall_radians: z
-                            .number()
-                            .gte(0)
-                            .describe(
-                              "From the closest pose's orientation to the requested one.",
-                            ),
-                          position_shortfall_meters: z
-                            .number()
-                            .gte(0)
-                            .describe(
-                              "From the closest pose's tool position to the requested one.",
-                            ),
-                          reason: z
-                            .union([
-                              z
-                                .literal("at_joint_limit")
-                                .describe(
-                                  "The best pose it found has a joint at its limit, and no step improves it.",
-                                ),
-                              z
-                                .literal("stalled")
-                                .describe(
-                                  "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                ),
-                              z
-                                .literal("iteration_limit")
-                                .describe(
-                                  "It was still improving when it ran out of iterations.",
-                                ),
-                              z
-                                .literal("out_of_reach")
-                                .describe(
-                                  "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                ),
-                            ])
-                            .describe("Why a solve stopped short."),
-                          waypoint: z
-                            .number()
-                            .int()
-                            .gte(0)
-                            .describe(
-                              "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                            ),
-                        })
-                        .describe(
-                          "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                        ),
-                      z.null(),
-                    ])
-                    .optional(),
-                })
-                .describe(
-                  "What the arm is asked to run, and why it stops short of the target if it does.",
-                ),
-              z.null(),
-            ])
-            .describe("The plan a `plan_motion` made.")
-            .optional(),
-          projection: z
-            .union([
-              z
-                .object({
-                  calculation_milliseconds: z.number().gte(0),
-                  jaw_yaw_ranges: z
-                    .array(
-                      z
-                        .object({
-                          from_degrees: z.number().gte(0).lte(360),
-                          reachable: z.boolean(),
-                          reason: z.union([z.string(), z.null()]).optional(),
-                          to_degrees: z.number().gte(0).lte(360),
-                        })
-                        .describe(
-                          "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
-                        ),
-                    )
-                    .describe(
-                      "The jaw yaws the arm can take at the projected position and approach;\nempty when nothing was projected or the arm has no wrist roll.",
-                    ),
-                  outcome: z
-                    .union([
-                      z
-                        .object({
-                          kind: z.literal("projected"),
-                          pose: z
-                            .object({
-                              joints: z.array(z.number()),
-                              orientation: z
-                                .object({
-                                  approach: z.array(z.number()).min(3).max(3),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                })
-                                .describe(
-                                  "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
-                                ),
-                              orientation_error_radians: z
-                                .union([
-                                  z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "From the requested orientation; none when the solver chose it.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "From the requested orientation; none when the solver chose it.",
-                                    ),
-                                ])
-                                .describe(
-                                  "From the requested orientation; none when the solver chose it.",
-                                )
-                                .optional(),
-                              position: z.array(z.number()).min(3).max(3),
-                              position_error_meters: z.number().gte(0),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .describe("Where the arm would put the tool."),
-                          reason: z
-                            .union([
-                              z
-                                .string()
-                                .describe(
-                                  "Why the target was not met; none when it was met within tolerance.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Why the target was not met; none when it was met within tolerance.",
-                                ),
-                            ])
-                            .describe(
-                              "Why the target was not met; none when it was met within tolerance.",
-                            )
-                            .optional(),
-                          within_tolerance: z
-                            .boolean()
-                            .describe(
-                              "The solver or controller met the target without a path constraint.",
-                            ),
-                        })
-                        .describe(
-                          "The best pose found, including an approximation when the target was not met.",
-                        ),
-                      z
-                        .object({
-                          kind: z.literal("unavailable"),
-                          reason: z.string(),
-                        })
-                        .describe(
-                          "The preview could not produce a usable pose.",
-                        ),
-                    ])
-                    .describe(
-                      "A usable projected pose, or why the preview could not produce one.",
-                    ),
-                  requested: z
-                    .union([
-                      z
-                        .object({
-                          orientation: z
-                            .object({
-                              approach: z.array(z.number()).min(3).max(3),
-                              jaw_yaw_degrees: z.number().gte(0).lt(360),
-                            })
-                            .describe(
-                              "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
-                            ),
-                          quaternion: z.array(z.number()).min(4).max(4),
-                        })
-                        .describe(
-                          "The orientation the target asked for, so a caller that sent a quaternion\nlearns the approach and jaw yaw it stands for, and one that sent those gets\nthe quaternion to send instead.",
-                        ),
-                      z.null(),
-                    ])
-                    .describe(
-                      "None for a position-only target the solver chose the orientation for.",
-                    )
-                    .optional(),
-                })
-                .describe("The answer to a projection."),
-              z.null(),
-            ])
-            .describe("The answer to a `project_pose`.")
-            .optional(),
-          reason: z
-            .union([
-              z
-                .enum([
-                  "arm_busy",
-                  "not_enabled",
-                  "stale_revision",
-                  "interlocked",
-                  "faulted",
-                  "invalid_target",
-                  "stream_ended",
-                  "unreachable",
-                  "lease_held_elsewhere",
-                  "malformed",
-                ])
-                .describe("Why a command was not accepted."),
-              z.null(),
-            ])
-            .optional(),
-          record: z
-            .union([
-              z
-                .object({
-                  accepted_at: z.number(),
-                  checkpoints: z.array(
-                    z
-                      .object({
-                        destination_position: z
-                          .union([z.array(z.number()).min(3).max(3), z.null()])
-                          .optional(),
-                        destination_quaternion: z
-                          .union([z.array(z.number()).min(4).max(4), z.null()])
-                          .optional(),
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                      })
-                      .describe(
-                        "Where the arm stood, as measured, when it settled at the end of a segment.",
-                      ),
-                  ),
-                  command: z
-                    .union([
-                      z
-                        .object({
-                          destination_joints: z.array(z.number()),
-                          destination_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          destination_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
-                          group_id: z.union([z.string(), z.null()]).optional(),
-                          joint_speed: z.number(),
-                          kind: z.literal("move"),
-                          path_limited: z
-                            .union([
-                              z
-                                .object({ reason: z.string() })
-                                .describe(
-                                  "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                          pose_limited: z
-                            .union([
-                              z
-                                .object({
-                                  advice: z
-                                    .string()
-                                    .describe(
-                                      "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                    ),
-                                  orientation_shortfall_radians: z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "From the closest pose's orientation to the requested one.",
-                                    ),
-                                  position_shortfall_meters: z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "From the closest pose's tool position to the requested one.",
-                                    ),
-                                  reason: z
-                                    .union([
-                                      z
-                                        .literal("at_joint_limit")
-                                        .describe(
-                                          "The best pose it found has a joint at its limit, and no step improves it.",
-                                        ),
-                                      z
-                                        .literal("stalled")
-                                        .describe(
-                                          "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                        ),
-                                      z
-                                        .literal("iteration_limit")
-                                        .describe(
-                                          "It was still improving when it ran out of iterations.",
-                                        ),
-                                      z
-                                        .literal("out_of_reach")
-                                        .describe(
-                                          "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                        ),
-                                    ])
-                                    .describe("Why a solve stopped short."),
-                                  waypoint: z
-                                    .number()
-                                    .int()
-                                    .gte(0)
-                                    .describe(
-                                      "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                    ),
-                                })
-                                .describe(
-                                  "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          goal_pose: z
-                            .object({
-                              position: z.array(z.number()).min(3).max(3),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .strict()
-                            .describe(
-                              "The target pose or streamed goal in the station world frame.",
-                            ),
-                          kind: z.literal("policy_reach"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          goal_joints: z.array(z.number()),
-                          joint_speed: z.number(),
-                          kind: z.literal("joint_stream"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          goal_pose: z
-                            .object({
-                              position: z.array(z.number()).min(3).max(3),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .strict()
-                            .describe(
-                              "The target pose or streamed goal in the station world frame.",
-                            ),
-                          kind: z.literal("pose_stream"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          joint_speed: z.number(),
-                          kind: z.literal("gripper"),
-                          stream_command_id: z
-                            .union([
-                              z
-                                .string()
-                                .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
-                                ),
-                            ])
-                            .describe(
-                              "The joint stream that issued this jaw goal, if any.",
-                            )
-                            .optional(),
-                          target_angle_radians: z.number(),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          action: z
-                            .enum([
-                              "enable",
-                              "disable",
-                              "approve_recovery",
-                              "clear_fault",
-                              "stop",
-                              "shutdown",
-                            ])
-                            .describe(
-                              "State-changing commands with no position target.",
-                            ),
-                          kind: z.literal("control"),
-                        })
-                        .strict(),
-                    ])
-                    .describe(
-                      "Data specific to the command the controller accepted.",
-                    ),
-                  command_id: z.string(),
-                  label: z
-                    .string()
-                    .describe(
-                      "A readable description, including the originating operation's name.",
-                    ),
-                  phase: z
-                    .union([
-                      z
-                        .object({ kind: z.literal("pending") })
-                        .strict()
-                        .describe("Accepted and awaiting a terminal result."),
-                      z
-                        .object({
-                          detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
-                          kind: z.literal("not_started"),
-                          outcome: z
-                            .enum(["stopped", "failed"])
-                            .describe(
-                              "The command was stopped or failed before it started.",
-                            ),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          achieved: z
-                            .union([
-                              z
-                                .object({
-                                  joint_error_radians: z
-                                    .union([z.number().gte(0), z.null()])
-                                    .optional(),
-                                  joint_errors_radians: z
-                                    .union([
-                                      z
-                                        .array(z.number())
-                                        .describe(
-                                          "Each joint's absolute distance from the target joints.",
-                                        ),
-                                      z
-                                        .null()
-                                        .describe(
-                                          "Each joint's absolute distance from the target joints.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "Each joint's absolute distance from the target joints.",
-                                    )
-                                    .optional(),
-                                  joints: z.array(z.number()),
-                                  orientation: z
-                                    .union([
-                                      z
-                                        .object({
-                                          approach: z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
-                                          goal: z
-                                            .union([
-                                              z
-                                                .object({
-                                                  approach_error_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lt(360),
-                                                  jaw_yaw_reference: z
-                                                    .enum([
-                                                      "world_x",
-                                                      "world_y",
-                                                    ])
-                                                    .describe(
-                                                      "The world axis jaw yaw zero is projected from.",
-                                                    ),
-                                                  orientation_error_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lte(180),
-                                                })
-                                                .describe(
-                                                  "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                                ),
-                                              z.null(),
-                                            ])
-                                            .optional(),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                        })
-                                        .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                        ),
-                                      z.null(),
-                                    ])
-                                    .describe(
-                                      "The tool orientation in grasp terms, against the target's when there is one.",
-                                    )
-                                    .optional(),
-                                  orientation_error_radians: z
-                                    .union([z.number().gte(0), z.null()])
-                                    .optional(),
-                                  position: z
-                                    .union([
-                                      z
-                                        .array(z.number())
-                                        .min(3)
-                                        .max(3)
-                                        .describe(
-                                          "The tool pose at `joints`; absent when the controller has no tool link.",
-                                        ),
-                                      z
-                                        .null()
-                                        .describe(
-                                          "The tool pose at `joints`; absent when the controller has no tool link.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "The tool pose at `joints`; absent when the controller has no tool link.",
-                                    )
-                                    .optional(),
-                                  position_error_meters: z
-                                    .union([z.number().gte(0), z.null()])
-                                    .optional(),
-                                  quaternion: z
-                                    .union([
-                                      z.array(z.number()).min(4).max(4),
-                                      z.null(),
-                                    ])
-                                    .optional(),
-                                  sampled_at: z.number(),
-                                })
-                                .describe(
-                                  "Where the arm was, measured, when a command ended.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                          completion: z
-                            .object({
-                              detail: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              finished_at: z.number(),
-                              gripper: z
-                                .union([
-                                  z
-                                    .union([
-                                      z
-                                        .object({
-                                          kind: z.literal("reached"),
-                                          measured_angle_radians: z.number(),
-                                        })
-                                        .describe(
-                                          "The jaw arrived at the angle it was asked for.",
-                                        ),
-                                      z
-                                        .object({
-                                          kind: z.literal("stopped_short"),
-                                          measured_angle_radians: z.number(),
-                                          target_angle_radians: z.number(),
-                                        })
-                                        .describe(
-                                          "The jaw stopped short of its target and stayed there: it closed on something,\nwas blocked opening, or its target was clipped to the jaw's range.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .describe(
-                                  "How a gripper command ended, when jaw feedback was available.",
-                                )
-                                .optional(),
-                              outcome: z
-                                .enum([
-                                  "completed",
-                                  "stopped",
-                                  "tripped",
-                                  "timed_out",
-                                  "stopped_short",
-                                  "superseded",
-                                  "faulted",
-                                  "failed",
-                                ])
-                                .describe(
-                                  "A command outcome established by the controller.",
-                                ),
-                            })
-                            .describe(
-                              "The outcome and timestamp for a command with a known end.",
-                            ),
-                          kind: z.literal("finished"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
-                          kind: z.literal("outcome_unknown"),
-                        })
-                        .strict()
-                        .describe(
-                          "Control was interrupted and the final arm position could not be confirmed.",
-                        ),
-                    ])
-                    .describe("Evidence of how an accepted command ended."),
-                  trace_context: z
-                    .union([
-                      z
-                        .object({
-                          traceparent: z
-                            .string()
-                            .describe(
-                              "`00-<trace id>-<parent span id>-<flags>`.",
-                            ),
-                          tracestate: z
-                            .union([z.string(), z.null()])
-                            .default(null),
-                        })
-                        .describe(
-                          "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
-                        ),
-                      z.null(),
-                    ])
-                    .optional(),
-                })
-                .strict()
-                .describe("One command, from acceptance to its end."),
-              z.null(),
-            ])
-            .optional(),
-          records: z
-            .array(
-              z
-                .object({
-                  accepted_at: z.number(),
-                  checkpoints: z.array(
-                    z
-                      .object({
-                        destination_position: z
-                          .union([z.array(z.number()).min(3).max(3), z.null()])
-                          .optional(),
-                        destination_quaternion: z
-                          .union([z.array(z.number()).min(4).max(4), z.null()])
-                          .optional(),
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                      })
-                      .describe(
-                        "Where the arm stood, as measured, when it settled at the end of a segment.",
-                      ),
-                  ),
-                  command: z
-                    .union([
-                      z
-                        .object({
-                          destination_joints: z.array(z.number()),
-                          destination_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          destination_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
-                          group_id: z.union([z.string(), z.null()]).optional(),
-                          joint_speed: z.number(),
-                          kind: z.literal("move"),
-                          path_limited: z
-                            .union([
-                              z
-                                .object({ reason: z.string() })
-                                .describe(
-                                  "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                          pose_limited: z
-                            .union([
-                              z
-                                .object({
-                                  advice: z
-                                    .string()
-                                    .describe(
-                                      "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                    ),
-                                  orientation_shortfall_radians: z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "From the closest pose's orientation to the requested one.",
-                                    ),
-                                  position_shortfall_meters: z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "From the closest pose's tool position to the requested one.",
-                                    ),
-                                  reason: z
-                                    .union([
-                                      z
-                                        .literal("at_joint_limit")
-                                        .describe(
-                                          "The best pose it found has a joint at its limit, and no step improves it.",
-                                        ),
-                                      z
-                                        .literal("stalled")
-                                        .describe(
-                                          "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                        ),
-                                      z
-                                        .literal("iteration_limit")
-                                        .describe(
-                                          "It was still improving when it ran out of iterations.",
-                                        ),
-                                      z
-                                        .literal("out_of_reach")
-                                        .describe(
-                                          "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                        ),
-                                    ])
-                                    .describe("Why a solve stopped short."),
-                                  waypoint: z
-                                    .number()
-                                    .int()
-                                    .gte(0)
-                                    .describe(
-                                      "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                    ),
-                                })
-                                .describe(
-                                  "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          goal_pose: z
-                            .object({
-                              position: z.array(z.number()).min(3).max(3),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .strict()
-                            .describe(
-                              "The target pose or streamed goal in the station world frame.",
-                            ),
-                          kind: z.literal("policy_reach"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          goal_joints: z.array(z.number()),
-                          joint_speed: z.number(),
-                          kind: z.literal("joint_stream"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          goal_pose: z
-                            .object({
-                              position: z.array(z.number()).min(3).max(3),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .strict()
-                            .describe(
-                              "The target pose or streamed goal in the station world frame.",
-                            ),
-                          kind: z.literal("pose_stream"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          joint_speed: z.number(),
-                          kind: z.literal("gripper"),
-                          stream_command_id: z
-                            .union([
-                              z
-                                .string()
-                                .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
-                                ),
-                            ])
-                            .describe(
-                              "The joint stream that issued this jaw goal, if any.",
-                            )
-                            .optional(),
-                          target_angle_radians: z.number(),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          action: z
-                            .enum([
-                              "enable",
-                              "disable",
-                              "approve_recovery",
-                              "clear_fault",
-                              "stop",
-                              "shutdown",
-                            ])
-                            .describe(
-                              "State-changing commands with no position target.",
-                            ),
-                          kind: z.literal("control"),
-                        })
-                        .strict(),
-                    ])
-                    .describe(
-                      "Data specific to the command the controller accepted.",
-                    ),
-                  command_id: z.string(),
-                  label: z
-                    .string()
-                    .describe(
-                      "A readable description, including the originating operation's name.",
-                    ),
-                  phase: z
-                    .union([
-                      z
-                        .object({ kind: z.literal("pending") })
-                        .strict()
-                        .describe("Accepted and awaiting a terminal result."),
-                      z
-                        .object({
-                          detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
-                          kind: z.literal("not_started"),
-                          outcome: z
-                            .enum(["stopped", "failed"])
-                            .describe(
-                              "The command was stopped or failed before it started.",
-                            ),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          achieved: z
-                            .union([
-                              z
-                                .object({
-                                  joint_error_radians: z
-                                    .union([z.number().gte(0), z.null()])
-                                    .optional(),
-                                  joint_errors_radians: z
-                                    .union([
-                                      z
-                                        .array(z.number())
-                                        .describe(
-                                          "Each joint's absolute distance from the target joints.",
-                                        ),
-                                      z
-                                        .null()
-                                        .describe(
-                                          "Each joint's absolute distance from the target joints.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "Each joint's absolute distance from the target joints.",
-                                    )
-                                    .optional(),
-                                  joints: z.array(z.number()),
-                                  orientation: z
-                                    .union([
-                                      z
-                                        .object({
-                                          approach: z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
-                                          goal: z
-                                            .union([
-                                              z
-                                                .object({
-                                                  approach_error_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lt(360),
-                                                  jaw_yaw_reference: z
-                                                    .enum([
-                                                      "world_x",
-                                                      "world_y",
-                                                    ])
-                                                    .describe(
-                                                      "The world axis jaw yaw zero is projected from.",
-                                                    ),
-                                                  orientation_error_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lte(180),
-                                                })
-                                                .describe(
-                                                  "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                                ),
-                                              z.null(),
-                                            ])
-                                            .optional(),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                        })
-                                        .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                        ),
-                                      z.null(),
-                                    ])
-                                    .describe(
-                                      "The tool orientation in grasp terms, against the target's when there is one.",
-                                    )
-                                    .optional(),
-                                  orientation_error_radians: z
-                                    .union([z.number().gte(0), z.null()])
-                                    .optional(),
-                                  position: z
-                                    .union([
-                                      z
-                                        .array(z.number())
-                                        .min(3)
-                                        .max(3)
-                                        .describe(
-                                          "The tool pose at `joints`; absent when the controller has no tool link.",
-                                        ),
-                                      z
-                                        .null()
-                                        .describe(
-                                          "The tool pose at `joints`; absent when the controller has no tool link.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "The tool pose at `joints`; absent when the controller has no tool link.",
-                                    )
-                                    .optional(),
-                                  position_error_meters: z
-                                    .union([z.number().gte(0), z.null()])
-                                    .optional(),
-                                  quaternion: z
-                                    .union([
-                                      z.array(z.number()).min(4).max(4),
-                                      z.null(),
-                                    ])
-                                    .optional(),
-                                  sampled_at: z.number(),
-                                })
-                                .describe(
-                                  "Where the arm was, measured, when a command ended.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                          completion: z
-                            .object({
-                              detail: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              finished_at: z.number(),
-                              gripper: z
-                                .union([
-                                  z
-                                    .union([
-                                      z
-                                        .object({
-                                          kind: z.literal("reached"),
-                                          measured_angle_radians: z.number(),
-                                        })
-                                        .describe(
-                                          "The jaw arrived at the angle it was asked for.",
-                                        ),
-                                      z
-                                        .object({
-                                          kind: z.literal("stopped_short"),
-                                          measured_angle_radians: z.number(),
-                                          target_angle_radians: z.number(),
-                                        })
-                                        .describe(
-                                          "The jaw stopped short of its target and stayed there: it closed on something,\nwas blocked opening, or its target was clipped to the jaw's range.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .describe(
-                                  "How a gripper command ended, when jaw feedback was available.",
-                                )
-                                .optional(),
-                              outcome: z
-                                .enum([
-                                  "completed",
-                                  "stopped",
-                                  "tripped",
-                                  "timed_out",
-                                  "stopped_short",
-                                  "superseded",
-                                  "faulted",
-                                  "failed",
-                                ])
-                                .describe(
-                                  "A command outcome established by the controller.",
-                                ),
-                            })
-                            .describe(
-                              "The outcome and timestamp for a command with a known end.",
-                            ),
-                          kind: z.literal("finished"),
-                        })
-                        .strict(),
-                      z
-                        .object({
-                          detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
-                          kind: z.literal("outcome_unknown"),
-                        })
-                        .strict()
-                        .describe(
-                          "Control was interrupted and the final arm position could not be confirmed.",
-                        ),
-                    ])
-                    .describe("Evidence of how an accepted command ended."),
-                  trace_context: z
-                    .union([
-                      z
-                        .object({
-                          traceparent: z
-                            .string()
-                            .describe(
-                              "`00-<trace id>-<parent span id>-<flags>`.",
-                            ),
-                          tracestate: z
-                            .union([z.string(), z.null()])
-                            .default(null),
-                        })
-                        .describe(
-                          "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
-                        ),
-                      z.null(),
-                    ])
-                    .optional(),
-                })
-                .strict()
-                .describe("One command, from acceptance to its end."),
-            )
-            .describe(
-              "The records of a grouped move, one per arm in the order asked; empty\nfor any other request.",
-            )
-            .default([]),
-          request_id: z.string(),
-        })
-        .describe(
-          "The one answer to a request that carried a request id: the command's\nrecord when it was accepted, or the reason it was not.",
-        ),
-      z
-        .object({
           fault: z.union([z.string(), z.null()]).optional(),
           kind: z.literal("snapshot"),
           log: z
@@ -8870,7 +7422,7 @@ export const apiSchemas = z.object({
                     .optional(),
                 })
                 .describe(
-                  "One line from the controller: a log event with its sequence number, or an\nunsequenced sample or reply.",
+                  "One line from the controller: a sequenced log event or an unsequenced feedback frame.",
                 ),
             )
             .describe("The retained log, oldest first."),
@@ -9056,16 +7608,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             )
                             .optional(),
                           target_angle_radians: z.number(),
@@ -9700,16 +8252,16 @@ export const apiSchemas = z.object({
                       z
                         .string()
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         ),
                       z
                         .null()
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         ),
                     ])
                     .describe(
-                      "The joint stream that issued this jaw goal, if any.",
+                      "The motion or joint stream that owns this jaw command, if any.",
                     )
                     .optional(),
                   target_angle_radians: z.number(),
@@ -10289,1474 +8841,6 @@ export const apiSchemas = z.object({
             ),
           z
             .object({
-              accepted: z.boolean(),
-              description: z
-                .union([
-                  z
-                    .object({
-                      model_points: z
-                        .array(z.array(z.number()).min(3).max(3))
-                        .describe(
-                          "Each joint's origin, then the tool's: the points a viewer draws the arm through.",
-                        ),
-                      orientation: z
-                        .object({
-                          approach: z.array(z.number()).min(3).max(3),
-                          degrees_from_down: z.number().gte(0).lte(180),
-                          goal: z
-                            .union([
-                              z
-                                .object({
-                                  approach_error_degrees: z
-                                    .number()
-                                    .gte(0)
-                                    .lte(180),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                  jaw_yaw_reference: z
-                                    .enum(["world_x", "world_y"])
-                                    .describe(
-                                      "The world axis jaw yaw zero is projected from.",
-                                    ),
-                                  orientation_error_degrees: z
-                                    .number()
-                                    .gte(0)
-                                    .lte(180),
-                                })
-                                .describe(
-                                  "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                          jaw_yaw_degrees: z.number().gte(0).lt(360),
-                          jaw_yaw_reference: z
-                            .enum(["world_x", "world_y"])
-                            .describe(
-                              "The world axis jaw yaw zero is projected from.",
-                            ),
-                        })
-                        .describe(
-                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                        ),
-                      position: z.array(z.number()).min(3).max(3),
-                      quaternion: z.array(z.number()).min(4).max(4),
-                    })
-                    .describe(
-                      "The tool's pose at some joints, in the station's world frame.",
-                    ),
-                  z.null(),
-                ])
-                .describe("The answer to a `describe_pose`.")
-                .optional(),
-              detail: z.union([z.string(), z.null()]).optional(),
-              ik: z
-                .union([
-                  z
-                    .union([
-                      z
-                        .object({
-                          joints: z.array(z.number()),
-                          orientation_error_radians: z
-                            .number()
-                            .describe(
-                              "From the required orientation, or from the seed's when it was free.",
-                            ),
-                          position_error_meters: z.number(),
-                          tool_position: z.array(z.number()).min(3).max(3),
-                          tool_quaternion: z.array(z.number()).min(4).max(4),
-                          outcome: z.literal("solved"),
-                        })
-                        .describe(
-                          "The tool is within tolerance of the target.",
-                        ),
-                      z
-                        .object({
-                          best: z
-                            .object({
-                              joints: z.array(z.number()),
-                              orientation_error_radians: z
-                                .number()
-                                .describe(
-                                  "From the required orientation, or from the seed's when it was free.",
-                                ),
-                              position_error_meters: z.number(),
-                              tool_position: z.array(z.number()).min(3).max(3),
-                              tool_quaternion: z
-                                .array(z.number())
-                                .min(4)
-                                .max(4),
-                            })
-                            .describe("Where a solve left the arm."),
-                          outcome: z.literal("failed"),
-                          reason: z
-                            .union([
-                              z
-                                .literal("at_joint_limit")
-                                .describe(
-                                  "The best pose it found has a joint at its limit, and no step improves it.",
-                                ),
-                              z
-                                .literal("stalled")
-                                .describe(
-                                  "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                ),
-                              z
-                                .literal("iteration_limit")
-                                .describe(
-                                  "It was still improving when it ran out of iterations.",
-                                ),
-                              z
-                                .literal("out_of_reach")
-                                .describe(
-                                  "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                ),
-                            ])
-                            .describe("Why a solve stopped short."),
-                        })
-                        .describe(
-                          "It is not; `best` is the pose with the smallest position error found,\nalways inside the joint limits.",
-                        ),
-                    ])
-                    .describe("A solve's outcome."),
-                  z.null(),
-                ])
-                .describe("How a `solve_pose` ended.")
-                .optional(),
-              kind: z.literal("reply"),
-              lease: z
-                .union([
-                  z
-                    .union([
-                      z
-                        .object({
-                          lease_seconds: z.number(),
-                          lease_token: z.string(),
-                          status: z
-                            .object({
-                              expires_in_seconds: z
-                                .number()
-                                .describe(
-                                  "The lease lapses this long after its grant or last explicit renewal.",
-                                ),
-                              holder: z
-                                .union([
-                                  z
-                                    .literal("agent")
-                                    .describe(
-                                      "A model loop, started from the terminal or the agent server.",
-                                    ),
-                                  z
-                                    .literal("manual")
-                                    .describe(
-                                      "A person driving the arms from the viewer's manual controls.",
-                                    ),
-                                ])
-                                .describe(
-                                  "The kind of controller holding the lease.",
-                                ),
-                              label: z.string(),
-                              on_interruption: z
-                                .union([
-                                  z
-                                    .literal("wait_for_approval")
-                                    .describe(
-                                      "Keep the lease and wait for an operator's `approve_recovery`.",
-                                    ),
-                                  z
-                                    .literal("return_lease")
-                                    .describe("Give the lease up."),
-                                ])
-                                .describe(
-                                  "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
-                                ),
-                              required_cameras: z
-                                .array(z.string())
-                                .describe(
-                                  "Cameras the holder cannot work without.",
-                                ),
-                            })
-                            .describe(
-                              "The current lease, as everyone may see it.",
-                            ),
-                          kind: z.literal("granted"),
-                        })
-                        .describe("The lease is yours."),
-                      z
-                        .object({
-                          kind: z.literal("holder"),
-                          status: z
-                            .union([
-                              z
-                                .object({
-                                  expires_in_seconds: z
-                                    .number()
-                                    .describe(
-                                      "The lease lapses this long after its grant or last explicit renewal.",
-                                    ),
-                                  holder: z
-                                    .union([
-                                      z
-                                        .literal("agent")
-                                        .describe(
-                                          "A model loop, started from the terminal or the agent server.",
-                                        ),
-                                      z
-                                        .literal("manual")
-                                        .describe(
-                                          "A person driving the arms from the viewer's manual controls.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "The kind of controller holding the lease.",
-                                    ),
-                                  label: z.string(),
-                                  on_interruption: z
-                                    .union([
-                                      z
-                                        .literal("wait_for_approval")
-                                        .describe(
-                                          "Keep the lease and wait for an operator's `approve_recovery`.",
-                                        ),
-                                      z
-                                        .literal("return_lease")
-                                        .describe("Give the lease up."),
-                                    ])
-                                    .describe(
-                                      "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
-                                    ),
-                                  required_cameras: z
-                                    .array(z.string())
-                                    .describe(
-                                      "Cameras the holder cannot work without.",
-                                    ),
-                                })
-                                .describe(
-                                  "The current lease, as everyone may see it.",
-                                ),
-                              z.null(),
-                            ])
-                            .optional(),
-                        })
-                        .describe("Who holds the lease, if anyone."),
-                    ])
-                    .describe("What a request about the lease answers."),
-                  z.null(),
-                ])
-                .describe("The answer to a request about the lease.")
-                .optional(),
-              plan: z
-                .union([
-                  z
-                    .object({
-                      path_limited: z
-                        .union([
-                          z
-                            .object({ reason: z.string() })
-                            .describe(
-                              "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                            ),
-                          z.null(),
-                        ])
-                        .optional(),
-                      plan: z.object({
-                        peak_speed: z.number().gte(0),
-                        segments: z.array(
-                          z
-                            .object({
-                              corners: z.array(z.array(z.number())),
-                              destination_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .default(null),
-                              destination_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .default(null),
-                              label: z.string(),
-                              minimum_duration_seconds: z
-                                .union([
-                                  z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                )
-                                .default(null),
-                              pass_through: z
-                                .union([
-                                  z
-                                    .object({
-                                      gripper_angle: z
-                                        .union([z.number(), z.null()])
-                                        .optional(),
-                                    })
-                                    .describe(
-                                      "Continue through this configuration and optionally begin a jaw move.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                            })
-                            .describe(
-                              "One straight run between corners, with where it is meant to end.",
-                            ),
-                        ),
-                      }),
-                      pose_limited: z
-                        .union([
-                          z
-                            .object({
-                              advice: z
-                                .string()
-                                .describe(
-                                  "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                ),
-                              orientation_shortfall_radians: z
-                                .number()
-                                .gte(0)
-                                .describe(
-                                  "From the closest pose's orientation to the requested one.",
-                                ),
-                              position_shortfall_meters: z
-                                .number()
-                                .gte(0)
-                                .describe(
-                                  "From the closest pose's tool position to the requested one.",
-                                ),
-                              reason: z
-                                .union([
-                                  z
-                                    .literal("at_joint_limit")
-                                    .describe(
-                                      "The best pose it found has a joint at its limit, and no step improves it.",
-                                    ),
-                                  z
-                                    .literal("stalled")
-                                    .describe(
-                                      "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                    ),
-                                  z
-                                    .literal("iteration_limit")
-                                    .describe(
-                                      "It was still improving when it ran out of iterations.",
-                                    ),
-                                  z
-                                    .literal("out_of_reach")
-                                    .describe(
-                                      "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                    ),
-                                ])
-                                .describe("Why a solve stopped short."),
-                              waypoint: z
-                                .number()
-                                .int()
-                                .gte(0)
-                                .describe(
-                                  "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                ),
-                            })
-                            .describe(
-                              "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                            ),
-                          z.null(),
-                        ])
-                        .optional(),
-                    })
-                    .describe(
-                      "What the arm is asked to run, and why it stops short of the target if it does.",
-                    ),
-                  z.null(),
-                ])
-                .describe("The plan a `plan_motion` made.")
-                .optional(),
-              projection: z
-                .union([
-                  z
-                    .object({
-                      calculation_milliseconds: z.number().gte(0),
-                      jaw_yaw_ranges: z
-                        .array(
-                          z
-                            .object({
-                              from_degrees: z.number().gte(0).lte(360),
-                              reachable: z.boolean(),
-                              reason: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              to_degrees: z.number().gte(0).lte(360),
-                            })
-                            .describe(
-                              "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
-                            ),
-                        )
-                        .describe(
-                          "The jaw yaws the arm can take at the projected position and approach;\nempty when nothing was projected or the arm has no wrist roll.",
-                        ),
-                      outcome: z
-                        .union([
-                          z
-                            .object({
-                              kind: z.literal("projected"),
-                              pose: z
-                                .object({
-                                  joints: z.array(z.number()),
-                                  orientation: z
-                                    .object({
-                                      approach: z
-                                        .array(z.number())
-                                        .min(3)
-                                        .max(3),
-                                      jaw_yaw_degrees: z
-                                        .number()
-                                        .gte(0)
-                                        .lt(360),
-                                    })
-                                    .describe(
-                                      "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
-                                    ),
-                                  orientation_error_radians: z
-                                    .union([
-                                      z
-                                        .number()
-                                        .gte(0)
-                                        .describe(
-                                          "From the requested orientation; none when the solver chose it.",
-                                        ),
-                                      z
-                                        .null()
-                                        .describe(
-                                          "From the requested orientation; none when the solver chose it.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "From the requested orientation; none when the solver chose it.",
-                                    )
-                                    .optional(),
-                                  position: z.array(z.number()).min(3).max(3),
-                                  position_error_meters: z.number().gte(0),
-                                  quaternion: z.array(z.number()).min(4).max(4),
-                                })
-                                .describe("Where the arm would put the tool."),
-                              reason: z
-                                .union([
-                                  z
-                                    .string()
-                                    .describe(
-                                      "Why the target was not met; none when it was met within tolerance.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "Why the target was not met; none when it was met within tolerance.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Why the target was not met; none when it was met within tolerance.",
-                                )
-                                .optional(),
-                              within_tolerance: z
-                                .boolean()
-                                .describe(
-                                  "The solver or controller met the target without a path constraint.",
-                                ),
-                            })
-                            .describe(
-                              "The best pose found, including an approximation when the target was not met.",
-                            ),
-                          z
-                            .object({
-                              kind: z.literal("unavailable"),
-                              reason: z.string(),
-                            })
-                            .describe(
-                              "The preview could not produce a usable pose.",
-                            ),
-                        ])
-                        .describe(
-                          "A usable projected pose, or why the preview could not produce one.",
-                        ),
-                      requested: z
-                        .union([
-                          z
-                            .object({
-                              orientation: z
-                                .object({
-                                  approach: z.array(z.number()).min(3).max(3),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                })
-                                .describe(
-                                  "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
-                                ),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .describe(
-                              "The orientation the target asked for, so a caller that sent a quaternion\nlearns the approach and jaw yaw it stands for, and one that sent those gets\nthe quaternion to send instead.",
-                            ),
-                          z.null(),
-                        ])
-                        .describe(
-                          "None for a position-only target the solver chose the orientation for.",
-                        )
-                        .optional(),
-                    })
-                    .describe("The answer to a projection."),
-                  z.null(),
-                ])
-                .describe("The answer to a `project_pose`.")
-                .optional(),
-              reason: z
-                .union([
-                  z
-                    .enum([
-                      "arm_busy",
-                      "not_enabled",
-                      "stale_revision",
-                      "interlocked",
-                      "faulted",
-                      "invalid_target",
-                      "stream_ended",
-                      "unreachable",
-                      "lease_held_elsewhere",
-                      "malformed",
-                    ])
-                    .describe("Why a command was not accepted."),
-                  z.null(),
-                ])
-                .optional(),
-              record: z
-                .union([
-                  z
-                    .object({
-                      accepted_at: z.number(),
-                      checkpoints: z.array(
-                        z
-                          .object({
-                            destination_position: z
-                              .union([
-                                z.array(z.number()).min(3).max(3),
-                                z.null(),
-                              ])
-                              .optional(),
-                            destination_quaternion: z
-                              .union([
-                                z.array(z.number()).min(4).max(4),
-                                z.null(),
-                              ])
-                              .optional(),
-                            label: z.string(),
-                            measured_joints: z.array(z.number()),
-                          })
-                          .describe(
-                            "Where the arm stood, as measured, when it settled at the end of a segment.",
-                          ),
-                      ),
-                      command: z
-                        .union([
-                          z
-                            .object({
-                              destination_joints: z.array(z.number()),
-                              destination_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              destination_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              group_id: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              joint_speed: z.number(),
-                              kind: z.literal("move"),
-                              path_limited: z
-                                .union([
-                                  z
-                                    .object({ reason: z.string() })
-                                    .describe(
-                                      "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              pose_limited: z
-                                .union([
-                                  z
-                                    .object({
-                                      advice: z
-                                        .string()
-                                        .describe(
-                                          "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                        ),
-                                      orientation_shortfall_radians: z
-                                        .number()
-                                        .gte(0)
-                                        .describe(
-                                          "From the closest pose's orientation to the requested one.",
-                                        ),
-                                      position_shortfall_meters: z
-                                        .number()
-                                        .gte(0)
-                                        .describe(
-                                          "From the closest pose's tool position to the requested one.",
-                                        ),
-                                      reason: z
-                                        .union([
-                                          z
-                                            .literal("at_joint_limit")
-                                            .describe(
-                                              "The best pose it found has a joint at its limit, and no step improves it.",
-                                            ),
-                                          z
-                                            .literal("stalled")
-                                            .describe(
-                                              "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                            ),
-                                          z
-                                            .literal("iteration_limit")
-                                            .describe(
-                                              "It was still improving when it ran out of iterations.",
-                                            ),
-                                          z
-                                            .literal("out_of_reach")
-                                            .describe(
-                                              "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                            ),
-                                        ])
-                                        .describe("Why a solve stopped short."),
-                                      waypoint: z
-                                        .number()
-                                        .int()
-                                        .gte(0)
-                                        .describe(
-                                          "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                        ),
-                                    })
-                                    .describe(
-                                      "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              goal_pose: z
-                                .object({
-                                  position: z.array(z.number()).min(3).max(3),
-                                  quaternion: z.array(z.number()).min(4).max(4),
-                                })
-                                .strict()
-                                .describe(
-                                  "The target pose or streamed goal in the station world frame.",
-                                ),
-                              kind: z.literal("policy_reach"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              goal_joints: z.array(z.number()),
-                              joint_speed: z.number(),
-                              kind: z.literal("joint_stream"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              goal_pose: z
-                                .object({
-                                  position: z.array(z.number()).min(3).max(3),
-                                  quaternion: z.array(z.number()).min(4).max(4),
-                                })
-                                .strict()
-                                .describe(
-                                  "The target pose or streamed goal in the station world frame.",
-                                ),
-                              kind: z.literal("pose_stream"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              joint_speed: z.number(),
-                              kind: z.literal("gripper"),
-                              stream_command_id: z
-                                .union([
-                                  z
-                                    .string()
-                                    .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
-                                    ),
-                                ])
-                                .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
-                                )
-                                .optional(),
-                              target_angle_radians: z.number(),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              action: z
-                                .enum([
-                                  "enable",
-                                  "disable",
-                                  "approve_recovery",
-                                  "clear_fault",
-                                  "stop",
-                                  "shutdown",
-                                ])
-                                .describe(
-                                  "State-changing commands with no position target.",
-                                ),
-                              kind: z.literal("control"),
-                            })
-                            .strict(),
-                        ])
-                        .describe(
-                          "Data specific to the command the controller accepted.",
-                        ),
-                      command_id: z.string(),
-                      label: z
-                        .string()
-                        .describe(
-                          "A readable description, including the originating operation's name.",
-                        ),
-                      phase: z
-                        .union([
-                          z
-                            .object({ kind: z.literal("pending") })
-                            .strict()
-                            .describe(
-                              "Accepted and awaiting a terminal result.",
-                            ),
-                          z
-                            .object({
-                              detail: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              finished_at: z.number(),
-                              kind: z.literal("not_started"),
-                              outcome: z
-                                .enum(["stopped", "failed"])
-                                .describe(
-                                  "The command was stopped or failed before it started.",
-                                ),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              achieved: z
-                                .union([
-                                  z
-                                    .object({
-                                      joint_error_radians: z
-                                        .union([z.number().gte(0), z.null()])
-                                        .optional(),
-                                      joint_errors_radians: z
-                                        .union([
-                                          z
-                                            .array(z.number())
-                                            .describe(
-                                              "Each joint's absolute distance from the target joints.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "Each joint's absolute distance from the target joints.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "Each joint's absolute distance from the target joints.",
-                                        )
-                                        .optional(),
-                                      joints: z.array(z.number()),
-                                      orientation: z
-                                        .union([
-                                          z
-                                            .object({
-                                              approach: z
-                                                .array(z.number())
-                                                .min(3)
-                                                .max(3),
-                                              degrees_from_down: z
-                                                .number()
-                                                .gte(0)
-                                                .lte(180),
-                                              goal: z
-                                                .union([
-                                                  z
-                                                    .object({
-                                                      approach_error_degrees: z
-                                                        .number()
-                                                        .gte(0)
-                                                        .lte(180),
-                                                      jaw_yaw_degrees: z
-                                                        .number()
-                                                        .gte(0)
-                                                        .lt(360),
-                                                      jaw_yaw_reference: z
-                                                        .enum([
-                                                          "world_x",
-                                                          "world_y",
-                                                        ])
-                                                        .describe(
-                                                          "The world axis jaw yaw zero is projected from.",
-                                                        ),
-                                                      orientation_error_degrees:
-                                                        z
-                                                          .number()
-                                                          .gte(0)
-                                                          .lte(180),
-                                                    })
-                                                    .describe(
-                                                      "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                                    ),
-                                                  z.null(),
-                                                ])
-                                                .optional(),
-                                              jaw_yaw_degrees: z
-                                                .number()
-                                                .gte(0)
-                                                .lt(360),
-                                              jaw_yaw_reference: z
-                                                .enum(["world_x", "world_y"])
-                                                .describe(
-                                                  "The world axis jaw yaw zero is projected from.",
-                                                ),
-                                            })
-                                            .describe(
-                                              "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                            ),
-                                          z.null(),
-                                        ])
-                                        .describe(
-                                          "The tool orientation in grasp terms, against the target's when there is one.",
-                                        )
-                                        .optional(),
-                                      orientation_error_radians: z
-                                        .union([z.number().gte(0), z.null()])
-                                        .optional(),
-                                      position: z
-                                        .union([
-                                          z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3)
-                                            .describe(
-                                              "The tool pose at `joints`; absent when the controller has no tool link.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "The tool pose at `joints`; absent when the controller has no tool link.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "The tool pose at `joints`; absent when the controller has no tool link.",
-                                        )
-                                        .optional(),
-                                      position_error_meters: z
-                                        .union([z.number().gte(0), z.null()])
-                                        .optional(),
-                                      quaternion: z
-                                        .union([
-                                          z.array(z.number()).min(4).max(4),
-                                          z.null(),
-                                        ])
-                                        .optional(),
-                                      sampled_at: z.number(),
-                                    })
-                                    .describe(
-                                      "Where the arm was, measured, when a command ended.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              completion: z
-                                .object({
-                                  detail: z
-                                    .union([z.string(), z.null()])
-                                    .optional(),
-                                  finished_at: z.number(),
-                                  gripper: z
-                                    .union([
-                                      z
-                                        .union([
-                                          z
-                                            .object({
-                                              kind: z.literal("reached"),
-                                              measured_angle_radians:
-                                                z.number(),
-                                            })
-                                            .describe(
-                                              "The jaw arrived at the angle it was asked for.",
-                                            ),
-                                          z
-                                            .object({
-                                              kind: z.literal("stopped_short"),
-                                              measured_angle_radians:
-                                                z.number(),
-                                              target_angle_radians: z.number(),
-                                            })
-                                            .describe(
-                                              "The jaw stopped short of its target and stayed there: it closed on something,\nwas blocked opening, or its target was clipped to the jaw's range.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
-                                        ),
-                                      z.null(),
-                                    ])
-                                    .describe(
-                                      "How a gripper command ended, when jaw feedback was available.",
-                                    )
-                                    .optional(),
-                                  outcome: z
-                                    .enum([
-                                      "completed",
-                                      "stopped",
-                                      "tripped",
-                                      "timed_out",
-                                      "stopped_short",
-                                      "superseded",
-                                      "faulted",
-                                      "failed",
-                                    ])
-                                    .describe(
-                                      "A command outcome established by the controller.",
-                                    ),
-                                })
-                                .describe(
-                                  "The outcome and timestamp for a command with a known end.",
-                                ),
-                              kind: z.literal("finished"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              detail: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              finished_at: z.number(),
-                              kind: z.literal("outcome_unknown"),
-                            })
-                            .strict()
-                            .describe(
-                              "Control was interrupted and the final arm position could not be confirmed.",
-                            ),
-                        ])
-                        .describe("Evidence of how an accepted command ended."),
-                      trace_context: z
-                        .union([
-                          z
-                            .object({
-                              traceparent: z
-                                .string()
-                                .describe(
-                                  "`00-<trace id>-<parent span id>-<flags>`.",
-                                ),
-                              tracestate: z
-                                .union([z.string(), z.null()])
-                                .default(null),
-                            })
-                            .describe(
-                              "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
-                            ),
-                          z.null(),
-                        ])
-                        .optional(),
-                    })
-                    .strict()
-                    .describe("One command, from acceptance to its end."),
-                  z.null(),
-                ])
-                .optional(),
-              records: z
-                .array(
-                  z
-                    .object({
-                      accepted_at: z.number(),
-                      checkpoints: z.array(
-                        z
-                          .object({
-                            destination_position: z
-                              .union([
-                                z.array(z.number()).min(3).max(3),
-                                z.null(),
-                              ])
-                              .optional(),
-                            destination_quaternion: z
-                              .union([
-                                z.array(z.number()).min(4).max(4),
-                                z.null(),
-                              ])
-                              .optional(),
-                            label: z.string(),
-                            measured_joints: z.array(z.number()),
-                          })
-                          .describe(
-                            "Where the arm stood, as measured, when it settled at the end of a segment.",
-                          ),
-                      ),
-                      command: z
-                        .union([
-                          z
-                            .object({
-                              destination_joints: z.array(z.number()),
-                              destination_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              destination_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              group_id: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              joint_speed: z.number(),
-                              kind: z.literal("move"),
-                              path_limited: z
-                                .union([
-                                  z
-                                    .object({ reason: z.string() })
-                                    .describe(
-                                      "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              pose_limited: z
-                                .union([
-                                  z
-                                    .object({
-                                      advice: z
-                                        .string()
-                                        .describe(
-                                          "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                        ),
-                                      orientation_shortfall_radians: z
-                                        .number()
-                                        .gte(0)
-                                        .describe(
-                                          "From the closest pose's orientation to the requested one.",
-                                        ),
-                                      position_shortfall_meters: z
-                                        .number()
-                                        .gte(0)
-                                        .describe(
-                                          "From the closest pose's tool position to the requested one.",
-                                        ),
-                                      reason: z
-                                        .union([
-                                          z
-                                            .literal("at_joint_limit")
-                                            .describe(
-                                              "The best pose it found has a joint at its limit, and no step improves it.",
-                                            ),
-                                          z
-                                            .literal("stalled")
-                                            .describe(
-                                              "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                            ),
-                                          z
-                                            .literal("iteration_limit")
-                                            .describe(
-                                              "It was still improving when it ran out of iterations.",
-                                            ),
-                                          z
-                                            .literal("out_of_reach")
-                                            .describe(
-                                              "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                            ),
-                                        ])
-                                        .describe("Why a solve stopped short."),
-                                      waypoint: z
-                                        .number()
-                                        .int()
-                                        .gte(0)
-                                        .describe(
-                                          "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                        ),
-                                    })
-                                    .describe(
-                                      "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              goal_pose: z
-                                .object({
-                                  position: z.array(z.number()).min(3).max(3),
-                                  quaternion: z.array(z.number()).min(4).max(4),
-                                })
-                                .strict()
-                                .describe(
-                                  "The target pose or streamed goal in the station world frame.",
-                                ),
-                              kind: z.literal("policy_reach"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              goal_joints: z.array(z.number()),
-                              joint_speed: z.number(),
-                              kind: z.literal("joint_stream"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              goal_pose: z
-                                .object({
-                                  position: z.array(z.number()).min(3).max(3),
-                                  quaternion: z.array(z.number()).min(4).max(4),
-                                })
-                                .strict()
-                                .describe(
-                                  "The target pose or streamed goal in the station world frame.",
-                                ),
-                              kind: z.literal("pose_stream"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              joint_speed: z.number(),
-                              kind: z.literal("gripper"),
-                              stream_command_id: z
-                                .union([
-                                  z
-                                    .string()
-                                    .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
-                                    ),
-                                ])
-                                .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
-                                )
-                                .optional(),
-                              target_angle_radians: z.number(),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              action: z
-                                .enum([
-                                  "enable",
-                                  "disable",
-                                  "approve_recovery",
-                                  "clear_fault",
-                                  "stop",
-                                  "shutdown",
-                                ])
-                                .describe(
-                                  "State-changing commands with no position target.",
-                                ),
-                              kind: z.literal("control"),
-                            })
-                            .strict(),
-                        ])
-                        .describe(
-                          "Data specific to the command the controller accepted.",
-                        ),
-                      command_id: z.string(),
-                      label: z
-                        .string()
-                        .describe(
-                          "A readable description, including the originating operation's name.",
-                        ),
-                      phase: z
-                        .union([
-                          z
-                            .object({ kind: z.literal("pending") })
-                            .strict()
-                            .describe(
-                              "Accepted and awaiting a terminal result.",
-                            ),
-                          z
-                            .object({
-                              detail: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              finished_at: z.number(),
-                              kind: z.literal("not_started"),
-                              outcome: z
-                                .enum(["stopped", "failed"])
-                                .describe(
-                                  "The command was stopped or failed before it started.",
-                                ),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              achieved: z
-                                .union([
-                                  z
-                                    .object({
-                                      joint_error_radians: z
-                                        .union([z.number().gte(0), z.null()])
-                                        .optional(),
-                                      joint_errors_radians: z
-                                        .union([
-                                          z
-                                            .array(z.number())
-                                            .describe(
-                                              "Each joint's absolute distance from the target joints.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "Each joint's absolute distance from the target joints.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "Each joint's absolute distance from the target joints.",
-                                        )
-                                        .optional(),
-                                      joints: z.array(z.number()),
-                                      orientation: z
-                                        .union([
-                                          z
-                                            .object({
-                                              approach: z
-                                                .array(z.number())
-                                                .min(3)
-                                                .max(3),
-                                              degrees_from_down: z
-                                                .number()
-                                                .gte(0)
-                                                .lte(180),
-                                              goal: z
-                                                .union([
-                                                  z
-                                                    .object({
-                                                      approach_error_degrees: z
-                                                        .number()
-                                                        .gte(0)
-                                                        .lte(180),
-                                                      jaw_yaw_degrees: z
-                                                        .number()
-                                                        .gte(0)
-                                                        .lt(360),
-                                                      jaw_yaw_reference: z
-                                                        .enum([
-                                                          "world_x",
-                                                          "world_y",
-                                                        ])
-                                                        .describe(
-                                                          "The world axis jaw yaw zero is projected from.",
-                                                        ),
-                                                      orientation_error_degrees:
-                                                        z
-                                                          .number()
-                                                          .gte(0)
-                                                          .lte(180),
-                                                    })
-                                                    .describe(
-                                                      "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                                    ),
-                                                  z.null(),
-                                                ])
-                                                .optional(),
-                                              jaw_yaw_degrees: z
-                                                .number()
-                                                .gte(0)
-                                                .lt(360),
-                                              jaw_yaw_reference: z
-                                                .enum(["world_x", "world_y"])
-                                                .describe(
-                                                  "The world axis jaw yaw zero is projected from.",
-                                                ),
-                                            })
-                                            .describe(
-                                              "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                            ),
-                                          z.null(),
-                                        ])
-                                        .describe(
-                                          "The tool orientation in grasp terms, against the target's when there is one.",
-                                        )
-                                        .optional(),
-                                      orientation_error_radians: z
-                                        .union([z.number().gte(0), z.null()])
-                                        .optional(),
-                                      position: z
-                                        .union([
-                                          z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3)
-                                            .describe(
-                                              "The tool pose at `joints`; absent when the controller has no tool link.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "The tool pose at `joints`; absent when the controller has no tool link.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "The tool pose at `joints`; absent when the controller has no tool link.",
-                                        )
-                                        .optional(),
-                                      position_error_meters: z
-                                        .union([z.number().gte(0), z.null()])
-                                        .optional(),
-                                      quaternion: z
-                                        .union([
-                                          z.array(z.number()).min(4).max(4),
-                                          z.null(),
-                                        ])
-                                        .optional(),
-                                      sampled_at: z.number(),
-                                    })
-                                    .describe(
-                                      "Where the arm was, measured, when a command ended.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              completion: z
-                                .object({
-                                  detail: z
-                                    .union([z.string(), z.null()])
-                                    .optional(),
-                                  finished_at: z.number(),
-                                  gripper: z
-                                    .union([
-                                      z
-                                        .union([
-                                          z
-                                            .object({
-                                              kind: z.literal("reached"),
-                                              measured_angle_radians:
-                                                z.number(),
-                                            })
-                                            .describe(
-                                              "The jaw arrived at the angle it was asked for.",
-                                            ),
-                                          z
-                                            .object({
-                                              kind: z.literal("stopped_short"),
-                                              measured_angle_radians:
-                                                z.number(),
-                                              target_angle_radians: z.number(),
-                                            })
-                                            .describe(
-                                              "The jaw stopped short of its target and stayed there: it closed on something,\nwas blocked opening, or its target was clipped to the jaw's range.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
-                                        ),
-                                      z.null(),
-                                    ])
-                                    .describe(
-                                      "How a gripper command ended, when jaw feedback was available.",
-                                    )
-                                    .optional(),
-                                  outcome: z
-                                    .enum([
-                                      "completed",
-                                      "stopped",
-                                      "tripped",
-                                      "timed_out",
-                                      "stopped_short",
-                                      "superseded",
-                                      "faulted",
-                                      "failed",
-                                    ])
-                                    .describe(
-                                      "A command outcome established by the controller.",
-                                    ),
-                                })
-                                .describe(
-                                  "The outcome and timestamp for a command with a known end.",
-                                ),
-                              kind: z.literal("finished"),
-                            })
-                            .strict(),
-                          z
-                            .object({
-                              detail: z
-                                .union([z.string(), z.null()])
-                                .optional(),
-                              finished_at: z.number(),
-                              kind: z.literal("outcome_unknown"),
-                            })
-                            .strict()
-                            .describe(
-                              "Control was interrupted and the final arm position could not be confirmed.",
-                            ),
-                        ])
-                        .describe("Evidence of how an accepted command ended."),
-                      trace_context: z
-                        .union([
-                          z
-                            .object({
-                              traceparent: z
-                                .string()
-                                .describe(
-                                  "`00-<trace id>-<parent span id>-<flags>`.",
-                                ),
-                              tracestate: z
-                                .union([z.string(), z.null()])
-                                .default(null),
-                            })
-                            .describe(
-                              "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
-                            ),
-                          z.null(),
-                        ])
-                        .optional(),
-                    })
-                    .strict()
-                    .describe("One command, from acceptance to its end."),
-                )
-                .describe(
-                  "The records of a grouped move, one per arm in the order asked; empty\nfor any other request.",
-                )
-                .default([]),
-              request_id: z.string(),
-            })
-            .describe(
-              "The one answer to a request that carried a request id: the command's\nrecord when it was accepted, or the reason it was not.",
-            ),
-          z
-            .object({
               fault: z.union([z.string(), z.null()]).optional(),
               kind: z.literal("snapshot"),
               log: z.array(z.any()).describe("The retained log, oldest first."),
@@ -11952,16 +9036,16 @@ export const apiSchemas = z.object({
                                   z
                                     .string()
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                   z
                                     .null()
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                 ])
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 )
                                 .optional(),
                               target_angle_radians: z.number(),
@@ -12605,16 +9689,16 @@ export const apiSchemas = z.object({
                           z
                             .string()
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                           z
                             .null()
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                         ])
                         .describe(
-                          "The joint stream that issued this jaw goal, if any.",
+                          "The motion or joint stream that owns this jaw command, if any.",
                         )
                         .optional(),
                       target_angle_radians: z.number(),
@@ -12965,7 +10049,7 @@ export const apiSchemas = z.object({
         .optional(),
     })
     .describe(
-      "One line from the controller: a log event with its sequence number, or an\nunsequenced sample or reply.",
+      "One line from the controller: a sequenced log event or an unsequenced feedback frame.",
     ),
   GoalComparison: z
     .object({
@@ -13108,81 +10192,6 @@ export const apiSchemas = z.object({
         ),
     ])
     .describe("Why a solve stopped short."),
-  IkPose: z
-    .object({
-      joints: z.array(z.number()),
-      orientation_error_radians: z
-        .number()
-        .describe(
-          "From the required orientation, or from the seed's when it was free.",
-        ),
-      position_error_meters: z.number(),
-      tool_position: z.array(z.number()).min(3).max(3),
-      tool_quaternion: z.array(z.number()).min(4).max(4),
-    })
-    .describe("Where a solve left the arm."),
-  IkResult: z
-    .union([
-      z
-        .object({
-          joints: z.array(z.number()),
-          orientation_error_radians: z
-            .number()
-            .describe(
-              "From the required orientation, or from the seed's when it was free.",
-            ),
-          position_error_meters: z.number(),
-          tool_position: z.array(z.number()).min(3).max(3),
-          tool_quaternion: z.array(z.number()).min(4).max(4),
-          outcome: z.literal("solved"),
-        })
-        .describe("The tool is within tolerance of the target."),
-      z
-        .object({
-          best: z
-            .object({
-              joints: z.array(z.number()),
-              orientation_error_radians: z
-                .number()
-                .describe(
-                  "From the required orientation, or from the seed's when it was free.",
-                ),
-              position_error_meters: z.number(),
-              tool_position: z.array(z.number()).min(3).max(3),
-              tool_quaternion: z.array(z.number()).min(4).max(4),
-            })
-            .describe("Where a solve left the arm."),
-          outcome: z.literal("failed"),
-          reason: z
-            .union([
-              z
-                .literal("at_joint_limit")
-                .describe(
-                  "The best pose it found has a joint at its limit, and no step improves it.",
-                ),
-              z
-                .literal("stalled")
-                .describe(
-                  "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                ),
-              z
-                .literal("iteration_limit")
-                .describe(
-                  "It was still improving when it ran out of iterations.",
-                ),
-              z
-                .literal("out_of_reach")
-                .describe(
-                  "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                ),
-            ])
-            .describe("Why a solve stopped short."),
-        })
-        .describe(
-          "It is not; `best` is the pose with the smallest position error found,\nalways inside the joint limits.",
-        ),
-    ])
-    .describe("A solve's outcome."),
   Interlock: z
     .union([
       z
@@ -13301,7 +10310,16 @@ export const apiSchemas = z.object({
               "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
             )
             .default("wait_for_approval"),
-          required_cameras: z.array(z.string()).default([]),
+          required_cameras: z
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
+            .default([]),
         })
         .strict()
         .describe(
@@ -13364,7 +10382,14 @@ export const apiSchemas = z.object({
                   "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                 ),
               required_cameras: z
-                .array(z.string())
+                .array(
+                  z
+                    .string()
+                    .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                    .describe(
+                      "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                    ),
+                )
                 .describe("Cameras the holder cannot work without."),
             })
             .describe("The current lease, as everyone may see it."),
@@ -13411,7 +10436,14 @@ export const apiSchemas = z.object({
                       "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                     ),
                   required_cameras: z
-                    .array(z.string())
+                    .array(
+                      z
+                        .string()
+                        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                        .describe(
+                          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                        ),
+                    )
                     .describe("Cameras the holder cannot work without."),
                 })
                 .describe("The current lease, as everyone may see it."),
@@ -13425,7 +10457,12 @@ export const apiSchemas = z.object({
   LeaseCameraReport: z
     .object({
       available: z.boolean(),
-      camera: z.string(),
+      camera: z
+        .string()
+        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+        .describe(
+          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+        ),
       lease_token: z.string(),
     })
     .strict()
@@ -13471,7 +10508,14 @@ export const apiSchemas = z.object({
               "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
             ),
           required_cameras: z
-            .array(z.string())
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
             .describe("Cameras the holder cannot work without."),
         })
         .describe("The current lease, as everyone may see it."),
@@ -13521,7 +10565,16 @@ export const apiSchemas = z.object({
           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
         )
         .default("wait_for_approval"),
-      required_cameras: z.array(z.string()).default([]),
+      required_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .default([]),
     })
     .strict()
     .describe(
@@ -13562,7 +10615,14 @@ export const apiSchemas = z.object({
           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
         ),
       required_cameras: z
-        .array(z.string())
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
         .describe("Cameras the holder cannot work without."),
     })
     .describe("The current lease, as everyone may see it."),
@@ -13645,35 +10705,97 @@ export const apiSchemas = z.object({
   ]),
   MediaStatusReport: z
     .object({
-      cameras: z.record(
-        z.string(),
-        z
-          .union([
-            z.object({ state: z.literal("resolving") }),
-            z.object({ state: z.literal("starting") }),
-            z.object({
-              publication: z
+      cameras: z
+        .record(
+          z.string(),
+          z.union([
+            z
+              .union([
+                z.object({ state: z.literal("resolving") }),
+                z.object({ state: z.literal("starting") }),
+                z.object({
+                  publication: z
+                    .union([
+                      z.object({ state: z.literal("disabled") }),
+                      z.object({ state: z.literal("connecting") }),
+                      z.object({ state: z.literal("publishing") }),
+                      z.object({
+                        detail: z.union([z.string(), z.null()]).optional(),
+                        state: z.literal("reconnecting"),
+                      }),
+                    ])
+                    .describe(
+                      "Room publication is independent of the local capture lifecycle.",
+                    ),
+                  state: z.literal("capturing"),
+                }),
+                z.object({ state: z.literal("disconnected") }),
+                z.object({ state: z.literal("ambiguous") }),
+                z.object({ state: z.literal("stalled") }),
+                z.object({ detail: z.string(), state: z.literal("failed") }),
+              ])
+              .describe("The current lifecycle of a configured camera."),
+            z.never(),
+          ]),
+        )
+        .superRefine((value, ctx) => {
+          for (const key in value) {
+            let evaluated = false;
+            if (key.match(/^[a-z0-9_]{1,40}$/)) {
+              evaluated = true;
+              const result = z
                 .union([
-                  z.object({ state: z.literal("disabled") }),
-                  z.object({ state: z.literal("connecting") }),
-                  z.object({ state: z.literal("publishing") }),
+                  z.object({ state: z.literal("resolving") }),
+                  z.object({ state: z.literal("starting") }),
                   z.object({
-                    detail: z.union([z.string(), z.null()]).optional(),
-                    state: z.literal("reconnecting"),
+                    publication: z
+                      .union([
+                        z.object({ state: z.literal("disabled") }),
+                        z.object({ state: z.literal("connecting") }),
+                        z.object({ state: z.literal("publishing") }),
+                        z.object({
+                          detail: z.union([z.string(), z.null()]).optional(),
+                          state: z.literal("reconnecting"),
+                        }),
+                      ])
+                      .describe(
+                        "Room publication is independent of the local capture lifecycle.",
+                      ),
+                    state: z.literal("capturing"),
                   }),
+                  z.object({ state: z.literal("disconnected") }),
+                  z.object({ state: z.literal("ambiguous") }),
+                  z.object({ state: z.literal("stalled") }),
+                  z.object({ detail: z.string(), state: z.literal("failed") }),
                 ])
-                .describe(
-                  "Room publication is independent of the local capture lifecycle.",
-                ),
-              state: z.literal("capturing"),
-            }),
-            z.object({ state: z.literal("disconnected") }),
-            z.object({ state: z.literal("ambiguous") }),
-            z.object({ state: z.literal("stalled") }),
-            z.object({ detail: z.string(), state: z.literal("failed") }),
-          ])
-          .describe("The current lifecycle of a configured camera."),
-      ),
+                .describe("The current lifecycle of a configured camera.")
+                .safeParse(value[key]);
+              if (!result.success) {
+                ctx.addIssue({
+                  path: [key],
+                  code: "custom",
+                  message: `Invalid input: Key matching regex /${key}/ must match schema`,
+                  params: {
+                    issues: result.error.issues,
+                  },
+                });
+              }
+            }
+            if (!evaluated) {
+              const result = z.never().safeParse(value[key]);
+              if (!result.success) {
+                ctx.addIssue({
+                  path: [key],
+                  code: "custom",
+                  message: `Invalid input: must match catchall schema`,
+                  params: {
+                    issues: result.error.issues,
+                  },
+                });
+              }
+            }
+          }
+        }),
       service: z.union([
         z.object({ state: z.literal("running") }),
         z
@@ -13962,16 +11084,16 @@ export const apiSchemas = z.object({
                                     z
                                       .string()
                                       .describe(
-                                        "The joint stream that issued this jaw goal, if any.",
+                                        "The motion or joint stream that owns this jaw command, if any.",
                                       ),
                                     z
                                       .null()
                                       .describe(
-                                        "The joint stream that issued this jaw goal, if any.",
+                                        "The motion or joint stream that owns this jaw command, if any.",
                                       ),
                                   ])
                                   .describe(
-                                    "The joint stream that issued this jaw goal, if any.",
+                                    "The motion or joint stream that owns this jaw command, if any.",
                                   )
                                   .optional(),
                                 target_angle_radians: z.number(),
@@ -14532,16 +11654,16 @@ export const apiSchemas = z.object({
                                     z
                                       .string()
                                       .describe(
-                                        "The joint stream that issued this jaw goal, if any.",
+                                        "The motion or joint stream that owns this jaw command, if any.",
                                       ),
                                     z
                                       .null()
                                       .describe(
-                                        "The joint stream that issued this jaw goal, if any.",
+                                        "The motion or joint stream that owns this jaw command, if any.",
                                       ),
                                   ])
                                   .describe(
-                                    "The joint stream that issued this jaw goal, if any.",
+                                    "The motion or joint stream that owns this jaw command, if any.",
                                   )
                                   .optional(),
                                 target_angle_radians: z.number(),
@@ -15050,7 +12172,14 @@ export const apiSchemas = z.object({
                       "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                     ),
                   required_cameras: z
-                    .array(z.string())
+                    .array(
+                      z
+                        .string()
+                        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                        .describe(
+                          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                        ),
+                    )
                     .describe("Cameras the holder cannot work without."),
                 })
                 .describe("The current lease, as everyone may see it."),
@@ -15138,8 +12267,26 @@ export const apiSchemas = z.object({
         .array(z.string())
         .describe("With no arm selection, include every arm.")
         .default([]),
-      optional_cameras: z.array(z.string()).default([]),
-      required_cameras: z.array(z.string()).default([]),
+      optional_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .default([]),
+      required_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .default([]),
     })
     .strict()
     .describe("Select robot state and camera snapshots for one observation."),
@@ -15317,16 +12464,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             )
                             .optional(),
                           target_angle_radians: z.number(),
@@ -15761,16 +12908,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             )
                             .optional(),
                           target_angle_radians: z.number(),
@@ -16205,16 +13352,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             )
                             .optional(),
                           target_angle_radians: z.number(),
@@ -16541,11 +13688,6 @@ export const apiSchemas = z.object({
     .describe(
       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
     ),
-  PassThrough: z
-    .object({ gripper_angle: z.union([z.number(), z.null()]).optional() })
-    .describe(
-      "Continue through this configuration and optionally begin a jaw move.",
-    ),
   PathLimited: z
     .object({ reason: z.string() })
     .describe(
@@ -16570,130 +13712,6 @@ export const apiSchemas = z.object({
     text: z.string(),
   }),
   PlanStepStatus: z.enum(["pending", "active", "done", "failed"]),
-  PlannedMotion: z
-    .object({
-      path_limited: z
-        .union([
-          z
-            .object({ reason: z.string() })
-            .describe(
-              "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-            ),
-          z.null(),
-        ])
-        .optional(),
-      plan: z.object({
-        peak_speed: z.number().gte(0),
-        segments: z.array(
-          z
-            .object({
-              corners: z.array(z.array(z.number())),
-              destination_position: z
-                .union([z.array(z.number()).min(3).max(3), z.null()])
-                .default(null),
-              destination_quaternion: z
-                .union([z.array(z.number()).min(4).max(4), z.null()])
-                .default(null),
-              label: z.string(),
-              minimum_duration_seconds: z
-                .union([
-                  z
-                    .number()
-                    .gte(0)
-                    .describe(
-                      "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                    ),
-                  z
-                    .null()
-                    .describe(
-                      "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                    ),
-                ])
-                .describe(
-                  "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                )
-                .default(null),
-              pass_through: z
-                .union([
-                  z
-                    .object({
-                      gripper_angle: z.union([z.number(), z.null()]).optional(),
-                    })
-                    .describe(
-                      "Continue through this configuration and optionally begin a jaw move.",
-                    ),
-                  z.null(),
-                ])
-                .optional(),
-            })
-            .describe(
-              "One straight run between corners, with where it is meant to end.",
-            ),
-        ),
-      }),
-      pose_limited: z
-        .union([
-          z
-            .object({
-              advice: z
-                .string()
-                .describe(
-                  "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                ),
-              orientation_shortfall_radians: z
-                .number()
-                .gte(0)
-                .describe(
-                  "From the closest pose's orientation to the requested one.",
-                ),
-              position_shortfall_meters: z
-                .number()
-                .gte(0)
-                .describe(
-                  "From the closest pose's tool position to the requested one.",
-                ),
-              reason: z
-                .union([
-                  z
-                    .literal("at_joint_limit")
-                    .describe(
-                      "The best pose it found has a joint at its limit, and no step improves it.",
-                    ),
-                  z
-                    .literal("stalled")
-                    .describe(
-                      "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                    ),
-                  z
-                    .literal("iteration_limit")
-                    .describe(
-                      "It was still improving when it ran out of iterations.",
-                    ),
-                  z
-                    .literal("out_of_reach")
-                    .describe(
-                      "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                    ),
-                ])
-                .describe("Why a solve stopped short."),
-              waypoint: z
-                .number()
-                .int()
-                .gte(0)
-                .describe(
-                  "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                ),
-            })
-            .describe(
-              "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-            ),
-          z.null(),
-        ])
-        .optional(),
-    })
-    .describe(
-      "What the arm is asked to run, and why it stops short of the target if it does.",
-    ),
   PoseDescription: z
     .object({
       model_points: z
@@ -17822,15 +14840,17 @@ export const apiSchemas = z.object({
               z
                 .string()
                 .describe(
-                  "The joint stream that issued this jaw goal, if any.",
+                  "The motion or joint stream that owns this jaw command, if any.",
                 ),
               z
                 .null()
                 .describe(
-                  "The joint stream that issued this jaw goal, if any.",
+                  "The motion or joint stream that owns this jaw command, if any.",
                 ),
             ])
-            .describe("The joint stream that issued this jaw goal, if any.")
+            .describe(
+              "The motion or joint stream that owns this jaw command, if any.",
+            )
             .optional(),
           target_angle_radians: z.number(),
         })
@@ -18206,50 +15226,6 @@ export const apiSchemas = z.object({
     .describe(
       "One control cycle's state; a sample, so a slow client may miss some.",
     ),
-  Segment: z
-    .object({
-      corners: z.array(z.array(z.number())),
-      destination_position: z
-        .union([z.array(z.number()).min(3).max(3), z.null()])
-        .default(null),
-      destination_quaternion: z
-        .union([z.array(z.number()).min(4).max(4), z.null()])
-        .default(null),
-      label: z.string(),
-      minimum_duration_seconds: z
-        .union([
-          z
-            .number()
-            .gte(0)
-            .describe(
-              "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-            ),
-          z
-            .null()
-            .describe(
-              "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-            ),
-        ])
-        .describe(
-          "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-        )
-        .default(null),
-      pass_through: z
-        .union([
-          z
-            .object({
-              gripper_angle: z.union([z.number(), z.null()]).optional(),
-            })
-            .describe(
-              "Continue through this configuration and optionally begin a jaw move.",
-            ),
-          z.null(),
-        ])
-        .optional(),
-    })
-    .describe(
-      "One straight run between corners, with where it is meant to end.",
-    ),
   ServerMessage: z
     .union([
       z.object({
@@ -18456,1477 +15432,6 @@ export const apiSchemas = z.object({
                     ),
                   z
                     .object({
-                      accepted: z.boolean(),
-                      description: z
-                        .union([
-                          z
-                            .object({
-                              model_points: z
-                                .array(z.array(z.number()).min(3).max(3))
-                                .describe(
-                                  "Each joint's origin, then the tool's: the points a viewer draws the arm through.",
-                                ),
-                              orientation: z
-                                .object({
-                                  approach: z.array(z.number()).min(3).max(3),
-                                  degrees_from_down: z.number().gte(0).lte(180),
-                                  goal: z.union([
-                                    z
-                                      .object({
-                                        approach_error_degrees: z
-                                          .number()
-                                          .gte(0)
-                                          .lte(180),
-                                        jaw_yaw_degrees: z
-                                          .number()
-                                          .gte(0)
-                                          .lt(360),
-                                        jaw_yaw_reference: z
-                                          .enum(["world_x", "world_y"])
-                                          .describe(
-                                            "The world axis jaw yaw zero is projected from.",
-                                          ),
-                                        orientation_error_degrees: z
-                                          .number()
-                                          .gte(0)
-                                          .lte(180),
-                                      })
-                                      .describe(
-                                        "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                      ),
-                                    z.null(),
-                                  ]),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                  jaw_yaw_reference: z
-                                    .enum(["world_x", "world_y"])
-                                    .describe(
-                                      "The world axis jaw yaw zero is projected from.",
-                                    ),
-                                })
-                                .describe(
-                                  "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                ),
-                              position: z.array(z.number()).min(3).max(3),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .describe(
-                              "The tool's pose at some joints, in the station's world frame.",
-                            ),
-                          z.null(),
-                        ])
-                        .describe("The answer to a `describe_pose`."),
-                      detail: z.union([z.string(), z.null()]),
-                      ik: z
-                        .union([
-                          z
-                            .union([
-                              z
-                                .object({
-                                  joints: z.array(z.number()),
-                                  orientation_error_radians: z
-                                    .number()
-                                    .describe(
-                                      "From the required orientation, or from the seed's when it was free.",
-                                    ),
-                                  position_error_meters: z.number(),
-                                  tool_position: z
-                                    .array(z.number())
-                                    .min(3)
-                                    .max(3),
-                                  tool_quaternion: z
-                                    .array(z.number())
-                                    .min(4)
-                                    .max(4),
-                                  outcome: z.literal("solved"),
-                                })
-                                .describe(
-                                  "The tool is within tolerance of the target.",
-                                ),
-                              z
-                                .object({
-                                  best: z
-                                    .object({
-                                      joints: z.array(z.number()),
-                                      orientation_error_radians: z
-                                        .number()
-                                        .describe(
-                                          "From the required orientation, or from the seed's when it was free.",
-                                        ),
-                                      position_error_meters: z.number(),
-                                      tool_position: z
-                                        .array(z.number())
-                                        .min(3)
-                                        .max(3),
-                                      tool_quaternion: z
-                                        .array(z.number())
-                                        .min(4)
-                                        .max(4),
-                                    })
-                                    .describe("Where a solve left the arm."),
-                                  outcome: z.literal("failed"),
-                                  reason: z
-                                    .union([
-                                      z
-                                        .literal("at_joint_limit")
-                                        .describe(
-                                          "The best pose it found has a joint at its limit, and no step improves it.",
-                                        ),
-                                      z
-                                        .literal("stalled")
-                                        .describe(
-                                          "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                        ),
-                                      z
-                                        .literal("iteration_limit")
-                                        .describe(
-                                          "It was still improving when it ran out of iterations.",
-                                        ),
-                                      z
-                                        .literal("out_of_reach")
-                                        .describe(
-                                          "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                        ),
-                                    ])
-                                    .describe("Why a solve stopped short."),
-                                })
-                                .describe(
-                                  "It is not; `best` is the pose with the smallest position error found,\nalways inside the joint limits.",
-                                ),
-                            ])
-                            .describe("A solve's outcome."),
-                          z.null(),
-                        ])
-                        .describe("How a `solve_pose` ended."),
-                      kind: z.literal("reply"),
-                      lease: z
-                        .union([
-                          z
-                            .union([
-                              z
-                                .object({
-                                  lease_seconds: z.number(),
-                                  lease_token: z.string(),
-                                  status: z
-                                    .object({
-                                      expires_in_seconds: z
-                                        .number()
-                                        .describe(
-                                          "The lease lapses this long after its grant or last explicit renewal.",
-                                        ),
-                                      holder: z
-                                        .union([
-                                          z
-                                            .literal("agent")
-                                            .describe(
-                                              "A model loop, started from the terminal or the agent server.",
-                                            ),
-                                          z
-                                            .literal("manual")
-                                            .describe(
-                                              "A person driving the arms from the viewer's manual controls.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "The kind of controller holding the lease.",
-                                        ),
-                                      label: z.string(),
-                                      on_interruption: z
-                                        .union([
-                                          z
-                                            .literal("wait_for_approval")
-                                            .describe(
-                                              "Keep the lease and wait for an operator's `approve_recovery`.",
-                                            ),
-                                          z
-                                            .literal("return_lease")
-                                            .describe("Give the lease up."),
-                                        ])
-                                        .describe(
-                                          "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
-                                        ),
-                                      required_cameras: z
-                                        .array(z.string())
-                                        .describe(
-                                          "Cameras the holder cannot work without.",
-                                        ),
-                                    })
-                                    .describe(
-                                      "The current lease, as everyone may see it.",
-                                    ),
-                                  kind: z.literal("granted"),
-                                })
-                                .describe("The lease is yours."),
-                              z
-                                .object({
-                                  kind: z.literal("holder"),
-                                  status: z.union([
-                                    z
-                                      .object({
-                                        expires_in_seconds: z
-                                          .number()
-                                          .describe(
-                                            "The lease lapses this long after its grant or last explicit renewal.",
-                                          ),
-                                        holder: z
-                                          .union([
-                                            z
-                                              .literal("agent")
-                                              .describe(
-                                                "A model loop, started from the terminal or the agent server.",
-                                              ),
-                                            z
-                                              .literal("manual")
-                                              .describe(
-                                                "A person driving the arms from the viewer's manual controls.",
-                                              ),
-                                          ])
-                                          .describe(
-                                            "The kind of controller holding the lease.",
-                                          ),
-                                        label: z.string(),
-                                        on_interruption: z
-                                          .union([
-                                            z
-                                              .literal("wait_for_approval")
-                                              .describe(
-                                                "Keep the lease and wait for an operator's `approve_recovery`.",
-                                              ),
-                                            z
-                                              .literal("return_lease")
-                                              .describe("Give the lease up."),
-                                          ])
-                                          .describe(
-                                            "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
-                                          ),
-                                        required_cameras: z
-                                          .array(z.string())
-                                          .describe(
-                                            "Cameras the holder cannot work without.",
-                                          ),
-                                      })
-                                      .describe(
-                                        "The current lease, as everyone may see it.",
-                                      ),
-                                    z.null(),
-                                  ]),
-                                })
-                                .describe("Who holds the lease, if anyone."),
-                            ])
-                            .describe(
-                              "What a request about the lease answers.",
-                            ),
-                          z.null(),
-                        ])
-                        .describe("The answer to a request about the lease."),
-                      plan: z
-                        .union([
-                          z
-                            .object({
-                              path_limited: z.union([
-                                z
-                                  .object({ reason: z.string() })
-                                  .describe(
-                                    "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                  ),
-                                z.null(),
-                              ]),
-                              plan: z.object({
-                                peak_speed: z.number().gte(0),
-                                segments: z.array(
-                                  z
-                                    .object({
-                                      corners: z.array(z.array(z.number())),
-                                      destination_position: z
-                                        .union([
-                                          z.array(z.number()).min(3).max(3),
-                                          z.null(),
-                                        ])
-                                        .default(null),
-                                      destination_quaternion: z
-                                        .union([
-                                          z.array(z.number()).min(4).max(4),
-                                          z.null(),
-                                        ])
-                                        .default(null),
-                                      label: z.string(),
-                                      minimum_duration_seconds: z
-                                        .union([
-                                          z
-                                            .number()
-                                            .gte(0)
-                                            .describe(
-                                              "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
-                                        )
-                                        .default(null),
-                                      pass_through: z.union([
-                                        z
-                                          .object({
-                                            gripper_angle: z.union([
-                                              z.number(),
-                                              z.null(),
-                                            ]),
-                                          })
-                                          .describe(
-                                            "Continue through this configuration and optionally begin a jaw move.",
-                                          ),
-                                        z.null(),
-                                      ]),
-                                    })
-                                    .describe(
-                                      "One straight run between corners, with where it is meant to end.",
-                                    ),
-                                ),
-                              }),
-                              pose_limited: z.union([
-                                z
-                                  .object({
-                                    advice: z
-                                      .string()
-                                      .describe(
-                                        "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                      ),
-                                    orientation_shortfall_radians: z
-                                      .number()
-                                      .gte(0)
-                                      .describe(
-                                        "From the closest pose's orientation to the requested one.",
-                                      ),
-                                    position_shortfall_meters: z
-                                      .number()
-                                      .gte(0)
-                                      .describe(
-                                        "From the closest pose's tool position to the requested one.",
-                                      ),
-                                    reason: z
-                                      .union([
-                                        z
-                                          .literal("at_joint_limit")
-                                          .describe(
-                                            "The best pose it found has a joint at its limit, and no step improves it.",
-                                          ),
-                                        z
-                                          .literal("stalled")
-                                          .describe(
-                                            "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                          ),
-                                        z
-                                          .literal("iteration_limit")
-                                          .describe(
-                                            "It was still improving when it ran out of iterations.",
-                                          ),
-                                        z
-                                          .literal("out_of_reach")
-                                          .describe(
-                                            "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                          ),
-                                      ])
-                                      .describe("Why a solve stopped short."),
-                                    waypoint: z
-                                      .number()
-                                      .int()
-                                      .gte(0)
-                                      .describe(
-                                        "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                      ),
-                                  })
-                                  .describe(
-                                    "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                  ),
-                                z.null(),
-                              ]),
-                            })
-                            .describe(
-                              "What the arm is asked to run, and why it stops short of the target if it does.",
-                            ),
-                          z.null(),
-                        ])
-                        .describe("The plan a `plan_motion` made."),
-                      projection: z
-                        .union([
-                          z
-                            .object({
-                              calculation_milliseconds: z.number().gte(0),
-                              jaw_yaw_ranges: z
-                                .array(
-                                  z
-                                    .object({
-                                      from_degrees: z.number().gte(0).lte(360),
-                                      reachable: z.boolean(),
-                                      reason: z.union([z.string(), z.null()]),
-                                      to_degrees: z.number().gte(0).lte(360),
-                                    })
-                                    .describe(
-                                      "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
-                                    ),
-                                )
-                                .describe(
-                                  "The jaw yaws the arm can take at the projected position and approach;\nempty when nothing was projected or the arm has no wrist roll.",
-                                ),
-                              outcome: z
-                                .union([
-                                  z
-                                    .object({
-                                      kind: z.literal("projected"),
-                                      pose: z
-                                        .object({
-                                          joints: z.array(z.number()),
-                                          orientation: z
-                                            .object({
-                                              approach: z
-                                                .array(z.number())
-                                                .min(3)
-                                                .max(3),
-                                              jaw_yaw_degrees: z
-                                                .number()
-                                                .gte(0)
-                                                .lt(360),
-                                            })
-                                            .describe(
-                                              "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
-                                            ),
-                                          orientation_error_radians: z
-                                            .union([
-                                              z
-                                                .number()
-                                                .gte(0)
-                                                .describe(
-                                                  "From the requested orientation; none when the solver chose it.",
-                                                ),
-                                              z
-                                                .null()
-                                                .describe(
-                                                  "From the requested orientation; none when the solver chose it.",
-                                                ),
-                                            ])
-                                            .describe(
-                                              "From the requested orientation; none when the solver chose it.",
-                                            ),
-                                          position: z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3),
-                                          position_error_meters: z
-                                            .number()
-                                            .gte(0),
-                                          quaternion: z
-                                            .array(z.number())
-                                            .min(4)
-                                            .max(4),
-                                        })
-                                        .describe(
-                                          "Where the arm would put the tool.",
-                                        ),
-                                      reason: z
-                                        .union([
-                                          z
-                                            .string()
-                                            .describe(
-                                              "Why the target was not met; none when it was met within tolerance.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "Why the target was not met; none when it was met within tolerance.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "Why the target was not met; none when it was met within tolerance.",
-                                        ),
-                                      within_tolerance: z
-                                        .boolean()
-                                        .describe(
-                                          "The solver or controller met the target without a path constraint.",
-                                        ),
-                                    })
-                                    .describe(
-                                      "The best pose found, including an approximation when the target was not met.",
-                                    ),
-                                  z
-                                    .object({
-                                      kind: z.literal("unavailable"),
-                                      reason: z.string(),
-                                    })
-                                    .describe(
-                                      "The preview could not produce a usable pose.",
-                                    ),
-                                ])
-                                .describe(
-                                  "A usable projected pose, or why the preview could not produce one.",
-                                ),
-                              requested: z
-                                .union([
-                                  z
-                                    .object({
-                                      orientation: z
-                                        .object({
-                                          approach: z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                        })
-                                        .describe(
-                                          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
-                                        ),
-                                      quaternion: z
-                                        .array(z.number())
-                                        .min(4)
-                                        .max(4),
-                                    })
-                                    .describe(
-                                      "The orientation the target asked for, so a caller that sent a quaternion\nlearns the approach and jaw yaw it stands for, and one that sent those gets\nthe quaternion to send instead.",
-                                    ),
-                                  z.null(),
-                                ])
-                                .describe(
-                                  "None for a position-only target the solver chose the orientation for.",
-                                ),
-                            })
-                            .describe("The answer to a projection."),
-                          z.null(),
-                        ])
-                        .describe("The answer to a `project_pose`."),
-                      reason: z.union([
-                        z
-                          .enum([
-                            "arm_busy",
-                            "not_enabled",
-                            "stale_revision",
-                            "interlocked",
-                            "faulted",
-                            "invalid_target",
-                            "stream_ended",
-                            "unreachable",
-                            "lease_held_elsewhere",
-                            "malformed",
-                          ])
-                          .describe("Why a command was not accepted."),
-                        z.null(),
-                      ]),
-                      record: z.union([
-                        z
-                          .object({
-                            accepted_at: z.number(),
-                            checkpoints: z.array(
-                              z
-                                .object({
-                                  destination_position: z.union([
-                                    z.array(z.number()).min(3).max(3),
-                                    z.null(),
-                                  ]),
-                                  destination_quaternion: z.union([
-                                    z.array(z.number()).min(4).max(4),
-                                    z.null(),
-                                  ]),
-                                  label: z.string(),
-                                  measured_joints: z.array(z.number()),
-                                })
-                                .describe(
-                                  "Where the arm stood, as measured, when it settled at the end of a segment.",
-                                ),
-                            ),
-                            command: z
-                              .union([
-                                z
-                                  .object({
-                                    destination_joints: z.array(z.number()),
-                                    destination_position: z.union([
-                                      z.array(z.number()).min(3).max(3),
-                                      z.null(),
-                                    ]),
-                                    destination_quaternion: z.union([
-                                      z.array(z.number()).min(4).max(4),
-                                      z.null(),
-                                    ]),
-                                    group_id: z.union([z.string(), z.null()]),
-                                    joint_speed: z.number(),
-                                    kind: z.literal("move"),
-                                    path_limited: z.union([
-                                      z
-                                        .object({ reason: z.string() })
-                                        .describe(
-                                          "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                        ),
-                                      z.null(),
-                                    ]),
-                                    pose_limited: z.union([
-                                      z
-                                        .object({
-                                          advice: z
-                                            .string()
-                                            .describe(
-                                              "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                            ),
-                                          orientation_shortfall_radians: z
-                                            .number()
-                                            .gte(0)
-                                            .describe(
-                                              "From the closest pose's orientation to the requested one.",
-                                            ),
-                                          position_shortfall_meters: z
-                                            .number()
-                                            .gte(0)
-                                            .describe(
-                                              "From the closest pose's tool position to the requested one.",
-                                            ),
-                                          reason: z
-                                            .union([
-                                              z
-                                                .literal("at_joint_limit")
-                                                .describe(
-                                                  "The best pose it found has a joint at its limit, and no step improves it.",
-                                                ),
-                                              z
-                                                .literal("stalled")
-                                                .describe(
-                                                  "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                                ),
-                                              z
-                                                .literal("iteration_limit")
-                                                .describe(
-                                                  "It was still improving when it ran out of iterations.",
-                                                ),
-                                              z
-                                                .literal("out_of_reach")
-                                                .describe(
-                                                  "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                                ),
-                                            ])
-                                            .describe(
-                                              "Why a solve stopped short.",
-                                            ),
-                                          waypoint: z
-                                            .number()
-                                            .int()
-                                            .gte(0)
-                                            .describe(
-                                              "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                            ),
-                                        })
-                                        .describe(
-                                          "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                        ),
-                                      z.null(),
-                                    ]),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    goal_pose: z
-                                      .object({
-                                        position: z
-                                          .array(z.number())
-                                          .min(3)
-                                          .max(3),
-                                        quaternion: z
-                                          .array(z.number())
-                                          .min(4)
-                                          .max(4),
-                                      })
-                                      .strict()
-                                      .describe(
-                                        "The target pose or streamed goal in the station world frame.",
-                                      ),
-                                    kind: z.literal("policy_reach"),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    goal_joints: z.array(z.number()),
-                                    joint_speed: z.number(),
-                                    kind: z.literal("joint_stream"),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    goal_pose: z
-                                      .object({
-                                        position: z
-                                          .array(z.number())
-                                          .min(3)
-                                          .max(3),
-                                        quaternion: z
-                                          .array(z.number())
-                                          .min(4)
-                                          .max(4),
-                                      })
-                                      .strict()
-                                      .describe(
-                                        "The target pose or streamed goal in the station world frame.",
-                                      ),
-                                    kind: z.literal("pose_stream"),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    joint_speed: z.number(),
-                                    kind: z.literal("gripper"),
-                                    stream_command_id: z
-                                      .union([
-                                        z
-                                          .string()
-                                          .describe(
-                                            "The joint stream that issued this jaw goal, if any.",
-                                          ),
-                                        z
-                                          .null()
-                                          .describe(
-                                            "The joint stream that issued this jaw goal, if any.",
-                                          ),
-                                      ])
-                                      .describe(
-                                        "The joint stream that issued this jaw goal, if any.",
-                                      ),
-                                    target_angle_radians: z.number(),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    action: z
-                                      .enum([
-                                        "enable",
-                                        "disable",
-                                        "approve_recovery",
-                                        "clear_fault",
-                                        "stop",
-                                        "shutdown",
-                                      ])
-                                      .describe(
-                                        "State-changing commands with no position target.",
-                                      ),
-                                    kind: z.literal("control"),
-                                  })
-                                  .strict(),
-                              ])
-                              .describe(
-                                "Data specific to the command the controller accepted.",
-                              ),
-                            command_id: z.string(),
-                            label: z
-                              .string()
-                              .describe(
-                                "A readable description, including the originating operation's name.",
-                              ),
-                            phase: z
-                              .union([
-                                z
-                                  .object({ kind: z.literal("pending") })
-                                  .strict()
-                                  .describe(
-                                    "Accepted and awaiting a terminal result.",
-                                  ),
-                                z
-                                  .object({
-                                    detail: z.union([z.string(), z.null()]),
-                                    finished_at: z.number(),
-                                    kind: z.literal("not_started"),
-                                    outcome: z
-                                      .enum(["stopped", "failed"])
-                                      .describe(
-                                        "The command was stopped or failed before it started.",
-                                      ),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    achieved: z.union([
-                                      z
-                                        .object({
-                                          joint_error_radians: z.union([
-                                            z.number().gte(0),
-                                            z.null(),
-                                          ]),
-                                          joint_errors_radians: z
-                                            .union([
-                                              z
-                                                .array(z.number())
-                                                .describe(
-                                                  "Each joint's absolute distance from the target joints.",
-                                                ),
-                                              z
-                                                .null()
-                                                .describe(
-                                                  "Each joint's absolute distance from the target joints.",
-                                                ),
-                                            ])
-                                            .describe(
-                                              "Each joint's absolute distance from the target joints.",
-                                            ),
-                                          joints: z.array(z.number()),
-                                          orientation: z
-                                            .union([
-                                              z
-                                                .object({
-                                                  approach: z
-                                                    .array(z.number())
-                                                    .min(3)
-                                                    .max(3),
-                                                  degrees_from_down: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lte(180),
-                                                  goal: z.union([
-                                                    z
-                                                      .object({
-                                                        approach_error_degrees:
-                                                          z
-                                                            .number()
-                                                            .gte(0)
-                                                            .lte(180),
-                                                        jaw_yaw_degrees: z
-                                                          .number()
-                                                          .gte(0)
-                                                          .lt(360),
-                                                        jaw_yaw_reference: z
-                                                          .enum([
-                                                            "world_x",
-                                                            "world_y",
-                                                          ])
-                                                          .describe(
-                                                            "The world axis jaw yaw zero is projected from.",
-                                                          ),
-                                                        orientation_error_degrees:
-                                                          z
-                                                            .number()
-                                                            .gte(0)
-                                                            .lte(180),
-                                                      })
-                                                      .describe(
-                                                        "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                                      ),
-                                                    z.null(),
-                                                  ]),
-                                                  jaw_yaw_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lt(360),
-                                                  jaw_yaw_reference: z
-                                                    .enum([
-                                                      "world_x",
-                                                      "world_y",
-                                                    ])
-                                                    .describe(
-                                                      "The world axis jaw yaw zero is projected from.",
-                                                    ),
-                                                })
-                                                .describe(
-                                                  "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                                ),
-                                              z.null(),
-                                            ])
-                                            .describe(
-                                              "The tool orientation in grasp terms, against the target's when there is one.",
-                                            ),
-                                          orientation_error_radians: z.union([
-                                            z.number().gte(0),
-                                            z.null(),
-                                          ]),
-                                          position: z
-                                            .union([
-                                              z
-                                                .array(z.number())
-                                                .min(3)
-                                                .max(3)
-                                                .describe(
-                                                  "The tool pose at `joints`; absent when the controller has no tool link.",
-                                                ),
-                                              z
-                                                .null()
-                                                .describe(
-                                                  "The tool pose at `joints`; absent when the controller has no tool link.",
-                                                ),
-                                            ])
-                                            .describe(
-                                              "The tool pose at `joints`; absent when the controller has no tool link.",
-                                            ),
-                                          position_error_meters: z.union([
-                                            z.number().gte(0),
-                                            z.null(),
-                                          ]),
-                                          quaternion: z.union([
-                                            z.array(z.number()).min(4).max(4),
-                                            z.null(),
-                                          ]),
-                                          sampled_at: z.number(),
-                                        })
-                                        .describe(
-                                          "Where the arm was, measured, when a command ended.",
-                                        ),
-                                      z.null(),
-                                    ]),
-                                    completion: z
-                                      .object({
-                                        detail: z.union([z.string(), z.null()]),
-                                        finished_at: z.number(),
-                                        gripper: z
-                                          .union([
-                                            z
-                                              .union([
-                                                z
-                                                  .object({
-                                                    kind: z.literal("reached"),
-                                                    measured_angle_radians:
-                                                      z.number(),
-                                                  })
-                                                  .describe(
-                                                    "The jaw arrived at the angle it was asked for.",
-                                                  ),
-                                                z
-                                                  .object({
-                                                    kind: z.literal(
-                                                      "stopped_short",
-                                                    ),
-                                                    measured_angle_radians:
-                                                      z.number(),
-                                                    target_angle_radians:
-                                                      z.number(),
-                                                  })
-                                                  .describe(
-                                                    "The jaw stopped short of its target and stayed there: it closed on something,\nwas blocked opening, or its target was clipped to the jaw's range.",
-                                                  ),
-                                              ])
-                                              .describe(
-                                                "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
-                                              ),
-                                            z.null(),
-                                          ])
-                                          .describe(
-                                            "How a gripper command ended, when jaw feedback was available.",
-                                          ),
-                                        outcome: z
-                                          .enum([
-                                            "completed",
-                                            "stopped",
-                                            "tripped",
-                                            "timed_out",
-                                            "stopped_short",
-                                            "superseded",
-                                            "faulted",
-                                            "failed",
-                                          ])
-                                          .describe(
-                                            "A command outcome established by the controller.",
-                                          ),
-                                      })
-                                      .describe(
-                                        "The outcome and timestamp for a command with a known end.",
-                                      ),
-                                    kind: z.literal("finished"),
-                                  })
-                                  .strict(),
-                                z
-                                  .object({
-                                    detail: z.union([z.string(), z.null()]),
-                                    finished_at: z.number(),
-                                    kind: z.literal("outcome_unknown"),
-                                  })
-                                  .strict()
-                                  .describe(
-                                    "Control was interrupted and the final arm position could not be confirmed.",
-                                  ),
-                              ])
-                              .describe(
-                                "Evidence of how an accepted command ended.",
-                              ),
-                            trace_context: z.union([
-                              z
-                                .object({
-                                  traceparent: z
-                                    .string()
-                                    .describe(
-                                      "`00-<trace id>-<parent span id>-<flags>`.",
-                                    ),
-                                  tracestate: z
-                                    .union([z.string(), z.null()])
-                                    .default(null),
-                                })
-                                .describe(
-                                  "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
-                                ),
-                              z.null(),
-                            ]),
-                          })
-                          .strict()
-                          .describe("One command, from acceptance to its end."),
-                        z.null(),
-                      ]),
-                      records: z
-                        .array(
-                          z
-                            .object({
-                              accepted_at: z.number(),
-                              checkpoints: z.array(
-                                z
-                                  .object({
-                                    destination_position: z.union([
-                                      z.array(z.number()).min(3).max(3),
-                                      z.null(),
-                                    ]),
-                                    destination_quaternion: z.union([
-                                      z.array(z.number()).min(4).max(4),
-                                      z.null(),
-                                    ]),
-                                    label: z.string(),
-                                    measured_joints: z.array(z.number()),
-                                  })
-                                  .describe(
-                                    "Where the arm stood, as measured, when it settled at the end of a segment.",
-                                  ),
-                              ),
-                              command: z
-                                .union([
-                                  z
-                                    .object({
-                                      destination_joints: z.array(z.number()),
-                                      destination_position: z.union([
-                                        z.array(z.number()).min(3).max(3),
-                                        z.null(),
-                                      ]),
-                                      destination_quaternion: z.union([
-                                        z.array(z.number()).min(4).max(4),
-                                        z.null(),
-                                      ]),
-                                      group_id: z.union([z.string(), z.null()]),
-                                      joint_speed: z.number(),
-                                      kind: z.literal("move"),
-                                      path_limited: z.union([
-                                        z
-                                          .object({ reason: z.string() })
-                                          .describe(
-                                            "A move cut short where its straight joint path would first fold the arm into\nitself or drive it down into the table: the plan's target is the last clear\nsample before that, not what was asked for.",
-                                          ),
-                                        z.null(),
-                                      ]),
-                                      pose_limited: z.union([
-                                        z
-                                          .object({
-                                            advice: z
-                                              .string()
-                                              .describe(
-                                                "The shortfall and the closest pose's tool position in millimetres, then what\nwould be reachable exactly instead, in the terms a pose takes.",
-                                              ),
-                                            orientation_shortfall_radians: z
-                                              .number()
-                                              .gte(0)
-                                              .describe(
-                                                "From the closest pose's orientation to the requested one.",
-                                              ),
-                                            position_shortfall_meters: z
-                                              .number()
-                                              .gte(0)
-                                              .describe(
-                                                "From the closest pose's tool position to the requested one.",
-                                              ),
-                                            reason: z
-                                              .union([
-                                                z
-                                                  .literal("at_joint_limit")
-                                                  .describe(
-                                                    "The best pose it found has a joint at its limit, and no step improves it.",
-                                                  ),
-                                                z
-                                                  .literal("stalled")
-                                                  .describe(
-                                                    "No step improves the best pose it found, away from any limit: the target\nis out of reach, or the arm is in a singular pose that cannot move toward it.",
-                                                  ),
-                                                z
-                                                  .literal("iteration_limit")
-                                                  .describe(
-                                                    "It was still improving when it ran out of iterations.",
-                                                  ),
-                                                z
-                                                  .literal("out_of_reach")
-                                                  .describe(
-                                                    "The target is farther from the arm's first joint than the arm's links\nreach; the best pose stretches toward it.",
-                                                  ),
-                                              ])
-                                              .describe(
-                                                "Why a solve stopped short.",
-                                              ),
-                                            waypoint: z
-                                              .number()
-                                              .int()
-                                              .gte(0)
-                                              .describe(
-                                                "The waypoint the move stops at, counted from 0; later waypoints are left out.",
-                                              ),
-                                          })
-                                          .describe(
-                                            "A pose move whose target no joints reach exactly, run to the closest pose the\nsolver found instead: the plan's target is that pose, not what was asked for.",
-                                          ),
-                                        z.null(),
-                                      ]),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      goal_pose: z
-                                        .object({
-                                          position: z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3),
-                                          quaternion: z
-                                            .array(z.number())
-                                            .min(4)
-                                            .max(4),
-                                        })
-                                        .strict()
-                                        .describe(
-                                          "The target pose or streamed goal in the station world frame.",
-                                        ),
-                                      kind: z.literal("policy_reach"),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      goal_joints: z.array(z.number()),
-                                      joint_speed: z.number(),
-                                      kind: z.literal("joint_stream"),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      goal_pose: z
-                                        .object({
-                                          position: z
-                                            .array(z.number())
-                                            .min(3)
-                                            .max(3),
-                                          quaternion: z
-                                            .array(z.number())
-                                            .min(4)
-                                            .max(4),
-                                        })
-                                        .strict()
-                                        .describe(
-                                          "The target pose or streamed goal in the station world frame.",
-                                        ),
-                                      kind: z.literal("pose_stream"),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      joint_speed: z.number(),
-                                      kind: z.literal("gripper"),
-                                      stream_command_id: z
-                                        .union([
-                                          z
-                                            .string()
-                                            .describe(
-                                              "The joint stream that issued this jaw goal, if any.",
-                                            ),
-                                          z
-                                            .null()
-                                            .describe(
-                                              "The joint stream that issued this jaw goal, if any.",
-                                            ),
-                                        ])
-                                        .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
-                                        ),
-                                      target_angle_radians: z.number(),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      action: z
-                                        .enum([
-                                          "enable",
-                                          "disable",
-                                          "approve_recovery",
-                                          "clear_fault",
-                                          "stop",
-                                          "shutdown",
-                                        ])
-                                        .describe(
-                                          "State-changing commands with no position target.",
-                                        ),
-                                      kind: z.literal("control"),
-                                    })
-                                    .strict(),
-                                ])
-                                .describe(
-                                  "Data specific to the command the controller accepted.",
-                                ),
-                              command_id: z.string(),
-                              label: z
-                                .string()
-                                .describe(
-                                  "A readable description, including the originating operation's name.",
-                                ),
-                              phase: z
-                                .union([
-                                  z
-                                    .object({ kind: z.literal("pending") })
-                                    .strict()
-                                    .describe(
-                                      "Accepted and awaiting a terminal result.",
-                                    ),
-                                  z
-                                    .object({
-                                      detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
-                                      kind: z.literal("not_started"),
-                                      outcome: z
-                                        .enum(["stopped", "failed"])
-                                        .describe(
-                                          "The command was stopped or failed before it started.",
-                                        ),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      achieved: z.union([
-                                        z
-                                          .object({
-                                            joint_error_radians: z.union([
-                                              z.number().gte(0),
-                                              z.null(),
-                                            ]),
-                                            joint_errors_radians: z
-                                              .union([
-                                                z
-                                                  .array(z.number())
-                                                  .describe(
-                                                    "Each joint's absolute distance from the target joints.",
-                                                  ),
-                                                z
-                                                  .null()
-                                                  .describe(
-                                                    "Each joint's absolute distance from the target joints.",
-                                                  ),
-                                              ])
-                                              .describe(
-                                                "Each joint's absolute distance from the target joints.",
-                                              ),
-                                            joints: z.array(z.number()),
-                                            orientation: z
-                                              .union([
-                                                z
-                                                  .object({
-                                                    approach: z
-                                                      .array(z.number())
-                                                      .min(3)
-                                                      .max(3),
-                                                    degrees_from_down: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lte(180),
-                                                    goal: z.union([
-                                                      z
-                                                        .object({
-                                                          approach_error_degrees:
-                                                            z
-                                                              .number()
-                                                              .gte(0)
-                                                              .lte(180),
-                                                          jaw_yaw_degrees: z
-                                                            .number()
-                                                            .gte(0)
-                                                            .lt(360),
-                                                          jaw_yaw_reference: z
-                                                            .enum([
-                                                              "world_x",
-                                                              "world_y",
-                                                            ])
-                                                            .describe(
-                                                              "The world axis jaw yaw zero is projected from.",
-                                                            ),
-                                                          orientation_error_degrees:
-                                                            z
-                                                              .number()
-                                                              .gte(0)
-                                                              .lte(180),
-                                                        })
-                                                        .describe(
-                                                          "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-                                                        ),
-                                                      z.null(),
-                                                    ]),
-                                                    jaw_yaw_degrees: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lt(360),
-                                                    jaw_yaw_reference: z
-                                                      .enum([
-                                                        "world_x",
-                                                        "world_y",
-                                                      ])
-                                                      .describe(
-                                                        "The world axis jaw yaw zero is projected from.",
-                                                      ),
-                                                  })
-                                                  .describe(
-                                                    "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
-                                                  ),
-                                                z.null(),
-                                              ])
-                                              .describe(
-                                                "The tool orientation in grasp terms, against the target's when there is one.",
-                                              ),
-                                            orientation_error_radians: z.union([
-                                              z.number().gte(0),
-                                              z.null(),
-                                            ]),
-                                            position: z
-                                              .union([
-                                                z
-                                                  .array(z.number())
-                                                  .min(3)
-                                                  .max(3)
-                                                  .describe(
-                                                    "The tool pose at `joints`; absent when the controller has no tool link.",
-                                                  ),
-                                                z
-                                                  .null()
-                                                  .describe(
-                                                    "The tool pose at `joints`; absent when the controller has no tool link.",
-                                                  ),
-                                              ])
-                                              .describe(
-                                                "The tool pose at `joints`; absent when the controller has no tool link.",
-                                              ),
-                                            position_error_meters: z.union([
-                                              z.number().gte(0),
-                                              z.null(),
-                                            ]),
-                                            quaternion: z.union([
-                                              z.array(z.number()).min(4).max(4),
-                                              z.null(),
-                                            ]),
-                                            sampled_at: z.number(),
-                                          })
-                                          .describe(
-                                            "Where the arm was, measured, when a command ended.",
-                                          ),
-                                        z.null(),
-                                      ]),
-                                      completion: z
-                                        .object({
-                                          detail: z.union([
-                                            z.string(),
-                                            z.null(),
-                                          ]),
-                                          finished_at: z.number(),
-                                          gripper: z
-                                            .union([
-                                              z
-                                                .union([
-                                                  z
-                                                    .object({
-                                                      kind: z.literal(
-                                                        "reached",
-                                                      ),
-                                                      measured_angle_radians:
-                                                        z.number(),
-                                                    })
-                                                    .describe(
-                                                      "The jaw arrived at the angle it was asked for.",
-                                                    ),
-                                                  z
-                                                    .object({
-                                                      kind: z.literal(
-                                                        "stopped_short",
-                                                      ),
-                                                      measured_angle_radians:
-                                                        z.number(),
-                                                      target_angle_radians:
-                                                        z.number(),
-                                                    })
-                                                    .describe(
-                                                      "The jaw stopped short of its target and stayed there: it closed on something,\nwas blocked opening, or its target was clipped to the jaw's range.",
-                                                    ),
-                                                ])
-                                                .describe(
-                                                  "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
-                                                ),
-                                              z.null(),
-                                            ])
-                                            .describe(
-                                              "How a gripper command ended, when jaw feedback was available.",
-                                            ),
-                                          outcome: z
-                                            .enum([
-                                              "completed",
-                                              "stopped",
-                                              "tripped",
-                                              "timed_out",
-                                              "stopped_short",
-                                              "superseded",
-                                              "faulted",
-                                              "failed",
-                                            ])
-                                            .describe(
-                                              "A command outcome established by the controller.",
-                                            ),
-                                        })
-                                        .describe(
-                                          "The outcome and timestamp for a command with a known end.",
-                                        ),
-                                      kind: z.literal("finished"),
-                                    })
-                                    .strict(),
-                                  z
-                                    .object({
-                                      detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
-                                      kind: z.literal("outcome_unknown"),
-                                    })
-                                    .strict()
-                                    .describe(
-                                      "Control was interrupted and the final arm position could not be confirmed.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Evidence of how an accepted command ended.",
-                                ),
-                              trace_context: z.union([
-                                z
-                                  .object({
-                                    traceparent: z
-                                      .string()
-                                      .describe(
-                                        "`00-<trace id>-<parent span id>-<flags>`.",
-                                      ),
-                                    tracestate: z
-                                      .union([z.string(), z.null()])
-                                      .default(null),
-                                  })
-                                  .describe(
-                                    "The caller's W3C trace context for a command, so a recorder can make the\ncommand's span a child of the caller's span.",
-                                  ),
-                                z.null(),
-                              ]),
-                            })
-                            .strict()
-                            .describe(
-                              "One command, from acceptance to its end.",
-                            ),
-                        )
-                        .describe(
-                          "The records of a grouped move, one per arm in the order asked; empty\nfor any other request.",
-                        )
-                        .default([]),
-                      request_id: z.string(),
-                    })
-                    .describe(
-                      "The one answer to a request that carried a request id: the command's\nrecord when it was accepted, or the reason it was not.",
-                    ),
-                  z
-                    .object({
                       fault: z.union([z.string(), z.null()]),
                       kind: z.literal("snapshot"),
                       log: z
@@ -20124,16 +15629,16 @@ export const apiSchemas = z.object({
                                           z
                                             .string()
                                             .describe(
-                                              "The joint stream that issued this jaw goal, if any.",
+                                              "The motion or joint stream that owns this jaw command, if any.",
                                             ),
                                           z
                                             .null()
                                             .describe(
-                                              "The joint stream that issued this jaw goal, if any.",
+                                              "The motion or joint stream that owns this jaw command, if any.",
                                             ),
                                         ])
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                       target_angle_radians: z.number(),
                                     })
@@ -20773,16 +16278,16 @@ export const apiSchemas = z.object({
                                   z
                                     .string()
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                   z
                                     .null()
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                 ])
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               target_angle_radians: z.number(),
                             })
@@ -21132,7 +16637,7 @@ export const apiSchemas = z.object({
                 ),
             })
             .describe(
-              "One line from the controller: a log event with its sequence number, or an\nunsequenced sample or reply.",
+              "One line from the controller: a sequenced log event or an unsequenced feedback frame.",
             ),
           kind: z.literal("frame"),
         })
@@ -21182,7 +16687,14 @@ export const apiSchemas = z.object({
                           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                         ),
                       required_cameras: z
-                        .array(z.string())
+                        .array(
+                          z
+                            .string()
+                            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                            .describe(
+                              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                            ),
+                        )
                         .describe("Cameras the holder cannot work without."),
                     })
                     .describe("The current lease, as everyone may see it."),
@@ -21232,7 +16744,14 @@ export const apiSchemas = z.object({
                             "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                           ),
                         required_cameras: z
-                          .array(z.string())
+                          .array(
+                            z
+                              .string()
+                              .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                              .describe(
+                                "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                              ),
+                          )
                           .describe("Cameras the holder cannot work without."),
                       })
                       .describe("The current lease, as everyone may see it."),
@@ -21417,16 +16936,16 @@ export const apiSchemas = z.object({
                                       z
                                         .string()
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                       z
                                         .null()
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                     ])
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                   target_angle_radians: z.number(),
                                 })
@@ -22051,16 +17570,16 @@ export const apiSchemas = z.object({
                                       z
                                         .string()
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                       z
                                         .null()
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                     ])
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                   target_angle_radians: z.number(),
                                 })
@@ -22596,16 +18115,16 @@ export const apiSchemas = z.object({
                                       z
                                         .string()
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                       z
                                         .null()
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                     ])
                                     .describe(
-                                      "The joint stream that issued this jaw goal, if any.",
+                                      "The motion or joint stream that owns this jaw command, if any.",
                                     ),
                                   target_angle_radians: z.number(),
                                 })
@@ -23093,7 +18612,14 @@ export const apiSchemas = z.object({
                           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                         ),
                       required_cameras: z
-                        .array(z.string())
+                        .array(
+                          z
+                            .string()
+                            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                            .describe(
+                              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                            ),
+                        )
                         .describe("Cameras the holder cannot work without."),
                     })
                     .describe("The current lease, as everyone may see it."),
@@ -23446,7 +18972,8 @@ export const apiSchemas = z.object({
                                             ])
                                             .describe(
                                               "Start moving the gripper when passing this waypoint.",
-                                            ),
+                                            )
+                                            .optional(),
                                         })
                                         .strict()
                                         .describe(
@@ -23657,16 +19184,16 @@ export const apiSchemas = z.object({
                                           z
                                             .string()
                                             .describe(
-                                              "The joint stream that issued this jaw goal, if any.",
+                                              "The motion or joint stream that owns this jaw command, if any.",
                                             ),
                                           z
                                             .null()
                                             .describe(
-                                              "The joint stream that issued this jaw goal, if any.",
+                                              "The motion or joint stream that owns this jaw command, if any.",
                                             ),
                                         ])
                                         .describe(
-                                          "The joint stream that issued this jaw goal, if any.",
+                                          "The motion or joint stream that owns this jaw command, if any.",
                                         ),
                                       target_angle_radians: z.number(),
                                     })
@@ -24463,16 +19990,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                           target_angle_radians: z.number(),
                         })
@@ -24977,16 +20504,16 @@ export const apiSchemas = z.object({
                               z
                                 .string()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "The joint stream that issued this jaw goal, if any.",
+                                  "The motion or joint stream that owns this jaw command, if any.",
                                 ),
                             ])
                             .describe(
-                              "The joint stream that issued this jaw goal, if any.",
+                              "The motion or joint stream that owns this jaw command, if any.",
                             ),
                           target_angle_radians: z.number(),
                         })
@@ -25454,7 +20981,14 @@ export const apiSchemas = z.object({
                   "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                 ),
               required_cameras: z
-                .array(z.string())
+                .array(
+                  z
+                    .string()
+                    .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                    .describe(
+                      "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                    ),
+                )
                 .describe("Cameras the holder cannot work without."),
             })
             .describe("The current lease, as everyone may see it."),

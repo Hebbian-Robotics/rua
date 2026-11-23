@@ -11,7 +11,7 @@ pub(super) fn recovery_positions<'a>(
     feedback: &'a Feedback,
 ) -> anyhow::Result<MeasuredPositions<'a>> {
     config.recovery_limits().clamp(&feedback.positions)?;
-    feedback.measured_positions(config)
+    Ok(feedback.validate_for_cycle(config)?.positions)
 }
 
 pub(super) enum RecoveryHold {
@@ -33,7 +33,7 @@ pub(super) fn assess_recovery_hold(
         (None, None) => true,
         _ => false,
     };
-    let stable = observation.feedback.measured_positions(config).is_ok()
+    let stable = observation.feedback.validate_for_cycle(config).is_ok()
         && !observation.motor_torque.is_empty()
         && observation.motor_torque.iter().all(|(_, enabled)| *enabled)
         && observation.health_issue.is_none()
@@ -74,6 +74,8 @@ mod tests {
         let config = ControllerConfig::try_from(settings).unwrap();
         let held = Feedback {
             positions: vec![0.0, 0.0],
+            velocities: vec![0.0; 2],
+            efforts: vec![0.0; 2],
             gripper_angle: Some(0.5),
             ..Feedback::default()
         };

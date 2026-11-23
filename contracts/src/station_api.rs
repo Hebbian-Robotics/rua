@@ -150,6 +150,7 @@ pub enum ActionSequenceGoal {
 pub struct ActionSequenceWaypoint {
     pub at: crate::CompiledGoal,
     /// Start moving the gripper when passing this waypoint.
+    #[schemars(extend("x-omit-when-none" = true))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gripper_opening: Option<GripperOpening>,
 }
@@ -446,9 +447,9 @@ pub struct ObservationRequest {
     #[serde(default)]
     pub arms: Vec<String>,
     #[serde(default)]
-    pub required_cameras: Vec<String>,
+    pub required_cameras: Vec<crate::SnapshotName>,
     #[serde(default)]
-    pub optional_cameras: Vec<String>,
+    pub optional_cameras: Vec<crate::SnapshotName>,
 }
 
 /// One captured JPEG with its source timestamp and retrieval interval.

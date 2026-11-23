@@ -63,6 +63,7 @@ enum LaunchDecision {
     Start,
 }
 
+#[deny(clippy::disallowed_methods)]
 impl ControllerPhase {
     fn is_available(&self) -> bool {
         matches!(self, Self::Online { .. } | Self::Unmanaged)

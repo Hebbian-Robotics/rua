@@ -1,3 +1,4 @@
+#![deny(clippy::wildcard_enum_match_arm)]
 pub mod action_step;
 pub mod arm;
 mod compiler;

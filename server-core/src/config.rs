@@ -124,10 +124,7 @@ impl ControllerConfig {
     #[must_use]
     pub(crate) fn arm_limits(&self) -> crate::arm::Limits {
         crate::arm::Limits {
-            joint_count: self.joint_count,
-            lower: self.lower_limits.clone(),
-            upper: self.upper_limits.clone(),
-            joint_limit_recovery_tolerance_radians: self.joint_limit_recovery_tolerance_radians,
+            joint_bounds: self.recovery_limits.clone(),
             gripper: self
                 .gripper
                 .as_ref()

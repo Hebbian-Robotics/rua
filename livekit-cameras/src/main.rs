@@ -61,8 +61,8 @@ async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
     let snapshots = snapshots::Snapshots::start(
         cameras
             .iter()
-            .map(|camera| camera.name().to_owned())
-            .collect(),
+            .map(|camera| hebbian_contracts::CameraName::try_from(camera.name()))
+            .collect::<Result<_, _>>()?,
         arguments.camera_socket,
         arguments.room,
     );

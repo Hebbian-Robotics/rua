@@ -499,7 +499,9 @@ pub(crate) fn admit_action_step(
         let core = cores
             .get_mut(action.arm.as_str())
             .expect("all arms validated");
+        let mut jaw_motion_owner = None;
         if let Some(movement) = action.movement {
+            let has_waypoint_jaw = matches!(&movement, AdmittedMovement::Trajectory { decision, .. } if decision.plan.segments.iter().any(|section| section.pass_through.is_some_and(|point| point.gripper_angle.is_some())));
             let record = match movement {
                 AdmittedMovement::Trajectory {
                     label,
@@ -514,6 +516,9 @@ pub(crate) fn admit_action_step(
                 ),
                 AdmittedMovement::PolicyPose { label, goal } => core.apply_reach(&label, goal, now),
             };
+            if has_waypoint_jaw {
+                jaw_motion_owner = Some(record.command_id.clone());
+            }
             records.push(ArmRecord {
                 arm: action.arm.clone(),
                 record,
@@ -522,7 +527,7 @@ pub(crate) fn admit_action_step(
         if let Some(target) = action.gripper {
             records.push(ArmRecord {
                 arm: action.arm,
-                record: core.apply_gripper(target, None, now),
+                record: core.apply_gripper(target, jaw_motion_owner, now),
             });
         }
     }
@@ -552,10 +557,12 @@ mod tests {
     fn core() -> ArmCore {
         ArmCore::new(
             Limits {
-                joint_count: 2,
-                lower: vec![-2.0, -2.0],
-                upper: vec![2.0, 2.0],
-                joint_limit_recovery_tolerance_radians: 0.035,
+                joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits::new(
+                    &[-2.0, -2.0],
+                    &[2.0, 2.0],
+                    0.035,
+                )
+                .unwrap(),
                 gripper: None,
                 pose_goals: None,
                 jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
@@ -592,6 +599,24 @@ mod tests {
         }
     }
 
+    fn start_test_movement(moving: &mut ArmCore) {
+        let movement = part("moving", [0.5, 0.0]);
+        moving
+            .submit(
+                Command::Move {
+                    label: "move_to_joints".into(),
+                    plan: movement.plan,
+                    joint_speed: movement.joint_speed,
+                    path_limited: None,
+                    pose_limited: None,
+                },
+                Now::current(),
+            )
+            .unwrap();
+        moving.next_job().unwrap();
+        moving.begin_moving();
+    }
+
     #[test]
     fn an_expired_manual_lease_allows_enable_only_after_every_arm_has_stopped() {
         let lease = Lease::new(Duration::from_secs(1));
@@ -604,6 +629,7 @@ mod tests {
         let mode = AcquireMode::WaitOrFail;
         let grant = lease.acquire_stopping_arms(request.clone(), mode).unwrap();
         let expired = Instant::now() + Duration::from_secs(2);
+        let unleased = crate::lease::MotionClaim::Unleased;
         let (disabled_handle, disabled_inbox) = arm_channel();
         let (moving_handle, moving_inbox) = arm_channel();
         let moving_generation = Arc::new(AtomicU64::new(0));
@@ -620,21 +646,7 @@ mod tests {
         let prepared_before_expiry = [GenerationTicket::capture(&moving_generation)];
         let mut disabled = core();
         let mut moving = holding_core();
-        let movement = part("moving", [0.5, 0.0]);
-        moving
-            .submit(
-                Command::Move {
-                    label: "move_to_joints".into(),
-                    plan: movement.plan,
-                    joint_speed: movement.joint_speed,
-                    path_limited: None,
-                    pose_limited: None,
-                },
-                Now::current(),
-            )
-            .unwrap();
-        moving.next_job().unwrap();
-        moving.begin_moving();
+        start_test_movement(&mut moving);
         let mut cores = BTreeMap::from([("disabled", &mut disabled), ("moving", &mut moving)]);
 
         assert!(lease.status(expired).is_some());
@@ -646,7 +658,14 @@ mod tests {
         assert!(lease.status(expired).is_some());
         assert!(
             lease
-                .admit_generation(None, || expired, &[], &[], LeaseAdmission::Normal, || ())
+                .admit_generation(
+                    unleased,
+                    || expired,
+                    &[],
+                    &[],
+                    LeaseAdmission::Normal,
+                    || ()
+                )
                 .is_err()
         );
         for (name, inbox) in [("disabled", &disabled_inbox), ("moving", &moving_inbox)] {
@@ -676,14 +695,21 @@ mod tests {
                 .submit(Command::Enable, Now::current())
         };
         let enabled = lease
-            .admit_generation(None, || expired, &[], &[], LeaseAdmission::Normal, enable)
+            .admit_generation(
+                unleased,
+                || expired,
+                &[],
+                &[],
+                LeaseAdmission::Normal,
+                enable,
+            )
             .unwrap()
             .unwrap();
         assert_eq!(enabled.label, "enable");
         let fresh = lease.acquire_stopping_arms(request, mode).unwrap();
         assert_ne!(fresh.lease_token, grant.lease_token);
         let late_plan = lease.admit_generation(
-            Some(&grant.lease_token),
+            crate::lease::MotionClaim::Token(&grant.lease_token),
             || expired,
             &[],
             &prepared_before_expiry,
@@ -832,10 +858,10 @@ mod tests {
     ) -> ArmCore {
         let mut arm = ArmCore::new(
             Limits {
-                joint_count: 5,
-                lower: vec![-1.5; 5],
-                upper: vec![1.5; 5],
-                joint_limit_recovery_tolerance_radians: 0.035,
+                joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits::new(
+                    &[-1.5; 5], &[1.5; 5], 0.035,
+                )
+                .unwrap(),
                 gripper: Some((0.0, 1.5)),
                 pose_goals: Some(crate::arm::PoseGoalSettings {
                     position_tolerance_meters: 0.01,

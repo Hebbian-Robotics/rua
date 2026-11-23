@@ -14,7 +14,7 @@ impl<P: Plant> Runner<'_, P> {
     pub(super) fn group_member(&self) -> Option<&ActiveGroupMember> {
         match &self.state.activity {
             Activity::Group(member) => Some(member),
-            _ => None,
+            Activity::Idle | Activity::Motion(_) | Activity::Stream(_) | Activity::Reach(_) => None,
         }
     }
 

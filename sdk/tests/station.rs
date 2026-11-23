@@ -1671,3 +1671,34 @@ async fn cancelling_before_a_waypoint_leaves_the_gripper_closed() -> TestResult 
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_waypoint_can_reverse_an_unfinished_step_gripper_move() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("reverse jaw during move"))).await??;
+    within(client.enable(ARM)).await??;
+    let source = serde_json::from_value(json!({"steps":[{"arms":{(ARM):{
+        "goal":{"kind":"joints","joints":[0.02,-0.5,0.5,0.0,0.0]},
+        "gripper_opening":1.0,
+        "max_joint_speed":0.15,
+        "waypoints":[{"at":{"kind":"joints","joints":[0.01,-0.5,0.5,0.0,0.0]},"gripper_opening":0.0}]
+    }}}]}))?;
+    let execution = within(lease.start_action_sequence(source)).await??;
+    let result = within(client.wait_for_action_sequence(&execution)).await??;
+    assert_eq!(result.phase, ActionSequencePhase::Completed);
+    assert_eq!(result.steps[0].len(), 2);
+    assert!(
+        result.steps[0]
+            .iter()
+            .all(|entry| entry.record.outcome()
+                == Some(hebbian_contracts::CommandOutcome::Completed))
+    );
+    let state = within(client.get_state()).await??;
+    assert!(
+        state.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| opening < 0.02)
+    );
+    Ok(())
+}

@@ -292,11 +292,11 @@ def test_required_camera_interlock_ends_with_the_lease(server_binary: Path) -> N
                 StationClient(station.server) as agent,
                 StationClient(station.server) as replacement,
                 agent.holding_lease(
-                    "agent", required_cameras=["missing-test-camera"]
+                    "agent", required_cameras=["missing_test_camera"]
                 ) as agent_lease,
             ):
                 arm = agent.arm(ARM)
-                await agent_lease.report_camera("missing-test-camera", True)
+                await agent_lease.report_camera("missing_test_camera", True)
                 await agent.wait_for_state(
                     lambda state: all(
                         interlock.kind != "required_camera_unavailable"
@@ -304,7 +304,7 @@ def test_required_camera_interlock_ends_with_the_lease(server_binary: Path) -> N
                     )
                 )
                 observed_revision = (await arm.state()).revision
-                await agent_lease.report_camera("missing-test-camera", False)
+                await agent_lease.report_camera("missing_test_camera", False)
                 stale_command = await agent_lease.send(
                     ARM, EnableCommand(), expected_revision=observed_revision
                 )
@@ -331,7 +331,7 @@ def test_required_camera_interlock_ends_with_the_lease(server_binary: Path) -> N
                     assert replacement_lease.status.holder is LeaseHolder.manual
                     await asyncio.wait_for(agent.lease_lost.wait(), timeout=5)
                     with pytest.raises(LeaseLost):
-                        await agent_lease.report_camera("missing-test-camera", True)
+                        await agent_lease.report_camera("missing_test_camera", True)
                     assert not await arm_interlocks(replacement)
 
         asyncio.run(asyncio.wait_for(exercise(), timeout=20))

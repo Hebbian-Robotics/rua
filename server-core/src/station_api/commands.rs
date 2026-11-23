@@ -139,6 +139,7 @@ impl StationMovement {
     }
 }
 
+#[deny(clippy::disallowed_methods)]
 fn plan_station_movement(
     movement: StationMovement,
     config: &ControllerConfig,

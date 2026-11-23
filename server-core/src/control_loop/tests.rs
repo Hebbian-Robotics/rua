@@ -37,8 +37,7 @@ fn policy_settings() -> crate::config::PolicyConfig {
 #[test]
 fn a_policy_must_remain_still_for_the_whole_settle_dwell() {
     let goal = ReachGoal {
-        position: [0.0; 3],
-        quaternion: [0.0, 0.0, 0.0, 1.0],
+        target: Isometry3::identity(),
         position_tolerance_meters: 0.02,
         orientation_tolerance_radians: 0.1,
     };

@@ -353,9 +353,8 @@ impl Loop<'_> {
     pub(super) fn commit_motion_effects(&mut self, effects: MotionEffects, now: Now) {
         if let Activity::Motion(active) = &mut self.activity {
             if let Some(target) = effects.waypoint_gripper {
-                let parent = self.core.active_command_id().map(str::to_owned);
-                let record = self.core.apply_gripper(target, parent, now);
-                active.waypoint_gripper_command = Some(record.command_id);
+                active.waypoint_gripper_command =
+                    Some(self.core.apply_waypoint_gripper(target, now));
             }
             active.checkpoints_sent += effects.checkpoints.len();
         }
@@ -454,7 +453,7 @@ mod tests {
                 let feedback = plant.read_feedback().unwrap();
                 if validated_tracking_error(
                     &config,
-                    &feedback.positions,
+                    feedback.measured_positions(&config).unwrap(),
                     &previous,
                     &velocity,
                     interval,

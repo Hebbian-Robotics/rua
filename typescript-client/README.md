@@ -3,11 +3,11 @@
 Use the TypeScript client to control a running station from a browser or Node.js.
 Install a released version with `pnpm add hebbian-rua`.
 
-## Try the published SDK
+## Try the workspace SDK
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
 From the checkout root, install dependencies with `pnpm install --frozen-lockfile`.
-The checkout installs the published SDK for runnable examples.
+The runnable examples import the local workspace SDK.
 
 To read state without moving the robot, start a station
 ([MuJoCo quickstart](../docs/simulation.md) or [hardware setup](../docs/getting-started.md)).

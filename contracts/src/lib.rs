@@ -1,3 +1,4 @@
+#![deny(clippy::wildcard_enum_match_arm)]
 //! Shared station state and command-record contracts.
 
 mod controller_config;
@@ -38,29 +39,95 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A camera participant and recording-path name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CameraName<'a>(&'a str);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
+#[schemars(inline, transparent)]
+pub struct CameraName(#[schemars(regex(pattern = r"^[a-z0-9_]{1,40}$"))] String);
 
-impl<'a> TryFrom<&'a str> for CameraName<'a> {
+impl<'de> Deserialize<'de> for CameraName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl std::borrow::Borrow<str> for CameraName {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl TryFrom<String> for CameraName {
     type Error = InvalidCameraName;
 
-    fn try_from(name: &'a str) -> Result<Self, Self::Error> {
+    fn try_from(name: String) -> Result<Self, Self::Error> {
         if name.is_empty()
             || name.len() > 40
             || !name.bytes().all(|character| {
                 character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'_'
             })
         {
-            return Err(InvalidCameraName(name.to_owned()));
+            return Err(InvalidCameraName(name));
         }
         Ok(Self(name))
     }
 }
 
-impl CameraName<'_> {
+impl TryFrom<&str> for CameraName {
+    type Error = InvalidCameraName;
+
+    fn try_from(name: &str) -> Result<Self, Self::Error> {
+        Self::try_from(name.to_owned())
+    }
+}
+
+impl CameraName {
     #[must_use]
     pub fn as_str(&self) -> &str {
-        self.0
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CameraName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
+#[schemars(inline, transparent)]
+pub struct SnapshotName(#[schemars(regex(pattern = SnapshotName::PATTERN))] String);
+
+impl TryFrom<String> for SnapshotName {
+    type Error = InvalidCameraName;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        if name
+            .strip_prefix("sim_")
+            .is_some_and(|view| !view.is_empty())
+        {
+            return Ok(Self(name));
+        }
+        CameraName::try_from(name).map(|name| Self(name.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for SnapshotName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl SnapshotName {
+    pub const PATTERN: &'static str = r"^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$";
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SnapshotName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -81,7 +148,17 @@ impl std::error::Error for InvalidCameraName {}
 
 #[cfg(test)]
 mod camera_name_tests {
-    use super::CameraName;
+    use super::{CameraName, SnapshotName};
+
+    #[test]
+    fn simulator_views_round_trip_without_becoming_participant_names() {
+        let renderer_view = "sim_Left wrist/close-up";
+        let name: SnapshotName = serde_json::from_value(renderer_view.into()).unwrap();
+        assert_eq!(name.as_str(), renderer_view);
+        assert_eq!(serde_json::to_value(name).unwrap(), renderer_view);
+        assert!(CameraName::try_from(renderer_view).is_err());
+        assert!(serde_json::from_value::<SnapshotName>("../outside".into()).is_err());
+    }
 
     #[test]
     fn camera_names_use_safe_ascii_and_have_bounded_length() {
@@ -346,7 +423,7 @@ pub enum RecordedCommand {
     Gripper {
         target_angle_radians: f64,
         joint_speed: f64,
-        /// The joint stream that issued this jaw goal, if any.
+        /// The motion or joint stream that owns this jaw command, if any.
         stream_command_id: Option<String>,
     },
     #[schemars(title = "RecordedControl")]
@@ -565,7 +642,11 @@ impl CommandRecord {
     pub fn group_id(&self) -> Option<&str> {
         match &self.command {
             RecordedCommand::Move { group_id, .. } => group_id.as_deref(),
-            _ => None,
+            RecordedCommand::PolicyReach { .. }
+            | RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -575,7 +656,11 @@ impl CommandRecord {
             RecordedCommand::Move {
                 destination_joints, ..
             } => Some(destination_joints),
-            _ => None,
+            RecordedCommand::PolicyReach { .. }
+            | RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -587,7 +672,10 @@ impl CommandRecord {
                 ..
             } => *destination_position,
             RecordedCommand::PolicyReach { goal_pose } => Some(goal_pose.position),
-            _ => None,
+            RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -599,7 +687,10 @@ impl CommandRecord {
                 ..
             } => *destination_quaternion,
             RecordedCommand::PolicyReach { goal_pose } => Some(goal_pose.quaternion),
-            _ => None,
+            RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -607,7 +698,9 @@ impl CommandRecord {
     pub fn achieved(&self) -> Option<&Achieved> {
         match &self.phase {
             CommandPhase::Finished { achieved, .. } => achieved.as_deref(),
-            _ => None,
+            CommandPhase::Pending
+            | CommandPhase::NotStarted { .. }
+            | CommandPhase::OutcomeUnknown { .. } => None,
         }
     }
 

@@ -430,6 +430,7 @@ fn adapt(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.remove("format");
+            object.remove("x-omit-when-none");
             // Use the broadly supported anyOf spelling for nullable values.
             if let Some(Value::Array(types)) = object.get("type")
                 && types.len() == 2
@@ -494,7 +495,7 @@ fn adapt(value: &mut Value) {
                 adapt(item);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
@@ -625,7 +626,7 @@ fn inline_schema(value: &Value, definitions: &Value) -> Value {
                 .map(|item| inline_schema(item, definitions))
                 .collect(),
         ),
-        _ => value.clone(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
     }
 }
 #[expect(

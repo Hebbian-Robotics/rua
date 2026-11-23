@@ -73,20 +73,21 @@ impl<P: Plant> Runner<'_, P> {
         let config = self.config;
         self.plant.preflight()?;
         let initial = self.read_plant_feedback()?;
-        let initial_positions = initial.measured_positions(config)?;
+        let initial_positions = initial.validate_for_cycle(config)?.positions;
         if let Err(error) = config.recovery_limits().clamp(initial_positions.as_slice()) {
             return Err(match error {
                 RecoveryRefusal::OutsideRecovery { .. } => anyhow::anyhow!(
                     "{error}; move the arm inside its limits by hand before enabling"
                 ),
-                error => anyhow::anyhow!(error),
+                error @ (RecoveryRefusal::WrongJointCount { .. }
+                | RecoveryRefusal::NotFinite { .. }) => anyhow::anyhow!(error),
             });
         }
         // INVARIANT: The guard watches from before torque goes on.
         self.plant.start_guard()?;
         if let Some(checks) = &config.enable_checks {
             let settled = self.read_plant_feedback()?;
-            let settled_positions = settled.measured_positions(config)?;
+            let settled_positions = settled.validate_for_cycle(config)?.positions;
             anyhow::ensure!(
                 max_joint_deviation(settled_positions.as_slice(), initial_positions.as_slice())
                     <= checks.preflight_drift_limit_radians,
@@ -112,7 +113,7 @@ impl<P: Plant> Runner<'_, P> {
         let decision = hold
             .observe(
                 self.config,
-                fresh.measured_positions(self.config)?,
+                fresh.validate_for_cycle(self.config)?.positions,
                 fresh.fault.as_deref(),
                 &fresh.efforts,
             )

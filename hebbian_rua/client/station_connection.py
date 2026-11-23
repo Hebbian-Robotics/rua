@@ -21,7 +21,6 @@ from hebbian_rua.client.contract.station_api import (
     Mode,
     Record,
     Rejected,
-    Reply,
     Resync,
     RunEventRecord,
     RunMessage,
@@ -507,7 +506,6 @@ class StationConnection:
                 cursor = sequence
             case (
                 State()
-                | Reply()
                 | Resync()
                 | Mode()
                 | Rejected()

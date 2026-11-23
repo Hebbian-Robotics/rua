@@ -117,5 +117,5 @@ pub enum CameraPublication {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub struct MediaStatusReport {
     pub service: MediaState,
-    pub cameras: BTreeMap<String, CameraStatus>,
+    pub cameras: BTreeMap<crate::CameraName, CameraStatus>,
 }

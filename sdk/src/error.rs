@@ -46,6 +46,15 @@ pub enum Error {
     Http { status: u16, body: String },
 }
 
+impl From<hebbian_contracts::InvalidCameraName> for Error {
+    fn from(error: hebbian_contracts::InvalidCameraName) -> Self {
+        Self::Refused {
+            reason: RejectionReason::InvalidTarget,
+            detail: error.to_string(),
+        }
+    }
+}
+
 fn describe_holder(status: Option<&LeaseStatus>) -> String {
     status.map_or_else(
         || "an unknown holder".to_owned(),

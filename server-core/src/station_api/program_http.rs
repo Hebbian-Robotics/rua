@@ -24,7 +24,8 @@ pub(crate) enum ProgramSubmissionError {
     Unavailable(&'static str),
     MissingCompilation,
     IncompatibleCompilation,
-    Conflict(String),
+    ExecutionRefused(super::runtime::ExecutionRefusal),
+    CompilationRejected(hebbian_contracts::CompilationDiagnostic),
     Internal(String),
 }
 
@@ -42,7 +43,12 @@ impl From<ProgramSubmissionError> for HttpFailure {
                 StatusCode::CONFLICT,
                 "Compilation configuration changed; compile the saved source again".into(),
             ),
-            ProgramSubmissionError::Conflict(detail) => (StatusCode::CONFLICT, detail),
+            ProgramSubmissionError::ExecutionRefused(refusal) => {
+                (StatusCode::CONFLICT, refusal.to_string())
+            }
+            ProgramSubmissionError::CompilationRejected(diagnostic) => {
+                (StatusCode::CONFLICT, diagnostic.to_string())
+            }
             ProgramSubmissionError::Internal(detail) => internal_failure(detail),
         }
     }
@@ -251,7 +257,7 @@ async fn execute_submission(
                 expected_revisions,
                 continuation,
             )
-            .map_err(ProgramSubmissionError::Conflict)?;
+            .map_err(ProgramSubmissionError::ExecutionRefused)?;
             if let Some(record) = state.executions.lookup(&id) {
                 state.publish_execution(record);
             }
@@ -289,7 +295,7 @@ fn prepare_submission(
             {
                 ProgramCompilation::Ready(artifact) => artifact,
                 ProgramCompilation::Rejected(diagnostic) => {
-                    return Err(ProgramSubmissionError::Conflict(diagnostic.to_string()));
+                    return Err(ProgramSubmissionError::CompilationRejected(diagnostic));
                 }
             };
             let expected_revisions = artifact.compilation.source.expected_revisions.clone();
