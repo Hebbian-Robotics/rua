@@ -40,11 +40,10 @@ tokio-util = { version = "0.7", features = ["rt"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 v4l = "0.14"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-plist = "1.9"
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+nusb = "0.2.9"
 
 [dev-dependencies]
-plist = "1.9"
 prost = "0.14"
 hebbian-robot-use-core = { path = "../server-core" }
 # The run telemetry buffer lives in the station; the recorder test needs a real one.

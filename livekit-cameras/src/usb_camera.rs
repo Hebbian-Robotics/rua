@@ -31,6 +31,18 @@ fn parse_hex(value: &str) -> Option<u16> {
     u16::from_str_radix(value.strip_prefix("0x").unwrap_or(value), 16).ok()
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn find_usb_device(identity: &UsbCameraIdentity) -> io::Result<nusb::DeviceInfo> {
+    use nusb::MaybeFuture;
+
+    let devices = nusb::list_devices().wait()?;
+    unique_device(devices.filter(|device| {
+        device.vendor_id() == identity.vendor
+            && device.product_id() == identity.product
+            && device.serial_number() == Some(identity.serial.as_str())
+    }))
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
 fn unique_device<T>(mut matches: impl Iterator<Item = T>) -> io::Result<T> {
     let first = matches.next().ok_or_else(|| {
@@ -52,17 +64,11 @@ pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
     use std::fs;
     use v4l::capability::Flags;
 
-    let physical = unique_device(
-        fs::read_dir("/sys/bus/usb/devices")?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| linux_usb_match(path, identity))
-            .filter_map(|path| fs::canonicalize(path).ok()),
-    )?;
+    let physical = find_usb_device(identity)?;
     let devices = fs::read_dir("/sys/class/video4linux")?;
     let index = linux_capture_indices(
         devices.filter_map(Result::ok).map(|entry| entry.path()),
-        &physical,
+        physical.sysfs_path(),
     )
     .filter(|index| {
         v4l::Device::new(*index)
@@ -79,20 +85,6 @@ pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
 
     // WHY: Numeric selectors stop on capture loss. The publisher can then resolve USB identity again.
     Ok(index.to_string())
-}
-
-#[cfg(target_os = "linux")]
-fn linux_usb_match(path: &std::path::Path, expected: &UsbCameraIdentity) -> bool {
-    use std::fs;
-    let hex_field = |name| {
-        fs::read_to_string(path.join(name))
-            .ok()
-            .and_then(|value| parse_hex(value.trim()))
-    };
-    hex_field("idVendor") == Some(expected.vendor)
-        && hex_field("idProduct") == Some(expected.product)
-        && fs::read_to_string(path.join("serial"))
-            .is_ok_and(|serial| serial.trim() == expected.serial)
 }
 
 #[cfg(target_os = "linux")]
@@ -116,63 +108,15 @@ fn linux_capture_indices(
 
 #[cfg(target_os = "macos")]
 pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
-    let output = std::process::Command::new("/usr/sbin/ioreg")
-        .args(["-a", "-r", "-c", "IOUSBHostDevice", "-d", "1"])
-        .output()?;
-    if !output.status.success() {
-        return Err(io::Error::other(format!(
-            "Could not read the macOS USB device list: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let devices = read_mac_usb_devices(&output.stdout)?;
-    let location = mac_usb_location(identity, &devices)?;
+    let usb_device = find_usb_device(identity)?;
     let capture_devices = cameras::list_cameras().map_err(io::Error::other)?;
     resolve_mac_capture_index(
         identity,
-        location,
+        usb_device.location_id(),
         capture_devices
             .iter()
             .map(|device| (device.misc(), device.index().as_string())),
     )
-}
-
-#[cfg(any(target_os = "macos", test))]
-#[derive(serde::Deserialize)]
-struct MacUsbDevice {
-    #[serde(rename = "idVendor")]
-    vendor: Option<u16>,
-    #[serde(rename = "idProduct")]
-    product: Option<u16>,
-    #[serde(rename = "USB Serial Number")]
-    serial: Option<String>,
-    #[serde(rename = "locationID")]
-    location: Option<u32>,
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn read_mac_usb_devices(archive: &[u8]) -> io::Result<Vec<MacUsbDevice>> {
-    // WHY: ioreg emits no archive when a rooted search finds no matching class.
-    if archive.is_empty() {
-        return Ok(Vec::new());
-    }
-    plist::from_bytes(archive).map_err(|error| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Could not decode the macOS USB device list: {error}"),
-        )
-    })
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn mac_usb_location(identity: &UsbCameraIdentity, devices: &[MacUsbDevice]) -> io::Result<u32> {
-    unique_device(devices.iter().filter(|device| {
-        device.vendor == Some(identity.vendor)
-            && device.product == Some(identity.product)
-            && device.serial.as_deref() == Some(identity.serial.as_str())
-    }))?
-    .location
-    .ok_or_else(|| io::Error::other("Matching USB camera has no macOS location ID"))
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -214,58 +158,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mac_camera_uses_usb_identity_and_rejects_duplicate_physical_devices() {
-        let expected: UsbCameraIdentity = "1234:abcd:TEAM_CAMERA".parse().unwrap();
-        let usb_camera = |serial: &str, location: u32| {
-            format!(
-                "<dict>
-                    <key>idVendor</key><integer>4660</integer>
-                    <key>idProduct</key><integer>43981</integer>
-                    <key>USB Serial Number</key><string>{serial}</string>
-                    <key>locationID</key><integer>{location}</integer>
-                    <key>IOObjectClass</key><string>IOUSBHostDevice</string>
-                </dict>"
-            )
-        };
-        let mut cameras = vec![
-            usb_camera("TEAM_CAMERA", 0x1460_0000),
-            usb_camera("LAPTOP_CAMERA", 0x1470_0000),
-        ];
+    fn usb_selection_requires_exactly_one_physical_match() {
+        assert_eq!(unique_device(["wrist"].into_iter()).unwrap(), "wrist");
+        assert_eq!(
+            unique_device(std::iter::empty::<&str>())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(
+            unique_device(["wrist", "second wrist"].into_iter())
+                .unwrap_err()
+                .to_string()
+                .contains("ambiguous")
+        );
+    }
+
+    #[test]
+    fn mac_capture_index_follows_the_matching_usb_location() {
+        let identity: UsbCameraIdentity = "1234:abcd:TEAM_CAMERA".parse().unwrap();
         let capture_devices = [("0x147000001234abcd", "0"), ("0x146000001234abcd", "2")];
-        let resolve = |cameras: &[String]| {
-            let archive = format!(
-                r#"<?xml version="1.0" encoding="UTF-8"?>
-                <plist version="1.0"><array>{}</array></plist>"#,
-                cameras.concat()
-            );
-            let devices = read_mac_usb_devices(archive.as_bytes()).unwrap();
-            let location = mac_usb_location(&expected, &devices)?;
+        let resolve = |location| {
             resolve_mac_capture_index(
-                &expected,
+                &identity,
                 location,
                 capture_devices
                     .into_iter()
                     .map(|(id, index)| (id.to_owned(), index.to_owned())),
             )
         };
-        assert_eq!(resolve(&cameras).unwrap(), "2");
-        assert_eq!(
-            resolve(&cameras[1..]).unwrap_err().kind(),
-            io::ErrorKind::NotFound
-        );
-        assert_eq!(
-            mac_usb_location(&expected, &read_mac_usb_devices(b"").unwrap())
-                .unwrap_err()
-                .kind(),
-            io::ErrorKind::NotFound
-        );
-        cameras.push(usb_camera("TEAM_CAMERA", 0x1480_0000));
-        assert!(
-            resolve(&cameras)
-                .unwrap_err()
-                .to_string()
-                .contains("ambiguous")
-        );
+        assert_eq!(resolve(0x1460_0000).unwrap(), "2");
+        assert!(resolve(0x1480_0000).is_err());
     }
 
     #[cfg(target_os = "linux")]
@@ -276,19 +199,9 @@ mod tests {
         let test_dir = tempfile::tempdir().unwrap();
         let wrist = test_dir.path().join("wrist");
         let laptop = test_dir.path().join("laptop");
-        for (path, serial) in [(&wrist, "TEAM_CAMERA"), (&laptop, "LAPTOP_CAMERA")] {
-            fs::create_dir_all(path.join("interface")).unwrap();
-            fs::write(path.join("idVendor"), "1234\n").unwrap();
-            fs::write(path.join("idProduct"), "abcd\n").unwrap();
-            fs::write(path.join("serial"), format!("{serial}\n")).unwrap();
+        for physical_device in [&wrist, &laptop] {
+            fs::create_dir_all(physical_device.join("interface")).unwrap();
         }
-        let expected = "1234:abcd:TEAM_CAMERA".parse().unwrap();
-        let physical = unique_device(
-            [wrist.as_path(), laptop.as_path()]
-                .into_iter()
-                .filter(|path| linux_usb_match(path, &expected)),
-        )
-        .unwrap();
         let nodes =
             [("video0", &laptop), ("video2", &wrist), ("video3", &wrist)].map(|(name, device)| {
                 let node = test_dir.path().join(name);
@@ -297,7 +210,7 @@ mod tests {
                 node
             });
         assert_eq!(
-            linux_capture_indices(nodes.into_iter(), physical).collect::<Vec<_>>(),
+            linux_capture_indices(nodes.into_iter(), &wrist).collect::<Vec<_>>(),
             [2, 3],
         );
     }
