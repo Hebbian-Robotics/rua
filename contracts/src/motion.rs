@@ -250,9 +250,9 @@ pub struct Segment {
     #[schemars(range(min = 0.0))]
     pub minimum_duration_seconds: Option<f64>,
     #[serde(default)]
-    pub target_position: Option<[f64; 3]>,
+    pub destination_position: Option<[f64; 3]>,
     #[serde(default)]
-    pub target_quaternion: Option<[f64; 4]>,
+    pub destination_quaternion: Option<[f64; 4]>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]

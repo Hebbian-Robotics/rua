@@ -30,7 +30,7 @@
     "label",
     "completion",
     "phase",
-    "target_status",
+    "goal_status",
     "pose_limited",
     "path_limited"
   ],

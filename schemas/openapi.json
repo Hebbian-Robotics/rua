@@ -902,17 +902,7 @@
       "Checkpoint": {
         "description": "Where the arm stood, as measured, when it settled at the end of a segment.",
         "properties": {
-          "label": {
-            "type": "string"
-          },
-          "measured_joints": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "type": "array"
-          },
-          "target_position": {
+          "destination_position": {
             "items": {
               "format": "double",
               "type": "number"
@@ -924,7 +914,7 @@
               "null"
             ]
           },
-          "target_quaternion": {
+          "destination_quaternion": {
             "items": {
               "format": "double",
               "type": "number"
@@ -935,6 +925,16 @@
               "array",
               "null"
             ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "measured_joints": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -2740,6 +2740,39 @@
         ],
         "type": "object"
       },
+      "GoalComparison": {
+        "description": "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
+        "properties": {
+          "approach_error_degrees": {
+            "format": "double",
+            "maximum": 180.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "jaw_yaw_degrees": {
+            "exclusiveMaximum": 360.0,
+            "format": "double",
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "jaw_yaw_reference": {
+            "$ref": "#/components/schemas/JawYawReference"
+          },
+          "orientation_error_degrees": {
+            "format": "double",
+            "maximum": 180.0,
+            "minimum": 0.0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "jaw_yaw_degrees",
+          "jaw_yaw_reference",
+          "approach_error_degrees",
+          "orientation_error_degrees"
+        ],
+        "type": "object"
+      },
       "GripperResult": {
         "description": "How a gripper command ended, in the jaw's own angle. The controller sees where the jaw\nstopped, not what stopped it, so it cannot tell a held object from a blocked jaw.",
         "oneOf": [
@@ -3802,6 +3835,16 @@
             "minimum": 0.0,
             "type": "number"
           },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "jaw_yaw_degrees": {
             "exclusiveMaximum": 360.0,
             "format": "double",
@@ -3810,16 +3853,6 @@
           },
           "jaw_yaw_reference": {
             "$ref": "#/components/schemas/JawYawReference"
-          },
-          "target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TargetComparison"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -4418,6 +4451,37 @@
           {
             "additionalProperties": false,
             "properties": {
+              "destination_joints": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "destination_position": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 3,
+                "minItems": 3,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "destination_quaternion": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 4,
+                "minItems": 4,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
               "group_id": {
                 "type": [
                   "string",
@@ -4451,42 +4515,11 @@
                     "type": "null"
                   }
                 ]
-              },
-              "target_joints": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              "target_position": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "maxItems": 3,
-                "minItems": 3,
-                "type": [
-                  "array",
-                  "null"
-                ]
-              },
-              "target_quaternion": {
-                "items": {
-                  "format": "double",
-                  "type": "number"
-                },
-                "maxItems": 4,
-                "minItems": 4,
-                "type": [
-                  "array",
-                  "null"
-                ]
               }
             },
             "required": [
               "kind",
-              "target_joints",
+              "destination_joints",
               "joint_speed"
             ],
             "title": "RecordedMove",
@@ -4495,17 +4528,17 @@
           {
             "additionalProperties": false,
             "properties": {
+              "goal_pose": {
+                "$ref": "#/components/schemas/CommandPose"
+              },
               "kind": {
                 "const": "policy_reach",
                 "type": "string"
-              },
-              "target_pose": {
-                "$ref": "#/components/schemas/CommandPose"
               }
             },
             "required": [
               "kind",
-              "target_pose"
+              "goal_pose"
             ],
             "title": "RecordedPolicyReach",
             "type": "object"
@@ -5088,6 +5121,32 @@
             },
             "type": "array"
           },
+          "destination_position": {
+            "default": null,
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "destination_quaternion": {
+            "default": null,
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "label": {
             "type": "string"
           },
@@ -5109,32 +5168,6 @@
               {
                 "type": "null"
               }
-            ]
-          },
-          "target_position": {
-            "default": null,
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 3,
-            "minItems": 3,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "target_quaternion": {
-            "default": null,
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 4,
-            "minItems": 4,
-            "type": [
-              "array",
-              "null"
             ]
           }
         },
@@ -5661,37 +5694,6 @@
           },
           {
             "additionalProperties": false,
-            "description": "Waypoints are corners: the arm comes to rest and settles at each one.",
-            "properties": {
-              "kind": {
-                "const": "follow_path",
-                "type": "string"
-              },
-              "max_joint_speed": {
-                "default": null,
-                "exclusiveMinimum": 0.0,
-                "title": "JointSpeed",
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
-              "waypoints": {
-                "items": {
-                  "$ref": "#/components/schemas/Waypoint"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "kind",
-              "waypoints"
-            ],
-            "title": "FollowPathCommand",
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
             "description": "Start streaming joint destinations while the arm is holding. Send\nlater goals to the operation's goal endpoint. The stream ends when\ngoals stop arriving, on stop, or on a trip.",
             "properties": {
               "gripper_opening": {
@@ -5913,39 +5915,6 @@
         "required": [
           "surface_height_meters",
           "leeway_meters"
-        ],
-        "type": "object"
-      },
-      "TargetComparison": {
-        "description": "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-        "properties": {
-          "approach_error_degrees": {
-            "format": "double",
-            "maximum": 180.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "jaw_yaw_degrees": {
-            "exclusiveMaximum": 360.0,
-            "format": "double",
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "jaw_yaw_reference": {
-            "$ref": "#/components/schemas/JawYawReference"
-          },
-          "orientation_error_degrees": {
-            "format": "double",
-            "maximum": 180.0,
-            "minimum": 0.0,
-            "type": "number"
-          }
-        },
-        "required": [
-          "jaw_yaw_degrees",
-          "jaw_yaw_reference",
-          "approach_error_degrees",
-          "orientation_error_degrees"
         ],
         "type": "object"
       },

@@ -426,7 +426,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert_eq!(explicit.phase, ActionSequencePhase::Completed);
     assert_eq!(explicit.steps.len(), 2);
     assert_eq!(
-        explicit.steps[1][0].record.target_joints(),
+        explicit.steps[1][0].record.destination_joints(),
         Some([-0.2, -0.5, 0.5, 0.0, 0.0].as_slice())
     );
     let mut revised_source = source;
@@ -454,7 +454,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     assert_eq!(continued.continuation, Some(continuation));
     assert_eq!(continued.steps.len(), 1);
     assert_eq!(
-        continued.steps[0][0].record.target_joints(),
+        continued.steps[0][0].record.destination_joints(),
         Some([0.1, -0.5, 0.5, 0.0, 0.0].as_slice())
     );
     let repeated = lease
@@ -1634,7 +1634,7 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
     let result = within(client.wait_for_action_sequence(&execution)).await??;
     assert_eq!(result.phase, ActionSequencePhase::Completed);
     assert_eq!(
-        result.steps[0][0].record.target_joints(),
+        result.steps[0][0].record.destination_joints(),
         Some(goal.as_slice())
     );
     let state = within(client.get_state()).await??;

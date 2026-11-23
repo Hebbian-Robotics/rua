@@ -161,7 +161,7 @@
         "completion": {
           "outcome": "completed"
         },
-        "target_status": "limited",
+        "goal_status": "limited",
         "pose_limited": {
           "position_shortfall_mm": 1.1
         }
@@ -171,7 +171,7 @@
         "completion": {
           "outcome": "completed"
         },
-        "target_status": "limited",
+        "goal_status": "limited",
         "path_limited": {
           "reason": "self_collision"
         }
@@ -181,14 +181,14 @@
         "completion": {
           "outcome": "completed"
         },
-        "target_status": "reached"
+        "goal_status": "reached"
       },
       {
         "command_id": "move-3",
         "completion": {
           "outcome": "stopped_short"
         },
-        "target_status": "stopped_short",
+        "goal_status": "stopped_short",
         "pose_limited": {
           "position_shortfall_mm": 1.1
         }

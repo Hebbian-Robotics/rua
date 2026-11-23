@@ -76,8 +76,8 @@ impl ArmCore {
                 label: "return_to_rest".into(),
                 corners: vec![poses.hold.clone(), home_target],
                 minimum_duration_seconds: None,
-                target_position: None,
-                target_quaternion: None,
+                destination_position: None,
+                destination_quaternion: None,
             }],
             peak_speed: self.limits.default_joint_speed,
         };

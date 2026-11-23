@@ -418,8 +418,8 @@ impl CornerPathTracker {
                 self.checkpoints.push(Checkpoint {
                     label: segment.label.clone(),
                     measured_joints: measured.to_vec(),
-                    target_position: segment.target_position,
-                    target_quaternion: segment.target_quaternion,
+                    destination_position: segment.destination_position,
+                    destination_quaternion: segment.destination_quaternion,
                 });
                 self.segment_index += 1;
                 self.section_elapsed -= duration;
@@ -482,8 +482,8 @@ impl CornerPathTracker {
         self.checkpoints.push(Checkpoint {
             label: segment.label.clone(),
             measured_joints: measured.to_vec(),
-            target_position: segment.target_position,
-            target_quaternion: segment.target_quaternion,
+            destination_position: segment.destination_position,
+            destination_quaternion: segment.destination_quaternion,
         });
         self.segment_index += 1;
         if self.segment_index == self.plan.segments.len() {

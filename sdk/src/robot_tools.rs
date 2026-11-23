@@ -944,12 +944,12 @@ mod outcome_tests {
         for example in examples {
             for grouped in [true, false] {
                 let mut record_data = example["record"].clone();
-                record_data["command"]["target_joints"] = serde_json::json!([0.123_456_789]);
+                record_data["command"]["destination_joints"] = serde_json::json!([0.123_456_789]);
                 record_data["command"]["joint_speed"] = serde_json::json!(0.123_456_789);
                 let record: hebbian_contracts::CommandRecord =
                     serde_json::from_value(record_data.clone()).unwrap();
                 assert_eq!(
-                    serde_json::to_value(record.target_status()).unwrap(),
+                    serde_json::to_value(record.goal_status()).unwrap(),
                     example["expected_status"],
                 );
                 let outcome = command_records_outcome(
@@ -991,7 +991,7 @@ mod outcome_tests {
                 assert!(model_record.get("checkpoints").is_none());
                 assert!(model_record.get("accepted_at").is_none());
                 assert_eq!(
-                    model_record["target_joints_degrees"],
+                    model_record["destination_joints_degrees"],
                     serde_json::json!([7.1])
                 );
                 assert_eq!(model_record["joint_speed_degrees_per_second"], 7.1);

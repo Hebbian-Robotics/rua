@@ -7,12 +7,9 @@ from hebbian_rua.client.contract.station_api import (
     ClearFaultCommand,
     DisableCommand,
     EnableCommand,
-    FollowPathCommand,
     GraspOrientation,
-    JointsWaypoint,
     MoveToJointsCommand,
     MoveToPoseCommand,
-    PoseWaypoint,
     QuaternionOrientation,
     RehomeCommand,
     StationSetGripperCommand,
@@ -32,7 +29,6 @@ type StationCommand = (
     | RehomeCommand
     | MoveToJointsCommand
     | MoveToPoseCommand
-    | FollowPathCommand
     | StationStreamJointsCommand
     | StationSetGripperCommand
 )
@@ -134,19 +130,6 @@ class ArmMotionCommands:
                 orientation=orientation,
                 max_joint_speed=max_joint_speed,
             ),
-            expected_revision=expected_revision,
-        )
-
-    async def follow_path(
-        self,
-        waypoints: list[JointsWaypoint | PoseWaypoint],
-        *,
-        max_joint_speed: float | None = None,
-        expected_revision: int | None = None,
-    ) -> "CommandResult":
-        """Waypoints are corners: the arm comes to rest and settles at each one."""
-        return await self._run_command(
-            FollowPathCommand(waypoints=waypoints, max_joint_speed=max_joint_speed),
             expected_revision=expected_revision,
         )
 

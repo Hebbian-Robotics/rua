@@ -337,7 +337,7 @@ function appendState(
       series.push(arm?.commanded_joints?.[index] ?? null);
     });
     sample.destinationJoints.push(
-      commandPlan(arm?.active_command)?.target_joints ?? null,
+      commandPlan(arm?.active_command)?.destination_joints ?? null,
     );
     sample.destinationLimited.push(commandWasLimited(arm?.active_command));
     sample.gripperOpening.push(arm?.gripper_opening ?? null);

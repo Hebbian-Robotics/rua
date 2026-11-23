@@ -80,6 +80,13 @@ path before execution. Continuous moves currently support one IK-controlled
 arm per step. If every joint must stop or reverse at a waypoint, use two
 steps so the arm can settle there. A direct move needs only `goal`.
 
+Use separate goal steps for a sequence of stops. The station prepares each
+step from current feedback, so an earlier step can complete before a later
+step is refused. Move records report the admitted `destination_joints` and,
+when available, `destination_position` and `destination_quaternion`. A
+policy reach records its requested `goal_pose`. Model-facing `goal_status`
+indicates whether the move reached its goal or was limited or interrupted.
+
 Execution depends on the lease and current interlocks. If a disconnected client
 stops renewing the lease, expiry stops the arms. Lease handoff, revocation and
 interlocks can also stop execution. An expected arm revision fences a request

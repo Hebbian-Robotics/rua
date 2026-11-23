@@ -690,7 +690,7 @@ export const robotToolContext = {
   orientation:
     "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
   outcomes:
-    "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
+    "A completed move with goal_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
   surface_guard:
     "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
 };
@@ -713,7 +713,8 @@ export const robotToolInputUnits = [
 ] as const;
 export const modelOutputUnits = [
   ["position", "position_mm", 1000.0],
-  ["target_position", "target_position_mm", 1000.0],
+  ["goal_position", "goal_position_mm", 1000.0],
+  ["destination_position", "destination_position_mm", 1000.0],
   ["tool_position", "tool_position_mm", 1000.0],
   ["surface_height_meters", "surface_height_mm", 1000.0],
   ["leeway_meters", "leeway_mm", 1000.0],
@@ -729,7 +730,7 @@ export const modelOutputUnits = [
   ],
   ["commanded_joints", "commanded_joints_degrees", 57.29577951308232],
   ["rest_pose", "rest_pose_degrees", 57.29577951308232],
-  ["target_joints", "target_joints_degrees", 57.29577951308232],
+  ["destination_joints", "destination_joints_degrees", 57.29577951308232],
   ["goal_joints", "goal_joints_degrees", 57.29577951308232],
   ["joint_error_radians", "joint_error_degrees", 57.29577951308232],
   ["joint_errors_radians", "joint_errors_degrees", 57.29577951308232],
@@ -787,7 +788,7 @@ export const modelResponseFields = {
     "label",
     "completion",
     "phase",
-    "target_status",
+    "goal_status",
     "pose_limited",
     "path_limited",
   ],

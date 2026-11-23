@@ -29,7 +29,7 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
         label="move_to_joints",
         accepted_at=123.123456789,
         checkpoints=[Checkpoint(label="start", measured_joints=[0.123456789])],
-        command=RecordedMove(target_joints=[0.3], joint_speed=0.5),
+        command=RecordedMove(destination_joints=[0.3], joint_speed=0.5),
         phase=FinishedCommand(
             completion=CommandCompletion(
                 finished_at=124.123456789,
@@ -144,7 +144,7 @@ def test_sequence_summary_reports_progress_and_each_step_outcome() -> None:
                         "outcome": "stopped_short",
                         "detail": "Object contact",
                     },
-                    "target_status": "partial",
+                    "goal_status": "partial",
                 }
             ]
         ],

@@ -102,13 +102,6 @@ pub enum StationCommand {
         #[serde(default)]
         max_joint_speed: Option<JointSpeed>,
     },
-    /// Waypoints are corners: the arm comes to rest and settles at each one.
-    #[schemars(title = "FollowPathCommand")]
-    FollowPath {
-        waypoints: Vec<Waypoint>,
-        #[serde(default)]
-        max_joint_speed: Option<JointSpeed>,
-    },
     /// Start streaming joint destinations while the arm is holding. Send
     /// later goals to the operation's goal endpoint. The stream ends when
     /// goals stop arriving, on stop, or on a trip.

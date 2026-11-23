@@ -339,8 +339,8 @@ fn straight_plan(label: &str, start: [f64; 2], target: [f64; 2]) -> CornerPlan {
             label: label.into(),
             corners: vec![start.to_vec(), target.to_vec()],
             minimum_duration_seconds: None,
-            target_position: None,
-            target_quaternion: None,
+            destination_position: None,
+            destination_quaternion: None,
         }],
     }
 }

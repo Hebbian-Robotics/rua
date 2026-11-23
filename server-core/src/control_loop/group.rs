@@ -90,8 +90,8 @@ impl ActiveGroup {
                 label: GROUP_SEGMENT_LABEL.into(),
                 corners: vec![initial, target],
                 minimum_duration_seconds: None,
-                target_position: None,
-                target_quaternion: None,
+                destination_position: None,
+                destination_quaternion: None,
             }],
             peak_speed: plans
                 .iter()
@@ -172,8 +172,8 @@ impl ActiveGroup {
                 .extend(checkpoints.iter().map(|checkpoint| Checkpoint {
                     measured_joints: checkpoint.measured_joints[part.clone()].to_vec(),
                     label: checkpoint.label.clone(),
-                    target_position: checkpoint.target_position,
-                    target_quaternion: checkpoint.target_quaternion,
+                    destination_position: checkpoint.destination_position,
+                    destination_quaternion: checkpoint.destination_quaternion,
                 }));
             share.attempt = GroupWriteAttempt::First;
             share.segment = segment;

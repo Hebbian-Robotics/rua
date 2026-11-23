@@ -281,7 +281,7 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
         "label",
         "completion",
         "phase",
-        "target_status",
+        "goal_status",
         "pose_limited",
         "path_limited",
     ],
@@ -290,7 +290,8 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
 /// Station field, model field, and multiplier for model-facing output.
 pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
     ("position", "position_mm", 1000.0),
-    ("target_position", "target_position_mm", 1000.0),
+    ("goal_position", "goal_position_mm", 1000.0),
+    ("destination_position", "destination_position_mm", 1000.0),
     ("tool_position", "tool_position_mm", 1000.0),
     ("surface_height_meters", "surface_height_mm", 1000.0),
     ("leeway_meters", "leeway_mm", 1000.0),
@@ -319,8 +320,8 @@ pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
         180.0 / std::f64::consts::PI,
     ),
     (
-        "target_joints",
-        "target_joints_degrees",
+        "destination_joints",
+        "destination_joints_degrees",
         180.0 / std::f64::consts::PI,
     ),
     (
@@ -592,7 +593,7 @@ pub fn robot_tool_context() -> Value {
         "motion": "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
         "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
         "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
-        "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
+        "outcomes": "A completed move with goal_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
         "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified."
     })
 }

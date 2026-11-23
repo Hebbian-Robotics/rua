@@ -717,7 +717,7 @@ ROBOT_TOOL_CONTEXT = json.loads(r"""
   "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
   "motion": "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
   "orientation": "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
-  "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
+  "outcomes": "A completed move with goal_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
   "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit."
 }
 """)
@@ -750,8 +750,13 @@ MODEL_OUTPUT_UNITS = json.loads(r"""
     1000.0
   ],
   [
-    "target_position",
-    "target_position_mm",
+    "goal_position",
+    "goal_position_mm",
+    1000.0
+  ],
+  [
+    "destination_position",
+    "destination_position_mm",
     1000.0
   ],
   [
@@ -810,8 +815,8 @@ MODEL_OUTPUT_UNITS = json.loads(r"""
     57.29577951308232
   ],
   [
-    "target_joints",
-    "target_joints_degrees",
+    "destination_joints",
+    "destination_joints_degrees",
     57.29577951308232
   ],
   [
@@ -909,7 +914,7 @@ MODEL_RESPONSE_FIELDS = json.loads(r"""
     "label",
     "completion",
     "phase",
-    "target_status",
+    "goal_status",
     "pose_limited",
     "path_limited"
   ],

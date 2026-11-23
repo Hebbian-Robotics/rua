@@ -5,8 +5,13 @@
     1000.0
   ],
   [
-    "target_position",
-    "target_position_mm",
+    "goal_position",
+    "goal_position_mm",
+    1000.0
+  ],
+  [
+    "destination_position",
+    "destination_position_mm",
     1000.0
   ],
   [
@@ -65,8 +70,8 @@
     57.29577951308232
   ],
   [
-    "target_joints",
-    "target_joints_degrees",
+    "destination_joints",
+    "destination_joints_degrees",
     57.29577951308232
   ],
   [

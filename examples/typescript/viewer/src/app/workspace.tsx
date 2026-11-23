@@ -395,7 +395,7 @@ export function WorkspaceApp({
                   measuredJoints: arm.measured_joints,
                   commandedJoints: arm.commanded_joints,
                   destinationJoints:
-                    commandPlan(arm.active_command)?.target_joints ?? null,
+                    commandPlan(arm.active_command)?.destination_joints ?? null,
                   destinationLimited: commandWasLimited(arm.active_command),
                   gripperOpening: arm.gripper_opening,
                 })) ?? []

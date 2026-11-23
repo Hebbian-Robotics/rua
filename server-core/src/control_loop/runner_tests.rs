@@ -812,8 +812,8 @@ fn start_short_move(
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.01, 0.0]],
             minimum_duration_seconds: None,
-            target_position: None,
-            target_quaternion: None,
+            destination_position: None,
+            destination_quaternion: None,
         }],
     };
     runner
@@ -1080,8 +1080,8 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.2, 0.0]],
             minimum_duration_seconds: None,
-            target_position: None,
-            target_quaternion: None,
+            destination_position: None,
+            destination_quaternion: None,
         }],
     };
     let now = Now::current();

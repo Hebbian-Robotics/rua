@@ -93,17 +93,17 @@
             ],
             "command": {
               "kind": "move",
-              "target_joints": [
+              "destination_joints": [
                 0.1,
                 -0.2
               ],
               "joint_speed": 1.0,
-              "target_position": [
+              "destination_position": [
                 0.2,
                 0.0,
                 0.1
               ],
-              "target_quaternion": [
+              "destination_quaternion": [
                 0.0,
                 0.7071067811865476,
                 0.0,
@@ -383,17 +383,17 @@
             ],
             "command": {
               "kind": "move",
-              "target_joints": [
+              "destination_joints": [
                 0.1,
                 -0.2
               ],
               "joint_speed": 1.0,
-              "target_position": [
+              "destination_position": [
                 0.2,
                 0.0,
                 0.1
               ],
-              "target_quaternion": [
+              "destination_quaternion": [
                 0.0,
                 0.7071067811865476,
                 0.0,
@@ -670,7 +670,7 @@
                 ],
                 "sampled_at": 4.5
               },
-              "target_status": "partial",
+              "goal_status": "partial",
               "trace_context": {
                 "trace_id": "t"
               }
@@ -730,7 +730,7 @@
                 ],
                 "sampled_at": 4.5
               },
-              "target_status": "partial"
+              "goal_status": "partial"
             }
           }
         ]
@@ -783,7 +783,7 @@
                 ],
                 "sampled_at": 4.5
               },
-              "target_status": "partial"
+              "goal_status": "partial"
             }
           }
         ]
@@ -815,17 +815,17 @@
           ],
           "command": {
             "kind": "move",
-            "target_joints": [
+            "destination_joints": [
               0.1,
               -0.2
             ],
             "joint_speed": 1.0,
-            "target_position": [
+            "destination_position": [
               0.2,
               0.0,
               0.1
             ],
-            "target_quaternion": [
+            "destination_quaternion": [
               0.0,
               0.7071067811865476,
               0.0,
@@ -892,22 +892,22 @@
             "outcome": "stopped_short",
             "detail": "Object contact"
           },
-          "target_joints": [
+          "destination_joints": [
             0.1,
             -0.2
           ],
-          "target_position": [
+          "destination_position": [
             0.2,
             0.0,
             0.1
           ],
-          "target_quaternion": [
+          "destination_quaternion": [
             0.0,
             0.7071067811865476,
             0.0,
             0.7071067811865475
           ],
-          "target_status": "stopped_short",
+          "goal_status": "stopped_short",
           "pose_limited": {
             "waypoint": 0,
             "reason": "at_joint_limit",
@@ -959,22 +959,22 @@
             "outcome": "stopped_short",
             "detail": "Object contact"
           },
-          "target_joints_degrees": [
+          "destination_joints_degrees": [
             5.7,
             -11.5
           ],
-          "target_position_mm": [
+          "destination_position_mm": [
             200.0,
             0.0,
             100.0
           ],
-          "target_quaternion": [
+          "destination_quaternion": [
             0.0,
             0.7071,
             0.0,
             0.7071
           ],
-          "target_status": "stopped_short",
+          "goal_status": "stopped_short",
           "pose_limited": {
             "waypoint": 0,
             "reason": "at_joint_limit",

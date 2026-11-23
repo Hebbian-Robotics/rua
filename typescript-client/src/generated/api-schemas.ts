@@ -21,11 +21,7 @@ export const apiSchemas = z.object({
             .object({
               approach: z.array(z.number()).min(3).max(3),
               degrees_from_down: z.number().gte(0).lte(180),
-              jaw_yaw_degrees: z.number().gte(0).lt(360),
-              jaw_yaw_reference: z
-                .enum(["world_x", "world_y"])
-                .describe("The world axis jaw yaw zero is projected from."),
-              target: z
+              goal: z
                 .union([
                   z
                     .object({
@@ -44,6 +40,10 @@ export const apiSchemas = z.object({
                   z.null(),
                 ])
                 .optional(),
+              jaw_yaw_degrees: z.number().gte(0).lt(360),
+              jaw_yaw_reference: z
+                .enum(["world_x", "world_y"])
+                .describe("The world axis jaw yaw zero is projected from."),
             })
             .describe(
               "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -723,16 +723,16 @@ export const apiSchemas = z.object({
                     checkpoints: z.array(
                       z
                         .object({
-                          label: z.string(),
-                          measured_joints: z.array(z.number()),
-                          target_position: z.union([
+                          destination_position: z.union([
                             z.array(z.number()).min(3).max(3),
                             z.null(),
                           ]),
-                          target_quaternion: z.union([
+                          destination_quaternion: z.union([
                             z.array(z.number()).min(4).max(4),
                             z.null(),
                           ]),
+                          label: z.string(),
+                          measured_joints: z.array(z.number()),
                         })
                         .describe(
                           "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -742,6 +742,15 @@ export const apiSchemas = z.object({
                       .union([
                         z
                           .object({
+                            destination_joints: z.array(z.number()),
+                            destination_position: z.union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ]),
+                            destination_quaternion: z.union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ]),
                             group_id: z.union([z.string(), z.null()]),
                             joint_speed: z.number(),
                             kind: z.literal("move"),
@@ -810,21 +819,11 @@ export const apiSchemas = z.object({
                                 ),
                               z.null(),
                             ]),
-                            target_joints: z.array(z.number()),
-                            target_position: z.union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ]),
-                            target_quaternion: z.union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ]),
                           })
                           .strict(),
                         z
                           .object({
-                            kind: z.literal("policy_reach"),
-                            target_pose: z
+                            goal_pose: z
                               .object({
                                 position: z.array(z.number()).min(3).max(3),
                                 quaternion: z.array(z.number()).min(4).max(4),
@@ -833,6 +832,7 @@ export const apiSchemas = z.object({
                               .describe(
                                 "The target pose or streamed goal in the station world frame.",
                               ),
+                            kind: z.literal("policy_reach"),
                           })
                           .strict(),
                         z
@@ -962,16 +962,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z.union([
+                                          goal: z.union([
                                             z
                                               .object({
                                                 approach_error_degrees: z
@@ -997,6 +988,15 @@ export const apiSchemas = z.object({
                                               ),
                                             z.null(),
                                           ]),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -1914,14 +1914,14 @@ export const apiSchemas = z.object({
           checkpoints: z.array(
             z
               .object({
-                label: z.string(),
-                measured_joints: z.array(z.number()),
-                target_position: z
+                destination_position: z
                   .union([z.array(z.number()).min(3).max(3), z.null()])
                   .optional(),
-                target_quaternion: z
+                destination_quaternion: z
                   .union([z.array(z.number()).min(4).max(4), z.null()])
                   .optional(),
+                label: z.string(),
+                measured_joints: z.array(z.number()),
               })
               .describe(
                 "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -1931,6 +1931,13 @@ export const apiSchemas = z.object({
             .union([
               z
                 .object({
+                  destination_joints: z.array(z.number()),
+                  destination_position: z
+                    .union([z.array(z.number()).min(3).max(3), z.null()])
+                    .optional(),
+                  destination_quaternion: z
+                    .union([z.array(z.number()).min(4).max(4), z.null()])
+                    .optional(),
                   group_id: z.union([z.string(), z.null()]).optional(),
                   joint_speed: z.number(),
                   kind: z.literal("move"),
@@ -2003,19 +2010,11 @@ export const apiSchemas = z.object({
                       z.null(),
                     ])
                     .optional(),
-                  target_joints: z.array(z.number()),
-                  target_position: z
-                    .union([z.array(z.number()).min(3).max(3), z.null()])
-                    .optional(),
-                  target_quaternion: z
-                    .union([z.array(z.number()).min(4).max(4), z.null()])
-                    .optional(),
                 })
                 .strict(),
               z
                 .object({
-                  kind: z.literal("policy_reach"),
-                  target_pose: z
+                  goal_pose: z
                     .object({
                       position: z.array(z.number()).min(3).max(3),
                       quaternion: z.array(z.number()).min(4).max(4),
@@ -2024,6 +2023,7 @@ export const apiSchemas = z.object({
                     .describe(
                       "The target pose or streamed goal in the station world frame.",
                     ),
+                  kind: z.literal("policy_reach"),
                 })
                 .strict(),
               z
@@ -2147,13 +2147,7 @@ export const apiSchemas = z.object({
                                 .object({
                                   approach: z.array(z.number()).min(3).max(3),
                                   degrees_from_down: z.number().gte(0).lte(180),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                  jaw_yaw_reference: z
-                                    .enum(["world_x", "world_y"])
-                                    .describe(
-                                      "The world axis jaw yaw zero is projected from.",
-                                    ),
-                                  target: z
+                                  goal: z
                                     .union([
                                       z
                                         .object({
@@ -2181,6 +2175,12 @@ export const apiSchemas = z.object({
                                       z.null(),
                                     ])
                                     .optional(),
+                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                  jaw_yaw_reference: z
+                                    .enum(["world_x", "world_y"])
+                                    .describe(
+                                      "The world axis jaw yaw zero is projected from.",
+                                    ),
                                 })
                                 .describe(
                                   "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -2336,14 +2336,14 @@ export const apiSchemas = z.object({
               checkpoints: z.array(
                 z
                   .object({
-                    label: z.string(),
-                    measured_joints: z.array(z.number()),
-                    target_position: z
+                    destination_position: z
                       .union([z.array(z.number()).min(3).max(3), z.null()])
                       .optional(),
-                    target_quaternion: z
+                    destination_quaternion: z
                       .union([z.array(z.number()).min(4).max(4), z.null()])
                       .optional(),
+                    label: z.string(),
+                    measured_joints: z.array(z.number()),
                   })
                   .describe(
                     "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -2353,6 +2353,13 @@ export const apiSchemas = z.object({
                 .union([
                   z
                     .object({
+                      destination_joints: z.array(z.number()),
+                      destination_position: z
+                        .union([z.array(z.number()).min(3).max(3), z.null()])
+                        .optional(),
+                      destination_quaternion: z
+                        .union([z.array(z.number()).min(4).max(4), z.null()])
+                        .optional(),
                       group_id: z.union([z.string(), z.null()]).optional(),
                       joint_speed: z.number(),
                       kind: z.literal("move"),
@@ -2425,19 +2432,11 @@ export const apiSchemas = z.object({
                           z.null(),
                         ])
                         .optional(),
-                      target_joints: z.array(z.number()),
-                      target_position: z
-                        .union([z.array(z.number()).min(3).max(3), z.null()])
-                        .optional(),
-                      target_quaternion: z
-                        .union([z.array(z.number()).min(4).max(4), z.null()])
-                        .optional(),
                     })
                     .strict(),
                   z
                     .object({
-                      kind: z.literal("policy_reach"),
-                      target_pose: z
+                      goal_pose: z
                         .object({
                           position: z.array(z.number()).min(3).max(3),
                           quaternion: z.array(z.number()).min(4).max(4),
@@ -2446,6 +2445,7 @@ export const apiSchemas = z.object({
                         .describe(
                           "The target pose or streamed goal in the station world frame.",
                         ),
+                      kind: z.literal("policy_reach"),
                     })
                     .strict(),
                   z
@@ -2577,16 +2577,7 @@ export const apiSchemas = z.object({
                                         .number()
                                         .gte(0)
                                         .lte(180),
-                                      jaw_yaw_degrees: z
-                                        .number()
-                                        .gte(0)
-                                        .lt(360),
-                                      jaw_yaw_reference: z
-                                        .enum(["world_x", "world_y"])
-                                        .describe(
-                                          "The world axis jaw yaw zero is projected from.",
-                                        ),
-                                      target: z
+                                      goal: z
                                         .union([
                                           z
                                             .object({
@@ -2614,6 +2605,15 @@ export const apiSchemas = z.object({
                                           z.null(),
                                         ])
                                         .optional(),
+                                      jaw_yaw_degrees: z
+                                        .number()
+                                        .gte(0)
+                                        .lt(360),
+                                      jaw_yaw_reference: z
+                                        .enum(["world_x", "world_y"])
+                                        .describe(
+                                          "The world axis jaw yaw zero is projected from.",
+                                        ),
                                     })
                                     .describe(
                                       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -2854,14 +2854,14 @@ export const apiSchemas = z.object({
               checkpoints: z.array(
                 z
                   .object({
-                    label: z.string(),
-                    measured_joints: z.array(z.number()),
-                    target_position: z
+                    destination_position: z
                       .union([z.array(z.number()).min(3).max(3), z.null()])
                       .optional(),
-                    target_quaternion: z
+                    destination_quaternion: z
                       .union([z.array(z.number()).min(4).max(4), z.null()])
                       .optional(),
+                    label: z.string(),
+                    measured_joints: z.array(z.number()),
                   })
                   .describe(
                     "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -2871,6 +2871,13 @@ export const apiSchemas = z.object({
                 .union([
                   z
                     .object({
+                      destination_joints: z.array(z.number()),
+                      destination_position: z
+                        .union([z.array(z.number()).min(3).max(3), z.null()])
+                        .optional(),
+                      destination_quaternion: z
+                        .union([z.array(z.number()).min(4).max(4), z.null()])
+                        .optional(),
                       group_id: z.union([z.string(), z.null()]).optional(),
                       joint_speed: z.number(),
                       kind: z.literal("move"),
@@ -2943,19 +2950,11 @@ export const apiSchemas = z.object({
                           z.null(),
                         ])
                         .optional(),
-                      target_joints: z.array(z.number()),
-                      target_position: z
-                        .union([z.array(z.number()).min(3).max(3), z.null()])
-                        .optional(),
-                      target_quaternion: z
-                        .union([z.array(z.number()).min(4).max(4), z.null()])
-                        .optional(),
                     })
                     .strict(),
                   z
                     .object({
-                      kind: z.literal("policy_reach"),
-                      target_pose: z
+                      goal_pose: z
                         .object({
                           position: z.array(z.number()).min(3).max(3),
                           quaternion: z.array(z.number()).min(4).max(4),
@@ -2964,6 +2963,7 @@ export const apiSchemas = z.object({
                         .describe(
                           "The target pose or streamed goal in the station world frame.",
                         ),
+                      kind: z.literal("policy_reach"),
                     })
                     .strict(),
                   z
@@ -3095,16 +3095,7 @@ export const apiSchemas = z.object({
                                         .number()
                                         .gte(0)
                                         .lte(180),
-                                      jaw_yaw_degrees: z
-                                        .number()
-                                        .gte(0)
-                                        .lt(360),
-                                      jaw_yaw_reference: z
-                                        .enum(["world_x", "world_y"])
-                                        .describe(
-                                          "The world axis jaw yaw zero is projected from.",
-                                        ),
-                                      target: z
+                                      goal: z
                                         .union([
                                           z
                                             .object({
@@ -3132,6 +3123,15 @@ export const apiSchemas = z.object({
                                           z.null(),
                                         ])
                                         .optional(),
+                                      jaw_yaw_degrees: z
+                                        .number()
+                                        .gte(0)
+                                        .lt(360),
+                                      jaw_yaw_reference: z
+                                        .enum(["world_x", "world_y"])
+                                        .describe(
+                                          "The world axis jaw yaw zero is projected from.",
+                                        ),
                                     })
                                     .describe(
                                       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -3374,11 +3374,7 @@ export const apiSchemas = z.object({
                 .object({
                   approach: z.array(z.number()).min(3).max(3),
                   degrees_from_down: z.number().gte(0).lte(180),
-                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                  jaw_yaw_reference: z
-                    .enum(["world_x", "world_y"])
-                    .describe("The world axis jaw yaw zero is projected from."),
-                  target: z
+                  goal: z
                     .union([
                       z
                         .object({
@@ -3397,6 +3393,10 @@ export const apiSchemas = z.object({
                       z.null(),
                     ])
                     .optional(),
+                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                  jaw_yaw_reference: z
+                    .enum(["world_x", "world_y"])
+                    .describe("The world axis jaw yaw zero is projected from."),
                 })
                 .describe(
                   "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -3468,14 +3468,14 @@ export const apiSchemas = z.object({
     .describe("The current lifecycle of a configured camera."),
   Checkpoint: z
     .object({
-      label: z.string(),
-      measured_joints: z.array(z.number()),
-      target_position: z
+      destination_position: z
         .union([z.array(z.number()).min(3).max(3), z.null()])
         .optional(),
-      target_quaternion: z
+      destination_quaternion: z
         .union([z.array(z.number()).min(4).max(4), z.null()])
         .optional(),
+      label: z.string(),
+      measured_joints: z.array(z.number()),
     })
     .describe(
       "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -3974,72 +3974,6 @@ export const apiSchemas = z.object({
                 .describe("Move the tool to a world position and orientation."),
               z
                 .object({
-                  kind: z.literal("follow_path"),
-                  max_joint_speed: z
-                    .union([z.number().gt(0), z.null()])
-                    .default(null),
-                  waypoints: z.array(
-                    z
-                      .union([
-                        z.object({
-                          joints: z.array(z.number()),
-                          kind: z.literal("joints"),
-                        }),
-                        z.object({
-                          kind: z.literal("pose"),
-                          orientation: z
-                            .union([
-                              z
-                                .object({
-                                  approach: z
-                                    .union([
-                                      z
-                                        .union([
-                                          z
-                                            .literal("down")
-                                            .describe("World -Z."),
-                                          z
-                                            .literal("forward")
-                                            .describe("World +X."),
-                                        ])
-                                        .describe(
-                                          "A named approach direction.",
-                                        ),
-                                      z.array(z.number()).min(3).max(3),
-                                    ])
-                                    .describe(
-                                      "The direction the jaws point along: a named one, or a nonzero world direction.",
-                                    ),
-                                  jaw_yaw_degrees: z.number(),
-                                  kind: z.literal("grasp"),
-                                })
-                                .describe(
-                                  "The approach direction and the jaw yaw about it, in degrees.",
-                                ),
-                              z
-                                .object({
-                                  kind: z.literal("quaternion"),
-                                  quaternion: z.array(z.number()).min(4).max(4),
-                                })
-                                .describe("A raw quaternion, `[x, y, z, w]`."),
-                            ])
-                            .describe(
-                              "A tool orientation as a client gives it.",
-                            ),
-                          position: z.array(z.number()).min(3).max(3),
-                        }),
-                      ])
-                      .describe(
-                        "One corner of a move: joints, or a tool pose solved for joints.",
-                      ),
-                  ),
-                })
-                .strict()
-                .describe(
-                  "Waypoints are corners: the arm comes to rest and settles at each one.",
-                ),
-              z
-                .object({
                   gripper_opening: z
                     .union([
                       z
@@ -4408,14 +4342,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -4425,6 +4359,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -4497,25 +4444,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -4524,6 +4457,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -4655,16 +4589,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -4695,6 +4620,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -4978,13 +4912,7 @@ export const apiSchemas = z.object({
                         .object({
                           approach: z.array(z.number()).min(3).max(3),
                           degrees_from_down: z.number().gte(0).lte(180),
-                          jaw_yaw_degrees: z.number().gte(0).lt(360),
-                          jaw_yaw_reference: z
-                            .enum(["world_x", "world_y"])
-                            .describe(
-                              "The world axis jaw yaw zero is projected from.",
-                            ),
-                          target: z
+                          goal: z
                             .union([
                               z
                                 .object({
@@ -5009,6 +4937,12 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
+                          jaw_yaw_degrees: z.number().gte(0).lt(360),
+                          jaw_yaw_reference: z
+                            .enum(["world_x", "world_y"])
+                            .describe(
+                              "The world axis jaw yaw zero is projected from.",
+                            ),
                         })
                         .describe(
                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -5132,16 +5066,16 @@ export const apiSchemas = z.object({
       checkpoints: z.array(
         z
           .object({
-            label: z.string(),
-            measured_joints: z.array(z.number()),
-            target_position: z.union([
+            destination_position: z.union([
               z.array(z.number()).min(3).max(3),
               z.null(),
             ]),
-            target_quaternion: z.union([
+            destination_quaternion: z.union([
               z.array(z.number()).min(4).max(4),
               z.null(),
             ]),
+            label: z.string(),
+            measured_joints: z.array(z.number()),
           })
           .describe(
             "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -5151,6 +5085,15 @@ export const apiSchemas = z.object({
         .union([
           z
             .object({
+              destination_joints: z.array(z.number()),
+              destination_position: z.union([
+                z.array(z.number()).min(3).max(3),
+                z.null(),
+              ]),
+              destination_quaternion: z.union([
+                z.array(z.number()).min(4).max(4),
+                z.null(),
+              ]),
               group_id: z.union([z.string(), z.null()]),
               joint_speed: z.number(),
               kind: z.literal("move"),
@@ -5219,21 +5162,11 @@ export const apiSchemas = z.object({
                   ),
                 z.null(),
               ]),
-              target_joints: z.array(z.number()),
-              target_position: z.union([
-                z.array(z.number()).min(3).max(3),
-                z.null(),
-              ]),
-              target_quaternion: z.union([
-                z.array(z.number()).min(4).max(4),
-                z.null(),
-              ]),
             })
             .strict(),
           z
             .object({
-              kind: z.literal("policy_reach"),
-              target_pose: z
+              goal_pose: z
                 .object({
                   position: z.array(z.number()).min(3).max(3),
                   quaternion: z.array(z.number()).min(4).max(4),
@@ -5242,6 +5175,7 @@ export const apiSchemas = z.object({
                 .describe(
                   "The target pose or streamed goal in the station world frame.",
                 ),
+              kind: z.literal("policy_reach"),
             })
             .strict(),
           z
@@ -5358,13 +5292,7 @@ export const apiSchemas = z.object({
                           .object({
                             approach: z.array(z.number()).min(3).max(3),
                             degrees_from_down: z.number().gte(0).lte(180),
-                            jaw_yaw_degrees: z.number().gte(0).lt(360),
-                            jaw_yaw_reference: z
-                              .enum(["world_x", "world_y"])
-                              .describe(
-                                "The world axis jaw yaw zero is projected from.",
-                              ),
-                            target: z.union([
+                            goal: z.union([
                               z
                                 .object({
                                   approach_error_degrees: z
@@ -5387,6 +5315,12 @@ export const apiSchemas = z.object({
                                 ),
                               z.null(),
                             ]),
+                            jaw_yaw_degrees: z.number().gte(0).lt(360),
+                            jaw_yaw_reference: z
+                              .enum(["world_x", "world_y"])
+                              .describe(
+                                "The world axis jaw yaw zero is projected from.",
+                              ),
                           })
                           .describe(
                             "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -5623,66 +5557,6 @@ export const apiSchemas = z.object({
             })
             .strict()
             .describe("Move the tool to a world position and orientation."),
-          z
-            .object({
-              kind: z.literal("follow_path"),
-              max_joint_speed: z
-                .union([z.number().gt(0), z.null()])
-                .default(null),
-              waypoints: z.array(
-                z
-                  .union([
-                    z.object({
-                      joints: z.array(z.number()),
-                      kind: z.literal("joints"),
-                    }),
-                    z.object({
-                      kind: z.literal("pose"),
-                      orientation: z
-                        .union([
-                          z
-                            .object({
-                              approach: z
-                                .union([
-                                  z
-                                    .union([
-                                      z.literal("down").describe("World -Z."),
-                                      z
-                                        .literal("forward")
-                                        .describe("World +X."),
-                                    ])
-                                    .describe("A named approach direction."),
-                                  z.array(z.number()).min(3).max(3),
-                                ])
-                                .describe(
-                                  "The direction the jaws point along: a named one, or a nonzero world direction.",
-                                ),
-                              jaw_yaw_degrees: z.number(),
-                              kind: z.literal("grasp"),
-                            })
-                            .describe(
-                              "The approach direction and the jaw yaw about it, in degrees.",
-                            ),
-                          z
-                            .object({
-                              kind: z.literal("quaternion"),
-                              quaternion: z.array(z.number()).min(4).max(4),
-                            })
-                            .describe("A raw quaternion, `[x, y, z, w]`."),
-                        ])
-                        .describe("A tool orientation as a client gives it."),
-                      position: z.array(z.number()).min(3).max(3),
-                    }),
-                  ])
-                  .describe(
-                    "One corner of a move: joints, or a tool pose solved for joints.",
-                  ),
-              ),
-            })
-            .strict()
-            .describe(
-              "Waypoints are corners: the arm comes to rest and settles at each one.",
-            ),
           z
             .object({
               gripper_opening: z
@@ -7325,6 +7199,12 @@ export const apiSchemas = z.object({
       z
         .object({
           corners: z.array(z.array(z.number())),
+          destination_position: z
+            .union([z.array(z.number()).min(3).max(3), z.null()])
+            .default(null),
+          destination_quaternion: z
+            .union([z.array(z.number()).min(4).max(4), z.null()])
+            .default(null),
           label: z.string(),
           minimum_duration_seconds: z
             .union([
@@ -7356,12 +7236,6 @@ export const apiSchemas = z.object({
               z.null(),
             ])
             .optional(),
-          target_position: z
-            .union([z.array(z.number()).min(3).max(3), z.null()])
-            .default(null),
-          target_quaternion: z
-            .union([z.array(z.number()).min(4).max(4), z.null()])
-            .default(null),
         })
         .describe(
           "One straight run between corners, with where it is meant to end.",
@@ -7557,13 +7431,7 @@ export const apiSchemas = z.object({
                     .object({
                       approach: z.array(z.number()).min(3).max(3),
                       degrees_from_down: z.number().gte(0).lte(180),
-                      jaw_yaw_degrees: z.number().gte(0).lt(360),
-                      jaw_yaw_reference: z
-                        .enum(["world_x", "world_y"])
-                        .describe(
-                          "The world axis jaw yaw zero is projected from.",
-                        ),
-                      target: z
+                      goal: z
                         .union([
                           z
                             .object({
@@ -7588,6 +7456,12 @@ export const apiSchemas = z.object({
                           z.null(),
                         ])
                         .optional(),
+                      jaw_yaw_degrees: z.number().gte(0).lt(360),
+                      jaw_yaw_reference: z
+                        .enum(["world_x", "world_y"])
+                        .describe(
+                          "The world axis jaw yaw zero is projected from.",
+                        ),
                     })
                     .describe(
                       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -7811,6 +7685,18 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           corners: z.array(z.array(z.number())),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .default(null),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .default(null),
                           label: z.string(),
                           minimum_duration_seconds: z
                             .union([
@@ -7844,18 +7730,6 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .default(null),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .default(null),
                         })
                         .describe(
                           "One straight run between corners, with where it is meant to end.",
@@ -8083,14 +7957,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -8100,6 +7974,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -8172,25 +8059,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -8199,6 +8072,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -8330,16 +8204,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -8370,6 +8235,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -8522,14 +8396,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -8539,6 +8413,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -8611,25 +8498,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -8638,6 +8511,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -8769,16 +8643,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -8809,6 +8674,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -9034,14 +8908,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -9051,6 +8925,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -9123,25 +9010,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -9150,6 +9023,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -9281,16 +9155,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -9321,6 +9186,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -9684,14 +9558,14 @@ export const apiSchemas = z.object({
           checkpoints: z.array(
             z
               .object({
-                label: z.string(),
-                measured_joints: z.array(z.number()),
-                target_position: z
+                destination_position: z
                   .union([z.array(z.number()).min(3).max(3), z.null()])
                   .optional(),
-                target_quaternion: z
+                destination_quaternion: z
                   .union([z.array(z.number()).min(4).max(4), z.null()])
                   .optional(),
+                label: z.string(),
+                measured_joints: z.array(z.number()),
               })
               .describe(
                 "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -9701,6 +9575,13 @@ export const apiSchemas = z.object({
             .union([
               z
                 .object({
+                  destination_joints: z.array(z.number()),
+                  destination_position: z
+                    .union([z.array(z.number()).min(3).max(3), z.null()])
+                    .optional(),
+                  destination_quaternion: z
+                    .union([z.array(z.number()).min(4).max(4), z.null()])
+                    .optional(),
                   group_id: z.union([z.string(), z.null()]).optional(),
                   joint_speed: z.number(),
                   kind: z.literal("move"),
@@ -9773,19 +9654,11 @@ export const apiSchemas = z.object({
                       z.null(),
                     ])
                     .optional(),
-                  target_joints: z.array(z.number()),
-                  target_position: z
-                    .union([z.array(z.number()).min(3).max(3), z.null()])
-                    .optional(),
-                  target_quaternion: z
-                    .union([z.array(z.number()).min(4).max(4), z.null()])
-                    .optional(),
                 })
                 .strict(),
               z
                 .object({
-                  kind: z.literal("policy_reach"),
-                  target_pose: z
+                  goal_pose: z
                     .object({
                       position: z.array(z.number()).min(3).max(3),
                       quaternion: z.array(z.number()).min(4).max(4),
@@ -9794,6 +9667,7 @@ export const apiSchemas = z.object({
                     .describe(
                       "The target pose or streamed goal in the station world frame.",
                     ),
+                  kind: z.literal("policy_reach"),
                 })
                 .strict(),
               z
@@ -9918,13 +9792,7 @@ export const apiSchemas = z.object({
                                 .object({
                                   approach: z.array(z.number()).min(3).max(3),
                                   degrees_from_down: z.number().gte(0).lte(180),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                  jaw_yaw_reference: z
-                                    .enum(["world_x", "world_y"])
-                                    .describe(
-                                      "The world axis jaw yaw zero is projected from.",
-                                    ),
-                                  target: z
+                                  goal: z
                                     .union([
                                       z
                                         .object({
@@ -9952,6 +9820,12 @@ export const apiSchemas = z.object({
                                       z.null(),
                                     ])
                                     .optional(),
+                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                  jaw_yaw_reference: z
+                                    .enum(["world_x", "world_y"])
+                                    .describe(
+                                      "The world axis jaw yaw zero is projected from.",
+                                    ),
                                 })
                                 .describe(
                                   "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -10429,13 +10303,7 @@ export const apiSchemas = z.object({
                         .object({
                           approach: z.array(z.number()).min(3).max(3),
                           degrees_from_down: z.number().gte(0).lte(180),
-                          jaw_yaw_degrees: z.number().gte(0).lt(360),
-                          jaw_yaw_reference: z
-                            .enum(["world_x", "world_y"])
-                            .describe(
-                              "The world axis jaw yaw zero is projected from.",
-                            ),
-                          target: z
+                          goal: z
                             .union([
                               z
                                 .object({
@@ -10460,6 +10328,12 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
+                          jaw_yaw_degrees: z.number().gte(0).lt(360),
+                          jaw_yaw_reference: z
+                            .enum(["world_x", "world_y"])
+                            .describe(
+                              "The world axis jaw yaw zero is projected from.",
+                            ),
                         })
                         .describe(
                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -10690,6 +10564,18 @@ export const apiSchemas = z.object({
                           z
                             .object({
                               corners: z.array(z.array(z.number())),
+                              destination_position: z
+                                .union([
+                                  z.array(z.number()).min(3).max(3),
+                                  z.null(),
+                                ])
+                                .default(null),
+                              destination_quaternion: z
+                                .union([
+                                  z.array(z.number()).min(4).max(4),
+                                  z.null(),
+                                ])
+                                .default(null),
                               label: z.string(),
                               minimum_duration_seconds: z
                                 .union([
@@ -10723,18 +10609,6 @@ export const apiSchemas = z.object({
                                   z.null(),
                                 ])
                                 .optional(),
-                              target_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .default(null),
-                              target_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .default(null),
                             })
                             .describe(
                               "One straight run between corners, with where it is meant to end.",
@@ -10970,20 +10844,20 @@ export const apiSchemas = z.object({
                       checkpoints: z.array(
                         z
                           .object({
-                            label: z.string(),
-                            measured_joints: z.array(z.number()),
-                            target_position: z
+                            destination_position: z
                               .union([
                                 z.array(z.number()).min(3).max(3),
                                 z.null(),
                               ])
                               .optional(),
-                            target_quaternion: z
+                            destination_quaternion: z
                               .union([
                                 z.array(z.number()).min(4).max(4),
                                 z.null(),
                               ])
                               .optional(),
+                            label: z.string(),
+                            measured_joints: z.array(z.number()),
                           })
                           .describe(
                             "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -10993,6 +10867,19 @@ export const apiSchemas = z.object({
                         .union([
                           z
                             .object({
+                              destination_joints: z.array(z.number()),
+                              destination_position: z
+                                .union([
+                                  z.array(z.number()).min(3).max(3),
+                                  z.null(),
+                                ])
+                                .optional(),
+                              destination_quaternion: z
+                                .union([
+                                  z.array(z.number()).min(4).max(4),
+                                  z.null(),
+                                ])
+                                .optional(),
                               group_id: z
                                 .union([z.string(), z.null()])
                                 .optional(),
@@ -11067,25 +10954,11 @@ export const apiSchemas = z.object({
                                   z.null(),
                                 ])
                                 .optional(),
-                              target_joints: z.array(z.number()),
-                              target_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              target_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .optional(),
                             })
                             .strict(),
                           z
                             .object({
-                              kind: z.literal("policy_reach"),
-                              target_pose: z
+                              goal_pose: z
                                 .object({
                                   position: z.array(z.number()).min(3).max(3),
                                   quaternion: z.array(z.number()).min(4).max(4),
@@ -11094,6 +10967,7 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The target pose or streamed goal in the station world frame.",
                                 ),
+                              kind: z.literal("policy_reach"),
                             })
                             .strict(),
                           z
@@ -11229,16 +11103,7 @@ export const apiSchemas = z.object({
                                                 .number()
                                                 .gte(0)
                                                 .lte(180),
-                                              jaw_yaw_degrees: z
-                                                .number()
-                                                .gte(0)
-                                                .lt(360),
-                                              jaw_yaw_reference: z
-                                                .enum(["world_x", "world_y"])
-                                                .describe(
-                                                  "The world axis jaw yaw zero is projected from.",
-                                                ),
-                                              target: z
+                                              goal: z
                                                 .union([
                                                   z
                                                     .object({
@@ -11270,6 +11135,15 @@ export const apiSchemas = z.object({
                                                   z.null(),
                                                 ])
                                                 .optional(),
+                                              jaw_yaw_degrees: z
+                                                .number()
+                                                .gte(0)
+                                                .lt(360),
+                                              jaw_yaw_reference: z
+                                                .enum(["world_x", "world_y"])
+                                                .describe(
+                                                  "The world axis jaw yaw zero is projected from.",
+                                                ),
                                             })
                                             .describe(
                                               "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -11426,20 +11300,20 @@ export const apiSchemas = z.object({
                       checkpoints: z.array(
                         z
                           .object({
-                            label: z.string(),
-                            measured_joints: z.array(z.number()),
-                            target_position: z
+                            destination_position: z
                               .union([
                                 z.array(z.number()).min(3).max(3),
                                 z.null(),
                               ])
                               .optional(),
-                            target_quaternion: z
+                            destination_quaternion: z
                               .union([
                                 z.array(z.number()).min(4).max(4),
                                 z.null(),
                               ])
                               .optional(),
+                            label: z.string(),
+                            measured_joints: z.array(z.number()),
                           })
                           .describe(
                             "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -11449,6 +11323,19 @@ export const apiSchemas = z.object({
                         .union([
                           z
                             .object({
+                              destination_joints: z.array(z.number()),
+                              destination_position: z
+                                .union([
+                                  z.array(z.number()).min(3).max(3),
+                                  z.null(),
+                                ])
+                                .optional(),
+                              destination_quaternion: z
+                                .union([
+                                  z.array(z.number()).min(4).max(4),
+                                  z.null(),
+                                ])
+                                .optional(),
                               group_id: z
                                 .union([z.string(), z.null()])
                                 .optional(),
@@ -11523,25 +11410,11 @@ export const apiSchemas = z.object({
                                   z.null(),
                                 ])
                                 .optional(),
-                              target_joints: z.array(z.number()),
-                              target_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              target_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .optional(),
                             })
                             .strict(),
                           z
                             .object({
-                              kind: z.literal("policy_reach"),
-                              target_pose: z
+                              goal_pose: z
                                 .object({
                                   position: z.array(z.number()).min(3).max(3),
                                   quaternion: z.array(z.number()).min(4).max(4),
@@ -11550,6 +11423,7 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The target pose or streamed goal in the station world frame.",
                                 ),
+                              kind: z.literal("policy_reach"),
                             })
                             .strict(),
                           z
@@ -11685,16 +11559,7 @@ export const apiSchemas = z.object({
                                                 .number()
                                                 .gte(0)
                                                 .lte(180),
-                                              jaw_yaw_degrees: z
-                                                .number()
-                                                .gte(0)
-                                                .lt(360),
-                                              jaw_yaw_reference: z
-                                                .enum(["world_x", "world_y"])
-                                                .describe(
-                                                  "The world axis jaw yaw zero is projected from.",
-                                                ),
-                                              target: z
+                                              goal: z
                                                 .union([
                                                   z
                                                     .object({
@@ -11726,6 +11591,15 @@ export const apiSchemas = z.object({
                                                   z.null(),
                                                 ])
                                                 .optional(),
+                                              jaw_yaw_degrees: z
+                                                .number()
+                                                .gte(0)
+                                                .lt(360),
+                                              jaw_yaw_reference: z
+                                                .enum(["world_x", "world_y"])
+                                                .describe(
+                                                  "The world axis jaw yaw zero is projected from.",
+                                                ),
                                             })
                                             .describe(
                                               "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -11922,20 +11796,20 @@ export const apiSchemas = z.object({
                       checkpoints: z.array(
                         z
                           .object({
-                            label: z.string(),
-                            measured_joints: z.array(z.number()),
-                            target_position: z
+                            destination_position: z
                               .union([
                                 z.array(z.number()).min(3).max(3),
                                 z.null(),
                               ])
                               .optional(),
-                            target_quaternion: z
+                            destination_quaternion: z
                               .union([
                                 z.array(z.number()).min(4).max(4),
                                 z.null(),
                               ])
                               .optional(),
+                            label: z.string(),
+                            measured_joints: z.array(z.number()),
                           })
                           .describe(
                             "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -11945,6 +11819,19 @@ export const apiSchemas = z.object({
                         .union([
                           z
                             .object({
+                              destination_joints: z.array(z.number()),
+                              destination_position: z
+                                .union([
+                                  z.array(z.number()).min(3).max(3),
+                                  z.null(),
+                                ])
+                                .optional(),
+                              destination_quaternion: z
+                                .union([
+                                  z.array(z.number()).min(4).max(4),
+                                  z.null(),
+                                ])
+                                .optional(),
                               group_id: z
                                 .union([z.string(), z.null()])
                                 .optional(),
@@ -12019,25 +11906,11 @@ export const apiSchemas = z.object({
                                   z.null(),
                                 ])
                                 .optional(),
-                              target_joints: z.array(z.number()),
-                              target_position: z
-                                .union([
-                                  z.array(z.number()).min(3).max(3),
-                                  z.null(),
-                                ])
-                                .optional(),
-                              target_quaternion: z
-                                .union([
-                                  z.array(z.number()).min(4).max(4),
-                                  z.null(),
-                                ])
-                                .optional(),
                             })
                             .strict(),
                           z
                             .object({
-                              kind: z.literal("policy_reach"),
-                              target_pose: z
+                              goal_pose: z
                                 .object({
                                   position: z.array(z.number()).min(3).max(3),
                                   quaternion: z.array(z.number()).min(4).max(4),
@@ -12046,6 +11919,7 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The target pose or streamed goal in the station world frame.",
                                 ),
+                              kind: z.literal("policy_reach"),
                             })
                             .strict(),
                           z
@@ -12181,16 +12055,7 @@ export const apiSchemas = z.object({
                                                 .number()
                                                 .gte(0)
                                                 .lte(180),
-                                              jaw_yaw_degrees: z
-                                                .number()
-                                                .gte(0)
-                                                .lt(360),
-                                              jaw_yaw_reference: z
-                                                .enum(["world_x", "world_y"])
-                                                .describe(
-                                                  "The world axis jaw yaw zero is projected from.",
-                                                ),
-                                              target: z
+                                              goal: z
                                                 .union([
                                                   z
                                                     .object({
@@ -12222,6 +12087,15 @@ export const apiSchemas = z.object({
                                                   z.null(),
                                                 ])
                                                 .optional(),
+                                              jaw_yaw_degrees: z
+                                                .number()
+                                                .gte(0)
+                                                .lt(360),
+                                              jaw_yaw_reference: z
+                                                .enum(["world_x", "world_y"])
+                                                .describe(
+                                                  "The world axis jaw yaw zero is projected from.",
+                                                ),
                                             })
                                             .describe(
                                               "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -12589,14 +12463,14 @@ export const apiSchemas = z.object({
               checkpoints: z.array(
                 z
                   .object({
-                    label: z.string(),
-                    measured_joints: z.array(z.number()),
-                    target_position: z
+                    destination_position: z
                       .union([z.array(z.number()).min(3).max(3), z.null()])
                       .optional(),
-                    target_quaternion: z
+                    destination_quaternion: z
                       .union([z.array(z.number()).min(4).max(4), z.null()])
                       .optional(),
+                    label: z.string(),
+                    measured_joints: z.array(z.number()),
                   })
                   .describe(
                     "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -12606,6 +12480,13 @@ export const apiSchemas = z.object({
                 .union([
                   z
                     .object({
+                      destination_joints: z.array(z.number()),
+                      destination_position: z
+                        .union([z.array(z.number()).min(3).max(3), z.null()])
+                        .optional(),
+                      destination_quaternion: z
+                        .union([z.array(z.number()).min(4).max(4), z.null()])
+                        .optional(),
                       group_id: z.union([z.string(), z.null()]).optional(),
                       joint_speed: z.number(),
                       kind: z.literal("move"),
@@ -12678,19 +12559,11 @@ export const apiSchemas = z.object({
                           z.null(),
                         ])
                         .optional(),
-                      target_joints: z.array(z.number()),
-                      target_position: z
-                        .union([z.array(z.number()).min(3).max(3), z.null()])
-                        .optional(),
-                      target_quaternion: z
-                        .union([z.array(z.number()).min(4).max(4), z.null()])
-                        .optional(),
                     })
                     .strict(),
                   z
                     .object({
-                      kind: z.literal("policy_reach"),
-                      target_pose: z
+                      goal_pose: z
                         .object({
                           position: z.array(z.number()).min(3).max(3),
                           quaternion: z.array(z.number()).min(4).max(4),
@@ -12699,6 +12572,7 @@ export const apiSchemas = z.object({
                         .describe(
                           "The target pose or streamed goal in the station world frame.",
                         ),
+                      kind: z.literal("policy_reach"),
                     })
                     .strict(),
                   z
@@ -12831,16 +12705,7 @@ export const apiSchemas = z.object({
                                         .number()
                                         .gte(0)
                                         .lte(180),
-                                      jaw_yaw_degrees: z
-                                        .number()
-                                        .gte(0)
-                                        .lt(360),
-                                      jaw_yaw_reference: z
-                                        .enum(["world_x", "world_y"])
-                                        .describe(
-                                          "The world axis jaw yaw zero is projected from.",
-                                        ),
-                                      target: z
+                                      goal: z
                                         .union([
                                           z
                                             .object({
@@ -12868,6 +12733,15 @@ export const apiSchemas = z.object({
                                           z.null(),
                                         ])
                                         .optional(),
+                                      jaw_yaw_degrees: z
+                                        .number()
+                                        .gte(0)
+                                        .lt(360),
+                                      jaw_yaw_reference: z
+                                        .enum(["world_x", "world_y"])
+                                        .describe(
+                                          "The world axis jaw yaw zero is projected from.",
+                                        ),
                                     })
                                     .describe(
                                       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -13092,6 +12966,18 @@ export const apiSchemas = z.object({
     })
     .describe(
       "One line from the controller: a log event with its sequence number, or an\nunsequenced sample or reply.",
+    ),
+  GoalComparison: z
+    .object({
+      approach_error_degrees: z.number().gte(0).lte(180),
+      jaw_yaw_degrees: z.number().gte(0).lt(360),
+      jaw_yaw_reference: z
+        .enum(["world_x", "world_y"])
+        .describe("The world axis jaw yaw zero is projected from."),
+      orientation_error_degrees: z.number().gte(0).lte(180),
+    })
+    .describe(
+      "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
     ),
   GripperResult: z
     .union([
@@ -13912,20 +13798,20 @@ export const apiSchemas = z.object({
                         checkpoints: z.array(
                           z
                             .object({
-                              label: z.string(),
-                              measured_joints: z.array(z.number()),
-                              target_position: z
+                              destination_position: z
                                 .union([
                                   z.array(z.number()).min(3).max(3),
                                   z.null(),
                                 ])
                                 .optional(),
-                              target_quaternion: z
+                              destination_quaternion: z
                                 .union([
                                   z.array(z.number()).min(4).max(4),
                                   z.null(),
                                 ])
                                 .optional(),
+                              label: z.string(),
+                              measured_joints: z.array(z.number()),
                             })
                             .describe(
                               "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -13935,6 +13821,19 @@ export const apiSchemas = z.object({
                           .union([
                             z
                               .object({
+                                destination_joints: z.array(z.number()),
+                                destination_position: z
+                                  .union([
+                                    z.array(z.number()).min(3).max(3),
+                                    z.null(),
+                                  ])
+                                  .optional(),
+                                destination_quaternion: z
+                                  .union([
+                                    z.array(z.number()).min(4).max(4),
+                                    z.null(),
+                                  ])
+                                  .optional(),
                                 group_id: z
                                   .union([z.string(), z.null()])
                                   .optional(),
@@ -14011,25 +13910,11 @@ export const apiSchemas = z.object({
                                     z.null(),
                                   ])
                                   .optional(),
-                                target_joints: z.array(z.number()),
-                                target_position: z
-                                  .union([
-                                    z.array(z.number()).min(3).max(3),
-                                    z.null(),
-                                  ])
-                                  .optional(),
-                                target_quaternion: z
-                                  .union([
-                                    z.array(z.number()).min(4).max(4),
-                                    z.null(),
-                                  ])
-                                  .optional(),
                               })
                               .strict(),
                             z
                               .object({
-                                kind: z.literal("policy_reach"),
-                                target_pose: z
+                                goal_pose: z
                                   .object({
                                     position: z.array(z.number()).min(3).max(3),
                                     quaternion: z
@@ -14041,6 +13926,7 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "The target pose or streamed goal in the station world frame.",
                                   ),
+                                kind: z.literal("policy_reach"),
                               })
                               .strict(),
                             z
@@ -14179,16 +14065,7 @@ export const apiSchemas = z.object({
                                                   .number()
                                                   .gte(0)
                                                   .lte(180),
-                                                jaw_yaw_degrees: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lt(360),
-                                                jaw_yaw_reference: z
-                                                  .enum(["world_x", "world_y"])
-                                                  .describe(
-                                                    "The world axis jaw yaw zero is projected from.",
-                                                  ),
-                                                target: z
+                                                goal: z
                                                   .union([
                                                     z
                                                       .object({
@@ -14221,6 +14098,15 @@ export const apiSchemas = z.object({
                                                     z.null(),
                                                   ])
                                                   .optional(),
+                                                jaw_yaw_degrees: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lt(360),
+                                                jaw_yaw_reference: z
+                                                  .enum(["world_x", "world_y"])
+                                                  .describe(
+                                                    "The world axis jaw yaw zero is projected from.",
+                                                  ),
                                               })
                                               .describe(
                                                 "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -14482,20 +14368,20 @@ export const apiSchemas = z.object({
                         checkpoints: z.array(
                           z
                             .object({
-                              label: z.string(),
-                              measured_joints: z.array(z.number()),
-                              target_position: z
+                              destination_position: z
                                 .union([
                                   z.array(z.number()).min(3).max(3),
                                   z.null(),
                                 ])
                                 .optional(),
-                              target_quaternion: z
+                              destination_quaternion: z
                                 .union([
                                   z.array(z.number()).min(4).max(4),
                                   z.null(),
                                 ])
                                 .optional(),
+                              label: z.string(),
+                              measured_joints: z.array(z.number()),
                             })
                             .describe(
                               "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -14505,6 +14391,19 @@ export const apiSchemas = z.object({
                           .union([
                             z
                               .object({
+                                destination_joints: z.array(z.number()),
+                                destination_position: z
+                                  .union([
+                                    z.array(z.number()).min(3).max(3),
+                                    z.null(),
+                                  ])
+                                  .optional(),
+                                destination_quaternion: z
+                                  .union([
+                                    z.array(z.number()).min(4).max(4),
+                                    z.null(),
+                                  ])
+                                  .optional(),
                                 group_id: z
                                   .union([z.string(), z.null()])
                                   .optional(),
@@ -14581,25 +14480,11 @@ export const apiSchemas = z.object({
                                     z.null(),
                                   ])
                                   .optional(),
-                                target_joints: z.array(z.number()),
-                                target_position: z
-                                  .union([
-                                    z.array(z.number()).min(3).max(3),
-                                    z.null(),
-                                  ])
-                                  .optional(),
-                                target_quaternion: z
-                                  .union([
-                                    z.array(z.number()).min(4).max(4),
-                                    z.null(),
-                                  ])
-                                  .optional(),
                               })
                               .strict(),
                             z
                               .object({
-                                kind: z.literal("policy_reach"),
-                                target_pose: z
+                                goal_pose: z
                                   .object({
                                     position: z.array(z.number()).min(3).max(3),
                                     quaternion: z
@@ -14611,6 +14496,7 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "The target pose or streamed goal in the station world frame.",
                                   ),
+                                kind: z.literal("policy_reach"),
                               })
                               .strict(),
                             z
@@ -14749,16 +14635,7 @@ export const apiSchemas = z.object({
                                                   .number()
                                                   .gte(0)
                                                   .lte(180),
-                                                jaw_yaw_degrees: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lt(360),
-                                                jaw_yaw_reference: z
-                                                  .enum(["world_x", "world_y"])
-                                                  .describe(
-                                                    "The world axis jaw yaw zero is projected from.",
-                                                  ),
-                                                target: z
+                                                goal: z
                                                   .union([
                                                     z
                                                       .object({
@@ -14791,6 +14668,15 @@ export const apiSchemas = z.object({
                                                     z.null(),
                                                   ])
                                                   .optional(),
+                                                jaw_yaw_degrees: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lt(360),
+                                                jaw_yaw_reference: z
+                                                  .enum(["world_x", "world_y"])
+                                                  .describe(
+                                                    "The world axis jaw yaw zero is projected from.",
+                                                  ),
                                               })
                                               .describe(
                                                 "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -15056,13 +14942,7 @@ export const apiSchemas = z.object({
                           .object({
                             approach: z.array(z.number()).min(3).max(3),
                             degrees_from_down: z.number().gte(0).lte(180),
-                            jaw_yaw_degrees: z.number().gte(0).lt(360),
-                            jaw_yaw_reference: z
-                              .enum(["world_x", "world_y"])
-                              .describe(
-                                "The world axis jaw yaw zero is projected from.",
-                              ),
-                            target: z
+                            goal: z
                               .union([
                                 z
                                   .object({
@@ -15087,6 +14967,12 @@ export const apiSchemas = z.object({
                                 z.null(),
                               ])
                               .optional(),
+                            jaw_yaw_degrees: z.number().gte(0).lt(360),
+                            jaw_yaw_reference: z
+                              .enum(["world_x", "world_y"])
+                              .describe(
+                                "The world axis jaw yaw zero is projected from.",
+                              ),
                           })
                           .describe(
                             "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -15283,14 +15169,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -15300,6 +15186,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -15372,25 +15271,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -15399,6 +15284,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -15530,16 +15416,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -15570,6 +15447,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -15727,14 +15613,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -15744,6 +15630,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -15816,25 +15715,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -15843,6 +15728,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -15974,16 +15860,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -16014,6 +15891,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -16171,14 +16057,14 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z
+                        destination_position: z
                           .union([z.array(z.number()).min(3).max(3), z.null()])
                           .optional(),
-                        target_quaternion: z
+                        destination_quaternion: z
                           .union([z.array(z.number()).min(4).max(4), z.null()])
                           .optional(),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -16188,6 +16074,19 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z
+                            .union([
+                              z.array(z.number()).min(3).max(3),
+                              z.null(),
+                            ])
+                            .optional(),
+                          destination_quaternion: z
+                            .union([
+                              z.array(z.number()).min(4).max(4),
+                              z.null(),
+                            ])
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -16260,25 +16159,11 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          target_joints: z.array(z.number()),
-                          target_position: z
-                            .union([
-                              z.array(z.number()).min(3).max(3),
-                              z.null(),
-                            ])
-                            .optional(),
-                          target_quaternion: z
-                            .union([
-                              z.array(z.number()).min(4).max(4),
-                              z.null(),
-                            ])
-                            .optional(),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -16287,6 +16172,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -16418,16 +16304,7 @@ export const apiSchemas = z.object({
                                             .number()
                                             .gte(0)
                                             .lte(180),
-                                          jaw_yaw_degrees: z
-                                            .number()
-                                            .gte(0)
-                                            .lt(360),
-                                          jaw_yaw_reference: z
-                                            .enum(["world_x", "world_y"])
-                                            .describe(
-                                              "The world axis jaw yaw zero is projected from.",
-                                            ),
-                                          target: z
+                                          goal: z
                                             .union([
                                               z
                                                 .object({
@@ -16458,6 +16335,15 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
+                                          jaw_yaw_degrees: z
+                                            .number()
+                                            .gte(0)
+                                            .lt(360),
+                                          jaw_yaw_reference: z
+                                            .enum(["world_x", "world_y"])
+                                            .describe(
+                                              "The world axis jaw yaw zero is projected from.",
+                                            ),
                                         })
                                         .describe(
                                           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -16630,11 +16516,7 @@ export const apiSchemas = z.object({
     .object({
       approach: z.array(z.number()).min(3).max(3),
       degrees_from_down: z.number().gte(0).lte(180),
-      jaw_yaw_degrees: z.number().gte(0).lt(360),
-      jaw_yaw_reference: z
-        .enum(["world_x", "world_y"])
-        .describe("The world axis jaw yaw zero is projected from."),
-      target: z
+      goal: z
         .union([
           z
             .object({
@@ -16651,6 +16533,10 @@ export const apiSchemas = z.object({
           z.null(),
         ])
         .optional(),
+      jaw_yaw_degrees: z.number().gte(0).lt(360),
+      jaw_yaw_reference: z
+        .enum(["world_x", "world_y"])
+        .describe("The world axis jaw yaw zero is projected from."),
     })
     .describe(
       "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -16702,6 +16588,12 @@ export const apiSchemas = z.object({
           z
             .object({
               corners: z.array(z.array(z.number())),
+              destination_position: z
+                .union([z.array(z.number()).min(3).max(3), z.null()])
+                .default(null),
+              destination_quaternion: z
+                .union([z.array(z.number()).min(4).max(4), z.null()])
+                .default(null),
               label: z.string(),
               minimum_duration_seconds: z
                 .union([
@@ -16733,12 +16625,6 @@ export const apiSchemas = z.object({
                   z.null(),
                 ])
                 .optional(),
-              target_position: z
-                .union([z.array(z.number()).min(3).max(3), z.null()])
-                .default(null),
-              target_quaternion: z
-                .union([z.array(z.number()).min(4).max(4), z.null()])
-                .default(null),
             })
             .describe(
               "One straight run between corners, with where it is meant to end.",
@@ -16819,11 +16705,7 @@ export const apiSchemas = z.object({
         .object({
           approach: z.array(z.number()).min(3).max(3),
           degrees_from_down: z.number().gte(0).lte(180),
-          jaw_yaw_degrees: z.number().gte(0).lt(360),
-          jaw_yaw_reference: z
-            .enum(["world_x", "world_y"])
-            .describe("The world axis jaw yaw zero is projected from."),
-          target: z
+          goal: z
             .union([
               z
                 .object({
@@ -16840,6 +16722,10 @@ export const apiSchemas = z.object({
               z.null(),
             ])
             .optional(),
+          jaw_yaw_degrees: z.number().gte(0).lt(360),
+          jaw_yaw_reference: z
+            .enum(["world_x", "world_y"])
+            .describe("The world axis jaw yaw zero is projected from."),
         })
         .describe(
           "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -17811,6 +17697,13 @@ export const apiSchemas = z.object({
     .union([
       z
         .object({
+          destination_joints: z.array(z.number()),
+          destination_position: z
+            .union([z.array(z.number()).min(3).max(3), z.null()])
+            .optional(),
+          destination_quaternion: z
+            .union([z.array(z.number()).min(4).max(4), z.null()])
+            .optional(),
           group_id: z.union([z.string(), z.null()]).optional(),
           joint_speed: z.number(),
           kind: z.literal("move"),
@@ -17883,19 +17776,11 @@ export const apiSchemas = z.object({
               z.null(),
             ])
             .optional(),
-          target_joints: z.array(z.number()),
-          target_position: z
-            .union([z.array(z.number()).min(3).max(3), z.null()])
-            .optional(),
-          target_quaternion: z
-            .union([z.array(z.number()).min(4).max(4), z.null()])
-            .optional(),
         })
         .strict(),
       z
         .object({
-          kind: z.literal("policy_reach"),
-          target_pose: z
+          goal_pose: z
             .object({
               position: z.array(z.number()).min(3).max(3),
               quaternion: z.array(z.number()).min(4).max(4),
@@ -17904,6 +17789,7 @@ export const apiSchemas = z.object({
             .describe(
               "The target pose or streamed goal in the station world frame.",
             ),
+          kind: z.literal("policy_reach"),
         })
         .strict(),
       z
@@ -18323,6 +18209,12 @@ export const apiSchemas = z.object({
   Segment: z
     .object({
       corners: z.array(z.array(z.number())),
+      destination_position: z
+        .union([z.array(z.number()).min(3).max(3), z.null()])
+        .default(null),
+      destination_quaternion: z
+        .union([z.array(z.number()).min(4).max(4), z.null()])
+        .default(null),
       label: z.string(),
       minimum_duration_seconds: z
         .union([
@@ -18354,12 +18246,6 @@ export const apiSchemas = z.object({
           z.null(),
         ])
         .optional(),
-      target_position: z
-        .union([z.array(z.number()).min(3).max(3), z.null()])
-        .default(null),
-      target_quaternion: z
-        .union([z.array(z.number()).min(4).max(4), z.null()])
-        .default(null),
     })
     .describe(
       "One straight run between corners, with where it is meant to end.",
@@ -18584,13 +18470,7 @@ export const apiSchemas = z.object({
                                 .object({
                                   approach: z.array(z.number()).min(3).max(3),
                                   degrees_from_down: z.number().gte(0).lte(180),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                  jaw_yaw_reference: z
-                                    .enum(["world_x", "world_y"])
-                                    .describe(
-                                      "The world axis jaw yaw zero is projected from.",
-                                    ),
-                                  target: z.union([
+                                  goal: z.union([
                                     z
                                       .object({
                                         approach_error_degrees: z
@@ -18616,6 +18496,12 @@ export const apiSchemas = z.object({
                                       ),
                                     z.null(),
                                   ]),
+                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                  jaw_yaw_reference: z
+                                    .enum(["world_x", "world_y"])
+                                    .describe(
+                                      "The world axis jaw yaw zero is projected from.",
+                                    ),
                                 })
                                 .describe(
                                   "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -18850,6 +18736,18 @@ export const apiSchemas = z.object({
                                   z
                                     .object({
                                       corners: z.array(z.array(z.number())),
+                                      destination_position: z
+                                        .union([
+                                          z.array(z.number()).min(3).max(3),
+                                          z.null(),
+                                        ])
+                                        .default(null),
+                                      destination_quaternion: z
+                                        .union([
+                                          z.array(z.number()).min(4).max(4),
+                                          z.null(),
+                                        ])
+                                        .default(null),
                                       label: z.string(),
                                       minimum_duration_seconds: z
                                         .union([
@@ -18882,18 +18780,6 @@ export const apiSchemas = z.object({
                                           ),
                                         z.null(),
                                       ]),
-                                      target_position: z
-                                        .union([
-                                          z.array(z.number()).min(3).max(3),
-                                          z.null(),
-                                        ])
-                                        .default(null),
-                                      target_quaternion: z
-                                        .union([
-                                          z.array(z.number()).min(4).max(4),
-                                          z.null(),
-                                        ])
-                                        .default(null),
                                     })
                                     .describe(
                                       "One straight run between corners, with where it is meant to end.",
@@ -19136,16 +19022,16 @@ export const apiSchemas = z.object({
                             checkpoints: z.array(
                               z
                                 .object({
-                                  label: z.string(),
-                                  measured_joints: z.array(z.number()),
-                                  target_position: z.union([
+                                  destination_position: z.union([
                                     z.array(z.number()).min(3).max(3),
                                     z.null(),
                                   ]),
-                                  target_quaternion: z.union([
+                                  destination_quaternion: z.union([
                                     z.array(z.number()).min(4).max(4),
                                     z.null(),
                                   ]),
+                                  label: z.string(),
+                                  measured_joints: z.array(z.number()),
                                 })
                                 .describe(
                                   "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -19155,6 +19041,15 @@ export const apiSchemas = z.object({
                               .union([
                                 z
                                   .object({
+                                    destination_joints: z.array(z.number()),
+                                    destination_position: z.union([
+                                      z.array(z.number()).min(3).max(3),
+                                      z.null(),
+                                    ]),
+                                    destination_quaternion: z.union([
+                                      z.array(z.number()).min(4).max(4),
+                                      z.null(),
+                                    ]),
                                     group_id: z.union([z.string(), z.null()]),
                                     joint_speed: z.number(),
                                     kind: z.literal("move"),
@@ -19225,21 +19120,11 @@ export const apiSchemas = z.object({
                                         ),
                                       z.null(),
                                     ]),
-                                    target_joints: z.array(z.number()),
-                                    target_position: z.union([
-                                      z.array(z.number()).min(3).max(3),
-                                      z.null(),
-                                    ]),
-                                    target_quaternion: z.union([
-                                      z.array(z.number()).min(4).max(4),
-                                      z.null(),
-                                    ]),
                                   })
                                   .strict(),
                                 z
                                   .object({
-                                    kind: z.literal("policy_reach"),
-                                    target_pose: z
+                                    goal_pose: z
                                       .object({
                                         position: z
                                           .array(z.number())
@@ -19254,6 +19139,7 @@ export const apiSchemas = z.object({
                                       .describe(
                                         "The target pose or streamed goal in the station world frame.",
                                       ),
+                                    kind: z.literal("policy_reach"),
                                   })
                                   .strict(),
                                 z
@@ -19391,19 +19277,7 @@ export const apiSchemas = z.object({
                                                     .number()
                                                     .gte(0)
                                                     .lte(180),
-                                                  jaw_yaw_degrees: z
-                                                    .number()
-                                                    .gte(0)
-                                                    .lt(360),
-                                                  jaw_yaw_reference: z
-                                                    .enum([
-                                                      "world_x",
-                                                      "world_y",
-                                                    ])
-                                                    .describe(
-                                                      "The world axis jaw yaw zero is projected from.",
-                                                    ),
-                                                  target: z.union([
+                                                  goal: z.union([
                                                     z
                                                       .object({
                                                         approach_error_degrees:
@@ -19434,6 +19308,18 @@ export const apiSchemas = z.object({
                                                       ),
                                                     z.null(),
                                                   ]),
+                                                  jaw_yaw_degrees: z
+                                                    .number()
+                                                    .gte(0)
+                                                    .lt(360),
+                                                  jaw_yaw_reference: z
+                                                    .enum([
+                                                      "world_x",
+                                                      "world_y",
+                                                    ])
+                                                    .describe(
+                                                      "The world axis jaw yaw zero is projected from.",
+                                                    ),
                                                 })
                                                 .describe(
                                                   "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -19584,16 +19470,16 @@ export const apiSchemas = z.object({
                               checkpoints: z.array(
                                 z
                                   .object({
-                                    label: z.string(),
-                                    measured_joints: z.array(z.number()),
-                                    target_position: z.union([
+                                    destination_position: z.union([
                                       z.array(z.number()).min(3).max(3),
                                       z.null(),
                                     ]),
-                                    target_quaternion: z.union([
+                                    destination_quaternion: z.union([
                                       z.array(z.number()).min(4).max(4),
                                       z.null(),
                                     ]),
+                                    label: z.string(),
+                                    measured_joints: z.array(z.number()),
                                   })
                                   .describe(
                                     "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -19603,6 +19489,15 @@ export const apiSchemas = z.object({
                                 .union([
                                   z
                                     .object({
+                                      destination_joints: z.array(z.number()),
+                                      destination_position: z.union([
+                                        z.array(z.number()).min(3).max(3),
+                                        z.null(),
+                                      ]),
+                                      destination_quaternion: z.union([
+                                        z.array(z.number()).min(4).max(4),
+                                        z.null(),
+                                      ]),
                                       group_id: z.union([z.string(), z.null()]),
                                       joint_speed: z.number(),
                                       kind: z.literal("move"),
@@ -19673,21 +19568,11 @@ export const apiSchemas = z.object({
                                           ),
                                         z.null(),
                                       ]),
-                                      target_joints: z.array(z.number()),
-                                      target_position: z.union([
-                                        z.array(z.number()).min(3).max(3),
-                                        z.null(),
-                                      ]),
-                                      target_quaternion: z.union([
-                                        z.array(z.number()).min(4).max(4),
-                                        z.null(),
-                                      ]),
                                     })
                                     .strict(),
                                   z
                                     .object({
-                                      kind: z.literal("policy_reach"),
-                                      target_pose: z
+                                      goal_pose: z
                                         .object({
                                           position: z
                                             .array(z.number())
@@ -19702,6 +19587,7 @@ export const apiSchemas = z.object({
                                         .describe(
                                           "The target pose or streamed goal in the station world frame.",
                                         ),
+                                      kind: z.literal("policy_reach"),
                                     })
                                     .strict(),
                                   z
@@ -19839,19 +19725,7 @@ export const apiSchemas = z.object({
                                                       .number()
                                                       .gte(0)
                                                       .lte(180),
-                                                    jaw_yaw_degrees: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lt(360),
-                                                    jaw_yaw_reference: z
-                                                      .enum([
-                                                        "world_x",
-                                                        "world_y",
-                                                      ])
-                                                      .describe(
-                                                        "The world axis jaw yaw zero is projected from.",
-                                                      ),
-                                                    target: z.union([
+                                                    goal: z.union([
                                                       z
                                                         .object({
                                                           approach_error_degrees:
@@ -19882,6 +19756,18 @@ export const apiSchemas = z.object({
                                                         ),
                                                       z.null(),
                                                     ]),
+                                                    jaw_yaw_degrees: z
+                                                      .number()
+                                                      .gte(0)
+                                                      .lt(360),
+                                                    jaw_yaw_reference: z
+                                                      .enum([
+                                                        "world_x",
+                                                        "world_y",
+                                                      ])
+                                                      .describe(
+                                                        "The world axis jaw yaw zero is projected from.",
+                                                      ),
                                                   })
                                                   .describe(
                                                     "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -20082,16 +19968,16 @@ export const apiSchemas = z.object({
                               checkpoints: z.array(
                                 z
                                   .object({
-                                    label: z.string(),
-                                    measured_joints: z.array(z.number()),
-                                    target_position: z.union([
+                                    destination_position: z.union([
                                       z.array(z.number()).min(3).max(3),
                                       z.null(),
                                     ]),
-                                    target_quaternion: z.union([
+                                    destination_quaternion: z.union([
                                       z.array(z.number()).min(4).max(4),
                                       z.null(),
                                     ]),
+                                    label: z.string(),
+                                    measured_joints: z.array(z.number()),
                                   })
                                   .describe(
                                     "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -20101,6 +19987,15 @@ export const apiSchemas = z.object({
                                 .union([
                                   z
                                     .object({
+                                      destination_joints: z.array(z.number()),
+                                      destination_position: z.union([
+                                        z.array(z.number()).min(3).max(3),
+                                        z.null(),
+                                      ]),
+                                      destination_quaternion: z.union([
+                                        z.array(z.number()).min(4).max(4),
+                                        z.null(),
+                                      ]),
                                       group_id: z.union([z.string(), z.null()]),
                                       joint_speed: z.number(),
                                       kind: z.literal("move"),
@@ -20171,21 +20066,11 @@ export const apiSchemas = z.object({
                                           ),
                                         z.null(),
                                       ]),
-                                      target_joints: z.array(z.number()),
-                                      target_position: z.union([
-                                        z.array(z.number()).min(3).max(3),
-                                        z.null(),
-                                      ]),
-                                      target_quaternion: z.union([
-                                        z.array(z.number()).min(4).max(4),
-                                        z.null(),
-                                      ]),
                                     })
                                     .strict(),
                                   z
                                     .object({
-                                      kind: z.literal("policy_reach"),
-                                      target_pose: z
+                                      goal_pose: z
                                         .object({
                                           position: z
                                             .array(z.number())
@@ -20200,6 +20085,7 @@ export const apiSchemas = z.object({
                                         .describe(
                                           "The target pose or streamed goal in the station world frame.",
                                         ),
+                                      kind: z.literal("policy_reach"),
                                     })
                                     .strict(),
                                   z
@@ -20337,19 +20223,7 @@ export const apiSchemas = z.object({
                                                       .number()
                                                       .gte(0)
                                                       .lte(180),
-                                                    jaw_yaw_degrees: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lt(360),
-                                                    jaw_yaw_reference: z
-                                                      .enum([
-                                                        "world_x",
-                                                        "world_y",
-                                                      ])
-                                                      .describe(
-                                                        "The world axis jaw yaw zero is projected from.",
-                                                      ),
-                                                    target: z.union([
+                                                    goal: z.union([
                                                       z
                                                         .object({
                                                           approach_error_degrees:
@@ -20380,6 +20254,18 @@ export const apiSchemas = z.object({
                                                         ),
                                                       z.null(),
                                                     ]),
+                                                    jaw_yaw_degrees: z
+                                                      .number()
+                                                      .gte(0)
+                                                      .lt(360),
+                                                    jaw_yaw_reference: z
+                                                      .enum([
+                                                        "world_x",
+                                                        "world_y",
+                                                      ])
+                                                      .describe(
+                                                        "The world axis jaw yaw zero is projected from.",
+                                                      ),
                                                   })
                                                   .describe(
                                                     "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -20745,16 +20631,16 @@ export const apiSchemas = z.object({
                       checkpoints: z.array(
                         z
                           .object({
-                            label: z.string(),
-                            measured_joints: z.array(z.number()),
-                            target_position: z.union([
+                            destination_position: z.union([
                               z.array(z.number()).min(3).max(3),
                               z.null(),
                             ]),
-                            target_quaternion: z.union([
+                            destination_quaternion: z.union([
                               z.array(z.number()).min(4).max(4),
                               z.null(),
                             ]),
+                            label: z.string(),
+                            measured_joints: z.array(z.number()),
                           })
                           .describe(
                             "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -20764,6 +20650,15 @@ export const apiSchemas = z.object({
                         .union([
                           z
                             .object({
+                              destination_joints: z.array(z.number()),
+                              destination_position: z.union([
+                                z.array(z.number()).min(3).max(3),
+                                z.null(),
+                              ]),
+                              destination_quaternion: z.union([
+                                z.array(z.number()).min(4).max(4),
+                                z.null(),
+                              ]),
                               group_id: z.union([z.string(), z.null()]),
                               joint_speed: z.number(),
                               kind: z.literal("move"),
@@ -20832,21 +20727,11 @@ export const apiSchemas = z.object({
                                   ),
                                 z.null(),
                               ]),
-                              target_joints: z.array(z.number()),
-                              target_position: z.union([
-                                z.array(z.number()).min(3).max(3),
-                                z.null(),
-                              ]),
-                              target_quaternion: z.union([
-                                z.array(z.number()).min(4).max(4),
-                                z.null(),
-                              ]),
                             })
                             .strict(),
                           z
                             .object({
-                              kind: z.literal("policy_reach"),
-                              target_pose: z
+                              goal_pose: z
                                 .object({
                                   position: z.array(z.number()).min(3).max(3),
                                   quaternion: z.array(z.number()).min(4).max(4),
@@ -20855,6 +20740,7 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The target pose or streamed goal in the station world frame.",
                                 ),
+                              kind: z.literal("policy_reach"),
                             })
                             .strict(),
                           z
@@ -20987,16 +20873,7 @@ export const apiSchemas = z.object({
                                               .number()
                                               .gte(0)
                                               .lte(180),
-                                            jaw_yaw_degrees: z
-                                              .number()
-                                              .gte(0)
-                                              .lt(360),
-                                            jaw_yaw_reference: z
-                                              .enum(["world_x", "world_y"])
-                                              .describe(
-                                                "The world axis jaw yaw zero is projected from.",
-                                              ),
-                                            target: z.union([
+                                            goal: z.union([
                                               z
                                                 .object({
                                                   approach_error_degrees: z
@@ -21025,6 +20902,15 @@ export const apiSchemas = z.object({
                                                 ),
                                               z.null(),
                                             ]),
+                                            jaw_yaw_degrees: z
+                                              .number()
+                                              .gte(0)
+                                              .lt(360),
+                                            jaw_yaw_reference: z
+                                              .enum(["world_x", "world_y"])
+                                              .describe(
+                                                "The world axis jaw yaw zero is projected from.",
+                                              ),
                                           })
                                           .describe(
                                             "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -21375,16 +21261,16 @@ export const apiSchemas = z.object({
                           checkpoints: z.array(
                             z
                               .object({
-                                label: z.string(),
-                                measured_joints: z.array(z.number()),
-                                target_position: z.union([
+                                destination_position: z.union([
                                   z.array(z.number()).min(3).max(3),
                                   z.null(),
                                 ]),
-                                target_quaternion: z.union([
+                                destination_quaternion: z.union([
                                   z.array(z.number()).min(4).max(4),
                                   z.null(),
                                 ]),
+                                label: z.string(),
+                                measured_joints: z.array(z.number()),
                               })
                               .describe(
                                 "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -21394,6 +21280,15 @@ export const apiSchemas = z.object({
                             .union([
                               z
                                 .object({
+                                  destination_joints: z.array(z.number()),
+                                  destination_position: z.union([
+                                    z.array(z.number()).min(3).max(3),
+                                    z.null(),
+                                  ]),
+                                  destination_quaternion: z.union([
+                                    z.array(z.number()).min(4).max(4),
+                                    z.null(),
+                                  ]),
                                   group_id: z.union([z.string(), z.null()]),
                                   joint_speed: z.number(),
                                   kind: z.literal("move"),
@@ -21464,21 +21359,11 @@ export const apiSchemas = z.object({
                                       ),
                                     z.null(),
                                   ]),
-                                  target_joints: z.array(z.number()),
-                                  target_position: z.union([
-                                    z.array(z.number()).min(3).max(3),
-                                    z.null(),
-                                  ]),
-                                  target_quaternion: z.union([
-                                    z.array(z.number()).min(4).max(4),
-                                    z.null(),
-                                  ]),
                                 })
                                 .strict(),
                               z
                                 .object({
-                                  kind: z.literal("policy_reach"),
-                                  target_pose: z
+                                  goal_pose: z
                                     .object({
                                       position: z
                                         .array(z.number())
@@ -21493,6 +21378,7 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "The target pose or streamed goal in the station world frame.",
                                     ),
+                                  kind: z.literal("policy_reach"),
                                 })
                                 .strict(),
                               z
@@ -21630,16 +21516,7 @@ export const apiSchemas = z.object({
                                                   .number()
                                                   .gte(0)
                                                   .lte(180),
-                                                jaw_yaw_degrees: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lt(360),
-                                                jaw_yaw_reference: z
-                                                  .enum(["world_x", "world_y"])
-                                                  .describe(
-                                                    "The world axis jaw yaw zero is projected from.",
-                                                  ),
-                                                target: z.union([
+                                                goal: z.union([
                                                   z
                                                     .object({
                                                       approach_error_degrees: z
@@ -21669,6 +21546,15 @@ export const apiSchemas = z.object({
                                                     ),
                                                   z.null(),
                                                 ]),
+                                                jaw_yaw_degrees: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lt(360),
+                                                jaw_yaw_reference: z
+                                                  .enum(["world_x", "world_y"])
+                                                  .describe(
+                                                    "The world axis jaw yaw zero is projected from.",
+                                                  ),
                                               })
                                               .describe(
                                                 "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -22009,16 +21895,16 @@ export const apiSchemas = z.object({
                           checkpoints: z.array(
                             z
                               .object({
-                                label: z.string(),
-                                measured_joints: z.array(z.number()),
-                                target_position: z.union([
+                                destination_position: z.union([
                                   z.array(z.number()).min(3).max(3),
                                   z.null(),
                                 ]),
-                                target_quaternion: z.union([
+                                destination_quaternion: z.union([
                                   z.array(z.number()).min(4).max(4),
                                   z.null(),
                                 ]),
+                                label: z.string(),
+                                measured_joints: z.array(z.number()),
                               })
                               .describe(
                                 "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -22028,6 +21914,15 @@ export const apiSchemas = z.object({
                             .union([
                               z
                                 .object({
+                                  destination_joints: z.array(z.number()),
+                                  destination_position: z.union([
+                                    z.array(z.number()).min(3).max(3),
+                                    z.null(),
+                                  ]),
+                                  destination_quaternion: z.union([
+                                    z.array(z.number()).min(4).max(4),
+                                    z.null(),
+                                  ]),
                                   group_id: z.union([z.string(), z.null()]),
                                   joint_speed: z.number(),
                                   kind: z.literal("move"),
@@ -22098,21 +21993,11 @@ export const apiSchemas = z.object({
                                       ),
                                     z.null(),
                                   ]),
-                                  target_joints: z.array(z.number()),
-                                  target_position: z.union([
-                                    z.array(z.number()).min(3).max(3),
-                                    z.null(),
-                                  ]),
-                                  target_quaternion: z.union([
-                                    z.array(z.number()).min(4).max(4),
-                                    z.null(),
-                                  ]),
                                 })
                                 .strict(),
                               z
                                 .object({
-                                  kind: z.literal("policy_reach"),
-                                  target_pose: z
+                                  goal_pose: z
                                     .object({
                                       position: z
                                         .array(z.number())
@@ -22127,6 +22012,7 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "The target pose or streamed goal in the station world frame.",
                                     ),
+                                  kind: z.literal("policy_reach"),
                                 })
                                 .strict(),
                               z
@@ -22264,16 +22150,7 @@ export const apiSchemas = z.object({
                                                   .number()
                                                   .gte(0)
                                                   .lte(180),
-                                                jaw_yaw_degrees: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lt(360),
-                                                jaw_yaw_reference: z
-                                                  .enum(["world_x", "world_y"])
-                                                  .describe(
-                                                    "The world axis jaw yaw zero is projected from.",
-                                                  ),
-                                                target: z.union([
+                                                goal: z.union([
                                                   z
                                                     .object({
                                                       approach_error_degrees: z
@@ -22303,6 +22180,15 @@ export const apiSchemas = z.object({
                                                     ),
                                                   z.null(),
                                                 ]),
+                                                jaw_yaw_degrees: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lt(360),
+                                                jaw_yaw_reference: z
+                                                  .enum(["world_x", "world_y"])
+                                                  .describe(
+                                                    "The world axis jaw yaw zero is projected from.",
+                                                  ),
                                               })
                                               .describe(
                                                 "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -22554,16 +22440,16 @@ export const apiSchemas = z.object({
                           checkpoints: z.array(
                             z
                               .object({
-                                label: z.string(),
-                                measured_joints: z.array(z.number()),
-                                target_position: z.union([
+                                destination_position: z.union([
                                   z.array(z.number()).min(3).max(3),
                                   z.null(),
                                 ]),
-                                target_quaternion: z.union([
+                                destination_quaternion: z.union([
                                   z.array(z.number()).min(4).max(4),
                                   z.null(),
                                 ]),
+                                label: z.string(),
+                                measured_joints: z.array(z.number()),
                               })
                               .describe(
                                 "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -22573,6 +22459,15 @@ export const apiSchemas = z.object({
                             .union([
                               z
                                 .object({
+                                  destination_joints: z.array(z.number()),
+                                  destination_position: z.union([
+                                    z.array(z.number()).min(3).max(3),
+                                    z.null(),
+                                  ]),
+                                  destination_quaternion: z.union([
+                                    z.array(z.number()).min(4).max(4),
+                                    z.null(),
+                                  ]),
                                   group_id: z.union([z.string(), z.null()]),
                                   joint_speed: z.number(),
                                   kind: z.literal("move"),
@@ -22643,21 +22538,11 @@ export const apiSchemas = z.object({
                                       ),
                                     z.null(),
                                   ]),
-                                  target_joints: z.array(z.number()),
-                                  target_position: z.union([
-                                    z.array(z.number()).min(3).max(3),
-                                    z.null(),
-                                  ]),
-                                  target_quaternion: z.union([
-                                    z.array(z.number()).min(4).max(4),
-                                    z.null(),
-                                  ]),
                                 })
                                 .strict(),
                               z
                                 .object({
-                                  kind: z.literal("policy_reach"),
-                                  target_pose: z
+                                  goal_pose: z
                                     .object({
                                       position: z
                                         .array(z.number())
@@ -22672,6 +22557,7 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "The target pose or streamed goal in the station world frame.",
                                     ),
+                                  kind: z.literal("policy_reach"),
                                 })
                                 .strict(),
                               z
@@ -22809,16 +22695,7 @@ export const apiSchemas = z.object({
                                                   .number()
                                                   .gte(0)
                                                   .lte(180),
-                                                jaw_yaw_degrees: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lt(360),
-                                                jaw_yaw_reference: z
-                                                  .enum(["world_x", "world_y"])
-                                                  .describe(
-                                                    "The world axis jaw yaw zero is projected from.",
-                                                  ),
-                                                target: z.union([
+                                                goal: z.union([
                                                   z
                                                     .object({
                                                       approach_error_degrees: z
@@ -22848,6 +22725,15 @@ export const apiSchemas = z.object({
                                                     ),
                                                   z.null(),
                                                 ]),
+                                                jaw_yaw_degrees: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lt(360),
+                                                jaw_yaw_reference: z
+                                                  .enum(["world_x", "world_y"])
+                                                  .describe(
+                                                    "The world axis jaw yaw zero is projected from.",
+                                                  ),
                                               })
                                               .describe(
                                                 "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -23098,13 +22984,7 @@ export const apiSchemas = z.object({
                               .object({
                                 approach: z.array(z.number()).min(3).max(3),
                                 degrees_from_down: z.number().gte(0).lte(180),
-                                jaw_yaw_degrees: z.number().gte(0).lt(360),
-                                jaw_yaw_reference: z
-                                  .enum(["world_x", "world_y"])
-                                  .describe(
-                                    "The world axis jaw yaw zero is projected from.",
-                                  ),
-                                target: z.union([
+                                goal: z.union([
                                   z
                                     .object({
                                       approach_error_degrees: z
@@ -23130,6 +23010,12 @@ export const apiSchemas = z.object({
                                     ),
                                   z.null(),
                                 ]),
+                                jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                jaw_yaw_reference: z
+                                  .enum(["world_x", "world_y"])
+                                  .describe(
+                                    "The world axis jaw yaw zero is projected from.",
+                                  ),
                               })
                               .describe(
                                 "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -23615,16 +23501,16 @@ export const apiSchemas = z.object({
                               checkpoints: z.array(
                                 z
                                   .object({
-                                    label: z.string(),
-                                    measured_joints: z.array(z.number()),
-                                    target_position: z.union([
+                                    destination_position: z.union([
                                       z.array(z.number()).min(3).max(3),
                                       z.null(),
                                     ]),
-                                    target_quaternion: z.union([
+                                    destination_quaternion: z.union([
                                       z.array(z.number()).min(4).max(4),
                                       z.null(),
                                     ]),
+                                    label: z.string(),
+                                    measured_joints: z.array(z.number()),
                                   })
                                   .describe(
                                     "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -23634,6 +23520,15 @@ export const apiSchemas = z.object({
                                 .union([
                                   z
                                     .object({
+                                      destination_joints: z.array(z.number()),
+                                      destination_position: z.union([
+                                        z.array(z.number()).min(3).max(3),
+                                        z.null(),
+                                      ]),
+                                      destination_quaternion: z.union([
+                                        z.array(z.number()).min(4).max(4),
+                                        z.null(),
+                                      ]),
                                       group_id: z.union([z.string(), z.null()]),
                                       joint_speed: z.number(),
                                       kind: z.literal("move"),
@@ -23704,21 +23599,11 @@ export const apiSchemas = z.object({
                                           ),
                                         z.null(),
                                       ]),
-                                      target_joints: z.array(z.number()),
-                                      target_position: z.union([
-                                        z.array(z.number()).min(3).max(3),
-                                        z.null(),
-                                      ]),
-                                      target_quaternion: z.union([
-                                        z.array(z.number()).min(4).max(4),
-                                        z.null(),
-                                      ]),
                                     })
                                     .strict(),
                                   z
                                     .object({
-                                      kind: z.literal("policy_reach"),
-                                      target_pose: z
+                                      goal_pose: z
                                         .object({
                                           position: z
                                             .array(z.number())
@@ -23733,6 +23618,7 @@ export const apiSchemas = z.object({
                                         .describe(
                                           "The target pose or streamed goal in the station world frame.",
                                         ),
+                                      kind: z.literal("policy_reach"),
                                     })
                                     .strict(),
                                   z
@@ -23870,19 +23756,7 @@ export const apiSchemas = z.object({
                                                       .number()
                                                       .gte(0)
                                                       .lte(180),
-                                                    jaw_yaw_degrees: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lt(360),
-                                                    jaw_yaw_reference: z
-                                                      .enum([
-                                                        "world_x",
-                                                        "world_y",
-                                                      ])
-                                                      .describe(
-                                                        "The world axis jaw yaw zero is projected from.",
-                                                      ),
-                                                    target: z.union([
+                                                    goal: z.union([
                                                       z
                                                         .object({
                                                           approach_error_degrees:
@@ -23913,6 +23787,18 @@ export const apiSchemas = z.object({
                                                         ),
                                                       z.null(),
                                                     ]),
+                                                    jaw_yaw_degrees: z
+                                                      .number()
+                                                      .gte(0)
+                                                      .lt(360),
+                                                    jaw_yaw_reference: z
+                                                      .enum([
+                                                        "world_x",
+                                                        "world_y",
+                                                      ])
+                                                      .describe(
+                                                        "The world axis jaw yaw zero is projected from.",
+                                                      ),
                                                   })
                                                   .describe(
                                                     "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -24362,62 +24248,6 @@ export const apiSchemas = z.object({
         .describe("Move the tool to a world position and orientation."),
       z
         .object({
-          kind: z.literal("follow_path"),
-          max_joint_speed: z.union([z.number().gt(0), z.null()]).default(null),
-          waypoints: z.array(
-            z
-              .union([
-                z.object({
-                  joints: z.array(z.number()),
-                  kind: z.literal("joints"),
-                }),
-                z.object({
-                  kind: z.literal("pose"),
-                  orientation: z
-                    .union([
-                      z
-                        .object({
-                          approach: z
-                            .union([
-                              z
-                                .union([
-                                  z.literal("down").describe("World -Z."),
-                                  z.literal("forward").describe("World +X."),
-                                ])
-                                .describe("A named approach direction."),
-                              z.array(z.number()).min(3).max(3),
-                            ])
-                            .describe(
-                              "The direction the jaws point along: a named one, or a nonzero world direction.",
-                            ),
-                          jaw_yaw_degrees: z.number(),
-                          kind: z.literal("grasp"),
-                        })
-                        .describe(
-                          "The approach direction and the jaw yaw about it, in degrees.",
-                        ),
-                      z
-                        .object({
-                          kind: z.literal("quaternion"),
-                          quaternion: z.array(z.number()).min(4).max(4),
-                        })
-                        .describe("A raw quaternion, `[x, y, z, w]`."),
-                    ])
-                    .describe("A tool orientation as a client gives it."),
-                  position: z.array(z.number()).min(3).max(3),
-                }),
-              ])
-              .describe(
-                "One corner of a move: joints, or a tool pose solved for joints.",
-              ),
-          ),
-        })
-        .strict()
-        .describe(
-          "Waypoints are corners: the arm comes to rest and settles at each one.",
-        ),
-      z
-        .object({
           gripper_opening: z
             .union([
               z
@@ -24491,16 +24321,16 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z.union([
+                        destination_position: z.union([
                           z.array(z.number()).min(3).max(3),
                           z.null(),
                         ]),
-                        target_quaternion: z.union([
+                        destination_quaternion: z.union([
                           z.array(z.number()).min(4).max(4),
                           z.null(),
                         ]),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -24510,6 +24340,15 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z.union([
+                            z.array(z.number()).min(3).max(3),
+                            z.null(),
+                          ]),
+                          destination_quaternion: z.union([
+                            z.array(z.number()).min(4).max(4),
+                            z.null(),
+                          ]),
                           group_id: z.union([z.string(), z.null()]),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -24578,21 +24417,11 @@ export const apiSchemas = z.object({
                               ),
                             z.null(),
                           ]),
-                          target_joints: z.array(z.number()),
-                          target_position: z.union([
-                            z.array(z.number()).min(3).max(3),
-                            z.null(),
-                          ]),
-                          target_quaternion: z.union([
-                            z.array(z.number()).min(4).max(4),
-                            z.null(),
-                          ]),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -24601,6 +24430,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -24730,16 +24560,7 @@ export const apiSchemas = z.object({
                                           .number()
                                           .gte(0)
                                           .lte(180),
-                                        jaw_yaw_degrees: z
-                                          .number()
-                                          .gte(0)
-                                          .lt(360),
-                                        jaw_yaw_reference: z
-                                          .enum(["world_x", "world_y"])
-                                          .describe(
-                                            "The world axis jaw yaw zero is projected from.",
-                                          ),
-                                        target: z.union([
+                                        goal: z.union([
                                           z
                                             .object({
                                               approach_error_degrees: z
@@ -24765,6 +24586,15 @@ export const apiSchemas = z.object({
                                             ),
                                           z.null(),
                                         ]),
+                                        jaw_yaw_degrees: z
+                                          .number()
+                                          .gte(0)
+                                          .lt(360),
+                                        jaw_yaw_reference: z
+                                          .enum(["world_x", "world_y"])
+                                          .describe(
+                                            "The world axis jaw yaw zero is projected from.",
+                                          ),
                                       })
                                       .describe(
                                         "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -25005,16 +24835,16 @@ export const apiSchemas = z.object({
                   checkpoints: z.array(
                     z
                       .object({
-                        label: z.string(),
-                        measured_joints: z.array(z.number()),
-                        target_position: z.union([
+                        destination_position: z.union([
                           z.array(z.number()).min(3).max(3),
                           z.null(),
                         ]),
-                        target_quaternion: z.union([
+                        destination_quaternion: z.union([
                           z.array(z.number()).min(4).max(4),
                           z.null(),
                         ]),
+                        label: z.string(),
+                        measured_joints: z.array(z.number()),
                       })
                       .describe(
                         "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -25024,6 +24854,15 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          destination_joints: z.array(z.number()),
+                          destination_position: z.union([
+                            z.array(z.number()).min(3).max(3),
+                            z.null(),
+                          ]),
+                          destination_quaternion: z.union([
+                            z.array(z.number()).min(4).max(4),
+                            z.null(),
+                          ]),
                           group_id: z.union([z.string(), z.null()]),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -25092,21 +24931,11 @@ export const apiSchemas = z.object({
                               ),
                             z.null(),
                           ]),
-                          target_joints: z.array(z.number()),
-                          target_position: z.union([
-                            z.array(z.number()).min(3).max(3),
-                            z.null(),
-                          ]),
-                          target_quaternion: z.union([
-                            z.array(z.number()).min(4).max(4),
-                            z.null(),
-                          ]),
                         })
                         .strict(),
                       z
                         .object({
-                          kind: z.literal("policy_reach"),
-                          target_pose: z
+                          goal_pose: z
                             .object({
                               position: z.array(z.number()).min(3).max(3),
                               quaternion: z.array(z.number()).min(4).max(4),
@@ -25115,6 +24944,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "The target pose or streamed goal in the station world frame.",
                             ),
+                          kind: z.literal("policy_reach"),
                         })
                         .strict(),
                       z
@@ -25244,16 +25074,7 @@ export const apiSchemas = z.object({
                                           .number()
                                           .gte(0)
                                           .lte(180),
-                                        jaw_yaw_degrees: z
-                                          .number()
-                                          .gte(0)
-                                          .lt(360),
-                                        jaw_yaw_reference: z
-                                          .enum(["world_x", "world_y"])
-                                          .describe(
-                                            "The world axis jaw yaw zero is projected from.",
-                                          ),
-                                        target: z.union([
+                                        goal: z.union([
                                           z
                                             .object({
                                               approach_error_degrees: z
@@ -25279,6 +25100,15 @@ export const apiSchemas = z.object({
                                             ),
                                           z.null(),
                                         ]),
+                                        jaw_yaw_degrees: z
+                                          .number()
+                                          .gte(0)
+                                          .lt(360),
+                                        jaw_yaw_reference: z
+                                          .enum(["world_x", "world_y"])
+                                          .describe(
+                                            "The world axis jaw yaw zero is projected from.",
+                                          ),
                                       })
                                       .describe(
                                         "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -25520,13 +25350,7 @@ export const apiSchemas = z.object({
                       .object({
                         approach: z.array(z.number()).min(3).max(3),
                         degrees_from_down: z.number().gte(0).lte(180),
-                        jaw_yaw_degrees: z.number().gte(0).lt(360),
-                        jaw_yaw_reference: z
-                          .enum(["world_x", "world_y"])
-                          .describe(
-                            "The world axis jaw yaw zero is projected from.",
-                          ),
-                        target: z.union([
+                        goal: z.union([
                           z
                             .object({
                               approach_error_degrees: z
@@ -25549,6 +25373,12 @@ export const apiSchemas = z.object({
                             ),
                           z.null(),
                         ]),
+                        jaw_yaw_degrees: z.number().gte(0).lt(360),
+                        jaw_yaw_reference: z
+                          .enum(["world_x", "world_y"])
+                          .describe(
+                            "The world axis jaw yaw zero is projected from.",
+                          ),
                       })
                       .describe(
                         "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
@@ -25687,18 +25517,6 @@ export const apiSchemas = z.object({
   SurfaceGuardConfig: z
     .object({ leeway_meters: z.number(), surface_height_meters: z.number() })
     .strict(),
-  TargetComparison: z
-    .object({
-      approach_error_degrees: z.number().gte(0).lte(180),
-      jaw_yaw_degrees: z.number().gte(0).lt(360),
-      jaw_yaw_reference: z
-        .enum(["world_x", "world_y"])
-        .describe("The world axis jaw yaw zero is projected from."),
-      orientation_error_degrees: z.number().gte(0).lte(180),
-    })
-    .describe(
-      "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
-    ),
   ToolOrientation: z
     .object({
       approach: z.array(z.number()).min(3).max(3),

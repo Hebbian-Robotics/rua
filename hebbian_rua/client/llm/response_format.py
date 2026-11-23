@@ -51,14 +51,12 @@ def _model_command_record(record: dict) -> dict:
         key: item for key, item in record.items() if key not in {"command", "phase"}
     }
     result.update(
-        (key, item)
-        for key, item in command.items()
-        if key not in {"kind", "target_pose"}
+        (key, item) for key, item in command.items() if key not in {"kind", "goal_pose"}
     )
-    pose = command.get("target_pose")
+    pose = command.get("goal_pose")
     if isinstance(pose, dict):
-        result["target_position"] = pose.get("position")
-        result["target_quaternion"] = pose.get("quaternion")
+        result["goal_position"] = pose.get("position")
+        result["goal_quaternion"] = pose.get("quaternion")
     phase_kind = phase["kind"]
     if phase_kind == "finished":
         completion = phase.get("completion")
@@ -68,16 +66,16 @@ def _model_command_record(record: dict) -> dict:
             outcome = completion.get("outcome")
             match outcome:
                 case "completed":
-                    result["target_status"] = (
+                    result["goal_status"] = (
                         "limited"
                         if command.get("pose_limited") is not None
                         or command.get("path_limited") is not None
                         else "reached"
                     )
                 case "stopped_short":
-                    result["target_status"] = "stopped_short"
+                    result["goal_status"] = "stopped_short"
                 case _:
-                    result["target_status"] = "partial"
+                    result["goal_status"] = "partial"
     elif phase_kind in {"not_started", "outcome_unknown"}:
         result["completion"] = {
             "outcome": "interrupted"
@@ -87,7 +85,7 @@ def _model_command_record(record: dict) -> dict:
             "finished_at": phase.get("finished_at"),
         }
         if phase_kind == "not_started":
-            key = "target_status" if command["kind"] == "move" else "phase"
+            key = "goal_status" if command["kind"] == "move" else "phase"
             result[key] = "not_started"
     return result
 

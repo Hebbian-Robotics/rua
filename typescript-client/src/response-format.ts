@@ -36,7 +36,7 @@ function modelCommandRecord(
     typeof record["command_id"] !== "string"
   )
     return record;
-  const { kind, target_pose: pose, ...target } = command;
+  const { kind, goal_pose: pose, ...target } = command;
   const phaseKind = phase["kind"];
   if (
     typeof kind !== "string" ||
@@ -47,8 +47,8 @@ function modelCommandRecord(
     return record;
   const result: Record<string, unknown> = { ...metadata, ...target };
   if (isObject(pose)) {
-    result["target_position"] = pose["position"];
-    result["target_quaternion"] = pose["quaternion"];
+    result["goal_position"] = pose["position"];
+    result["goal_quaternion"] = pose["quaternion"];
   }
   if (phaseKind === "finished") {
     result["completion"] = phase["completion"];
@@ -59,9 +59,9 @@ function modelCommandRecord(
       if (outcome === "completed") {
         const limited =
           command["pose_limited"] != null || command["path_limited"] != null;
-        result["target_status"] = limited ? "limited" : "reached";
+        result["goal_status"] = limited ? "limited" : "reached";
       } else {
-        result["target_status"] =
+        result["goal_status"] =
           outcome === "stopped_short" ? "stopped_short" : "partial";
       }
     }
@@ -73,7 +73,7 @@ function modelCommandRecord(
       finished_at: phase["finished_at"],
     };
     if (phaseKind === "not_started") {
-      if (kind === "move") result["target_status"] = "not_started";
+      if (kind === "move") result["goal_status"] = "not_started";
       else result["phase"] = "not_started";
     }
   }

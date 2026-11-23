@@ -54,13 +54,13 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
     let is_move = command["kind"] == "move";
     let target = command
         .iter()
-        .filter(|(key, _)| !matches!(key.as_str(), "kind" | "target_pose"));
+        .filter(|(key, _)| !matches!(key.as_str(), "kind" | "goal_pose"));
     let mut fields: Map<String, Value> = target
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
-    if let Some(pose) = command.get("target_pose").and_then(Value::as_object) {
-        fields.insert("target_position".into(), pose["position"].clone());
-        fields.insert("target_quaternion".into(), pose["quaternion"].clone());
+    if let Some(pose) = command.get("goal_pose").and_then(Value::as_object) {
+        fields.insert("goal_position".into(), pose["position"].clone());
+        fields.insert("goal_quaternion".into(), pose["quaternion"].clone());
     }
     match phase["kind"].as_str() {
         Some("finished") => {
@@ -80,7 +80,7 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
                     Some("stopped_short") => "stopped_short",
                     _ => "partial",
                 };
-                fields.insert("target_status".into(), status.into());
+                fields.insert("goal_status".into(), status.into());
             }
         }
         Some(kind @ ("not_started" | "outcome_unknown")) => {
@@ -99,7 +99,7 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
             );
             if kind == "not_started" {
                 fields.insert(
-                    if is_move { "target_status" } else { "phase" }.into(),
+                    if is_move { "goal_status" } else { "phase" }.into(),
                     "not_started".into(),
                 );
             }

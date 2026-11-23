@@ -254,14 +254,6 @@ pub(crate) fn arm_command(
             orientation,
             max_joint_speed,
         },
-        StationCommand::FollowPath {
-            waypoints,
-            max_joint_speed,
-        } => StationMovement::Trajectory {
-            label: "follow_path",
-            waypoints,
-            max_joint_speed,
-        },
         StationCommand::StreamJoints {
             joints,
             max_joint_speed,

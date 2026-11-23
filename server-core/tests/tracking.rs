@@ -32,8 +32,8 @@ fn plan() -> CornerPlan {
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.6, -0.3]],
             minimum_duration_seconds: None,
-            target_position: None,
-            target_quaternion: None,
+            destination_position: None,
+            destination_quaternion: None,
         }],
         peak_speed: 0.6,
     }

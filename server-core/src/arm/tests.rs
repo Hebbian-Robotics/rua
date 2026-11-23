@@ -4,8 +4,8 @@ use std::time::Instant;
 use super::admission::RETAINED_RECORDS;
 use super::*;
 use hebbian_contracts::{
-    ArmMode, Command, CommandOutcome, CommandRecord, CornerPlan, Event, JawClosingAxis,
-    RejectionReason, Segment, TargetStatus,
+    ArmMode, Command, CommandOutcome, CommandRecord, CornerPlan, Event, GoalStatus, JawClosingAxis,
+    RejectionReason, Segment,
 };
 
 fn limits() -> Limits {
@@ -51,8 +51,8 @@ fn plan(from: [f64; 2], to: [f64; 2]) -> CornerPlan {
             label: "go".into(),
             corners: vec![from.to_vec(), to.to_vec()],
             minimum_duration_seconds: None,
-            target_position: None,
-            target_quaternion: None,
+            destination_position: None,
+            destination_quaternion: None,
         }],
         peak_speed: 1.0,
     }
@@ -129,7 +129,7 @@ fn enabling_holds_the_present_pose_and_completes_its_record() {
 fn a_move_is_queued_with_its_target_and_refused_while_another_is_active() {
     let (mut core, _) = enabled_core();
     let record = core.submit(mv([0.0, 0.0], [0.5, -0.5]), at(2.0)).unwrap();
-    assert_eq!(record.target_joints(), Some([0.5, -0.5].as_slice()));
+    assert_eq!(record.destination_joints(), Some([0.5, -0.5].as_slice()));
     assert_eq!(record_speed(&record), 1.0);
     assert_eq!(
         reason(core.submit(mv([0.0, 0.0], [0.1, 0.0]), at(2.0))),
@@ -212,7 +212,7 @@ fn a_completed_move_records_how_close_the_arm_ended_to_its_target() {
     core.observe(at(3.0), &[0.49, 0.0], None, None);
     core.motion_ended(CommandOutcome::Completed, None, &[0.5, 0.0], at(3.0));
     let finished = core.record(&record.command_id).unwrap();
-    assert_eq!(finished.target_status(), Some(TargetStatus::Reached));
+    assert_eq!(finished.goal_status(), Some(GoalStatus::Reached));
     let achieved = finished.achieved().unwrap();
     assert!((achieved.joint_error_radians.unwrap() - 0.01).abs() < 1e-12);
     assert_eq!(core.mode(), ArmMode::Holding);
@@ -228,7 +228,7 @@ fn stop_ends_the_queue_asks_the_active_command_to_stop_and_completes_itself() {
     assert_eq!(stop.label, "stop");
     let cancelled = core.record(&record.command_id).unwrap();
     assert_eq!(cancelled.outcome(), Some(CommandOutcome::Stopped));
-    assert_eq!(cancelled.target_status(), Some(TargetStatus::NotStarted));
+    assert_eq!(cancelled.goal_status(), Some(GoalStatus::NotStarted));
     assert!(core.next_job().is_none());
     let running = core
         .submit(mv_planned([0.0, 0.0], [0.5, 0.0]), at(3.0))
@@ -245,7 +245,7 @@ fn stop_ends_the_queue_asks_the_active_command_to_stop_and_completes_itself() {
     );
     let ended = core.record(&running.command_id).unwrap();
     assert_eq!(ended.outcome(), Some(CommandOutcome::Stopped));
-    assert_eq!(ended.target_status(), Some(TargetStatus::Partial));
+    assert_eq!(ended.goal_status(), Some(GoalStatus::Partial));
     assert!(!core.stop_requested());
 }
 
@@ -268,8 +268,8 @@ fn control_handoff_waits_for_the_running_motion_to_stop() {
 #[test]
 fn a_failed_move_only_reports_partial_when_feedback_showed_displacement() {
     for (measured, expected) in [
-        ([0.0, 0.0], TargetStatus::NotStarted),
-        ([0.1, 0.0], TargetStatus::Partial),
+        ([0.0, 0.0], GoalStatus::NotStarted),
+        ([0.1, 0.0], GoalStatus::Partial),
     ] {
         let (mut core, _) = enabled_core();
         let movement = core.submit(mv([0.0, 0.0], [0.5, 0.0]), at(2.0)).unwrap();
@@ -279,7 +279,7 @@ fn a_failed_move_only_reports_partial_when_feedback_showed_displacement() {
         core.failed("The trajectory failed", at(2.2));
         let record = core.record(&movement.command_id).unwrap();
         assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
-        assert_eq!(record.target_status(), Some(expected));
+        assert_eq!(record.goal_status(), Some(expected));
     }
 }
 
@@ -377,7 +377,7 @@ fn a_disconnected_motion_has_an_unknown_outcome() {
     );
     let interrupted = core.record(&record.command_id).unwrap();
     assert_eq!(interrupted.achieved(), None);
-    assert_eq!(interrupted.target_status(), None);
+    assert_eq!(interrupted.goal_status(), None);
 }
 
 #[test]
@@ -642,13 +642,13 @@ fn a_move_that_stopped_short_is_not_reported_reached() {
     core.observe(at(3.0), &[0.449, 0.0], None, None);
     core.motion_ended(CommandOutcome::StoppedShort, None, &[0.5, 0.0], at(3.0));
     let finished = core.record(&record.command_id).unwrap();
-    assert_eq!(finished.target_status(), Some(TargetStatus::StoppedShort));
+    assert_eq!(finished.goal_status(), Some(GoalStatus::StoppedShort));
 }
 
-fn stopped_short_detail(target_position: Option<[f64; 3]>) -> Option<String> {
+fn stopped_short_detail(destination_position: Option<[f64; 3]>) -> Option<String> {
     let (mut core, _) = enabled_core();
     let mut pose_plan = plan([0.0, 0.0], [0.5, 0.0]);
-    pose_plan.segments[0].target_position = target_position;
+    pose_plan.segments[0].destination_position = destination_position;
     let command = Command::Move {
         label: "move_to_pose".into(),
         plan: pose_plan,

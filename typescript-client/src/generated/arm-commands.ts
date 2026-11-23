@@ -97,25 +97,6 @@ export function armMotionCommands<Result>(
       );
     },
     /**
-     * Waypoints are corners: the arm comes to rest and settles at each one.
-     */
-    followPath(
-      waypoints: Extract<StationCommand, { kind: "follow_path" }>["waypoints"],
-      maxJointSpeed?: NonNullable<
-        Extract<StationCommand, { kind: "follow_path" }>["max_joint_speed"]
-      >,
-      expectedRevision?: number,
-    ): Result {
-      return send(
-        {
-          kind: "follow_path",
-          waypoints: waypoints,
-          max_joint_speed: maxJointSpeed ?? null,
-        },
-        expectedRevision,
-      );
-    },
-    /**
      * Start streaming joint destinations while the arm is holding. Send
      * later goals to the operation's goal endpoint. The stream ends when
      * goals stop arriving, on stop, or on a trip.
