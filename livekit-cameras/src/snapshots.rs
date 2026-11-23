@@ -1,11 +1,11 @@
 use std::{
     collections::BTreeMap,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
 };
 
-use crate::{config::CameraInput, error::PublisherError};
+use crate::error::PublisherError;
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -13,10 +13,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use hebbian_contracts::unix_nanoseconds;
+use hebbian_contracts::{CameraStatus, unix_nanoseconds};
 use livekit::webrtc::video_frame::VideoRotation;
 use livekit_camera_frames::{CameraFrame, CameraFrames, LatestFrame, TrackIdentity, camera_frame};
-use livekit_camera_publisher::capture::CaptureWorker;
+use livekit_camera_publisher::capture::CapturedI420Frame;
 use serde::Deserialize;
 use station_access::{Credentials, WatcherRole};
 use tokio::{
@@ -31,7 +31,7 @@ const MAX_SIMULATOR_FRAME_BYTES: usize = 8 * 1024 * 1024;
 #[derive(Clone, Default)]
 pub struct Snapshots {
     frames: CameraFrames,
-    local_names: Arc<Vec<String>>,
+    local_status: Arc<Mutex<BTreeMap<String, CameraStatus>>>,
     socket: Option<PathBuf>,
 }
 #[derive(Deserialize)]
@@ -43,58 +43,17 @@ struct SocketReply {
 }
 
 impl Snapshots {
-    /// `expected` names known room cameras that should be listed even before frames arrive.
-    pub fn start(
-        cameras: Vec<CameraInput>,
-        expected: Vec<String>,
-        socket: Option<PathBuf>,
-        room: Option<String>,
-    ) -> Self {
+    pub fn start(names: Vec<String>, socket: Option<PathBuf>, room: Option<String>) -> Self {
         let snapshots = Self {
             frames: CameraFrames::default(),
-            local_names: Arc::new(
-                cameras
-                    .iter()
-                    .map(|camera| camera.name().to_owned())
-                    .chain(expected)
-                    .collect::<std::collections::BTreeSet<_>>()
+            local_status: Arc::new(Mutex::new(
+                names
                     .into_iter()
+                    .map(|name| (name, CameraStatus::Resolving))
                     .collect(),
-            ),
+            )),
             socket,
         };
-        for camera in cameras {
-            let name = camera.name().to_owned();
-            snapshots.frames.register(TrackIdentity {
-                participant: name.clone(),
-                track_sid: format!("local:{name}"),
-            });
-            let state = snapshots.clone();
-            tokio::spawn(async move {
-                let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
-                loop {
-                    // PROTOCOL: The station reads camera failures from this stderr format.
-                    let worker = match camera.resolve().await {
-                        Ok(resolved) => {
-                            CaptureWorker::start(&resolved).map_err(PublisherError::from)
-                        }
-                        Err(error) => Err(error),
-                    };
-                    match worker {
-                        Ok(mut worker) => {
-                            if state.forward_local_frames(&name, &mut worker).await {
-                                backoff.reset();
-                            }
-                            if let Err(error) = worker.stop().await {
-                                eprintln!("Camera {name}: {error}");
-                            }
-                        }
-                        Err(error) => eprintln!("Camera {name}: {error}"),
-                    }
-                    tokio::time::sleep(backoff.next_delay()).await;
-                }
-            });
-        }
         if let Some(room) = room {
             let state = snapshots.clone();
             tokio::spawn(async move {
@@ -103,43 +62,52 @@ impl Snapshots {
         }
         snapshots
     }
-    async fn forward_local_frames(&self, name: &str, worker: &mut CaptureWorker) -> bool {
-        let mut published_frame = false;
-        let track = format!("local:{name}");
-        while worker.frames.changed().await.is_ok() {
-            let Some(frame) = worker.frames.borrow_and_update().clone() else {
-                continue;
-            };
-            let Ok(planes) = frame.i420.planes() else {
-                continue;
-            };
-            let mut buffer = livekit::webrtc::video_frame::I420Buffer::with_strides(
-                frame.i420.width,
-                frame.i420.height,
-                frame.i420.width,
-                frame.i420.width.div_ceil(2),
-                frame.i420.width.div_ceil(2),
-            );
-            let (y, u, v) = buffer.data_mut();
-            y.copy_from_slice(planes.y);
-            u.copy_from_slice(planes.u);
-            v.copy_from_slice(planes.v);
-            if let Ok(image) = camera_frame(
-                &buffer,
-                VideoRotation::VideoRotation0,
-                frame.captured_at_unix_ns,
-                Instant::now(),
-            ) {
-                self.frames.insert(&track, image);
-                published_frame = true;
-            }
+    pub(super) fn set_camera_status(&self, name: &str, status: CameraStatus) {
+        let mut statuses = self
+            .local_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(previous) = statuses.get_mut(name) {
+            *previous = status;
         }
-        published_frame
+    }
+
+    pub(super) fn register_local_frames(&self, name: &str) {
+        self.frames.register(TrackIdentity {
+            participant: name.to_owned(),
+            track_sid: format!("local:{name}"),
+        });
+    }
+
+    pub(super) fn store_local_frame(&self, name: &str, frame: &CapturedI420Frame) {
+        let Ok(planes) = frame.i420.planes() else {
+            return;
+        };
+        let mut buffer = livekit::webrtc::video_frame::I420Buffer::with_strides(
+            frame.i420.width,
+            frame.i420.height,
+            frame.i420.width,
+            frame.i420.width.div_ceil(2),
+            frame.i420.width.div_ceil(2),
+        );
+        let (y, u, v) = buffer.data_mut();
+        y.copy_from_slice(planes.y);
+        u.copy_from_slice(planes.u);
+        v.copy_from_slice(planes.v);
+        if let Ok(image) = camera_frame(
+            &buffer,
+            VideoRotation::VideoRotation0,
+            frame.captured_at_unix_ns,
+            Instant::now(),
+        ) {
+            self.frames.insert(&format!("local:{name}"), image);
+        }
     }
 
     pub fn router(self) -> Router {
         Router::new()
             .route("/cameras", get(list))
+            .route("/camera-status", get(camera_status))
             .route("/cameras/{name}", get(snapshot))
             .with_state(self)
     }
@@ -211,9 +179,24 @@ fn frame_is_fresh(received_at: Instant, now: Instant) -> bool {
     now.saturating_duration_since(received_at) <= Duration::from_secs(3)
 }
 
+async fn camera_status(State(state): State<Snapshots>) -> Json<BTreeMap<String, CameraStatus>> {
+    Json(
+        state
+            .local_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
+    )
+}
+
 async fn list(State(state): State<Snapshots>) -> Json<Vec<hebbian_contracts::CameraListing>> {
     let mut names = BTreeMap::new();
-    for name in state.local_names.iter() {
+    for name in state
+        .local_status
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .keys()
+    {
         names.insert(name.clone(), false);
     }
     let now = Instant::now();
@@ -283,7 +266,7 @@ mod tests {
     #[tokio::test]
     async fn an_expected_camera_that_never_publishes_is_listed_unavailable()
     -> Result<(), Box<dyn std::error::Error>> {
-        let snapshots = Snapshots::start(Vec::new(), vec!["wrist".into()], None, None);
+        let snapshots = Snapshots::start(vec!["wrist".into()], None, None);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let router = snapshots.router();

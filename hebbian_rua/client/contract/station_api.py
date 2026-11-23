@@ -97,18 +97,103 @@ class CameraListing(BaseModel):
     name: str
 
 
-class CameraProblem(BaseModel):
+class CameraPublication1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
     )
-    detail: Annotated[
-        str,
+    state: Literal["disabled"] = "disabled"
+
+
+class CameraPublication2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["connecting"] = "connecting"
+
+
+class CameraPublication3(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["publishing"] = "publishing"
+
+
+class CameraPublication4(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str | None = None
+    state: Literal["reconnecting"] = "reconnecting"
+
+
+class CameraStatus1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["resolving"] = "resolving"
+
+
+class CameraStatus2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["starting"] = "starting"
+
+
+class CameraStatus3(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    publication: Annotated[
+        CameraPublication1
+        | CameraPublication2
+        | CameraPublication3
+        | CameraPublication4,
         Field(
-            description="The media service's message, such as `camera backend: Could not open device …`."
+            description="Room publication is independent of the local capture lifecycle."
         ),
     ]
-    last_seen_unix_seconds: StrictFloat
+    state: Literal["capturing"] = "capturing"
+
+
+class CameraStatus4(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["disconnected"] = "disconnected"
+
+
+class CameraStatus5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["ambiguous"] = "ambiguous"
+
+
+class CameraStatus6(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    state: Literal["stalled"] = "stalled"
+
+
+class CameraStatus7(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str
+    state: Literal["failed"] = "failed"
 
 
 class Checkpoint(BaseModel):
@@ -735,7 +820,16 @@ class MediaStatusReport(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    cameras: dict[str, CameraProblem]
+    cameras: dict[
+        str,
+        CameraStatus1
+        | CameraStatus2
+        | CameraStatus3
+        | CameraStatus4
+        | CameraStatus5
+        | CameraStatus6
+        | CameraStatus7,
+    ]
     service: MediaState1 | MediaState2 | MediaState3
 
 

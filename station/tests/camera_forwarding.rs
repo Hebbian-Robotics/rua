@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::routing::get;
-use hebbian_contracts::{CameraListing, CommandAnswer, StationInstance};
+use hebbian_contracts::{CameraListing, CommandAnswer, MediaState, StationInstance};
 use hebbian_robot_use_core::config::ControllerConfig;
 use hebbian_robot_use_core::control_link::Link;
 use hebbian_robot_use_core::lease::{LEASE, Lease};
@@ -23,6 +23,8 @@ use serde_json::json;
 use tokio::sync::Semaphore;
 
 fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> HttpServer {
+    let media_status = MediaStatus::default();
+    media_status.set(MediaState::Running);
     HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
@@ -42,7 +44,7 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
                     room: None,
                     phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
                     manual_control: false,
-                    media_status: MediaStatus::default(),
+                    media_status,
                 },
                 || true,
             );
@@ -79,6 +81,15 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
     });
     let upstream_requests = Arc::new(Semaphore::new(0));
     let media = axum::Router::new()
+        .route(
+            "/camera-status",
+            get(|| async {
+                axum::Json(json!({
+                    "wrist": {"state": "ambiguous"},
+                    "front": {"state": "capturing", "publication": {"state": "reconnecting", "detail": null}}
+                }))
+            }),
+        )
         .route(
             "/cameras",
             get(|| async { axum::Json(json!([{"name": "wrist", "available": true}])) }),
@@ -140,6 +151,24 @@ async fn assert_forwarding(
         .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
+    let status: serde_json::Value = client
+        .get(format!("{base}/viewer/api/media-status"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        status,
+        json!({
+            "service": {"state": "running"},
+            "cameras": {
+                "wrist": {"state": "ambiguous"},
+                "front": {"state": "capturing", "publication": {"state": "reconnecting", "detail": null}}
+            }
+        })
+    );
     let cameras: Vec<CameraListing> = client
         .get(format!("{base}/cameras"))
         .send()

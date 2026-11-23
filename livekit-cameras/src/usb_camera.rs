@@ -31,40 +31,47 @@ fn parse_hex(value: &str) -> Option<u16> {
     u16::from_str_radix(value.strip_prefix("0x").unwrap_or(value), 16).ok()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum UsbMatch<Device> {
+    Unique(Device),
+    Disconnected,
+    Ambiguous,
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn find_usb_device(identity: &UsbCameraIdentity) -> io::Result<nusb::DeviceInfo> {
+fn find_usb_device(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<nusb::DeviceInfo>> {
     use nusb::MaybeFuture;
 
     let devices = nusb::list_devices().wait()?;
-    unique_device(devices.filter(|device| {
+    Ok(unique_device(devices.filter(|device| {
         device.vendor_id() == identity.vendor
             && device.product_id() == identity.product
             && device.serial_number() == Some(identity.serial.as_str())
-    }))
+    })))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
-fn unique_device<T>(mut matches: impl Iterator<Item = T>) -> io::Result<T> {
-    let first = matches.next().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "USB camera disconnected (no matching device)",
-        )
-    })?;
+fn unique_device<Device>(mut matches: impl Iterator<Item = Device>) -> UsbMatch<Device> {
+    let Some(first) = matches.next() else {
+        return UsbMatch::Disconnected;
+    };
     if matches.next().is_some() {
-        return Err(io::Error::other(
-            "USB camera is ambiguous (multiple matching devices). Use rua camera-devices and pass --camera NAME=DEVICE",
-        ));
+        UsbMatch::Ambiguous
+    } else {
+        UsbMatch::Unique(first)
     }
-    Ok(first)
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
+pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<String>> {
     use std::fs;
     use v4l::capability::Flags;
 
-    let physical = find_usb_device(identity)?;
+    let physical = match find_usb_device(identity)? {
+        UsbMatch::Unique(device) => device,
+        UsbMatch::Disconnected => return Ok(UsbMatch::Disconnected),
+        UsbMatch::Ambiguous => return Ok(UsbMatch::Ambiguous),
+    };
     let devices = fs::read_dir("/sys/class/video4linux")?;
     let index = linux_capture_indices(
         devices.filter_map(Result::ok).map(|entry| entry.path()),
@@ -84,7 +91,7 @@ pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
     })?;
 
     // WHY: Numeric selectors stop on capture loss. The publisher can then resolve USB identity again.
-    Ok(index.to_string())
+    Ok(UsbMatch::Unique(index.to_string()))
 }
 
 #[cfg(target_os = "linux")]
@@ -107,8 +114,12 @@ fn linux_capture_indices(
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
-    let usb_device = find_usb_device(identity)?;
+pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<String>> {
+    let usb_device = match find_usb_device(identity)? {
+        UsbMatch::Unique(device) => device,
+        UsbMatch::Disconnected => return Ok(UsbMatch::Disconnected),
+        UsbMatch::Ambiguous => return Ok(UsbMatch::Ambiguous),
+    };
     let capture_devices = cameras::list_cameras().map_err(io::Error::other)?;
     resolve_mac_capture_index(
         identity,
@@ -117,6 +128,7 @@ pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
             .iter()
             .map(|device| (device.misc(), device.index().as_string())),
     )
+    .map(UsbMatch::Unique)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -146,7 +158,7 @@ fn resolve_mac_capture_index(
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-pub(crate) fn resolve(_identity: &UsbCameraIdentity) -> io::Result<String> {
+pub(crate) fn resolve(_identity: &UsbCameraIdentity) -> io::Result<UsbMatch<String>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "USB camera matching is unavailable on this platform",
@@ -159,18 +171,17 @@ mod tests {
 
     #[test]
     fn usb_selection_requires_exactly_one_physical_match() {
-        assert_eq!(unique_device(["wrist"].into_iter()).unwrap(), "wrist");
         assert_eq!(
-            unique_device(std::iter::empty::<&str>())
-                .unwrap_err()
-                .kind(),
-            io::ErrorKind::NotFound
+            unique_device(["wrist"].into_iter()),
+            UsbMatch::Unique("wrist")
         );
-        assert!(
-            unique_device(["wrist", "second wrist"].into_iter())
-                .unwrap_err()
-                .to_string()
-                .contains("ambiguous")
+        assert_eq!(
+            unique_device(std::iter::empty::<&str>()),
+            UsbMatch::Disconnected
+        );
+        assert_eq!(
+            unique_device(["wrist", "second wrist"].into_iter()),
+            UsbMatch::Ambiguous
         );
     }
 

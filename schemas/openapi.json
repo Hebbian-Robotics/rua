@@ -684,23 +684,161 @@
         ],
         "type": "object"
       },
-      "CameraProblem": {
-        "description": "Why a camera is not producing frames: the latest error from the media service.",
-        "properties": {
-          "detail": {
-            "description": "The media service's message, such as `camera backend: Could not open device …`.",
-            "type": "string"
+      "CameraPublication": {
+        "description": "Room publication is independent of the local capture lifecycle.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "disabled",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
           },
-          "last_seen_unix_seconds": {
-            "format": "double",
-            "type": "number"
+          {
+            "properties": {
+              "state": {
+                "const": "connecting",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "publishing",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "const": "reconnecting",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
           }
-        },
-        "required": [
-          "detail",
-          "last_seen_unix_seconds"
-        ],
-        "type": "object"
+        ]
+      },
+      "CameraStatus": {
+        "description": "The current lifecycle of a configured camera.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "resolving",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "starting",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "publication": {
+                "$ref": "#/components/schemas/CameraPublication"
+              },
+              "state": {
+                "const": "capturing",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "publication"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "disconnected",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "ambiguous",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "stalled",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "state": {
+                "const": "failed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "detail"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "Checkpoint": {
         "description": "Where the arm stood, as measured, when it settled at the end of a segment.",
@@ -3230,11 +3368,11 @@
         ]
       },
       "MediaStatusReport": {
-        "description": "`GET /viewer/api/media-status`: the media service's state and each camera's latest problem.\nA problem stays until a newer one replaces it, so read it only for a camera that is\nunavailable.",
+        "description": "`GET /viewer/api/media-status`: the media service and its configured cameras.",
         "properties": {
           "cameras": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/CameraProblem"
+              "$ref": "#/components/schemas/CameraStatus"
             },
             "type": "object"
           },

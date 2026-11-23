@@ -143,8 +143,10 @@ async fn check_camera(
 }
 
 async fn camera_problem(client: &Client, station: &Url, name: CameraName<'_>) -> Option<String> {
+    use hebbian_contracts::{CameraPublication, CameraStatus, MediaStatusReport};
+
     let url = endpoint(station, &["viewer", "api", "media-status"]).ok()?;
-    let status: serde_json::Value = client
+    let status: MediaStatusReport = client
         .get(url)
         .send()
         .await
@@ -154,9 +156,29 @@ async fn camera_problem(client: &Client, station: &Url, name: CameraName<'_>) ->
         .json()
         .await
         .ok()?;
-    status["cameras"][name.as_str()]["detail"]
-        .as_str()
-        .map(str::to_owned)
+    let detail = match status.cameras.get(name.as_str())? {
+        CameraStatus::Resolving => "Looking up the camera",
+        CameraStatus::Starting => "Waiting for the first local frame",
+        CameraStatus::Disconnected => "USB camera disconnected (no matching device)",
+        CameraStatus::Ambiguous => {
+            "USB camera is ambiguous (multiple matching devices). Use rua camera-devices and pass --camera NAME=DEVICE"
+        }
+        CameraStatus::Stalled => "Local camera capture stalled. Retrying",
+        CameraStatus::Failed { detail } => detail,
+        CameraStatus::Capturing { publication } => match publication {
+            CameraPublication::Connecting => "Local frames available. Connecting to LiveKit",
+            CameraPublication::Reconnecting { detail } => {
+                return Some(match detail {
+                    Some(detail) => {
+                        format!("Local frames available. LiveKit reconnecting: {detail}")
+                    }
+                    None => "Local frames available. LiveKit reconnecting".to_owned(),
+                });
+            }
+            CameraPublication::Disabled | CameraPublication::Publishing => return None,
+        },
+    };
+    Some(detail.to_owned())
 }
 
 #[derive(Deserialize)]

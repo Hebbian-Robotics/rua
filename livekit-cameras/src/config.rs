@@ -1,6 +1,6 @@
 use crate::{
     error::PublisherError,
-    usb_camera::{self, UsbCameraIdentity},
+    usb_camera::{self, UsbCameraIdentity, UsbMatch},
 };
 use cameras::config::configure_camera;
 use clap::Args;
@@ -50,19 +50,24 @@ impl CameraInput {
         &self.name
     }
 
-    pub(crate) async fn resolve(&self) -> Result<CameraConfiguration, PublisherError> {
+    pub(crate) async fn resolve(&self) -> Result<UsbMatch<CameraConfiguration>, PublisherError> {
         let device = match &self.device {
             CameraDevice::Explicit(device) => device.clone(),
             CameraDevice::Usb(identity) => {
                 let identity = identity.clone();
-                tokio::task::spawn_blocking(move || usb_camera::resolve(&identity))
+                match tokio::task::spawn_blocking(move || usb_camera::resolve(&identity))
                     .await
                     .map_err(std::io::Error::other)??
+                {
+                    UsbMatch::Unique(device) => device,
+                    UsbMatch::Disconnected => return Ok(UsbMatch::Disconnected),
+                    UsbMatch::Ambiguous => return Ok(UsbMatch::Ambiguous),
+                }
             }
         };
         let mut camera = CameraConfiguration::new(self.name.clone(), device)?;
         camera.publishing = self.publishing;
-        Ok(camera)
+        Ok(UsbMatch::Unique(camera))
     }
 }
 

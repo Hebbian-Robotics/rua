@@ -13,6 +13,10 @@ import {
 import { Alert } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
+import {
+  type MediaStatus,
+  mediaStatusSchema,
+} from "../../shared/media-status-schema.js";
 import { agentApi, resolveAgentUrl } from "../agent-api.js";
 import { stationJson } from "../api.js";
 import { errorMessage } from "../errors.js";
@@ -58,12 +62,10 @@ const EMPTY_SPANS: LiveRun["spans"] = [];
 const noSeek = (): void => {};
 
 function useMediaStatus(): string {
-  const query = useQuery({
+  const query = useQuery<MediaStatus>({
     queryKey: ["media-status"],
     queryFn: async () =>
-      apiSchemas.shape.MediaStatusReport.parse(
-        await stationJson("api/media-status"),
-      ),
+      mediaStatusSchema.parse(await stationJson("api/media-status")),
     refetchInterval: 5000,
     refetchIntervalInBackground: true,
     retry: false,
@@ -72,7 +74,31 @@ function useMediaStatus(): string {
   const service = query.data.service;
   switch (service.state) {
     case "running":
-      return "";
+      return Object.entries(query.data.cameras)
+        .flatMap(([name, camera]) => {
+          switch (camera.state) {
+            case "resolving":
+            case "starting":
+              return [];
+            case "disconnected":
+              return [`${name}: camera disconnected`];
+            case "ambiguous":
+              return [`${name}: multiple USB cameras matched`];
+            case "stalled":
+              return [`${name}: capture stalled, retrying`];
+            case "failed":
+              return [`${name}: ${camera.detail}`];
+            case "capturing":
+              return camera.publication.state === "reconnecting"
+                ? [`${name}: local capture active, reconnecting to LiveKit`]
+                : [];
+            default: {
+              const unexpected: never = camera;
+              return unexpected;
+            }
+          }
+        })
+        .join(" · ");
     case "restarting":
       return `Media service restarting: ${service.last_exit}`;
     case "unavailable":
@@ -372,13 +398,8 @@ export function WorkspaceApp({
               <h2 id="workspace-cameras">Cameras</h2>
               <p className="workspace-camera-status" role="status">
                 {cameras.status}
+                {mediaStatus && <span className="block">{mediaStatus}</span>}
               </p>
-              {mediaStatus && (
-                <details className="workspace-camera-status">
-                  <summary>Camera service needs attention</summary>
-                  <p>{mediaStatus}</p>
-                </details>
-              )}
               <details className="camera-setup">
                 <summary>Add remote camera</summary>
                 <div className="grid gap-3">

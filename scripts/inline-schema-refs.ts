@@ -7,7 +7,9 @@ type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
 
 const schemaPath = process.argv[2];
-if (!schemaPath) throw new Error("usage: inline-schema-refs.ts <schema.json>");
+const component = process.argv[3];
+if (!schemaPath)
+  throw new Error("usage: inline-schema-refs.ts <schema.json> [component]");
 const root = JSON.parse(readFileSync(schemaPath, "utf8")) as JsonObject;
 // CONSTRAINT: A JSON Schema keeps its definitions in `$defs`; an OpenAPI document in
 // `components.schemas`, and then the output is an object with one property per
@@ -60,12 +62,15 @@ function inline(node: Json, referencesInProgress: readonly string[]): Json {
     };
   }
   return Object.fromEntries(
-    Object.entries(node).map(([key, value]) => [
-      // CONSTRAINT: json-schema-to-zod types `oneOf` as `any`, and `anyOf` as a union. The
-      // variants of a tagged enum exclude each other, so the two agree.
-      key === "oneOf" ? "anyOf" : key,
-      inline(value, referencesInProgress),
-    ]),
+    Object.entries(node)
+      // WHY: The viewer needs validation rules only. The public schema owns descriptions.
+      .filter(([key, value]) => !(component && key === "description" && typeof value === "string"))
+      .map(([key, value]) => [
+        // CONSTRAINT: json-schema-to-zod types `oneOf` as `any`, and `anyOf` as a union.
+        // The variants of a tagged enum exclude each other, so the two agree.
+        key === "oneOf" ? "anyOf" : key,
+        inline(value, referencesInProgress),
+      ]),
   );
 }
 
@@ -114,22 +119,20 @@ const outputNames = openApiSchemas
   : [];
 
 const { $defs: _definitions, ...rest } = root;
+const schema = openApiSchemas
+  ? {
+      type: "object",
+      properties: Object.fromEntries(
+        outputNames.map((name) => [name, { $ref: `#/components/schemas/${name}` }]),
+      ),
+      required: outputNames,
+    }
+  : rest;
 const inlined = inline(
-  openApiSchemas
-    ? {
-        type: "object",
-        properties: Object.fromEntries(
-          outputNames.map((name) => [
-            name,
-            { $ref: `#/components/schemas/${name}` },
-          ]),
-        ),
-        required: outputNames,
-      }
-    : rest,
+  component ? { $ref: `#/components/schemas/${component}` } : schema,
   [],
 ) as JsonObject;
-const properties = inlined.properties as JsonObject;
+const properties = (inlined.properties ?? {}) as JsonObject;
 for (const name of Object.keys(properties)) {
   if (SENT_BY_CONTROLLER.has(name))
     properties[name] = requireNullableFields(properties[name] as Json);

@@ -44,7 +44,7 @@ pub struct ReconnectRequest {
     pub supported: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum MediaState {
     Running,
@@ -58,19 +58,32 @@ pub enum MediaState {
     },
 }
 
-/// Why a camera is not producing frames: the latest error from the media service.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
-pub struct CameraProblem {
-    /// The media service's message, such as `camera backend: Could not open device …`.
-    pub detail: String,
-    pub last_seen_unix_seconds: f64,
+/// The current lifecycle of a configured camera.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum CameraStatus {
+    Resolving,
+    Starting,
+    Capturing { publication: CameraPublication },
+    Disconnected,
+    Ambiguous,
+    Stalled,
+    Failed { detail: String },
 }
 
-/// `GET /viewer/api/media-status`: the media service's state and each camera's latest problem.
-/// A problem stays until a newer one replaces it, so read it only for a camera that is
-/// unavailable.
-#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+/// Room publication is independent of the local capture lifecycle.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum CameraPublication {
+    Disabled,
+    Connecting,
+    Publishing,
+    Reconnecting { detail: Option<String> },
+}
+
+/// `GET /viewer/api/media-status`: the media service and its configured cameras.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub struct MediaStatusReport {
     pub service: MediaState,
-    pub cameras: BTreeMap<String, CameraProblem>,
+    pub cameras: BTreeMap<String, CameraStatus>,
 }

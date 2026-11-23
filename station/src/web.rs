@@ -201,6 +201,8 @@ pub fn mount(
         phone_page_url: settings.phone_page_url,
     });
     let media_status = settings.media_status;
+    let proxy = crate::camera_proxy::camera_proxy(media_connect_address);
+    let status_proxy = proxy.clone();
     let control_mode = ViewerControl {
         mode: if settings.manual_control {
             ViewerControlMode::So101Manual
@@ -222,14 +224,19 @@ pub fn mount(
         )
         .route(
             "/viewer/api/media-status",
-            get(move || async move { Json(media_status.report()) }),
+            get(move || async move {
+                Json(
+                    media_status
+                        .report_with_cameras(status_proxy.as_deref())
+                        .await,
+                )
+            }),
         )
         .nest(
             "/viewer/api",
             crate::recording::router(manager.clone(), arms.clone()),
         )
         .nest("/viewer/api", recordings::router(recording_library));
-    let proxy = crate::camera_proxy::camera_proxy(media_connect_address);
     let router = router.merge(crate::camera_proxy::observation_router(
         arms.clone(),
         proxy.clone(),
