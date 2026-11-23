@@ -549,9 +549,20 @@ fn check_rest_reference(tables: &ProfileTables) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn validate_arm_names<'a>(names: impl IntoIterator<Item = &'a str>) -> anyhow::Result<()> {
-    let mut unique_names = HashSet::new();
-    for name in names {
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ArmName(String);
+
+impl std::str::FromStr for ArmName {
+    type Err = anyhow::Error;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Self::validate(name)?;
+        Ok(Self(name.to_owned()))
+    }
+}
+
+impl ArmName {
+    fn validate(name: &str) -> anyhow::Result<()> {
         ensure!(
             !name.is_empty()
                 && name.bytes().all(|character| {
@@ -559,6 +570,19 @@ pub fn validate_arm_names<'a>(names: impl IntoIterator<Item = &'a str>) -> anyho
                 }),
             "Invalid arm name {name:?}: use letters, digits, underscores or hyphens"
         );
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+pub fn validate_arm_names<'a>(names: impl IntoIterator<Item = &'a str>) -> anyhow::Result<()> {
+    let mut unique_names = HashSet::new();
+    for name in names {
+        ArmName::validate(name)?;
         ensure!(unique_names.insert(name), "Duplicate arm name {name:?}");
     }
     Ok(())

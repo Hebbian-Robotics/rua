@@ -39,29 +39,95 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A camera participant and recording-path name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CameraName<'a>(&'a str);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
+#[schemars(inline, transparent)]
+pub struct CameraName(#[schemars(regex(pattern = r"^[a-z0-9_]{1,40}$"))] String);
 
-impl<'a> TryFrom<&'a str> for CameraName<'a> {
+impl<'de> Deserialize<'de> for CameraName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl std::borrow::Borrow<str> for CameraName {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl TryFrom<String> for CameraName {
     type Error = InvalidCameraName;
 
-    fn try_from(name: &'a str) -> Result<Self, Self::Error> {
+    fn try_from(name: String) -> Result<Self, Self::Error> {
         if name.is_empty()
             || name.len() > 40
             || !name.bytes().all(|character| {
                 character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'_'
             })
         {
-            return Err(InvalidCameraName(name.to_owned()));
+            return Err(InvalidCameraName(name));
         }
         Ok(Self(name))
     }
 }
 
-impl CameraName<'_> {
+impl TryFrom<&str> for CameraName {
+    type Error = InvalidCameraName;
+
+    fn try_from(name: &str) -> Result<Self, Self::Error> {
+        Self::try_from(name.to_owned())
+    }
+}
+
+impl CameraName {
     #[must_use]
     pub fn as_str(&self) -> &str {
-        self.0
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CameraName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
+#[schemars(inline, transparent)]
+pub struct SnapshotName(#[schemars(regex(pattern = SnapshotName::PATTERN))] String);
+
+impl TryFrom<String> for SnapshotName {
+    type Error = InvalidCameraName;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        if name
+            .strip_prefix("sim_")
+            .is_some_and(|view| !view.is_empty())
+        {
+            return Ok(Self(name));
+        }
+        CameraName::try_from(name).map(|name| Self(name.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for SnapshotName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl SnapshotName {
+    pub const PATTERN: &'static str = r"^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$";
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SnapshotName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 

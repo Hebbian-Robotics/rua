@@ -99,7 +99,7 @@ fn shutdown_flag() -> anyhow::Result<Arc<AtomicBool>> {
 pub(crate) const DEFAULT_STAND_IN_LAG_SECONDS: f64 = 0.05;
 
 pub(crate) struct ConfiguredArm {
-    pub name: String,
+    pub name: hebbian_robot_use_core::profile::ArmName,
     pub config: ControllerConfig,
     pub config_path: PathBuf,
 }
@@ -108,7 +108,7 @@ pub(crate) fn load_arms(arms: &[(String, PathBuf)]) -> anyhow::Result<Vec<Config
     arms.iter()
         .map(|(name, path)| {
             Ok(ConfiguredArm {
-                name: name.clone(),
+                name: name.parse()?,
                 config: load_config(path)?,
                 config_path: path.clone(),
             })
@@ -136,7 +136,7 @@ fn simulator_setups(
     // simulator serving several arms can connect to all of them at once.
     let mut listeners = Vec::new();
     for arm in arms {
-        let name = &arm.name;
+        let name = arm.name.as_str();
         let config = arm.config.clone();
         let plant_path = directory.join(format!("{name}.plant.sock"));
         let _ = std::fs::remove_file(&plant_path);
@@ -179,7 +179,7 @@ fn hardware_setups(
 > {
     let mut setups = Vec::new();
     for arm in arms {
-        let name = &arm.name;
+        let name = arm.name.as_str();
         let config = arm.config.clone();
         let guard_config_path = config.guard.as_ref().map(|_| arm.config_path.as_path());
         let servos = feetech_servos(&config)?;
@@ -196,7 +196,7 @@ fn no_physics_setups(
 ) -> Vec<ArmSetup<NoPhysicsStandIn>> {
     let mut setups = Vec::new();
     for arm in arms {
-        let name = &arm.name;
+        let name = arm.name.as_str();
         let config = arm.config.clone();
         let start: Vec<f64> = config
             .lower_limits
@@ -238,9 +238,9 @@ pub(crate) fn run_supervised(
         let handoff = link
             .take_controller_station_arm()
             .context("The station handoff was already taken")?;
-        handoffs.insert(arm.name.clone(), handoff);
-        links.insert(arm.name.clone(), link);
-        controller_arms.push((arm.name.clone(), arm.config_path.clone()));
+        handoffs.insert(arm.name.as_str().to_owned(), handoff);
+        links.insert(arm.name.as_str().to_owned(), link);
+        controller_arms.push((arm.name.as_str().to_owned(), arm.config_path.clone()));
     }
     let session = hebbian_robot_use_core::controller_bridge::StationSession::new(handoffs);
     let launch = ControllerLaunch {

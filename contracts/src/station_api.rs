@@ -440,9 +440,9 @@ pub struct ObservationRequest {
     #[serde(default)]
     pub arms: Vec<String>,
     #[serde(default)]
-    pub required_cameras: Vec<String>,
+    pub required_cameras: Vec<crate::SnapshotName>,
     #[serde(default)]
-    pub optional_cameras: Vec<String>,
+    pub optional_cameras: Vec<crate::SnapshotName>,
 }
 
 /// One captured JPEG with its source timestamp and retrieval interval.

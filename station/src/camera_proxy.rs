@@ -30,7 +30,7 @@ pub(crate) struct CameraProxy {
 
 enum CameraRequest<'a> {
     List,
-    Snapshot(&'a str),
+    Snapshot(&'a hebbian_contracts::SnapshotName),
 }
 
 enum ForwardingOutcome {
@@ -78,7 +78,9 @@ impl CameraProxy {
 
     pub(crate) async fn camera_status(
         &self,
-    ) -> reqwest::Result<std::collections::BTreeMap<String, hebbian_contracts::CameraStatus>> {
+    ) -> reqwest::Result<
+        std::collections::BTreeMap<hebbian_contracts::CameraName, hebbian_contracts::CameraStatus>,
+    > {
         let mut url = self.camera_list_url.clone();
         url.set_path("/viewer/api/media-status");
         self.client
@@ -97,7 +99,7 @@ impl CameraProxy {
         if let CameraRequest::Snapshot(name) = request {
             url.path_segments_mut()
                 .map_err(|()| anyhow::anyhow!("Media companion URL cannot hold a path"))?
-                .push(name);
+                .push(name.as_str());
         }
 
         let mut upstream = self.client.get(url).send().await?;
@@ -167,10 +169,9 @@ async fn snapshot(
     State(proxy): State<Option<Arc<CameraProxy>>>,
     Path(name): Path<String>,
 ) -> Response {
-    // WHY: URL path construction normalizes dot segments. Simulator names are otherwise opaque.
-    if matches!(name.as_str(), "." | "..") {
+    let Ok(name) = hebbian_contracts::SnapshotName::try_from(name) else {
         return ForwardingOutcome::SnapshotNotFound.into_response();
-    }
+    };
     forward(proxy.as_deref(), CameraRequest::Snapshot(&name)).await
 }
 
@@ -210,7 +211,7 @@ enum CameraImportance {
 
 struct ObservationSelection {
     arms: BTreeSet<String>,
-    cameras: Vec<(String, CameraImportance)>,
+    cameras: Vec<(hebbian_contracts::SnapshotName, CameraImportance)>,
 }
 
 impl TryFrom<ObservationRequest> for ObservationSelection {
@@ -226,7 +227,7 @@ impl TryFrom<ObservationRequest> for ObservationSelection {
         ] {
             for name in selection {
                 anyhow::ensure!(
-                    !matches!(name.as_str(), "" | "." | "..") && names.insert(name.clone()),
+                    names.insert(name.clone()),
                     "Expected unique nonempty camera names"
                 );
                 anyhow::ensure!(
@@ -242,7 +243,7 @@ impl TryFrom<ObservationRequest> for ObservationSelection {
 
 async fn capture_frame(
     proxy: &CameraProxy,
-    name: &str,
+    name: &hebbian_contracts::SnapshotName,
     importance: CameraImportance,
 ) -> Option<ObservationFrame> {
     let timeout = match importance {
@@ -339,7 +340,7 @@ async fn observe(
             } else {
                 None
             };
-            (name, importance, frame)
+            (name.to_string(), importance, frame)
         });
     }
     let mut cameras = BTreeMap::new();

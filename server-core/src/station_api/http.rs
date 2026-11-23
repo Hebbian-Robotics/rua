@@ -493,7 +493,9 @@ async fn report_lease_camera(
     let camera = input.camera.clone();
     match station_state
         .admission
-        .decide(move |_| link.report_camera(&input.lease_token, &input.camera, input.available))
+        .decide(move |_| {
+            link.report_camera(&input.lease_token, input.camera.as_str(), input.available)
+        })
         .await
         .map_err(admission_unavailable)?
     {

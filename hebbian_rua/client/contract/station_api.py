@@ -6,7 +6,14 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictFloat
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictFloat,
+    StringConstraints,
+)
 
 
 class ActionSequenceGripper(BaseModel):
@@ -251,6 +258,19 @@ class ClientHello(BaseModel):
     ] = None
 
 
+class RequiredCamera(RootModel[str]):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[
+        str,
+        Field(
+            description="Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            pattern="^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+        ),
+    ]
+
+
 class ReturnLease(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -275,7 +295,13 @@ class ReportCamera(BaseModel):
         frozen=True,
     )
     available: bool
-    camera: str
+    camera: Annotated[
+        str,
+        Field(
+            description="Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            pattern="^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+        ),
+    ]
     kind: Literal["report_camera"] = "report_camera"
     request_id: str | None = None
 
@@ -738,7 +764,13 @@ class LeaseCameraReport(BaseModel):
         frozen=True,
     )
     available: bool
-    camera: str
+    camera: Annotated[
+        str,
+        Field(
+            description="Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            pattern="^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+        ),
+    ]
     lease_token: str
 
 
@@ -787,7 +819,7 @@ class MediaStatusReport(BaseModel):
         frozen=True,
     )
     cameras: dict[
-        str,
+        Annotated[str, StringConstraints(pattern=r"^[a-z0-9_]{1,40}$")],
         CameraStatus1
         | CameraStatus2
         | CameraStatus3
@@ -855,6 +887,19 @@ class ObservationFrame(BaseModel):
     ]
 
 
+class OptionalCamera(RootModel[str]):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[
+        str,
+        Field(
+            description="Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            pattern="^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+        ),
+    ]
+
+
 class ObservationRequest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -863,8 +908,8 @@ class ObservationRequest(BaseModel):
     arms: Annotated[
         list[str], Field(description="With no arm selection, include every arm.")
     ] = []
-    optional_cameras: list[str] = []
-    required_cameras: list[str] = []
+    optional_cameras: Annotated[list[OptionalCamera], Field(validate_default=True)] = []
+    required_cameras: Annotated[list[RequiredCamera], Field(validate_default=True)] = []
 
 
 class OnInterruption(StrEnum):
@@ -1535,7 +1580,10 @@ class AcquireLease(BaseModel):
     on_interruption: OnInterruption = OnInterruption.wait_for_approval
     request_id: str | None = None
     required_cameras: Annotated[
-        list[str], Field(description="Cameras the holder cannot work without.")
+        list[RequiredCamera],
+        Field(
+            description="Cameras the holder cannot work without.", validate_default=True
+        ),
     ] = []
 
 
@@ -1550,7 +1598,10 @@ class TakeLease(BaseModel):
     on_interruption: OnInterruption = OnInterruption.wait_for_approval
     request_id: str | None = None
     required_cameras: Annotated[
-        list[str], Field(description="Cameras the holder cannot work without.")
+        list[RequiredCamera],
+        Field(
+            description="Cameras the holder cannot work without.", validate_default=True
+        ),
     ] = []
 
 
@@ -1644,7 +1695,7 @@ class LeaseRequest(BaseModel):
     holder: LeaseHolder
     label: str
     on_interruption: OnInterruption = OnInterruption.wait_for_approval
-    required_cameras: list[str] = []
+    required_cameras: Annotated[list[RequiredCamera], Field(validate_default=True)] = []
 
 
 class LeaseStatus(BaseModel):
@@ -1662,7 +1713,8 @@ class LeaseStatus(BaseModel):
     label: str
     on_interruption: OnInterruption
     required_cameras: Annotated[
-        list[str], Field(description="Cameras the holder cannot work without.")
+        list[RequiredCamera],
+        Field(description="Cameras the holder cannot work without."),
     ]
 
 

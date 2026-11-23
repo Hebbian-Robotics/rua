@@ -92,7 +92,7 @@ impl CommandAuthority {
 pub use hebbian_contracts::LeaseRequest;
 
 struct Held {
-    token: String,
+    token: LeaseSecret,
     request: LeaseRequest,
     unavailable_cameras: BTreeSet<String>,
     expires_at: Instant,
@@ -100,7 +100,7 @@ struct Held {
 }
 
 struct TakeoverReservation {
-    token: String,
+    token: LeaseSecret,
     controller_epoch: ControllerEpoch,
 }
 
@@ -191,7 +191,7 @@ impl<'a> MotionPermission<'a> {
                         .to_owned(),
                 });
             }
-            if !matches!(presented, MotionClaim::Token(token) if same_token(&claim.token, token)) {
+            if !matches!(presented, MotionClaim::Token(token) if claim.token.matches(token)) {
                 return Err(Rejection {
                     reason: RejectionReason::LeaseHeldElsewhere,
                     detail: format!(
@@ -233,7 +233,7 @@ impl Held {
     }
 
     fn is_held_by(&self, token: Option<&str>) -> bool {
-        token.is_some_and(|token| same_token(&self.token, token))
+        token.is_some_and(|token| self.token.matches(token))
     }
 
     fn active_at(&self, now: Instant) -> bool {
@@ -245,24 +245,30 @@ impl Held {
     }
 }
 
-fn same_token(held: &str, presented: &str) -> bool {
-    held.len() == presented.len()
-        && held
-            .bytes()
-            .zip(presented.bytes())
-            .fold(0_u8, |difference, (held, presented)| {
-                difference | (held ^ presented)
-            })
-            == 0
-}
+#[derive(Clone)]
+struct LeaseSecret(String);
 
-fn new_token() -> std::io::Result<String> {
-    let mut bytes = [0_u8; 24];
-    std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
-    Ok(bytes.iter().fold(String::new(), |mut hex, byte| {
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    }))
+impl LeaseSecret {
+    fn matches(&self, presented: &str) -> bool {
+        let held = &self.0;
+        held.len() == presented.len()
+            && held
+                .bytes()
+                .zip(presented.bytes())
+                .fold(0_u8, |difference, (held, presented)| {
+                    difference | (held ^ presented)
+                })
+                == 0
+    }
+
+    fn generate() -> std::io::Result<Self> {
+        let mut bytes = [0_u8; 24];
+        std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
+        Ok(Self(bytes.iter().fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -708,8 +714,13 @@ impl Lease {
             .as_ref()
             .filter(|claim| matches!(claim.phase, LeasePhase::Active) && claim.expires_at > now)
             .map(|claim| CameraRequirements {
-                token: claim.token.clone(),
-                cameras: claim.request.required_cameras.clone(),
+                token: claim.token.0.clone(),
+                cameras: claim
+                    .request
+                    .required_cameras
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
             })
     }
 
@@ -732,7 +743,7 @@ impl Lease {
             .request
             .required_cameras
             .iter()
-            .any(|name| name == camera)
+            .any(|name| name.as_str() == camera)
         {
             return Err(CameraReportRefusal::CameraNotRequired);
         }
@@ -834,14 +845,14 @@ impl Lease {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let claim = Held {
-            token: new_token().map_err(AcquireError::Unavailable)?,
+            token: LeaseSecret::generate().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
             phase: LeasePhase::Active,
         };
         let grant = LeaseGrant {
-            lease_token: claim.token.clone(),
+            lease_token: claim.token.0.clone(),
             lease_seconds: self.duration.as_secs_f64(),
             status: claim.status(now),
         };
@@ -871,7 +882,7 @@ impl Lease {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let reservation = Held {
-            token: new_token().map_err(AcquireError::Unavailable)?,
+            token: LeaseSecret::generate().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
@@ -901,7 +912,7 @@ impl Lease {
         let held = &mut authority.held;
         let reservation = held
             .as_mut()
-            .filter(|reservation| reservation.is_held_by(Some(&token.token)))?;
+            .filter(|reservation| reservation.token.matches(&token.token.0))?;
         let completion = reservation.phase.finish_takeover(result)?;
         self.authority_changes.send_replace(());
         match completion {
@@ -910,7 +921,7 @@ impl Lease {
         }
         reservation.expires_at = now + self.duration;
         Some(LeaseGrant {
-            lease_token: reservation.token.clone(),
+            lease_token: reservation.token.0.clone(),
             lease_seconds: self.duration.as_secs_f64(),
             status: reservation.status(now),
         })
@@ -1133,7 +1144,9 @@ mod tests {
         LeaseRequest {
             holder,
             label: label.into(),
-            required_cameras: vec!["front".into()],
+            required_cameras: vec![
+                hebbian_contracts::SnapshotName::try_from("front".to_owned()).unwrap(),
+            ],
             on_interruption: OnInterruption::WaitForApproval,
         }
     }
@@ -1426,7 +1439,7 @@ mod tests {
         for token in [
             None,
             Some(old_token.as_str()),
-            Some(reservation.token.as_str()),
+            Some(reservation.token.0.as_str()),
         ] {
             assert_eq!(
                 command(&lease, token, now).unwrap_err().reason,

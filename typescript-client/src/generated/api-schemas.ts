@@ -3127,7 +3127,14 @@ export const apiSchemas = z.object({
             .default("wait_for_approval"),
           request_id: z.union([z.string(), z.null()]).default(null),
           required_cameras: z
-            .array(z.string())
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
             .describe("Cameras the holder cannot work without.")
             .default([]),
         })
@@ -3168,7 +3175,14 @@ export const apiSchemas = z.object({
             .default("wait_for_approval"),
           request_id: z.union([z.string(), z.null()]).default(null),
           required_cameras: z
-            .array(z.string())
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
             .describe("Cameras the holder cannot work without.")
             .default([]),
         })
@@ -3472,7 +3486,12 @@ export const apiSchemas = z.object({
       z
         .object({
           available: z.boolean(),
-          camera: z.string(),
+          camera: z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
           kind: z.literal("report_camera"),
           request_id: z.union([z.string(), z.null()]).default(null),
         })
@@ -8971,7 +8990,16 @@ export const apiSchemas = z.object({
               "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
             )
             .default("wait_for_approval"),
-          required_cameras: z.array(z.string()).default([]),
+          required_cameras: z
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
+            .default([]),
         })
         .strict()
         .describe(
@@ -9034,7 +9062,14 @@ export const apiSchemas = z.object({
                   "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                 ),
               required_cameras: z
-                .array(z.string())
+                .array(
+                  z
+                    .string()
+                    .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                    .describe(
+                      "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                    ),
+                )
                 .describe("Cameras the holder cannot work without."),
             })
             .describe("The current lease, as everyone may see it."),
@@ -9081,7 +9116,14 @@ export const apiSchemas = z.object({
                       "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                     ),
                   required_cameras: z
-                    .array(z.string())
+                    .array(
+                      z
+                        .string()
+                        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                        .describe(
+                          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                        ),
+                    )
                     .describe("Cameras the holder cannot work without."),
                 })
                 .describe("The current lease, as everyone may see it."),
@@ -9095,7 +9137,12 @@ export const apiSchemas = z.object({
   LeaseCameraReport: z
     .object({
       available: z.boolean(),
-      camera: z.string(),
+      camera: z
+        .string()
+        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+        .describe(
+          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+        ),
       lease_token: z.string(),
     })
     .strict()
@@ -9141,7 +9188,14 @@ export const apiSchemas = z.object({
               "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
             ),
           required_cameras: z
-            .array(z.string())
+            .array(
+              z
+                .string()
+                .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                .describe(
+                  "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                ),
+            )
             .describe("Cameras the holder cannot work without."),
         })
         .describe("The current lease, as everyone may see it."),
@@ -9191,7 +9245,16 @@ export const apiSchemas = z.object({
           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
         )
         .default("wait_for_approval"),
-      required_cameras: z.array(z.string()).default([]),
+      required_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .default([]),
     })
     .strict()
     .describe(
@@ -9232,7 +9295,14 @@ export const apiSchemas = z.object({
           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
         ),
       required_cameras: z
-        .array(z.string())
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
         .describe("Cameras the holder cannot work without."),
     })
     .describe("The current lease, as everyone may see it."),
@@ -9315,35 +9385,97 @@ export const apiSchemas = z.object({
   ]),
   MediaStatusReport: z
     .object({
-      cameras: z.record(
-        z.string(),
-        z
-          .union([
-            z.object({ state: z.literal("resolving") }),
-            z.object({ state: z.literal("starting") }),
-            z.object({
-              publication: z
+      cameras: z
+        .record(
+          z.string(),
+          z.union([
+            z
+              .union([
+                z.object({ state: z.literal("resolving") }),
+                z.object({ state: z.literal("starting") }),
+                z.object({
+                  publication: z
+                    .union([
+                      z.object({ state: z.literal("disabled") }),
+                      z.object({ state: z.literal("connecting") }),
+                      z.object({ state: z.literal("publishing") }),
+                      z.object({
+                        detail: z.union([z.string(), z.null()]).optional(),
+                        state: z.literal("reconnecting"),
+                      }),
+                    ])
+                    .describe(
+                      "Room publication is independent of the local capture lifecycle.",
+                    ),
+                  state: z.literal("capturing"),
+                }),
+                z.object({ state: z.literal("disconnected") }),
+                z.object({ state: z.literal("ambiguous") }),
+                z.object({ state: z.literal("stalled") }),
+                z.object({ detail: z.string(), state: z.literal("failed") }),
+              ])
+              .describe("The current lifecycle of a configured camera."),
+            z.never(),
+          ]),
+        )
+        .superRefine((value, ctx) => {
+          for (const key in value) {
+            let evaluated = false;
+            if (key.match(/^[a-z0-9_]{1,40}$/)) {
+              evaluated = true;
+              const result = z
                 .union([
-                  z.object({ state: z.literal("disabled") }),
-                  z.object({ state: z.literal("connecting") }),
-                  z.object({ state: z.literal("publishing") }),
+                  z.object({ state: z.literal("resolving") }),
+                  z.object({ state: z.literal("starting") }),
                   z.object({
-                    detail: z.union([z.string(), z.null()]).optional(),
-                    state: z.literal("reconnecting"),
+                    publication: z
+                      .union([
+                        z.object({ state: z.literal("disabled") }),
+                        z.object({ state: z.literal("connecting") }),
+                        z.object({ state: z.literal("publishing") }),
+                        z.object({
+                          detail: z.union([z.string(), z.null()]).optional(),
+                          state: z.literal("reconnecting"),
+                        }),
+                      ])
+                      .describe(
+                        "Room publication is independent of the local capture lifecycle.",
+                      ),
+                    state: z.literal("capturing"),
                   }),
+                  z.object({ state: z.literal("disconnected") }),
+                  z.object({ state: z.literal("ambiguous") }),
+                  z.object({ state: z.literal("stalled") }),
+                  z.object({ detail: z.string(), state: z.literal("failed") }),
                 ])
-                .describe(
-                  "Room publication is independent of the local capture lifecycle.",
-                ),
-              state: z.literal("capturing"),
-            }),
-            z.object({ state: z.literal("disconnected") }),
-            z.object({ state: z.literal("ambiguous") }),
-            z.object({ state: z.literal("stalled") }),
-            z.object({ detail: z.string(), state: z.literal("failed") }),
-          ])
-          .describe("The current lifecycle of a configured camera."),
-      ),
+                .describe("The current lifecycle of a configured camera.")
+                .safeParse(value[key]);
+              if (!result.success) {
+                ctx.addIssue({
+                  path: [key],
+                  code: "custom",
+                  message: `Invalid input: Key matching regex /${key}/ must match schema`,
+                  params: {
+                    issues: result.error.issues,
+                  },
+                });
+              }
+            }
+            if (!evaluated) {
+              const result = z.never().safeParse(value[key]);
+              if (!result.success) {
+                ctx.addIssue({
+                  path: [key],
+                  code: "custom",
+                  message: `Invalid input: must match catchall schema`,
+                  params: {
+                    issues: result.error.issues,
+                  },
+                });
+              }
+            }
+          }
+        }),
       service: z.union([
         z.object({ state: z.literal("running") }),
         z
@@ -10682,7 +10814,14 @@ export const apiSchemas = z.object({
                       "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                     ),
                   required_cameras: z
-                    .array(z.string())
+                    .array(
+                      z
+                        .string()
+                        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                        .describe(
+                          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                        ),
+                    )
                     .describe("Cameras the holder cannot work without."),
                 })
                 .describe("The current lease, as everyone may see it."),
@@ -10770,8 +10909,26 @@ export const apiSchemas = z.object({
         .array(z.string())
         .describe("With no arm selection, include every arm.")
         .default([]),
-      optional_cameras: z.array(z.string()).default([]),
-      required_cameras: z.array(z.string()).default([]),
+      optional_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .default([]),
+      required_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .default([]),
     })
     .strict()
     .describe("Select robot state and camera snapshots for one observation."),
@@ -15085,7 +15242,14 @@ export const apiSchemas = z.object({
                           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                         ),
                       required_cameras: z
-                        .array(z.string())
+                        .array(
+                          z
+                            .string()
+                            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                            .describe(
+                              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                            ),
+                        )
                         .describe("Cameras the holder cannot work without."),
                     })
                     .describe("The current lease, as everyone may see it."),
@@ -15135,7 +15299,14 @@ export const apiSchemas = z.object({
                             "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                           ),
                         required_cameras: z
-                          .array(z.string())
+                          .array(
+                            z
+                              .string()
+                              .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                              .describe(
+                                "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                              ),
+                          )
                           .describe("Cameras the holder cannot work without."),
                       })
                       .describe("The current lease, as everyone may see it."),
@@ -16941,7 +17112,14 @@ export const apiSchemas = z.object({
                           "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                         ),
                       required_cameras: z
-                        .array(z.string())
+                        .array(
+                          z
+                            .string()
+                            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                            .describe(
+                              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                            ),
+                        )
                         .describe("Cameras the holder cannot work without."),
                     })
                     .describe("The current lease, as everyone may see it."),
@@ -19198,7 +19376,14 @@ export const apiSchemas = z.object({
                   "What happens to the lease when an arm is interrupted and needs an\noperator's approval to recover.",
                 ),
               required_cameras: z
-                .array(z.string())
+                .array(
+                  z
+                    .string()
+                    .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+                    .describe(
+                      "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+                    ),
+                )
                 .describe("Cameras the holder cannot work without."),
             })
             .describe("The current lease, as everyone may see it."),
