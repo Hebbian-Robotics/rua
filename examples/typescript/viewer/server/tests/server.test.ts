@@ -122,3 +122,28 @@ test("the default origins include the configured station, and an override replac
     ["http://other"],
   );
 });
+
+test("an idle run event stream sends a heartbeat", async () => {
+  const server = app();
+  expect((await server.request("/api/runs", post)).status).toBe(201);
+  vi.useFakeTimers();
+  try {
+    const response = await server.request("/api/runs/run-1/events");
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Missing run event stream");
+    try {
+      const decoder = new TextDecoder();
+      const snapshot = await reader.read();
+      expect(decoder.decode(snapshot.value)).toContain('"type":"snapshot"');
+      const heartbeat = reader.read();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(decoder.decode((await heartbeat).value)).toContain(
+        "event: heartbeat",
+      );
+    } finally {
+      await reader.cancel();
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
