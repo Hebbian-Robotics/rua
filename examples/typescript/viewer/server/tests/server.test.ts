@@ -114,7 +114,7 @@ test("CORS allows the viewer origin only", async () => {
   ]);
 });
 
-test("the default origins include the configured station, and an override replaces them", () => {
+test("the default origins include the configured viewer, and an override replaces them", () => {
   expect(
     allowedViewerOrigins("http://127.0.0.1:8795/path", undefined),
   ).toContain("http://127.0.0.1:8795");

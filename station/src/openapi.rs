@@ -1,12 +1,12 @@
 use hebbian_contracts::{
     ActionSequenceRecord, ActionSequenceRequest, ActionSequenceStartRequest, CameraListing,
     ClientMessage, CommandAnswer, CommandCancellationRequest, CommandSubmissionRequest,
-    CompilationArtifact, CompilationOutcome, ControllerStatus, GroupCommandSubmissionRequest,
-    LeaseAcquireRequest, LeaseCameraReport, LeaseGrant, LeaseToken, MediaStatusReport,
-    ObservationAnswer, ObservationRequest, OperationStatus, PhoneInvite, PhoneInviteRequest,
-    PosePreviewBatchRequest, PosePreviewBatchResponse, ReconnectRequest, RecordingStatus,
-    RoomAccess, RunCompiledProgramRequest, RunEvent, RunSpansRequest, ServerMessage,
-    StationInstance, StationState, StreamGoalUpdateRequest, TraceFile, ViewerControl,
+    CompilationArtifact, CompilationOutcome, ControlCapabilities, ControllerStatus,
+    GroupCommandSubmissionRequest, LeaseAcquireRequest, LeaseCameraReport, LeaseGrant, LeaseToken,
+    MediaStatusReport, ObservationAnswer, ObservationRequest, OperationStatus, PhoneInvite,
+    PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse, ReconnectRequest,
+    RecordingStatus, RoomAccess, RunCompiledProgramRequest, RunEvent, RunSpansRequest,
+    ServerMessage, StationInstance, StationState, StreamGoalUpdateRequest, TraceFile,
 };
 use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
@@ -22,7 +22,6 @@ enum Reply {
     Json(SchemaOf),
     File(&'static [&'static str]),
     NoContent,
-    Redirect,
 }
 
 pub struct Route {
@@ -305,15 +304,6 @@ pub fn routes() -> Vec<Route> {
             true,
         ),
         route(
-            "redirect_to_viewer",
-            "get",
-            "/",
-            "Redirects to the viewer when one is built.",
-            None,
-            Reply::Redirect,
-            false,
-        ),
-        route(
             "record_run_event_http",
             "post",
             "/run/events",
@@ -352,7 +342,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "get_recording_enabled",
             "get",
-            "/viewer/api/recording-enabled",
+            "/recording/enabled",
             "Whether the station can record.",
             None,
             Reply::Json(schema_of::<bool>),
@@ -361,7 +351,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "get_room_access",
             "get",
-            "/viewer/api/token",
+            "/media/access-token",
             "Watch-only LiveKit access to every camera in the room.",
             None,
             Reply::Json(schema_of::<RoomAccess>),
@@ -370,25 +360,25 @@ pub fn routes() -> Vec<Route> {
         route(
             "phone_invite",
             "post",
-            "/viewer/api/phone-invites",
+            "/media/phone-invites",
             "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.",
             Some(schema_of::<PhoneInviteRequest>),
             Reply::Json(schema_of::<PhoneInvite>),
             true,
         ),
         route(
-            "get_control_mode",
+            "get_control_capabilities",
             "get",
-            "/viewer/api/control-mode",
-            "Whether the viewer shows manual controls.",
+            "/control/capabilities",
+            "Whether the station is configured for manual pose control.",
             None,
-            Reply::Json(schema_of::<ViewerControl>),
+            Reply::Json(schema_of::<ControlCapabilities>),
             false,
         ),
         route(
             "get_controller_status",
             "get",
-            "/viewer/api/controller",
+            "/controller",
             "The controller's availability and guard reports.",
             None,
             Reply::Json(schema_of::<ControllerStatus>),
@@ -397,7 +387,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "reconnect_controller",
             "post",
-            "/viewer/api/controller/reconnect",
+            "/controller/reconnect",
             "Reconnect after the operator supports the arm.",
             Some(schema_of::<ReconnectRequest>),
             Reply::Json(schema_of::<ControllerStatus>),
@@ -408,7 +398,7 @@ pub fn routes() -> Vec<Route> {
             ..route(
                 "get_media_status",
                 "get",
-                "/viewer/api/media-status",
+                "/media/status",
                 "The media service and the current state of each configured camera.",
                 None,
                 Reply::Json(schema_of::<MediaStatusReport>),
@@ -418,7 +408,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "start_recording",
             "post",
-            "/viewer/api/recording/start",
+            "/recording/start",
             "Start recording and return the recording's name.",
             None,
             Reply::Json(schema_of::<String>),
@@ -427,7 +417,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "recording_status",
             "get",
-            "/viewer/api/recording/status",
+            "/recording/status",
             "Whether the station is recording.",
             None,
             Reply::Json(schema_of::<RecordingStatus>),
@@ -436,7 +426,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "stop_recording",
             "post",
-            "/viewer/api/recording/stop",
+            "/recording/stop",
             "Stop recording.",
             None,
             Reply::Json(schema_of::<()>),
@@ -445,7 +435,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "stop_recording_for_lease",
             "post",
-            "/viewer/api/recording/stop-for-lease",
+            "/recording/stop-for-lease",
             "Stop recording only while the token still holds the lease.",
             Some(schema_of::<LeaseToken>),
             Reply::Json(schema_of::<()>),
@@ -454,7 +444,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "list_recordings",
             "get",
-            "/viewer/api/recordings",
+            "/recordings",
             "The recordings on disk.",
             None,
             Reply::Json(schema_of::<recordings::Recordings>),
@@ -463,7 +453,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "get_recording_file",
             "get",
-            "/viewer/api/recordings/{path}",
+            "/recordings/{path}",
             "A file of a recording.",
             None,
             Reply::File(&["application/octet-stream"]),
@@ -472,7 +462,7 @@ pub fn routes() -> Vec<Route> {
         route(
             "delete_recording",
             "delete",
-            "/viewer/api/recordings/{path}",
+            "/recordings/{path}",
             "Delete a recording.",
             None,
             Reply::NoContent,
@@ -543,7 +533,6 @@ fn response(reply: &Reply, generator: &mut SchemaGenerator) -> Value {
             json!({"200": {"description": "OK", "content": content}})
         }
         Reply::NoContent => json!({"204": {"description": "No content"}}),
-        Reply::Redirect => json!({"307": {"description": "Temporary redirect"}}),
     }
 }
 

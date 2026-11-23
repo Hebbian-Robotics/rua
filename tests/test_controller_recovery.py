@@ -204,14 +204,14 @@ def test_station_reconnects_disabled_using_its_running_binary(
 
                 async def unavailable() -> bool:
                     return (
-                        httpx2.get(f"{server}/viewer/api/controller").json()["phase"]
+                        httpx2.get(f"{server}/controller").json()["phase"]
                         == "unavailable"
                     )
 
                 await wait_until_async(unavailable, timeout=10)
                 assert (
                     httpx2.post(
-                        f"{server}/viewer/api/controller/reconnect",
+                        f"{server}/controller/reconnect",
                         json={"supported": False},
                     ).status_code
                     == 400
@@ -220,14 +220,14 @@ def test_station_reconnects_disabled_using_its_running_binary(
                 try:
                     assert (
                         httpx2.post(
-                            f"{server}/viewer/api/controller/reconnect",
+                            f"{server}/controller/reconnect",
                             json={"supported": True},
                         ).status_code
                         == 200
                     )
 
                     async def startup_failed() -> bool:
-                        status = httpx2.get(f"{server}/viewer/api/controller").json()
+                        status = httpx2.get(f"{server}/controller").json()
                         return (
                             status["phase"] == "unavailable"
                             and "startup" in status["reason"]
@@ -239,7 +239,7 @@ def test_station_reconnects_disabled_using_its_running_binary(
                     configuration_path.write_bytes(configuration)
                 assert (
                     httpx2.post(
-                        f"{server}/viewer/api/controller/reconnect",
+                        f"{server}/controller/reconnect",
                         json={"supported": True},
                     ).status_code
                     == 200
@@ -247,8 +247,7 @@ def test_station_reconnects_disabled_using_its_running_binary(
 
                 async def online() -> bool:
                     return (
-                        httpx2.get(f"{server}/viewer/api/controller").json()["phase"]
-                        == "online"
+                        httpx2.get(f"{server}/controller").json()["phase"] == "online"
                     )
 
                 await wait_until_async(online, timeout=15)
@@ -296,12 +295,12 @@ def test_short_delay_recovers_but_a_stalled_controller_is_stopped(
 
                 wait_until(fresh_state, timeout=5)
                 assert controller_pid(station.process.pid) == process_id
-                assert client.get("/viewer/api/controller").json()["phase"] == "online"
+                assert client.get("/controller").json()["phase"] == "online"
 
                 os.kill(process_id, signal.SIGSTOP)
 
                 def controller_stopped() -> bool:
-                    status = client.get("/viewer/api/controller").json()
+                    status = client.get("/controller").json()
                     return (
                         status["phase"] == "unavailable"
                         and status["guard_released"]

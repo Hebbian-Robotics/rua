@@ -1360,7 +1360,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml",
- "tower-http",
  "tracing",
  "urdf-rs",
  "uuid",

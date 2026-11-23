@@ -508,7 +508,7 @@ class StationClient:
 
     async def _camera_problem(self, name: str) -> str | None:
         try:
-            response = await self._station_http.get("/viewer/api/media-status")
+            response = await self._station_http.get("/media/status")
             response.raise_for_status()
             camera = MediaStatusReport.model_validate_json(
                 response.content

@@ -207,6 +207,11 @@ class StationApi:
         """Renew a current station lease."""
         await self._send(self._station, "POST", "/leases/renew", body)
 
+    async def phone_invite(self, body: PhoneInviteRequest) -> PhoneInvite:
+        """Create an invite from a loopback connection to stream a phone as camera `phone_<label>`."""
+        response = await self._send(self._station, "POST", "/media/phone-invites", body)
+        return TypeAdapter(PhoneInvite).validate_json(response.content)
+
     async def capture_observation_http(
         self, body: ObservationRequest
     ) -> ObservationAnswer:
@@ -247,6 +252,24 @@ class StationApi:
         response = await self._send(self._station, "POST", "/pose_previews", body)
         return TypeAdapter(PosePreviewBatchResponse).validate_json(response.content)
 
+    async def start_recording(self) -> str:
+        """Start recording and return the recording's name."""
+        response = await self._send(self._station, "POST", "/recording/start")
+        return TypeAdapter(str).validate_json(response.content)
+
+    async def recording_status(self) -> RecordingStatus:
+        """Whether the station is recording."""
+        response = await self._send(self._station, "GET", "/recording/status")
+        return TypeAdapter(RecordingStatus).validate_json(response.content)
+
+    async def stop_recording(self) -> None:
+        """Stop recording."""
+        await self._send(self._station, "POST", "/recording/stop")
+
+    async def stop_recording_for_lease(self, body: LeaseToken) -> None:
+        """Stop recording only while the token still holds the lease."""
+        await self._send(self._station, "POST", "/recording/stop-for-lease", body)
+
     async def record_run_event_http(self, body: object) -> None:
         """Record a model-loop event."""
         await self._send(self._station, "POST", "/run/events", body)
@@ -274,35 +297,4 @@ class StationApi:
             "GET",
             f"/traces/{quote(name, safe='')}",
             maximum_bytes=maximum_bytes,
-        )
-
-    async def phone_invite(self, body: PhoneInviteRequest) -> PhoneInvite:
-        """Create an invite from a loopback connection to stream a phone as camera `phone_<label>`."""
-        response = await self._send(
-            self._station, "POST", "/viewer/api/phone-invites", body
-        )
-        return TypeAdapter(PhoneInvite).validate_json(response.content)
-
-    async def start_recording(self) -> str:
-        """Start recording and return the recording's name."""
-        response = await self._send(
-            self._station, "POST", "/viewer/api/recording/start"
-        )
-        return TypeAdapter(str).validate_json(response.content)
-
-    async def recording_status(self) -> RecordingStatus:
-        """Whether the station is recording."""
-        response = await self._send(
-            self._station, "GET", "/viewer/api/recording/status"
-        )
-        return TypeAdapter(RecordingStatus).validate_json(response.content)
-
-    async def stop_recording(self) -> None:
-        """Stop recording."""
-        await self._send(self._station, "POST", "/viewer/api/recording/stop")
-
-    async def stop_recording_for_lease(self, body: LeaseToken) -> None:
-        """Stop recording only while the token still holds the lease."""
-        await self._send(
-            self._station, "POST", "/viewer/api/recording/stop-for-lease", body
         )

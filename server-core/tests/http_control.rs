@@ -139,7 +139,6 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
     let server = HttpServer::start(
         "127.0.0.1:0",
         vec![],
-        None,
         Arc::new(DiscardTelemetry),
         Arc::default(),
         |_, _| Ok(axum::Router::new()),
@@ -186,7 +185,6 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let server = HttpServer::start(
         "127.0.0.1:0",
         vec![],
-        None,
         Arc::new(DiscardTelemetry),
         Arc::default(),
         |_, _| Ok(axum::Router::new()),

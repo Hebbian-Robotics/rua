@@ -14,7 +14,6 @@ import {
   type Lease,
   LeaseHeldElsewhereError,
   type StationCommand,
-  type StationConnection,
 } from "hebbian-rua";
 import {
   type AcquireOutcome,
@@ -23,7 +22,7 @@ import {
   newManualLabel,
 } from "./control-logic.js";
 import { errorMessage } from "./errors.js";
-import { stationConnection } from "./viewer-connection.js";
+import { stationConnection, type ViewerLease } from "./viewer-connection.js";
 
 export interface ManualLease {
   readonly label: string;
@@ -50,7 +49,7 @@ export interface ManualLease {
 }
 
 export function createManualLease(
-  connection: Pick<StationConnection, "acquireLease" | "onLeaseLost">,
+  connection: Pick<typeof stationConnection, "acquireLease" | "onLeaseLost">,
   randomHex: () => string = () =>
     Math.floor(Math.random() * 0x10000)
       .toString(16)
@@ -58,7 +57,7 @@ export function createManualLease(
 ): ManualLease {
   const label = newManualLabel(randomHex());
   let held = false;
-  let current: Lease | null = null;
+  let current: ViewerLease | null = null;
   let returningLease: Promise<void> | null = null;
   const listeners = new Set<() => void>();
 

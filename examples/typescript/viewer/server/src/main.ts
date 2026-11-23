@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { createRecordingClient } from "hebbian-rua";
+import type { Context } from "hono";
+import { proxy } from "hono/proxy";
 import type { Provider } from "../../shared/run-api.js";
+import { manualSessions } from "./manual-sessions.js";
 import { allowedViewerOrigins } from "./origins.js";
 import { RunManager } from "./run-manager.js";
 import { fileRunStore } from "./run-store.js";
@@ -19,7 +25,7 @@ const host = environment["AGENT_HOST"] ?? "127.0.0.1";
 const stationUrl =
   environment["HEBBIAN_STATION_URL"] ?? "http://127.0.0.1:8792";
 const allowedOrigins = allowedViewerOrigins(
-  stationUrl,
+  `http://${host}:${port}`,
   environment["AGENT_ALLOWED_ORIGINS"],
 );
 
@@ -48,9 +54,71 @@ const app = createApp({
       .filter(([, variable]) => (environment[variable] ?? "").trim() !== "")
       .map(([provider]) => provider),
 });
+const recording = createRecordingClient(stationUrl);
+app.get("/api/recording/status", async (context) =>
+  context.json(await recording.status()),
+);
+app.post("/api/recording/start", async (context) =>
+  context.json(await recording.start()),
+);
+app.post("/api/recording/stop", async (context) => {
+  await recording.stop();
+  return context.json(null);
+});
+app.route("/api/manual", manualSessions(stationUrl));
+app.get("/", (context) => context.redirect("/viewer/"));
+app.get("/viewer", (context) => context.redirect("/viewer/"));
+app.get("/api/control/capabilities", forwardStationApi);
+app.get("/api/controller", forwardStationApi);
+app.post("/api/controller/reconnect", forwardStationApi);
+app.get("/api/media/status", forwardStationApi);
+app.get("/api/media/access-token", forwardStationApi);
+app.post("/api/media/phone-invites", forwardStationApi);
+app.get("/api/recording/enabled", forwardStationApi);
+app.get("/api/recordings", forwardStationApi);
+app.on(["GET", "HEAD", "DELETE"], "/api/recordings/*", forwardStationApi);
+app.use(
+  "/viewer/*",
+  serveStatic({
+    root: resolve(import.meta.dirname, "../../../../../dist/viewer"),
+    rewriteRequestPath: (path) => path.slice("/viewer".length),
+  }),
+);
+app.get("/model/*", (context) =>
+  forwardStationRequest(context, new URL(context.req.url).pathname),
+);
+
+function forwardStationApi(context: Context): Promise<Response> {
+  const path = new URL(context.req.url).pathname.slice("/api".length);
+  return forwardStationRequest(context, path);
+}
+
+async function forwardStationRequest(
+  context: Context,
+  path: string,
+): Promise<Response> {
+  const incoming = new URL(context.req.url);
+  const target = new URL(stationUrl);
+  target.pathname = path;
+  target.search = incoming.search;
+  const headers = new Headers();
+  for (const name of [
+    "accept",
+    "content-type",
+    "range",
+    "if-range",
+    "if-none-match",
+    "if-modified-since",
+  ]) {
+    const value = context.req.header(name);
+    if (value !== undefined) headers.set(name, value);
+  }
+  return proxy(target, { raw: context.req.raw, headers, redirect: "manual" });
+}
+
 const server = serve({ fetch: app.fetch, hostname: host, port }, (address) =>
   console.log(
-    `Agent server on http://${host}:${address.port}, station ${stationUrl}`,
+    `Viewer on http://${host}:${address.port}, station ${stationUrl}`,
   ),
 );
 

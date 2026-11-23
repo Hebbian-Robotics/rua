@@ -294,18 +294,14 @@ test("losing the lease ends the run without stopping the recording", async () =>
   expect(result).toBe(
     "The lease was lost: taken, revoked, returned for an interruption or lapsed",
   );
-  expect(station.requests).toContain("POST /viewer/api/recording/start");
-  expect(station.requests).not.toContain(
-    "POST /viewer/api/recording/stop-for-lease",
-  );
+  expect(station.requests).toContain("POST /recording/start");
+  expect(station.requests).not.toContain("POST /recording/stop-for-lease");
   expect(station.commands).toHaveLength(0);
 });
 
 test("a normal finish stops the recording the run started", async () => {
   await runLoop([turn(["finish", { reason: "ok" }])], { record: true });
-  expect(station.requests).toContain(
-    "POST /viewer/api/recording/stop-for-lease",
-  );
+  expect(station.requests).toContain("POST /recording/stop-for-lease");
 });
 
 test("cancelling stops the arm and leaves the recording running", async () => {
@@ -323,9 +319,7 @@ test("cancelling stops the arm and leaves the recording running", async () => {
   expect(result).toBe("Run cancelled; the arm was stopped");
   expect(station.commands).toHaveLength(0);
   expect(station.leaseStops).toContain("follower");
-  expect(station.requests).not.toContain(
-    "POST /viewer/api/recording/stop-for-lease",
-  );
+  expect(station.requests).not.toContain("POST /recording/stop-for-lease");
   expect(station.returned).toBe(true);
 });
 

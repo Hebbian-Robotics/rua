@@ -9,7 +9,7 @@ use axum::{
 };
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
-// CONSTRAINT: Routes are relative; the station nests this under `/viewer/api`.
+// WHY: The station and offline playback server share the recording library routes.
 pub fn router(library: RecordingLibrary) -> Router {
     Router::new()
         .route("/recordings", get(list))

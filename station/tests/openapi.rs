@@ -55,9 +55,7 @@ fn registered_paths(source: &str, prefix: &str) -> BTreeSet<String> {
 fn the_openapi_document_matches_the_routers() {
     let scratch = std::env::temp_dir().join(format!("hebbian-openapi-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).unwrap();
-    std::fs::write(scratch.join("index.html"), "viewer").unwrap();
     let settings = WebSettings {
-        viewer_directory: None,
         local_cameras_only: false,
         recordings_directory: scratch.join("recordings"),
         enable_recording: false,
@@ -73,7 +71,6 @@ fn the_openapi_document_matches_the_routers() {
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
-        Some(scratch.clone()),
         live_run.clone(),
         Arc::default(),
         |runtime, bound| {
@@ -129,14 +126,8 @@ fn the_openapi_document_matches_the_routers() {
         &read("station/src/controller_supervisor.rs"),
         "",
     ));
-    registered.extend(registered_paths(
-        &read("station/src/recording.rs"),
-        "/viewer/api",
-    ));
-    registered.extend(registered_paths(
-        &read("recordings/src/routes.rs"),
-        "/viewer/api",
-    ));
+    registered.extend(registered_paths(&read("station/src/recording.rs"), ""));
+    registered.extend(registered_paths(&read("recordings/src/routes.rs"), ""));
     assert_eq!(
         registered_paths(&read("livekit-cameras/src/snapshots.rs"), ""),
         media_paths,

@@ -23,7 +23,7 @@
     "dev": "pnpm --parallel run \"/^dev:/\"",
     "dev:viewer": "vite",
     "dev:agent": "tsx watch --conditions=development examples/typescript/viewer/server/src/main.ts",
-    "start:agent": "tsx --conditions=development examples/typescript/viewer/server/src/main.ts",
+    "start:viewer": "tsx --conditions=development examples/typescript/viewer/server/src/main.ts",
     "test:viewer": "vitest run",
     "test:package": "tsx scripts/check-client-package.ts"
   },

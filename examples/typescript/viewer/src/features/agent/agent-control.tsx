@@ -272,7 +272,7 @@ export function AgentControl({
         <p>
           {unavailable}{" "}
           {status === "unreachable" && (
-            <a href="#settings/agent">Agent connection settings</a>
+            <a href="#settings/agent">Agent connection status</a>
           )}
         </p>
       )}

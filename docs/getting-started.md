@@ -22,9 +22,10 @@ Before starting the viewer, [add your LiveKit credentials to the station’s `.e
 uv run cargo run -p hebbian-robot-use-server -- serve --manual-control
 ```
 
+Start the viewer in a second terminal with `pnpm start:viewer`.
 Wait for `measured_joints` to populate in [station state](http://127.0.0.1:8792/state).
 The API can respond before arm feedback arrives. With torque off, open the
-[viewer](http://127.0.0.1:8792/viewer/) and
+[viewer](http://127.0.0.1:8793/viewer/) and
 [check that its 3D view matches the arm](so101-manual-control.md#set-up-each-so-101).
 Choose **Manual**, then select **Enable arm** to hold its current pose and
 acquire manual control.
@@ -36,12 +37,7 @@ See [viewer controls](so101-manual-control.md#controls) for details and
 ## 3. Run your first agent
 
 1. Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in your
-   environment or the repository's `.env`. Keep the station running and start
-   the agent server from the repository root.
-
-   ```sh
-   pnpm start:agent
-   ```
+   environment or the repository's `.env`. Restart the viewer backend to load new keys.
 
 2. In **Run a task**, open **Agent settings** and choose your provider. If you
    set up cameras, confirm their live feeds and select the views to share.

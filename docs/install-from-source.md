@@ -51,9 +51,8 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-The station serves the resulting viewer assets from disk. Starting the viewer requires
-[LiveKit credentials](cameras.md#connect-a-usb-camera). For an API-only station,
-use `serve --headless`. Camera builds have
+Run `pnpm start:viewer` to serve the built viewer and run the example agent backend.
+The station runs independently. Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
@@ -67,9 +66,9 @@ Run commands from the repository root. After pulling dependency changes, run
 | --- | --- | --- |
 | Rust station or hardware profile | `uv run cargo run -p hebbian-robot-use-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
 | Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
-| TypeScript agent | `pnpm start:agent` | Restart the agent server to load example changes. |
+| Viewer and agent backend | `pnpm start:viewer` | Restart the viewer backend to load example changes. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
-| Viewer served by the station | `pnpm build` | Refresh the browser; no station restart is needed. |
+| Viewer served by the example backend | `pnpm build` | Refresh the browser; no station restart is needed. |
 | Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |
 

@@ -55,7 +55,7 @@ def station(
 def test_recording_context_starts_and_stops_recording(station: RunningStation) -> None:
     async def record() -> None:
         async with StationClient(station.server) as client, client.recording() as name:
-            assert station.get("/viewer/api/recordings").json()["active"] == name
+            assert station.get("/recordings").json()["active"] == name
             status = (await client.recording_status()).root
             assert status.state == "recording"
             assert status.name == name

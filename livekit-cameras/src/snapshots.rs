@@ -111,7 +111,7 @@ impl Snapshots {
     pub fn router(self) -> Router {
         Router::new()
             .route("/cameras", get(list))
-            .route("/viewer/api/media-status", get(camera_status))
+            .route("/media/status", get(camera_status))
             .route("/cameras/{name}", get(snapshot))
             .with_state(self)
     }

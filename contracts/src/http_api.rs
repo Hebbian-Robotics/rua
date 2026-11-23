@@ -19,7 +19,7 @@ pub struct CameraListing {
     pub available: bool,
 }
 
-/// `POST /viewer/api/phone-invites`.
+/// `POST /media/phone-invites`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PhoneInviteRequest {
     /// The phone streams as `phone_<label>`.

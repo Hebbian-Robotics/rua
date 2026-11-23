@@ -12,7 +12,7 @@ import {
 import { Alert } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
-import { agentApi, resolveAgentUrl } from "../agent-api.js";
+import { agentApi } from "../agent-api.js";
 import { stationJson } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { AgentControl } from "../features/agent/agent-control.js";
@@ -178,7 +178,7 @@ export function WorkspaceApp({
   const [changingArmPower, setChangingArmPower] = useState(false);
   const [stoppingRun, setStoppingRun] = useState(false);
   const { preferences, updatePreferences, colorScheme } = viewerPreferences;
-  const agentUrl = resolveAgentUrl(preferences.agentServerUrl);
+  const agentUrl = globalThis.location.origin;
   const agent = useAgentRun(agentUrl);
   const { run, setRun } = agent;
   const runActive = isRunActive(run);
@@ -255,11 +255,11 @@ export function WorkspaceApp({
         active = false;
       };
     }
-    void stationJson("api/control-mode")
+    void stationJson("/api/control/capabilities")
       .then((value) => {
-        const mode = apiSchemas.shape.ViewerControl.parse(value).mode;
-        if (active)
-          setManualMode(mode === "so101_manual" ? "enabled" : "disabled");
+        const { manual_pose_control } =
+          apiSchemas.shape.ControlCapabilities.parse(value);
+        if (active) setManualMode(manual_pose_control ? "enabled" : "disabled");
       })
       .catch(() => {
         if (active) setManualMode("unknown");
@@ -556,7 +556,6 @@ export function WorkspaceApp({
           update={updatePreferences}
           arms={connected ? (stationState?.arms ?? null) : null}
           agent={agent}
-          agentSettingsLocked={startingRun || runActive}
           section={settingsSection}
         />
       )}

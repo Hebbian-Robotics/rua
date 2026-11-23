@@ -9,7 +9,7 @@ export function useMediaStatus(): string {
   const query = useQuery<MediaStatus>({
     queryKey: ["media-status"],
     queryFn: async () =>
-      mediaStatusSchema.parse(await stationJson("api/media-status")),
+      mediaStatusSchema.parse(await stationJson("/api/media/status")),
     refetchInterval: 5000,
     refetchIntervalInBackground: true,
     retry: false,

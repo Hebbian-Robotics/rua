@@ -8,8 +8,6 @@ const preferencesSchema = z.object({
   showTargetJoints: z.boolean().catch(true).default(true),
   showCommandedJoints: z.boolean().catch(false).default(false),
   showCameraLabels: z.boolean().catch(true).default(true),
-  // Empty means the default agent server address.
-  agentServerUrl: z.string().catch("").default(""),
   recordWithControl: z.boolean().catch(false).default(false),
 });
 

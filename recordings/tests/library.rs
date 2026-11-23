@@ -204,7 +204,7 @@ fn standalone_viewer_serves_the_bundle_and_api_then_stops_on_sigterm() {
     assert!(get("/").starts_with("HTTP/1.1 307"));
     assert!(get("/viewer/").starts_with("HTTP/1.1 307"));
     assert!(get("/viewer/recording.html").ends_with("recordings viewer"));
-    let listing = get("/viewer/api/recordings");
+    let listing = get("/api/recordings");
     assert!(listing.starts_with("HTTP/1.1 200"));
     assert!(listing.contains("\"name\":\"take\""));
     assert!(

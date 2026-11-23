@@ -1,6 +1,4 @@
-// The agent server's HTTP surface. It only starts, stops and lists runs; live
-// data (state, video, control, telemetry) comes from the robot server.
-
+import { StationHttpError } from "hebbian-rua";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -35,6 +33,8 @@ export function createApp({
   const app = new Hono();
   app.use("/api/*", cors({ origin: allowedOrigins }));
   app.onError((error, context) => {
+    if (error instanceof StationHttpError)
+      return Response.json({ detail: error.message }, { status: error.status });
     if (error instanceof RunConflictError)
       return context.json({ detail: error.message }, 409);
     if (error instanceof RunNotFoundError)

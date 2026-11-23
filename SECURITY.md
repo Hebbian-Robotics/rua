@@ -11,9 +11,9 @@ enable, move and stop the arms and read camera frames. Therefore:
 - Keep the default loopback addresses. Do not bind `--http-address` or
   `--media-address` to an untrusted network or the public internet.
 - For remote access, use a network you trust and control and protect every
-  exposed endpoint with your own authentication. `/viewer/api` can start recordings, report cameras for the lease
-  and issue camera tokens; the viewer also uses the station HTTP API for state
-  and commands. Exposing `/viewer/` alone does not make the viewer API read-only.
+  exposed endpoint with your own authentication. The station API can start
+  recordings, report cameras for a lease, and issue camera tokens. The viewer
+  backend also exposes state and command APIs to the browser.
   Treat remote viewer users as
   robot operators, not anonymous observers.
 - Keep a physical power cutoff within reach whenever an arm is powered.

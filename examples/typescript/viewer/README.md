@@ -1,11 +1,16 @@
 # Example viewer
 
-The station serves this React viewer at `/viewer/`. Follow the
+The example Node server hosts the React viewer and agent loop. Run `pnpm build`
+and `pnpm start:viewer`, then open <http://127.0.0.1:8793/viewer/>. Set
+`HEBBIAN_STATION_URL` to connect to a station other than the local default. Follow the
 [viewer build instructions](../../../docs/install-from-source.md#optional-viewer)
 and start a station with [your arm connected](../../../docs/getting-started.md).
 Use [MuJoCo](../../../docs/simulation.md) to test the viewer without hardware.
-The viewer build installs the published TypeScript SDK from npm through the
-repository lockfile.
+Each browser tab opens a session on the viewer backend. The backend connects
+to the station through the TypeScript SDK, streams state to the tab, and
+releases its manual lease when the session ends. The browser renders the robot
+model, connects directly to LiveKit for live video, and decodes recordings
+served through the example backend. The station owns capture and storage.
 
 ## Use the viewer
 
@@ -17,14 +22,12 @@ repository lockfile.
   for phone and USB camera setup.
 - **Recording** starts or stops capture and configures automatic recording.
   **Recordings** opens saved sessions. See [Recording](../../../docs/recording.md).
-- **Settings** controls appearance, pose overlays, camera labels, and the agent
-  server address.
+- **Settings** controls appearance, pose overlays, camera labels, and agent
+  connection status.
 
 ## Develop the viewer
 
-From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the
-station first with `HEBBIAN_VIEWER_DIRECTORY="$PWD/dist/viewer"` in its environment
-so it validates the viewer configuration even during frontend development. Add `--manual-control` to exercise manual motion in simulation.
+From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the station separately. Add `--manual-control` to exercise manual motion in simulation.
 Use `pnpm check` and `pnpm test:viewer` to check changes.
 
 - [`src/app/`](src/app/) contains the page entry points and workspace. The full

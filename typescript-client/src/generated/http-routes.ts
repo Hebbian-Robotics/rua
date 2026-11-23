@@ -170,6 +170,15 @@ export function createStationApi(
         jsonRequestInit("POST", body, signal),
       );
     },
+    /** Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. */
+    async phoneInvite(body: ApiSchemas["PhoneInviteRequest"]) {
+      return apiSchemas.shape.PhoneInvite.parse(
+        await stationRequest(
+          new URL(`/media/phone-invites`, stationUrl),
+          jsonRequestInit("POST", body, signal),
+        ),
+      );
+    },
     /** Capture selected arm state and camera frames under the same observation revisions. */
     async captureObservationHttp(body: ApiSchemas["ObservationRequest"]) {
       return apiSchemas.shape.ObservationAnswer.parse(
@@ -219,6 +228,40 @@ export function createStationApi(
         ),
       );
     },
+    /** Start recording and return the recording's name. */
+    async startRecording() {
+      return z
+        .string()
+        .parse(
+          await stationRequest(
+            new URL(`/recording/start`, stationUrl),
+            jsonRequestInit("POST", undefined, signal),
+          ),
+        );
+    },
+    /** Whether the station is recording. */
+    async recordingStatus() {
+      return apiSchemas.shape.RecordingStatus.parse(
+        await stationRequest(
+          new URL(`/recording/status`, stationUrl),
+          jsonRequestInit("GET", undefined, signal),
+        ),
+      );
+    },
+    /** Stop recording. */
+    async stopRecording() {
+      await stationFetch(
+        new URL(`/recording/stop`, stationUrl),
+        jsonRequestInit("POST", undefined, signal),
+      );
+    },
+    /** Stop recording only while the token still holds the lease. */
+    async stopRecordingForLease(body: ApiSchemas["LeaseToken"]) {
+      await stationFetch(
+        new URL(`/recording/stop-for-lease`, stationUrl),
+        jsonRequestInit("POST", body, signal),
+      );
+    },
     /** Record a model-loop event. */
     async recordRunEventHttp(body: ApiSchemas["RunEvent"]) {
       await stationFetch(
@@ -258,49 +301,6 @@ export function createStationApi(
       return stationFetch(
         new URL(`/traces/${encodeURIComponent(name)}`, stationUrl),
         jsonRequestInit("GET", undefined, signal),
-      );
-    },
-    /** Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. */
-    async phoneInvite(body: ApiSchemas["PhoneInviteRequest"]) {
-      return apiSchemas.shape.PhoneInvite.parse(
-        await stationRequest(
-          new URL(`/viewer/api/phone-invites`, stationUrl),
-          jsonRequestInit("POST", body, signal),
-        ),
-      );
-    },
-    /** Start recording and return the recording's name. */
-    async startRecording() {
-      return z
-        .string()
-        .parse(
-          await stationRequest(
-            new URL(`/viewer/api/recording/start`, stationUrl),
-            jsonRequestInit("POST", undefined, signal),
-          ),
-        );
-    },
-    /** Whether the station is recording. */
-    async recordingStatus() {
-      return apiSchemas.shape.RecordingStatus.parse(
-        await stationRequest(
-          new URL(`/viewer/api/recording/status`, stationUrl),
-          jsonRequestInit("GET", undefined, signal),
-        ),
-      );
-    },
-    /** Stop recording. */
-    async stopRecording() {
-      await stationFetch(
-        new URL(`/viewer/api/recording/stop`, stationUrl),
-        jsonRequestInit("POST", undefined, signal),
-      );
-    },
-    /** Stop recording only while the token still holds the lease. */
-    async stopRecordingForLease(body: ApiSchemas["LeaseToken"]) {
-      await stationFetch(
-        new URL(`/viewer/api/recording/stop-for-lease`, stationUrl),
-        jsonRequestInit("POST", body, signal),
       );
     },
   };

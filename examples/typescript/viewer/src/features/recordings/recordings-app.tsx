@@ -63,7 +63,7 @@ const RobotScene = lazy(() =>
   })),
 );
 function recordingFileUrl(path: string): string {
-  return `api/recordings/${path.split("/").map(encodeURIComponent).join("/")}`;
+  return `/api/recordings/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 function sampleAtOrBefore(times: number[], time: number): number {
   let lower = 0;
@@ -318,7 +318,7 @@ export function RecordingsApp() {
   const recordingsQuery = useQuery({
     queryKey: ["recordings"],
     queryFn: async () =>
-      apiSchemas.shape.Recordings.parse(await stationJson("api/recordings")),
+      apiSchemas.shape.Recordings.parse(await stationJson("/api/recordings")),
     retry: false,
   });
   const recordings = recordingsQuery.data ?? null;
@@ -355,7 +355,7 @@ export function RecordingsApp() {
   const deleteMutation = useMutation({
     mutationFn: async (recordingName: string) => {
       const response = await fetch(
-        `api/recordings/${encodeURIComponent(recordingName)}`,
+        `/api/recordings/${encodeURIComponent(recordingName)}`,
         { method: "DELETE" },
       );
       if (!response.ok)

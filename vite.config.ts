@@ -1,13 +1,11 @@
 import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
-import { normalizePath } from "vite";
+import { loadEnv, normalizePath } from "vite";
 import { defineConfig } from "vitest/config";
 
-// CONSTRAINT: The station serves the viewer, its HTTP API and every /viewer/api route.
-// The optional agent server (port 8793) is called directly by the viewer (CORS).
-const station = "http://127.0.0.1:8792";
-
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
+  const backendEnvironment = loadEnv(mode, import.meta.dirname, "AGENT_");
+  const viewerBackend = `http://${backendEnvironment["AGENT_HOST"] ?? "127.0.0.1"}:${backendEnvironment["AGENT_PORT"] ?? "8793"}`;
   const root = resolve(import.meta.dirname, "examples/typescript/viewer/web");
   const sourceDirectory = normalizePath(
     resolve(import.meta.dirname, "examples/typescript/viewer/src"),
@@ -73,9 +71,8 @@ export default defineConfig(({ command }) => {
     },
     server: {
       proxy: {
-        "^/(instance|events|run|commands|group_commands|pose_previews|leases|arms|action_sequence|state|traces|model)(/|\\?|$)":
-          station,
-        "/viewer/api": station,
+        "/model": viewerBackend,
+        "/api": viewerBackend,
       },
     },
   };
