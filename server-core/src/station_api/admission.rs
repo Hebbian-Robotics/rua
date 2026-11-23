@@ -8,6 +8,7 @@ use super::{events::EventJournal, runtime::ExecutionRegistry, submissions::Opera
 pub(super) struct AdmissionState {
     pub executions: ExecutionRegistry,
     pub operations: Operations,
+    pub clock: fn() -> std::time::Instant,
     events: Arc<EventJournal>,
 }
 
@@ -36,6 +37,7 @@ impl AdmissionOwner {
             let mut state = AdmissionState {
                 executions: ExecutionRegistry::default(),
                 operations: Operations::default(),
+                clock: std::time::Instant::now,
                 events,
             };
             while let Some(decide) = pending.recv().await {
