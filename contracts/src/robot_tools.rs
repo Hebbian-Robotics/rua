@@ -511,7 +511,7 @@ fn adapt(value: &mut Value) {
                 adapt(item);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 

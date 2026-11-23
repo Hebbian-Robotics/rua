@@ -125,7 +125,7 @@ pub(super) fn runner_for<'a, P: Plant>(
     };
     let core = ArmCore::new(config.arm_limits(), link.log_publisher());
     let initialized = plant.read_feedback().and_then(|feedback| {
-        feedback.measured_positions(config)?;
+        feedback.validate_for_cycle(config)?;
         let state = initialize_loop(config, core, &feedback)?;
         Ok((state, feedback))
     });
@@ -606,29 +606,32 @@ impl<P: Plant> Runner<'_, P> {
         let reading = self
             .plant
             .read_feedback_into(feedback)
-            .and_then(|()| feedback.measured_positions(self.config));
+            .and_then(|()| feedback.validate_for_cycle(self.config));
         self.timings.feedback_read_seconds = reading_began.elapsed().as_secs_f64();
-        if let Err(failure) = reading {
-            self.bus_failed(&failure, now);
-            if matches!(
-                self.state.core.mode(),
-                ArmMode::Disconnected | ArmMode::Faulted
-            ) {
-                // INVARIANT: Publish the transition, never the unspecified failed-read buffer.
-                let retained = std::mem::take(&mut self.feedback);
-                if retained.measured_positions(self.config).is_ok() {
-                    self.publish(&retained, interval, false);
+        let validated = match reading {
+            Ok(validated) => validated,
+            Err(failure) => {
+                self.bus_failed(&failure, now);
+                if matches!(
+                    self.state.core.mode(),
+                    ArmMode::Disconnected | ArmMode::Faulted
+                ) {
+                    // INVARIANT: Publish the transition, never the unspecified failed-read buffer.
+                    let retained = std::mem::take(&mut self.feedback);
+                    if retained.measured_positions(self.config).is_ok() {
+                        self.publish(&retained, interval, false);
+                    }
+                    self.feedback = retained;
                 }
-                self.feedback = retained;
+                return CycleReading::Unavailable(self.finished_or_continue());
             }
-            return CycleReading::Unavailable(self.finished_or_continue());
-        }
+        };
         let read_time = self.started.elapsed().as_secs_f64();
         self.observe_feedback(feedback, now);
 
         let failure = self
             .state
-            .cycle_failure(feedback, interval, deadline_missed);
+            .cycle_failure(&validated, interval, deadline_missed);
         if failure.is_none() {
             self.state.tripped = None;
         }

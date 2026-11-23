@@ -493,7 +493,9 @@ async fn report_lease_camera(
     let camera = input.camera.clone();
     match station_state
         .admission
-        .decide(move |_| link.report_camera(&input.lease_token, &input.camera, input.available))
+        .decide(move |_| {
+            link.report_camera(&input.lease_token, input.camera.as_str(), input.available)
+        })
         .await
         .map_err(admission_unavailable)?
     {
@@ -994,7 +996,7 @@ async fn submit_group_command(
                 let reply = link.action_step_async(
                     actions,
                     SubmissionAuthority {
-                        token,
+                        claim: token.into(),
                         generation: &generation,
                         clock: state.clock,
                     },
@@ -1050,7 +1052,7 @@ async fn submit_command(
                         link.submit_command_async(
                             command,
                             SubmissionAuthority {
-                                token,
+                                claim: token.into(),
                                 generation: &generation,
                                 clock: state.clock,
                             },
@@ -1058,7 +1060,15 @@ async fn submit_command(
                             input.expected_revision,
                         )
                     }
-                    command => {
+                    command @ (hebbian_contracts::Command::Enable
+                    | hebbian_contracts::Command::ApproveRecovery
+                    | hebbian_contracts::Command::ClearFault
+                    | hebbian_contracts::Command::Shutdown
+                    | hebbian_contracts::Command::Move { .. }
+                    | hebbian_contracts::Command::StreamJoints { .. }
+                    | hebbian_contracts::Command::StreamPose { .. }
+                    | hebbian_contracts::Command::ReachPose { .. }
+                    | hebbian_contracts::Command::SetGripper { .. }) => {
                         state
                             .executions
                             .check_command_conflict(token, &[&input.arm])
@@ -1066,7 +1076,7 @@ async fn submit_command(
                         link.submit_command_async(
                             command,
                             SubmissionAuthority {
-                                token,
+                                claim: token.into(),
                                 generation: &generation,
                                 clock: state.clock,
                             },
@@ -1119,7 +1129,7 @@ async fn update_stream_goal(
                     let reply = link.submit_command_async(
                         command,
                         SubmissionAuthority {
-                            token: Some(&input.lease_token),
+                            claim: crate::lease::MotionClaim::Token(&input.lease_token),
                             generation: &generation,
                             clock: state.clock,
                         },

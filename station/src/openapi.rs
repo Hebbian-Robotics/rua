@@ -514,7 +514,14 @@ pub fn routes() -> Vec<Route> {
 fn path_parameters(path: &str) -> Vec<Value> {
     path.split('/')
         .filter_map(|segment| segment.strip_prefix('{')?.strip_suffix('}'))
-        .map(|name| json!({"name": name, "in": "path", "required": true, "schema": {"type": "string"}}))
+        .map(|name| {
+            let schema = if path == "/cameras/{name}" {
+                json!({"type": "string", "pattern": hebbian_contracts::SnapshotName::PATTERN})
+            } else {
+                json!({"type":"string"})
+            };
+            json!({"name": name, "in": "path", "required": true, "schema": schema})
+        })
         .collect()
 }
 

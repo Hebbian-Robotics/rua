@@ -15,7 +15,7 @@ use hebbian_contracts::CommandOutcome;
 
 pub(super) struct ActiveStream {
     pub(super) command_id: hebbian_contracts::CommandId,
-    pub(super) policy_engaged: bool,
+    pub(super) policy_session: PolicySession,
 }
 
 pub(super) enum Activity {
@@ -90,14 +90,15 @@ impl Loop<'_> {
 
     pub(super) fn cycle_failure(
         &self,
-        feedback: &Feedback,
+        validated: &crate::plant::TrustedFeedback<'_>,
         interval: f64,
         deadline_missed: Option<String>,
     ) -> Option<Trip> {
+        let feedback = validated.feedback;
         deadline_missed.map(Trip::Deadline).or_else(|| {
             validated_tracking_error(
                 self.config,
-                &feedback.positions,
+                validated.positions,
                 &self.previous_command,
                 &self.commanded_velocities,
                 interval,
@@ -108,7 +109,11 @@ impl Loop<'_> {
                     Activity::Motion(active) if self.config.feetech.is_some() => {
                         Some((active.supervisor.peak_speed(), active.speed_fraction))
                     }
-                    _ => None,
+                    Activity::Idle
+                    | Activity::Motion(_)
+                    | Activity::Group(_)
+                    | Activity::Stream(_)
+                    | Activity::Reach(_) => None,
                 };
                 failure.into_trip(self.config, feedback, motion_speed)
             })
@@ -178,7 +183,7 @@ impl Loop<'_> {
         self.hold_at = None;
         self.activity = Activity::Stream(ActiveStream {
             command_id,
-            policy_engaged: false,
+            policy_session: PolicySession::Reset,
         });
     }
 
@@ -225,26 +230,18 @@ impl Loop<'_> {
                 },
                 _,
             )) => {
-                stream.policy_engaged = false;
+                stream.policy_session = PolicySession::Reset;
                 self.hold_at = None;
                 self.reference
                     .set_at_rest(positions.as_slice(), Some(joint_speed.radians_per_second()));
                 Ok(MotionPlan::ReferenceReady(MotionOutput::None))
             }
-            Some((
-                StreamGoal::Pose {
-                    position,
-                    quaternion,
-                },
-                _,
-            )) => {
+            Some((StreamGoal::Pose(target), _)) => {
                 self.hold_at = None;
-                let session = if stream.policy_engaged {
-                    PolicySession::Continue
-                } else {
-                    PolicySession::Reset
-                };
-                PolicyRequest::new(session, *position, *quaternion).map(MotionPlan::Infer)
+                Ok(MotionPlan::Infer(PolicyRequest {
+                    session: stream.policy_session,
+                    target: *target,
+                }))
             }
         }
     }
@@ -282,7 +279,7 @@ impl Loop<'_> {
         feedback: &Feedback,
     ) -> Result<(), Trip> {
         let policy_command = matches!(self.activity, Activity::Reach(_))
-            || (matches!(&self.activity, Activity::Stream(stream) if stream.policy_engaged)
+            || (matches!(&self.activity, Activity::Stream(stream) if matches!(stream.policy_session, PolicySession::Continue))
                 && !effects.ends_motion());
         // WHY: Smooth the terminal hold from the commanded velocity so a stop brakes
         // instead of freezing, including when completion still awaits the write.

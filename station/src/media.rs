@@ -105,18 +105,20 @@ impl MediaSupervisor {
         plan: &MediaPlan,
         station_url: &str,
         status: &MediaStatus,
+        local_cameras_only: bool,
     ) -> Self {
-        let livekit = match CameraConfiguration::from_environment() {
-            Ok(CameraConfiguration::Enabled(_)) => true,
-            Ok(CameraConfiguration::Off { reason }) => {
-                tracing::info!(%reason, "LiveKit is off; cameras are local to the media service");
-                false
-            }
-            Err(error) => {
-                tracing::warn!(%error, "LiveKit is not fully configured; cameras are local");
-                false
-            }
-        };
+        let livekit = !local_cameras_only
+            && match CameraConfiguration::from_environment() {
+                Ok(CameraConfiguration::Enabled(_)) => true,
+                Ok(CameraConfiguration::Off { reason }) => {
+                    tracing::info!(%reason, "LiveKit is off; cameras are local to the media service");
+                    false
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "LiveKit is not fully configured; cameras are local");
+                    false
+                }
+            };
         tracing::info!(address = %plan.address, "Media HTTP endpoint");
         Self::spawn(
             runtime,
@@ -226,6 +228,7 @@ async fn supervise(
     });
 }
 
+#[deny(clippy::disallowed_methods)]
 fn restart_after_media_exit(
     run_duration: Duration,
     last_exit: String,

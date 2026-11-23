@@ -482,7 +482,6 @@ export function createStationConnection(
         {
           kind: P.union(
             "state",
-            "reply",
             "resync",
             "mode",
             "rejected",

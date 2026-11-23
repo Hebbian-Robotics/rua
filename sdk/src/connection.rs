@@ -170,7 +170,6 @@ impl Inner {
                 Some(*seq)
             }
             Event::State(_)
-            | Event::Reply { .. }
             | Event::Resync { .. }
             | Event::Mode { .. }
             | Event::Rejected { .. }

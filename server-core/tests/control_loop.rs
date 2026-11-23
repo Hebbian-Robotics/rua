@@ -247,6 +247,10 @@ struct SwitchedFaultPlant {
 }
 
 impl Plant for SwitchedFaultPlant {
+    fn pacing(&self) -> Pacing {
+        self.inner.pacing()
+    }
+
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         self.inner.read_feedback_into(feedback)?;
         if self.fault.load(Ordering::Relaxed) {

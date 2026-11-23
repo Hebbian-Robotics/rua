@@ -100,6 +100,8 @@ impl SimulatedStation {
                         runtime,
                         address,
                         WebSettings {
+                            viewer_directory: None,
+                            local_cameras_only: false,
                             recordings_directory: std::env::temp_dir(),
                             enable_recording: false,
                             media_address,

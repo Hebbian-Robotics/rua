@@ -45,7 +45,31 @@ pub struct Feedback {
     pub fault: Option<String>,
 }
 
+pub(crate) struct TrustedFeedback<'a> {
+    pub(crate) feedback: &'a Feedback,
+    pub(crate) positions: crate::motion_values::MeasuredPositions<'a>,
+}
+
 impl Feedback {
+    pub(crate) fn validate_for_cycle(
+        &self,
+        config: &crate::config::ControllerConfig,
+    ) -> anyhow::Result<TrustedFeedback<'_>> {
+        let positions = self.measured_positions(config)?;
+        anyhow::ensure!(
+            crate::limits::is_finite_joint_vector(&self.velocities, config.joint_count),
+            "Invalid joint velocity feedback"
+        );
+        anyhow::ensure!(
+            crate::limits::is_finite_joint_vector(&self.efforts, config.joint_count),
+            "Invalid joint effort feedback"
+        );
+        Ok(TrustedFeedback {
+            feedback: self,
+            positions,
+        })
+    }
+
     pub(crate) fn measured_positions(
         &self,
         config: &crate::config::ControllerConfig,

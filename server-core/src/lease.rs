@@ -92,7 +92,7 @@ impl CommandAuthority {
 pub use hebbian_contracts::LeaseRequest;
 
 struct Held {
-    token: String,
+    token: LeaseSecret,
     request: LeaseRequest,
     unavailable_cameras: BTreeSet<String>,
     expires_at: Instant,
@@ -100,7 +100,7 @@ struct Held {
 }
 
 struct TakeoverReservation {
-    token: String,
+    token: LeaseSecret,
     controller_epoch: ControllerEpoch,
 }
 
@@ -151,6 +151,18 @@ fn poll_stops(pending: &mut Vec<PendingArmStop>) -> Settling {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum MotionClaim<'a> {
+    Unleased,
+    Token(&'a str),
+}
+
+impl<'a> From<Option<&'a str>> for MotionClaim<'a> {
+    fn from(token: Option<&'a str>) -> Self {
+        token.map_or(Self::Unleased, Self::Token)
+    }
+}
+
 enum MotionPermission<'a> {
     Held(&'a Held),
     Unleased,
@@ -160,7 +172,7 @@ enum MotionPermission<'a> {
 impl<'a> MotionPermission<'a> {
     fn check(
         held: Option<&'a Held>,
-        token: Option<&str>,
+        presented: MotionClaim<'_>,
         admission: LeaseAdmission,
         now: Instant,
     ) -> Result<Self, Rejection> {
@@ -179,7 +191,7 @@ impl<'a> MotionPermission<'a> {
                         .to_owned(),
                 });
             }
-            if !claim.is_held_by(token) {
+            if !matches!(presented, MotionClaim::Token(token) if claim.token.matches(token)) {
                 return Err(Rejection {
                     reason: RejectionReason::LeaseHeldElsewhere,
                     detail: format!(
@@ -195,7 +207,7 @@ impl<'a> MotionPermission<'a> {
             }
             return Ok(Self::Held(claim));
         }
-        if token.is_some() {
+        if matches!(presented, MotionClaim::Token(_)) {
             return Err(Rejection {
                 reason: RejectionReason::LeaseHeldElsewhere,
                 detail: "The lease has ended; acquire it again".to_owned(),
@@ -221,7 +233,7 @@ impl Held {
     }
 
     fn is_held_by(&self, token: Option<&str>) -> bool {
-        token.is_some_and(|token| same_token(&self.token, token))
+        token.is_some_and(|token| self.token.matches(token))
     }
 
     fn active_at(&self, now: Instant) -> bool {
@@ -233,24 +245,30 @@ impl Held {
     }
 }
 
-fn same_token(held: &str, presented: &str) -> bool {
-    held.len() == presented.len()
-        && held
-            .bytes()
-            .zip(presented.bytes())
-            .fold(0_u8, |difference, (held, presented)| {
-                difference | (held ^ presented)
-            })
-            == 0
-}
+#[derive(Clone)]
+struct LeaseSecret(String);
 
-fn new_token() -> std::io::Result<String> {
-    let mut bytes = [0_u8; 24];
-    std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
-    Ok(bytes.iter().fold(String::new(), |mut hex, byte| {
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    }))
+impl LeaseSecret {
+    fn matches(&self, presented: &str) -> bool {
+        let held = &self.0;
+        held.len() == presented.len()
+            && held
+                .bytes()
+                .zip(presented.bytes())
+                .fold(0_u8, |difference, (held, presented)| {
+                    difference | (held ^ presented)
+                })
+                == 0
+    }
+
+    fn generate() -> std::io::Result<Self> {
+        let mut bytes = [0_u8; 24];
+        std::fs::File::open("/dev/urandom").and_then(|mut random| random.read_exact(&mut bytes))?;
+        Ok(Self(bytes.iter().fold(String::new(), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -696,8 +714,13 @@ impl Lease {
             .as_ref()
             .filter(|claim| matches!(claim.phase, LeasePhase::Active) && claim.expires_at > now)
             .map(|claim| CameraRequirements {
-                token: claim.token.clone(),
-                cameras: claim.request.required_cameras.clone(),
+                token: claim.token.0.clone(),
+                cameras: claim
+                    .request
+                    .required_cameras
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
             })
     }
 
@@ -720,7 +743,7 @@ impl Lease {
             .request
             .required_cameras
             .iter()
-            .any(|name| name == camera)
+            .any(|name| name.as_str() == camera)
         {
             return Err(CameraReportRefusal::CameraNotRequired);
         }
@@ -823,14 +846,14 @@ impl Lease {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let claim = Held {
-            token: new_token().map_err(AcquireError::Unavailable)?,
+            token: LeaseSecret::generate().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
             phase: LeasePhase::Active,
         };
         let grant = LeaseGrant {
-            lease_token: claim.token.clone(),
+            lease_token: claim.token.0.clone(),
             lease_seconds: self.duration.as_secs_f64(),
             status: claim.status(now),
         };
@@ -860,7 +883,7 @@ impl Lease {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let reservation = Held {
-            token: new_token().map_err(AcquireError::Unavailable)?,
+            token: LeaseSecret::generate().map_err(AcquireError::Unavailable)?,
             request,
             unavailable_cameras: BTreeSet::new(),
             expires_at: now + self.duration,
@@ -890,7 +913,7 @@ impl Lease {
         let held = &mut authority.held;
         let reservation = held
             .as_mut()
-            .filter(|reservation| reservation.is_held_by(Some(&token.token)))?;
+            .filter(|reservation| reservation.token.matches(&token.token.0))?;
         let completion = reservation.phase.finish_takeover(result)?;
         self.authority_changes.send_replace(());
         match completion {
@@ -899,7 +922,7 @@ impl Lease {
         }
         reservation.expires_at = now + self.duration;
         Some(LeaseGrant {
-            lease_token: token.token,
+            lease_token: token.token.0,
             lease_seconds: self.duration.as_secs_f64(),
             status: reservation.status(now),
         })
@@ -1026,7 +1049,7 @@ impl Lease {
 
     pub(crate) fn admit_generation<T>(
         &self,
-        token: Option<&str>,
+        claim: MotionClaim<'_>,
         clock: impl FnOnce() -> Instant,
         gates: &[ArmGate],
         generations: &[GenerationTicket],
@@ -1065,7 +1088,7 @@ impl Lease {
         }
         // WHY: Sample after acquiring the authority and interlock locks: contention can outlast a lease.
         let now = clock();
-        let permission = MotionPermission::check(held.as_ref(), token, admission, now);
+        let permission = MotionPermission::check(held.as_ref(), claim, admission, now);
         if admission.blocks_on_interlocks()
             && held
                 .as_ref()
@@ -1122,7 +1145,9 @@ mod tests {
         LeaseRequest {
             holder,
             label: label.into(),
-            required_cameras: vec!["front".into()],
+            required_cameras: vec![
+                hebbian_contracts::SnapshotName::try_from("front".to_owned()).unwrap(),
+            ],
             on_interruption: OnInterruption::WaitForApproval,
         }
     }
@@ -1149,7 +1174,14 @@ mod tests {
     }
 
     fn command(lease: &Lease, token: Option<&str>, now: Instant) -> Result<(), Rejection> {
-        lease.admit_generation(token, || now, &[], &[], LeaseAdmission::Normal, || ())
+        lease.admit_generation(
+            token.into(),
+            || now,
+            &[],
+            &[],
+            LeaseAdmission::Normal,
+            || (),
+        )
     }
 
     fn gated(
@@ -1159,7 +1191,7 @@ mod tests {
         expected_revision: Option<u64>,
     ) -> Result<(), Rejection> {
         lease.admit_generation(
-            token,
+            token.into(),
             Instant::now,
             &[ArmGate {
                 interlocks: arm.clone(),
@@ -1408,7 +1440,7 @@ mod tests {
         for token in [
             None,
             Some(old_token.as_str()),
-            Some(reservation.token.as_str()),
+            Some(reservation.token.0.as_str()),
         ] {
             assert_eq!(
                 command(&lease, token, now).unwrap_err().reason,
@@ -1537,7 +1569,7 @@ mod tests {
         assert!(
             lease
                 .admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || now,
                     &[],
                     &first_submission,
@@ -1549,7 +1581,7 @@ mod tests {
         assert!(
             lease
                 .admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || now,
                     &[],
                     &second_submission,
@@ -1580,7 +1612,14 @@ mod tests {
         assert!(command(&lease, None, later).is_err());
         assert!(
             lease
-                .admit_generation(None, || later, &[], &[], LeaseAdmission::ClearFault, || ())
+                .admit_generation(
+                    None.into(),
+                    || later,
+                    &[],
+                    &[],
+                    LeaseAdmission::ClearFault,
+                    || ()
+                )
                 .is_ok()
         );
         let (retry, ()) = lease
@@ -1671,7 +1710,7 @@ mod tests {
             let interlock_guard = gate.interlocks.lock_unpoisoned();
             let submission = scope.spawn(|| {
                 lease.admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || *current_time.lock_unpoisoned(),
                     std::slice::from_ref(&gate),
                     &[],
@@ -1705,7 +1744,7 @@ mod tests {
         acquire_agent(&lease, now);
         let mut ran = false;
         let _ = lease.admit_generation(
-            None,
+            None.into(),
             || now,
             &[],
             &[],

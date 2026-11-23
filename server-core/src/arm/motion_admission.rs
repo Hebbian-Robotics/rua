@@ -1,3 +1,5 @@
+#![deny(clippy::disallowed_methods)]
+
 // INVARIANT: Pure motion decisions. Record mutation and event publication happen only
 // after a decision succeeds, in `ArmCore`'s imperative admission shell.
 
@@ -21,21 +23,17 @@ impl AdmittedPlan {
             plan.peak_speed <= limits.max_joint_speed,
             "Path speed exceeds the arm's maximum"
         );
-        anyhow::ensure!(
-            limits.lower.len() == limits.joint_count && limits.upper.len() == limits.joint_count,
-            "Arm limits do not match its joint count"
-        );
         for (segment_index, segment) in plan.segments.iter().enumerate() {
             for (corner_index, corner) in segment.corners.iter().enumerate() {
                 let tolerance = if segment_index == 0 && corner_index == 0 {
-                    limits.joint_limit_recovery_tolerance_radians
+                    limits.joint_bounds.tolerance()
                 } else {
                     0.0
                 };
                 for (joint, ((value, lower), upper)) in corner
                     .iter()
-                    .zip(&limits.lower)
-                    .zip(&limits.upper)
+                    .zip(limits.joint_bounds.lower())
+                    .zip(limits.joint_bounds.upper())
                     .enumerate()
                 {
                     anyhow::ensure!(
@@ -80,7 +78,7 @@ impl ArmCore {
             }],
             peak_speed: self.limits.default_joint_speed,
         };
-        let plan = ValidatedPlan::new(plan, self.limits.joint_count)?;
+        let plan = ValidatedPlan::new(plan, self.limits.joint_bounds.lower().len())?;
         AdmittedPlan::new(plan, &self.limits, poses.hold.clone())
     }
 }
@@ -126,7 +124,8 @@ impl MoveDecision {
                 "Joint speed exceeds the arm's maximum",
             ));
         }
-        let plan = ValidatedPlan::new(plan, core.limits.joint_count).map_err(invalid)?;
+        let plan =
+            ValidatedPlan::new(plan, core.limits.joint_bounds.lower().len()).map_err(invalid)?;
         if plan.peak_speed.to_bits() != speed.radians_per_second().to_bits() {
             return Err(rejection(
                 RejectionReason::InvalidTarget,

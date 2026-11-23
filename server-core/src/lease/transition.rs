@@ -1,3 +1,5 @@
+#![deny(clippy::disallowed_methods)]
+
 use std::time::Instant;
 
 use hebbian_contracts::LeaseHolder;

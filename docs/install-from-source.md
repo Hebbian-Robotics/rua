@@ -51,7 +51,9 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-The station serves the resulting viewer assets from disk. Camera builds have
+The station serves the resulting viewer assets from disk. Starting the viewer requires
+[LiveKit credentials](cameras.md#connect-a-usb-camera). For an API-only station,
+use `serve --headless`. Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.

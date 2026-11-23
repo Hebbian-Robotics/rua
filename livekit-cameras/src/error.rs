@@ -1,6 +1,8 @@
 #[derive(Debug, thiserror::Error)]
 pub enum PublisherError {
     #[error(transparent)]
+    InvalidCameraName(#[from] hebbian_contracts::InvalidCameraName),
+    #[error(transparent)]
     NativePublisher(#[from] livekit_camera_publisher::error::PublisherError),
     #[error(transparent)]
     Recorder(#[from] crate::recorder::RecorderError),

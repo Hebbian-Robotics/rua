@@ -8,7 +8,7 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
 
 1. If you run RUA from source, [build the media companion](#rua-configuration)
    once. The Python wheel includes it.
-2. Use a LiveKit Cloud project or a reachable self-hosted
+2. Create a [LiveKit Cloud project](https://cloud.livekit.io/) and generate a project API key, or use a reachable self-hosted
    LiveKit server. Put its WebSocket URL and API credentials in the station’s
    `.env` file.
 
@@ -101,6 +101,10 @@ for phone controls and custom hosting.
 
 ## Check a camera from the CLI
 
+LiveKit camera names use 1–40 lowercase ASCII letters, digits or underscores.
+Simulator snapshots use `sim_` followed by the renderer's view name. Use the
+name returned by the camera list for snapshot, observation and lease requests.
+
 With the station running, list available camera names and save a JPEG:
 
 ```sh
@@ -112,8 +116,8 @@ Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
 ## Local snapshots
 
-For local USB snapshots only, leave the LiveKit settings unset and keep the
-same `--camera` flag. The media companion captures frames directly. The CLI
+For local cameras such as a built-in webcam or a USB camera, add `--local-cameras-only` to the station’s `serve` command.
+Phone invites and room streaming require LiveKit. The media companion captures frames directly. The CLI
 and SDKs still use the station URL for discovery and snapshots.
 
 ```sh

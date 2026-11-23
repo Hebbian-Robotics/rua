@@ -1,0 +1,6 @@
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "Pass the monotonic observation time into the decision." },
+    { path = "std::time::SystemTime::now", reason = "Read wall time at the I/O boundary." },
+    { path = "std::process::Command::new", reason = "The supervisor executes process effects." },
+    { path = "tokio::process::Command::new", reason = "The supervisor executes process effects." },
+]

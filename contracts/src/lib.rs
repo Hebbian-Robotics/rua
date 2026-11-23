@@ -1,3 +1,4 @@
+#![deny(clippy::wildcard_enum_match_arm)]
 //! Shared station state and command-record contracts.
 
 #![warn(clippy::missing_errors_doc, clippy::missing_panics_doc)]
@@ -40,29 +41,95 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A camera participant and recording-path name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CameraName<'a>(&'a str);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
+#[schemars(inline, transparent)]
+pub struct CameraName(#[schemars(regex(pattern = r"^[a-z0-9_]{1,40}$"))] String);
 
-impl<'a> TryFrom<&'a str> for CameraName<'a> {
+impl<'de> Deserialize<'de> for CameraName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl std::borrow::Borrow<str> for CameraName {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl TryFrom<String> for CameraName {
     type Error = InvalidCameraName;
 
-    fn try_from(name: &'a str) -> Result<Self, Self::Error> {
+    fn try_from(name: String) -> Result<Self, Self::Error> {
         if name.is_empty()
             || name.len() > 40
             || !name.bytes().all(|character| {
                 character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'_'
             })
         {
-            return Err(InvalidCameraName(name.to_owned()));
+            return Err(InvalidCameraName(name));
         }
         Ok(Self(name))
     }
 }
 
-impl CameraName<'_> {
+impl TryFrom<&str> for CameraName {
+    type Error = InvalidCameraName;
+
+    fn try_from(name: &str) -> Result<Self, Self::Error> {
+        Self::try_from(name.to_owned())
+    }
+}
+
+impl CameraName {
     #[must_use]
     pub fn as_str(&self) -> &str {
-        self.0
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CameraName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, JsonSchema)]
+#[schemars(inline, transparent)]
+pub struct SnapshotName(#[schemars(regex(pattern = SnapshotName::PATTERN))] String);
+
+impl TryFrom<String> for SnapshotName {
+    type Error = InvalidCameraName;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        if name
+            .strip_prefix("sim_")
+            .is_some_and(|view| !view.is_empty())
+        {
+            return Ok(Self(name));
+        }
+        CameraName::try_from(name).map(|name| Self(name.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for SnapshotName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl SnapshotName {
+    pub const PATTERN: &'static str = r"^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$";
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SnapshotName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -83,7 +150,17 @@ impl std::error::Error for InvalidCameraName {}
 
 #[cfg(test)]
 mod camera_name_tests {
-    use super::CameraName;
+    use super::{CameraName, SnapshotName};
+
+    #[test]
+    fn simulator_views_round_trip_without_becoming_participant_names() {
+        let renderer_view = "sim_Left wrist/close-up";
+        let name: SnapshotName = serde_json::from_value(renderer_view.into()).unwrap();
+        assert_eq!(name.as_str(), renderer_view);
+        assert_eq!(serde_json::to_value(name).unwrap(), renderer_view);
+        assert!(CameraName::try_from(renderer_view).is_err());
+        assert!(serde_json::from_value::<SnapshotName>("../outside".into()).is_err());
+    }
 
     #[test]
     fn camera_names_use_safe_ascii_and_have_bounded_length() {
@@ -134,7 +211,9 @@ pub enum JawYawReference {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct OrientationSummary {
     pub approach: [f64; 3],
+    #[schemars(range(min = 0.0, max = 180.0))]
     pub degrees_from_down: f64,
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
     pub jaw_yaw_reference: JawYawReference,
     pub target: Option<TargetComparison>,
@@ -145,9 +224,12 @@ pub struct OrientationSummary {
 /// physical error.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TargetComparison {
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
     pub jaw_yaw_reference: JawYawReference,
+    #[schemars(range(min = 0.0, max = 180.0))]
     pub approach_error_degrees: f64,
+    #[schemars(range(min = 0.0, max = 180.0))]
     pub orientation_error_degrees: f64,
 }
 
@@ -243,8 +325,10 @@ pub struct PoseLimited {
     pub waypoint: usize,
     pub reason: IkFailure,
     /// From the closest pose's tool position to the requested one.
+    #[schemars(range(min = 0.0))]
     pub position_shortfall_meters: f64,
     /// From the closest pose's orientation to the requested one.
+    #[schemars(range(min = 0.0))]
     pub orientation_shortfall_radians: f64,
     /// The shortfall and the closest pose's tool position in millimetres, then what
     /// would be reachable exactly instead, in the terms a pose takes.
@@ -272,10 +356,13 @@ pub struct Achieved {
     /// The tool pose at `joints`; absent when the controller has no tool link.
     pub position: Option<[f64; 3]>,
     pub quaternion: Option<[f64; 4]>,
+    #[schemars(range(min = 0.0))]
     pub joint_error_radians: Option<f64>,
     /// Each joint's absolute distance from the target joints.
     pub joint_errors_radians: Option<Vec<f64>>,
+    #[schemars(range(min = 0.0))]
     pub position_error_meters: Option<f64>,
+    #[schemars(range(min = 0.0))]
     pub orientation_error_radians: Option<f64>,
     /// The tool orientation in grasp terms, against the target's when there is one.
     pub orientation: Option<OrientationSummary>,
@@ -607,7 +694,11 @@ impl CommandRecord {
     pub fn group_id(&self) -> Option<&str> {
         match &self.command {
             RecordedCommand::Move { group_id, .. } => group_id.as_deref(),
-            _ => None,
+            RecordedCommand::PolicyReach { .. }
+            | RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -615,7 +706,11 @@ impl CommandRecord {
     pub fn target_joints(&self) -> Option<&[f64]> {
         match &self.command {
             RecordedCommand::Move { target_joints, .. } => Some(target_joints),
-            _ => None,
+            RecordedCommand::PolicyReach { .. }
+            | RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -626,7 +721,10 @@ impl CommandRecord {
                 target_position, ..
             } => *target_position,
             RecordedCommand::PolicyReach { target_pose } => Some(target_pose.position),
-            _ => None,
+            RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -637,7 +735,10 @@ impl CommandRecord {
                 target_quaternion, ..
             } => *target_quaternion,
             RecordedCommand::PolicyReach { target_pose } => Some(target_pose.quaternion),
-            _ => None,
+            RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -645,7 +746,9 @@ impl CommandRecord {
     pub fn achieved(&self) -> Option<&Achieved> {
         match &self.phase {
             CommandPhase::Finished { achieved, .. } => achieved.as_deref(),
-            _ => None,
+            CommandPhase::Pending
+            | CommandPhase::NotStarted { .. }
+            | CommandPhase::OutcomeUnknown { .. } => None,
         }
     }
 

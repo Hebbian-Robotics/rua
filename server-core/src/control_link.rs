@@ -12,7 +12,7 @@ use crate::config::ControllerConfig;
 use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
 use crate::lease::{
     AcquireError, AcquireMode, ArmGate, CommandAuthority, GenerationTicket, Lease, LeaseAdmission,
-    LeaseRequest, SharedInterlocks,
+    LeaseRequest, MotionClaim, SharedInterlocks,
 };
 use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
@@ -30,7 +30,7 @@ const WRITER_POLL: Duration = Duration::from_millis(20);
 
 #[derive(Clone, Copy)]
 pub(crate) struct SubmissionAuthority<'a> {
-    pub token: Option<&'a str>,
+    pub claim: MotionClaim<'a>,
     pub generation: &'a [GenerationTicket],
     pub clock: fn() -> Instant,
 }
@@ -504,8 +504,8 @@ impl LinkHandle {
                 planner.project_by_policy(joints, position, orientation, |position, quaternion| {
                     let request = PreviewRequest {
                         goal: ReachGoal {
-                            position,
-                            quaternion,
+                            target: crate::kinematics::pose_from_xyzw(position, quaternion)
+                                .map_err(|error| error.to_string())?,
                             position_tolerance_meters: settings.position_tolerance_meters,
                             orientation_tolerance_radians: settings.orientation_tolerance_radians,
                         },
@@ -936,7 +936,13 @@ impl Hub {
                 }
             }
             Event::Mode { mode, fault } => self.mode = Some((*mode, fault.clone())),
-            _ => {}
+            Event::State(_)
+            | Event::Snapshot { .. }
+            | Event::Resync { .. }
+            | Event::Rejected { .. }
+            | Event::Tripped { .. }
+            | Event::ControllerUnavailable { .. }
+            | Event::ControllerAvailable => {}
         }
         self.next_seq = self.next_seq.max(1);
         let frame = Frame::emitted_now(Some(self.next_seq), event);
@@ -988,7 +994,7 @@ fn enqueue_with_lease<R>(
     enqueue: impl FnOnce() -> Result<R, crate::arm::Rejection>,
 ) -> Result<R, crate::arm::Rejection> {
     shared.lease.admit_generation(
-        authority.token,
+        authority.claim,
         authority.clock,
         gates,
         authority.generation,
@@ -1075,7 +1081,7 @@ mod tests {
                 .submit_command_async(
                     Command::Enable,
                     SubmissionAuthority {
-                        token: Some(&lease.lease_token),
+                        claim: crate::lease::MotionClaim::Token(&lease.lease_token),
                         generation: &[current_execution],
                         clock: Instant::now
                     },
@@ -1098,7 +1104,7 @@ mod tests {
             .submit_command_async(
                 Command::Enable,
                 SubmissionAuthority {
-                    token: None,
+                    claim: MotionClaim::Unleased,
                     generation: &[],
                     clock: Instant::now,
                 },

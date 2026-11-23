@@ -272,7 +272,11 @@ impl Station {
             request: hebbian_contracts::LeaseRequest {
                 holder: request.holder,
                 label: request.label,
-                required_cameras: request.required_cameras,
+                required_cameras: request
+                    .required_cameras
+                    .into_iter()
+                    .map(hebbian_contracts::SnapshotName::try_from)
+                    .collect::<std::result::Result<_, _>>()?,
                 on_interruption: request.on_interruption,
             },
             take,
@@ -1090,7 +1094,7 @@ impl LeaseGuard {
         self.station
             .report_lease_camera_http(&LeaseCameraReport {
                 lease_token: self.lease_token.clone(),
-                camera: camera.to_owned(),
+                camera: hebbian_contracts::SnapshotName::try_from(camera.to_owned())?,
                 available,
             })
             .await
