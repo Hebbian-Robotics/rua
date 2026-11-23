@@ -280,20 +280,13 @@ async fn capture_frame(
         Some(ObservationFrame {
             jpeg_base64: STANDARD.encode(jpeg),
             captured_at_unix_ns,
-            retrieved_between_unix_seconds: [unix_seconds(started), unix_seconds(finished)],
+            retrieved_between_unix_seconds: [started, finished]
+                .map(|nanos| Duration::from_nanos(nanos).as_secs_f64()),
         })
     })
     .await
     .ok()
     .flatten()
-}
-
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "Observation intervals use fractional Unix seconds, like station feedback"
-)]
-fn unix_seconds(nanos: u64) -> f64 {
-    nanos as f64 / 1_000_000_000.0
 }
 
 async fn observe(
