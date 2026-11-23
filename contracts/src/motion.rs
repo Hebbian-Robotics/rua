@@ -9,6 +9,92 @@ use crate::{PathLimited, PoseLimited};
 /// Above this absolute normalized approach X, jaw yaw zero uses world Y.
 pub const JAW_REFERENCE_SWITCH_APPROACH_X: f64 = 0.95;
 
+/// A positive, finite joint speed in radians per second.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct JointSpeed(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidSpeed;
+
+impl std::fmt::Display for InvalidSpeed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A joint speed must be positive and finite")
+    }
+}
+
+impl std::error::Error for InvalidSpeed {}
+
+impl TryFrom<f64> for JointSpeed {
+    type Error = InvalidSpeed;
+
+    fn try_from(speed: f64) -> Result<Self, Self::Error> {
+        Self::new(speed)
+    }
+}
+
+impl From<JointSpeed> for f64 {
+    fn from(speed: JointSpeed) -> Self {
+        speed.radians_per_second()
+    }
+}
+
+impl JointSpeed {
+    /// # Errors
+    /// Refuses zero, negative, and non-finite speeds.
+    pub fn new(radians_per_second: f64) -> Result<Self, InvalidSpeed> {
+        if radians_per_second.is_finite() && radians_per_second > 0.0 {
+            Ok(Self(radians_per_second))
+        } else {
+            Err(InvalidSpeed)
+        }
+    }
+
+    /// # Errors
+    /// Refuses invalid requested, default or maximum speeds.
+    pub fn for_request(
+        requested: Option<f64>,
+        default: f64,
+        maximum: f64,
+    ) -> Result<Self, InvalidSpeed> {
+        Self::for_validated_request(requested.map(Self::new).transpose()?, default, maximum)
+    }
+
+    /// # Errors
+    /// Refuses invalid default or maximum speeds.
+    pub fn for_validated_request(
+        requested: Option<Self>,
+        default: f64,
+        maximum: f64,
+    ) -> Result<Self, InvalidSpeed> {
+        let speed = match requested {
+            Some(speed) => speed,
+            None => Self::new(default)?,
+        };
+        let cap = Self::new(maximum)?;
+        Ok(Self(speed.0.min(cap.0)))
+    }
+
+    #[must_use]
+    pub fn radians_per_second(self) -> f64 {
+        self.0
+    }
+}
+
+impl JsonSchema for JointSpeed {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "JointSpeed".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"title": "JointSpeed", "type": "number", "exclusiveMinimum": 0.0})
+    }
+}
+
 /// Why a command was not accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

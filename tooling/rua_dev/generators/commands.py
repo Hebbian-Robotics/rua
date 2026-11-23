@@ -95,9 +95,18 @@ def fixed_length(schema: dict) -> int | None:
     return None
 
 
-def rust_type(schema: dict, definitions: dict) -> str:
+def rust_named_type(schema: dict) -> str | None:
     if "$ref" in schema:
         return reference_name(schema)
+    title = schema.get("title")
+    if title in ("GripperOpening", "JointSpeed"):
+        return title
+    return None
+
+
+def rust_type(schema: dict, definitions: dict) -> str:
+    if named_type := rust_named_type(schema):
+        return named_type
     kind = scalar_type(schema)
     if kind == "number":
         return "f64"
@@ -149,16 +158,11 @@ def doc_lines(variant: Variant) -> list[str]:
 def generate_rust(variants: list[Variant], definitions: dict) -> str:
     reference_types = sorted(
         {
-            reference_name(field.schema)
+            named_type
             for variant in variants
             for field in variant.fields
-            if "$ref" in field.schema
-        }
-        | {
-            reference_name(field.schema["items"])
-            for variant in variants
-            for field in variant.fields
-            if "items" in field.schema and "$ref" in field.schema["items"]
+            for schema in (field.schema, field.schema.get("items", {}))
+            if (named_type := rust_named_type(schema)) is not None
         }
     )
     lines = [

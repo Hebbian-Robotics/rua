@@ -13,7 +13,55 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ArmRecord, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
+use crate::{ArmRecord, JointSpeed, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
+
+/// A normalized gripper target, from closed (0) to open (1).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct GripperOpening(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidGripperOpening;
+
+impl std::fmt::Display for InvalidGripperOpening {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A gripper opening must be a finite number from 0 (closed) to 1 (open)")
+    }
+}
+
+impl std::error::Error for InvalidGripperOpening {}
+
+impl TryFrom<f64> for GripperOpening {
+    type Error = InvalidGripperOpening;
+
+    fn try_from(opening: f64) -> Result<Self, Self::Error> {
+        if (0.0..=1.0).contains(&opening) {
+            Ok(Self(opening))
+        } else {
+            Err(InvalidGripperOpening)
+        }
+    }
+}
+
+impl From<GripperOpening> for f64 {
+    fn from(opening: GripperOpening) -> Self {
+        opening.0
+    }
+}
+
+impl JsonSchema for GripperOpening {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "GripperOpening".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"title": "GripperOpening", "type": "number", "minimum": 0.0, "maximum": 1.0})
+    }
+}
 
 /// A command for one arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -44,7 +92,7 @@ pub enum StationCommand {
         joints: Vec<f64>,
         /// Peak joint speed in rad/s; clamped to the profile's maximum.
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
     /// Move the tool to a world position and orientation.
     #[schemars(title = "MoveToPoseCommand")]
@@ -52,14 +100,14 @@ pub enum StationCommand {
         position: [f64; 3],
         orientation: PoseOrientation,
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
     /// Waypoints are corners: the arm comes to rest and settles at each one.
     #[schemars(title = "FollowPathCommand")]
     FollowPath {
         waypoints: Vec<Waypoint>,
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
     /// Start streaming joint destinations while the arm is holding. Send
     /// later goals to the operation's goal endpoint. The stream ends when
@@ -68,21 +116,19 @@ pub enum StationCommand {
     StreamJoints {
         joints: Vec<f64>,
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
         /// The initial gripper target, 0 closed to 1 open, if the stream drives it.
         #[serde(default)]
-        #[schemars(range(min = 0.0, max = 1.0))]
-        gripper_opening: Option<f64>,
+        gripper_opening: Option<GripperOpening>,
     },
     /// Open or close the gripper, 0 closed to 1 open, whether the arm is holding
     /// or moving. It completes on arrival or on contact.
     #[schemars(title = "StationSetGripperCommand")]
     SetGripper {
-        #[schemars(range(min = 0.0, max = 1.0))]
-        opening: f64,
+        opening: GripperOpening,
         /// Peak gripper speed in rad/s; uses the arm default and maximum.
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
 }
 
@@ -203,8 +249,7 @@ pub struct StreamGoalUpdateRequest {
     pub sequence: u32,
     pub joints: Vec<f64>,
     #[serde(default)]
-    #[schemars(range(min = 0.0, max = 1.0))]
-    pub gripper_opening: Option<f64>,
+    pub gripper_opening: Option<GripperOpening>,
     #[serde(default)]
     pub expected_revision: Option<u64>,
 }
@@ -264,7 +309,7 @@ pub struct MoveArmsCommand {
     #[schemars(schema_with = "nonempty_arm_targets")]
     pub targets: BTreeMap<String, Waypoint>,
     #[serde(default)]
-    pub max_joint_speed: Option<f64>,
+    pub max_joint_speed: Option<JointSpeed>,
 }
 
 fn nonempty_arm_targets(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -407,4 +452,36 @@ pub enum PreviewAnswer {
         reason: RejectionReason,
         detail: String,
     },
+}
+
+#[cfg(test)]
+mod motion_value_tests {
+    use super::*;
+
+    #[test]
+    fn a_command_rejects_a_nonpositive_speed_at_the_wire_boundary() {
+        for speed in ["0", "-0.5"] {
+            let command =
+                format!(r#"{{"kind":"move_to_joints","joints":[0.0],"max_joint_speed":{speed}}}"#);
+            assert!(serde_json::from_str::<StationCommand>(&command).is_err());
+        }
+    }
+
+    #[test]
+    fn an_opening_accepts_the_closed_and_open_endpoints_as_wire_numbers() {
+        for wire_value in ["0.0", "0.5", "1.0"] {
+            let opening: GripperOpening = serde_json::from_str(wire_value).unwrap();
+            assert_eq!(serde_json::to_string(&opening).unwrap(), wire_value);
+        }
+    }
+
+    #[test]
+    fn an_opening_rejects_values_outside_the_unit_interval() {
+        for opening in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
+            assert!(GripperOpening::try_from(opening).is_err());
+        }
+        for wire_value in ["-0.1", "1.1"] {
+            assert!(serde_json::from_str::<GripperOpening>(wire_value).is_err());
+        }
+    }
 }

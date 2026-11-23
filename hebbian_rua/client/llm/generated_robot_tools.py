@@ -467,7 +467,9 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             }
           ],
           "default": null,
-          "description": "Peak speed in degrees per second; clamped to the profile maximum."
+          "description": "Peak speed in degrees per second; clamped to the profile maximum.",
+          "exclusiveMinimum": 0.0,
+          "title": "JointSpeed"
         },
         "targets": {
           "additionalProperties": {
@@ -504,11 +506,14 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             }
           ],
           "default": null,
-          "description": "Peak speed in degrees per second; clamped to the profile maximum."
+          "description": "Peak speed in degrees per second; clamped to the profile maximum.",
+          "exclusiveMinimum": 0.0,
+          "title": "JointSpeed"
         },
         "opening": {
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "GripperOpening",
           "type": "number"
         }
       },

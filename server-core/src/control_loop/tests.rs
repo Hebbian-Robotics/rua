@@ -171,7 +171,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
                     quaternion: pose.quaternion,
                 },
             }],
-            Some(1.0),
+            Some(hebbian_contracts::JointSpeed::new(1.0).unwrap()),
             None,
         )
         .unwrap();
