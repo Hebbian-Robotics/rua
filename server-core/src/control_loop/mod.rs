@@ -4,6 +4,7 @@
 )]
 
 mod activity;
+mod cycle;
 mod group;
 mod guards;
 mod learned;
@@ -282,6 +283,7 @@ fn runner_for<'a, P: Plant>(
         failed_cycles: 0,
         last_reconnect_failure: None,
         recovery: runner::BusRecovery::Disabled,
+        startup_hold: None,
     })
 }
 
@@ -491,6 +493,12 @@ fn run_runners<P: Plant>(
     runners
         .into_iter()
         .map(|mut runner| {
+            if runner.startup_hold.is_some() {
+                runner.fail_enable(
+                    "Controller stopped before startup hold was confirmed",
+                    Now::current(),
+                );
+            }
             runner.report.trace = Some(runner.trace.finish());
             runner.report
         })

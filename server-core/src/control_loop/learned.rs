@@ -1,13 +1,47 @@
 // INVARIANT: Learned-policy adaptation produces references and advances command state; hardware writes and setpoint guards remain in the common loop.
 
 use super::activity::{Activity, Loop};
-use crate::arm::{Now, ReachGoal};
+use super::trajectory::MotionOutput;
+use crate::arm::ReachGoal;
 use crate::kinematics::pose_from_xyzw;
 use crate::limits::Trip;
 use crate::plant::Feedback;
 use crate::policy::{ActiveReach, ReachStatus};
 use anyhow::Context;
 use hebbian_contracts::CommandOutcome;
+use nalgebra::Isometry3;
+
+pub(super) enum PolicySession {
+    Continue,
+    Reset,
+}
+
+pub(super) struct PolicyRequest {
+    pub(super) session: PolicySession,
+    pub(super) target: Isometry3<f64>,
+}
+
+pub(super) enum MotionPlan {
+    ReferenceReady(MotionOutput),
+    Infer(PolicyRequest),
+}
+
+impl PolicyRequest {
+    pub(super) fn new(
+        session: PolicySession,
+        position: [f64; 3],
+        quaternion: [f64; 4],
+    ) -> Result<Self, Trip> {
+        Ok(Self {
+            session,
+            target: pose_from_xyzw(position, quaternion).map_err(policy_failure)?,
+        })
+    }
+}
+
+pub(super) fn policy_failure(error: anyhow::Error) -> Trip {
+    Trip::Policy(format!("Policy failed: {error:#}"))
+}
 
 impl Loop<'_> {
     pub(super) fn start_reach(&mut self, goal: ReachGoal) -> anyhow::Result<()> {
@@ -32,73 +66,46 @@ impl Loop<'_> {
         interval: f64,
         feedback: &Feedback,
         stop: bool,
-        now: Now,
-    ) -> Result<(), Trip> {
+    ) -> Result<MotionPlan, Trip> {
         if stop {
-            self.end_stopped(now);
-            return Ok(());
+            return Ok(MotionPlan::ReferenceReady(MotionOutput::Arm(
+                self.prepare_stop_write(Vec::new(), "Stopped".into()),
+            )));
         }
-        let policy_failed =
-            |error: anyhow::Error| Trip::Policy(format!("Policy failed: {error:#}"));
         let Activity::Reach(active) = &mut self.activity else {
             return Err(Trip::Policy("No pose command is running".into()));
         };
         let runtime = self
             .policy
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| Trip::Policy("No policy is loaded".into()))?;
-        let goal = active.goal().clone();
-        let tool = runtime.tool_pose(feedback).map_err(policy_failed)?;
+        let tool = runtime.tool_pose(feedback).map_err(policy_failure)?;
         match active.assess(&tool, &feedback.velocities, interval) {
             ReachStatus::Running => {}
             ReachStatus::TimedOut => {
-                self.end_timed_out(feedback, now);
-                return Ok(());
+                let effects = self.prepare_measured_hold(
+                    CommandOutcome::TimedOut,
+                    Some("The pose was not reached before the deadline".into()),
+                    feedback,
+                );
+                return Ok(MotionPlan::ReferenceReady(MotionOutput::Arm(effects)));
             }
             ReachStatus::Settled => {
-                self.filter.reset(&feedback.positions);
-                self.end_activity(
-                    CommandOutcome::Completed,
-                    None,
-                    Some(feedback.positions.clone()),
-                    now,
-                );
-                return Ok(());
+                let effects = self.prepare_measured_hold(CommandOutcome::Completed, None, feedback);
+                return Ok(MotionPlan::ReferenceReady(MotionOutput::Arm(effects)));
             }
         }
-        let target = pose_from_xyzw(goal.position, goal.quaternion).map_err(policy_failed)?;
-        let joint_goal = runtime
-            .joint_goal(self.config, feedback, &target)
-            .map_err(policy_failed)?;
-        self.reference
-            .set_at_rest(&joint_goal, Some(self.config.max_joint_speed));
-        Ok(())
+        let goal = active.goal();
+        PolicyRequest::new(PolicySession::Continue, goal.position, goal.quaternion)
+            .map(MotionPlan::Infer)
     }
 
-    pub(super) fn policy_stream_reference(
-        &mut self,
-        feedback: &Feedback,
-        position: [f64; 3],
-        quaternion: [f64; 4],
-    ) -> Result<(), Trip> {
-        let policy_failed =
-            |error: anyhow::Error| Trip::Policy(format!("Policy failed: {error:#}"));
-        let runtime = self
-            .policy
-            .as_mut()
-            .ok_or_else(|| Trip::Policy("A pose goal arrived but no policy is loaded".into()))?;
-        if let Activity::Stream(stream) = &mut self.activity
-            && !stream.policy_engaged
-        {
-            runtime.reset();
+    pub(super) fn adopt_policy_target(&mut self, joint_goal: &[f64]) -> MotionOutput {
+        if let Activity::Stream(stream) = &mut self.activity {
             stream.policy_engaged = true;
         }
-        let target = pose_from_xyzw(position, quaternion).map_err(policy_failed)?;
-        let goal = runtime
-            .joint_goal(self.config, feedback, &target)
-            .map_err(policy_failed)?;
         self.reference
-            .set_at_rest(&goal, Some(self.config.max_joint_speed));
-        Ok(())
+            .set_at_rest(joint_goal, Some(self.config.max_joint_speed));
+        MotionOutput::None
     }
 }

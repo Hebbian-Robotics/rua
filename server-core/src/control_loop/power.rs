@@ -1,11 +1,9 @@
-use std::time::Instant;
-
 use super::runner::Runner;
 use crate::arm::Now;
 use crate::config::ControllerConfig;
 use crate::limits::{Trip, check_effort, max_joint_deviation};
 use crate::motion_values::MeasuredPositions;
-use crate::plant::{Feedback, Pacing, Plant};
+use crate::plant::{Feedback, Plant};
 use hebbian_robot_geometry::joint_limits::RecoveryRefusal;
 const STARTUP_HOLD_SECONDS: f64 = 0.25;
 const SHUTDOWN_AT_REST_RADIANS: f64 = 0.01;
@@ -32,29 +30,28 @@ impl std::fmt::Display for EnableRefusal<'_> {
     }
 }
 
-struct StartupHold<'a> {
-    config: &'a ControllerConfig,
-    initial: MeasuredPositions<'a>,
+pub(super) struct StartupHold {
+    initial: Vec<f64>,
     remaining_observations: f64,
 }
 
-impl<'a> StartupHold<'a> {
-    fn new(config: &'a ControllerConfig, initial: MeasuredPositions<'a>) -> Self {
+impl StartupHold {
+    fn new(config: &ControllerConfig, initial: MeasuredPositions<'_>) -> Self {
         Self {
-            config,
-            initial,
+            initial: initial.as_slice().to_vec(),
             remaining_observations: (STARTUP_HOLD_SECONDS * config.frequency_hertz).ceil(),
         }
     }
 
     fn observe<'feedback>(
         &mut self,
+        config: &ControllerConfig,
         fresh: MeasuredPositions<'_>,
         fault: Option<&'feedback str>,
         efforts: &[f64],
     ) -> Result<EnableDecision, EnableRefusal<'feedback>> {
-        if let Some(checks) = &self.config.enable_checks
-            && max_joint_deviation(fresh.as_slice(), self.initial.as_slice())
+        if let Some(checks) = &config.enable_checks
+            && max_joint_deviation(fresh.as_slice(), &self.initial)
                 > checks.enable_drift_limit_radians
         {
             return Err(EnableRefusal::Drift);
@@ -62,8 +59,8 @@ impl<'a> StartupHold<'a> {
         if let Some(fault) = fault {
             return Err(EnableRefusal::FeedbackFault(fault));
         }
-        check_effort(self.config, efforts).map_err(EnableRefusal::Effort)?;
-        if self.config.enable_checks.is_none() || self.remaining_observations <= 0.0 {
+        check_effort(config, efforts).map_err(EnableRefusal::Effort)?;
+        if config.enable_checks.is_none() || self.remaining_observations <= 0.0 {
             return Ok(EnableDecision::Confirmed);
         }
         self.remaining_observations -= 1.0;
@@ -72,7 +69,7 @@ impl<'a> StartupHold<'a> {
 }
 
 impl<P: Plant> Runner<'_, P> {
-    pub(super) fn enable_checked(&mut self) -> anyhow::Result<Feedback> {
+    fn begin_enable(&mut self) -> anyhow::Result<StartupHold> {
         let config = self.config;
         self.plant.preflight()?;
         let initial = self.plant.read_feedback()?;
@@ -97,52 +94,73 @@ impl<P: Plant> Runner<'_, P> {
             );
         }
         self.plant.enable()?;
-        let period_seconds = 1.0 / config.frequency_hertz;
-        let period = config.control_timing.period;
-        let mut startup_hold = StartupHold::new(config, initial_positions);
-        loop {
-            let cycle_started = Instant::now();
-            let fresh = self.plant.read_feedback()?;
-            match startup_hold
-                .observe(
-                    fresh.measured_positions(config)?,
-                    fresh.fault.as_deref(),
-                    &fresh.efforts,
-                )
-                .map_err(|refusal| anyhow::anyhow!("{refusal}"))?
-            {
-                EnableDecision::Confirmed => return Ok(fresh),
-                EnableDecision::ObserveAgain => {}
-            }
+        Ok(StartupHold::new(config, initial_positions))
+    }
 
-            self.plant.heartbeat()?;
-            self.plant.advance(period_seconds)?;
-            if self.plant.pacing() != Pacing::RepliesAsFastAsPossible {
-                std::thread::sleep(period.saturating_sub(cycle_started.elapsed()));
-            }
+    pub(super) fn start_enable(&mut self, now: Now) {
+        match self.begin_enable() {
+            Ok(hold) => self.startup_hold = Some(hold),
+            Err(failure) => self.fail_enable(&format!("{failure:#}"), now),
         }
     }
 
-    pub(super) fn enable(&mut self, now: Now) {
-        let result = self.enable_checked();
-        match result {
-            Ok(fresh) => {
+    fn observe_startup(
+        &mut self,
+        hold: &mut StartupHold,
+    ) -> anyhow::Result<(EnableDecision, Feedback)> {
+        let fresh = self.plant.read_feedback()?;
+        let decision = hold
+            .observe(
+                self.config,
+                fresh.measured_positions(self.config)?,
+                fresh.fault.as_deref(),
+                &fresh.efforts,
+            )
+            .map_err(|refusal| anyhow::anyhow!("{refusal}"))?;
+        self.plant.heartbeat()?;
+        Ok((decision, fresh))
+    }
+
+    pub(super) fn progress_enable(
+        &mut self,
+        mut hold: StartupHold,
+        feedback: &mut Feedback,
+        now: Now,
+    ) {
+        if self.state.core.shutdown_requested() {
+            self.fail_enable("Shutdown requested before startup hold was confirmed", now);
+            return;
+        }
+        let (decision, fresh) = match self.observe_startup(&mut hold) {
+            Ok(observation) => observation,
+            Err(failure) => {
+                self.fail_enable(&format!("{failure:#}"), now);
+                return;
+            }
+        };
+        self.observe_feedback(&fresh, now);
+        match decision {
+            EnableDecision::ObserveAgain => self.startup_hold = Some(hold),
+            EnableDecision::Confirmed => {
                 self.state.power_up(&fresh.positions, fresh.gripper_angle);
                 self.state.arm().enabled(&fresh.positions, now);
             }
-            Err(reason) => {
-                // INVARIANT: A refused preflight leaves the arm disabled; release what the
-                // attempt may have left on.
-                let detail = format!("Enable failed: {reason:#}");
-                match self.plant.release() {
-                    Ok(()) => self.state.arm().failed(&detail, now),
-                    Err(failure) => self.state.arm().enter_fault(
-                        &detail,
-                        &[format!("Could not confirm torque release: {failure:#}")],
-                        now,
-                    ),
-                }
-            }
+        }
+        *feedback = fresh;
+    }
+
+    pub(super) fn fail_enable(&mut self, reason: &str, now: Now) {
+        self.startup_hold = None;
+        // INVARIANT: A refused preflight leaves the arm disabled; release what the
+        // attempt may have left on.
+        let detail = format!("Enable failed: {reason}");
+        match self.plant.release() {
+            Ok(()) => self.state.arm().failed(&detail, now),
+            Err(failure) => self.state.arm().enter_fault(
+                &detail,
+                &[format!("Could not confirm torque release: {failure:#}")],
+                now,
+            ),
         }
     }
 
@@ -216,26 +234,26 @@ mod tests {
         for period in 0..26 {
             assert!(
                 matches!(
-                    hold.observe(initial, None, &healthy_efforts),
+                    hold.observe(&config, initial, None, &healthy_efforts),
                     Ok(EnableDecision::ObserveAgain)
                 ),
                 "confirmed before period {period} elapsed"
             );
         }
         assert!(matches!(
-            hold.observe(drifted, None, &healthy_efforts),
+            hold.observe(&config, drifted, None, &healthy_efforts),
             Err(EnableRefusal::Drift)
         ));
         assert!(matches!(
-            hold.observe(initial, Some("voltage fault"), &healthy_efforts),
+            hold.observe(&config, initial, Some("voltage fault"), &healthy_efforts),
             Err(EnableRefusal::FeedbackFault("voltage fault"))
         ));
         assert!(matches!(
-            hold.observe(initial, None, &[11.0, 0.0]),
+            hold.observe(&config, initial, None, &[11.0, 0.0]),
             Err(EnableRefusal::Effort(_))
         ));
         assert!(matches!(
-            hold.observe(initial, None, &healthy_efforts),
+            hold.observe(&config, initial, None, &healthy_efforts),
             Ok(EnableDecision::Confirmed)
         ));
     }
@@ -246,7 +264,7 @@ mod tests {
         let initial = MeasuredPositions::new(&[0.0, 0.0], 2).unwrap();
         let mut hold = StartupHold::new(&config, initial);
         assert!(matches!(
-            hold.observe(initial, None, &[0.0, 0.0]),
+            hold.observe(&config, initial, None, &[0.0, 0.0]),
             Ok(EnableDecision::Confirmed)
         ));
     }

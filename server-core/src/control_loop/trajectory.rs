@@ -86,7 +86,7 @@ pub(super) struct MotionEffects {
     completion: Option<MotionCompletion>,
 }
 
-pub(super) enum CycleEffects {
+pub(super) enum MotionOutput {
     None,
     Arm(MotionEffects),
     Group {
@@ -95,7 +95,7 @@ pub(super) enum CycleEffects {
     },
 }
 
-impl CycleEffects {
+impl MotionOutput {
     pub(super) fn ends_motion(&self) -> bool {
         match self {
             Self::None => false,
@@ -106,7 +106,7 @@ impl CycleEffects {
 
 struct MotionCompletion {
     outcome: CommandOutcome,
-    detail: String,
+    detail: Option<String>,
     hold: Vec<f64>,
 }
 
@@ -216,7 +216,7 @@ impl Loop<'_> {
         Ok(self.prepare_motion_effects(feedback, progress))
     }
 
-    fn prepare_stop_write(
+    pub(super) fn prepare_stop_write(
         &mut self,
         checkpoints: Vec<Checkpoint>,
         detail: String,
@@ -229,7 +229,7 @@ impl Loop<'_> {
             checkpoints,
             completion: Some(MotionCompletion {
                 outcome: CommandOutcome::Stopped,
-                detail,
+                detail: Some(detail),
                 hold: hold.clone(),
             }),
         }
@@ -283,8 +283,27 @@ impl Loop<'_> {
             checkpoints,
             completion: Some(MotionCompletion {
                 outcome,
-                detail,
+                detail: Some(detail),
                 hold: final_pose,
+            }),
+        }
+    }
+
+    pub(super) fn prepare_measured_hold(
+        &mut self,
+        outcome: CommandOutcome,
+        detail: Option<String>,
+        feedback: &Feedback,
+    ) -> MotionEffects {
+        let hold = feedback.positions.clone();
+        self.filter.reset(&hold);
+        self.reference.set_at_rest(&hold, None);
+        MotionEffects {
+            checkpoints: Vec::new(),
+            completion: Some(MotionCompletion {
+                outcome,
+                detail,
+                hold,
             }),
         }
     }
@@ -299,7 +318,7 @@ impl Loop<'_> {
         if let Some(completion) = effects.completion {
             self.end_activity(
                 completion.outcome,
-                Some(completion.detail),
+                completion.detail,
                 Some(completion.hold),
                 now,
             );
@@ -311,7 +330,7 @@ impl Loop<'_> {
         feedback: &Feedback,
         stop: bool,
         group: Option<Result<&GroupReference, &Trip>>,
-    ) -> Result<CycleEffects, Trip> {
+    ) -> Result<MotionOutput, Trip> {
         let Activity::Group(member) = &self.activity else {
             return Err(Trip::Trajectory("No group motion is running".into()));
         };
@@ -320,13 +339,13 @@ impl Loop<'_> {
             .clone()
             .or_else(|| stop.then(|| "Stopped".to_owned()))
         {
-            return Ok(CycleEffects::Arm(
+            return Ok(MotionOutput::Arm(
                 self.prepare_stop_write(Vec::new(), reason),
             ));
         }
         let Some(share) = group else {
             self.reference.set_at_rest(self.filter.positions(), None);
-            return Ok(CycleEffects::None);
+            return Ok(MotionOutput::None);
         };
         let share = share.map_err(Clone::clone)?;
         self.reference.copy_from(&share.reference);
@@ -339,7 +358,7 @@ impl Loop<'_> {
                 final_pose: share.final_pose.clone(),
             },
         );
-        Ok(CycleEffects::Group {
+        Ok(MotionOutput::Group {
             effects,
             attempt: share.attempt,
         })

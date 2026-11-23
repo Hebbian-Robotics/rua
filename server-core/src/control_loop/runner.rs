@@ -2,19 +2,21 @@ use std::time::{Duration, Instant};
 
 use super::activity::Activity;
 use super::activity::Loop;
+use super::cycle::{CycleOutputs, GripperEffect};
+use super::learned::{MotionPlan, PolicyRequest, PolicySession, policy_failure};
+use super::power::StartupHold;
 use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
-use super::trajectory::{CycleEffects, GroupReference, GroupWriteAttempt, MotionEffects};
+use super::trajectory::{GroupReference, GroupWriteAttempt, MotionEffects, MotionOutput};
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
 use crate::arm::{Job, Now};
 use crate::config::ControllerConfig;
 use crate::control_link::{Link, SampleRecycler};
-use crate::gripper::GripperState;
 use crate::handoff::ArmInbox;
 use crate::limits::Trip;
 use crate::plant::{Feedback, Plant, Reconnection};
 use crate::trace::TraceWriter;
 use hebbian_contracts::ArmRecoveryIssue;
-use hebbian_contracts::{ArmMode, CommandOutcome, Event, GripperResult};
+use hebbian_contracts::{ArmMode, CommandOutcome, Event};
 const BUS_FAILURE_GRACE_SECONDS: f64 = 0.5;
 // SAFETY: A cycle longer than this many periods is fed to the generators as this
 // many, so a late cycle does not become a jump.
@@ -59,16 +61,9 @@ enum CycleReading {
     Unavailable(Flow),
 }
 
-#[derive(Debug)]
-struct GripperWrite {
-    angle: f64,
-    completed: Option<GripperResult>,
-}
-
-#[derive(Debug)]
-pub(super) enum GripperCycleFailure {
-    Control(anyhow::Error),
-    Plant(anyhow::Error),
+enum SetpointFailure {
+    Gripper(anyhow::Error),
+    Arm(anyhow::Error),
 }
 
 pub(super) enum Flow {
@@ -96,6 +91,7 @@ pub(super) struct Runner<'a, P: Plant> {
     pub(super) failed_cycles: u32,
     pub(super) last_reconnect_failure: Option<String>,
     pub(super) recovery: BusRecovery,
+    pub(super) startup_hold: Option<StartupHold>,
 }
 
 impl<P: Plant> Runner<'_, P> {
@@ -386,146 +382,6 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    pub(super) fn drive_gripper(
-        &mut self,
-        feedback: &Feedback,
-        interval: f64,
-        now: Now,
-    ) -> Result<(), GripperCycleFailure> {
-        if let Some(write) = self
-            .prepare_gripper_write(feedback, interval, now)
-            .map_err(GripperCycleFailure::Control)?
-        {
-            let write_started = Instant::now();
-            self.plant
-                .command_gripper(write.angle)
-                .map_err(GripperCycleFailure::Plant)?;
-            self.timings.gripper_write_seconds = write_started.elapsed().as_secs_f64();
-            if let Some(result) = write.completed
-                && let Some(command_id) = self.state.gripper_command.take()
-            {
-                self.state.arm().finish_gripper(
-                    &command_id,
-                    CommandOutcome::Completed,
-                    Some(result.describe()),
-                    Some(result),
-                    now,
-                );
-            }
-        }
-        Ok(())
-    }
-
-    fn prepare_gripper_write(
-        &mut self,
-        feedback: &Feedback,
-        interval: f64,
-        now: Now,
-    ) -> anyhow::Result<Option<GripperWrite>> {
-        let (Some(measured), Some(_)) = (feedback.gripper_angle, self.state.gripper.as_ref())
-        else {
-            if self.state.powered() && self.config.gripper.is_some() {
-                return Err(anyhow::anyhow!(
-                    "Missing measurement or controller for the configured gripper"
-                ));
-            }
-            return Ok(None);
-        };
-        if self.state.arm().take_gripper_stop() {
-            // INVARIANT: The record already ended stopped; the jaw holds where it is.
-            self.state.gripper_command = None;
-            if let Some(jaw) = &mut self.state.gripper {
-                jaw.hold(measured);
-            }
-        }
-        let new_target = self.state.arm().take_gripper_target();
-        if let Some((command_id, gripper_target)) = new_target {
-            if let Some(jaw) = &mut self.state.gripper {
-                jaw.set_target(
-                    gripper_target.angle.radians(),
-                    gripper_target.speed.radians_per_second(),
-                    measured,
-                )?;
-            }
-            self.state.gripper_command = Some(command_id);
-        }
-        let Some(jaw) = &mut self.state.gripper else {
-            return Ok(None);
-        };
-        let proposed_command = jaw.step(measured, interval)?;
-        let target = jaw.target();
-        // WHY: Check only this cycle's smoothed travel, rather than scanning the
-        // entire opening in one motor cycle. Recheck at the current arm pose
-        // while arm and jaw move together.
-        let command = match self
-            .state
-            .safe_jaw_target(proposed_command, measured, feedback)
-        {
-            Ok(command) => command,
-            Err(reason) => {
-                if let Some(jaw) = &mut self.state.gripper {
-                    jaw.hold(measured);
-                }
-                if let Some(command_id) = self.state.gripper_command.take() {
-                    self.state.arm().finish_gripper(
-                        &command_id,
-                        CommandOutcome::Failed,
-                        Some(reason),
-                        None,
-                        now,
-                    );
-                }
-                return Ok(None);
-            }
-        };
-        let jaw = self.state.gripper.as_mut().ok_or_else(|| {
-            anyhow::anyhow!("The active gripper controller disappeared during its cycle")
-        })?;
-        let clipped = (command - proposed_command).abs() > 1e-8;
-        if clipped {
-            jaw.hold(command);
-        }
-        let state = jaw.state();
-        let completed = match (state, clipped) {
-            (GripperState::Moving, _) => None,
-            (GripperState::Reached, false) => Some(GripperResult::Reached {
-                measured_angle_radians: measured,
-            }),
-            _ => Some(GripperResult::StoppedShort {
-                measured_angle_radians: measured,
-                target_angle_radians: target,
-            }),
-        };
-        Ok(Some(GripperWrite {
-            angle: command,
-            completed,
-        }))
-    }
-
-    fn resolve_gripper_failure(
-        &mut self,
-        failure: GripperCycleFailure,
-        feedback: &Feedback,
-        now: Now,
-    ) -> anyhow::Result<()> {
-        match failure {
-            GripperCycleFailure::Plant(failure) => Err(failure),
-            GripperCycleFailure::Control(failure) => {
-                let detail = format!("Gripper control failed: {failure:#}");
-                self.state.core.fail_gripper(&detail, now);
-                self.state.gripper_command = None;
-                self.trip(feedback, Trip::Gripper(detail), now);
-                if let Some(measured) = feedback.gripper_angle {
-                    if let Some(jaw) = &mut self.state.gripper {
-                        jaw.hold(measured);
-                    }
-                    self.plant.command_gripper(measured)?;
-                }
-                Ok(())
-            }
-        }
-    }
-
     // INVARIANT: Step each grouped trajectory between the read and command halves, after every member has supplied this cycle’s reading.
     // WHY: Enabling may take longer than a cycle; restart the cycle timer after a long admission.
     pub(super) fn dispatch_next_command(&mut self, now: Now) -> bool {
@@ -545,7 +401,7 @@ impl<P: Plant> Runner<'_, P> {
             }
             Job::Enable { .. } => {
                 if mode.accepts_enable() {
-                    self.enable(now);
+                    self.start_enable(now);
                 } else {
                     self.state.arm().failed("The arm is already enabled", now);
                 }
@@ -648,6 +504,11 @@ impl<P: Plant> Runner<'_, P> {
         self.report.cycle_microseconds.saturating_record(
             u64::try_from(cycle.as_micros()).unwrap_or(LONGEST_RECORDED_CYCLE_MICROSECONDS),
         );
+        if let Some(hold) = self.startup_hold.take() {
+            feedback.clone_from(&self.feedback);
+            self.progress_enable(hold, feedback, now);
+            return self.finish_inactive_cycle(feedback, interval, now, false);
+        }
         if self.state.arm().mode() == ArmMode::Disconnected {
             feedback.clone_from(&self.feedback);
             self.reconnect_step(feedback, now);
@@ -663,38 +524,24 @@ impl<P: Plant> Runner<'_, P> {
             .read_feedback_into(feedback)
             .and_then(|()| feedback.measured_positions(self.config));
         self.timings.feedback_read_seconds = reading_began.elapsed().as_secs_f64();
-        let positions = match reading {
-            Ok(positions) => positions,
-            Err(failure) => {
-                self.bus_failed(&failure, now);
-                if matches!(
-                    self.state.core.mode(),
-                    ArmMode::Disconnected | ArmMode::Faulted
-                ) {
-                    // INVARIANT: Publish the transition, never the unspecified failed-read buffer.
-                    let retained = std::mem::take(&mut self.feedback);
-                    if retained.measured_positions(self.config).is_ok() {
-                        self.publish(&retained, interval, false);
-                    }
-                    self.feedback = retained;
+        if let Err(failure) = reading {
+            self.bus_failed(&failure, now);
+            if matches!(
+                self.state.core.mode(),
+                ArmMode::Disconnected | ArmMode::Faulted
+            ) {
+                // INVARIANT: Publish the transition, never the unspecified failed-read buffer.
+                let retained = std::mem::take(&mut self.feedback);
+                if retained.measured_positions(self.config).is_ok() {
+                    self.publish(&retained, interval, false);
                 }
-                return CycleReading::Unavailable(self.finished_or_continue());
+                self.feedback = retained;
             }
-        };
+            return CycleReading::Unavailable(self.finished_or_continue());
+        }
         let read_time = self.started.elapsed().as_secs_f64();
-        let tool_pose_began = Instant::now();
-        let tool_pose = self
-            .state
-            .tool
-            .as_ref()
-            .and_then(|tool| tool.pose(feedback));
-        self.timings.tool_pose_seconds = tool_pose_began.elapsed().as_secs_f64();
-        self.state.core.observe(
-            now,
-            positions.as_slice(),
-            tool_pose,
-            feedback.fault.as_deref(),
-        );
+        self.observe_feedback(feedback, now);
+
         let failure = self
             .state
             .cycle_failure(feedback, interval, deadline_missed);
@@ -708,23 +555,12 @@ impl<P: Plant> Runner<'_, P> {
             false
         };
         self.timings.start_next_seconds = start_next_began.elapsed().as_secs_f64();
-        let gripper_began = Instant::now();
-        if let Err(failure) = self.drive_gripper(feedback, interval, now)
-            && let Err(transport_failure) = self.resolve_gripper_failure(failure, feedback, now)
-        {
-            self.bus_failed(&transport_failure, now);
-            return CycleReading::Trusted(Begun::Done(self.finished_or_continue(), false));
+        if let Some(hold) = self.startup_hold.take() {
+            self.progress_enable(hold, feedback, now);
+            return self.finish_inactive_cycle(feedback, interval, now, restart_timer);
         }
-        self.timings.gripper_seconds = gripper_began.elapsed().as_secs_f64();
         if !self.state.powered() {
-            self.failed_cycles = 0;
-            // CONSTRAINT: A paced plant (a simulator) moves time on only when told to.
-            if let Err(failure) = self.plant.advance(interval) {
-                self.plant_failed(&failure, now);
-                return CycleReading::Trusted(Begun::Done(self.finished_or_continue(), false));
-            }
-            self.publish(feedback, interval, false);
-            return CycleReading::Trusted(Begun::Done(self.finished_or_continue(), restart_timer));
+            return self.finish_inactive_cycle(feedback, interval, now, restart_timer);
         }
         CycleReading::Trusted(Begun::Pending(PendingCycle {
             cycle_began,
@@ -734,6 +570,42 @@ impl<P: Plant> Runner<'_, P> {
             read_time,
             restart_timer,
         }))
+    }
+
+    pub(super) fn observe_feedback(&mut self, feedback: &Feedback, now: Now) {
+        let tool_pose_began = Instant::now();
+        let tool_pose = self
+            .state
+            .tool
+            .as_ref()
+            .and_then(|tool| tool.pose(feedback));
+        self.timings.tool_pose_seconds = tool_pose_began.elapsed().as_secs_f64();
+        self.state.core.observe(
+            now,
+            &feedback.positions,
+            tool_pose,
+            feedback.fault.as_deref(),
+        );
+    }
+
+    fn finish_inactive_cycle(
+        &mut self,
+        feedback: &Feedback,
+        interval: f64,
+        now: Now,
+        restart_timer: bool,
+    ) -> CycleReading {
+        self.failed_cycles = 0;
+        // CONSTRAINT: A paced plant (a simulator) moves time on only when told to.
+        if let Err(failure) = self.plant.advance(interval) {
+            if self.startup_hold.is_some() {
+                self.fail_enable(&format!("{failure:#}"), now);
+            }
+            self.plant_failed(&failure, now);
+            return CycleReading::Trusted(Begun::Done(self.finished_or_continue(), false));
+        }
+        self.publish(feedback, interval, false);
+        CycleReading::Trusted(Begun::Done(self.finished_or_continue(), restart_timer))
     }
 
     pub(super) fn finish_cycle(
@@ -761,37 +633,40 @@ impl<P: Plant> Runner<'_, P> {
             read_time,
             restart_timer,
         } = pending;
-        // INVARIANT: A tripped arm already holds where it tripped; faults, efforts and
-        // temperatures still reach the clients in every state sample.
-        if self.state.tripped.is_none()
-            && let Some(trip) = failure
-        {
-            self.trip(feedback, trip, now);
-        }
-        let stop = self.state.core.stop_requested();
+        let gripper_began = Instant::now();
+        let gripper = self.state.plan_gripper(feedback, interval, failure);
+        self.timings.gripper_seconds = gripper_began.elapsed().as_secs_f64();
         let computation_began = Instant::now();
-        let computed = self.state.command(interval, feedback, stop, group, now);
+        if let Some(runtime) = &mut self.state.policy {
+            runtime.begin_cycle();
+        }
+        let motion = self.state.plan_motion(interval, feedback, group, now);
+        let motion = motion.and_then(|plan| match plan {
+            MotionPlan::ReferenceReady(effects) => Ok(effects),
+            MotionPlan::Infer(request) => self.evaluate_policy(request, feedback),
+        });
+        let CycleOutputs {
+            motion,
+            gripper,
+            trip,
+        } = self
+            .state
+            .finish_cycle_plan(motion, gripper, feedback, interval);
         self.timings.command_compute_seconds = computation_began.elapsed().as_secs_f64();
         self.timings.policy_inference_seconds = self
             .state
             .policy
             .as_ref()
             .map_or(0.0, crate::policy::PolicyRuntime::inference_seconds);
-        let effects = match computed {
-            Ok(effects) => effects,
-            Err(trip) => {
-                self.trip(feedback, trip, now);
-                self.state.next_command.clone_from(&feedback.positions);
-                CycleEffects::None
-            }
-        };
         let command_start_time = self.started.elapsed().as_secs_f64();
-        let write_began = Instant::now();
-        if let Err(failure) = self
-            .plant
-            .command(&self.state.next_command, interval)
-            .and_then(|()| self.plant.heartbeat())
-        {
+        let written = self.write_setpoints(&gripper, interval);
+        self.publish_trip(trip, feedback, now);
+        self.commit_gripper(
+            gripper,
+            !matches!(written, Err(SetpointFailure::Gripper(_))),
+            now,
+        );
+        if let Err(SetpointFailure::Arm(failure) | SetpointFailure::Gripper(failure)) = written {
             self.bus_failed(&failure, now);
             return FinishedCycle {
                 flow: self.finished_or_continue(),
@@ -799,22 +674,21 @@ impl<P: Plant> Runner<'_, P> {
                 group_write: None,
             };
         }
-        self.timings.command_write_seconds = write_began.elapsed().as_secs_f64();
         let write_time = self.started.elapsed().as_secs_f64();
         let repeated_group_setpoint = matches!(
-            effects,
-            CycleEffects::Group {
+            motion,
+            MotionOutput::Group {
                 attempt: GroupWriteAttempt::Retry,
                 ..
             }
         );
-        let group_write = match effects {
-            CycleEffects::None => None,
-            CycleEffects::Arm(effects) => {
+        let group_write = match motion {
+            MotionOutput::None => None,
+            MotionOutput::Arm(effects) => {
                 self.state.commit_motion_effects(effects, now);
                 None
             }
-            CycleEffects::Group { effects, .. } => Some(GroupWrite {
+            MotionOutput::Group { effects, .. } => Some(GroupWrite {
                 effects,
                 now,
                 interval,
@@ -851,6 +725,24 @@ impl<P: Plant> Runner<'_, P> {
             restart_timer,
             group_write,
         }
+    }
+
+    fn evaluate_policy(
+        &mut self,
+        request: PolicyRequest,
+        feedback: &Feedback,
+    ) -> Result<MotionOutput, Trip> {
+        let runtime =
+            self.state.policy.as_mut().ok_or_else(|| {
+                Trip::Policy("A pose goal arrived but no policy is loaded".into())
+            })?;
+        if matches!(request.session, PolicySession::Reset) {
+            runtime.reset();
+        }
+        let positions = runtime
+            .joint_goal(self.config, feedback, &request.target)
+            .map_err(policy_failure)?;
+        Ok(self.state.adopt_policy_target(&positions))
     }
 
     fn accept_joint_setpoint(&mut self, interval: f64, repeated_group_setpoint: bool) {
@@ -899,13 +791,62 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    pub(super) fn trip(&mut self, feedback: &Feedback, trip: Trip, now: Now) {
-        let reason = trip.detail();
-        self.report.trip.get_or_insert_with(|| reason.to_owned());
+    fn write_setpoints(
+        &mut self,
+        gripper: &GripperEffect,
+        interval: f64,
+    ) -> Result<(), SetpointFailure> {
+        // CONSTRAINT: The simulator includes its queued jaw target in the joint step.
+        if let Some(angle) = gripper.setpoint() {
+            let gripper_started = Instant::now();
+            let written = self.plant.command_gripper(angle);
+            self.timings.gripper_write_seconds = gripper_started.elapsed().as_secs_f64();
+            written.map_err(SetpointFailure::Gripper)?;
+        }
+        let write_started = Instant::now();
+        let written = self
+            .plant
+            .command(&self.state.next_command, interval)
+            .and_then(|()| self.plant.heartbeat());
+        self.timings.command_write_seconds = write_started.elapsed().as_secs_f64();
+        written.map_err(SetpointFailure::Arm)
+    }
+
+    fn commit_gripper(&mut self, gripper: GripperEffect, confirmed: bool, now: Now) {
+        match gripper {
+            GripperEffect::Write(write) if confirmed => {
+                if let Some(result) = write.completed
+                    && let Some(command_id) = self.state.gripper_command.take()
+                {
+                    self.state.arm().finish_gripper(
+                        &command_id,
+                        CommandOutcome::Completed,
+                        Some(result.describe()),
+                        Some(result),
+                        now,
+                    );
+                }
+            }
+            GripperEffect::Refused(detail) | GripperEffect::Failed { detail, .. } => {
+                self.state.gripper_command = None;
+                self.state.core.fail_gripper(&detail, now);
+            }
+            GripperEffect::Idle | GripperEffect::Write(_) => {}
+        }
+    }
+
+    fn publish_trip(&mut self, trip: Option<String>, feedback: &Feedback, now: Now) {
+        let Some(reason) = trip else { return };
+        self.report.trip.get_or_insert_with(|| reason.clone());
         self.link.publish(Event::Tripped {
-            reason: reason.to_owned(),
+            reason: reason.clone(),
         });
-        self.state.hold_after_trip(trip, feedback, now);
+        self.state.arm().motion_ended(
+            CommandOutcome::Tripped,
+            Some(reason),
+            &feedback.positions,
+            now,
+        );
     }
 
     pub(super) fn publish(&mut self, feedback: &Feedback, interval: f64, command_sent: bool) {

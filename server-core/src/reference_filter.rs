@@ -51,13 +51,20 @@ impl Reference {
 
 const ROUNDING_TOLERANCE_RADIANS: f64 = 1e-10;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InwardRecovery {
+    Inactive,
+    FromAbove,
+    FromBelow,
+}
+
 pub(crate) struct ReferenceFilter {
     joint_count: usize,
     lower_limits: Vec<f64>,
     upper_limits: Vec<f64>,
     recovery_lower: Vec<f64>,
     recovery_upper: Vec<f64>,
-    recovering_inward: Vec<i8>,
+    recovering_inward: Vec<InwardRecovery>,
     velocity_limit: f64,
     acceleration_limit: f64,
     jerk_limit: f64,
@@ -94,7 +101,7 @@ impl ReferenceFilter {
         input.synchronization = Synchronization::None;
         Ok(Self {
             joint_count: n,
-            recovering_inward: vec![0; n],
+            recovering_inward: vec![InwardRecovery::Inactive; n],
             recovery_lower: initial
                 .iter()
                 .zip(&config.lower_limits)
@@ -133,7 +140,7 @@ impl ReferenceFilter {
         self.positions.clone_from(&reference.positions);
         self.velocities.clone_from(&reference.velocities);
         self.accelerations.clone_from(&reference.accelerations);
-        self.recovering_inward.fill(0);
+        self.recovering_inward.fill(InwardRecovery::Inactive);
         // INVARIANT: A start just outside a limit (an arm resting against its stop) is the
         // new edge of what the filter may output until it is back inside.
         for joint in 0..self.joint_count {
@@ -181,15 +188,15 @@ impl ReferenceFilter {
         // WHY: When an inward path starts outside a calibrated limit, aim the
         // filter at the limit until it has recovered. Chasing successive
         // outside waypoints can reverse velocity and move outward again.
-        if self.recovering_inward[joint] == 0 {
+        if self.recovering_inward[joint] == InwardRecovery::Inactive {
             if self.positions[joint] > self.upper_limits[joint]
                 && wanted < self.positions[joint] - 1e-8
             {
-                self.recovering_inward[joint] = 1;
+                self.recovering_inward[joint] = InwardRecovery::FromAbove;
             } else if self.positions[joint] < self.lower_limits[joint]
                 && wanted > self.positions[joint] + 1e-8
             {
-                self.recovering_inward[joint] = -1;
+                self.recovering_inward[joint] = InwardRecovery::FromBelow;
             }
         } else if self.positions[joint] >= self.lower_limits[joint]
             && self.positions[joint] <= self.upper_limits[joint]
@@ -198,18 +205,20 @@ impl ReferenceFilter {
             && self.velocities[joint].abs() < 1e-6
             && self.accelerations[joint].abs() < 1e-5
         {
-            self.recovering_inward[joint] = 0;
+            self.recovering_inward[joint] = InwardRecovery::Inactive;
         }
         match self.recovering_inward[joint] {
-            1 => {
+            InwardRecovery::FromAbove => {
                 self.upper_limits[joint]
                     - 0.002_f64.min((self.upper_limits[joint] - self.lower_limits[joint]) * 0.1)
             }
-            -1 => {
+            InwardRecovery::FromBelow => {
                 self.lower_limits[joint]
                     + 0.002_f64.min((self.upper_limits[joint] - self.lower_limits[joint]) * 0.1)
             }
-            _ => wanted.clamp(self.recovery_lower[joint], self.recovery_upper[joint]),
+            InwardRecovery::Inactive => {
+                wanted.clamp(self.recovery_lower[joint], self.recovery_upper[joint])
+            }
         }
     }
 
@@ -237,7 +246,8 @@ impl ReferenceFilter {
             // WHY: `clamp` returns `wanted` itself when it is in range, so exact
             // equality is the right test for "was moved to a limit".
             #[allow(clippy::float_cmp)]
-            let at_limit = target != wanted || self.recovering_inward[joint] != 0;
+            let at_limit =
+                target != wanted || self.recovering_inward[joint] != InwardRecovery::Inactive;
             self.input.max_velocity[joint] = velocity_limit;
             self.input.current_position[joint] = self.positions[joint];
             self.input.current_velocity[joint] = self.velocities[joint];
@@ -285,7 +295,7 @@ impl ReferenceFilter {
                 || *position > self.recovery_upper[joint] + ROUNDING_TOLERANCE_RADIANS
             {
                 return Err(Trip::ReferenceFilter(format!(
-                    "Filtered reference left the joint limits: joint {joint}, position {position:.12}, bounds {:.12}..{:.12}, velocity {:.12}, prev {:.12}, ref {:.12}, target {:.12}, latched {}",
+                    "Filtered reference left the joint limits: joint {joint}, position {position:.12}, bounds {:.12}..{:.12}, velocity {:.12}, prev {:.12}, ref {:.12}, target {:.12}, recovery {:?}",
                     self.recovery_lower[joint],
                     self.recovery_upper[joint],
                     velocities[joint],

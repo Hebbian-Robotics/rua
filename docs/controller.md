@@ -39,10 +39,20 @@ failure and coordinated stopping. All paths share the [final setpoint guards](..
 Planning uses a snapshot, so the loop still checks live feedback. A protective
 trip can override normal trajectory braking.
 
+Each powered cycle computes its joint and jaw setpoints before writing either.
+The runner publishes motion completion and checkpoints after the write is
+confirmed. A grouped step waits for confirmation from every member. Protective
+trips are reported even if the hold write fails.
+
+After enable turns on torque, the controller checks the startup hold over
+successive cycles. Other arms continue running during those observations. The
+enabling arm accepts motion only after verification succeeds.
+
 ## Learned control
 
 The SO-101 ONNX adapter converts pose goals and recent joint feedback into
-joint targets. The motor loop applies its usual setpoint guards. See
+joint targets. The runner evaluates the policy synchronously when the cycle
+requests it, then passes the result through the usual setpoint guards. See
 [learned-policy setup](hardware.md#learned-policies) for profile configuration.
 The [adapter](../server-core/src/so101/policy.rs) defines the model's inputs,
 observation history, action scaling and required metadata. Set

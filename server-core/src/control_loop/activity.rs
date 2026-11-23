@@ -1,5 +1,6 @@
+use super::learned::{MotionPlan, PolicyRequest, PolicySession};
 use super::tool_pose::ToolPose;
-use super::trajectory::{ActiveGroupMember, ActiveMotion, CycleEffects, GroupReference};
+use super::trajectory::{ActiveGroupMember, ActiveMotion, GroupReference, MotionOutput};
 use super::{build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot};
 use crate::arm::{ArmCore, Now, StreamGoal};
 use crate::config::ControllerConfig;
@@ -116,18 +117,13 @@ impl Loop<'_> {
         })
     }
 
-    pub(super) fn hold_after_trip(&mut self, trip: Trip, feedback: &Feedback, now: Now) {
+    pub(super) fn prepare_trip(&mut self, trip: Trip, feedback: &Feedback) -> String {
         self.filter.reset(&feedback.positions);
         self.hold_at = Some(feedback.positions.clone());
         self.activity = Activity::Idle;
         let reason = trip.detail().to_owned();
         self.tripped = Some(trip);
-        self.arm().motion_ended(
-            CommandOutcome::Tripped,
-            Some(reason),
-            &feedback.positions,
-            now,
-        );
+        reason
     }
 
     fn jaw_angle_refusal(
@@ -202,52 +198,25 @@ impl Loop<'_> {
         self.reference.set_at_rest(hold, None);
     }
 
-    // SAFETY: End the command as stopped, braking to rest from the commanded velocity.
-    pub(super) fn end_stopped(&mut self, now: Now) {
-        self.end_activity(CommandOutcome::Stopped, Some("Stopped".into()), None, now);
-    }
-
-    // SAFETY: End the command as timed out. As after any trip, the arm holds where it
-    // is, not where it was going.
-    pub(super) fn end_timed_out(&mut self, feedback: &Feedback, now: Now) {
-        self.filter.reset(&feedback.positions);
-        self.end_activity(
-            CommandOutcome::TimedOut,
-            Some("The pose was not reached before the deadline".to_owned()),
-            Some(feedback.positions.clone()),
-            now,
-        );
-    }
-
-    pub(super) fn stream_reference(
-        &mut self,
-        feedback: &Feedback,
-        stop: bool,
-        now: Now,
-    ) -> Result<(), Trip> {
-        let Activity::Stream(stream) = &self.activity else {
+    fn stream_reference(&mut self, stop: bool, now: Now) -> Result<MotionPlan, Trip> {
+        let Activity::Stream(stream) = &mut self.activity else {
             return Err(Trip::Trajectory("No stream is running".into()));
         };
         if stop {
-            self.end_stopped(now);
-            return Ok(());
+            let effects = self.prepare_stop_write(Vec::new(), "Stopped".into());
+            return Ok(MotionPlan::ReferenceReady(MotionOutput::Arm(effects)));
         }
         let command_id = stream.command_id.as_str();
         let timeout = self.config.control_timing.stream_goal_timeout;
         let timed_out = self.core.stream_timed_out(command_id, now.instant, timeout);
-        let pose = match self.core.stream_goal(command_id) {
-            None => return Err(Trip::Trajectory("The stream has no goal".into())),
+        match self.core.stream_goal(command_id) {
+            None => Err(Trip::Trajectory("The stream has no goal".into())),
             Some(_) if timed_out => {
-                self.end_activity(
-                    CommandOutcome::Stopped,
-                    Some(format!(
-                        "No goal for {} s",
-                        self.config.stream_goal_timeout_seconds
-                    )),
-                    None,
-                    now,
+                let effects = self.prepare_stop_write(
+                    Vec::new(),
+                    format!("No goal for {} s", self.config.stream_goal_timeout_seconds),
                 );
-                return Ok(());
+                Ok(MotionPlan::ReferenceReady(MotionOutput::Arm(effects)))
             }
             Some((
                 StreamGoal::Joints {
@@ -256,9 +225,11 @@ impl Loop<'_> {
                 },
                 _,
             )) => {
+                stream.policy_engaged = false;
+                self.hold_at = None;
                 self.reference
                     .set_at_rest(positions.as_slice(), Some(joint_speed.radians_per_second()));
-                None
+                Ok(MotionPlan::ReferenceReady(MotionOutput::None))
             }
             Some((
                 StreamGoal::Pose {
@@ -266,52 +237,53 @@ impl Loop<'_> {
                     quaternion,
                 },
                 _,
-            )) => Some((*position, *quaternion)),
-        };
-        let Some((position, quaternion)) = pose else {
-            if let Activity::Stream(stream) = &mut self.activity {
-                stream.policy_engaged = false;
+            )) => {
+                self.hold_at = None;
+                let session = if stream.policy_engaged {
+                    PolicySession::Continue
+                } else {
+                    PolicySession::Reset
+                };
+                PolicyRequest::new(session, *position, *quaternion).map(MotionPlan::Infer)
             }
-            return Ok(());
-        };
-        self.policy_stream_reference(feedback, position, quaternion)
+        }
     }
 
-    pub(super) fn command(
+    pub(super) fn plan_motion(
         &mut self,
         interval: f64,
         feedback: &Feedback,
-        stop: bool,
         group: Option<Result<&GroupReference, &Trip>>,
         now: Now,
-    ) -> Result<CycleEffects, Trip> {
-        if let Some(runtime) = &mut self.policy {
-            runtime.begin_cycle();
-        }
-        let policy_reach = matches!(self.activity, Activity::Reach(_));
+    ) -> Result<MotionPlan, Trip> {
+        let stop = self.core.stop_requested();
         let effects = match self.activity {
             Activity::Motion(_) => {
-                CycleEffects::Arm(self.motion_reference(interval, feedback, stop)?)
+                MotionOutput::Arm(self.motion_reference(interval, feedback, stop)?)
             }
             Activity::Group(_) => self.group_reference(feedback, stop, group)?,
-            Activity::Stream(_) => {
-                self.stream_reference(feedback, stop, now)?;
-                CycleEffects::None
-            }
-            Activity::Reach(_) => {
-                self.reach_reference(interval, feedback, stop, now)?;
-                CycleEffects::None
-            }
+            Activity::Stream(_) => return self.stream_reference(stop, now),
+            Activity::Reach(_) => return self.reach_reference(interval, feedback, stop),
             Activity::Idle => {
                 let hold = self
                     .hold_at
                     .get_or_insert_with(|| self.filter.positions().to_vec());
                 self.reference.set_at_rest(hold, None);
-                CycleEffects::None
+                MotionOutput::None
             }
         };
-        let policy_command = policy_reach
-            || matches!(&self.activity, Activity::Stream(stream) if stream.policy_engaged);
+        Ok(MotionPlan::ReferenceReady(effects))
+    }
+
+    pub(super) fn guard_setpoint(
+        &mut self,
+        effects: &MotionOutput,
+        interval: f64,
+        feedback: &Feedback,
+    ) -> Result<(), Trip> {
+        let policy_command = matches!(self.activity, Activity::Reach(_))
+            || (matches!(&self.activity, Activity::Stream(stream) if stream.policy_engaged)
+                && !effects.ends_motion());
         // WHY: Smooth the terminal hold from the commanded velocity so a stop brakes
         // instead of freezing, including when completion still awaits the write.
         let smooth_destination =
@@ -331,8 +303,7 @@ impl Loop<'_> {
             &self.next_command,
             &self.previous_command,
             feedback,
-        )?;
-        Ok(effects)
+        )
     }
 }
 
