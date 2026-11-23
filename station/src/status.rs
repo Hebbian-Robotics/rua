@@ -91,7 +91,11 @@ async fn check_arm_feedback(
                     "{} is {:?} ({})",
                     sample.arm,
                     sample.mode,
-                    sample.status
+                    sample
+                        .fault
+                        .as_deref()
+                        .or(sample.active_trip.as_deref())
+                        .unwrap_or("No diagnostic detail")
                 );
                 if feedback_advanced(arm, sample) {
                     modes.push(format!("{} ({:?})", sample.arm, sample.mode));
@@ -111,9 +115,9 @@ async fn check_arm_feedback(
 
 fn feedback_advanced(initial: &ArmState, current: &ArmState) -> bool {
     !current.measured_joints.is_empty()
-        && current.sampled_at_unix_seconds.is_some_and(|timestamp| {
+        && current.sampled_unix_nano.is_some_and(|timestamp| {
             initial
-                .sampled_at_unix_seconds
+                .sampled_unix_nano
                 .is_none_or(|previous| timestamp > previous)
         })
 }

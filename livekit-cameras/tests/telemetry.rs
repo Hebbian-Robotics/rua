@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use std::{fs, process::Command};
 
-/// Wait for durable recorder output rather than assuming startup or delivery
-/// completes within a fixed sleep. An active MCAP can end partway through a
-/// record; final archive checks below still require a completely readable file.
+// WHY: Wait for durable recorder output rather than assuming startup or delivery
+// completes within a fixed sleep. An active MCAP can end partway through a
+// record; final archive checks below still require a completely readable file.
 async fn wait_for_recorded_message(
     process: &mut tokio::process::Child,
     recording: &std::path::Path,
@@ -236,7 +236,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .kill_on_drop(true)
         .spawn()?;
     wait_for_recorded_message(&mut child, &recording, "/station/state", |_, state| {
-        state["arms"][0]["sampled_at_unix_seconds"].is_number()
+        state["arms"][0]["sampled_unix_nano"].is_string()
     })
     .await?;
     send_run_history(server.local_address()).await?;
@@ -421,8 +421,8 @@ async fn send_run_history(address: std::net::SocketAddr) -> Result<(), Box<dyn s
     Ok(())
 }
 
-/// The station can die without a chance to stop its recorder (a crash, SIGKILL).
-/// The recorder must notice, finalize a readable file, and say it is incomplete.
+// CONSTRAINT: The station can die without a chance to stop its recorder (a crash, SIGKILL).
+// The recorder must notice, finalize a readable file, and say it is incomplete.
 #[tokio::test]
 async fn recorder_finalizes_as_incomplete_when_its_station_is_killed()
 -> Result<(), Box<dyn std::error::Error>> {

@@ -3,7 +3,9 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
+
+from pydantic import JsonValue
 
 
 @dataclass(frozen=True)
@@ -34,7 +36,7 @@ class RobotToolSpec:
 
     name: str
     description: str
-    parameters_schema: dict[str, Any]
+    parameters_schema: dict[str, JsonValue]
 
 
 @dataclass(frozen=True)

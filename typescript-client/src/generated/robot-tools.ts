@@ -617,27 +617,70 @@ export const modelOutputUnits = [
   ["max_joint_speed", "max_joint_speed_degrees_per_second", 57.29577951308232],
 ] as const;
 export const modelOutcomes = {
-  completed: "completed",
-  failed: "incomplete",
-  faulted: "faulted",
-  interrupted: "interrupted",
-  stopped: "incomplete",
-  stopped_short: "stopped_short",
-  superseded: "incomplete",
-  timed_out: "incomplete",
-  tripped: "incomplete",
+  commands: {
+    completed: {
+      class: "completed",
+      limited_target: "limited",
+      target: "reached",
+    },
+    failed: {
+      class: "incomplete",
+      limited_target: "partial",
+      target: "partial",
+    },
+    faulted: {
+      class: "faulted",
+      limited_target: "partial",
+      target: "partial",
+    },
+    interrupted: {
+      class: "interrupted",
+      limited_target: "partial",
+      target: "partial",
+    },
+    pending: {
+      class: "incomplete",
+      limited_target: "partial",
+      target: "partial",
+    },
+    stopped: {
+      class: "incomplete",
+      limited_target: "partial",
+      target: "partial",
+    },
+    stopped_short: {
+      class: "stopped_short",
+      limited_target: "stopped_short",
+      target: "stopped_short",
+    },
+    superseded: {
+      class: "incomplete",
+      limited_target: "partial",
+      target: "partial",
+    },
+    timed_out: {
+      class: "incomplete",
+      limited_target: "partial",
+      target: "partial",
+    },
+    tripped: {
+      class: "incomplete",
+      limited_target: "partial",
+      target: "partial",
+    },
+  },
+  status_priority: ["reached", "limited", "partial", "stopped_short"],
 } as const;
 export const modelResponseFields = {
   arm: [
     "arm",
     "mode",
-    "status",
     "fault",
     "active_trip",
     "interlocks",
     "recovery_issue",
     "revision",
-    "sampled_at_unix_seconds",
+    "sampled_unix_nano",
     "measured_joints",
     "tool",
     "gripper_opening",
@@ -652,8 +695,8 @@ export const modelResponseFields = {
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at",
-    "finished_at",
+    "accepted_unix_nano",
+    "finished_unix_nano",
   ],
   earlier_step: [
     "label",

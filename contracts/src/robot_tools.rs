@@ -3,7 +3,7 @@
 //! The model supplies orientation fields without the station's `kind` tag;
 //! SDK adapters add that tag before sending the request.
 
-use schemars::{JsonSchema, schema_for};
+use schemars::{JsonSchema, Schema, generate::SchemaSettings, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -236,6 +236,27 @@ impl From<crate::CommandOutcome> for ModelOutcome {
     }
 }
 
+/// Lowest to highest priority when combining command records into a group result.
+pub const MODEL_GROUP_STATUSES: [crate::TargetStatus; 4] = [
+    crate::TargetStatus::Reached,
+    crate::TargetStatus::Limited,
+    crate::TargetStatus::Partial,
+    crate::TargetStatus::StoppedShort,
+];
+
+impl ModelOutcome {
+    #[must_use]
+    pub fn target_status(self, limited: bool) -> crate::TargetStatus {
+        use crate::TargetStatus;
+        match self {
+            Self::Completed if limited => TargetStatus::Limited,
+            Self::Completed => TargetStatus::Reached,
+            Self::StoppedShort => TargetStatus::StoppedShort,
+            Self::Incomplete | Self::Faulted | Self::Interrupted => TargetStatus::Partial,
+        }
+    }
+}
+
 /// Fields selected by the concise model response formatter.
 #[derive(Debug, Serialize)]
 pub struct ModelResponseFields {
@@ -253,13 +274,12 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
     arm: &[
         "arm",
         "mode",
-        "status",
         "fault",
         "active_trip",
         "interlocks",
         "recovery_issue",
         "revision",
-        "sampled_at_unix_seconds",
+        "sampled_unix_nano",
         "measured_joints",
         "tool",
         "gripper_opening",
@@ -274,8 +294,8 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
         "checkpoints",
         "trace_context",
         "model_points",
-        "accepted_at",
-        "finished_at",
+        "accepted_unix_nano",
+        "finished_unix_nano",
     ],
     earlier_step: &[
         "label",
@@ -406,12 +426,12 @@ pub struct RobotToolDefinition {
     pub operation: RobotToolOperation,
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Schemars schemas contain only JSON-compatible data and cannot fail JSON serialization."
-)]
 fn model_arguments<T: JsonSchema>() -> Value {
-    let mut schema = serde_json::to_value(schema_for!(T)).expect("schema is serializable");
+    adapt_model_schema(schema_for!(T))
+}
+
+fn adapt_model_schema(schema: Schema) -> Value {
+    let mut schema = schema.to_value();
     if let Some(object) = schema.as_object_mut() {
         object.remove("$schema");
         object.remove("title");
@@ -421,10 +441,6 @@ fn model_arguments<T: JsonSchema>() -> Value {
 }
 
 // SDK adapters infer variant tags and convert explicit model units to SI.
-#[expect(
-    clippy::expect_used,
-    reason = "The speed property is replaced with an object schema immediately before it is accessed."
-)]
 fn adapt(value: &mut Value) {
     match value {
         Value::Object(object) => {
@@ -466,8 +482,10 @@ fn adapt(value: &mut Value) {
                 if let Some(Value::Object(properties)) = object.get_mut("properties")
                     && let Some(mut property) = properties.remove(station_field)
                 {
-                    if station_field == "max_joint_speed" {
-                        property.as_object_mut().expect("speed schema").insert(
+                    if station_field == "max_joint_speed"
+                        && let Ok(schema) = <&mut Schema>::try_from(&mut property)
+                    {
+                        schema.insert(
                             "description".into(),
                             json!(
                                 "Peak speed in degrees per second; clamped to the profile maximum."
@@ -497,90 +515,106 @@ fn adapt(value: &mut Value) {
     }
 }
 
-// The gripper tool adds an arm selector to the station's command fields.
-#[expect(
-    clippy::expect_used,
-    reason = "The generated Command schema defines SetGripper and its required fields; contract tests guard the shape."
-)]
-fn gripper_arguments_schema() -> Value {
-    let command_schema = model_arguments::<StationCommand>();
-    let mut schema = command_schema["oneOf"]
+fn schema_variant<'a>(schema: &'a Value, keyword: &str, title: &str) -> Result<&'a Value, String> {
+    schema[keyword]
         .as_array()
-        .and_then(|variants| {
-            variants
-                .iter()
-                .find(|variant| variant["title"] == "StationSetGripperCommand")
-        })
-        .expect("the station contract has a gripper command")
-        .clone();
-    let properties = schema["properties"]
-        .as_object_mut()
-        .expect("gripper fields");
-    properties.remove("kind");
-    properties.insert("arm".into(), json!({"type": "string"}));
-    let required = schema["required"]
-        .as_array_mut()
-        .expect("gripper required fields");
-    required.retain(|field| field != "kind");
-    required.push(json!("arm"));
-    schema
-        .as_object_mut()
-        .expect("gripper schema")
-        .remove("title");
-    schema
+        .and_then(|variants| variants.iter().find(|variant| variant["title"] == title))
+        .ok_or_else(|| format!("Missing {title} in generated {keyword} schema"))
+}
+
+fn gripper_arguments_schema() -> Result<Value, String> {
+    #[derive(Serialize, Deserialize)]
+    struct CommandArguments {
+        properties: serde_json::Map<String, Value>,
+        required: Vec<String>,
+        #[serde(flatten)]
+        keywords: serde_json::Map<String, Value>,
+    }
+
+    let command = model_arguments::<StationCommand>();
+    let variant = schema_variant(&command, "oneOf", "StationSetGripperCommand")?;
+    let mut arguments: CommandArguments = serde_json::from_value(variant.clone())
+        .map_err(|error| format!("Invalid gripper command schema: {error}"))?;
+    arguments.keywords.remove("title");
+    arguments.properties.remove("kind");
+    arguments
+        .properties
+        .insert("arm".into(), json!({"type": "string"}));
+    arguments.required.retain(|name| name != "kind");
+    arguments.required.push("arm".into());
+    Ok(json!(arguments))
 }
 
 /// The explicit set of robot capabilities exposed to model frameworks.
+///
+/// # Panics
+/// Panics if the built-in default sequence or generated command schemas are inconsistent.
 #[must_use]
 #[expect(
     clippy::expect_used,
     reason = "The default sequence configuration is valid and covered by the catalog contract tests."
 )]
 pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
-    vec![
-        RobotToolDefinition {
-            name: "action_sequence",
-            operation: RobotToolOperation::StartActionSequence,
-            description: "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.".into(),
-            parameters: action_sequence_tool_schema(&SequenceToolConfiguration::default()).expect("default sequence configuration"),
-        },
-        RobotToolDefinition {
-            name: "preview_pose",
-            operation: RobotToolOperation::Preview,
-            description: "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.".into(),
-            parameters: model_arguments::<PreviewPoseArguments>(),
-        },
-        RobotToolDefinition {
-            name: "move_arms",
-            operation: RobotToolOperation::MoveArms,
-            description: "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.".into(),
-            parameters: model_arguments::<MoveArmsCommand>(),
-        },
-        RobotToolDefinition {
-            name: "set_arm_gripper",
-            operation: RobotToolOperation::SetGripper,
-            description: "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.".into(),
-            parameters: gripper_arguments_schema(),
-        },
-        RobotToolDefinition {
-            name: "rehome",
-            operation: RobotToolOperation::Rehome,
-            description: "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.".into(),
-            parameters: model_arguments::<StopArguments>(),
-        },
-        RobotToolDefinition {
-            name: "stop",
-            operation: RobotToolOperation::Stop,
-            description: "Stop this arm's motion; it holds where it stops.".into(),
-            parameters: model_arguments::<StopArguments>(),
-        },
-        RobotToolDefinition {
-            name: "observe",
-            operation: RobotToolOperation::Observe,
-            description: "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.".into(),
-            parameters: model_arguments::<ObserveArguments>(),
-        },
-    ]
+    all_robot_tool_capabilities()
+        .into_iter()
+        .map(|capability| {
+            capability
+                .definition()
+                .expect("default sequence configuration")
+        })
+        .collect()
+}
+
+impl RobotToolCapability {
+    /// Build the model-facing definition with the selected sequence configuration.
+    ///
+    /// # Errors
+    /// Returns an error for invalid sequence configuration or missing station schema fields.
+    pub fn definition(&self) -> Result<RobotToolDefinition, String> {
+        let (name, description, parameters) = match self {
+            Self::ActionSequence(configuration) => (
+                "action_sequence",
+                "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.",
+                action_sequence_tool_schema(configuration)?,
+            ),
+            Self::PreviewPose => (
+                "preview_pose",
+                "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.",
+                model_arguments::<PreviewPoseArguments>(),
+            ),
+            Self::MoveArms => (
+                "move_arms",
+                "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+                model_arguments::<MoveArmsCommand>(),
+            ),
+            Self::SetArmGripper => (
+                "set_arm_gripper",
+                "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.",
+                gripper_arguments_schema()?,
+            ),
+            Self::Rehome => (
+                "rehome",
+                "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
+                model_arguments::<StopArguments>(),
+            ),
+            Self::Stop => (
+                "stop",
+                "Stop this arm's motion; it holds where it stops.",
+                model_arguments::<StopArguments>(),
+            ),
+            Self::Observe => (
+                "observe",
+                "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.",
+                model_arguments::<ObserveArguments>(),
+            ),
+        };
+        Ok(RobotToolDefinition {
+            name,
+            description: description.into(),
+            parameters,
+            operation: self.operation(),
+        })
+    }
 }
 
 /// Robot conventions and limitations independent of a particular station.
@@ -600,101 +634,51 @@ pub fn robot_tool_context() -> Value {
 /// Compose the model's sequence schema without exposing unused actions or arm selectors.
 ///
 /// # Errors
-/// The configuration enables no actions or contains invalid arm names.
-#[expect(
-    clippy::expect_used,
-    reason = "Local references and action fields come from our generated schema; contract tests guard its shape."
-)]
+/// The configuration is invalid or the generated station schema lacks a selected action.
 pub fn action_sequence_tool_schema(
     configuration: &SequenceToolConfiguration,
 ) -> Result<Value, String> {
-    fn inline(value: &Value, definitions: &Value) -> Value {
-        match value {
-            Value::Object(object) => {
-                if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
-                    let name = reference
-                        .strip_prefix("#/$defs/")
-                        .expect("local schema reference");
-                    return inline(&definitions[name], definitions);
-                }
-                Value::Object(
-                    object
-                        .iter()
-                        .filter(|(key, _)| key.as_str() != "$defs")
-                        .map(|(key, value)| (key.clone(), inline(value, definitions)))
-                        .collect(),
-                )
-            }
-            Value::Array(items) => {
-                Value::Array(items.iter().map(|item| inline(item, definitions)).collect())
-            }
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
-        }
-    }
     configuration.validate()?;
-    let source = model_arguments::<ActionSequenceArmAction>();
-    let variants = inline(&source, &source["$defs"]);
-    let mut action = variants["anyOf"]
-        .as_array()
-        .expect("arm action variants")
-        .iter()
-        .find(|variant| variant["properties"].get("movement").is_some())
-        .expect("move action")
-        .clone();
-    let action_fields = action.as_object_mut().expect("move action schema");
-    action_fields.remove("required");
-    action_fields.remove("title");
-    action_fields.insert("description".into(), source["description"].clone());
-    let properties = action["properties"]
-        .as_object_mut()
-        .expect("action properties");
-    if configuration.actions.contains(&SequenceAction::Pose)
-        || configuration.actions.contains(&SequenceAction::Joints)
+    let generator = SchemaSettings::default()
+        .with(|settings| settings.inline_subschemas = true)
+        .into_generator();
+    let source = adapt_model_schema(generator.into_root_schema_for::<ActionSequenceArmAction>());
+    let gripper = schema_variant(&source, "anyOf", "ActionSequenceGripper")?;
+    let mut properties = gripper["properties"]
+        .as_object()
+        .cloned()
+        .ok_or("Missing gripper action properties")?;
+    let mut required_actions = Vec::new();
+    if configuration.actions.contains(&SequenceAction::Joints)
+        || configuration.actions.contains(&SequenceAction::Pose)
     {
-        let movement = properties.get_mut("movement").expect("movement schema");
-        let mut variants = movement["oneOf"]
-            .as_array()
-            .expect("movement variants")
-            .clone();
-        variants.retain(|variant| {
-            let capability = if variant["properties"].get("joints_degrees").is_some() {
-                SequenceAction::Joints
-            } else {
-                SequenceAction::Pose
-            };
-            configuration.actions.contains(&capability)
-        });
-        *movement = if variants.len() == 1 {
-            variants.remove(0)
-        } else {
-            json!({"oneOf": variants})
+        let movement =
+            &schema_variant(&source, "anyOf", "ActionSequenceMove")?["properties"]["movement"];
+        let variants = [
+            (SequenceAction::Joints, "ActionSequenceJointsMovement"),
+            (SequenceAction::Pose, "ActionSequencePoseMovement"),
+        ]
+        .into_iter()
+        .filter(|(action, _)| configuration.actions.contains(action))
+        .map(|(_, title)| schema_variant(movement, "oneOf", title))
+        .collect::<Result<Vec<_>, _>>()?;
+        let movement = match variants.as_slice() {
+            [only] => (*only).clone(),
+            _ => json!({"oneOf": variants}),
         };
-    } else {
-        properties.remove("movement");
+        properties.insert("movement".into(), movement);
+        required_actions
+            .push(json!({"required":["movement"], "properties":{"movement":{"type":"object"}}}));
     }
     if configuration.actions.contains(&SequenceAction::Gripper) {
-        let opening = properties
-            .get_mut("gripper_opening")
-            .expect("opening schema");
-        if let Some(opening) = opening.as_object_mut() {
-            opening.remove("anyOf");
-            opening.remove("default");
-            opening.insert("type".into(), json!("number"));
-        }
+        required_actions.push(json!({"required":["gripper_opening"], "properties":{"gripper_opening":{"type":"number"}}}));
     } else {
         properties.remove("gripper_opening");
     }
-    let required_actions: Vec<_> = [("movement", "object"), ("gripper_opening", "number")]
-        .into_iter()
-        .filter(|(name, _)| properties.contains_key(*name))
-        .map(|(name, kind)| {
-            json!({
-                "required": [name],
-                "properties": {name: {"type": kind}},
-            })
-        })
-        .collect();
-    action["anyOf"] = json!(required_actions);
+    let action = json!({
+        "type":"object", "additionalProperties":false, "description":source["description"],
+        "properties":properties, "anyOf":required_actions
+    });
     let step = match &configuration.scope {
         SequenceScope::SingleArm => action,
         SequenceScope::NamedArms(arms) => json!({

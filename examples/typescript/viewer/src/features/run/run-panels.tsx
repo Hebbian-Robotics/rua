@@ -71,11 +71,11 @@ function LiveActionSequence() {
           const action = Object.entries(step.arms)
             .map(([arm, armAction]) => {
               const movement =
-                armAction.movement?.kind === "pose"
-                  ? "Move to pose"
-                  : armAction.movement?.kind === "joints"
-                    ? "Move joints"
-                    : "";
+                "movement" in armAction
+                  ? armAction.movement.kind === "pose"
+                    ? "Move to pose"
+                    : "Move joints"
+                  : "";
               return `${arm}: ${[
                 movement,
                 armAction.gripper_opening != null

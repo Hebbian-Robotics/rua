@@ -46,27 +46,36 @@ class CapturedObservation:
     captures: dict[str, CameraJpeg] = field(default_factory=dict)
 
 
+def _record_rule(record: CommandRecord) -> dict:
+    return MODEL_OUTCOMES["commands"][command_record_outcome(record) or "pending"]
+
+
 def model_record_outcome(record: CommandRecord) -> str:
-    outcome = command_record_outcome(record)
-    return MODEL_OUTCOMES[outcome] if outcome is not None else "incomplete"
+    return _record_rule(record)["class"]
 
 
 def records_result(
     call: RobotToolCall, records: list[CommandRecord], *, grouped: bool = False
 ) -> RobotToolResult:
     """Report incomplete or limited commands as errors; group moves by status."""
-    limited = any(command_record_was_limited(record) for record in records)
     payloads = [record.model_dump(mode="json") for record in records]
-    outcomes = {model_record_outcome(record) for record in records}
+    outcomes = set()
+    targets = set()
+    for record in records:
+        rule = _record_rule(record)
+        outcomes.add(rule["class"])
+        targets.add(
+            rule["limited_target" if command_record_was_limited(record) else "target"]
+        )
+    status = next(
+        (
+            target
+            for target in reversed(MODEL_OUTCOMES["status_priority"])
+            if target in targets
+        ),
+        "partial",
+    )
     if grouped:
-        if outcomes == {"completed"} and limited:
-            status = "limited"
-        elif outcomes == {"completed"}:
-            status = "reached"
-        elif "stopped_short" in outcomes:
-            status = "stopped_short"
-        else:
-            status = "partial"
         first_command = records[0].command
         payload = {
             "group_id": first_command.group_id
@@ -82,7 +91,7 @@ def records_result(
     return result_from_data(
         call,
         payload,
-        is_error=limited or any(outcome != "completed" for outcome in outcomes),
+        is_error=status != "reached",
         halt="faulted" in outcomes,
         interrupted="interrupted" in outcomes,
     )

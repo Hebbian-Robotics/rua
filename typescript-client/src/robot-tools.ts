@@ -90,9 +90,8 @@ function result(
   };
 }
 
-function modelRecordOutcome(record: CommandRecord) {
-  const outcome = commandResult(record)?.outcome;
-  return outcome ? modelOutcomes[outcome] : "incomplete";
+function modelRecordRule(record: CommandRecord) {
+  return modelOutcomes.commands[commandResult(record)?.outcome ?? "pending"];
 }
 
 function toolCommandResult(
@@ -110,20 +109,24 @@ function toolCommandResult(
       ),
     );
   const records = answer.records.map(({ record }) => record);
-  const outcomes = records.map(modelRecordOutcome);
-  const limited = records.some(commandWasLimited);
+  const outcomes = records.map((record) => modelRecordRule(record).class);
+  const targets = new Set(
+    records.map(
+      (record) =>
+        modelRecordRule(record)[
+          commandWasLimited(record) ? "limited_target" : "target"
+        ],
+    ),
+  );
+  const status =
+    modelOutcomes.status_priority.findLast((target) => targets.has(target)) ??
+    "partial";
   const payloads = records;
   const payload =
     call.name === "move_arms"
       ? {
           group_id: commandPlan(records[0])?.group_id,
-          status: outcomes.every((outcome) => outcome === "completed")
-            ? limited
-              ? "limited"
-              : "reached"
-            : outcomes.includes("stopped_short")
-              ? "stopped_short"
-              : "partial",
+          status,
           commands: payloads,
         }
       : payloads.length === 1
@@ -132,7 +135,7 @@ function toolCommandResult(
   return result(
     call,
     payload,
-    limited || outcomes.some((outcome) => outcome !== "completed"),
+    status !== "reached",
     outcomes.includes("faulted"),
     outcomes.includes("interrupted"),
   );
@@ -595,7 +598,7 @@ function createRobotToolsCore(
                   );
                   const outcomes = sequence.steps
                     .flat()
-                    .map(({ record }) => modelRecordOutcome(record));
+                    .map(({ record }) => modelRecordRule(record).class);
                   const modes = (await stationState()).arms
                     .filter((candidate) =>
                       sequence.arms.includes(candidate.arm),

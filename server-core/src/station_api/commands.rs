@@ -11,42 +11,39 @@ use hebbian_contracts::{
     Sample, StationCommand, Waypoint,
 };
 
-type Refusal = (RejectionReason, String);
-
-fn refused(reason: RejectionReason, detail: impl Into<String>) -> Refusal {
-    (reason, detail.into())
-}
+use crate::arm::{Rejection, rejection};
 
 const FIRST_SAMPLE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
-fn latest_sample(link: &LinkHandle) -> Result<Sample, Refusal> {
+fn latest_sample(link: &LinkHandle) -> Result<Sample, Rejection> {
     link.wait_for_sample(FIRST_SAMPLE_WAIT)
-        .ok_or_else(|| refused(RejectionReason::ArmBusy, "No feedback from the arm yet"))
+        .ok_or_else(|| rejection(RejectionReason::ArmBusy, "No feedback from the arm yet"))
 }
 
+#[derive(Clone, Copy)]
 struct HoldingFeedback<'a> {
     pose: &'a [f64],
     gripper_angle: Option<f64>,
 }
 
 impl<'a> TryFrom<&'a Sample> for HoldingFeedback<'a> {
-    type Error = Refusal;
+    type Error = Rejection;
 
-    fn try_from(sample: &'a Sample) -> Result<Self, Refusal> {
+    fn try_from(sample: &'a Sample) -> Result<Self, Rejection> {
         match (sample.mode, sample.hold_pose.as_deref()) {
             (ArmMode::Holding, Some(pose)) => Ok(Self {
                 pose,
                 gripper_angle: sample.gripper_angle,
             }),
-            (ArmMode::Disabled, _) => Err(refused(
+            (ArmMode::Disabled, _) => Err(rejection(
                 RejectionReason::NotEnabled,
                 "The arm is disabled; send enable, then repeat the command",
             )),
-            (ArmMode::Faulted, _) => Err(refused(
+            (ArmMode::Faulted, _) => Err(rejection(
                 RejectionReason::Faulted,
                 "The arm is faulted; send clear_fault after inspecting it",
             )),
-            _ => Err(refused(
+            _ => Err(rejection(
                 RejectionReason::ArmBusy,
                 "Another command is active; send stop first",
             )),
@@ -58,20 +55,20 @@ fn jaw_angle(
     link: &LinkHandle,
     arm: &str,
     opening: hebbian_contracts::GripperOpening,
-) -> Result<hebbian_contracts::JawAngle, Refusal> {
+) -> Result<hebbian_contracts::JawAngle, Rejection> {
     let gripper = link.gripper().ok_or_else(|| {
-        refused(
+        rejection(
             RejectionReason::InvalidTarget,
             format!("{arm} has no gripper"),
         )
     })?;
     hebbian_contracts::JawAngle::try_from(gripper.angle(f64::from(opening)))
-        .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))
 }
 
-fn planner_or_refuse(planner: Option<&Planner>) -> Result<&Planner, Refusal> {
+fn planner_or_refuse(planner: Option<&Planner>) -> Result<&Planner, Rejection> {
     planner.ok_or_else(|| {
-        refused(
+        rejection(
             RejectionReason::InvalidTarget,
             "This arm has no tool link to plan for",
         )
@@ -83,23 +80,21 @@ fn plan_trajectory(
     holding: HoldingFeedback<'_>,
     waypoints: &[Waypoint],
     max_joint_speed: Option<JointSpeed>,
-) -> Result<PlannedMotion, Refusal> {
-    planner
-        .plan(
-            holding.pose,
-            waypoints,
-            max_joint_speed,
-            holding.gripper_angle,
-        )
-        .map_err(|refusal| (refusal.reason, refusal.detail))
+) -> Result<PlannedMotion, Rejection> {
+    planner.plan(
+        holding.pose,
+        waypoints,
+        max_joint_speed,
+        holding.gripper_angle,
+    )
 }
 
-fn planned_speed(motion: &PlannedMotion) -> Result<JointSpeed, Refusal> {
+fn planned_speed(motion: &PlannedMotion) -> Result<JointSpeed, Rejection> {
     JointSpeed::new(motion.plan.peak_speed)
-        .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))
 }
 
-fn prepare_trajectory(label: &str, motion: PlannedMotion) -> Result<PreparedMovement, Refusal> {
+fn prepare_trajectory(label: &str, motion: PlannedMotion) -> Result<PreparedMovement, Rejection> {
     Ok(PreparedMovement::Trajectory {
         label: label.to_owned(),
         joint_speed: planned_speed(&motion)?,
@@ -146,7 +141,7 @@ fn plan_station_movement(
     planner: Option<&Planner>,
     uses_policy: bool,
     sample: &Sample,
-) -> Result<PreparedMovement, Refusal> {
+) -> Result<PreparedMovement, Rejection> {
     let (label, waypoints, max_joint_speed) = match movement {
         StationMovement::Pose {
             position,
@@ -179,19 +174,19 @@ fn plan_station_movement(
         } => (label, waypoints, max_joint_speed),
         StationMovement::Rehome => {
             let rest_pose = sample.rest_pose.as_deref().ok_or_else(|| {
-                refused(
+                rejection(
                     RejectionReason::NotEnabled,
                     "The arm has no saved home pose; enable it first",
                 )
             })?;
             let joints = config.recovery_limits().clamp(rest_pose).map_err(|error| {
-                refused(
+                rejection(
                     RejectionReason::InvalidTarget,
                     format!("Saved home pose: {error}"),
                 )
             })?;
             let speed = JointSpeed::new(config.max_joint_speed.min(2.0))
-                .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))?;
+                .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
             ("rehome", vec![Waypoint::Joints { joints }], Some(speed))
         }
     };
@@ -204,10 +199,10 @@ fn plan_station_movement(
 fn prepare_movement(
     link: &LinkHandle,
     movement: StationMovement,
-) -> Result<PreparedMovement, Refusal> {
+) -> Result<PreparedMovement, Rejection> {
     let uses_policy = link.has_policy();
     if uses_policy && movement.rejects_policy() {
-        return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+        return Err(rejection(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
     }
     plan_station_movement(
         movement,
@@ -223,7 +218,7 @@ fn prepare_gripper(
     arm: &str,
     opening: GripperOpening,
     max_joint_speed: Option<JointSpeed>,
-) -> Result<PreparedGripper, Refusal> {
+) -> Result<PreparedGripper, Rejection> {
     Ok(PreparedGripper {
         angle: jaw_angle(link, arm, opening)?,
         joint_speed: max_joint_speed,
@@ -234,7 +229,7 @@ pub(crate) fn arm_command(
     link: &LinkHandle,
     arm: &str,
     command: StationCommand,
-) -> Result<Command, Refusal> {
+) -> Result<Command, Rejection> {
     let movement = match command {
         StationCommand::Enable => return Ok(Command::Enable),
         StationCommand::ApproveRecovery => return Ok(Command::ApproveRecovery),
@@ -291,7 +286,7 @@ pub(super) fn prepare_compiled_action(
     link: &LinkHandle,
     arm: &str,
     action: &CompiledArmAction,
-) -> Result<PreparedArmAction, Refusal> {
+) -> Result<PreparedArmAction, Rejection> {
     match action {
         CompiledArmAction::Move {
             movement,
@@ -344,9 +339,9 @@ pub(super) fn joint_stream(
     positions: Vec<f64>,
     gripper_opening: Option<hebbian_contracts::GripperOpening>,
     admission: StreamAdmission,
-) -> Result<Command, Refusal> {
+) -> Result<Command, Rejection> {
     if link.has_policy() {
-        return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+        return Err(rejection(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
     }
     let gripper_angle = gripper_opening
         .map(|opening| jaw_angle(link, arm, opening))
@@ -373,25 +368,25 @@ pub(crate) fn plan_group_move<'a>(
         Vec<PreparedArmAction>,
         Vec<crate::lease::ArmGate>,
     ),
-    Refusal,
+    Rejection,
 > {
     let mut moves = Vec::new();
     let mut gates = Vec::new();
     let mut first_link = None;
     for (arm, waypoint) in &command.targets {
         let link = links.get(arm).ok_or_else(|| {
-            refused(
+            rejection(
                 RejectionReason::InvalidTarget,
                 format!("No arm named {arm}"),
             )
         })?;
         if link.has_policy() {
-            return Err(refused(
+            return Err(rejection(
                 RejectionReason::InvalidTarget,
                 "Use per-arm pose commands for arms with learned control",
             ));
         }
-        let prefixed = |(reason, detail): Refusal| (reason, format!("{arm}: {detail}"));
+        let prefixed = |Rejection { reason, detail }| rejection(reason, format!("{arm}: {detail}"));
         let sample = latest_sample(link).map_err(prefixed)?;
         let planner = planner_or_refuse(link.planner()).map_err(prefixed)?;
         let holding = HoldingFeedback::try_from(&sample).map_err(prefixed)?;
@@ -422,17 +417,17 @@ pub(crate) fn plan_group_move<'a>(
         first_link.get_or_insert(link);
     }
     let link = first_link
-        .ok_or_else(|| refused(RejectionReason::InvalidTarget, "move_arms names no arm"))?;
+        .ok_or_else(|| rejection(RejectionReason::InvalidTarget, "move_arms names no arm"))?;
     Ok((link, moves, gates))
 }
 
 pub fn answer_preview(
     links: &BTreeMap<String, LinkHandle>,
     arm: &str,
-    pose: PreviewPose,
-) -> Result<PoseProjection, Refusal> {
+    pose: &PreviewPose,
+) -> Result<PoseProjection, Rejection> {
     let link = links.get(arm).ok_or_else(|| {
-        refused(
+        rejection(
             RejectionReason::InvalidTarget,
             format!("No arm named {arm}"),
         )
@@ -449,12 +444,14 @@ pub fn answer_preview(
 pub(crate) fn preview_answer(
     links: &BTreeMap<String, LinkHandle>,
     arm: &str,
-    pose: PreviewPose,
+    pose: &PreviewPose,
 ) -> hebbian_contracts::PreviewAnswer {
     match answer_preview(links, arm, pose) {
         Ok(projection) => hebbian_contracts::PreviewAnswer::Projected {
             projection: Box::new(projection),
         },
-        Err((reason, detail)) => hebbian_contracts::PreviewAnswer::Refused { reason, detail },
+        Err(Rejection { reason, detail }) => {
+            hebbian_contracts::PreviewAnswer::Refused { reason, detail }
+        }
     }
 }

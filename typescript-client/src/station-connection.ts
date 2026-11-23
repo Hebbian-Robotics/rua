@@ -537,10 +537,13 @@ export function createStationConnection(
         const arm = latestState.arms.find((arm) => arm.arm === commandArm);
         if (arm === undefined || arm.active_command?.command_id === commandId)
           return undefined;
-        const finishedAt = commandResult(record)?.finished_at ?? 0;
+        const finishedAt = BigInt(
+          commandResult(record)?.finished_unix_nano ?? 0,
+        );
         // Commands that finish in one cycle show only the latest on that arm.
         return arm.last_command?.command_id === commandId ||
-          (commandResult(arm.last_command)?.finished_at ?? -1) >= finishedAt
+          BigInt(commandResult(arm.last_command)?.finished_unix_nano ?? -1) >=
+            finishedAt
           ? true
           : undefined;
       },

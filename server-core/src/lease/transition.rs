@@ -23,6 +23,7 @@ pub(super) enum ExpiryPolicy {
     ReleaseWhenSettled,
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum Settling {
     Pending,
     Confirmed,

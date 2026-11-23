@@ -225,7 +225,7 @@ pub(crate) fn run_supervised(
     plant: PlantSelection,
     http_address: &str,
     web: WebSettings,
-    media: crate::media::MediaPlan,
+    media: &crate::media::MediaPlan,
 ) -> anyhow::Result<()> {
     validate_arms(arms)?;
     let shutdown_requested = shutdown_flag()?;
@@ -299,7 +299,7 @@ pub(crate) fn run_supervised(
     let runtime = server.runtime_handle();
     let media = crate::media::MediaSupervisor::start(
         &runtime,
-        &media,
+        media,
         &web::local_http_url(server.local_address()),
         &media_status,
         local_cameras_only,

@@ -45,7 +45,7 @@ pub(crate) enum SingleArmRequest {
         reply: Sender<Result<bool, Rejection>>,
     },
     CancelCommand {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
         reply: Sender<Result<(), Rejection>>,
     },
     Submit {
@@ -120,7 +120,7 @@ impl ArmHandle {
 
     pub(crate) fn cancel_command(
         &self,
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     ) -> Result<Receiver<Result<(), Rejection>>, Rejection> {
         let (reply, answer) = channel();
         self.enqueue(ArmRequest::Single(SingleArmRequest::CancelCommand {

@@ -36,7 +36,7 @@ from hebbian_rua.client.station_events import (
     StationStreamEvent,
     stream_station_events,
 )
-from hebbian_rua.client.station_types import command_record_finished_at
+from hebbian_rua.client.station_types import command_record_finished_unix_nano
 
 log = logging.getLogger(__name__)
 # How long to wait for a connection, or for the first state.
@@ -313,8 +313,8 @@ class StationConnection:
         Commands that finish in one cycle show only the latest on that arm.
         """
         record = arm_record.record
-        finished_at = command_record_finished_at(record)
-        if self._state is None or finished_at is None:
+        finished_unix_nano = command_record_finished_unix_nano(record)
+        if self._state is None or finished_unix_nano is None:
             return False
         arm = next((arm for arm in self._state.arms if arm.arm == arm_record.arm), None)
         if arm is None or (
@@ -324,10 +324,10 @@ class StationConnection:
             return False
         if arm.last_command is None:
             return False
-        last_finished_at = command_record_finished_at(arm.last_command)
-        return last_finished_at is not None and (
+        last_finished_unix_nano = command_record_finished_unix_nano(arm.last_command)
+        return last_finished_unix_nano is not None and (
             arm.last_command.command_id == record.command_id
-            or last_finished_at >= finished_at
+            or last_finished_unix_nano >= finished_unix_nano
         )
 
     def _keep_record(self, arm_record: ArmRecord) -> None:
@@ -488,7 +488,7 @@ class StationConnection:
                     ArmRecord(
                         arm=arm,
                         record=CommandRecord(
-                            accepted_at=event.accepted_at,
+                            accepted_unix_nano=event.accepted_unix_nano,
                             checkpoints=event.checkpoints,
                             command=event.command,
                             command_id=event.command_id,

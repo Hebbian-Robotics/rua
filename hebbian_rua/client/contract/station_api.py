@@ -335,16 +335,6 @@ class PendingCommand(BaseModel):
     kind: Literal["pending"] = "pending"
 
 
-class CommandOutcomeUnknown(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    detail: str | None = None
-    finished_at: StrictFloat
-    kind: Literal["outcome_unknown"] = "outcome_unknown"
-
-
 class CommandPose(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1559,6 +1549,13 @@ class TraceFile(BaseModel):
     sizeBytes: Annotated[int, Field(ge=0)]
 
 
+class UnixNanos(RootModel[str]):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[str, Field(pattern="^[0-9]+$")]
+
+
 class ViewerControlMode(StrEnum):
     llm = "llm"
     so101_manual = "so101_manual"
@@ -1625,7 +1622,7 @@ class CommandCompletion(BaseModel):
         frozen=True,
     )
     detail: str | None = None
-    finished_at: StrictFloat
+    finished_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     gripper: Annotated[
         GripperResult1 | GripperResult2 | None,
         Field(
@@ -1641,9 +1638,19 @@ class CommandNotStarted(BaseModel):
         frozen=True,
     )
     detail: str | None = None
-    finished_at: StrictFloat
+    finished_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     kind: Literal["not_started"] = "not_started"
     outcome: NotStartedOutcome
+
+
+class CommandOutcomeUnknown(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    detail: str | None = None
+    finished_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
+    kind: Literal["outcome_unknown"] = "outcome_unknown"
 
 
 class CompilationTarget(BaseModel):
@@ -2031,7 +2038,7 @@ class CommandRecord(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    accepted_at: StrictFloat
+    accepted_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     checkpoints: list[Checkpoint]
     command: Annotated[
         RecordedMove
@@ -2042,7 +2049,12 @@ class CommandRecord(BaseModel):
         | RecordedControl,
         Field(description="Data specific to the command the controller accepted."),
     ]
-    command_id: str
+    command_id: Annotated[
+        str,
+        Field(
+            description="Station identifier for one accepted command and its subsequent records."
+        ),
+    ]
     label: Annotated[
         str,
         Field(
@@ -2074,7 +2086,7 @@ class Record(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    accepted_at: StrictFloat
+    accepted_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     checkpoints: list[Checkpoint]
     command: Annotated[
         RecordedMove
@@ -2085,7 +2097,12 @@ class Record(BaseModel):
         | RecordedControl,
         Field(description="Data specific to the command the controller accepted."),
     ]
-    command_id: str
+    command_id: Annotated[
+        str,
+        Field(
+            description="Station identifier for one accepted command and its subsequent records."
+        ),
+    ]
     kind: Literal["record"] = "record"
     label: Annotated[
         str,
@@ -2422,16 +2439,13 @@ class ArmState(BaseModel):
             ge=0,
         ),
     ]
-    sampled_at_unix_seconds: Annotated[
-        StrictFloat | None,
+    sampled_unix_nano: Annotated[
+        UnixNanos | None,
         Field(
-            description="When the newest sample was taken, in Unix seconds; none before the first."
+            description="Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample."
         ),
     ] = None
     segment: str | None = None
-    status: Annotated[
-        str, Field(description="Why the arm is as it is, in a few words.")
-    ]
     tool: Annotated[
         PoseDescription | None,
         Field(

@@ -6,7 +6,7 @@ function stoppedMove(jointErrors: number[] | null): CommandRecord {
   return apiSchemas.shape.CommandRecord.parse({
     command_id: "move",
     label: "move_to_joints",
-    accepted_at: 0,
+    accepted_unix_nano: "0",
     checkpoints: [],
     trace_context: null,
     command: {
@@ -22,7 +22,7 @@ function stoppedMove(jointErrors: number[] | null): CommandRecord {
     phase: {
       kind: "finished",
       completion: {
-        finished_at: 1,
+        finished_unix_nano: "1000000000",
         outcome: "stopped_short",
         detail: "Stopped short",
         gripper: null,
@@ -65,7 +65,7 @@ describe("manual command outcomes", () => {
           kind: "finished",
           achieved: null,
           completion: {
-            finished_at: 1,
+            finished_unix_nano: "1000000000",
             outcome: "tripped",
             detail: "Loop deadline missed",
             gripper: null,

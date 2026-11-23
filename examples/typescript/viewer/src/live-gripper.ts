@@ -5,7 +5,7 @@ import { armMotion } from "./manual-lease.js";
 
 type GripperArm = Pick<
   ArmState,
-  "arm" | "mode" | "sampled_at_unix_seconds" | "gripper_opening"
+  "arm" | "mode" | "sampled_unix_nano" | "gripper_opening"
 >;
 
 type GripperActivity =
@@ -25,8 +25,8 @@ export function createLiveGripper(
     const arm = getArm();
     return arm?.gripper_opening != null &&
       (arm.mode === "holding" || arm.mode === "moving") &&
-      arm.sampled_at_unix_seconds !== null &&
-      Date.now() / 1000 - arm.sampled_at_unix_seconds < 0.5
+      arm.sampled_unix_nano !== null &&
+      Date.now() / 1000 - Number(arm.sampled_unix_nano) / 1e9 < 0.5
       ? arm
       : undefined;
   }

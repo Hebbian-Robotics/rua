@@ -85,7 +85,9 @@ impl ArmCore {
 
 pub(crate) enum MoveDisposition {
     Queue,
-    ReplaceSettling { command_id: String },
+    ReplaceSettling {
+        command_id: hebbian_contracts::CommandId,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -154,7 +156,7 @@ impl MoveDecision {
                 )
             })?;
             MoveDisposition::ReplaceSettling {
-                command_id: command_id.to_owned(),
+                command_id: command_id.into(),
             }
         } else {
             MoveDisposition::Queue

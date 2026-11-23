@@ -40,7 +40,12 @@ static TEST_EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 fn at(seconds: f64) -> Now {
     Now {
-        unix_seconds: seconds,
+        unix_nano: hebbian_contracts::UnixNanos(
+            std::time::Duration::from_secs_f64(seconds)
+                .as_nanos()
+                .try_into()
+                .unwrap(),
+        ),
         instant: *TEST_EPOCH.get_or_init(Instant::now)
             + std::time::Duration::from_secs_f64(seconds),
     }
@@ -81,7 +86,7 @@ fn enabled_core() -> (ArmCore, Arc<Mutex<Vec<Event>>>) {
     let (mut core, events) = core();
     let record = core.submit(Command::Enable, at(1.0)).unwrap();
     let job = core.next_job().unwrap();
-    assert_eq!(job.command_id(), record.command_id);
+    assert_eq!(job.command_id(), &record.command_id);
     observe(&mut core, 1.0, None);
     core.enabled(&[0.0, 0.0], at(1.0));
     (core, events)
@@ -414,7 +419,7 @@ fn a_hard_fault_releases_and_refuses_everything_until_cleared_on_fresh_healthy_f
     );
     observe(&mut core, 3.4, None);
     let stale_after_clock_step = Now {
-        unix_seconds: 3.5,
+        unix_nano: hebbian_contracts::UnixNanos(3_500_000_000),
         ..at(9.0)
     };
     assert_eq!(
@@ -741,8 +746,8 @@ proptest::proptest! {
         use std::collections::BTreeMap;
         use proptest::{prop_assert, prop_assert_eq};
         let (mut core, _) = enabled_core();
-        let mut known_ids: Vec<String> = Vec::new();
-        let mut terminal_records: BTreeMap<String, CommandRecord> = BTreeMap::new();
+        let mut known_ids: Vec<hebbian_contracts::CommandId> = Vec::new();
+        let mut terminal_records: BTreeMap<hebbian_contracts::CommandId, CommandRecord> = BTreeMap::new();
         for (step, (operation, target)) in operations.into_iter().enumerate() {
             let seconds = f64::from(u32::try_from(step).unwrap()) + 2.0;
             let now = at(seconds);

@@ -6,12 +6,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub(crate) struct Rejection {
+pub struct Rejection {
     pub reason: RejectionReason,
     pub detail: String,
 }
 
-pub(super) fn rejection(reason: RejectionReason, detail: impl Into<String>) -> Rejection {
+pub(crate) fn rejection(reason: RejectionReason, detail: impl Into<String>) -> Rejection {
     Rejection {
         reason,
         detail: detail.into(),
@@ -43,7 +43,7 @@ pub struct Limits {
 // CONSTRAINT: Use wall time for records and monotonic time for deadlines; callers supply both.
 #[derive(Debug, Clone, Copy)]
 pub struct Now {
-    pub unix_seconds: f64,
+    pub unix_nano: hebbian_contracts::UnixNanos,
     pub instant: Instant,
 }
 
@@ -51,9 +51,7 @@ impl Now {
     #[must_use]
     pub(crate) fn current() -> Self {
         Self {
-            unix_seconds: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0.0, |elapsed| elapsed.as_secs_f64()),
+            unix_nano: hebbian_contracts::UnixNanos::now(),
             instant: Instant::now(),
         }
     }
@@ -62,31 +60,31 @@ impl Now {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Job {
     Enable {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     },
     ApproveRecovery {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     },
     Release {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     },
     Move {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
         plan: super::AdmittedPlan,
         group: Option<GroupMembership>,
     },
     Reach {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
         goal: ReachGoal,
     },
     Stream {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     },
 }
 
 impl Job {
     #[must_use]
-    pub(crate) fn command_id(&self) -> &str {
+    pub(crate) fn command_id(&self) -> &hebbian_contracts::CommandId {
         match self {
             Self::Enable { command_id }
             | Self::ApproveRecovery { command_id }
@@ -157,7 +155,7 @@ impl StreamGoal {
 
 #[derive(Debug, Clone)]
 pub(super) struct HeldStreamGoal {
-    pub(super) command_id: String,
+    pub(super) command_id: hebbian_contracts::CommandId,
     pub(super) goal: StreamGoal,
     pub(super) last_goal_at: Instant,
 }
@@ -169,9 +167,9 @@ pub(crate) struct GripperTarget {
 }
 
 pub(super) struct GripperCommand {
-    pub(super) command_id: String,
+    pub(super) command_id: hebbian_contracts::CommandId,
     pub(super) pending_target: Option<GripperTarget>,
-    pub(super) stream_id: Option<String>,
+    pub(super) stream_id: Option<hebbian_contracts::CommandId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,9 +213,12 @@ pub(super) enum CommandState {
     // INVARIANT: The previous motion has been superseded, but the loop still owns it.
     // The replacement can be cancelled before the loop lets go.
     Superseding(Option<Job>),
-    Starting(String),
-    Executing { command_id: String, settling: bool },
-    Stopping(String),
+    Starting(hebbian_contracts::CommandId),
+    Executing {
+        command_id: hebbian_contracts::CommandId,
+        settling: bool,
+    },
+    Stopping(hebbian_contracts::CommandId),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

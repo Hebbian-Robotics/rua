@@ -6,7 +6,7 @@ import { createLivePoseFollowMachine } from "./live-pose-follow-machine.js";
 import { armMotion, manualLease } from "./manual-lease.js";
 
 export type FollowArm = Pick<ArmState, "arm" | "mode"> & {
-  sampled_at_unix_seconds?: number | null;
+  sampled_unix_nano?: string | null;
 };
 
 // Hand-tuned for the manual-follow feel; not derived from a standard.
@@ -62,8 +62,9 @@ export function createLivePoseFollow(
       const mode = arm.mode;
       if (mode !== "holding" && !(stream !== null && mode === "moving")) return;
       if (
-        arm.sampled_at_unix_seconds != null &&
-        Date.now() / 1000 - arm.sampled_at_unix_seconds > STALE_FEEDBACK_SECONDS
+        arm.sampled_unix_nano != null &&
+        Date.now() / 1000 - Number(arm.sampled_unix_nano) / 1e9 >
+          STALE_FEEDBACK_SECONDS
       ) {
         disarm("Follow stopped: robot feedback is stale.");
         return;

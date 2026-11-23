@@ -231,6 +231,7 @@ pub(crate) fn run_guard(config_path: &Path, controller_pid: u32) -> anyhow::Resu
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum SchemaKind {
     SimPlant,
     OpenApi,

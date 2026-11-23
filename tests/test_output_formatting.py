@@ -27,12 +27,12 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
     record = CommandRecord(
         command_id="move-1",
         label="move_to_joints",
-        accepted_at=123.123456789,
+        accepted_unix_nano="123123456789",
         checkpoints=[Checkpoint(label="start", measured_joints=[0.123456789])],
         command=RecordedMove(target_joints=[0.3], joint_speed=0.5),
         phase=FinishedCommand(
             completion=CommandCompletion(
-                finished_at=124.123456789,
+                finished_unix_nano="124123456789",
                 outcome=KnownCommandOutcome.stopped_short,
                 detail="Object contact",
             ),
@@ -47,7 +47,7 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
     }
     assert summary["achieved"]["joints_degrees"] == [7.1]
     assert "checkpoints" not in summary
-    assert "accepted_at" not in summary
+    assert "accepted_unix_nano" not in summary
     assert "command_id" not in summary
     assert result.is_error
     assert result.data == record.model_dump(mode="json")

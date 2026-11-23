@@ -2,13 +2,12 @@
   "arm": [
     "arm",
     "mode",
-    "status",
     "fault",
     "active_trip",
     "interlocks",
     "recovery_issue",
     "revision",
-    "sampled_at_unix_seconds",
+    "sampled_unix_nano",
     "measured_joints",
     "tool",
     "gripper_opening"
@@ -23,8 +22,8 @@
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at",
-    "finished_at"
+    "accepted_unix_nano",
+    "finished_unix_nano"
   ],
   "earlier_step": [
     "label",

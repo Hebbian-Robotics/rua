@@ -4,9 +4,13 @@ import json
 import math
 from collections.abc import Collection
 from dataclasses import replace
-from typing import Literal
+from typing import Literal, assert_never
 
+from pydantic import ValidationError
+
+from hebbian_rua.client.contract.station_api import CommandRecord
 from hebbian_rua.client.llm.generated_robot_tools import (
+    MODEL_OUTCOMES,
     MODEL_OUTPUT_UNITS,
     MODEL_RESPONSE_FIELDS,
 )
@@ -37,58 +41,57 @@ def _scale_numbers(value: object, factor: float) -> object:
 
 
 def _model_command_record(record: dict) -> dict:
-    command, phase = record.get("command"), record.get("phase")
-    if (
-        not isinstance(command, dict)
-        or not isinstance(phase, dict)
-        or not isinstance(record.get("command_id"), str)
-        or not isinstance(command.get("kind"), str)
-        or phase.get("kind")
-        not in ("pending", "not_started", "finished", "outcome_unknown")
-    ):
+    if "command_id" not in record:
         return record
+    try:
+        parsed = CommandRecord.model_validate(record)
+    except ValidationError:
+        return record
+    command, phase = parsed.command, parsed.phase
     result = {
         key: item for key, item in record.items() if key not in {"command", "phase"}
     }
     result.update(
-        (key, item)
-        for key, item in command.items()
-        if key not in {"kind", "target_pose"}
+        command.model_dump(
+            mode="json", exclude={"kind", "target_pose"}, exclude_unset=True
+        )
     )
-    pose = command.get("target_pose")
-    if isinstance(pose, dict):
-        result["target_position"] = pose.get("position")
-        result["target_quaternion"] = pose.get("quaternion")
-    phase_kind = phase["kind"]
-    if phase_kind == "finished":
-        completion = phase.get("completion")
-        result["completion"] = completion
-        result["achieved"] = phase.get("achieved")
-        if command["kind"] == "move" and isinstance(completion, dict):
-            outcome = completion.get("outcome")
-            match outcome:
-                case "completed":
-                    result["target_status"] = (
-                        "limited"
-                        if command.get("pose_limited") is not None
-                        or command.get("path_limited") is not None
-                        else "reached"
-                    )
-                case "stopped_short":
-                    result["target_status"] = "stopped_short"
-                case _:
-                    result["target_status"] = "partial"
-    elif phase_kind in {"not_started", "outcome_unknown"}:
-        result["completion"] = {
-            "outcome": "interrupted"
-            if phase_kind == "outcome_unknown"
-            else phase.get("outcome"),
-            "detail": phase.get("detail"),
-            "finished_at": phase.get("finished_at"),
-        }
-        if phase_kind == "not_started":
-            key = "target_status" if command["kind"] == "move" else "phase"
-            result[key] = "not_started"
+    if command.kind == "policy_reach":
+        result["target_position"] = command.target_pose.position
+        result["target_quaternion"] = command.target_pose.quaternion
+    match phase.kind:
+        case "pending":
+            pass
+        case "finished":
+            result["completion"] = phase.completion.model_dump(
+                mode="json", exclude_unset=True
+            )
+            result["achieved"] = (
+                phase.achieved.model_dump(mode="json", exclude_unset=True)
+                if phase.achieved
+                else None
+            )
+            if command.kind == "move":
+                rule = MODEL_OUTCOMES["commands"][phase.completion.outcome]
+                result["target_status"] = rule[
+                    "limited_target"
+                    if command.pose_limited or command.path_limited
+                    else "target"
+                ]
+        case "not_started" | "outcome_unknown":
+            result["completion"] = {
+                "outcome": "interrupted"
+                if phase.kind == "outcome_unknown"
+                else phase.outcome.value,
+                "detail": phase.detail,
+                "finished_unix_nano": phase.finished_unix_nano,
+            }
+            if phase.kind == "not_started":
+                result["target_status" if command.kind == "move" else "phase"] = (
+                    "not_started"
+                )
+        case _ as unreachable:
+            assert_never(unreachable)
     return result
 
 
@@ -118,10 +121,7 @@ def _format_model_field(value: object, field_name: str) -> object:
         # Rounded quaternion components are normalized by station parsing on reuse.
         return _round_half_away_from_zero(
             value,
-            3
-            if "unix_seconds" in field_name
-            or field_name in {"accepted_at", "sampled_at", "finished_at"}
-            else 4,
+            3 if "unix_seconds" in field_name or field_name in {"sampled_at"} else 4,
         )
     return value
 

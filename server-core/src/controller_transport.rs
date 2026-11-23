@@ -16,7 +16,7 @@ pub struct ControllerRequestId(pub u64);
 pub enum ControllerRequest {
     ControlHandoffReadiness,
     CancelCommand {
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     },
     Submit {
         command: Command,

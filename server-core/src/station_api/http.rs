@@ -780,7 +780,7 @@ type CommandAdmission<ReplyContext, ReplyRecords> = Result<
         ReplyContext,
         oneshot::Receiver<Result<ReplyRecords, crate::arm::Rejection>>,
     ),
-    (hebbian_contracts::RejectionReason, String),
+    Rejection,
 >;
 
 async fn command_submission_outcome<ReplyContext, ReplyRecords>(
@@ -793,7 +793,7 @@ async fn command_submission_outcome<ReplyContext, ReplyRecords>(
 ) -> Admission {
     let (context, reply) = match admitted {
         Err(_) => return Err(CommandOutcomeUnknown::AdmissionWorker),
-        Ok(Err((reason, detail))) => {
+        Ok(Err(Rejection { reason, detail })) => {
             return Ok(hebbian_contracts::CommandAnswer::Refused { reason, detail });
         }
         Ok(Ok(pending)) => pending,
@@ -809,7 +809,7 @@ async fn command_submission_outcome<ReplyContext, ReplyRecords>(
     }
 }
 
-type CommandRefusal = (hebbian_contracts::RejectionReason, String);
+use crate::arm::{Rejection, rejection};
 
 fn admission_unavailable(_: AdmissionClosed) -> (StatusCode, String) {
     (
@@ -829,7 +829,7 @@ async fn submit_station_command<
         &BTreeMap<String, LinkHandle>,
         Vec<crate::lease::GenerationTicket>,
         tokio::sync::watch::Receiver<bool>,
-    ) -> Result<Commit, CommandRefusal>
+    ) -> Result<Commit, Rejection>
     + Send
     + 'static,
     into_arm_records: impl FnOnce(
@@ -953,10 +953,10 @@ async fn await_motion_completion(
 // prevents admission or waits for the exact command IDs from the controller.
 fn fence_cancelled_submission(
     cancellation: &tokio::sync::watch::Receiver<bool>,
-) -> Result<tokio::sync::watch::Ref<'_, bool>, (hebbian_contracts::RejectionReason, String)> {
+) -> Result<tokio::sync::watch::Ref<'_, bool>, Rejection> {
     let cancelled = cancellation.borrow();
     if *cancelled {
-        return Err((
+        return Err(rejection(
             hebbian_contracts::RejectionReason::ArmBusy,
             "Command submission was cancelled".to_owned(),
         ));
@@ -964,8 +964,8 @@ fn fence_cancelled_submission(
     Ok(cancelled)
 }
 
-fn arm_busy(detail: &str) -> CommandRefusal {
-    (
+fn arm_busy(detail: &str) -> Rejection {
+    rejection(
         hebbian_contracts::RejectionReason::ArmBusy,
         detail.to_owned(),
     )
@@ -993,19 +993,17 @@ async fn submit_group_command(
                     .executions
                     .check_command_conflict(token, &targets)
                     .map_err(arm_busy)?;
-                let reply = link
-                    .action_step_async(
-                        actions,
-                        SubmissionAuthority {
-                            claim: token.into(),
-                            generation: &generation,
-                            clock: state.clock,
-                        },
-                        &gates,
-                        input.trace_context,
-                        &cancellation,
-                    )
-                    .map_err(|error| (error.reason, error.detail))?;
+                let reply = link.action_step_async(
+                    actions,
+                    SubmissionAuthority {
+                        claim: token.into(),
+                        generation: &generation,
+                        clock: state.clock,
+                    },
+                    &gates,
+                    input.trace_context,
+                    &cancellation,
+                )?;
                 Ok((arms, reply))
             })
         },
@@ -1034,7 +1032,7 @@ async fn submit_command(
         move |links, mut generation, cancellation| {
             let link = links
                 .get(&input.arm)
-                .ok_or((
+                .ok_or(rejection(
                     hebbian_contracts::RejectionReason::InvalidTarget,
                     "Unknown arm".to_owned(),
                 ))?
@@ -1049,8 +1047,7 @@ async fn submit_command(
                         if let Some(token) = token {
                             link.stop_leased_motion_for_submission(token, &mut generation, || {
                                 state.executions.cancel_owner(token)
-                            })
-                            .map_err(|error| (error.reason, error.detail))?;
+                            })?;
                         }
                         link.submit_command_async(
                             command,
@@ -1087,8 +1084,7 @@ async fn submit_command(
                             input.expected_revision,
                         )
                     }
-                }
-                .map_err(|error| (error.reason, error.detail))?;
+                }?;
                 Ok((input.arm, reply))
             })
         },
@@ -1118,9 +1114,10 @@ async fn update_stream_goal(
                         .executions
                         .check_command_conflict(Some(&input.lease_token), &[arm])
                         .map_err(arm_busy)?;
-                    let link = links
-                        .get(arm)
-                        .ok_or((RejectionReason::InvalidTarget, "Unknown arm".to_owned()))?;
+                    let link = links.get(arm).ok_or(rejection(
+                        RejectionReason::InvalidTarget,
+                        "Unknown arm".to_owned(),
+                    ))?;
                     let generation = [link.submission_generation()];
                     let command = super::commands::joint_stream(
                         link,
@@ -1129,18 +1126,16 @@ async fn update_stream_goal(
                         input.gripper_opening,
                         super::commands::StreamAdmission::Update(controller_stream),
                     )?;
-                    let reply = link
-                        .submit_command_async(
-                            command,
-                            SubmissionAuthority {
-                                claim: crate::lease::MotionClaim::Token(&input.lease_token),
-                                generation: &generation,
-                                clock: state.clock,
-                            },
-                            None,
-                            input.expected_revision,
-                        )
-                        .map_err(|error| (error.reason, error.detail))?;
+                    let reply = link.submit_command_async(
+                        command,
+                        SubmissionAuthority {
+                            claim: crate::lease::MotionClaim::Token(&input.lease_token),
+                            generation: &generation,
+                            clock: state.clock,
+                        },
+                        None,
+                        input.expected_revision,
+                    )?;
                     Ok((arm.to_owned(), reply))
                 },
             )
@@ -1435,7 +1430,7 @@ pub(crate) async fn execute_pose_previews(
             let arm = request.arm.clone();
             workers.spawn_blocking(move || {
                 let answer =
-                    crate::station_api::commands::preview_answer(&arms, &arm, candidate.pose);
+                    crate::station_api::commands::preview_answer(&arms, &arm, &candidate.pose);
                 (
                     index,
                     hebbian_contracts::PosePreviewCandidateResult {
