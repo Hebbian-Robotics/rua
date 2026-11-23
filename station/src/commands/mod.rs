@@ -16,10 +16,6 @@ pub(crate) struct Arguments {
 }
 
 #[derive(Subcommand)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "One CLI invocation holds one command, so keeping its arguments inline avoids indirection."
-)]
 pub(crate) enum Command {
     /// Serve the station for a robot profile: build each arm's config, drive its
     /// servos, an external simulator or the no-physics stand-in, and serve the HTTP API,
@@ -54,6 +50,22 @@ pub(crate) enum Command {
         /// Local SO-101 config checkout; defaults to the configured registry.
         #[arg(long)]
         so101_config_directory: Option<PathBuf>,
+    },
+    /// Check station connectivity, arm feedback, `LiveKit` and an optional camera snapshot.
+    Status {
+        /// HTTP address of the running station.
+        #[arg(
+            long,
+            env = "HEBBIAN_STATION_URL",
+            default_value = "http://127.0.0.1:8792"
+        )]
+        server: reqwest::Url,
+        /// Direct camera service address. Defaults to the station URL.
+        #[arg(long, env = "HEBBIAN_MEDIA_SERVER")]
+        media_server: Option<reqwest::Url>,
+        /// Camera whose latest frame must be available.
+        #[arg(long)]
+        camera: Option<String>,
     },
     /// List local video capture devices and their selectors for serve --camera.
     CameraDevices {
