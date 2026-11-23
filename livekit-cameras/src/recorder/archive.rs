@@ -16,7 +16,6 @@ use std::{
     time::Duration,
 };
 
-/// What a message's channel declares about its payload.
 #[derive(Clone, Copy)]
 enum Payload {
     Json,
@@ -106,8 +105,7 @@ impl RecordingArchive {
         )
     }
 
-    /// One arm's joints as a ROS 2 `sensor_msgs/JointState`, for Foxglove and Rerun.
-    /// Velocities and efforts are each empty or one per joint.
+    // CONSTRAINT: ROS JointState velocities and efforts are each empty or one per joint.
     pub fn joint_states(
         &self,
         arm: &str,

@@ -1,4 +1,3 @@
-//! Station telemetry, independent of camera and `LiveKit` connections.
 use crate::recorder::{RecorderError, archive::RecordingArchive};
 use hebbian_contracts::{Backoff, Event, Frame, ServerMessage, unix_nanoseconds};
 use std::{collections::BTreeMap, time::Duration};
@@ -427,7 +426,7 @@ fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> Recorde
     }
 }
 
-/// A plant that reports no velocity or effort leaves that array out of the message.
+// CONSTRAINT: A plant that reports no velocity or effort leaves that array out of the message.
 fn one_per_joint(values: &[f64], joint_count: usize) -> &[f64] {
     if values.len() == joint_count {
         values
@@ -436,7 +435,6 @@ fn one_per_joint(values: &[f64], joint_count: usize) -> &[f64] {
     }
 }
 
-/// The station's state as JSON, and each arm's joints as a ROS 2 `JointState`.
 fn record_state(
     archive: &RecordingArchive,
     state: &hebbian_contracts::StationState,

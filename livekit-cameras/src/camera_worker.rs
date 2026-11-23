@@ -81,7 +81,7 @@ async fn run_capture(
     let mut frames = worker.frames.clone();
     let publication_stopped = stopped.child_token();
     let (publication_updates, mut updates) = mpsc::unbounded_channel();
-    // Each worker owns its publication future and event receiver. Both are dropped
+    // INVARIANT: Each worker owns its publication future and event receiver. Both are dropped
     // before the next lookup, so an earlier session cannot update its successor.
     let publication = async {
         if let Some(room) = room {
