@@ -1,9 +1,14 @@
-use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, RecordingStatus};
 use hebbian_robot_use_server::recording::{RecordingConfiguration, RecordingManager};
 use station_access::Credentials;
+
+fn recorder_fixture(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
 
 fn recording_manager(
     root: &std::path::Path,
@@ -29,16 +34,8 @@ fn recording_manager(
 async fn recording_started_offline_stays_incomplete_after_controller_recovers()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
-    let executable = directory.path().join("recorder");
+    let executable = recorder_fixture("offline-recorder.sh");
     let ready = directory.path().join("recorder-ready");
-    std::fs::write(
-        &executable,
-        format!(
-            "#!/bin/sh\ntrap 'exit 0' INT TERM\nprintf ready > '{}'\nwhile :; do sleep 1; done\n",
-            ready.display()
-        ),
-    )?;
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))?;
     let manager = recording_manager(directory.path(), executable)?;
     manager.controller_unavailable();
     let name = manager.start_recording()?;
@@ -122,7 +119,7 @@ async fn exercise_recorder_cleanup(
     use tokio::io::AsyncReadExt;
 
     let directory = tempfile::tempdir()?;
-    let executable = directory.path().join("recorder");
+    let executable = recorder_fixture("worker-recorder.sh");
     let worker_pipe = directory.path().join("worker-pipe");
     let leader_pid = directory.path().join("leader-pid");
     let worker_ready = directory.path().join("worker-ready");
@@ -135,17 +132,6 @@ async fn exercise_recorder_cleanup(
     );
     let mut worker_output =
         tokio::net::unix::pipe::OpenOptions::new().open_receiver(&worker_pipe)?;
-    std::fs::write(
-        &executable,
-        format!(
-            "#!/bin/sh\ntrap 'exit 0' INT TERM\nprintf '%s' \"$$\" > '{}'\n(\n  trap '' INT TERM\n  exec 3>'{}'\n  printf x >&3\n  touch '{}'\n  exec sleep 60\n) &\nwhile [ ! -e '{}' ]; do sleep 0.02; done\nexit 17\n",
-            leader_pid.display(),
-            worker_pipe.display(),
-            worker_ready.display(),
-            quit.display(),
-        ),
-    )?;
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))?;
     let manager = recording_manager(directory.path(), executable)?;
 
     let name = manager.start_recording()?;
