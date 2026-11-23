@@ -38,14 +38,15 @@ impl Loop<'_> {
             self.end_stopped(now);
             return Ok(());
         }
-        let policy_failed = |error: anyhow::Error| Trip(format!("Policy failed: {error:#}"));
+        let policy_failed =
+            |error: anyhow::Error| Trip::Policy(format!("Policy failed: {error:#}"));
         let Activity::Reach(active) = &mut self.activity else {
-            return Err(Trip("No pose command is running".into()));
+            return Err(Trip::Policy("No pose command is running".into()));
         };
         let runtime = self
             .policy
             .as_mut()
-            .ok_or_else(|| Trip("No policy is loaded".into()))?;
+            .ok_or_else(|| Trip::Policy("No policy is loaded".into()))?;
         let goal = active.goal().clone();
         let tool = runtime.tool_pose(feedback).map_err(policy_failed)?;
         match active.assess(&tool, &feedback.velocities, interval) {
@@ -80,11 +81,12 @@ impl Loop<'_> {
         position: [f64; 3],
         quaternion: [f64; 4],
     ) -> Result<(), Trip> {
-        let policy_failed = |error: anyhow::Error| Trip(format!("Policy failed: {error:#}"));
+        let policy_failed =
+            |error: anyhow::Error| Trip::Policy(format!("Policy failed: {error:#}"));
         let runtime = self
             .policy
             .as_mut()
-            .ok_or_else(|| Trip("A pose goal arrived but no policy is loaded".into()))?;
+            .ok_or_else(|| Trip::Policy("A pose goal arrived but no policy is loaded".into()))?;
         if let Activity::Stream(stream) = &mut self.activity
             && !stream.policy_engaged
         {

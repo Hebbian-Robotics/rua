@@ -1,12 +1,45 @@
 use crate::config::ControllerConfig;
 use std::fmt::Write as _;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Trip(pub String);
+#[derive(Debug, Clone, PartialEq)]
+pub enum Trip {
+    Tracking {
+        failure: TrackingFailure,
+        detail: String,
+    },
+    Effort(String),
+    FeedbackFault(String),
+    Deadline(String),
+    InvalidSetpoint,
+    SurfaceGuard(String),
+    SelfCollision(String),
+    ReferenceFilter(String),
+    Trajectory(String),
+    Policy(String),
+    Gripper(String),
+}
 
 impl Trip {
-    fn because(reason: impl Into<String>) -> Self {
-        Self(reason.into())
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::Tracking { detail, .. }
+            | Self::Effort(detail)
+            | Self::FeedbackFault(detail)
+            | Self::Deadline(detail)
+            | Self::SurfaceGuard(detail)
+            | Self::SelfCollision(detail)
+            | Self::ReferenceFilter(detail)
+            | Self::Trajectory(detail)
+            | Self::Policy(detail)
+            | Self::Gripper(detail) => detail,
+            Self::InvalidSetpoint => "Invalid servo setpoint",
+        }
+    }
+}
+
+impl std::fmt::Display for Trip {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.detail())
     }
 }
 
@@ -23,8 +56,8 @@ pub(crate) fn max_joint_deviation(left: &[f64], right: &[f64]) -> f64 {
         .fold(0.0, f64::max)
 }
 
-#[derive(Debug)]
-pub(crate) enum TrackingFailure {
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrackingFailure {
     InvalidFeedback(&'static str),
     ExcessLag {
         joint: usize,
@@ -41,8 +74,8 @@ impl TrackingFailure {
         feedback: &crate::plant::Feedback,
         motion_speed: Option<(f64, f64)>,
     ) -> Trip {
-        match self {
-            Self::InvalidFeedback(detail) => Trip::because(detail),
+        let detail = match self {
+            Self::InvalidFeedback(detail) => detail.to_owned(),
             Self::ExcessLag {
                 joint,
                 error,
@@ -70,8 +103,12 @@ impl TrackingFailure {
                         fraction * 100.0
                     );
                 }
-                Trip::because(detail)
+                detail
             }
+        };
+        Trip::Tracking {
+            failure: self,
+            detail,
         }
     }
 }
@@ -141,7 +178,7 @@ pub(crate) fn check_effort(config: &ControllerConfig, efforts: &[f64]) -> Result
         .zip(&config.joint_effort_limits)
         .any(|(effort, limit)| effort.abs() > *limit)
     {
-        return Err(Trip::because(format!("Effort limit: {efforts:?}")));
+        return Err(Trip::Effort(format!("Effort limit: {efforts:?}")));
     }
     Ok(())
 }
@@ -162,17 +199,22 @@ mod tests {
         let lag = config.tracking_following_lag_seconds;
         let past_margin = [margin + 0.01, 0.0];
         let trip = validated_tracking_error(&config, &[0.0, 0.0], &past_margin, &at_rest, 0.01);
-        let detail = trip
-            .unwrap_err()
-            .into_trip(
-                &config,
-                &crate::plant::Feedback {
-                    velocities: vec![0.03, 0.0],
-                    ..Default::default()
-                },
-                Some((1.2, 0.5)),
-            )
-            .0;
+        let trip = trip.unwrap_err().into_trip(
+            &config,
+            &crate::plant::Feedback {
+                velocities: vec![0.03, 0.0],
+                ..Default::default()
+            },
+            Some((1.2, 0.5)),
+        );
+        assert!(matches!(
+            trip,
+            Trip::Tracking {
+                failure: TrackingFailure::ExcessLag { joint: 0, .. },
+                ..
+            }
+        ));
+        let detail = trip.detail();
         assert!(detail.contains("joint 0 (a)"), "{detail}");
         assert!(
             detail.contains("commanded 0.00 rad/s, measured 0.03 rad/s"),
@@ -236,6 +278,9 @@ mod tests {
     fn an_effort_past_a_joints_limit_trips() {
         let config = config();
         assert!(check_effort(&config, &[9.0, -9.0]).is_ok());
-        assert!(check_effort(&config, &[0.0, -11.0]).is_err());
+        assert!(matches!(
+            check_effort(&config, &[0.0, -11.0]),
+            Err(Trip::Effort(_))
+        ));
     }
 }

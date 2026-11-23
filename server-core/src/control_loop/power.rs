@@ -27,7 +27,7 @@ impl std::fmt::Display for EnableRefusal<'_> {
         match self {
             Self::Drift => formatter.write_str("Moved during enable"),
             Self::FeedbackFault(fault) => write!(formatter, "Enable not confirmed: {fault}"),
-            Self::Effort(trip) => formatter.write_str(&trip.0),
+            Self::Effort(trip) => formatter.write_str(trip.detail()),
         }
     }
 }

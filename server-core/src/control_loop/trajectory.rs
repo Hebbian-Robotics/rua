@@ -131,7 +131,7 @@ impl Loop<'_> {
             return Ok(());
         }
         let Activity::Motion(active) = &mut self.activity else {
-            return Err(Trip("No motion is running".into()));
+            return Err(Trip::Trajectory("No motion is running".into()));
         };
         let speed_fraction = if self.config.feetech.is_some() {
             tracking_speed_fraction(

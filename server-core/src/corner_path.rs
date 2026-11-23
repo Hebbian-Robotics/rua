@@ -503,7 +503,7 @@ impl MotionSupervisor {
     }
 
     fn internal(error: &anyhow::Error) -> Trip {
-        Trip(format!("{error:#}"))
+        Trip::Trajectory(format!("{error:#}"))
     }
 
     // SAFETY: Tracking remains the control loop’s per-cycle check regardless of which trajectory is running.

@@ -15,7 +15,6 @@ use crate::arm::ReachGoal;
 use crate::config::ControllerConfig;
 use crate::control_loop::{build_guard, build_self_collision, guard_command, load_shared_robot};
 use crate::kinematics::pose_from_xyzw;
-use crate::limits::Trip;
 use crate::plant::{Feedback, NoPhysicsStandIn, Plant};
 use crate::policy::{ActiveReach, PolicyRuntime, ReachStatus};
 use crate::self_collision::SelfCollisionGuard;
@@ -162,7 +161,7 @@ impl Preview {
                         plant.command(&joint_goal, interval)?;
                         previous_command.copy_from_slice(&joint_goal);
                     }
-                    Err(Trip(reason)) => ending = Some((PreviewOutcome::Blocked, Some(reason))),
+                    Err(trip) => ending = Some((PreviewOutcome::Blocked, Some(trip.to_string()))),
                 }
             }
             if let Some((outcome, reason)) = ending {

@@ -633,7 +633,7 @@ fn a_trip_clears_when_the_checks_pass_again_and_stays_while_they_fail() {
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0]), faulty, at([0.0, 0.0])], &calls);
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
-    runner.state.tripped = Some("earlier".into());
+    runner.state.tripped = Some(crate::limits::Trip::FeedbackFault("earlier".into()));
     let cycle = Duration::from_millis(10);
     runner.begin_cycle(cycle, None);
     assert!(
