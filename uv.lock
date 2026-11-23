@@ -632,7 +632,7 @@ wheels = [
 
 [[package]]
 name = "hebbian-rua"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
@@ -1709,7 +1709,7 @@ wheels = [
 
 [[package]]
 name = "rua-dev"
-version = "0.1.4"
+version = "0.1.5"
 source = { editable = "tooling" }
 dependencies = [
     { name = "cyclopts" },
