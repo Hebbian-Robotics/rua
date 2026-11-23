@@ -13,12 +13,12 @@ contracts and SDKs against the simulated station. Shared schemas, test fixtures,
 workflow changes, and unclassified paths select all checks. Pushes to `main`
 and manual runs always execute the full suite.
 
-Dependency-heavy jobs in the [Check workflow](../.github/workflows/check.yml)
-run on Namespace with
+All jobs in the [Check workflow](../.github/workflows/check.yml) run on
+Namespace. Jobs that install dependencies use
 [Cache Volumes](https://namespace.so/docs/solutions/github-actions/caching) for
-pnpm, uv, Cargo builds, and pinned Cargo tools. Pull requests can reuse the volumes,
-and only jobs on `main` can persist updates. Rust checks use a separate volume per
-platform, and station integration uses its own Linux volume.
+pnpm, uv, Cargo builds, and pinned Cargo tools. Pull requests can reuse the
+volumes, and only jobs on `main` can persist updates. Rust checks use a separate
+volume per platform, and station integration uses its own Linux volume.
 
 Use `uv run rua-dev validate --help` for available lanes. Run
 `uv run rua-dev validate --lane viewer` for viewer checks and tests. Install

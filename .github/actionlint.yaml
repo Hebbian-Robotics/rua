@@ -1,9 +1,11 @@
 self-hosted-runner:
   labels:
+    - nscloud-ubuntu-24.04-amd64-2x4
     - nscloud-ubuntu-24.04-amd64-4x16-with-cache
     - nscloud-cache-tag-rua-check-docs
     - nscloud-cache-tag-rua-check-pnpm
     - nscloud-cache-tag-rua-check-python-3.14
     - nscloud-cache-tag-rua-check-integration
+    - nscloud-cache-tag-rua-release-sdk-packages
     - nscloud-cache-size-50gb
     - nscloud-cache-allow-commit-from-main
