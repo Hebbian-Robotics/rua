@@ -9,7 +9,7 @@ interface directories below. Keep useful internal rationale in a classified
 comment beside the code. Put consumer-facing descriptions in the owning public schema.
 """
 
-exclude = ["livekit-cameras/**", "**/target/**", "**/node_modules/**", "**/.venv/**"]
+exclude = ["**/target/**", "**/node_modules/**", "**/.venv/**"]
 
 [classification]
 labels = ["WHY", "INVARIANT", "CONSTRAINT", "TODO", "SAFETY"]
@@ -37,4 +37,8 @@ directories = [
     "contracts",
     "cli/src/commands",
     "station/src/commands",
+    "livekit-cameras/src/config.rs",
+    "livekit-cameras/src/lib.rs",
+    "livekit-cameras/src/main.rs",
+    "livekit-cameras/src/recorder/mod.rs",
 ]

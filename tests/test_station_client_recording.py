@@ -69,7 +69,7 @@ def test_recording_continues_during_a_action_sequence(station: RunningStation) -
         async with StationClient(station.server) as client:
             state = await client.wait_for_state(
                 lambda state: all(
-                    arm.sampled_at_unix_seconds is not None for arm in state.arms
+                    arm.sampled_unix_nano is not None for arm in state.arms
                 )
             )
             if state.arms[0].mode is ArmMode.disabled:
@@ -113,7 +113,7 @@ def test_previous_holder_cannot_stop_recording_after_the_lease_is_taken(
         ):
             state = await first.wait_for_state(
                 lambda state: all(
-                    arm.sampled_at_unix_seconds is not None for arm in state.arms
+                    arm.sampled_unix_nano is not None for arm in state.arms
                 )
             )
             if state.arms[0].mode is ArmMode.disabled:
@@ -142,7 +142,7 @@ def test_disabling_the_arm_leaves_the_lease_and_recording_running(
         async with StationClient(station.server) as client:
             state = await client.wait_for_state(
                 lambda state: all(
-                    arm.sampled_at_unix_seconds is not None for arm in state.arms
+                    arm.sampled_unix_nano is not None for arm in state.arms
                 )
             )
             if state.arms[0].mode is ArmMode.disabled:

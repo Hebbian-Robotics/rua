@@ -22,8 +22,8 @@
     "test": "uv run pytest",
     "dev": "pnpm --parallel run \"/^dev:/\"",
     "dev:viewer": "vite",
-    "dev:agent": "tsx watch examples/typescript/viewer/server/src/main.ts",
-    "start:agent": "tsx examples/typescript/viewer/server/src/main.ts",
+    "dev:agent": "tsx watch --conditions=development examples/typescript/viewer/server/src/main.ts",
+    "start:agent": "tsx --conditions=development examples/typescript/viewer/server/src/main.ts",
     "test:viewer": "vitest run",
     "test:package": "tsx scripts/check-client-package.ts"
   },

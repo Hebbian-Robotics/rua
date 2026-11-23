@@ -70,7 +70,7 @@ fn acquire(address: SocketAddr, instance: &str, label: &str, take: bool) -> Valu
     grant
 }
 
-fn submit(address: SocketAddr, instance: &str, token: &str, arm: &str, command: Value) -> Value {
+fn submit(address: SocketAddr, instance: &str, token: &str, arm: &str, command: &Value) -> Value {
     let operation_id = uuid::Uuid::new_v4().to_string();
     let (status, mut answer) = request(
         address,
@@ -169,7 +169,6 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
             && arm["active_trip"]
                 .as_str()
                 .is_some_and(|reason| !reason.is_empty())
-            && arm["status"] == arm["active_trip"]
     });
     overloaded.store(false, Ordering::Relaxed);
     wait_for_state(address, |state| {
@@ -214,10 +213,7 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let address = server.local_address();
     wait_for_state(address, |state| {
         state["arms"].as_array().is_some_and(|arms| {
-            arms.len() == 2
-                && arms
-                    .iter()
-                    .all(|arm| !arm["sampled_at_unix_seconds"].is_null())
+            arms.len() == 2 && arms.iter().all(|arm| !arm["sampled_unix_nano"].is_null())
         })
     });
     let (_, identity) = request(address, "GET", "/instance", None);
@@ -226,7 +222,7 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let old_token = grant["lease_token"].as_str().unwrap();
     for arm in ["first", "second"] {
         assert_eq!(
-            submit(address, instance, old_token, arm, json!({"kind":"enable"}))["status"],
+            submit(address, instance, old_token, arm, &json!({"kind":"enable"}))["status"],
             "accepted"
         );
     }
@@ -242,7 +238,7 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
             instance,
             old_token,
             arm,
-            json!({"kind":"stream_joints", "joints":[1.5,-1.5], "max_joint_speed":0.2}),
+            &json!({"kind":"stream_joints", "joints":[1.5,-1.5], "max_joint_speed":0.2}),
         );
         assert_eq!(answer["status"], "accepted", "{answer}");
         commands.push(answer["operation_id"].as_str().unwrap().to_owned());

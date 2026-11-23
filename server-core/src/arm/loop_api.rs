@@ -50,7 +50,9 @@ impl ArmCore {
         std::mem::take(&mut self.gripper_stop_requested)
     }
 
-    pub(crate) fn take_gripper_target(&mut self) -> Option<(String, GripperTarget)> {
+    pub(crate) fn take_gripper_target(
+        &mut self,
+    ) -> Option<(hebbian_contracts::CommandId, GripperTarget)> {
         let command = self.gripper_command.as_mut()?;
         Some((command.command_id.clone(), command.pending_target.take()?))
     }
@@ -66,7 +68,7 @@ impl ArmCore {
         if self
             .gripper_command
             .as_ref()
-            .is_some_and(|command| command.command_id == command_id)
+            .is_some_and(|command| command.command_id.as_str() == command_id)
         {
             self.gripper_command = None;
             self.finish_with_gripper_result(command_id, outcome, detail, result, now);
@@ -101,7 +103,7 @@ impl ArmCore {
         self.motion_origin.clear();
         self.motion_advanced = false;
         self.command_state = CommandState::Starting(id.clone());
-        if let Some(record) = self.records.get(&id).cloned() {
+        if let Some(record) = self.records.get(id.as_str()).cloned() {
             self.store(record);
         }
         Some(job)
@@ -169,7 +171,7 @@ impl ArmCore {
         let Some(id) = self.active_command_id().map(str::to_owned) else {
             return;
         };
-        if let Some(mut record) = self.records.get(&id).cloned() {
+        if let Some(mut record) = self.records.get(id.as_str()).cloned() {
             record.checkpoints.push(checkpoint);
             self.store(record);
         }
@@ -301,7 +303,7 @@ impl ArmCore {
     ) -> bool {
         self.stream
             .as_ref()
-            .filter(|stream| stream.command_id == command_id)
+            .filter(|stream| stream.command_id.as_str() == command_id)
             .is_some_and(|stream| now.duration_since(stream.last_goal_at) > timeout)
     }
 }

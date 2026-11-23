@@ -64,8 +64,8 @@ function RecoveryControls({ state }: { state: StationState | null }) {
     const arm = state?.arms.find((candidate) => candidate.arm === armName);
     if (arm?.mode !== "faulted") return;
     const fresh =
-      arm.sampled_at_unix_seconds !== null &&
-      Date.now() / 1000 - arm.sampled_at_unix_seconds < 1;
+      arm.sampled_unix_nano !== null &&
+      Date.now() / 1000 - Number(arm.sampled_unix_nano) / 1e9 < 1;
     if (!fresh || pending !== null) return;
     setMessages((previous) => ({ ...previous, [armName]: "" }));
     setPending(armName);
@@ -85,8 +85,8 @@ function RecoveryControls({ state }: { state: StationState | null }) {
     <div className="recovery">
       {state?.arms.map((arm) => {
         const fresh =
-          arm.sampled_at_unix_seconds !== null &&
-          Date.now() / 1000 - arm.sampled_at_unix_seconds < 1;
+          arm.sampled_unix_nano !== null &&
+          Date.now() / 1000 - Number(arm.sampled_unix_nano) / 1e9 < 1;
         const issue = !fresh
           ? "Motor feedback is stale. Check controller power and USB."
           : arm.fault || arm.active_trip;

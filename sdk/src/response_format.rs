@@ -36,77 +36,63 @@ fn keep_fields(object: &Map<String, Value>, kept: &[&str]) -> Map<String, Value>
 }
 
 fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
-    let Some((command, phase)) = record
-        .get("command")
-        .and_then(Value::as_object)
-        .zip(record.get("phase").and_then(Value::as_object))
-        .filter(|(command, phase)| {
-            record.get("command_id").is_some_and(Value::is_string)
-                && command.get("kind").is_some_and(Value::is_string)
-                && matches!(
-                    phase.get("kind").and_then(Value::as_str),
-                    Some("pending" | "not_started" | "finished" | "outcome_unknown")
-                )
-        })
+    use hebbian_contracts::{CommandPhase, CommandRecord, RecordedCommand};
+    if !record.contains_key("command_id") {
+        return record;
+    }
+    let Ok(command_record) = serde_json::from_value::<CommandRecord>(Value::Object(record.clone()))
     else {
         return record;
     };
-    let is_move = command["kind"] == "move";
-    let target = command
-        .iter()
-        .filter(|(key, _)| !matches!(key.as_str(), "kind" | "goal_pose"));
-    let mut fields: Map<String, Value> = target
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    if let Some(pose) = command.get("goal_pose").and_then(Value::as_object) {
-        fields.insert("goal_position".into(), pose["position"].clone());
-        fields.insert("goal_quaternion".into(), pose["quaternion"].clone());
+    let Some(mut fields) = record
+        .remove("command")
+        .and_then(|command| command.as_object().cloned())
+    else {
+        return record;
+    };
+    fields.remove("kind");
+    if let RecordedCommand::PolicyReach { goal_pose } = &command_record.command {
+        fields.remove("goal_pose");
+        fields.insert(
+            "goal_position".into(),
+            serde_json::json!(goal_pose.position),
+        );
+        fields.insert(
+            "goal_quaternion".into(),
+            serde_json::json!(goal_pose.quaternion),
+        );
     }
-    match phase["kind"].as_str() {
-        Some("finished") => {
-            let completion = &phase["completion"];
-            fields.insert("completion".into(), completion.clone());
-            fields.insert("achieved".into(), phase["achieved"].clone());
-            if is_move {
-                let status = match completion["outcome"].as_str() {
-                    Some("completed")
-                        if ["pose_limited", "path_limited"].iter().any(|field| {
-                            command.get(*field).is_some_and(|value| !value.is_null())
-                        }) =>
-                    {
-                        "limited"
-                    }
-                    Some("completed") => "reached",
-                    Some("stopped_short") => "stopped_short",
-                    _ => "partial",
-                };
-                fields.insert("goal_status".into(), status.into());
+    if let Some(status) = command_record.goal_status() {
+        fields.insert("goal_status".into(), serde_json::json!(status));
+    }
+    match &command_record.phase {
+        CommandPhase::Pending => {}
+        CommandPhase::Finished {
+            completion,
+            achieved,
+        } => {
+            fields.insert("completion".into(), serde_json::json!(completion));
+            fields.insert("achieved".into(), serde_json::json!(achieved));
+        }
+        CommandPhase::NotStarted {
+            detail,
+            finished_unix_nano,
+            ..
+        }
+        | CommandPhase::OutcomeUnknown {
+            detail,
+            finished_unix_nano,
+        } => {
+            fields.insert("completion".into(), serde_json::json!({
+                "outcome": command_record.outcome(), "detail": detail, "finished_unix_nano": finished_unix_nano,
+            }));
+            if matches!(command_record.phase, CommandPhase::NotStarted { .. })
+                && command_record.goal_status().is_none()
+            {
+                fields.insert("phase".into(), "not_started".into());
             }
         }
-        Some(kind @ ("not_started" | "outcome_unknown")) => {
-            let outcome = if kind == "outcome_unknown" {
-                "interrupted".into()
-            } else {
-                phase["outcome"].clone()
-            };
-            fields.insert(
-                "completion".into(),
-                serde_json::json!({
-                    "outcome": outcome,
-                    "detail": phase["detail"],
-                    "finished_at": phase["finished_at"],
-                }),
-            );
-            if kind == "not_started" {
-                fields.insert(
-                    if is_move { "goal_status" } else { "phase" }.into(),
-                    "not_started".into(),
-                );
-            }
-        }
-        _ => {}
     }
-    record.remove("command");
     record.remove("phase");
     record.extend(fields);
     record
@@ -276,9 +262,7 @@ fn format_model_field(value: Value, field: &str) -> Value {
                 .collect(),
         ),
         Value::Number(number) if number.is_f64() => {
-            let scale = if field.contains("unix_seconds")
-                || matches!(field, "accepted_at" | "sampled_at" | "finished_at")
-            {
+            let scale = if field.contains("unix_seconds") || matches!(field, "sampled_at") {
                 1000.0
             } else {
                 10_000.0

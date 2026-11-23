@@ -28,6 +28,7 @@ const SNAPSHOT_RECORDS: usize = 200;
 const REMEMBERED_RECORDS: usize = 10_000;
 const WRITER_POLL: Duration = Duration::from_millis(20);
 
+#[derive(Clone, Copy)]
 pub(crate) struct SubmissionAuthority<'a> {
     pub claim: MotionClaim<'a>,
     pub generation: &'a [GenerationTicket],
@@ -42,8 +43,14 @@ enum Outgoing {
     Connected(u64, ClientSink),
     Disconnected(u64),
     Snapshot(u64),
-    FindRecord(String, tokio::sync::oneshot::Sender<Option<CommandRecord>>),
-    AwaitCompletion(String, tokio::sync::oneshot::Sender<CommandRecord>),
+    FindRecord(
+        hebbian_contracts::CommandId,
+        tokio::sync::oneshot::Sender<Option<CommandRecord>>,
+    ),
+    AwaitCompletion(
+        hebbian_contracts::CommandId,
+        tokio::sync::oneshot::Sender<CommandRecord>,
+    ),
     WaitForSample(SampleRequest),
     View(tokio::sync::oneshot::Sender<ArmView>),
 }
@@ -132,7 +139,7 @@ impl LinkHandle {
     pub(crate) fn cancel_leased_command(
         &self,
         token: &str,
-        command_id: String,
+        command_id: hebbian_contracts::CommandId,
     ) -> hebbian_contracts::LeasedStopOutcome {
         use hebbian_contracts::LeasedStopOutcome;
         self.with_lease(token, || {
@@ -278,7 +285,10 @@ impl LinkHandle {
     }
 
     // CONSTRAINT: This waits for control-loop admission; call it outside async runtime workers.
-    pub async fn find_record(&self, command_id: String) -> Option<CommandRecord> {
+    pub async fn find_record(
+        &self,
+        command_id: hebbian_contracts::CommandId,
+    ) -> Option<CommandRecord> {
         let (answer, answered) = tokio::sync::oneshot::channel();
         self.shared
             .outgoing
@@ -287,7 +297,10 @@ impl LinkHandle {
         answered.await.ok().flatten()
     }
 
-    pub(crate) async fn await_completion(&self, command_id: String) -> Option<CommandRecord> {
+    pub(crate) async fn await_completion(
+        &self,
+        command_id: hebbian_contracts::CommandId,
+    ) -> Option<CommandRecord> {
         let (complete, completion) = tokio::sync::oneshot::channel();
         self.shared
             .outgoing
@@ -479,11 +492,11 @@ impl LinkHandle {
         orientation: Option<PoseOrientation>,
         joints: &[f64],
         gripper_angle: Option<f64>,
-    ) -> Result<PoseProjection, (RejectionReason, String)> {
+    ) -> Result<PoseProjection, crate::arm::Rejection> {
         let planner = self.shared.planner.as_deref().ok_or_else(|| {
-            (
+            crate::arm::rejection(
                 RejectionReason::InvalidTarget,
-                "This arm has no tool link to plan for".to_owned(),
+                "This arm has no tool link to plan for",
             )
         })?;
         Ok(match (&self.shared.preview, &self.shared.reach_settings) {
@@ -716,15 +729,16 @@ struct Hub {
     latest_sample: Option<Sample>,
     latest_sample_at: Option<SampleReceipt>,
     sample_waiters: Vec<SampleRequest>,
-    records: HashMap<String, CommandRecord>,
-    record_order: VecDeque<String>,
-    completion_waiters: HashMap<String, Vec<tokio::sync::oneshot::Sender<CommandRecord>>>,
+    records: HashMap<hebbian_contracts::CommandId, CommandRecord>,
+    record_order: VecDeque<hebbian_contracts::CommandId>,
+    completion_waiters:
+        HashMap<hebbian_contracts::CommandId, Vec<tokio::sync::oneshot::Sender<CommandRecord>>>,
     // INVARIANT: The command that finished latest and still awaits the resting sample that
     // follows its completion, with its finish time. Commands can be logged out of
     // finish order (a release logs the motion it interrupted after its own record),
     // so the latest finish time wins, not the last record logged.
-    pending_finished: Option<(String, f64)>,
-    settled_last: Option<(String, f64)>,
+    pending_finished: Option<(hebbian_contracts::CommandId, UnixNanos)>,
+    settled_last: Option<(hebbian_contracts::CommandId, UnixNanos)>,
     mode: Option<(ArmMode, Option<String>)>,
     recycle_sample: Option<SyncSender<Sample>>,
     changes: Option<Arc<tokio::sync::watch::Sender<Option<ArmMode>>>>,
@@ -748,7 +762,7 @@ impl Hub {
                     self.announce_change();
                 }
             }
-            Outgoing::ControllerUnavailable(reason) => self.controller_unavailable(reason),
+            Outgoing::ControllerUnavailable(reason) => self.controller_unavailable(&reason),
             Outgoing::Connected(client, sink) => {
                 self.clients.insert(client, sink);
             }
@@ -757,18 +771,18 @@ impl Hub {
             }
             Outgoing::Snapshot(client) => self.send_snapshot(client),
             Outgoing::View(answer) => {
-                let record = |id: Option<&String>| id.and_then(|id| self.records.get(id)).cloned();
+                let record = |id: Option<&str>| id.and_then(|id| self.records.get(id)).cloned();
                 let active_record = record(
                     self.latest_sample
                         .as_ref()
-                        .and_then(|sample| sample.active_command.as_ref()),
+                        .and_then(|sample| sample.active_command.as_deref()),
                 );
                 let _ = answer.send(ArmView {
                     sample: self.latest_sample.clone(),
                     sample_age: self.latest_sample_at.map(|at| at.monotonic.elapsed()),
                     sample_received_at: self.latest_sample_at.map(|at| at.unix),
                     active_record,
-                    last_record: record(self.settled_last.as_ref().map(|(id, _)| id)),
+                    last_record: record(self.settled_last.as_ref().map(|(id, _)| id.as_str())),
                 });
             }
             Outgoing::WaitForSample(request) => {
@@ -846,17 +860,15 @@ impl Hub {
         }
     }
 
-    fn controller_unavailable(&mut self, reason: String) {
+    fn controller_unavailable(&mut self, reason: &str) {
         self.latest_sample_at = None;
         if let Some(sample) = &mut self.latest_sample {
             sample.active_command = None;
         }
         self.log_event(Event::ControllerUnavailable {
-            reason: reason.clone(),
+            reason: reason.to_owned(),
         });
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0.0, |duration| duration.as_secs_f64());
+        let now = UnixNanos::now();
         let interrupted: Vec<_> = self
             .records
             .values()
@@ -865,7 +877,7 @@ impl Hub {
             .collect();
         for mut record in interrupted {
             record.phase = hebbian_contracts::CommandPhase::OutcomeUnknown {
-                finished_at: now,
+                finished_unix_nano: now,
                 detail: Some(format!(
                     "Controller lost; command outcome and arm torque are unknown: {reason}"
                 )),
@@ -895,13 +907,13 @@ impl Hub {
                         let _ = complete.send(record.clone());
                     }
                 }
-                if let Some(finished_at) = record.finished_at()
+                if let Some(finished_unix_nano) = record.finished_unix_nano()
                     && self
                         .pending_finished
                         .as_ref()
-                        .is_none_or(|(_, pending_at)| finished_at >= *pending_at)
+                        .is_none_or(|(_, pending_at)| finished_unix_nano >= *pending_at)
                 {
-                    self.pending_finished = Some((record.command_id.clone(), finished_at));
+                    self.pending_finished = Some((record.command_id.clone(), finished_unix_nano));
                 }
                 if self
                     .records
@@ -1032,12 +1044,12 @@ mod tests {
         let first = station_state(&links).await.unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         let unchanged = station_state(&links).await.unwrap();
-        let sampled_at = first.arms[0].sampled_at_unix_seconds.unwrap();
-        assert_eq!(unchanged.arms[0].sampled_at_unix_seconds, Some(sampled_at));
+        let sampled_at = first.arms[0].sampled_unix_nano.unwrap();
+        assert_eq!(unchanged.arms[0].sampled_unix_nano, Some(sampled_at));
 
         link.publish_sample(Sample::blank());
         let next = station_state(&links).await.unwrap();
-        assert!(next.arms[0].sampled_at_unix_seconds.unwrap() > sampled_at);
+        assert!(next.arms[0].sampled_unix_nano.unwrap() > sampled_at);
         link.close();
     }
 

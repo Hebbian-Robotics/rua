@@ -32,18 +32,25 @@ def test_http_stream_resumes_and_command_outcome_waits_for_state() -> None:
             )
             await station.event("station", state_message(sampled_at=1))
             await client.wait_for_state(
-                lambda state: state.arms[0].sampled_at_unix_seconds == 1
+                lambda state: (
+                    state.arms[0].sampled_unix_nano is not None
+                    and state.arms[0].sampled_unix_nano.root == "1000000000"
+                )
             )
             pending = asyncio.create_task(client._connection.wait_for_outcome("c"))
             await station.drop_stream()
             await station.wait_for_stream(2)
             assert station.last_event_ids[-1] == f"{STATION_ID}:3"
             await station.event(
-                "station", record_frame("follower", 2, command_record("c", 5))
+                "station",
+                record_frame("follower", 2, command_record("c", "5000000000")),
             )
             await station.event("station", state_message(sampled_at=2, active="c"))
             await client.wait_for_state(
-                lambda state: state.arms[0].sampled_at_unix_seconds == 2
+                lambda state: (
+                    state.arms[0].sampled_unix_nano is not None
+                    and state.arms[0].sampled_unix_nano.root == "2000000000"
+                )
             )
             assert not pending.done()
             await station.event("station", state_message(sampled_at=3, last="c"))

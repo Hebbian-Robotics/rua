@@ -27,6 +27,11 @@ An admission refusal leaves that request unapplied. For an admitted command,
 the record carries the outcome and the state achieved where available. Check
 the outcome and limit details before deciding what to do next.
 
+Command records carry `accepted_unix_nano` and terminal phases carry
+`finished_unix_nano`. Arm state carries `sampled_unix_nano` when feedback is
+available. These fields use decimal strings of nanoseconds since the Unix epoch.
+Compare their integer values when ordering events.
+
 The record's `command.kind` identifies the target or control action.
 Its `phase.kind` distinguishes `pending`, `not_started`, `finished`, and
 `outcome_unknown`. Only a finished command can carry end measurements.

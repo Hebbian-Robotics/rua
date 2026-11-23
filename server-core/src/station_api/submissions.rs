@@ -183,10 +183,10 @@ impl OperationId {
     }
 }
 
-pub(super) struct ControllerStreamCommand(String);
+pub(super) struct ControllerStreamCommand(hebbian_contracts::CommandId);
 
 impl ControllerStreamCommand {
-    pub(super) fn into_controller_id(self) -> String {
+    pub(super) fn into_controller_id(self) -> hebbian_contracts::CommandId {
         self.0
     }
 }
@@ -504,14 +504,11 @@ impl Operations {
         id: OperationId,
         token: &str,
         sequence: u32,
-        enqueue: impl FnOnce(
-            &str,
-            ControllerStreamCommand,
-        ) -> Result<Reply, (hebbian_contracts::RejectionReason, String)>,
-    ) -> Result<Reply, (hebbian_contracts::RejectionReason, String)> {
+        enqueue: impl FnOnce(&str, ControllerStreamCommand) -> Result<Reply, crate::arm::Rejection>,
+    ) -> Result<Reply, crate::arm::Rejection> {
         use hebbian_contracts::RejectionReason;
         let ended = || {
-            (
+            crate::arm::rejection(
                 RejectionReason::StreamEnded,
                 "Stream operation has ended".to_owned(),
             )
@@ -524,7 +521,7 @@ impl Operations {
             return Err(ended());
         };
         if operation.request.lease_token() != Some(token) {
-            return Err((
+            return Err(crate::arm::rejection(
                 RejectionReason::LeaseHeldElsewhere,
                 "Stream belongs to another lease".to_owned(),
             ));
@@ -537,7 +534,7 @@ impl Operations {
             return Err(ended());
         };
         if newest_goal.is_some_and(|latest| sequence <= latest) {
-            return Err((
+            return Err(crate::arm::rejection(
                 RejectionReason::InvalidTarget,
                 "Stream goal sequence must increase".to_owned(),
             ));
@@ -858,7 +855,7 @@ mod tests {
     fn an_active_stream_remains_cancellable_when_other_operations_fill_history() {
         let submissions = Operations::default();
         let start_id = Uuid::new_v4();
-        let command_id = "the-stream".to_owned();
+        let command_id = hebbian_contracts::CommandId::from("the-stream");
         let request = |id: Uuid| {
             SubmissionRequest::Single(CommandSubmissionRequest {
                 operation_id: id.to_string(),
@@ -889,7 +886,7 @@ mod tests {
                     record: hebbian_contracts::CommandRecord::new(
                         command_id.clone(),
                         "stream_joints",
-                        0.0,
+                        hebbian_contracts::UnixNanos(0),
                         hebbian_contracts::RecordedCommand::JointStream {
                             goal_joints: vec![0.0],
                             joint_speed: 1.0,

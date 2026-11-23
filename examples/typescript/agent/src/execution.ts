@@ -17,13 +17,18 @@ import {
 } from "./tools.js";
 import { KIND_ATTRIBUTE, type Span } from "./tracing.js";
 
+interface IndexedCall {
+  index: number;
+  call: RobotToolCall;
+}
+
 export type BatchPlan =
   | { kind: "reject_finish" }
   | {
       kind: "run";
-      memoryIndexes: number[];
-      finishIndexes: number[];
-      robotIndexes: number[];
+      memoryCalls: IndexedCall[];
+      finishCalls: IndexedCall[];
+      robotCalls: IndexedCall[];
     };
 
 // INVARIANT: Apply plan/notes updates in call order before motor calls so telemetry boundaries
@@ -31,14 +36,19 @@ export type BatchPlan =
 export function planToolBatch(calls: readonly RobotToolCall[]): BatchPlan {
   if (calls.length > 1 && calls.some((call) => call.name === FINISH_TOOL))
     return { kind: "reject_finish" };
-  const indexesWhere = (matches: (name: string) => boolean): number[] =>
-    calls.flatMap((call, index) => (matches(call.name) ? [index] : []));
-  const memoryIndexes = indexesWhere((name) => MEMORY_TOOLS.includes(name));
-  const finishIndexes = indexesWhere((name) => name === FINISH_TOOL);
-  const robotIndexes = indexesWhere(
-    (name) => !MEMORY_TOOLS.includes(name) && name !== FINISH_TOOL,
-  );
-  return { kind: "run", memoryIndexes, finishIndexes, robotIndexes };
+  const plan: BatchPlan = {
+    kind: "run",
+    memoryCalls: [],
+    finishCalls: [],
+    robotCalls: [],
+  };
+  for (const [index, call] of calls.entries()) {
+    const entry = { index, call };
+    if (MEMORY_TOOLS.includes(call.name)) plan.memoryCalls.push(entry);
+    else if (call.name === FINISH_TOOL) plan.finishCalls.push(entry);
+    else plan.robotCalls.push(entry);
+  }
+  return plan;
 }
 
 export function createAgentToolResult(
@@ -183,8 +193,7 @@ export async function runToolBatch(
     );
   } else {
     const resultsByCallIndex = new Map<number, RobotToolResult>();
-    for (const index of plan.memoryIndexes) {
-      const call = calls[index] as RobotToolCall;
+    for (const { index, call } of plan.memoryCalls) {
       resultsByCallIndex.set(
         index,
         await tracedCall(environment, call, async (span) =>
@@ -197,8 +206,7 @@ export async function runToolBatch(
         ),
       );
     }
-    for (const index of plan.finishIndexes) {
-      const call = calls[index] as RobotToolCall;
+    for (const { index, call } of plan.finishCalls) {
       resultsByCallIndex.set(
         index,
         await tracedCall(environment, call, async () => {
@@ -211,9 +219,7 @@ export async function runToolBatch(
     }
     const wrap: ToolCallWrapper = (call, run) =>
       tracedCall(environment, call, (span) => run(span.traceContext()));
-    const robotCalls = plan.robotIndexes.map(
-      (index) => calls[index] as RobotToolCall,
-    );
+    const robotCalls = plan.robotCalls.map(({ call }) => call);
     if (new Set(robotCalls.map((call) => call.id)).size !== robotCalls.length)
       throw new Error("Robot tool call IDs must be unique within a batch");
     const robotResults = await environment.robot.execute(
@@ -224,15 +230,16 @@ export async function runToolBatch(
     const robotResultsById = new Map(
       robotResults.map((result) => [result.call.id, result]),
     );
-    for (const index of plan.robotIndexes) {
-      const call = calls[index] as RobotToolCall;
+    for (const { index, call } of plan.robotCalls) {
       const result = robotResultsById.get(call.id);
       if (!result) throw new Error(`Missing result for tool call ${call.id}`);
       resultsByCallIndex.set(index, result);
     }
-    results = calls.map(
-      (_call, index) => resultsByCallIndex.get(index) as RobotToolResult,
-    );
+    results = calls.map((call, index) => {
+      const result = resultsByCallIndex.get(index);
+      if (!result) throw new Error(`Missing result for tool call ${call.id}`);
+      return result;
+    });
   }
   for (const result of results)
     reportEvent(environment.connection, {
@@ -241,9 +248,8 @@ export async function runToolBatch(
     });
   const needsObservation =
     plan.kind === "run" &&
-    plan.robotIndexes.some((index) => {
-      const call = calls[index];
-      if (!call || call.name === "preview_pose") return false;
+    plan.robotCalls.some(({ call }) => {
+      if (call.name === "preview_pose") return false;
       const argumentsValue = call.arguments;
       const historyOnly =
         call.name === "observe" &&

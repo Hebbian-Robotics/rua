@@ -67,7 +67,9 @@ def schema_keywords(schema: object) -> set[str]:
 def test_every_tool_schema_stays_within_what_all_providers_accept(
     tool: RobotToolSpec,
 ) -> None:
-    assert "kind" not in tool.parameters_schema["properties"]
+    properties = tool.parameters_schema["properties"]
+    assert isinstance(properties, dict)
+    assert "kind" not in properties
     assert schema_keywords(tool.parameters_schema) <= PROVIDER_COMPATIBLE_KEYWORDS
 
 
@@ -325,10 +327,18 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
         for tool in specialized.tools
         if tool.name == "action_sequence"
     )
-    fields = schema["properties"]["steps"]["items"]["properties"]
+    fields = schema
+    for field in ("properties", "steps", "items", "properties"):
+        child = fields[field]
+        assert isinstance(child, dict)
+        fields = child
     assert "arms" not in fields
     assert "joints_degrees" not in json.dumps(fields)
-    assert "position_mm" in fields["goal"]["properties"]
+    movement = fields["goal"]
+    assert isinstance(movement, dict)
+    movement_properties = movement["properties"]
+    assert isinstance(movement_properties, dict)
+    assert "position_mm" in movement_properties
     assert isinstance(
         specialized.parse(
             RobotToolCall(

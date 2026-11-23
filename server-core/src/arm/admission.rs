@@ -90,7 +90,7 @@ impl ArmCore {
         command: RecordedCommand,
         now: Now,
     ) -> CommandRecord {
-        let mut record = CommandRecord::new(new_identifier(), label, now.unix_seconds, command);
+        let mut record = CommandRecord::new(new_identifier().into(), label, now.unix_nano, command);
         record.trace_context.clone_from(&self.trace_context);
         record
     }
@@ -155,7 +155,7 @@ impl ArmCore {
         };
         record.phase = match outcome.known() {
             None => CommandPhase::OutcomeUnknown {
-                finished_at: now.unix_seconds,
+                finished_unix_nano: now.unix_nano,
                 detail,
             },
             Some(KnownCommandOutcome::Failed)
@@ -169,7 +169,7 @@ impl ArmCore {
                     ) =>
             {
                 CommandPhase::NotStarted {
-                    finished_at: now.unix_seconds,
+                    finished_unix_nano: now.unix_nano,
                     outcome: NotStartedOutcome::Failed,
                     detail,
                 }
@@ -183,7 +183,7 @@ impl ArmCore {
                 };
                 CommandPhase::Finished {
                     completion: CommandCompletion {
-                        finished_at: now.unix_seconds,
+                        finished_unix_nano: now.unix_nano,
                         outcome,
                         detail,
                         gripper,
@@ -198,7 +198,7 @@ impl ArmCore {
     fn stop_before_start(&mut self, command_id: &str, detail: &str, now: Now) {
         if let Some(mut record) = self.records.get(command_id).cloned() {
             record.phase = CommandPhase::NotStarted {
-                finished_at: now.unix_seconds,
+                finished_unix_nano: now.unix_nano,
                 outcome: NotStartedOutcome::Stopped,
                 detail: Some(detail.to_owned()),
             };
@@ -233,7 +233,8 @@ impl ArmCore {
                 (Some(position), Some(quaternion))
             });
         Some(Achieved {
-            sampled_at: observed.sampled_at.unix_seconds,
+            sampled_at: std::time::Duration::from_nanos(observed.sampled_at.unix_nano.0)
+                .as_secs_f64(),
             joint_error_radians: record.destination_joints().map(|target| {
                 joints
                     .iter()
@@ -454,12 +455,13 @@ impl ArmCore {
         if matches!(
             &self.command_state,
             CommandState::Queued(job) | CommandState::Superseding(Some(job))
-                if job.command_id() == command_id
+                if job.command_id().as_str() == command_id
         ) {
             self.cancel_queued(now, "Cancelled before start");
         }
         if self.gripper_command.as_ref().is_some_and(|command| {
-            command.command_id == command_id || command.stream_id.as_deref() == Some(command_id)
+            command.command_id.as_str() == command_id
+                || command.stream_id.as_deref() == Some(command_id)
         }) && let Some(command) = self.gripper_command.take()
         {
             self.gripper_stop_requested = true;
@@ -705,7 +707,7 @@ impl ArmCore {
         &mut self,
         positions: Vec<f64>,
         joint_speed: Option<JointSpeed>,
-        stream_command_id: Option<String>,
+        stream_command_id: Option<hebbian_contracts::CommandId>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         let positions = crate::joint_limits::JointTarget::parse(
@@ -744,7 +746,7 @@ impl ArmCore {
         &mut self,
         position: [f64; 3],
         quaternion: [f64; 4],
-        stream_command_id: Option<String>,
+        stream_command_id: Option<hebbian_contracts::CommandId>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         if self.limits.pose_goals.is_none() {
@@ -762,7 +764,7 @@ impl ArmCore {
     pub(super) fn submit_stream(
         &mut self,
         goal: StreamGoal,
-        stream_command_id: Option<String>,
+        stream_command_id: Option<hebbian_contracts::CommandId>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         if let Some(id) = stream_command_id {
@@ -793,7 +795,7 @@ impl ArmCore {
         let running = self
             .stream
             .as_mut()
-            .filter(|stream| stream.command_id == id);
+            .filter(|stream| stream.command_id.as_str() == id);
         let Some(stream) = running else {
             let ended = self.records.get(id);
             let outcome = ended.and_then(CommandRecord::outcome).map_or_else(
@@ -873,8 +875,14 @@ impl ArmCore {
         Ok(self.apply_gripper(target, None, now))
     }
 
-    pub(crate) fn apply_waypoint_gripper(&mut self, target: GripperTarget, now: Now) -> String {
-        let motion_id = self.active_command_id().map(str::to_owned);
+    pub(crate) fn apply_waypoint_gripper(
+        &mut self,
+        target: GripperTarget,
+        now: Now,
+    ) -> hebbian_contracts::CommandId {
+        let motion_id = self
+            .active_command_id()
+            .map(hebbian_contracts::CommandId::from);
         if let Some(command) = self.gripper_command.as_mut()
             && motion_id.is_some()
             && command.stream_id == motion_id
@@ -899,7 +907,7 @@ impl ArmCore {
     pub(crate) fn apply_gripper(
         &mut self,
         target: GripperTarget,
-        stream_command_id: Option<String>,
+        stream_command_id: Option<hebbian_contracts::CommandId>,
         now: Now,
     ) -> CommandRecord {
         if let Some(replaced) = self.gripper_command.take() {

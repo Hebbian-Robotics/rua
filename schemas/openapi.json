@@ -661,23 +661,22 @@
             "minimum": 0,
             "type": "integer"
           },
-          "sampled_at_unix_seconds": {
-            "description": "When the newest sample was taken, in Unix seconds; none before the first.",
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
+          "sampled_unix_nano": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnixNanos"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample."
           },
           "segment": {
             "type": [
               "string",
               "null"
             ]
-          },
-          "status": {
-            "description": "Why the arm is as it is, in a few words.",
-            "type": "string"
           },
           "tool": {
             "anyOf": [
@@ -698,7 +697,6 @@
           "measured_joint_velocities",
           "measured_joint_efforts",
           "controller",
-          "status",
           "interlocks",
           "revision"
         ],
@@ -1437,9 +1435,8 @@
               "null"
             ]
           },
-          "finished_at": {
-            "format": "double",
-            "type": "number"
+          "finished_unix_nano": {
+            "$ref": "#/components/schemas/UnixNanos"
           },
           "gripper": {
             "anyOf": [
@@ -1457,7 +1454,7 @@
           }
         },
         "required": [
-          "finished_at",
+          "finished_unix_nano",
           "outcome"
         ],
         "type": "object"
@@ -1504,9 +1501,8 @@
                   "null"
                 ]
               },
-              "finished_at": {
-                "format": "double",
-                "type": "number"
+              "finished_unix_nano": {
+                "$ref": "#/components/schemas/UnixNanos"
               },
               "kind": {
                 "const": "not_started",
@@ -1518,7 +1514,7 @@
             },
             "required": [
               "kind",
-              "finished_at",
+              "finished_unix_nano",
               "outcome"
             ],
             "title": "CommandNotStarted",
@@ -1562,9 +1558,8 @@
                   "null"
                 ]
               },
-              "finished_at": {
-                "format": "double",
-                "type": "number"
+              "finished_unix_nano": {
+                "$ref": "#/components/schemas/UnixNanos"
               },
               "kind": {
                 "const": "outcome_unknown",
@@ -1573,7 +1568,7 @@
             },
             "required": [
               "kind",
-              "finished_at"
+              "finished_unix_nano"
             ],
             "title": "CommandOutcomeUnknown",
             "type": "object"
@@ -1613,9 +1608,8 @@
         "additionalProperties": false,
         "description": "One command, from acceptance to its end.",
         "properties": {
-          "accepted_at": {
-            "format": "double",
-            "type": "number"
+          "accepted_unix_nano": {
+            "$ref": "#/components/schemas/UnixNanos"
           },
           "checkpoints": {
             "items": {
@@ -1627,6 +1621,7 @@
             "$ref": "#/components/schemas/RecordedCommand"
           },
           "command_id": {
+            "description": "Station identifier for one accepted command and its subsequent records.",
             "type": "string"
           },
           "label": {
@@ -1650,7 +1645,7 @@
         "required": [
           "command_id",
           "label",
-          "accepted_at",
+          "accepted_unix_nano",
           "command",
           "phase",
           "checkpoints"
@@ -2269,9 +2264,8 @@
             "additionalProperties": false,
             "description": "A command's record changed: accepted, started, a checkpoint, ended.",
             "properties": {
-              "accepted_at": {
-                "format": "double",
-                "type": "number"
+              "accepted_unix_nano": {
+                "$ref": "#/components/schemas/UnixNanos"
               },
               "checkpoints": {
                 "items": {
@@ -2283,6 +2277,7 @@
                 "$ref": "#/components/schemas/RecordedCommand"
               },
               "command_id": {
+                "description": "Station identifier for one accepted command and its subsequent records.",
                 "type": "string"
               },
               "kind": {
@@ -2311,7 +2306,7 @@
               "kind",
               "command_id",
               "label",
-              "accepted_at",
+              "accepted_unix_nano",
               "command",
               "phase",
               "checkpoints"

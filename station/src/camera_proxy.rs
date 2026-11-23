@@ -252,7 +252,7 @@ async fn capture_frame(
     };
     tokio::time::timeout(timeout, async {
         let _permit = proxy.in_flight.acquire().await.ok()?;
-        let started = hebbian_contracts::unix_nanoseconds();
+        let started = hebbian_contracts::UnixNanos::now();
         let ForwardingOutcome::Received(response) =
             proxy.fetch(CameraRequest::Snapshot(name)).await.ok()?
         else {
@@ -277,24 +277,17 @@ async fn capture_frame(
         let jpeg = axum::body::to_bytes(response.into_body(), MAX_RESPONSE_BYTES)
             .await
             .ok()?;
-        let finished = hebbian_contracts::unix_nanoseconds();
+        let finished = hebbian_contracts::UnixNanos::now();
         Some(ObservationFrame {
             jpeg_base64: STANDARD.encode(jpeg),
             captured_at_unix_ns,
-            retrieved_between_unix_seconds: [unix_seconds(started), unix_seconds(finished)],
+            retrieved_between_unix_seconds: [started, finished]
+                .map(hebbian_contracts::UnixNanos::as_unix_seconds),
         })
     })
     .await
     .ok()
     .flatten()
-}
-
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "Observation intervals use fractional Unix seconds, like station feedback"
-)]
-fn unix_seconds(nanos: u64) -> f64 {
-    nanos as f64 / 1_000_000_000.0
 }
 
 async fn observe(

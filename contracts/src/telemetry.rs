@@ -7,8 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Unix nanoseconds, written as a decimal string because they outgrow
-/// JavaScript's exact integers (as OTLP/JSON writes 64-bit integers); either a
-/// string or a number is read.
+/// JavaScript's exact integers (as OTLP/JSON writes 64-bit integers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct UnixNanos(pub u64);
 
@@ -20,16 +19,13 @@ impl Serialize for UnixNanos {
 
 impl<'de> Deserialize<'de> for UnixNanos {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Written {
-            Text(String),
-            Number(u64),
+        let text = String::deserialize(deserializer)?;
+        if !text.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(serde::de::Error::custom(
+                "expected decimal Unix nanoseconds",
+            ));
         }
-        match Written::deserialize(deserializer)? {
-            Written::Number(value) => Ok(Self(value)),
-            Written::Text(text) => text.parse().map(Self).map_err(serde::de::Error::custom),
-        }
+        text.parse().map(Self).map_err(serde::de::Error::custom)
     }
 }
 
@@ -168,6 +164,11 @@ pub struct LiveRun {
 }
 
 impl UnixNanos {
+    #[must_use]
+    pub fn as_unix_seconds(self) -> f64 {
+        std::time::Duration::from_nanos(self.0).as_secs_f64()
+    }
+
     /// The current time.
     #[must_use]
     pub fn now() -> Self {

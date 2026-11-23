@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceGripper,
@@ -164,12 +164,34 @@ def filter_sequence_actions(
     return transform
 
 
-def select_configurations(goal: dict, configuration: RobotToolConfiguration) -> dict:
-    variants = goal.get("oneOf", [goal])
+def _schema_object(value: JsonValue, *path: str) -> dict[str, JsonValue]:
+    for property_name in path:
+        if not isinstance(value, dict):
+            raise ValueError(f"Expected schema object before {property_name!r}")
+        value = value[property_name]
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected schema object at {path!r}")
+    return value
+
+
+def _schema_list(value: JsonValue) -> list[JsonValue]:
+    if not isinstance(value, list):
+        raise ValueError("Expected a list in the generated tool schema")
+    return value
+
+
+def select_configurations(
+    goal: dict[str, JsonValue], configuration: RobotToolConfiguration
+) -> JsonValue:
+    variants = _schema_list(goal.get("oneOf", [goal]))
     available = [
         variant
         for variant in variants
-        if ("joints" if "joints_degrees" in variant["properties"] else "pose")
+        if (
+            "joints"
+            if "joints_degrees" in _schema_object(variant, "properties")
+            else "pose"
+        )
         in configuration.sequence_actions
     ]
     return available[0] if len(available) == 1 else {"oneOf": available}
@@ -190,15 +212,17 @@ def create_robot_tool_catalog(
         tool = specifications_by_name[name]
         schema = deepcopy(tool.parameters_schema)
         if tool.name == "action_sequence":
-            steps = schema["properties"]["steps"]
-            action = steps["items"]
-            properties = action["properties"]
+            steps = _schema_object(schema, "properties", "steps")
+            action = _schema_object(steps, "items")
+            properties = _schema_object(action, "properties")
             if configuration.sequence_actions & {"pose", "joints"}:
                 properties["goal"] = select_configurations(
-                    properties["goal"], configuration
+                    _schema_object(properties, "goal"), configuration
                 )
-                point = properties["waypoints"]["items"]["properties"]
-                point["at"] = select_configurations(point["at"], configuration)
+                point = _schema_object(properties, "waypoints", "items", "properties")
+                point["at"] = select_configurations(
+                    _schema_object(point, "at"), configuration
+                )
                 if "gripper" not in configuration.sequence_actions:
                     point.pop("gripper_opening", None)
             else:
@@ -208,8 +232,11 @@ def create_robot_tool_catalog(
                 properties.pop("gripper_opening", None)
             action["anyOf"] = [
                 requirement
-                for requirement in action["anyOf"]
-                if all(name in properties for name in requirement["required"])
+                for requirement in _schema_list(action["anyOf"])
+                if all(
+                    isinstance(name, str) and name in properties
+                    for name in _schema_list(_schema_object(requirement)["required"])
+                )
             ]
             if isinstance(configuration.sequence_scope, NamedArmSequence):
                 steps["items"] = {

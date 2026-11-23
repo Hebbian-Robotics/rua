@@ -12,7 +12,7 @@
     "hebbian-agent": "./src/cli.ts"
   },
   "scripts": {
-    "start": "tsx src/cli.ts",
+    "start": "tsx --conditions=development src/cli.ts",
     "test": "vitest run --root ../../.. examples/typescript/agent/tests"
   },
   "dependencies": {

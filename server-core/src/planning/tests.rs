@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use super::orientation::{grasp_rotation, pose_orientation_quaternion, xyzw};
-use super::{PlanRefusal, PlannedMotion, Planner, ProjectionOutcome, Waypoint};
+use super::{PlannedMotion, Planner, ProjectionOutcome, Rejection, Waypoint};
 use crate::config::ControllerConfig;
 use crate::preview::{PreviewOutcome, ReachPreview};
 use hebbian_contracts::{
@@ -91,7 +91,7 @@ fn close(found: &[f64], expected: &[f64]) -> bool {
             .all(|(a, b)| (a - b).abs() < 1e-9)
 }
 
-fn refused(planner: &Planner, start: &[f64], waypoint: Waypoint) -> PlanRefusal {
+fn refused(planner: &Planner, start: &[f64], waypoint: Waypoint) -> Rejection {
     planner.plan(start, &[waypoint], None, None).unwrap_err()
 }
 
@@ -541,7 +541,7 @@ fn so101_self_collision() -> Planner {
     so101_planner(&json!({"self_collision": {"penetration_tolerance_meters": 0.01}}))
 }
 
-fn plan_to(planner: &Planner, start: &[f64], goal: &[f64]) -> Result<PlannedMotion, PlanRefusal> {
+fn plan_to(planner: &Planner, start: &[f64], goal: &[f64]) -> Result<PlannedMotion, Rejection> {
     planner.plan(
         start,
         &[Waypoint::Joints {

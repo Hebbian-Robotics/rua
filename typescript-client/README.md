@@ -7,7 +7,7 @@ Install a released version with `pnpm add hebbian-rua`.
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
 From the checkout root, install dependencies with `pnpm install --frozen-lockfile`.
-The runnable examples import the local workspace SDK.
+Build the local SDK with `pnpm --filter hebbian-rua build` before running the example.
 
 To read state without moving the robot, start a station
 ([MuJoCo quickstart](../docs/simulation.md) or [hardware setup](../docs/getting-started.md)).

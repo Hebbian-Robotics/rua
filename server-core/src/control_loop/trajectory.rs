@@ -47,7 +47,7 @@ pub(super) struct ActiveMotion {
     pub(super) speed_fraction: f64,
     pub(super) supervisor: MotionSupervisor,
     pub(super) checkpoints_sent: usize,
-    waypoint_gripper_command: Option<String>,
+    waypoint_gripper_command: Option<hebbian_contracts::CommandId>,
 }
 
 // INVARIANT: This arm's part of a grouped motion. The group's one trajectory is stepped

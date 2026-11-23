@@ -170,6 +170,10 @@ impl ReadyController {
 }
 
 // SAFETY: The controller must exclusively own the bus and complete startup checks before admitting commands. Fence handoffs before invalidating the station lease on disconnect.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "This session owns and shuts down the connected socket on return."
+)]
 pub fn serve_station_connection(
     socket: UnixStream,
     instance: ControllerInstanceId,
@@ -318,7 +322,7 @@ fn write_controller_messages(
     let mut first_samples = BTreeMap::new();
     let mut startup_events = Vec::new();
     let mut ready = false;
-    while let Ok(message) = messages.recv() {
+    for message in messages {
         if ready {
             transport.send(message)?;
             continue;
@@ -404,6 +408,10 @@ fn write_controller_messages(
 }
 
 // SAFETY: Stop the control loop when the controller transport returns, including on protocol failure.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "This session owns and shuts down the connected socket on return."
+)]
 pub fn serve_controller(
     socket: UnixStream,
     instance: ControllerInstanceId,

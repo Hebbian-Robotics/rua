@@ -631,7 +631,7 @@ impl<P: Plant> Runner<'_, P> {
 
         let failure = self
             .state
-            .cycle_failure(validated, interval, deadline_missed);
+            .cycle_failure(&validated, interval, deadline_missed);
         if failure.is_none() {
             self.state.tripped = None;
         }
@@ -730,7 +730,7 @@ impl<P: Plant> Runner<'_, P> {
         let motion = self.state.plan_motion(interval, feedback, group, now);
         let motion = motion.and_then(|plan| match plan {
             MotionPlan::ReferenceReady(effects) => Ok(effects),
-            MotionPlan::Infer(request) => self.evaluate_policy(request, feedback),
+            MotionPlan::Infer(request) => self.evaluate_policy(&request, feedback),
         });
         let CycleOutputs {
             motion,
@@ -816,7 +816,7 @@ impl<P: Plant> Runner<'_, P> {
 
     fn evaluate_policy(
         &mut self,
-        request: PolicyRequest,
+        request: &PolicyRequest,
         feedback: &Feedback,
     ) -> Result<MotionOutput, Trip> {
         let runtime =
@@ -828,7 +828,7 @@ impl<P: Plant> Runner<'_, P> {
         }
         let positions = runtime
             .joint_goal(self.config, feedback, &request.target)
-            .map_err(policy_failure)?;
+            .map_err(|error| policy_failure(&error))?;
         Ok(self.state.adopt_policy_target(&positions))
     }
 

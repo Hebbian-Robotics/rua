@@ -7,15 +7,18 @@ function calls(...names: string[]) {
 }
 
 test("plan and notes updates come first in call order, then the robot's calls together", () => {
-  expect(
-    planToolBatch(
-      calls("action_sequence", "update_notes", "stop", "update_plan"),
-    ),
-  ).toEqual({
+  const batch = calls("action_sequence", "update_notes", "stop", "update_plan");
+  expect(planToolBatch(batch)).toEqual({
     kind: "run",
-    memoryIndexes: [1, 3],
-    finishIndexes: [],
-    robotIndexes: [0, 2],
+    memoryCalls: [
+      { index: 1, call: batch[1] },
+      { index: 3, call: batch[3] },
+    ],
+    finishCalls: [],
+    robotCalls: [
+      { index: 0, call: batch[0] },
+      { index: 2, call: batch[2] },
+    ],
   });
 });
 

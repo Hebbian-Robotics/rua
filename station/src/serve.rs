@@ -208,5 +208,6 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
         simulator_camera_socket: matches!(plant, PlantSelection::Simulator { .. })
             .then(|| directory.join(SIMULATOR_CAMERA_SOCKET)),
     };
-    run_supervised(&arms, directory, plant, &arguments.http_address, web, media)
+    let http_address = &arguments.http_address;
+    run_supervised(&arms, directory, plant, http_address, web, &media)
 }

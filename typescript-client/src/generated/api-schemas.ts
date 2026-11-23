@@ -720,7 +720,7 @@ export const apiSchemas = z.object({
                 arm: z.string(),
                 record: z
                   .object({
-                    accepted_at: z.number(),
+                    accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                     checkpoints: z.array(
                       z
                         .object({
@@ -901,7 +901,11 @@ export const apiSchemas = z.object({
                       .describe(
                         "Data specific to the command the controller accepted.",
                       ),
-                    command_id: z.string(),
+                    command_id: z
+                      .string()
+                      .describe(
+                        "Station identifier for one accepted command and its subsequent records.",
+                      ),
                     label: z
                       .string()
                       .describe(
@@ -916,7 +920,7 @@ export const apiSchemas = z.object({
                         z
                           .object({
                             detail: z.union([z.string(), z.null()]),
-                            finished_at: z.number(),
+                            finished_unix_nano: z.string().regex(/^[0-9]+$/),
                             kind: z.literal("not_started"),
                             outcome: z
                               .enum(["stopped", "failed"])
@@ -1047,7 +1051,9 @@ export const apiSchemas = z.object({
                             completion: z
                               .object({
                                 detail: z.union([z.string(), z.null()]),
-                                finished_at: z.number(),
+                                finished_unix_nano: z
+                                  .string()
+                                  .regex(/^[0-9]+$/),
                                 gripper: z
                                   .union([
                                     z
@@ -1102,7 +1108,7 @@ export const apiSchemas = z.object({
                         z
                           .object({
                             detail: z.union([z.string(), z.null()]),
-                            finished_at: z.number(),
+                            finished_unix_nano: z.string().regex(/^[0-9]+$/),
                             kind: z.literal("outcome_unknown"),
                           })
                           .strict()
@@ -1911,7 +1917,7 @@ export const apiSchemas = z.object({
       arm: z.string(),
       record: z
         .object({
-          accepted_at: z.number(),
+          accepted_unix_nano: z.string().regex(/^[0-9]+$/),
           checkpoints: z.array(
             z
               .object({
@@ -2091,7 +2097,11 @@ export const apiSchemas = z.object({
                 .strict(),
             ])
             .describe("Data specific to the command the controller accepted."),
-          command_id: z.string(),
+          command_id: z
+            .string()
+            .describe(
+              "Station identifier for one accepted command and its subsequent records.",
+            ),
           label: z
             .string()
             .describe(
@@ -2106,7 +2116,7 @@ export const apiSchemas = z.object({
               z
                 .object({
                   detail: z.union([z.string(), z.null()]).optional(),
-                  finished_at: z.number(),
+                  finished_unix_nano: z.string().regex(/^[0-9]+$/),
                   kind: z.literal("not_started"),
                   outcome: z
                     .enum(["stopped", "failed"])
@@ -2234,7 +2244,7 @@ export const apiSchemas = z.object({
                   completion: z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       gripper: z
                         .union([
                           z
@@ -2290,7 +2300,7 @@ export const apiSchemas = z.object({
               z
                 .object({
                   detail: z.union([z.string(), z.null()]).optional(),
-                  finished_at: z.number(),
+                  finished_unix_nano: z.string().regex(/^[0-9]+$/),
                   kind: z.literal("outcome_unknown"),
                 })
                 .strict()
@@ -2333,7 +2343,7 @@ export const apiSchemas = z.object({
         .union([
           z
             .object({
-              accepted_at: z.number(),
+              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
               checkpoints: z.array(
                 z
                   .object({
@@ -2515,7 +2525,11 @@ export const apiSchemas = z.object({
                 .describe(
                   "Data specific to the command the controller accepted.",
                 ),
-              command_id: z.string(),
+              command_id: z
+                .string()
+                .describe(
+                  "Station identifier for one accepted command and its subsequent records.",
+                ),
               label: z
                 .string()
                 .describe(
@@ -2530,7 +2544,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       kind: z.literal("not_started"),
                       outcome: z
                         .enum(["stopped", "failed"])
@@ -2667,7 +2681,7 @@ export const apiSchemas = z.object({
                       completion: z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           gripper: z
                             .union([
                               z
@@ -2723,7 +2737,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       kind: z.literal("outcome_unknown"),
                     })
                     .strict()
@@ -2851,7 +2865,7 @@ export const apiSchemas = z.object({
         .union([
           z
             .object({
-              accepted_at: z.number(),
+              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
               checkpoints: z.array(
                 z
                   .object({
@@ -3033,7 +3047,11 @@ export const apiSchemas = z.object({
                 .describe(
                   "Data specific to the command the controller accepted.",
                 ),
-              command_id: z.string(),
+              command_id: z
+                .string()
+                .describe(
+                  "Station identifier for one accepted command and its subsequent records.",
+                ),
               label: z
                 .string()
                 .describe(
@@ -3048,7 +3066,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       kind: z.literal("not_started"),
                       outcome: z
                         .enum(["stopped", "failed"])
@@ -3185,7 +3203,7 @@ export const apiSchemas = z.object({
                       completion: z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           gripper: z
                             .union([
                               z
@@ -3241,7 +3259,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       kind: z.literal("outcome_unknown"),
                     })
                     .strict()
@@ -3343,25 +3361,13 @@ export const apiSchemas = z.object({
         .describe(
           "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
         ),
-      sampled_at_unix_seconds: z
-        .union([
-          z
-            .number()
-            .describe(
-              "When the newest sample was taken, in Unix seconds; none before the first.",
-            ),
-          z
-            .null()
-            .describe(
-              "When the newest sample was taken, in Unix seconds; none before the first.",
-            ),
-        ])
+      sampled_unix_nano: z
+        .union([z.string().regex(/^[0-9]+$/), z.null()])
         .describe(
-          "When the newest sample was taken, in Unix seconds; none before the first.",
+          "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.",
         )
         .optional(),
       segment: z.union([z.string(), z.null()]).optional(),
-      status: z.string().describe("Why the arm is as it is, in a few words."),
       tool: z
         .union([
           z
@@ -4358,7 +4364,7 @@ export const apiSchemas = z.object({
               arm: z.string(),
               record: z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -4546,7 +4552,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -4561,7 +4571,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -4703,7 +4713,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -4759,7 +4769,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -4826,7 +4836,7 @@ export const apiSchemas = z.object({
   CommandCompletion: z
     .object({
       detail: z.union([z.string(), z.null()]).optional(),
-      finished_at: z.number(),
+      finished_unix_nano: z.string().regex(/^[0-9]+$/),
       gripper: z
         .union([
           z
@@ -4892,7 +4902,7 @@ export const apiSchemas = z.object({
       z
         .object({
           detail: z.union([z.string(), z.null()]).optional(),
-          finished_at: z.number(),
+          finished_unix_nano: z.string().regex(/^[0-9]+$/),
           kind: z.literal("not_started"),
           outcome: z
             .enum(["stopped", "failed"])
@@ -5010,7 +5020,7 @@ export const apiSchemas = z.object({
           completion: z
             .object({
               detail: z.union([z.string(), z.null()]).optional(),
-              finished_at: z.number(),
+              finished_unix_nano: z.string().regex(/^[0-9]+$/),
               gripper: z
                 .union([
                   z
@@ -5064,7 +5074,7 @@ export const apiSchemas = z.object({
       z
         .object({
           detail: z.union([z.string(), z.null()]).optional(),
-          finished_at: z.number(),
+          finished_unix_nano: z.string().regex(/^[0-9]+$/),
           kind: z.literal("outcome_unknown"),
         })
         .strict()
@@ -5082,7 +5092,7 @@ export const apiSchemas = z.object({
     .describe("The target pose or streamed goal in the station world frame."),
   CommandRecord: z
     .object({
-      accepted_at: z.number(),
+      accepted_unix_nano: z.string().regex(/^[0-9]+$/),
       checkpoints: z.array(
         z
           .object({
@@ -5259,7 +5269,11 @@ export const apiSchemas = z.object({
             .strict(),
         ])
         .describe("Data specific to the command the controller accepted."),
-      command_id: z.string(),
+      command_id: z
+        .string()
+        .describe(
+          "Station identifier for one accepted command and its subsequent records.",
+        ),
       label: z
         .string()
         .describe(
@@ -5274,7 +5288,7 @@ export const apiSchemas = z.object({
           z
             .object({
               detail: z.union([z.string(), z.null()]),
-              finished_at: z.number(),
+              finished_unix_nano: z.string().regex(/^[0-9]+$/),
               kind: z.literal("not_started"),
               outcome: z
                 .enum(["stopped", "failed"])
@@ -5390,7 +5404,7 @@ export const apiSchemas = z.object({
               completion: z
                 .object({
                   detail: z.union([z.string(), z.null()]),
-                  finished_at: z.number(),
+                  finished_unix_nano: z.string().regex(/^[0-9]+$/),
                   gripper: z
                     .union([
                       z
@@ -5445,7 +5459,7 @@ export const apiSchemas = z.object({
           z
             .object({
               detail: z.union([z.string(), z.null()]),
-              finished_at: z.number(),
+              finished_unix_nano: z.string().regex(/^[0-9]+$/),
               kind: z.literal("outcome_unknown"),
             })
             .strict()
@@ -7456,7 +7470,7 @@ export const apiSchemas = z.object({
             .array(
               z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -7644,7 +7658,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -7659,7 +7677,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -7801,7 +7819,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -7857,7 +7875,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -8106,7 +8124,7 @@ export const apiSchemas = z.object({
         ),
       z
         .object({
-          accepted_at: z.number(),
+          accepted_unix_nano: z.string().regex(/^[0-9]+$/),
           checkpoints: z.array(
             z
               .object({
@@ -8286,7 +8304,11 @@ export const apiSchemas = z.object({
                 .strict(),
             ])
             .describe("Data specific to the command the controller accepted."),
-          command_id: z.string(),
+          command_id: z
+            .string()
+            .describe(
+              "Station identifier for one accepted command and its subsequent records.",
+            ),
           kind: z.literal("record"),
           label: z
             .string()
@@ -8302,7 +8324,7 @@ export const apiSchemas = z.object({
               z
                 .object({
                   detail: z.union([z.string(), z.null()]).optional(),
-                  finished_at: z.number(),
+                  finished_unix_nano: z.string().regex(/^[0-9]+$/),
                   kind: z.literal("not_started"),
                   outcome: z
                     .enum(["stopped", "failed"])
@@ -8430,7 +8452,7 @@ export const apiSchemas = z.object({
                   completion: z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       gripper: z
                         .union([
                           z
@@ -8486,7 +8508,7 @@ export const apiSchemas = z.object({
               z
                 .object({
                   detail: z.union([z.string(), z.null()]).optional(),
-                  finished_at: z.number(),
+                  finished_unix_nano: z.string().regex(/^[0-9]+$/),
                   kind: z.literal("outcome_unknown"),
                 })
                 .strict()
@@ -8876,7 +8898,7 @@ export const apiSchemas = z.object({
                 .array(
                   z
                     .object({
-                      accepted_at: z.number(),
+                      accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                       checkpoints: z.array(
                         z
                           .object({
@@ -9072,7 +9094,11 @@ export const apiSchemas = z.object({
                         .describe(
                           "Data specific to the command the controller accepted.",
                         ),
-                      command_id: z.string(),
+                      command_id: z
+                        .string()
+                        .describe(
+                          "Station identifier for one accepted command and its subsequent records.",
+                        ),
                       label: z
                         .string()
                         .describe(
@@ -9091,7 +9117,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("not_started"),
                               outcome: z
                                 .enum(["stopped", "failed"])
@@ -9234,7 +9260,9 @@ export const apiSchemas = z.object({
                                   detail: z
                                     .union([z.string(), z.null()])
                                     .optional(),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   gripper: z
                                     .union([
                                       z
@@ -9294,7 +9322,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("outcome_unknown"),
                             })
                             .strict()
@@ -9543,7 +9571,7 @@ export const apiSchemas = z.object({
             ),
           z
             .object({
-              accepted_at: z.number(),
+              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
               checkpoints: z.array(
                 z
                   .object({
@@ -9725,7 +9753,11 @@ export const apiSchemas = z.object({
                 .describe(
                   "Data specific to the command the controller accepted.",
                 ),
-              command_id: z.string(),
+              command_id: z
+                .string()
+                .describe(
+                  "Station identifier for one accepted command and its subsequent records.",
+                ),
               kind: z.literal("record"),
               label: z
                 .string()
@@ -9741,7 +9773,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       kind: z.literal("not_started"),
                       outcome: z
                         .enum(["stopped", "failed"])
@@ -9878,7 +9910,7 @@ export const apiSchemas = z.object({
                       completion: z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           gripper: z
                             .union([
                               z
@@ -9934,7 +9966,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       detail: z.union([z.string(), z.null()]).optional(),
-                      finished_at: z.number(),
+                      finished_unix_nano: z.string().regex(/^[0-9]+$/),
                       kind: z.literal("outcome_unknown"),
                     })
                     .strict()
@@ -10916,7 +10948,7 @@ export const apiSchemas = z.object({
                   .union([
                     z
                       .object({
-                        accepted_at: z.number(),
+                        accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                         checkpoints: z.array(
                           z
                             .object({
@@ -11120,7 +11152,11 @@ export const apiSchemas = z.object({
                           .describe(
                             "Data specific to the command the controller accepted.",
                           ),
-                        command_id: z.string(),
+                        command_id: z
+                          .string()
+                          .describe(
+                            "Station identifier for one accepted command and its subsequent records.",
+                          ),
                         label: z
                           .string()
                           .describe(
@@ -11139,7 +11175,9 @@ export const apiSchemas = z.object({
                                 detail: z
                                   .union([z.string(), z.null()])
                                   .optional(),
-                                finished_at: z.number(),
+                                finished_unix_nano: z
+                                  .string()
+                                  .regex(/^[0-9]+$/),
                                 kind: z.literal("not_started"),
                                 outcome: z
                                   .enum(["stopped", "failed"])
@@ -11283,7 +11321,9 @@ export const apiSchemas = z.object({
                                     detail: z
                                       .union([z.string(), z.null()])
                                       .optional(),
-                                    finished_at: z.number(),
+                                    finished_unix_nano: z
+                                      .string()
+                                      .regex(/^[0-9]+$/),
                                     gripper: z
                                       .union([
                                         z
@@ -11346,7 +11386,9 @@ export const apiSchemas = z.object({
                                 detail: z
                                   .union([z.string(), z.null()])
                                   .optional(),
-                                finished_at: z.number(),
+                                finished_unix_nano: z
+                                  .string()
+                                  .regex(/^[0-9]+$/),
                                 kind: z.literal("outcome_unknown"),
                               })
                               .strict()
@@ -11486,7 +11528,7 @@ export const apiSchemas = z.object({
                   .union([
                     z
                       .object({
-                        accepted_at: z.number(),
+                        accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                         checkpoints: z.array(
                           z
                             .object({
@@ -11690,7 +11732,11 @@ export const apiSchemas = z.object({
                           .describe(
                             "Data specific to the command the controller accepted.",
                           ),
-                        command_id: z.string(),
+                        command_id: z
+                          .string()
+                          .describe(
+                            "Station identifier for one accepted command and its subsequent records.",
+                          ),
                         label: z
                           .string()
                           .describe(
@@ -11709,7 +11755,9 @@ export const apiSchemas = z.object({
                                 detail: z
                                   .union([z.string(), z.null()])
                                   .optional(),
-                                finished_at: z.number(),
+                                finished_unix_nano: z
+                                  .string()
+                                  .regex(/^[0-9]+$/),
                                 kind: z.literal("not_started"),
                                 outcome: z
                                   .enum(["stopped", "failed"])
@@ -11853,7 +11901,9 @@ export const apiSchemas = z.object({
                                     detail: z
                                       .union([z.string(), z.null()])
                                       .optional(),
-                                    finished_at: z.number(),
+                                    finished_unix_nano: z
+                                      .string()
+                                      .regex(/^[0-9]+$/),
                                     gripper: z
                                       .union([
                                         z
@@ -11916,7 +11966,9 @@ export const apiSchemas = z.object({
                                 detail: z
                                   .union([z.string(), z.null()])
                                   .optional(),
-                                finished_at: z.number(),
+                                finished_unix_nano: z
+                                  .string()
+                                  .regex(/^[0-9]+$/),
                                 kind: z.literal("outcome_unknown"),
                               })
                               .strict()
@@ -12030,27 +12082,13 @@ export const apiSchemas = z.object({
                   .describe(
                     "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
                   ),
-                sampled_at_unix_seconds: z
-                  .union([
-                    z
-                      .number()
-                      .describe(
-                        "When the newest sample was taken, in Unix seconds; none before the first.",
-                      ),
-                    z
-                      .null()
-                      .describe(
-                        "When the newest sample was taken, in Unix seconds; none before the first.",
-                      ),
-                  ])
+                sampled_unix_nano: z
+                  .union([z.string().regex(/^[0-9]+$/), z.null()])
                   .describe(
-                    "When the newest sample was taken, in Unix seconds; none before the first.",
+                    "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.",
                   )
                   .optional(),
                 segment: z.union([z.string(), z.null()]).optional(),
-                status: z
-                  .string()
-                  .describe("Why the arm is as it is, in a few words."),
                 tool: z
                   .union([
                     z
@@ -12312,7 +12350,7 @@ export const apiSchemas = z.object({
               arm: z.string(),
               record: z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -12500,7 +12538,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -12515,7 +12557,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -12657,7 +12699,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -12713,7 +12755,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -12756,7 +12798,7 @@ export const apiSchemas = z.object({
               arm: z.string(),
               record: z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -12944,7 +12986,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -12959,7 +13005,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -13101,7 +13147,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -13157,7 +13203,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -13200,7 +13246,7 @@ export const apiSchemas = z.object({
               arm: z.string(),
               record: z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -13388,7 +13434,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -13403,7 +13453,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -13545,7 +13595,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -13601,7 +13651,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]).optional(),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -15469,7 +15519,7 @@ export const apiSchemas = z.object({
                         .array(
                           z
                             .object({
-                              accepted_at: z.number(),
+                              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                               checkpoints: z.array(
                                 z
                                   .object({
@@ -15664,7 +15714,11 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "Data specific to the command the controller accepted.",
                                 ),
-                              command_id: z.string(),
+                              command_id: z
+                                .string()
+                                .describe(
+                                  "Station identifier for one accepted command and its subsequent records.",
+                                ),
                               label: z
                                 .string()
                                 .describe(
@@ -15681,7 +15735,9 @@ export const apiSchemas = z.object({
                                   z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       kind: z.literal("not_started"),
                                       outcome: z
                                         .enum(["stopped", "failed"])
@@ -15823,7 +15879,9 @@ export const apiSchemas = z.object({
                                             z.string(),
                                             z.null(),
                                           ]),
-                                          finished_at: z.number(),
+                                          finished_unix_nano: z
+                                            .string()
+                                            .regex(/^[0-9]+$/),
                                           gripper: z
                                             .union([
                                               z
@@ -15885,7 +15943,9 @@ export const apiSchemas = z.object({
                                   z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       kind: z.literal("outcome_unknown"),
                                     })
                                     .strict()
@@ -16132,7 +16192,7 @@ export const apiSchemas = z.object({
                     ),
                   z
                     .object({
-                      accepted_at: z.number(),
+                      accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                       checkpoints: z.array(
                         z
                           .object({
@@ -16313,7 +16373,11 @@ export const apiSchemas = z.object({
                         .describe(
                           "Data specific to the command the controller accepted.",
                         ),
-                      command_id: z.string(),
+                      command_id: z
+                        .string()
+                        .describe(
+                          "Station identifier for one accepted command and its subsequent records.",
+                        ),
                       kind: z.literal("record"),
                       label: z
                         .string()
@@ -16331,7 +16395,7 @@ export const apiSchemas = z.object({
                           z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("not_started"),
                               outcome: z
                                 .enum(["stopped", "failed"])
@@ -16465,7 +16529,9 @@ export const apiSchemas = z.object({
                               completion: z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   gripper: z
                                     .union([
                                       z
@@ -16522,7 +16588,7 @@ export const apiSchemas = z.object({
                           z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("outcome_unknown"),
                             })
                             .strict()
@@ -16776,7 +16842,7 @@ export const apiSchemas = z.object({
                       arm: z.string(),
                       record: z
                         .object({
-                          accepted_at: z.number(),
+                          accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                           checkpoints: z.array(
                             z
                               .object({
@@ -16971,7 +17037,11 @@ export const apiSchemas = z.object({
                             .describe(
                               "Data specific to the command the controller accepted.",
                             ),
-                          command_id: z.string(),
+                          command_id: z
+                            .string()
+                            .describe(
+                              "Station identifier for one accepted command and its subsequent records.",
+                            ),
                           label: z
                             .string()
                             .describe(
@@ -16988,7 +17058,9 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   kind: z.literal("not_started"),
                                   outcome: z
                                     .enum(["stopped", "failed"])
@@ -17123,7 +17195,9 @@ export const apiSchemas = z.object({
                                   completion: z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       gripper: z
                                         .union([
                                           z
@@ -17183,7 +17257,9 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   kind: z.literal("outcome_unknown"),
                                 })
                                 .strict()
@@ -17410,7 +17486,7 @@ export const apiSchemas = z.object({
                     active_command: z.union([
                       z
                         .object({
-                          accepted_at: z.number(),
+                          accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                           checkpoints: z.array(
                             z
                               .object({
@@ -17605,7 +17681,11 @@ export const apiSchemas = z.object({
                             .describe(
                               "Data specific to the command the controller accepted.",
                             ),
-                          command_id: z.string(),
+                          command_id: z
+                            .string()
+                            .describe(
+                              "Station identifier for one accepted command and its subsequent records.",
+                            ),
                           label: z
                             .string()
                             .describe(
@@ -17622,7 +17702,9 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   kind: z.literal("not_started"),
                                   outcome: z
                                     .enum(["stopped", "failed"])
@@ -17757,7 +17839,9 @@ export const apiSchemas = z.object({
                                   completion: z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       gripper: z
                                         .union([
                                           z
@@ -17817,7 +17901,9 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   kind: z.literal("outcome_unknown"),
                                 })
                                 .strict()
@@ -17955,7 +18041,7 @@ export const apiSchemas = z.object({
                     last_command: z.union([
                       z
                         .object({
-                          accepted_at: z.number(),
+                          accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                           checkpoints: z.array(
                             z
                               .object({
@@ -18150,7 +18236,11 @@ export const apiSchemas = z.object({
                             .describe(
                               "Data specific to the command the controller accepted.",
                             ),
-                          command_id: z.string(),
+                          command_id: z
+                            .string()
+                            .describe(
+                              "Station identifier for one accepted command and its subsequent records.",
+                            ),
                           label: z
                             .string()
                             .describe(
@@ -18167,7 +18257,9 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   kind: z.literal("not_started"),
                                   outcome: z
                                     .enum(["stopped", "failed"])
@@ -18302,7 +18394,9 @@ export const apiSchemas = z.object({
                                   completion: z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       gripper: z
                                         .union([
                                           z
@@ -18362,7 +18456,9 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   detail: z.union([z.string(), z.null()]),
-                                  finished_at: z.number(),
+                                  finished_unix_nano: z
+                                    .string()
+                                    .regex(/^[0-9]+$/),
                                   kind: z.literal("outcome_unknown"),
                                 })
                                 .strict()
@@ -18470,26 +18566,12 @@ export const apiSchemas = z.object({
                       .describe(
                         "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
                       ),
-                    sampled_at_unix_seconds: z
-                      .union([
-                        z
-                          .number()
-                          .describe(
-                            "When the newest sample was taken, in Unix seconds; none before the first.",
-                          ),
-                        z
-                          .null()
-                          .describe(
-                            "When the newest sample was taken, in Unix seconds; none before the first.",
-                          ),
-                      ])
+                    sampled_unix_nano: z
+                      .union([z.string().regex(/^[0-9]+$/), z.null()])
                       .describe(
-                        "When the newest sample was taken, in Unix seconds; none before the first.",
+                        "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.",
                       ),
                     segment: z.union([z.string(), z.null()]),
-                    status: z
-                      .string()
-                      .describe("Why the arm is as it is, in a few words."),
                     tool: z
                       .union([
                         z
@@ -19024,7 +19106,7 @@ export const apiSchemas = z.object({
                           arm: z.string(),
                           record: z
                             .object({
-                              accepted_at: z.number(),
+                              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                               checkpoints: z.array(
                                 z
                                   .object({
@@ -19219,7 +19301,11 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "Data specific to the command the controller accepted.",
                                 ),
-                              command_id: z.string(),
+                              command_id: z
+                                .string()
+                                .describe(
+                                  "Station identifier for one accepted command and its subsequent records.",
+                                ),
                               label: z
                                 .string()
                                 .describe(
@@ -19236,7 +19322,9 @@ export const apiSchemas = z.object({
                                   z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       kind: z.literal("not_started"),
                                       outcome: z
                                         .enum(["stopped", "failed"])
@@ -19378,7 +19466,9 @@ export const apiSchemas = z.object({
                                             z.string(),
                                             z.null(),
                                           ]),
-                                          finished_at: z.number(),
+                                          finished_unix_nano: z
+                                            .string()
+                                            .regex(/^[0-9]+$/),
                                           gripper: z
                                             .union([
                                               z
@@ -19440,7 +19530,9 @@ export const apiSchemas = z.object({
                                   z
                                     .object({
                                       detail: z.union([z.string(), z.null()]),
-                                      finished_at: z.number(),
+                                      finished_unix_nano: z
+                                        .string()
+                                        .regex(/^[0-9]+$/),
                                       kind: z.literal("outcome_unknown"),
                                     })
                                     .strict()
@@ -19844,7 +19936,7 @@ export const apiSchemas = z.object({
             active_command: z.union([
               z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -20025,7 +20117,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -20040,7 +20136,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -20171,7 +20267,7 @@ export const apiSchemas = z.object({
                           completion: z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -20226,7 +20322,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -20358,7 +20454,7 @@ export const apiSchemas = z.object({
             last_command: z.union([
               z
                 .object({
-                  accepted_at: z.number(),
+                  accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                   checkpoints: z.array(
                     z
                       .object({
@@ -20539,7 +20635,11 @@ export const apiSchemas = z.object({
                     .describe(
                       "Data specific to the command the controller accepted.",
                     ),
-                  command_id: z.string(),
+                  command_id: z
+                    .string()
+                    .describe(
+                      "Station identifier for one accepted command and its subsequent records.",
+                    ),
                   label: z
                     .string()
                     .describe(
@@ -20554,7 +20654,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("not_started"),
                           outcome: z
                             .enum(["stopped", "failed"])
@@ -20685,7 +20785,7 @@ export const apiSchemas = z.object({
                           completion: z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_at: z.number(),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -20740,7 +20840,7 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           detail: z.union([z.string(), z.null()]),
-                          finished_at: z.number(),
+                          finished_unix_nano: z.string().regex(/^[0-9]+$/),
                           kind: z.literal("outcome_unknown"),
                         })
                         .strict()
@@ -20844,26 +20944,12 @@ export const apiSchemas = z.object({
               .describe(
                 "Advanced when an interlock is raised or its details change. Commands may carry it as\n`expected_revision`.",
               ),
-            sampled_at_unix_seconds: z
-              .union([
-                z
-                  .number()
-                  .describe(
-                    "When the newest sample was taken, in Unix seconds; none before the first.",
-                  ),
-                z
-                  .null()
-                  .describe(
-                    "When the newest sample was taken, in Unix seconds; none before the first.",
-                  ),
-              ])
+            sampled_unix_nano: z
+              .union([z.string().regex(/^[0-9]+$/), z.null()])
               .describe(
-                "When the newest sample was taken, in Unix seconds; none before the first.",
+                "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.",
               ),
             segment: z.union([z.string(), z.null()]),
-            status: z
-              .string()
-              .describe("Why the arm is as it is, in a few words."),
             tool: z
               .union([
                 z

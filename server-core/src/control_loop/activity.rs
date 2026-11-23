@@ -14,7 +14,7 @@ use crate::surface_guard::SurfaceGuard;
 use hebbian_contracts::CommandOutcome;
 
 pub(super) struct ActiveStream {
-    pub(super) command_id: String,
+    pub(super) command_id: hebbian_contracts::CommandId,
     pub(super) policy_session: PolicySession,
 }
 
@@ -46,7 +46,7 @@ pub(super) struct Loop<'a> {
     pub(super) tripped: Option<Trip>,
     pub(super) shutdown_return_attempted: bool,
     pub(super) gripper: Option<GripperController>,
-    pub(super) gripper_command: Option<String>,
+    pub(super) gripper_command: Option<hebbian_contracts::CommandId>,
 }
 
 impl Loop<'_> {
@@ -90,7 +90,7 @@ impl Loop<'_> {
 
     pub(super) fn cycle_failure(
         &self,
-        validated: crate::plant::TrustedFeedback<'_>,
+        validated: &crate::plant::TrustedFeedback<'_>,
         interval: f64,
         deadline_missed: Option<String>,
     ) -> Option<Trip> {
@@ -179,7 +179,7 @@ impl Loop<'_> {
         }
     }
 
-    pub(super) fn start_stream(&mut self, command_id: String) {
+    pub(super) fn start_stream(&mut self, command_id: hebbian_contracts::CommandId) {
         self.hold_at = None;
         self.activity = Activity::Stream(ActiveStream {
             command_id,

@@ -111,15 +111,15 @@ def command_record_outcome(record: CommandRecord) -> CommandOutcome | None:
             assert_never(unreachable)
 
 
-def command_record_finished_at(record: CommandRecord) -> float | None:
+def command_record_finished_unix_nano(record: CommandRecord) -> int | None:
     phase = record.phase
     match phase.kind:
         case "pending":
             return None
         case "finished":
-            return phase.completion.finished_at
+            return int(phase.completion.finished_unix_nano)
         case "not_started" | "outcome_unknown":
-            return phase.finished_at
+            return int(phase.finished_unix_nano)
         case _ as unreachable:
             assert_never(unreachable)
 

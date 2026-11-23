@@ -38,7 +38,7 @@ class OpenAIRobotTools:
                 "type": "function",
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": tool.parameters_schema,
+                "parameters": dict[str, object](tool.parameters_schema),
                 "strict": False,
             }
             for tool in self.robot.tools

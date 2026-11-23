@@ -1,11 +1,60 @@
 {
-  "completed": "completed",
-  "failed": "incomplete",
-  "faulted": "faulted",
-  "interrupted": "interrupted",
-  "stopped": "incomplete",
-  "stopped_short": "stopped_short",
-  "superseded": "incomplete",
-  "timed_out": "incomplete",
-  "tripped": "incomplete"
+  "commands": {
+    "completed": {
+      "class": "completed",
+      "limited_target": "limited",
+      "target": "reached"
+    },
+    "failed": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "faulted": {
+      "class": "faulted",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "interrupted": {
+      "class": "interrupted",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "pending": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "stopped": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "stopped_short": {
+      "class": "stopped_short",
+      "limited_target": "stopped_short",
+      "target": "stopped_short"
+    },
+    "superseded": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "timed_out": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    },
+    "tripped": {
+      "class": "incomplete",
+      "limited_target": "partial",
+      "target": "partial"
+    }
+  },
+  "status_priority": [
+    "reached",
+    "limited",
+    "partial",
+    "stopped_short"
+  ]
 }

@@ -19,7 +19,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -68,7 +68,6 @@
             ]
           },
           "controller": "policy",
-          "status": "ready",
           "rest_pose": [
             0.0,
             -1.8
@@ -76,28 +75,33 @@
           "segment": null,
           "active_command": null,
           "last_command": {
-            "command_id": "move-1",
-            "label": "move_to_pose",
-            "accepted_at": 1234.56789,
-            "trace_context": {
-              "trace_id": "abc",
-              "span_id": "def"
-            },
+            "accepted_unix_nano": "1234567890000",
             "checkpoints": [
               {
                 "label": "start",
                 "measured_joints": [
                   0.123456789
-                ]
+                ],
+                "destination_position": null,
+                "destination_quaternion": null
               }
             ],
             "command": {
+              "group_id": "group-1",
+              "joint_speed": 1.0,
               "kind": "move",
+              "path_limited": null,
+              "pose_limited": {
+                "advice": "Choose a reachable pose",
+                "orientation_shortfall_radians": 0.0007954,
+                "position_shortfall_meters": 0.0043278,
+                "reason": "at_joint_limit",
+                "waypoint": 0
+              },
               "destination_joints": [
                 0.1,
                 -0.2
               ],
-              "joint_speed": 1.0,
               "destination_position": [
                 0.2,
                 0.0,
@@ -108,44 +112,21 @@
                 0.7071067811865476,
                 0.0,
                 0.7071067811865475
-              ],
-              "pose_limited": {
-                "waypoint": 0,
-                "reason": "at_joint_limit",
-                "position_shortfall_meters": 0.0043278,
-                "orientation_shortfall_radians": 0.0007954
-              },
-              "group_id": "group-1"
+              ]
             },
+            "command_id": "move-1",
+            "label": "move_to_pose",
             "phase": {
-              "kind": "finished",
-              "completion": {
-                "outcome": "stopped_short",
-                "finished_at": 1236.123456,
-                "detail": "Object contact"
-              },
               "achieved": {
-                "sampled_at": 1236.123456,
-                "joints": [
-                  0.5,
-                  -0.5
-                ],
-                "position": [
-                  0.19,
-                  0.0012345,
-                  0.0987654
-                ],
-                "quaternion": [
-                  0.0,
-                  0.7071067811865476,
-                  0.0,
-                  0.7071067811865475
-                ],
+                "joint_error_radians": null,
                 "joint_errors_radians": [
                   0.01,
                   0.02
                 ],
-                "position_error_meters": 0.0019092,
+                "joints": [
+                  0.5,
+                  -0.5
+                ],
                 "orientation": {
                   "approach": [
                     -0.0092,
@@ -153,9 +134,36 @@
                     -1.0
                   ],
                   "degrees_from_down": 0.5,
-                  "jaw_yaw_degrees": 90.1
-                }
-              }
+                  "jaw_yaw_degrees": 90.1,
+                  "jaw_yaw_reference": "world_x",
+                  "goal": null
+                },
+                "orientation_error_radians": null,
+                "position": [
+                  0.19,
+                  0.0012345,
+                  0.0987654
+                ],
+                "position_error_meters": 0.0019092,
+                "quaternion": [
+                  0.0,
+                  0.7071067811865476,
+                  0.0,
+                  0.7071067811865475
+                ],
+                "sampled_at": 1236.123456
+              },
+              "completion": {
+                "detail": "Object contact",
+                "finished_unix_nano": "1236123456000",
+                "gripper": null,
+                "outcome": "stopped_short"
+              },
+              "kind": "finished"
+            },
+            "trace_context": {
+              "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
+              "tracestate": null
             }
           },
           "fault": null,
@@ -191,7 +199,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -218,7 +226,6 @@
               "jaw_yaw_degrees": 87.9
             }
           },
-          "status": "ready",
           "fault": null,
           "active_trip": "Joint tracking error",
           "recovery_issue": null,
@@ -248,7 +255,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.587,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [
             -3.2,
             -104.4
@@ -275,7 +282,6 @@
               "jaw_yaw_degrees": 87.9
             }
           },
-          "status": "ready",
           "active_trip": "Joint tracking error",
           "gripper_opening": 0.0027,
           "interlocks": [
@@ -309,7 +315,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -358,7 +364,6 @@
             ]
           },
           "controller": "policy",
-          "status": "ready",
           "rest_pose": [
             0.0,
             -1.8
@@ -366,28 +371,33 @@
           "segment": null,
           "active_command": null,
           "last_command": {
-            "command_id": "move-1",
-            "label": "move_to_pose",
-            "accepted_at": 1234.56789,
-            "trace_context": {
-              "trace_id": "abc",
-              "span_id": "def"
-            },
+            "accepted_unix_nano": "1234567890000",
             "checkpoints": [
               {
                 "label": "start",
                 "measured_joints": [
                   0.123456789
-                ]
+                ],
+                "destination_position": null,
+                "destination_quaternion": null
               }
             ],
             "command": {
+              "group_id": "group-1",
+              "joint_speed": 1.0,
               "kind": "move",
+              "path_limited": null,
+              "pose_limited": {
+                "advice": "Choose a reachable pose",
+                "orientation_shortfall_radians": 0.0007954,
+                "position_shortfall_meters": 0.0043278,
+                "reason": "at_joint_limit",
+                "waypoint": 0
+              },
               "destination_joints": [
                 0.1,
                 -0.2
               ],
-              "joint_speed": 1.0,
               "destination_position": [
                 0.2,
                 0.0,
@@ -398,44 +408,21 @@
                 0.7071067811865476,
                 0.0,
                 0.7071067811865475
-              ],
-              "pose_limited": {
-                "waypoint": 0,
-                "reason": "at_joint_limit",
-                "position_shortfall_meters": 0.0043278,
-                "orientation_shortfall_radians": 0.0007954
-              },
-              "group_id": "group-1"
+              ]
             },
+            "command_id": "move-1",
+            "label": "move_to_pose",
             "phase": {
-              "kind": "finished",
-              "completion": {
-                "outcome": "stopped_short",
-                "finished_at": 1236.123456,
-                "detail": "Object contact"
-              },
               "achieved": {
-                "sampled_at": 1236.123456,
-                "joints": [
-                  0.5,
-                  -0.5
-                ],
-                "position": [
-                  0.19,
-                  0.0012345,
-                  0.0987654
-                ],
-                "quaternion": [
-                  0.0,
-                  0.7071067811865476,
-                  0.0,
-                  0.7071067811865475
-                ],
+                "joint_error_radians": null,
                 "joint_errors_radians": [
                   0.01,
                   0.02
                 ],
-                "position_error_meters": 0.0019092,
+                "joints": [
+                  0.5,
+                  -0.5
+                ],
                 "orientation": {
                   "approach": [
                     -0.0092,
@@ -443,9 +430,36 @@
                     -1.0
                   ],
                   "degrees_from_down": 0.5,
-                  "jaw_yaw_degrees": 90.1
-                }
-              }
+                  "jaw_yaw_degrees": 90.1,
+                  "jaw_yaw_reference": "world_x",
+                  "goal": null
+                },
+                "orientation_error_radians": null,
+                "position": [
+                  0.19,
+                  0.0012345,
+                  0.0987654
+                ],
+                "position_error_meters": 0.0019092,
+                "quaternion": [
+                  0.0,
+                  0.7071067811865476,
+                  0.0,
+                  0.7071067811865475
+                ],
+                "sampled_at": 1236.123456
+              },
+              "completion": {
+                "detail": "Object contact",
+                "finished_unix_nano": "1236123456000",
+                "gripper": null,
+                "outcome": "stopped_short"
+              },
+              "kind": "finished"
+            },
+            "trace_context": {
+              "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
+              "tracestate": null
             }
           },
           "fault": null,
@@ -485,7 +499,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -512,7 +526,6 @@
               "jaw_yaw_degrees": 87.9
             }
           },
-          "status": "ready",
           "fault": null,
           "recovery_issue": null,
           "gripper_opening": 0.0027485587,
@@ -546,7 +559,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.587,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [
             -3.2,
             -104.4
@@ -573,7 +586,6 @@
               "jaw_yaw_degrees": 87.9
             }
           },
-          "status": "ready",
           "gripper_opening": 0.0027,
           "interlocks": [
             {
@@ -628,10 +640,10 @@
             "arm": "left",
             "record": {
               "command_id": "a",
-              "accepted_at": 1.5,
+              "accepted_unix_nano": "1500000000",
               "completion": {
                 "outcome": "completed",
-                "finished_at": 2.5,
+                "finished_unix_nano": "2500000000",
                 "detail": null,
                 "gripper": {
                   "kind": "stopped_short",
@@ -656,10 +668,10 @@
             "arm": "left",
             "record": {
               "command_id": "b",
-              "accepted_at": 3.5,
+              "accepted_unix_nano": "3500000000",
               "completion": {
                 "outcome": "stopped_short",
-                "finished_at": 4.5,
+                "finished_unix_nano": "4500000000",
                 "detail": "Object contact"
               },
               "achieved": {
@@ -798,28 +810,33 @@
       "status": "stopped_short",
       "commands": [
         {
-          "command_id": "move-1",
-          "label": "move_to_pose",
-          "accepted_at": 1234.56789,
-          "trace_context": {
-            "trace_id": "abc",
-            "span_id": "def"
-          },
+          "accepted_unix_nano": "1234567890000",
           "checkpoints": [
             {
               "label": "start",
               "measured_joints": [
                 0.123456789
-              ]
+              ],
+              "destination_position": null,
+              "destination_quaternion": null
             }
           ],
           "command": {
+            "group_id": "group-1",
+            "joint_speed": 1.0,
             "kind": "move",
+            "path_limited": null,
+            "pose_limited": {
+              "advice": "Choose a reachable pose",
+              "orientation_shortfall_radians": 0.0007954,
+              "position_shortfall_meters": 0.0043278,
+              "reason": "at_joint_limit",
+              "waypoint": 0
+            },
             "destination_joints": [
               0.1,
               -0.2
             ],
-            "joint_speed": 1.0,
             "destination_position": [
               0.2,
               0.0,
@@ -830,44 +847,21 @@
               0.7071067811865476,
               0.0,
               0.7071067811865475
-            ],
-            "pose_limited": {
-              "waypoint": 0,
-              "reason": "at_joint_limit",
-              "position_shortfall_meters": 0.0043278,
-              "orientation_shortfall_radians": 0.0007954
-            },
-            "group_id": "group-1"
+            ]
           },
+          "command_id": "move-1",
+          "label": "move_to_pose",
           "phase": {
-            "kind": "finished",
-            "completion": {
-              "outcome": "stopped_short",
-              "finished_at": 1236.123456,
-              "detail": "Object contact"
-            },
             "achieved": {
-              "sampled_at": 1236.123456,
-              "joints": [
-                0.5,
-                -0.5
-              ],
-              "position": [
-                0.19,
-                0.0012345,
-                0.0987654
-              ],
-              "quaternion": [
-                0.0,
-                0.7071067811865476,
-                0.0,
-                0.7071067811865475
-              ],
+              "joint_error_radians": null,
               "joint_errors_radians": [
                 0.01,
                 0.02
               ],
-              "position_error_meters": 0.0019092,
+              "joints": [
+                0.5,
+                -0.5
+              ],
               "orientation": {
                 "approach": [
                   -0.0092,
@@ -875,9 +869,36 @@
                   -1.0
                 ],
                 "degrees_from_down": 0.5,
-                "jaw_yaw_degrees": 90.1
-              }
-            }
+                "jaw_yaw_degrees": 90.1,
+                "jaw_yaw_reference": "world_x",
+                "goal": null
+              },
+              "orientation_error_radians": null,
+              "position": [
+                0.19,
+                0.0012345,
+                0.0987654
+              ],
+              "position_error_meters": 0.0019092,
+              "quaternion": [
+                0.0,
+                0.7071067811865476,
+                0.0,
+                0.7071067811865475
+              ],
+              "sampled_at": 1236.123456
+            },
+            "completion": {
+              "detail": "Object contact",
+              "finished_unix_nano": "1236123456000",
+              "gripper": null,
+              "outcome": "stopped_short"
+            },
+            "kind": "finished"
+          },
+          "trace_context": {
+            "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
+            "tracestate": null
           }
         }
       ]
@@ -888,9 +909,13 @@
         {
           "label": "move_to_pose",
           "joint_speed": 1.0,
-          "completion": {
-            "outcome": "stopped_short",
-            "detail": "Object contact"
+          "path_limited": null,
+          "pose_limited": {
+            "advice": "Choose a reachable pose",
+            "orientation_shortfall_radians": 0.0007954,
+            "position_shortfall_meters": 0.0043278,
+            "reason": "at_joint_limit",
+            "waypoint": 0
           },
           "destination_joints": [
             0.1,
@@ -907,35 +932,21 @@
             0.0,
             0.7071067811865475
           ],
-          "goal_status": "stopped_short",
-          "pose_limited": {
-            "waypoint": 0,
-            "reason": "at_joint_limit",
-            "position_shortfall_meters": 0.0043278,
-            "orientation_shortfall_radians": 0.0007954
+          "completion": {
+            "detail": "Object contact",
+            "gripper": null,
+            "outcome": "stopped_short"
           },
           "achieved": {
-            "sampled_at": 1236.123456,
-            "joints": [
-              0.5,
-              -0.5
-            ],
-            "position": [
-              0.19,
-              0.0012345,
-              0.0987654
-            ],
-            "quaternion": [
-              0.0,
-              0.7071067811865476,
-              0.0,
-              0.7071067811865475
-            ],
+            "joint_error_radians": null,
             "joint_errors_radians": [
               0.01,
               0.02
             ],
-            "position_error_meters": 0.0019092,
+            "joints": [
+              0.5,
+              -0.5
+            ],
             "orientation": {
               "approach": [
                 -0.0092,
@@ -943,9 +954,26 @@
                 -1.0
               ],
               "degrees_from_down": 0.5,
-              "jaw_yaw_degrees": 90.1
-            }
-          }
+              "jaw_yaw_degrees": 90.1,
+              "jaw_yaw_reference": "world_x",
+              "goal": null
+            },
+            "orientation_error_radians": null,
+            "position": [
+              0.19,
+              0.0012345,
+              0.0987654
+            ],
+            "position_error_meters": 0.0019092,
+            "quaternion": [
+              0.0,
+              0.7071067811865476,
+              0.0,
+              0.7071067811865475
+            ],
+            "sampled_at": 1236.123456
+          },
+          "goal_status": "stopped_short"
         }
       ]
     },
@@ -955,9 +983,12 @@
         {
           "label": "move_to_pose",
           "joint_speed_degrees_per_second": 57.3,
-          "completion": {
-            "outcome": "stopped_short",
-            "detail": "Object contact"
+          "pose_limited": {
+            "advice": "Choose a reachable pose",
+            "orientation_shortfall_degrees": 0.0,
+            "position_shortfall_mm": 4.3,
+            "reason": "at_joint_limit",
+            "waypoint": 0
           },
           "destination_joints_degrees": [
             5.7,
@@ -974,35 +1005,19 @@
             0.0,
             0.7071
           ],
-          "goal_status": "stopped_short",
-          "pose_limited": {
-            "waypoint": 0,
-            "reason": "at_joint_limit",
-            "position_shortfall_mm": 4.3,
-            "orientation_shortfall_degrees": 0.0
+          "completion": {
+            "detail": "Object contact",
+            "outcome": "stopped_short"
           },
           "achieved": {
-            "sampled_at": 1236.123,
-            "joints_degrees": [
-              28.6,
-              -28.6
-            ],
-            "position_mm": [
-              190.0,
-              1.2,
-              98.8
-            ],
-            "quaternion": [
-              0.0,
-              0.7071,
-              0.0,
-              0.7071
-            ],
             "joint_errors_degrees": [
               0.6,
               1.1
             ],
-            "position_error_mm": 1.9,
+            "joints_degrees": [
+              28.6,
+              -28.6
+            ],
             "orientation": {
               "approach": [
                 -0.0092,
@@ -1010,9 +1025,24 @@
                 -1.0
               ],
               "degrees_from_down": 0.5,
-              "jaw_yaw_degrees": 90.1
-            }
-          }
+              "jaw_yaw_degrees": 90.1,
+              "jaw_yaw_reference": "world_x"
+            },
+            "position_mm": [
+              190.0,
+              1.2,
+              98.8
+            ],
+            "position_error_mm": 1.9,
+            "quaternion": [
+              0.0,
+              0.7071,
+              0.0,
+              0.7071
+            ],
+            "sampled_at": 1236.123
+          },
+          "goal_status": "stopped_short"
         }
       ]
     }

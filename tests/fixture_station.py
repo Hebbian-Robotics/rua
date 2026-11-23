@@ -108,9 +108,7 @@ def wait_until_station_live(server: str, seconds: float = 30.0) -> None:
         if response.status_code != 200:
             return False
         arms = StationState.model_validate_json(response.content).arms
-        return bool(arms) and all(
-            arm.sampled_at_unix_seconds is not None for arm in arms
-        )
+        return bool(arms) and all(arm.sampled_unix_nano is not None for arm in arms)
 
     wait_until(
         every_arm_reported,

@@ -194,7 +194,7 @@ async fn the_lease_is_exclusive_revoked_and_returned() -> TestResult {
     let new_guard = within(first.acquire_lease(agent("again"))).await??;
     within(guard.lost()).await?;
     let stale_tools = RobotTools::new(&guard, ARM).with_operations(
-        [hebbian_rua::contracts::RobotToolOperation::SetGripper]
+        &[hebbian_rua::contracts::RobotToolOperation::SetGripper]
             .into_iter()
             .collect(),
     );
@@ -1146,7 +1146,7 @@ async fn assert_model_pose_previews(
         false
     );
     let absent_arm = RobotTools::new(lease, "not-an-arm").with_operations(
-        hebbian_rua::contracts::robot_tool_catalog()
+        &hebbian_rua::contracts::robot_tool_catalog()
             .into_iter()
             .map(|tool| tool.operation)
             .collect(),
@@ -1226,7 +1226,7 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     within(client.enable(ARM)).await??;
     let tools = RobotTools::new(&lease, ARM)
         .with_operations(
-            hebbian_rua::contracts::robot_tool_catalog()
+            &hebbian_rua::contracts::robot_tool_catalog()
                 .into_iter()
                 .map(|tool| tool.operation)
                 .collect(),

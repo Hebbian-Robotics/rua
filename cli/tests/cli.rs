@@ -137,7 +137,7 @@ async fn enable_then_move_to_joints_completes() -> TestResult {
     );
     let moved = run.stdout_json();
     assert_eq!(moved["completion"]["outcome"], "completed");
-    assert!(moved.get("trace_context").is_none() && moved.get("accepted_at").is_none());
+    assert!(moved.get("trace_context").is_none() && moved.get("accepted_unix_nano").is_none());
     let run = cli(&station.url, &["rehome", ARM]).await;
     assert_eq!(
         run.code(),

@@ -22,18 +22,7 @@ use hebbian_contracts::{
 use orientation::{orientation_summary, pose_orientation_quaternion, xyzw};
 const NO_MOVEMENT_JOINT_RADIANS: f64 = 1e-6;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlanRefusal {
-    pub reason: RejectionReason,
-    pub detail: String,
-}
-
-fn refusal(reason: RejectionReason, detail: impl Into<String>) -> PlanRefusal {
-    PlanRefusal {
-        reason,
-        detail: detail.into(),
-    }
-}
+use crate::arm::{Rejection, rejection};
 
 const WRIST_ROLL_JOINT_NAME: &str = "wrist_roll";
 
@@ -98,9 +87,9 @@ impl Planner {
         waypoints: &[Waypoint],
         requested_speed: Option<JointSpeed>,
         gripper_angle: Option<f64>,
-    ) -> Result<PlannedMotion, PlanRefusal> {
+    ) -> Result<PlannedMotion, Rejection> {
         if waypoints.is_empty() {
-            return Err(refusal(
+            return Err(rejection(
                 RejectionReason::InvalidTarget,
                 "A move needs at least one waypoint",
             ));
@@ -111,7 +100,7 @@ impl Planner {
             self.default_joint_speed,
             self.max_joint_speed,
         )
-        .map_err(|invalid| refusal(RejectionReason::InvalidTarget, invalid.to_string()))?;
+        .map_err(|invalid| rejection(RejectionReason::InvalidTarget, invalid.to_string()))?;
         let mut segments = Vec::new();
         let mut previous = start.to_vec();
         for (index, waypoint) in waypoints.iter().enumerate() {
@@ -126,7 +115,7 @@ impl Planner {
                             &self.upper,
                         )
                         .map_err(|error| {
-                            refusal(RejectionReason::InvalidTarget, error.to_string())
+                            rejection(RejectionReason::InvalidTarget, error.to_string())
                         })?;
                         (target.as_slice().to_vec(), None, None, None)
                     }
@@ -136,7 +125,7 @@ impl Planner {
                     } => {
                         let quaternion = pose_orientation_quaternion(*orientation, self.jaw_axis)
                             .map_err(|why| {
-                            refusal(RejectionReason::InvalidTarget, why.to_string())
+                            rejection(RejectionReason::InvalidTarget, why.to_string())
                         })?;
                         let (corner, pose_limited) =
                             self.solve_waypoint(index, &previous, *position, quaternion)?;
@@ -261,16 +250,16 @@ impl Planner {
         })
     }
 
-    fn require_joint_shape(&self, joints: &[f64]) -> Result<(), PlanRefusal> {
+    fn require_joint_shape(&self, joints: &[f64]) -> Result<(), Rejection> {
         let expected = self.joint_names.len();
         if joints.len() != expected {
-            return Err(refusal(
+            return Err(rejection(
                 RejectionReason::InvalidTarget,
                 format!("Expected {expected} joints, got {}", joints.len()),
             ));
         }
         if !joints.iter().all(|value| value.is_finite()) {
-            return Err(refusal(
+            return Err(rejection(
                 RejectionReason::InvalidTarget,
                 "Joint positions must be finite",
             ));
@@ -278,7 +267,7 @@ impl Planner {
         Ok(())
     }
 
-    fn joint_target(&self, joints: &[f64]) -> Result<Vec<f64>, PlanRefusal> {
+    fn joint_target(&self, joints: &[f64]) -> Result<Vec<f64>, Rejection> {
         self.require_joint_shape(joints)?;
         Ok(joints
             .iter()
@@ -293,11 +282,11 @@ impl Planner {
         previous: &[f64],
         position: [f64; 3],
         quaternion: [f64; 4],
-    ) -> Result<(Vec<f64>, Option<PoseLimited>), PlanRefusal> {
+    ) -> Result<(Vec<f64>, Option<PoseLimited>), Rejection> {
         let solved = self
             .solver
             .solve(position, OrientationGoal::Required { quaternion }, previous)
-            .map_err(|why| refusal(RejectionReason::InvalidTarget, why.to_string()))?;
+            .map_err(|why| rejection(RejectionReason::InvalidTarget, why.to_string()))?;
         match solved {
             IkResult::Solved(pose) => Ok((self.joint_target(&pose.joints)?, None)),
             IkResult::Failed { reason, best } => {
@@ -308,7 +297,7 @@ impl Planner {
                     .zip(previous)
                     .any(|(goal, was)| (goal - was).abs() > NO_MOVEMENT_JOINT_RADIANS);
                 if !moves {
-                    return Err(refusal(
+                    return Err(rejection(
                         RejectionReason::Unreachable,
                         format!("{}; {advice}", not_reached(reason, &best)),
                     ));
@@ -374,16 +363,16 @@ impl Planner {
         start: &[f64],
         goal: Vec<f64>,
         path: anyhow::Result<PathCheck>,
-    ) -> Result<(Vec<f64>, Option<PathLimited>), PlanRefusal> {
+    ) -> Result<(Vec<f64>, Option<PathLimited>), Rejection> {
         match path {
             Ok(PathCheck::Clear) => Ok((goal, None)),
             Ok(PathCheck::StopsAt { last_safe, reason }) if last_safe.as_slice() != start => {
                 Ok((last_safe, Some(PathLimited { reason })))
             }
             Ok(PathCheck::StartRefused { reason } | PathCheck::StopsAt { reason, .. }) => {
-                Err(refusal(RejectionReason::InvalidTarget, reason))
+                Err(rejection(RejectionReason::InvalidTarget, reason))
             }
-            Err(error) => Err(refusal(
+            Err(error) => Err(rejection(
                 RejectionReason::InvalidTarget,
                 format!("{error:#}"),
             )),

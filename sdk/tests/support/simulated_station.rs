@@ -155,12 +155,7 @@ impl SimulatedStation {
     pub async fn connect(&self) -> Result<Station, Error> {
         let station = Station::connect(&self.url).await?;
         station
-            .wait_for_state(|state| {
-                state
-                    .arms
-                    .iter()
-                    .all(|arm| arm.sampled_at_unix_seconds.is_some())
-            })
+            .wait_for_state(|state| state.arms.iter().all(|arm| arm.sampled_unix_nano.is_some()))
             .await?;
         Ok(station)
     }
