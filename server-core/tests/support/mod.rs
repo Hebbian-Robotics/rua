@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use hebbian_contracts::{Command, CommandRecord, Event, Frame};
 use hebbian_robot_use_core::control_link::LinkHandle;
-use hebbian_robot_use_core::control_loop::{ArmSetup, run_arms};
+use hebbian_robot_use_core::control_loop::{ArmSetup, Report, run_arms};
 use hebbian_robot_use_core::controller_transport::{ControllerAnswer, ControllerRequest};
 use hebbian_robot_use_core::plant::Plant;
 use tokio::sync::mpsc::Receiver;
@@ -97,7 +97,7 @@ impl LinkClient {
 // SAFETY: Stop simulated arms as soon as the test finishes, including after a panic.
 pub struct RunningArms {
     shutdown_requested: Arc<AtomicBool>,
-    loop_thread: Option<JoinHandle<()>>,
+    loop_thread: Option<JoinHandle<Vec<(String, Report)>>>,
 }
 
 impl RunningArms {
@@ -105,7 +105,7 @@ impl RunningArms {
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let loop_shutdown_requested = Arc::clone(&shutdown_requested);
         let loop_thread = std::thread::spawn(move || {
-            run_arms(
+            let reports = run_arms(
                 &mut arms,
                 Some(Duration::from_secs(30)),
                 &loop_shutdown_requested,
@@ -113,11 +113,16 @@ impl RunningArms {
             for arm in arms {
                 arm.link.close();
             }
+            reports
         });
         Self {
             shutdown_requested,
             loop_thread: Some(loop_thread),
         }
+    }
+    pub fn finish(mut self) -> Vec<(String, Report)> {
+        self.shutdown_requested.store(true, Ordering::Relaxed);
+        self.loop_thread.take().unwrap().join().unwrap()
     }
 }
 

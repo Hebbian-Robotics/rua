@@ -554,16 +554,10 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
     });
     setups[0].config = ControllerConfig::try_from(left_config).unwrap();
     let left_handle = setups[0].link.handle();
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let stop = Arc::clone(&shutdown);
-    let loop_thread = std::thread::spawn(move || {
-        let reports = run_arms(&mut setups, Some(Duration::from_secs(3)), &stop);
-        for setup in setups {
-            assert_eq!(setup.config.trace_directory, test_config().trace_directory);
-            setup.link.close();
-        }
-        reports
-    });
+    for setup in &setups {
+        assert_eq!(setup.config.trace_directory, test_config().trace_directory);
+    }
+    let running_arms = RunningArms::start(setups);
     let mut client = LinkClient::connect(&left_handle);
     client.command(Command::Enable);
     client.read_until(in_mode(ArmMode::Holding));
@@ -577,8 +571,7 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
         matches!(event, Event::State(Sample { positions, .. })
             if (positions[0] - 0.4).abs() < 0.02 && (positions[1] + 0.2).abs() < 0.02)
     });
-    shutdown.store(true, Ordering::Relaxed);
-    let reports = loop_thread.join().unwrap();
+    let reports = running_arms.finish();
     assert!(reports.iter().all(|(_, report)| report.trip.is_none()));
     for (name, report) in &reports {
         let expected_directory = Path::new(&test_config().trace_directory).join(name);
