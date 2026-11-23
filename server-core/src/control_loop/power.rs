@@ -104,7 +104,7 @@ impl<P: Plant> Runner<'_, P> {
     // SAFETY: On shutdown, with nothing left to carry out: return to where the arm
     // rested unpowered, then release.
     pub(super) fn shutdown_step(&mut self, now: Now) -> bool {
-        if !self.state.arm().shutdown_requested() || !self.state.powered {
+        if !self.state.arm().shutdown_requested() || !self.state.powered() {
             return false;
         }
         let poses = self.state.arm().poses().cloned();

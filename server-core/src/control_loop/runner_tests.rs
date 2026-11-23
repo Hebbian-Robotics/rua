@@ -265,7 +265,7 @@ fn drift_after_the_first_good_enable_sample_releases_torque_without_following_it
     assert_eq!(count(&calls.enable), 1);
     assert_eq!(count(&calls.release), 1);
     assert_eq!(count(&calls.position_writes), 0);
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn a_refused_enable_releases_whatever_the_attempt_left_on_and_fails_the_command(
     runner.enable(now);
     assert_eq!(count(&calls.release), 1);
     assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn a_clean_enable_turns_torque_on_once_and_powers_the_loop_up() {
     runner.state.arm().next_job();
     runner.enable(now);
     assert_eq!(count(&calls.enable), 1);
-    assert!(runner.state.powered);
+    assert!(runner.state.powered());
     assert_eq!(runner.state.arm().mode(), ArmMode::Holding);
 }
 
@@ -330,7 +330,7 @@ fn a_bus_failure_while_enabled_is_waited_out_with_the_guard_still_heard() {
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
     runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
-    assert!(runner.state.powered);
+    assert!(runner.state.powered());
     assert!(runner.report.trip.is_none());
     assert_eq!(count(&calls.release), 0);
 }
@@ -352,10 +352,10 @@ fn a_lost_bus_recovers_a_verified_hold_without_releasing_torque() {
     };
     for _ in 0..cycles_in_grace {
         cycle(&mut runner);
-        assert!(runner.state.powered, "still holding within the grace");
+        assert!(runner.state.powered(), "still holding within the grace");
     }
     cycle(&mut runner);
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
     assert_eq!(runner.state.arm().mode(), ArmMode::Disconnected);
     assert_eq!(count(&calls.release), 0);
     assert!(
@@ -386,7 +386,7 @@ fn a_lost_bus_recovers_a_verified_hold_without_releasing_torque() {
     cycle(&mut runner);
     assert_eq!(count(&calls.release), 0);
     assert_eq!(count(&calls.enable), 0);
-    assert!(runner.state.powered);
+    assert!(runner.state.powered());
     assert_eq!(runner.state.arm().mode(), ArmMode::Holding);
 }
 
@@ -453,7 +453,7 @@ fn a_reconnected_bus_with_a_motor_unpowered_does_not_resume_or_release() {
         runner.begin_cycle(Duration::from_millis(10), None);
     }
     assert_eq!(runner.state.arm().mode(), ArmMode::Disconnected);
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
     assert!(matches!(
         &runner.recovery,
         BusRecovery::AwaitingApproval(issue) if issue.motors_without_torque == [2]
@@ -531,7 +531,7 @@ fn a_heartbeat_that_fails_during_patience_counts_as_a_plant_failure() {
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
     runner.bus_failed(&anyhow::anyhow!("no answer"), Now::current());
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
     assert!(
         runner
             .report
@@ -553,7 +553,7 @@ fn a_shutdown_at_the_rest_pose_releases_without_moving() {
     runner.state.arm().submit(Command::Shutdown, now).unwrap();
     assert!(runner.shutdown_step(now));
     assert_eq!(count(&calls.release), 1);
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
 }
 
 #[test]
@@ -569,7 +569,7 @@ fn a_shutdown_away_from_rest_returns_once_and_then_releases() {
     assert!(!runner.shutdown_step(now), "the return to rest begins");
     assert!(runner.state.shutdown_return_attempted);
     assert_eq!(count(&calls.release), 0);
-    assert!(runner.state.powered);
+    assert!(runner.state.powered());
     assert!(runner.shutdown_step(now), "a second attempt releases");
     assert_eq!(count(&calls.release), 1);
 }
@@ -588,7 +588,7 @@ fn shutdown_releases_instead_of_returning_to_rest_outside_joint_limits() {
 
     runner.shutdown_step(now);
 
-    assert!(!runner.state.powered);
+    assert!(!runner.state.powered());
     assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
     assert_eq!(count(&calls.position_writes), 0);
     assert_eq!(count(&calls.release), 1);
@@ -620,7 +620,7 @@ fn a_shutdown_not_requested_or_an_unpowered_arm_does_nothing() {
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
     assert!(!runner.shutdown_step(Now::current()));
-    assert!(runner.state.powered);
+    assert!(runner.state.powered());
     assert_eq!(count(&calls.release), 0);
 }
 
