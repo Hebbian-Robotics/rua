@@ -594,7 +594,9 @@ mod tests {
 
     #[test]
     fn an_expired_manual_lease_allows_enable_only_after_every_arm_has_stopped() {
-        use crate::lease::{Lease, LeaseAdmission, SharedInterlocks};
+        use crate::lease::{
+            AcquireMode, GenerationTicket, Lease, LeaseAdmission, SharedInterlocks,
+        };
         use hebbian_contracts::{
             CommandOutcome, LeaseHolder, LeaseRequest, OnInterruption, RejectionReason,
         };
@@ -608,9 +610,8 @@ mod tests {
             required_cameras: vec![],
             on_interruption: OnInterruption::WaitForApproval,
         };
-        let grant = lease
-            .acquire_stopping_arms(request.clone(), crate::lease::AcquireMode::WaitOrFail)
-            .unwrap();
+        let mode = AcquireMode::WaitOrFail;
+        let grant = lease.acquire_stopping_arms(request.clone(), mode).unwrap();
         let expired = Instant::now() + Duration::from_secs(2);
         let (disabled_handle, disabled_inbox) = arm_channel();
         let (moving_handle, moving_inbox) = arm_channel();
@@ -625,7 +626,7 @@ mod tests {
             Arc::clone(&moving_generation),
             SharedInterlocks::default(),
         );
-        let prepared_before_expiry = [crate::lease::GenerationTicket::capture(&moving_generation)];
+        let prepared_before_expiry = [GenerationTicket::capture(&moving_generation)];
         let mut disabled = core();
         let mut moving = holding_core();
         let movement = part("moving", [0.5, 0.0]);
@@ -687,9 +688,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(enabled.label, "enable");
-        let fresh = lease
-            .acquire_stopping_arms(request, crate::lease::AcquireMode::WaitOrFail)
-            .unwrap();
+        let fresh = lease.acquire_stopping_arms(request, mode).unwrap();
         assert_ne!(fresh.lease_token, grant.lease_token);
         let late_plan = lease.admit_generation(
             Some(&grant.lease_token),
