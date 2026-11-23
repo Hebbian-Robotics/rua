@@ -6,7 +6,10 @@ from collections.abc import Collection
 from dataclasses import replace
 from typing import Literal
 
-from hebbian_rua.client.llm.generated_robot_tools import MODEL_OUTPUT_UNITS
+from hebbian_rua.client.llm.generated_robot_tools import (
+    MODEL_OUTPUT_UNITS,
+    MODEL_RESPONSE_FIELDS,
+)
 from hebbian_rua.client.llm.types import (
     ModelContent,
     RobotOutput,
@@ -123,37 +126,6 @@ def _format_model_field(value: object, field_name: str) -> object:
     return value
 
 
-_STATE_FIELDS = ("robot", "joint_names", "max_joint_speed", "surface_guard")
-_STATION_CONTEXT_FIELDS = ("description", "lease")
-_ARM_FIELDS = {
-    "arm",
-    "mode",
-    "status",
-    "fault",
-    "active_trip",
-    "interlocks",
-    "recovery_issue",
-    "revision",
-    "sampled_at_unix_seconds",
-    "measured_joints",
-    "tool",
-    "gripper_opening",
-}
-_DIAGNOSTIC_FIELDS = {
-    "id",
-    "command_id",
-    "group_id",
-    "stream_command_id",
-    "sequence_id",
-    "action_sequence_id",
-    "checkpoints",
-    "trace_context",
-    "model_points",
-    "accepted_at",
-    "finished_at",
-}
-
-
 def _compact_earlier_step(value: object) -> object:
     if not isinstance(value, list):
         return concise_output(value)
@@ -169,14 +141,7 @@ def _compact_earlier_step(value: object) -> object:
                     **{key: item[key] for key in ("arm",) if key in item},
                     "record": {
                         key: record[key]
-                        for key in (
-                            "label",
-                            "completion",
-                            "phase",
-                            "target_status",
-                            "pose_limited",
-                            "path_limited",
-                        )
+                        for key in MODEL_RESPONSE_FIELDS["earlier_step"]
                         if key in record
                     },
                 }
@@ -201,14 +166,18 @@ def concise_output(value: object, *, keep_station_context: bool = False) -> obje
         return value
     value = _model_command_record(value)
     if "arms" in value and "joint_names" in value:
-        kept_state_fields = _STATE_FIELDS + (
-            _STATION_CONTEXT_FIELDS if keep_station_context else ()
+        kept_state_fields = MODEL_RESPONSE_FIELDS["state"] + (
+            MODEL_RESPONSE_FIELDS["station_context"] if keep_station_context else []
         )
         return {
             **{key: value[key] for key in kept_state_fields if key in value},
             "arms": [
                 concise_output(
-                    {key: item for key, item in arm.items() if key in _ARM_FIELDS}
+                    {
+                        key: item
+                        for key, item in arm.items()
+                        if key in MODEL_RESPONSE_FIELDS["arm"]
+                    }
                 )
                 for arm in value["arms"]
             ],
@@ -229,7 +198,7 @@ def concise_output(value: object, *, keep_station_context: bool = False) -> obje
     return {
         key: concise_output(item, keep_station_context=keep_station_context)
         for key, item in value.items()
-        if key not in _DIAGNOSTIC_FIELDS
+        if key not in MODEL_RESPONSE_FIELDS["diagnostic"]
     }
 
 

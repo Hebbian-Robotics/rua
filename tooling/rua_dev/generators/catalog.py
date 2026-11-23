@@ -13,6 +13,7 @@ def generate(
     input_units: list[dict],
     output_units: list[list],
     outcomes: dict[str, str],
+    response_fields: dict[str, list[str]],
     targets: frozenset[SdkTarget],
 ) -> None:
     encoded_catalog = json.dumps(catalog, indent=2, ensure_ascii=False)
@@ -39,6 +40,9 @@ def generate(
                 + "\nMODEL_OUTCOMES = json.loads(r'''\n"
                 + json.dumps(outcomes, indent=2)
                 + "\n''')\n"
+                + "\nMODEL_RESPONSE_FIELDS = json.loads(r'''\n"
+                + json.dumps(response_fields, indent=2)
+                + "\n''')\n"
             )
 
     if SdkTarget.TYPESCRIPT in targets:
@@ -53,5 +57,7 @@ def generate(
             + encoded_output_units
             + " as const;\nexport const modelOutcomes = "
             + json.dumps(outcomes, indent=2)
+            + " as const;\nexport const modelResponseFields = "
+            + json.dumps(response_fields, indent=2)
             + " as const;\n"
         )

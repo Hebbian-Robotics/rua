@@ -332,6 +332,9 @@ function createRobotToolsCore(
         };
       }
     }
+    throw new Error(
+      `Unknown capture result ${JSON.stringify(capture satisfies never)}`,
+    );
   }
 
   async function observe(

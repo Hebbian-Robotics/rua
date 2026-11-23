@@ -236,6 +236,57 @@ impl From<crate::CommandOutcome> for ModelOutcome {
     }
 }
 
+/// Fields selected by the concise model response formatter.
+#[derive(Debug, Serialize)]
+pub struct ModelResponseFields {
+    pub state: &'static [&'static str],
+    pub station_context: &'static [&'static str],
+    pub arm: &'static [&'static str],
+    pub diagnostic: &'static [&'static str],
+    pub earlier_step: &'static [&'static str],
+}
+
+/// Shared field selections for station snapshots and command history.
+pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
+    state: &["robot", "joint_names", "max_joint_speed", "surface_guard"],
+    station_context: &["description", "lease"],
+    arm: &[
+        "arm",
+        "mode",
+        "status",
+        "fault",
+        "active_trip",
+        "interlocks",
+        "recovery_issue",
+        "revision",
+        "sampled_at_unix_seconds",
+        "measured_joints",
+        "tool",
+        "gripper_opening",
+    ],
+    diagnostic: &[
+        "id",
+        "command_id",
+        "group_id",
+        "stream_command_id",
+        "sequence_id",
+        "action_sequence_id",
+        "checkpoints",
+        "trace_context",
+        "model_points",
+        "accepted_at",
+        "finished_at",
+    ],
+    earlier_step: &[
+        "label",
+        "completion",
+        "phase",
+        "target_status",
+        "pose_limited",
+        "path_limited",
+    ],
+};
+
 /// Station field, model field, and multiplier for model-facing output.
 pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
     ("position", "position_mm", 1000.0),

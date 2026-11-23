@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import copy, deepcopy
 from dataclasses import replace
 from math import degrees
-from typing import Self
+from typing import Self, assert_never
 from uuid import uuid4
 
 from hebbian_rua.client.contract.station_api import (
@@ -393,6 +393,9 @@ class RobotTools(RobotToolRules):
                     )
                     set_sequence_id(sequence_id)
                     return await self._action_sequence_result(call, sequence_id)
+
+            case _ as unreachable:
+                assert_never(unreachable)
 
     async def _observe_tool(
         self, call: RobotToolCall, request: ObserveInput

@@ -16,6 +16,9 @@ fn main() -> Result<(), serde_json::Error> {
             rules.into()
         }
         Some("--output-units") => serde_json::to_value(hebbian_contracts::MODEL_OUTPUT_UNITS)?,
+        Some("--response-fields") => {
+            serde_json::to_value(hebbian_contracts::MODEL_RESPONSE_FIELDS)?
+        }
         Some("--context") => hebbian_contracts::robot_tool_context(),
         Some("--input-units") => serde_json::to_value(hebbian_contracts::MODEL_INPUT_UNITS)?,
         _ => serde_json::to_value(hebbian_contracts::robot_tool_catalog())?,

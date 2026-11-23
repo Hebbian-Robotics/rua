@@ -1,5 +1,8 @@
 /** Readable model responses; station records retain their original SI values. */
-import { modelOutputUnits } from "./generated/robot-tools.js";
+import {
+  modelOutputUnits,
+  modelResponseFields,
+} from "./generated/robot-tools.js";
 
 const outputConversions = new Map<string, readonly [string, number]>(
   modelOutputUnits.map(([stationField, modelField, factor]) => [
@@ -111,40 +114,7 @@ function formatModelField(value: unknown, fieldName: string): unknown {
   return value;
 }
 
-const stateFields = [
-  "robot",
-  "joint_names",
-  "max_joint_speed",
-  "surface_guard",
-];
-const stationContextFields = ["description", "lease"];
-const armFields = [
-  "arm",
-  "mode",
-  "status",
-  "fault",
-  "active_trip",
-  "interlocks",
-  "recovery_issue",
-  "revision",
-  "sampled_at_unix_seconds",
-  "measured_joints",
-  "tool",
-  "gripper_opening",
-];
-const diagnosticFields = [
-  "id",
-  "command_id",
-  "group_id",
-  "stream_command_id",
-  "sequence_id",
-  "action_sequence_id",
-  "checkpoints",
-  "trace_context",
-  "model_points",
-  "accepted_at",
-  "finished_at",
-];
+const diagnosticFields = new Set<string>(modelResponseFields.diagnostic);
 
 export interface ConciseOptions {
   /**
@@ -178,14 +148,7 @@ function compactEarlierStep(value: unknown): unknown {
       ...keepFields(entry, ["arm"]),
       record: keepFields(
         modelCommandRecord(record as Record<string, unknown>),
-        [
-          "label",
-          "completion",
-          "phase",
-          "target_status",
-          "pose_limited",
-          "path_limited",
-        ],
+        modelResponseFields.earlier_step,
       ),
     });
   });
@@ -207,11 +170,15 @@ export function conciseOutput(
     const arms = Array.isArray(record["arms"]) ? record["arms"] : [];
     return {
       ...keepFields(record, [
-        ...stateFields,
-        ...(options.keepStationContext ? stationContextFields : []),
+        ...modelResponseFields.state,
+        ...(options.keepStationContext
+          ? modelResponseFields.station_context
+          : []),
       ]),
       arms: arms.map((arm) =>
-        conciseOutput(keepFields(arm as Record<string, unknown>, armFields)),
+        conciseOutput(
+          keepFields(arm as Record<string, unknown>, modelResponseFields.arm),
+        ),
       ),
     };
   }
@@ -231,7 +198,7 @@ export function conciseOutput(
   }
   return Object.fromEntries(
     Object.entries(record)
-      .filter(([key]) => !diagnosticFields.includes(key))
+      .filter(([key]) => !diagnosticFields.has(key))
       .map(([key, item]) => [key, conciseOutput(item, options)]),
   );
 }

@@ -1,5 +1,6 @@
 //! Format model-facing results while retaining SI values in station records.
 
+use hebbian_contracts::MODEL_RESPONSE_FIELDS;
 use serde_json::{Map, Number, Value};
 
 fn scaled(value: Value, factor: f64) -> Value {
@@ -23,36 +24,6 @@ pub struct ConciseOptions {
     /// Observations leave them out because the model is given the conventions separately.
     pub keep_station_context: bool,
 }
-
-const STATE_FIELDS: [&str; 4] = ["robot", "joint_names", "max_joint_speed", "surface_guard"];
-const STATION_CONTEXT_FIELDS: [&str; 2] = ["description", "lease"];
-const ARM_FIELDS: [&str; 12] = [
-    "arm",
-    "mode",
-    "status",
-    "fault",
-    "active_trip",
-    "interlocks",
-    "recovery_issue",
-    "revision",
-    "sampled_at_unix_seconds",
-    "measured_joints",
-    "tool",
-    "gripper_opening",
-];
-const DIAGNOSTIC_FIELDS: [&str; 11] = [
-    "id",
-    "command_id",
-    "group_id",
-    "stream_command_id",
-    "sequence_id",
-    "action_sequence_id",
-    "checkpoints",
-    "trace_context",
-    "model_points",
-    "accepted_at",
-    "finished_at",
-];
 
 fn keep_fields(object: &Map<String, Value>, kept: &[&str]) -> Map<String, Value> {
     kept.iter()
@@ -162,14 +133,7 @@ fn compact_earlier_step(value: Value) -> Value {
                     "record".to_owned(),
                     Value::Object(keep_fields(
                         &model_command_record(record.clone()),
-                        &[
-                            "label",
-                            "completion",
-                            "phase",
-                            "target_status",
-                            "pose_limited",
-                            "path_limited",
-                        ],
+                        MODEL_RESPONSE_FIELDS.earlier_step,
                     )),
                 );
                 concise_output(Value::Object(compact), ConciseOptions::default())
@@ -192,9 +156,9 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
         Value::Object(object)
             if object.contains_key("arms") && object.contains_key("joint_names") =>
         {
-            let mut state = keep_fields(&object, &STATE_FIELDS);
+            let mut state = keep_fields(&object, MODEL_RESPONSE_FIELDS.state);
             if options.keep_station_context {
-                state.extend(keep_fields(&object, &STATION_CONTEXT_FIELDS));
+                state.extend(keep_fields(&object, MODEL_RESPONSE_FIELDS.station_context));
             }
             let arms = object
                 .get("arms")
@@ -204,7 +168,7 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
                 .map(|arm| {
                     let fields = arm
                         .as_object()
-                        .map(|arm| keep_fields(arm, &ARM_FIELDS))
+                        .map(|arm| keep_fields(arm, MODEL_RESPONSE_FIELDS.arm))
                         .unwrap_or_default();
                     concise_output(Value::Object(fields), ConciseOptions::default())
                 })
@@ -247,7 +211,7 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
         Value::Object(object) => Value::Object(
             model_command_record(object)
                 .into_iter()
-                .filter(|(key, _)| !DIAGNOSTIC_FIELDS.contains(&key.as_str()))
+                .filter(|(key, _)| !MODEL_RESPONSE_FIELDS.diagnostic.contains(&key.as_str()))
                 .map(|(key, value)| (key, concise_output(value, options)))
                 .collect(),
         ),
