@@ -136,15 +136,18 @@ fn publish_controller_event(
             "Controller reported an unknown arm",
         )
     })?;
-    if matches!(event, Event::State(_)) {
+    if let Event::State(sample) = event {
         feedback_times.insert(arm, Some(Instant::now()));
-    } else if !event.is_logged() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Controller sent an invalid event",
-        ));
+        link.publish_sample(sample);
+    } else {
+        let logged = hebbian_contracts::LoggedEvent::from_event(event).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Controller sent an invalid event",
+            )
+        })?;
+        link.publish_log(logged);
     }
-    link.publish(event);
     Ok(())
 }
 
@@ -520,7 +523,7 @@ mod tests {
             while !stopped.load(Ordering::Acquire) {
                 let mut sample = hebbian_contracts::Sample::blank();
                 sample.positions = vec![0.0, 0.0];
-                link.publish(Event::State(sample));
+                link.publish_sample(sample);
                 thread::sleep(Duration::from_millis(10));
             }
         })

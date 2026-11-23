@@ -186,9 +186,51 @@ impl Event {
     /// not: a sample is superseded by the next, a reply answers one client.
     #[must_use]
     pub fn is_logged(&self) -> bool {
-        !matches!(
-            self,
-            Self::State(_) | Self::Reply { .. } | Self::Snapshot { .. }
-        )
+        match self {
+            Self::State(_) | Self::Reply { .. } | Self::Snapshot { .. } => false,
+            Self::Resync { .. }
+            | Self::Record(_)
+            | Self::Mode { .. }
+            | Self::Rejected { .. }
+            | Self::Tripped { .. }
+            | Self::ControllerUnavailable { .. }
+            | Self::ControllerAvailable => true,
+        }
+    }
+}
+
+/// An event eligible for the controller's sequenced log.
+pub struct LoggedEvent(Event);
+
+impl LoggedEvent {
+    #[must_use]
+    pub fn from_event(event: Event) -> Option<Self> {
+        event.is_logged().then_some(Self(event))
+    }
+
+    #[must_use]
+    pub fn record(record: CommandRecord) -> Self {
+        Self(Event::Record(record))
+    }
+
+    #[must_use]
+    pub fn mode(mode: ArmMode, fault: Option<String>) -> Self {
+        Self(Event::Mode { mode, fault })
+    }
+
+    #[must_use]
+    pub fn tripped(reason: String) -> Self {
+        Self(Event::Tripped { reason })
+    }
+
+    #[must_use]
+    pub fn controller_available() -> Self {
+        Self(Event::ControllerAvailable)
+    }
+}
+
+impl From<LoggedEvent> for Event {
+    fn from(event: LoggedEvent) -> Self {
+        event.0
     }
 }

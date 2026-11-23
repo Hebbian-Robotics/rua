@@ -18,8 +18,8 @@ use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
 use crate::sync::LockUnpoisoned;
 use hebbian_contracts::{
-    ArmMode, ArmMove, CommandRecord, Event, Frame, Interlock, LeaseStatus, PoseOrientation,
-    PoseProjection, RejectionReason, Sample, UnixNanos,
+    ArmMode, ArmMove, CommandRecord, Event, Frame, Interlock, LeaseStatus, LoggedEvent,
+    PoseOrientation, PoseProjection, RejectionReason, Sample, UnixNanos,
 };
 
 const MAXIMUM_PENDING_SAMPLES: usize = 64;
@@ -30,7 +30,7 @@ const WRITER_POLL: Duration = Duration::from_millis(20);
 
 enum Outgoing {
     Sample(Sample),
-    Log(Event),
+    Log(LoggedEvent),
     EnsureRecord(CommandRecord),
     ControllerUnavailable(String),
     Connected(u64, ClientSink),
@@ -703,30 +703,22 @@ impl Link {
         self.loop_end.lock_unpoisoned().take()
     }
 
-    pub(crate) fn log_publisher(&self) -> impl Fn(Event) + Send + 'static + use<> {
+    pub(crate) fn log_publisher(&self) -> impl Fn(LoggedEvent) + Send + 'static + use<> {
         let log_sender = self.shared.outgoing.clone();
         move |event| {
             let _ = log_sender.send(Outgoing::Log(event));
         }
     }
 
-    #[expect(
-        clippy::unreachable,
-        reason = "Only state samples and logged events enter this loop publisher; protocol replies use separate paths."
-    )]
-    pub fn publish(&self, event: Event) {
-        match event {
-            Event::State(sample) => {
-                if self.pending_samples.load(Ordering::Relaxed) < MAXIMUM_PENDING_SAMPLES {
-                    self.pending_samples.fetch_add(1, Ordering::Relaxed);
-                    let _ = self.shared.outgoing.send(Outgoing::Sample(sample));
-                }
-            }
-            event if event.is_logged() => {
-                let _ = self.shared.outgoing.send(Outgoing::Log(event));
-            }
-            _ => unreachable!("only samples and log events are published by the loop"),
+    pub fn publish_sample(&self, sample: Sample) {
+        if self.pending_samples.load(Ordering::Relaxed) < MAXIMUM_PENDING_SAMPLES {
+            self.pending_samples.fetch_add(1, Ordering::Relaxed);
+            let _ = self.shared.outgoing.send(Outgoing::Sample(sample));
         }
+    }
+
+    pub fn publish_log(&self, event: LoggedEvent) {
+        let _ = self.shared.outgoing.send(Outgoing::Log(event));
     }
 
     pub fn close(mut self) {
@@ -774,7 +766,7 @@ impl Hub {
         match message {
             Outgoing::Sample(sample) => self.receive_sample(sample, pending_samples),
             Outgoing::Log(event) => {
-                self.log_event(event);
+                self.log_event(event.into());
                 self.announce_change();
             }
             Outgoing::EnsureRecord(record) => {
@@ -1036,7 +1028,7 @@ mod tests {
 
         let mut first = Sample::blank();
         first.positions = vec![0.1, 0.2];
-        link.publish(Event::State(first));
+        link.publish_sample(first);
 
         let sample = received.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(sample.positions, vec![0.1, 0.2]);
@@ -1053,14 +1045,14 @@ mod tests {
                 .unwrap();
         let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let links = BTreeMap::from([("arm".to_owned(), link.handle())]);
-        link.publish(Event::State(Sample::blank()));
+        link.publish_sample(Sample::blank());
         let first = station_state(&links).await.unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         let unchanged = station_state(&links).await.unwrap();
         let sampled_at = first.arms[0].sampled_at_unix_seconds.unwrap();
         assert_eq!(unchanged.arms[0].sampled_at_unix_seconds, Some(sampled_at));
 
-        link.publish(Event::State(Sample::blank()));
+        link.publish_sample(Sample::blank());
         let next = station_state(&links).await.unwrap();
         assert!(next.arms[0].sampled_at_unix_seconds.unwrap() > sampled_at);
         link.close();

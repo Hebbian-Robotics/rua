@@ -368,7 +368,7 @@ fn run(
                 |ready| {
                     ready.restore_motion_authority(&lease);
                     for link in links.values() {
-                        link.publish(hebbian_contracts::Event::ControllerAvailable);
+                        link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
                     }
                     supervisor.set_phase(ControllerPhase::Online { _readiness: ready });
                 },
