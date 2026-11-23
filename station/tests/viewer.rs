@@ -508,15 +508,16 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     wait_for_arm(address, |arm| has_interlock(arm, "arm_disconnected"));
     torque_off.store(true, Ordering::Relaxed);
     bus_down.store(false, Ordering::Relaxed);
-    let arm = wait_for_arm(address, |arm| {
-        arm["interlocks"].as_array().is_some_and(|interlocks| {
-            interlocks.iter().any(|interlock| {
-                interlock["kind"] == "recovery_approval_required"
-                    && interlock["motors"] == json!(["2"])
+    // WHY: Recovery approval is raised before the disconnect interlock is cleared.
+    wait_for_arm(address, |arm| {
+        !has_interlock(arm, "arm_disconnected")
+            && arm["interlocks"].as_array().is_some_and(|interlocks| {
+                interlocks.iter().any(|interlock| {
+                    interlock["kind"] == "recovery_approval_required"
+                        && interlock["motors"] == json!(["2"])
+                })
             })
-        })
     });
-    assert!(!has_interlock(&arm, "arm_disconnected"), "{arm}");
     assert_eq!(recovery_enables.load(Ordering::Relaxed), 0);
     let approved = submit_command(
         address,
