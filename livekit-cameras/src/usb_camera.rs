@@ -1,5 +1,7 @@
 use std::{io, str::FromStr};
 
+use livekit_camera_publisher::config::CameraDevice;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UsbCameraIdentity {
     vendor: u16,
@@ -63,7 +65,7 @@ fn unique_device<Device>(mut matches: impl Iterator<Item = Device>) -> UsbMatch<
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<String>> {
+pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<CameraDevice>> {
     use std::fs;
     use v4l::capability::Flags;
 
@@ -91,7 +93,7 @@ pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<Strin
     })?;
 
     // WHY: Numeric selectors stop on capture loss. The publisher can then resolve USB identity again.
-    Ok(UsbMatch::Unique(index.to_string()))
+    Ok(UsbMatch::Unique(CameraDevice::Selector(index.to_string())))
 }
 
 #[cfg(target_os = "linux")]
@@ -114,51 +116,25 @@ fn linux_capture_indices(
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<String>> {
+pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<UsbMatch<CameraDevice>> {
     let usb_device = match find_usb_device(identity)? {
         UsbMatch::Unique(device) => device,
         UsbMatch::Disconnected => return Ok(UsbMatch::Disconnected),
         UsbMatch::Ambiguous => return Ok(UsbMatch::Ambiguous),
     };
-    let capture_devices = cameras::list_cameras().map_err(io::Error::other)?;
-    resolve_mac_capture_index(
-        identity,
-        usb_device.location_id(),
-        capture_devices
-            .iter()
-            .map(|device| (device.misc(), device.index().as_string())),
-    )
-    .map(UsbMatch::Unique)
+    Ok(UsbMatch::Unique(CameraDevice::AvFoundationId(
+        avfoundation_id(identity, usb_device.location_id()),
+    )))
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn resolve_mac_capture_index(
-    identity: &UsbCameraIdentity,
-    location: u32,
-    devices: impl Iterator<Item = (String, String)>,
-) -> io::Result<String> {
-    // WHY: Some USB capture IDs encode the location, vendor and product. Require all three or leave the camera unavailable.
-    let expected_id = (u64::from(location) << 32)
-        | (u64::from(identity.vendor) << 16)
-        | u64::from(identity.product);
-    let mut matches = devices.filter(|(id, _)| {
-        id.strip_prefix("0x")
-            .and_then(|hex| u64::from_str_radix(hex, 16).ok())
-            == Some(expected_id)
-    });
-    let capture = matches.next()
-        .ok_or_else(|| io::Error::other("Matching USB camera has no AVFoundation capture ID. Use rua camera-devices and pass --camera NAME=DEVICE"))?;
-    if matches.next().is_some() {
-        return Err(io::Error::other(
-            "Matching USB camera has multiple AVFoundation capture IDs",
-        ));
-    }
-    // WHY: The capture index forces a fresh USB match after a disconnect.
-    Ok(capture.1)
+fn avfoundation_id(identity: &UsbCameraIdentity, location: u32) -> u64 {
+    // WHY: The capture subprocess matches the port, vendor and product against its fresh inventory.
+    (u64::from(location) << 32) | (u64::from(identity.vendor) << 16) | u64::from(identity.product)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-pub(crate) fn resolve(_identity: &UsbCameraIdentity) -> io::Result<UsbMatch<String>> {
+pub(crate) fn resolve(_identity: &UsbCameraIdentity) -> io::Result<UsbMatch<CameraDevice>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "USB camera matching is unavailable on this platform",
@@ -186,20 +162,16 @@ mod tests {
     }
 
     #[test]
-    fn mac_capture_index_follows_the_matching_usb_location() {
+    fn mac_capture_id_follows_the_selected_usb_port() {
         let identity: UsbCameraIdentity = "1234:abcd:TEAM_CAMERA".parse().unwrap();
-        let capture_devices = [("0x147000001234abcd", "0"), ("0x146000001234abcd", "2")];
-        let resolve = |location| {
-            resolve_mac_capture_index(
-                &identity,
-                location,
-                capture_devices
-                    .into_iter()
-                    .map(|(id, index)| (id.to_owned(), index.to_owned())),
-            )
-        };
-        assert_eq!(resolve(0x1460_0000).unwrap(), "2");
-        assert!(resolve(0x1480_0000).is_err());
+        assert_eq!(
+            avfoundation_id(&identity, 0x1460_0000),
+            0x1460_0000_1234_abcd
+        );
+        assert_eq!(
+            avfoundation_id(&identity, 0x1470_0000),
+            0x1470_0000_1234_abcd
+        );
     }
 
     #[cfg(target_os = "linux")]

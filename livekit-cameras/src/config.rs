@@ -33,15 +33,16 @@ pub struct ServeArguments {
 }
 
 pub use livekit_camera_publisher::config::CameraConfiguration;
+use livekit_camera_publisher::config::CameraDevice;
 
-enum CameraDevice {
+enum CameraSelection {
     Explicit(String),
     Usb(UsbCameraIdentity),
 }
 
 pub(crate) struct CameraInput {
     name: String,
-    device: CameraDevice,
+    device: CameraSelection,
     publishing: livekit_camera_publisher::config::PublishingOptions,
 }
 
@@ -52,8 +53,8 @@ impl CameraInput {
 
     pub(crate) async fn resolve(&self) -> Result<UsbMatch<CameraConfiguration>, PublisherError> {
         let device = match &self.device {
-            CameraDevice::Explicit(device) => device.clone(),
-            CameraDevice::Usb(identity) => {
+            CameraSelection::Explicit(device) => CameraDevice::Selector(device.clone()),
+            CameraSelection::Usb(identity) => {
                 let identity = identity.clone();
                 match tokio::task::spawn_blocking(move || usb_camera::resolve(&identity))
                     .await
@@ -65,7 +66,7 @@ impl CameraInput {
                 }
             }
         };
-        let mut camera = CameraConfiguration::new(self.name.clone(), device)?;
+        let mut camera = CameraConfiguration::for_device(self.name.clone(), device)?;
         camera.publishing = self.publishing;
         Ok(UsbMatch::Unique(camera))
     }
@@ -84,11 +85,11 @@ impl ServeArguments {
         automatic.retain(|name, _| !explicit.contains_key(name));
         explicit
             .into_iter()
-            .map(|(name, device)| Ok((name, CameraDevice::Explicit(device))))
+            .map(|(name, device)| Ok((name, CameraSelection::Explicit(device))))
             .chain(
                 automatic
                     .into_iter()
-                    .map(|(name, identity)| Ok((name, CameraDevice::Usb(identity.parse()?)))),
+                    .map(|(name, identity)| Ok((name, CameraSelection::Usb(identity.parse()?)))),
             )
             .map(|result: Result<_, std::io::Error>| {
                 let (name, device) = result?;

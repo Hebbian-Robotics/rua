@@ -142,7 +142,8 @@ mod tests {
         let new_device = CameraConfiguration::new("wrist".into(), "2".into())?;
         assert!(matches!(
             after_lookup(Ok(UsbMatch::Unique(new_device))),
-            CaptureDecision::Open(camera) if camera.device() == "2"
+            CaptureDecision::Open(camera)
+                if matches!(camera.device(), livekit_camera_publisher::config::CameraDevice::Selector(device) if device == "2")
         ));
         Ok(())
     }
