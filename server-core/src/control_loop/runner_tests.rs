@@ -804,24 +804,33 @@ fn the_completion_and_checkpoint_wait_for_the_confirming_plant_write() {
             .unwrap()
     };
 
-    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
-    let link = test_link(&config);
-    let mut runner = powered_runner(&mut plant, &config, &link);
-    let command_id = start_short_move(&mut runner);
-    for _ in 1..completing_cycle {
+    for outcome in [CommandOutcome::Completed, CommandOutcome::Stopped] {
+        let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+        let link = test_link(&config);
+        let mut runner = powered_runner(&mut plant, &config, &link);
+        let command_id = start_short_move(&mut runner);
+        for _ in 1..completing_cycle {
+            run_motion_cycle(&mut runner);
+        }
+        runner.plant.position_write_fails = true;
         run_motion_cycle(&mut runner);
-    }
-    runner.plant.position_write_fails = true;
-    run_motion_cycle(&mut runner);
-    let record = runner.state.core.record(&command_id).unwrap();
-    assert!(record.is_pending(), "{record:?}");
-    assert!(record.checkpoints.is_empty(), "{record:?}");
+        let record = runner.state.core.record(&command_id).unwrap();
+        assert!(record.is_pending(), "{record:?}");
+        assert!(record.checkpoints.is_empty(), "{record:?}");
 
-    runner.plant.position_write_fails = false;
-    run_motion_cycle(&mut runner);
-    let record = runner.state.core.record(&command_id).unwrap();
-    assert_eq!(record.outcome(), Some(CommandOutcome::Completed));
-    assert_eq!(record.checkpoints.len(), 1);
+        if outcome == CommandOutcome::Stopped {
+            runner
+                .state
+                .core
+                .submit(Command::Stop, Now::current())
+                .unwrap();
+        }
+        runner.plant.position_write_fails = false;
+        run_motion_cycle(&mut runner);
+        let record = runner.state.core.record(&command_id).unwrap();
+        assert_eq!(record.outcome(), Some(outcome));
+        assert_eq!(record.checkpoints.len(), 1);
+    }
 }
 
 #[test]

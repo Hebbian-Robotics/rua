@@ -133,13 +133,19 @@ impl Loop<'_> {
         feedback: &Feedback,
         stop: bool,
     ) -> Result<MotionEffects, Trip> {
+        let Activity::Motion(active) = &mut self.activity else {
+            return Err(Trip::Trajectory("No motion is running".into()));
+        };
         if stop {
             let hold = self
                 .hold_at
                 .get_or_insert_with(|| self.filter.stopping_position());
             self.reference.set_at_rest(hold, None);
             return Ok(MotionEffects {
-                checkpoints: Vec::new(),
+                checkpoints: active
+                    .supervisor
+                    .new_checkpoints(active.checkpoints_sent)
+                    .to_vec(),
                 completion: Some(MotionCompletion {
                     outcome: CommandOutcome::Stopped,
                     detail: "Stopped".to_owned(),
@@ -157,9 +163,6 @@ impl Loop<'_> {
             self.reference.set_at_rest(&feedback.positions, None);
             return Ok(MotionEffects::default());
         }
-        let Activity::Motion(active) = &mut self.activity else {
-            return Err(Trip::Trajectory("No motion is running".into()));
-        };
         let speed_fraction = if self.config.feetech.is_some() {
             tracking_speed_fraction(
                 feedback,
