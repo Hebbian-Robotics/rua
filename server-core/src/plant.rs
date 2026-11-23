@@ -1,3 +1,21 @@
+/// Authority borrowed by an adapter while the controller applies a plant write.
+///
+/// Callers outside the controller runner cannot construct the authority.
+///
+/// ```compile_fail,E0451
+/// use hebbian_robot_use_core::plant::PlantWritePermit;
+///
+/// let permit = PlantWritePermit { _private: () };
+/// ```
+///
+/// An adapter needs a permit to apply a setpoint.
+///
+/// ```compile_fail,E0061
+/// use hebbian_robot_use_core::plant::{NoPhysicsStandIn, Plant};
+///
+/// let mut plant = NoPhysicsStandIn::at(vec![0.0], 0.1);
+/// plant.command(&[0.1], 0.01).unwrap();
+/// ```
 pub use crate::control_loop::PlantWritePermit;
 
 #[derive(Debug)]
