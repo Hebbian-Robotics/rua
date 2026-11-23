@@ -5,8 +5,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use hebbian_contracts::{
-    ActionSequenceRecord, ArmRecord, Event, Frame, LiveRun, RunEvent, ServerMessage,
-    StationEventSnapshot, StationState, TraceSpan, UnixNanos,
+    ActionSequenceRecord, ArmRecord, Event, Frame, LiveRun, MAX_RUN_REPLAY_RECORDS, RunEvent,
+    ServerMessage, StationEventSnapshot, StationState, TraceSpan, UnixNanos,
 };
 use tokio::sync::{broadcast, watch};
 
@@ -201,7 +201,8 @@ impl Shared {
                 ..Inner::default()
             }),
             changed: watch::channel(0).0,
-            run_updates: broadcast::channel(1024).0,
+            // Leave room for live events that arrive while the caller finishes connecting.
+            run_updates: broadcast::channel(MAX_RUN_REPLAY_RECORDS * 2).0,
             action_sequence_updates: watch::channel(None).0,
             lease_lost: watch::channel(false).0,
         }

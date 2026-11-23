@@ -5,12 +5,12 @@ use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
 use hebbian_contracts::{
-    KnownRunEvent, LiveRun, RunEvent, RunMemory, RunUsage, ServerMessage, TraceSpan, UnixNanos,
+    KnownRunEvent, LiveRun, MAX_RUN_REPLAY_RECORDS, RunEvent, RunMemory, RunUsage, ServerMessage,
+    TraceSpan, UnixNanos,
 };
 use hebbian_robot_use_core::station_api::{RunTelemetry, RunUpdates};
 
 const KEPT_SPANS: usize = 1000;
-const KEPT_RECORDS: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq)]
 enum RunRecordKind {
@@ -48,7 +48,7 @@ impl RunBuffer {
 
     fn log(&mut self, kind: RunRecordKind) {
         self.next_seq = self.next_seq.max(1);
-        if self.records.len() >= KEPT_RECORDS {
+        if self.records.len() >= MAX_RUN_REPLAY_RECORDS {
             self.records.pop_front();
         }
         self.records.push_back(RunRecord {
@@ -318,12 +318,12 @@ mod tests {
     #[test]
     fn the_buffer_keeps_only_the_newest_records() {
         let mut buffer = RunBuffer::default();
-        for index in 0..KEPT_RECORDS + 10 {
+        for index in 0..MAX_RUN_REPLAY_RECORDS + 10 {
             buffer.record_span(span(&index.to_string(), &serde_json::json!({})));
         }
-        assert_eq!(buffer.records.len(), KEPT_RECORDS);
+        assert_eq!(buffer.records.len(), MAX_RUN_REPLAY_RECORDS);
         assert!(buffer.since(0).is_err());
         assert_eq!(buffer.since(buffer.newest_seq() - 1).unwrap().len(), 1);
-        assert_eq!(buffer.spans.len(), KEPT_RECORDS.min(KEPT_SPANS));
+        assert_eq!(buffer.spans.len(), MAX_RUN_REPLAY_RECORDS.min(KEPT_SPANS));
     }
 }

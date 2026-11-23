@@ -10,6 +10,7 @@ def check_release_versions(repository: Path, *, tag: str | None = None) -> None:
         "server-core": ("server-core/Cargo.toml", "package"),
         "media": ("livekit-cameras/Cargo.toml", "package"),
         "cli": ("cli/Cargo.toml", "package"),
+        "python-bindings": ("python-bindings/Cargo.toml", "package"),
         "rust-sdk": ("sdk/Cargo.toml", "package"),
         "rust-contracts": ("contracts/Cargo.toml", "package"),
     }

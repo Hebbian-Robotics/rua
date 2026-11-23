@@ -124,6 +124,7 @@ def test_second_station_cannot_overwrite_an_active_work_directory(
                 [
                     str(server_binary),
                     "serve",
+                    "--headless",
                     "--profile",
                     str(MUJOCO_PROFILE),
                     "--no-physics-stand-in",

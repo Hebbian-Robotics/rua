@@ -65,11 +65,12 @@ when replay is unavailable. Inspect the command outcome and reacquire control
 before sending new motion after a lost lease. A cancellation over a failed
 connection leaves the physical outcome uncertain.
 
-Python and TypeScript can retry submissions with the same operation ID. Rust
-returns a connection error for the application to handle. See the
-[Python](../hebbian_rua/client/station_connection.py),
-[TypeScript](../typescript-client/src/station-connection.ts), and
-[Rust](../sdk/src/connection.rs) clients for retry and cancellation behavior.
+Python and Rust report command submission failures to the caller. Keep the
+operation ID to look up its status after a transport error. TypeScript retries
+transient transport failures using the same operation ID. All three clients
+can request cancellation for a specific operation under its original lease.
+See the [shared Python and Rust client](../sdk/src/station.rs) and the
+[TypeScript client](../typescript-client/src/station-connection.ts).
 
 ## Control, tools and results
 

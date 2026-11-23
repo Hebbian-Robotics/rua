@@ -50,15 +50,6 @@ jobs:
           cache: |
             rust
             uv
-      - name: Verify the release tag matches the package version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          if [ "${GITHUB_EVENT_NAME}" = release ]; then
-            uv run --locked rua-dev check-release-versions --tag "${RELEASE_TAG}"
-          else
-            uv run --locked rua-dev check-release-versions
-          fi
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
@@ -80,6 +71,15 @@ jobs:
             echo 'MACOSX_DEPLOYMENT_TARGET=14.0'
             echo 'TMPDIR=/tmp'
           } >> "$GITHUB_ENV"
+      - name: Verify the release tag matches the package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = release ]; then
+            uv run --locked rua-dev check-release-versions --tag "${RELEASE_TAG}"
+          else
+            uv run --locked rua-dev check-release-versions
+          fi
       - name: Install source-doc-lint
         run: bash tooling/source-doc-lint/install-ci.sh
       - name: Check source and generated contracts
@@ -135,6 +135,9 @@ jobs:
         with:
           name: rua-wheels-${{ matrix.os }}
           path: dist/repaired
+      - name: Install the linker used by source development tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mold
       - name: Verify a clean wheel installation and simulator connection
         run: |
           for wheel_path in dist/repaired/*.whl; do

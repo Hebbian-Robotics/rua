@@ -97,6 +97,8 @@ jobs:
           cache: uv
       - name: Install source-doc-lint
         run: bash tooling/source-doc-lint/install-ci.sh
+      - name: Install the Linux linker for the Python extension
+        run: sudo apt-get update && sudo apt-get install -y mold
       - run: uv sync --locked
       - run: uv run rua-dev validate --lane python
       - run: uv lock --check --project examples/python

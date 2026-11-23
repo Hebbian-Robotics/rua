@@ -75,7 +75,19 @@ impl Station {
     /// # Errors
     /// [`Error::CameraUnavailable`] when the media service has no fresh frame for the camera.
     pub async fn camera_jpeg(&self, name: &str) -> Result<CameraJpeg> {
-        let response = match self.get_camera(name).await {
+        self.camera_jpeg_bounded(name, None).await
+    }
+
+    /// Fetch a frame, enforcing the caller's byte limit as each chunk arrives.
+    ///
+    /// # Errors
+    /// Returns [`Error::FrameTooLarge`] when the response exceeds the byte limit, or the errors from [`Self::camera_jpeg`].
+    pub async fn camera_jpeg_bounded(
+        &self,
+        name: &str,
+        maximum_bytes: Option<usize>,
+    ) -> Result<CameraJpeg> {
+        let mut response = match self.get_camera(name).await {
             Err(Error::Http { status: 404, .. }) => {
                 return Err(Error::CameraUnavailable {
                     name: name.to_owned(),
@@ -90,8 +102,17 @@ impl Station {
             .get(CAPTURED_AT_HEADER)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.parse().ok());
+        let mut jpeg = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if let Some(limit) = maximum_bytes
+                && chunk.len() > limit.saturating_sub(jpeg.len())
+            {
+                return Err(Error::FrameTooLarge(limit));
+            }
+            jpeg.extend_from_slice(&chunk);
+        }
         Ok(CameraJpeg {
-            jpeg: response.bytes().await?.to_vec(),
+            jpeg,
             captured_at_unix_ns,
         })
     }

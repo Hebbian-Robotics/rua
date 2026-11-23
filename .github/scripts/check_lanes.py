@@ -40,6 +40,8 @@ def file_lanes(filename: str) -> set[str]:
         return {"documentation"}
     if filename in TYPESCRIPT_CONFIG:
         return {"documentation", "comments", "typescript", "integration"}
+    if scope in {"python-bindings", "sdk", "contracts"}:
+        return {"comments", "rust", "python", "integration"}
     if scope in RUST_CRATES and path.name == "pyproject.toml":
         return ALL_LANES
     if filename in RUST_CONFIG or scope == ".cargo" or scope in RUST_CRATES:

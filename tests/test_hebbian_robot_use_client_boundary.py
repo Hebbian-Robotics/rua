@@ -10,9 +10,7 @@ PACKAGE_DIRECTORY = ROOT / "hebbian_rua/client"
 OWN_PACKAGE = "hebbian_rua"
 ALLOWED_THIRD_PARTY = {
     "pydantic": "pydantic",
-    "httpx2": "httpx2",
     "dotenv": "python-dotenv",
-    "tenacity": "tenacity",
 }
 PROVIDER_ADAPTER_IMPORTS = {
     "anthropic.py": "anthropic",

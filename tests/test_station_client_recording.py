@@ -3,9 +3,9 @@ import shutil
 from collections.abc import Generator
 from pathlib import Path
 
-import httpx2
 import pytest
 
+from hebbian_rua import HttpError
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceJointsMovement,
     ActionSequenceMove,
@@ -124,9 +124,9 @@ def test_previous_holder_cannot_stop_recording_after_the_lease_is_taken(
                 first.holding_lease("first") as first_lease,
                 second.holding_lease("second", take=True) as second_lease,
             ):
-                with pytest.raises(httpx2.HTTPStatusError) as refusal:
+                with pytest.raises(HttpError) as refusal:
                     await first_lease.stop_recording()
-                assert refusal.value.response.status_code == 409
+                assert refusal.value.status == 409
                 status = (await second.recording_status()).root
                 assert status.state == "recording"
                 assert status.name == recording

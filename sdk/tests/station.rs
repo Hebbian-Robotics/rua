@@ -999,7 +999,7 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
     Ok(())
 }
 
-async fn assert_model_tool_batches(tools: &RobotTools<'_>) -> TestResult {
+async fn assert_model_tool_batches(tools: &RobotTools<&hebbian_rua::LeaseGuard>) -> TestResult {
     let call = |name: &str, arguments| RobotToolCall {
         id: "call-1".into(),
         name: name.into(),
@@ -1075,7 +1075,10 @@ async fn assert_model_tool_batches(tools: &RobotTools<'_>) -> TestResult {
     Ok(())
 }
 
-async fn assert_constrained_tool_move(tools: &RobotTools<'_>, client: &Station) -> TestResult {
+async fn assert_constrained_tool_move(
+    tools: &RobotTools<&hebbian_rua::LeaseGuard>,
+    client: &Station,
+) -> TestResult {
     let examples: serde_json::Value = serde_json::from_str(include_str!(
         "../../tests/fixtures/model-tool-simulation.json"
     ))?;
@@ -1097,7 +1100,7 @@ async fn assert_constrained_tool_move(tools: &RobotTools<'_>, client: &Station) 
 async fn assert_model_pose_previews(
     client: &Station,
     lease: &hebbian_rua::LeaseGuard,
-    tools: &RobotTools<'_>,
+    tools: &RobotTools<&hebbian_rua::LeaseGuard>,
 ) -> TestResult {
     let call = |name: &str, arguments| RobotToolCall {
         id: "call-1".into(),
@@ -1172,7 +1175,9 @@ async fn assert_model_pose_previews(
     Ok(())
 }
 
-async fn assert_specialized_model_tools(tools: &RobotTools<'_>) -> TestResult {
+async fn assert_specialized_model_tools(
+    tools: &RobotTools<&hebbian_rua::LeaseGuard>,
+) -> TestResult {
     let specialized = tools
         .clone()
         .map_tools(hebbian_rua::contracts::default_robot_tool_mapping)?

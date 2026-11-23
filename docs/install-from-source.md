@@ -72,6 +72,7 @@ Run commands from the repository root. After pulling dependency changes, run
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
 | Viewer served by the example backend | `pnpm build` | Refresh the browser; no station restart is needed. |
 | Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
+| Rust SDK or PyO3 bindings | Run `uv sync` and restart the Python process to load the rebuilt extension. | The next Python process imports the new native module. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |
 
 Example environments and SDK tests use the SDKs in your checkout. Run `pnpm test:package` to validate the packed

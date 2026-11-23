@@ -52,6 +52,7 @@ pub struct RobotToolResult {
     pub outcome: RobotToolOutcome,
     /// Explicitly requested observation images, labelled for application-owned model messages.
     pub cameras: BTreeMap<String, Arc<[u8]>>,
+    pub sequence_images: Option<crate::SequenceImageHistory>,
 }
 
 impl RobotToolResult {
@@ -59,6 +60,7 @@ impl RobotToolResult {
         Self {
             call_id,
             outcome,
+            sequence_images: None,
             cameras: BTreeMap::new(),
         }
     }
@@ -98,24 +100,26 @@ pub struct RobotContext {
 
 /// A tool controller bound to an existing lease and default arm.
 #[derive(Clone)]
-pub struct RobotTools<'a> {
-    lease: &'a LeaseGuard,
+pub struct RobotTools<Guard> {
+    lease: Guard,
     arm: String,
     descriptions: BTreeMap<String, String>,
     sequence: SequenceToolConfiguration,
     capabilities: Vec<hebbian_contracts::RobotToolCapability>,
     cameras: Vec<String>,
+    optional_cameras: Vec<String>,
     sequence_images: SequenceImages,
 }
 
-impl<'a> RobotTools<'a> {
+impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
     #[must_use]
-    pub fn new(lease: &'a LeaseGuard, arm: impl Into<String>) -> Self {
+    pub fn new(lease: Guard, arm: impl Into<String>) -> Self {
         Self {
             lease,
             arm: arm.into(),
             descriptions: BTreeMap::new(),
             cameras: Vec::new(),
+            optional_cameras: Vec::new(),
             sequence_images: SequenceImages::default(),
             sequence: SequenceToolConfiguration::default(),
             capabilities: hebbian_contracts::default_robot_tool_mapping(
@@ -132,6 +136,13 @@ impl<'a> RobotTools<'a> {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+        self
+    }
+
+    /// Sample these cameras when available; missing frames leave the observation usable.
+    #[must_use]
+    pub fn with_optional_cameras(mut self, cameras: Vec<String>) -> Self {
+        self.optional_cameras = cameras;
         self
     }
 
@@ -257,12 +268,13 @@ impl<'a> RobotTools<'a> {
         let mut arguments = call.arguments.clone();
         let operation =
             match convert_model_arguments_to_station_units(&mut arguments).and_then(|()| {
-                normalize_arguments(&mut arguments);
+                normalize_arguments(&mut arguments)?;
                 self.parse_operation(&call.name, arguments, &options)
             }) {
                 Ok(operation) => operation,
                 Err(detail) => {
                     return Ok(RobotToolResult {
+                        sequence_images: None,
                         cameras: std::collections::BTreeMap::new(),
                         call_id: call.id,
                         outcome: RobotToolOutcome::InvalidInput(detail),
@@ -283,6 +295,7 @@ impl<'a> RobotTools<'a> {
                 match self.lease.run_arms_records(command, options.clone()).await {
                     Ok(records) => {
                         return Ok(RobotToolResult {
+                            sequence_images: None,
                             cameras: std::collections::BTreeMap::new(),
                             call_id: call.id,
                             outcome: command_records_outcome(&records, true)?,
@@ -313,6 +326,7 @@ impl<'a> RobotTools<'a> {
             }
             ToolOperation::ActionSequence { action_sequence } => {
                 return Ok(RobotToolResult {
+                    sequence_images: None,
                     cameras: std::collections::BTreeMap::new(),
                     call_id: call.id.clone(),
                     outcome: self.run_sequence(&call.id, action_sequence).await?,
@@ -338,6 +352,7 @@ impl<'a> RobotTools<'a> {
         };
         let outcome = self.operation_outcome(answer).await?;
         Ok(RobotToolResult {
+            sequence_images: None,
             cameras: std::collections::BTreeMap::new(),
             call_id: call.id,
             outcome,
@@ -363,7 +378,12 @@ impl<'a> RobotTools<'a> {
                     .iter()
                     .map(|name| hebbian_contracts::SnapshotName::try_from(name.clone()))
                     .collect::<Result<_, _>>()?,
-                optional_cameras: Vec::new(),
+                optional_cameras: self
+                    .optional_cameras
+                    .iter()
+                    .cloned()
+                    .map(hebbian_contracts::SnapshotName::try_from)
+                    .collect::<Result<_, _>>()?,
             })
             .await?
         {
@@ -401,6 +421,7 @@ impl<'a> RobotTools<'a> {
 
         Ok(RobotToolResult {
             call_id,
+            sequence_images: None,
             cameras,
             outcome: self
                 .operation_outcome(ToolOperationAnswer::Observation { state })
@@ -412,6 +433,7 @@ impl<'a> RobotTools<'a> {
         let Some(history) = self.sequence_images() else {
             return RobotToolResult {
                 call_id,
+                sequence_images: None,
                 cameras: std::collections::BTreeMap::new(),
                 outcome: RobotToolOutcome::InvalidInput(
                     "No sequence image history is available; none was captured or it expired."
@@ -449,6 +471,7 @@ impl<'a> RobotTools<'a> {
         });
         RobotToolResult {
             call_id,
+            sequence_images: Some(history),
             cameras,
             outcome: RobotToolOutcome::Returned(data),
         }
@@ -462,7 +485,11 @@ impl<'a> RobotTools<'a> {
         let capture = SequenceCapture::start(
             self.sequence_images.clone(),
             self.lease.station().clone(),
-            self.cameras.clone(),
+            self.cameras
+                .iter()
+                .chain(&self.optional_cameras)
+                .cloned()
+                .collect(),
             call_id.to_owned(),
         );
         let outcome = async {
@@ -514,6 +541,7 @@ impl<'a> RobotTools<'a> {
                 self.execute(call, options)
                     .await
                     .unwrap_or_else(|error| RobotToolResult {
+                        sequence_images: None,
                         cameras: std::collections::BTreeMap::new(),
                         call_id,
                         outcome: RobotToolOutcome::Failed(error),
@@ -562,7 +590,8 @@ impl<'a> RobotTools<'a> {
                 let StationCommand::SetGripper {
                     opening,
                     max_joint_speed,
-                } = parse(Value::Object(fields))?
+                } = parse(Value::Object(fields))
+                    .map_err(|error| format!("Invalid gripper opening or speed: {error}"))?
                 else {
                     return Err("expected a gripper command".into());
                 };
@@ -794,7 +823,7 @@ fn scale_argument(value: &mut Value, factor: f64) -> std::result::Result<(), Str
 }
 
 // The station uses tagged variants while models may omit tags whose fields identify them.
-fn normalize_arguments(value: &mut Value) {
+fn normalize_arguments(value: &mut Value) -> std::result::Result<(), String> {
     match value {
         Value::Object(object) => {
             if let Some(at) = object.get_mut("at") {
@@ -802,6 +831,11 @@ fn normalize_arguments(value: &mut Value) {
             }
             if let Some(goal) = object.get_mut("goal") {
                 normalize_movement(goal);
+                if goal.get("kind").and_then(Value::as_str) == Some("pose")
+                    && goal.get("orientation").is_none()
+                {
+                    return Err("A pose goal requires an orientation".into());
+                }
             }
             if let Some(Value::Object(targets)) = object.get_mut("goals") {
                 for target in targets.values_mut() {
@@ -823,16 +857,17 @@ fn normalize_arguments(value: &mut Value) {
                 }
             }
             for child in object.values_mut() {
-                normalize_arguments(child);
+                normalize_arguments(child)?;
             }
         }
         Value::Array(items) => {
             for item in items {
-                normalize_arguments(item);
+                normalize_arguments(item)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn normalize_movement(value: &mut Value) {
@@ -937,6 +972,7 @@ mod outcome_tests {
                 };
                 assert_eq!(incomplete, example["expected_error"]);
                 let result = super::RobotToolResult {
+                    sequence_images: None,
                     cameras: std::collections::BTreeMap::new(),
                     call_id: "test-call".into(),
                     outcome: if incomplete {
