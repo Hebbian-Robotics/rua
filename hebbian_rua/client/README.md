@@ -15,10 +15,11 @@ The Python package contains a PyO3 extension for CPython 3.12 and later.
 Published wheels include the Rust client. Source installs build it with maturin.
 A lease context awaits release on exit. The lease object exposes its status and
 operations. Use `Lease.send` and `Lease.cancel_operation` when you need a
-caller-assigned operation ID. A plain sequence wait can be cancelled independently
+caller-assigned operation ID. Use `StationClient.wait_for_command` with a
+returned command ID to observe its outcome. A plain sequence wait can be cancelled independently
 of the accepted sequence; use `StationClient.cancel_action_sequence` to stop it.
 HTTP failures surface as `hebbian_rua.HttpError` with the status and response
-body in `args`.
+body in `status` and `body`.
 
 Use [the control model](../../docs/control-model.md) for a custom control
 program, or [model output](../../docs/model-output.md) to change presentation

@@ -126,7 +126,7 @@ def test_previous_holder_cannot_stop_recording_after_the_lease_is_taken(
             ):
                 with pytest.raises(HttpError) as refusal:
                     await first_lease.stop_recording()
-                assert refusal.value.args[0] == 409
+                assert refusal.value.status == 409
                 status = (await second.recording_status()).root
                 assert status.state == "recording"
                 assert status.name == recording

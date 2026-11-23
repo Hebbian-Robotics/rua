@@ -3,7 +3,6 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
-from hebbian_rua.client.contract.station_api import CommandRecord
 from hebbian_rua.client.station_client import LeaseHeldElsewhere, StationClient
 from tests.fixture_station_http import (
     STATION_ID,
@@ -37,7 +36,7 @@ def test_http_stream_resumes_and_command_outcome_waits_for_state() -> None:
                     and state.arms[0].sampled_unix_nano.root == "1000000000"
                 )
             )
-            pending = asyncio.ensure_future(client._native.wait_for_outcome("c"))
+            pending = asyncio.create_task(client.wait_for_command("c"))
             await station.drop_stream()
             await station.wait_for_stream(2)
             assert station.last_event_ids[-1] == f"{STATION_ID}:3"
@@ -54,7 +53,7 @@ def test_http_stream_resumes_and_command_outcome_waits_for_state() -> None:
             )
             assert not pending.done()
             await station.event("station", state_message(sampled_at=3, last="c"))
-            assert CommandRecord.model_validate(await pending).command_id == "c"
+            assert (await pending).command_id == "c"
 
     run(exercise)
 

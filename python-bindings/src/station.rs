@@ -20,7 +20,17 @@ pub(crate) fn station_error(error: Error) -> PyErr {
         Error::Connection(_) => PyConnectionError::new_err(error.to_string()),
         Error::FrameTooLarge(_) => pyo3::exceptions::PyValueError::new_err(error.to_string()),
         Error::Timeout(_) => PyTimeoutError::new_err(error.to_string()),
-        Error::Http { status, body } => HttpError::new_err((status, body)),
+        Error::Http { status, body } => Python::attach(|py| {
+            let error = HttpError::new_err(format!("HTTP {status}: {body}"));
+            if let Err(attribute_error) = error
+                .value(py)
+                .setattr("status", status)
+                .and_then(|()| error.value(py).setattr("body", body))
+            {
+                return attribute_error;
+            }
+            error
+        }),
         Error::Refused { reason, detail } => Python::attach(|py| match pythonize(py, &reason) {
             Ok(reason) => CommandRefused::new_err((reason.unbind(), detail)),
             Err(error) => error.into(),

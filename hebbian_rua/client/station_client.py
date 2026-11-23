@@ -457,6 +457,12 @@ class StationClient:
             await self._native.get_operation(str(operation_id))
         )
 
+    async def wait_for_command(self, command_id: str) -> CommandRecord:
+        """Wait for an admitted command's outcome and the corresponding arm state."""
+        return CommandRecord.model_validate(
+            await self._native.wait_for_outcome(command_id)
+        )
+
     async def camera_jpeg(
         self, name: str, *, maximum_bytes: int | None = None
     ) -> CameraJpeg:
@@ -570,7 +576,7 @@ class StationClient:
                 await self._native.get_action_sequence(action_sequence_id)
             )
         except _native.HttpError as error:
-            if error.args[0] == 404:
+            if error.status == 404:
                 raise ActionSequenceUnavailable(action_sequence_id) from error
             raise
 
@@ -582,7 +588,7 @@ class StationClient:
                 await self._native.wait_for_action_sequence(action_sequence_id)
             )
         except _native.HttpError as error:
-            if error.args[0] == 404:
+            if error.status == 404:
                 raise ActionSequenceUnavailable(action_sequence_id) from error
             raise
 
@@ -625,7 +631,8 @@ class StationClient:
 
         async def watch_loss() -> None:
             await loss
-            self.lease_lost.set()
+            if self._guard is guard:
+                self.lease_lost.set()
 
         watcher = asyncio.create_task(watch_loss())
         try:
