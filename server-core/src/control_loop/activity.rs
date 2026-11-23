@@ -1,5 +1,5 @@
 use super::tool_pose::ToolPose;
-use super::trajectory::{ActiveGroupMember, ActiveMotion, GroupReference, MotionEffects};
+use super::trajectory::{ActiveGroupMember, ActiveMotion, CycleEffects, GroupReference};
 use super::{build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot};
 use crate::arm::{ArmCore, Now, StreamGoal};
 use crate::config::ControllerConfig;
@@ -172,8 +172,10 @@ impl Loop<'_> {
         Ok(last_safe)
     }
 
-    pub(super) fn cancel_group_member(&mut self, detail: &str, now: Now) {
-        self.end_activity(CommandOutcome::Stopped, Some(detail.to_owned()), None, now);
+    pub(super) fn request_group_stop(&mut self, detail: &str) {
+        if let Activity::Group(member) = &mut self.activity {
+            member.stop_reason.get_or_insert_with(|| detail.to_owned());
+        }
     }
 
     pub(super) fn start_stream(&mut self, command_id: String) {
@@ -282,31 +284,30 @@ impl Loop<'_> {
         stop: bool,
         group: Option<Result<&GroupReference, &Trip>>,
         now: Now,
-    ) -> Result<MotionEffects, Trip> {
+    ) -> Result<CycleEffects, Trip> {
         if let Some(runtime) = &mut self.policy {
             runtime.begin_cycle();
         }
         let policy_reach = matches!(self.activity, Activity::Reach(_));
         let effects = match self.activity {
-            Activity::Motion(_) => self.motion_reference(interval, feedback, stop)?,
-            Activity::Group(_) => {
-                self.group_reference(feedback, stop, group, now)?;
-                MotionEffects::default()
+            Activity::Motion(_) => {
+                CycleEffects::Arm(self.motion_reference(interval, feedback, stop)?)
             }
+            Activity::Group(_) => self.group_reference(feedback, stop, group)?,
             Activity::Stream(_) => {
                 self.stream_reference(feedback, stop, now)?;
-                MotionEffects::default()
+                CycleEffects::None
             }
             Activity::Reach(_) => {
                 self.reach_reference(interval, feedback, stop, now)?;
-                MotionEffects::default()
+                CycleEffects::None
             }
             Activity::Idle => {
                 let hold = self
                     .hold_at
                     .get_or_insert_with(|| self.filter.positions().to_vec());
                 self.reference.set_at_rest(hold, None);
-                MotionEffects::default()
+                CycleEffects::None
             }
         };
         let policy_command = policy_reach

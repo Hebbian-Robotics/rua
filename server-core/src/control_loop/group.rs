@@ -1,6 +1,6 @@
 use super::activity::Activity;
-use super::runner::{PendingCycle, Runner};
-use super::trajectory::{ActiveGroupMember, GroupReference, MotionStatus};
+use super::runner::{GroupWrite, PendingCycle, Runner};
+use super::trajectory::{ActiveGroupMember, GroupReference, GroupWriteAttempt, MotionStatus};
 use crate::arm::{GroupMembership, Now};
 use crate::config::ControllerConfig;
 use crate::corner_path::{MotionSupervisor, ValidatedPlan};
@@ -45,7 +45,8 @@ pub(super) struct ActiveGroup {
     pub(super) members: Vec<usize>,
     pub(super) joint_counts: Vec<usize>,
     pub(super) supervisor: MotionSupervisor,
-    pub(super) checkpoints_sent: usize,
+    checkpoints_sent: usize,
+    step_pending: bool,
     shares: Vec<GroupReference>,
 }
 
@@ -113,9 +114,11 @@ impl ActiveGroup {
             joint_counts: configs.iter().map(|config| config.joint_count).collect(),
             supervisor,
             checkpoints_sent: 0,
+            step_pending: false,
             shares: configs
                 .iter()
                 .map(|config| GroupReference {
+                    attempt: GroupWriteAttempt::First,
                     reference: Reference::at_rest(&config.lower_limits, None),
                     checkpoints: Vec::new(),
                     segment: None,
@@ -131,9 +134,17 @@ impl ActiveGroup {
         measured: &[f64],
         interval: f64,
     ) -> Result<&[GroupReference], Trip> {
+        // INVARIANT: A partial batch keeps its setpoint and checkpoints until all members
+        // confirm that same step in one cycle.
+        if self.step_pending {
+            for share in &mut self.shares {
+                share.attempt = GroupWriteAttempt::Retry;
+            }
+            return Ok(&self.shares);
+        }
         self.supervisor.advance(measured, interval)?;
+        self.step_pending = true;
         let checkpoints = self.supervisor.new_checkpoints(self.checkpoints_sent);
-        self.checkpoints_sent += checkpoints.len();
         let segment = self.supervisor.segment_label().map(|_| GROUP_SEGMENT_LABEL);
         let status = MotionStatus::of(&self.supervisor);
         let final_pose = (status != MotionStatus::Running).then(|| self.supervisor.final_pose());
@@ -163,6 +174,7 @@ impl ActiveGroup {
                     target_position: checkpoint.target_position,
                     target_quaternion: checkpoint.target_quaternion,
                 }));
+            share.attempt = GroupWriteAttempt::First;
             share.segment = segment;
             share.status = status;
             share.final_pose.clear();
@@ -171,6 +183,11 @@ impl ActiveGroup {
             }
         }
         Ok(&self.shares)
+    }
+
+    pub(super) fn confirm_step(&mut self) {
+        self.checkpoints_sent += self.supervisor.new_checkpoints(self.checkpoints_sent).len();
+        self.step_pending = false;
     }
 
     pub(super) fn member_reference(&self, index: usize) -> &GroupReference {
@@ -236,7 +253,7 @@ pub(super) struct GroupMemberReferenceIndex {
 }
 
 pub(super) fn step_groups<P: Plant>(
-    runners: &[Runner<'_, P>],
+    runners: &mut [Runner<'_, P>],
     groups: &mut [ActiveGroup],
     begun: &[Option<PendingCycle>],
     steps: &mut Vec<Option<Result<GroupMemberReferenceIndex, Trip>>>,
@@ -245,12 +262,39 @@ pub(super) fn step_groups<P: Plant>(
     steps.clear();
     steps.resize_with(runners.len(), || None);
     for (group_index, group) in groups.iter_mut().enumerate() {
+        if let Some(stopping) = group.members.iter().copied().find(|&index| {
+            runners[index]
+                .group_member()
+                .is_some_and(|member| member.group.id == group.id)
+                && runners[index].state.core.stop_requested()
+        }) {
+            let reason = format!("{} requested stop", runners[stopping].name);
+            for &index in &group.members {
+                if index != stopping
+                    && runners[index]
+                        .group_member()
+                        .is_some_and(|member| member.group.id == group.id)
+                    && !runners[index].state.core.stop_requested()
+                {
+                    runners[index].state.request_group_stop(&reason);
+                }
+            }
+            continue;
+        }
         // INVARIANT: A member that did not read this cycle (its plant failed) cannot be
         // stepped with; the others hold until the group is settled.
         let interval = group
             .members
             .iter()
             .try_fold(f64::INFINITY, |interval, index| {
+                let runner = &runners[*index];
+                let member = runner.group_member()?;
+                if member.group.id != group.id
+                    || member.stop_reason.is_some()
+                    || runner.state.core.stop_requested()
+                {
+                    return None;
+                }
                 Some(interval.min(begun[*index].as_ref()?.interval))
             });
         let Some(interval) = interval else { continue };
@@ -274,6 +318,24 @@ pub(super) fn step_groups<P: Plant>(
                 for index in &group.members {
                     steps[*index] = Some(Err(trip.clone()));
                 }
+            }
+        }
+    }
+}
+
+pub(super) fn confirm_group_writes<P: Plant>(
+    runners: &mut [Runner<'_, P>],
+    groups: &mut [ActiveGroup],
+    writes: &mut [Option<GroupWrite>],
+) {
+    for group in groups {
+        let confirmed = group.members.iter().all(|index| writes[*index].is_some());
+        if confirmed {
+            group.confirm_step();
+        }
+        for &index in &group.members {
+            if let Some(write) = writes[index].take() {
+                runners[index].finish_group_write(write, confirmed);
             }
         }
     }
@@ -304,10 +366,9 @@ pub(super) fn settle_groups<P: Plant>(
             .filter(|index| !is_following(&runners[**index]))
             .find_map(|index| runners[*index].last_group_failure(&group.id));
         if let Some(detail) = ended_badly {
-            let now = Now::current();
             for index in &group.members {
                 if is_following(&runners[*index]) {
-                    runners[*index].state.cancel_group_member(&detail, now);
+                    runners[*index].state.request_group_stop(&detail);
                 }
             }
             return false;

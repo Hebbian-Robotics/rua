@@ -54,6 +54,7 @@ pub(super) struct ActiveMotion {
 pub(super) struct ActiveGroupMember {
     pub(super) group: GroupMembership,
     pub(super) plan: crate::arm::AdmittedPlan,
+    pub(super) stop_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,19 +86,38 @@ pub(super) struct MotionEffects {
     completion: Option<MotionCompletion>,
 }
 
+pub(super) enum CycleEffects {
+    None,
+    Arm(MotionEffects),
+    Group {
+        effects: MotionEffects,
+        attempt: GroupWriteAttempt,
+    },
+}
+
+impl CycleEffects {
+    pub(super) fn ends_motion(&self) -> bool {
+        match self {
+            Self::None => false,
+            Self::Arm(effects) | Self::Group { effects, .. } => effects.completion.is_some(),
+        }
+    }
+}
+
 struct MotionCompletion {
     outcome: CommandOutcome,
     detail: String,
     hold: Vec<f64>,
 }
 
-impl MotionEffects {
-    pub(super) fn ends_motion(&self) -> bool {
-        self.completion.is_some()
-    }
+#[derive(Clone, Copy)]
+pub(super) enum GroupWriteAttempt {
+    First,
+    Retry,
 }
 
 pub(super) struct GroupReference {
+    pub(super) attempt: GroupWriteAttempt,
     pub(super) reference: Reference,
     pub(super) checkpoints: Vec<Checkpoint>,
     pub(super) segment: Option<&'static str>,
@@ -124,7 +144,11 @@ impl Loop<'_> {
         group: GroupMembership,
     ) {
         self.hold_at = None;
-        self.activity = Activity::Group(Box::new(ActiveGroupMember { group, plan }));
+        self.activity = Activity::Group(Box::new(ActiveGroupMember {
+            group,
+            plan,
+            stop_reason: None,
+        }));
     }
 
     pub(super) fn motion_reference(
@@ -137,21 +161,11 @@ impl Loop<'_> {
             return Err(Trip::Trajectory("No motion is running".into()));
         };
         if stop {
-            let hold = self
-                .hold_at
-                .get_or_insert_with(|| self.filter.stopping_position());
-            self.reference.set_at_rest(hold, None);
-            return Ok(MotionEffects {
-                checkpoints: active
-                    .supervisor
-                    .new_checkpoints(active.checkpoints_sent)
-                    .to_vec(),
-                completion: Some(MotionCompletion {
-                    outcome: CommandOutcome::Stopped,
-                    detail: "Stopped".to_owned(),
-                    hold: hold.clone(),
-                }),
-            });
+            let checkpoints = active
+                .supervisor
+                .new_checkpoints(active.checkpoints_sent)
+                .to_vec();
+            return Ok(self.prepare_stop_write(checkpoints, "Stopped".into()));
         }
         if self.core.take_supersede() {
             // INVARIANT: A new command replaced this one while it only settled; the arm holds
@@ -200,6 +214,25 @@ impl Loop<'_> {
         };
         self.core.set_settling(settling_at_end);
         Ok(self.prepare_motion_effects(feedback, progress))
+    }
+
+    fn prepare_stop_write(
+        &mut self,
+        checkpoints: Vec<Checkpoint>,
+        detail: String,
+    ) -> MotionEffects {
+        let hold = self
+            .hold_at
+            .get_or_insert_with(|| self.filter.stopping_position());
+        self.reference.set_at_rest(hold, None);
+        MotionEffects {
+            checkpoints,
+            completion: Some(MotionCompletion {
+                outcome: CommandOutcome::Stopped,
+                detail,
+                hold: hold.clone(),
+            }),
+        }
     }
 
     fn prepare_motion_effects(
@@ -278,15 +311,22 @@ impl Loop<'_> {
         feedback: &Feedback,
         stop: bool,
         group: Option<Result<&GroupReference, &Trip>>,
-        now: Now,
-    ) -> Result<(), Trip> {
-        if stop {
-            self.end_stopped(now);
-            return Ok(());
+    ) -> Result<CycleEffects, Trip> {
+        let Activity::Group(member) = &self.activity else {
+            return Err(Trip::Trajectory("No group motion is running".into()));
+        };
+        if let Some(reason) = member
+            .stop_reason
+            .clone()
+            .or_else(|| stop.then(|| "Stopped".to_owned()))
+        {
+            return Ok(CycleEffects::Arm(
+                self.prepare_stop_write(Vec::new(), reason),
+            ));
         }
         let Some(share) = group else {
             self.reference.set_at_rest(self.filter.positions(), None);
-            return Ok(());
+            return Ok(CycleEffects::None);
         };
         let share = share.map_err(Clone::clone)?;
         self.reference.copy_from(&share.reference);
@@ -299,8 +339,10 @@ impl Loop<'_> {
                 final_pose: share.final_pose.clone(),
             },
         );
-        self.commit_motion_effects(effects, now);
-        Ok(())
+        Ok(CycleEffects::Group {
+            effects,
+            attempt: share.attempt,
+        })
     }
 }
 
