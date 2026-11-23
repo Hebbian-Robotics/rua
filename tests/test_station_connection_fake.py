@@ -138,7 +138,7 @@ def test_resumed_telemetry_delivers_retained_records_after_connect() -> None:
             expected_sequences = list(range(1, 4097))
             station.retained_run_records = [
                 {
-                    "type": "run_event",
+                    "kind": "run_event",
                     "seq": sequence,
                     "received_unix_nano": "1000000000",
                     "event": {"type": "example"},
