@@ -38,7 +38,7 @@ static TEST_EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 fn at(seconds: f64) -> Now {
     Now {
-        unix_nanos: hebbian_contracts::UnixNanos(
+        unix_nano: hebbian_contracts::UnixNanos(
             std::time::Duration::from_secs_f64(seconds)
                 .as_nanos()
                 .try_into()
@@ -417,7 +417,7 @@ fn a_hard_fault_releases_and_refuses_everything_until_cleared_on_fresh_healthy_f
     );
     observe(&mut core, 3.4, None);
     let stale_after_clock_step = Now {
-        unix_nanos: hebbian_contracts::UnixNanos(3_500_000_000),
+        unix_nano: hebbian_contracts::UnixNanos(3_500_000_000),
         ..at(9.0)
     };
     assert_eq!(

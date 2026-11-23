@@ -117,9 +117,9 @@ def command_record_finished_at(record: CommandRecord) -> int | None:
         case "pending":
             return None
         case "finished":
-            return int(phase.completion.finished_at_unix_nano)
+            return int(phase.completion.finished_unix_nano)
         case "not_started" | "outcome_unknown":
-            return int(phase.finished_at_unix_nano)
+            return int(phase.finished_unix_nano)
         case _ as unreachable:
             assert_never(unreachable)
 

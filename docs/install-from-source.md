@@ -71,8 +71,7 @@ Run commands from the repository root. After pulling dependency changes, run
 | Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |
 
-Example environments use released SDKs. The repository's SDK tests exercise
-the source in your checkout. Run `pnpm test:package` to validate the packed
+Example environments and SDK tests use the SDKs in your checkout. Run `pnpm test:package` to validate the packed
 TypeScript SDK outside the workspace. `pnpm build` builds the static viewer in
 `dist/viewer` without building Rust binaries or restarting services.
 A running process continues using its loaded code until it restarts.

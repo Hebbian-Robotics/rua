@@ -331,7 +331,7 @@ test.each(["c", "newer"])(
         ]),
       );
       await connection.waitForState(
-        (state) => state.arms[0]?.sampled_at_unix_seconds === 1,
+        (state) => state.arms[0]?.sampled_unix_nano === "1000000000",
       );
       await setImmediate();
       expect(finished).toBe(false);
@@ -343,7 +343,7 @@ test.each(["c", "newer"])(
         ]),
       );
       await connection.waitForState(
-        (state) => state.arms[0]?.sampled_at_unix_seconds === 1.5,
+        (state) => state.arms[0]?.sampled_unix_nano === "1500000000",
       );
       await setImmediate();
       expect(finished).toBe(false);

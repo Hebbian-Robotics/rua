@@ -16,7 +16,6 @@ use std::{
     time::Duration,
 };
 
-/// What a message's channel declares about its payload.
 #[derive(Clone, Copy)]
 enum Payload {
     Json,
@@ -91,23 +90,17 @@ impl RecordingArchive {
         )
     }
 
-    pub fn video(
-        &self,
-        camera: &str,
-        timestamp: u64,
-        packet: Vec<u8>,
-    ) -> Result<(), RecorderError> {
+    pub fn video(&self, camera: &str, timestamp: u64, packet: &[u8]) -> Result<(), RecorderError> {
         self.write(
             &format!("/cameras/{camera}/video"),
             "protobuf",
             timestamp,
-            &messages::encode_compressed_video(timestamp, camera, &packet, "h264"),
+            &messages::encode_compressed_video(timestamp, camera, packet, "h264"),
             Payload::Video,
         )
     }
 
-    /// One arm's joints as a ROS 2 `sensor_msgs/JointState`, for Foxglove and Rerun.
-    /// Velocities and efforts are each empty or one per joint.
+    // CONSTRAINT: ROS JointState velocities and efforts are each empty or one per joint.
     pub fn joint_states(
         &self,
         arm: &str,

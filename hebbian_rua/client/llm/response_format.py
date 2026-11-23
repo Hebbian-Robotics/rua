@@ -84,7 +84,7 @@ def _model_command_record(record: dict) -> dict:
                 if phase.kind == "outcome_unknown"
                 else phase.outcome.value,
                 "detail": phase.detail,
-                "finished_at_unix_nano": phase.finished_at_unix_nano,
+                "finished_unix_nano": phase.finished_unix_nano,
             }
             if phase.kind == "not_started":
                 result["target_status" if command.kind == "move" else "phase"] = (

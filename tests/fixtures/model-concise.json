@@ -19,7 +19,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -75,7 +75,7 @@
           "segment": null,
           "active_command": null,
           "last_command": {
-            "accepted_at_unix_nano": "1234567890000",
+            "accepted_unix_nano": "1234567890000",
             "checkpoints": [
               {
                 "label": "start",
@@ -155,7 +155,7 @@
               },
               "completion": {
                 "detail": "Object contact",
-                "finished_at_unix_nano": "1236123456000",
+                "finished_unix_nano": "1236123456000",
                 "gripper": null,
                 "outcome": "stopped_short"
               },
@@ -199,7 +199,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -255,7 +255,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.587,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [
             -3.2,
             -104.4
@@ -315,7 +315,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -371,7 +371,7 @@
           "segment": null,
           "active_command": null,
           "last_command": {
-            "accepted_at_unix_nano": "1234567890000",
+            "accepted_unix_nano": "1234567890000",
             "checkpoints": [
               {
                 "label": "start",
@@ -451,7 +451,7 @@
               },
               "completion": {
                 "detail": "Object contact",
-                "finished_at_unix_nano": "1236123456000",
+                "finished_unix_nano": "1236123456000",
                 "gripper": null,
                 "outcome": "stopped_short"
               },
@@ -499,7 +499,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.5874462,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
             -0.0552233,
             -1.8223691
@@ -559,7 +559,7 @@
         {
           "arm": "follower",
           "mode": "holding",
-          "sampled_at_unix_seconds": 1794806421.587,
+          "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [
             -3.2,
             -104.4
@@ -640,10 +640,10 @@
             "arm": "left",
             "record": {
               "command_id": "a",
-              "accepted_at_unix_nano": "1500000000",
+              "accepted_unix_nano": "1500000000",
               "completion": {
                 "outcome": "completed",
-                "finished_at_unix_nano": "2500000000",
+                "finished_unix_nano": "2500000000",
                 "detail": null,
                 "gripper": {
                   "kind": "stopped_short",
@@ -668,10 +668,10 @@
             "arm": "left",
             "record": {
               "command_id": "b",
-              "accepted_at_unix_nano": "3500000000",
+              "accepted_unix_nano": "3500000000",
               "completion": {
                 "outcome": "stopped_short",
-                "finished_at_unix_nano": "4500000000",
+                "finished_unix_nano": "4500000000",
                 "detail": "Object contact"
               },
               "achieved": {
@@ -810,7 +810,7 @@
       "status": "stopped_short",
       "commands": [
         {
-          "accepted_at_unix_nano": "1234567890000",
+          "accepted_unix_nano": "1234567890000",
           "checkpoints": [
             {
               "label": "start",
@@ -890,7 +890,7 @@
             },
             "completion": {
               "detail": "Object contact",
-              "finished_at_unix_nano": "1236123456000",
+              "finished_unix_nano": "1236123456000",
               "gripper": null,
               "outcome": "stopped_short"
             },

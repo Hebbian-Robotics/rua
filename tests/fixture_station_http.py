@@ -8,20 +8,20 @@ STATION_ID = "11111111-1111-4111-8111-111111111111"
 
 
 def command_record(
-    command_id: str, finished_at_unix_nano: float | None = None
+    command_id: str, finished_unix_nano: float | None = None
 ) -> dict[str, Any]:
     return {
         "command_id": command_id,
         "label": "enable",
-        "accepted_at_unix_nano": "1000000000",
+        "accepted_unix_nano": "1000000000",
         "command": {"kind": "control", "action": "enable"},
         "phase": {"kind": "pending"}
-        if finished_at_unix_nano is None
+        if finished_unix_nano is None
         else {
             "kind": "finished",
             "completion": {
                 "outcome": "completed",
-                "finished_at_unix_nano": str(round(finished_at_unix_nano * 1e9)),
+                "finished_unix_nano": str(round(finished_unix_nano * 1e9)),
                 "detail": None,
             },
         },
@@ -64,14 +64,18 @@ def state_message(
                     "controller": "ik",
                     "fault": None,
                     "gripper_opening": None,
-                    "last_command": None if last is None else command_record(last, 2),
+                    "last_command": None
+                    if last is None
+                    else command_record(last, "2000000000"),
                     "measured_joint_efforts": [],
                     "measured_joint_velocities": [],
                     "measured_joints": [],
                     "mode": mode,
                     "recovery_issue": None,
                     "rest_pose": None,
-                    "sampled_at_unix_seconds": sampled_at,
+                    "sampled_unix_nano": None
+                    if sampled_at is None
+                    else str(round(sampled_at * 1_000_000_000)),
                     "segment": None,
                     "tool": None,
                     "interlocks": [],

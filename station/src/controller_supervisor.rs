@@ -188,13 +188,13 @@ pub fn start(
     }
     let thread = thread::spawn(move || {
         run(
-            worker,
-            configuration,
+            &worker,
+            &configuration,
             session,
-            links,
-            lease,
-            shutdown,
-            incoming,
+            &links,
+            &lease,
+            &shutdown,
+            &incoming,
         );
     });
     (supervisor, thread)
@@ -305,13 +305,13 @@ fn finish_controller(process: &mut ControllerProcess, result: Result<(), String>
 }
 
 fn run(
-    supervisor: ControllerSupervisor,
-    configuration: ControllerLaunch,
+    supervisor: &ControllerSupervisor,
+    configuration: &ControllerLaunch,
     mut session: StationSession,
-    links: BTreeMap<String, Arc<Link>>,
-    lease: Arc<Lease>,
-    shutdown: Arc<AtomicBool>,
-    incoming: mpsc::Receiver<()>,
+    links: &BTreeMap<String, Arc<Link>>,
+    lease: &Lease,
+    shutdown: &AtomicBool,
+    incoming: &mpsc::Receiver<()>,
 ) {
     let mut startup_timeout = CONTROLLER_CONNECT_TIMEOUT;
     if matches!(configuration.plant, PlantSelection::Simulator { .. }) {
@@ -328,7 +328,7 @@ fn run(
     let mut previous: Option<ControllerProcess> = None;
     while !shutdown.load(Ordering::Acquire) {
         if let Some(process) = previous.as_mut() {
-            refresh_guard_status(&supervisor, process);
+            refresh_guard_status(supervisor, process);
         }
         match incoming.recv_timeout(POLL_INTERVAL) {
             Ok(()) => {}
@@ -339,13 +339,13 @@ fn run(
             break;
         }
         if let Some(process) = previous.as_mut()
-            && !wait_for_release(&supervisor, process, &shutdown)
+            && !wait_for_release(supervisor, process, shutdown)
         {
             break;
         }
         previous = None;
         supervisor.set_phase(ControllerPhase::Starting);
-        let mut process = match ControllerProcess::start(&configuration) {
+        let mut process = match ControllerProcess::start(configuration) {
             Ok(process) => process,
             Err(error) => {
                 tracing::warn!(error = %format_args!("{error:#}"), "Cannot start controller");
@@ -357,16 +357,16 @@ fn run(
                 continue;
             }
         };
-        let connection = start_connection(&mut process, &shutdown, startup_timeout);
+        let connection = start_connection(&mut process, shutdown, startup_timeout);
         let result = connection.and_then(|socket| {
             serve_station_connection(
                 socket,
                 process.instance(),
                 &mut session,
-                &links,
-                &shutdown,
+                links,
+                shutdown,
                 |ready| {
-                    ready.restore_motion_authority(&lease);
+                    ready.restore_motion_authority(lease);
                     for link in links.values() {
                         link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
                     }

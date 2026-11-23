@@ -82,9 +82,9 @@ async function stopAndWaitForArms(armNames: string[]): Promise<void> {
           arm.arm === armName &&
           arm.mode === "holding" &&
           arm.active_command === null &&
-          arm.sampled_at_unix_seconds !== null &&
-          arm.sampled_at_unix_seconds >=
-            Number(stopRecord.accepted_at_unix_nano) / 1e9,
+          arm.sampled_unix_nano !== null &&
+          BigInt(arm.sampled_unix_nano) >=
+            BigInt(stopRecord.accepted_unix_nano),
       ),
     );
   }

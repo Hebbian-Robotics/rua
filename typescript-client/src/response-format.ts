@@ -59,7 +59,7 @@ function modelCommandRecord(
         outcome:
           phase.kind === "outcome_unknown" ? "interrupted" : phase.outcome,
         detail: phase.detail,
-        finished_at_unix_nano: phase.finished_at_unix_nano,
+        finished_unix_nano: phase.finished_unix_nano,
       };
       if (phase.kind === "not_started")
         result[kind === "move" ? "target_status" : "phase"] = "not_started";

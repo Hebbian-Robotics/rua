@@ -46,7 +46,7 @@ pub struct Limits {
 // CONSTRAINT: Use wall time for records and monotonic time for deadlines; callers supply both.
 #[derive(Debug, Clone, Copy)]
 pub struct Now {
-    pub unix_nanos: hebbian_contracts::UnixNanos,
+    pub unix_nano: hebbian_contracts::UnixNanos,
     pub instant: Instant,
 }
 
@@ -54,7 +54,7 @@ impl Now {
     #[must_use]
     pub(crate) fn current() -> Self {
         Self {
-            unix_nanos: hebbian_contracts::UnixNanos::now(),
+            unix_nano: hebbian_contracts::UnixNanos::now(),
             instant: Instant::now(),
         }
     }

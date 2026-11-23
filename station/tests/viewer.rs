@@ -202,7 +202,7 @@ fn acquire_lease(address: SocketAddr, holder: &str, cameras: &[&str]) -> Value {
 fn submit_command(
     address: SocketAddr,
     token: Option<&str>,
-    command: Value,
+    command: &Value,
     expected_revision: Option<u64>,
 ) -> Value {
     let instance = get_json(address, "/instance");
@@ -379,7 +379,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         std::thread::sleep(Duration::from_millis(20));
     };
     assert_eq!(kept["memory"]["task"], "stack");
-    let enabled = submit_command(address, None, json!({"kind": "enable"}), None);
+    let enabled = submit_command(address, None, &json!({"kind": "enable"}), None);
     assert_eq!(enabled["status"], "accepted", "{enabled}");
     loop {
         let state = get_json(address, "/state");
@@ -403,12 +403,12 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         has_interlock(arm, "required_camera_unavailable")
     });
     assert_eq!(arm["revision"], 1, "{arm}");
-    let refused = submit_command(address, Some(agent_token), json!({"kind":"enable"}), None);
+    let refused = submit_command(address, Some(agent_token), &json!({"kind":"enable"}), None);
     assert_eq!(refused["reason"], "interlocked", "{refused}");
     let stale_answer = submit_command(
         address,
         Some(agent_token),
-        json!({"kind":"disable"}),
+        &json!({"kind":"disable"}),
         Some(0),
     );
     assert_eq!(stale_answer["reason"], "stale_revision", "{stale_answer}");
@@ -456,7 +456,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let accepted = submit_command(
         address,
         Some(manual_token),
-        json!({
+        &json!({
             "kind":"stream_joints", "joints":[1.5,-1.5], "gripper_opening":null,
             "max_joint_speed":0.2
         }),
@@ -485,7 +485,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    let refused = submit_command(address, Some(manual_token), json!({"kind":"enable"}), None);
+    let refused = submit_command(address, Some(manual_token), &json!({"kind":"enable"}), None);
     assert_eq!(refused["status"], "refused", "{refused}");
     assert_eq!(
         get_json(address, "/viewer/api/recordings")["active"],
@@ -518,7 +518,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let approved = submit_command(
         address,
         Some(manual_token),
-        json!({"kind":"approve_recovery"}),
+        &json!({"kind":"approve_recovery"}),
         None,
     );
     assert_eq!(approved["status"], "accepted", "{approved}");

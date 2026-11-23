@@ -10,19 +10,19 @@ export function commandRecord(
   return {
     command_id: commandId,
     label: "enable",
-    accepted_at_unix_nano: "1000000000",
+    accepted_unix_nano: "1000000000",
     command: { kind: "control", action: "enable" },
     phase:
       finishedAt === null
         ? { kind: "pending" }
         : outcome === "interrupted"
-          ? { kind: "outcome_unknown", finished_at_unix_nano: String(finishedAt * 1e9), detail: null }
+          ? { kind: "outcome_unknown", finished_unix_nano: String(finishedAt * 1e9), detail: null }
           : {
               kind: "finished",
               achieved: null,
               completion: {
                 outcome,
-                finished_at_unix_nano: String(finishedAt * 1e9),
+                finished_unix_nano: String(finishedAt * 1e9),
                 detail: null,
                 gripper: null,
               },
@@ -76,7 +76,8 @@ function armState(options: ArmOptions) {
     mode: options.mode ?? "holding",
     recovery_issue: null,
     rest_pose: null,
-    sampled_at_unix_seconds: options.sampledAt ?? null,
+    sampled_unix_nano:
+      options.sampledAt == null ? null : String(options.sampledAt * 1e9),
     segment: null,
     tool: null,
     interlocks: [],

@@ -764,6 +764,7 @@ impl Lease {
     }
 
     pub fn raise(&self, arm: &SharedInterlocks, interlock: Interlock) {
+        let requires_recovery = matches!(interlock, Interlock::RecoveryApprovalRequired { .. });
         let raised = {
             let mut interlocks = arm.lock_unpoisoned();
             let existing = interlocks.active.iter().position(|active| {
@@ -772,18 +773,18 @@ impl Lease {
             match existing {
                 Some(index) if interlocks.active[index] == interlock => false,
                 Some(index) => {
-                    interlocks.active[index] = interlock.clone();
+                    interlocks.active[index] = interlock;
                     interlocks.revision = interlocks.revision.saturating_add(1);
                     true
                 }
                 None => {
-                    interlocks.active.push(interlock.clone());
+                    interlocks.active.push(interlock);
                     interlocks.revision = interlocks.revision.saturating_add(1);
                     true
                 }
             }
         };
-        if raised && matches!(interlock, Interlock::RecoveryApprovalRequired { .. }) {
+        if raised && requires_recovery {
             let mut authority = self.authority.lock_unpoisoned();
             let held = &mut authority.held;
             if held
@@ -898,7 +899,7 @@ impl Lease {
         }
         reservation.expires_at = now + self.duration;
         Some(LeaseGrant {
-            lease_token: reservation.token.clone(),
+            lease_token: token.token,
             lease_seconds: self.duration.as_secs_f64(),
             status: reservation.status(now),
         })

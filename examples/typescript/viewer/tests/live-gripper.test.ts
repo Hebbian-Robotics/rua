@@ -37,7 +37,7 @@ test("release cancels the pending gripper request for the original arm", () => {
     arm: "follower",
     mode: "holding" as const,
     gripper_opening: 1,
-    sampled_at_unix_seconds: Date.now() / 1000,
+    sampled_unix_nano: String(BigInt(Date.now()) * 1_000_000n),
   };
   const gripper = createLiveGripper(
     () => selectedArm,
@@ -73,7 +73,7 @@ test("a restarted command on the same arm is not stopped by an earlier release",
     arm: "follower",
     mode: "holding" as const,
     gripper_opening: 1,
-    sampled_at_unix_seconds: Date.now() / 1000,
+    sampled_unix_nano: String(BigInt(Date.now()) * 1_000_000n),
   };
   const gripper = createLiveGripper(
     () => arm,
@@ -112,7 +112,7 @@ test("losing focus cancels a gripper request that is still in flight", () => {
     arm: "follower",
     mode: "holding" as const,
     gripper_opening: 1,
-    sampled_at_unix_seconds: Date.now() / 1000,
+    sampled_unix_nano: String(BigInt(Date.now()) * 1_000_000n),
   };
   const gripper = createLiveGripper(
     () => arm,
@@ -146,7 +146,7 @@ test("a queued opening for the old arm is not sent to a newly selected arm", asy
     arm: "follower",
     mode: "holding" as const,
     gripper_opening: 1,
-    sampled_at_unix_seconds: Date.now() / 1000,
+    sampled_unix_nano: String(BigInt(Date.now()) * 1_000_000n),
   };
   const gripper = createLiveGripper(
     () => selectedArm,

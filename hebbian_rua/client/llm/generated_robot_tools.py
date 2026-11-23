@@ -818,8 +818,8 @@ MODEL_RESPONSE_FIELDS = json.loads(r"""
     "checkpoints",
     "trace_context",
     "model_points",
-    "accepted_at_unix_nano",
-    "finished_at_unix_nano"
+    "accepted_unix_nano",
+    "finished_unix_nano"
   ],
   "earlier_step": [
     "label",

@@ -1566,6 +1566,13 @@ class TraceFile(BaseModel):
     sizeBytes: Annotated[int, Field(ge=0)]
 
 
+class UnixNanos(RootModel[str]):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[str, Field(pattern="^[0-9]+$")]
+
+
 class ViewerControlMode(StrEnum):
     llm = "llm"
     so101_manual = "so101_manual"
@@ -1626,7 +1633,7 @@ class CommandCompletion(BaseModel):
         frozen=True,
     )
     detail: str | None = None
-    finished_at_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
+    finished_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     gripper: Annotated[
         GripperResult1 | GripperResult2 | None,
         Field(
@@ -1642,7 +1649,7 @@ class CommandNotStarted(BaseModel):
         frozen=True,
     )
     detail: str | None = None
-    finished_at_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
+    finished_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     kind: Literal["not_started"] = "not_started"
     outcome: NotStartedOutcome
 
@@ -1653,7 +1660,7 @@ class CommandOutcomeUnknown(BaseModel):
         frozen=True,
     )
     detail: str | None = None
-    finished_at_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
+    finished_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     kind: Literal["outcome_unknown"] = "outcome_unknown"
 
 
@@ -2059,7 +2066,7 @@ class CommandRecord(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    accepted_at_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
+    accepted_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     checkpoints: list[Checkpoint]
     command: Annotated[
         RecordedMove
@@ -2107,7 +2114,7 @@ class Record(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    accepted_at_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
+    accepted_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
     checkpoints: list[Checkpoint]
     command: Annotated[
         RecordedMove
@@ -2460,10 +2467,10 @@ class ArmState(BaseModel):
             ge=0,
         ),
     ]
-    sampled_at_unix_seconds: Annotated[
-        StrictFloat | None,
+    sampled_unix_nano: Annotated[
+        UnixNanos | None,
         Field(
-            description="When the newest sample was taken, in Unix seconds; none before the first."
+            description="Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample."
         ),
     ] = None
     segment: str | None = None

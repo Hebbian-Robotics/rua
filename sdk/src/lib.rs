@@ -6,6 +6,8 @@
 //! command that moves an arm, while power, stop and reads stay on [`Station`].
 //! Wire types come from `hebbian-rua-contracts`, re-exported as [`contracts`].
 
+#![warn(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 mod connection;
 mod error;
 mod http;

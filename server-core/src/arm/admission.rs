@@ -92,7 +92,7 @@ impl ArmCore {
         now: Now,
     ) -> CommandRecord {
         let mut record =
-            CommandRecord::new(new_identifier().into(), label, now.unix_nanos, command);
+            CommandRecord::new(new_identifier().into(), label, now.unix_nano, command);
         record.trace_context.clone_from(&self.trace_context);
         record
     }
@@ -157,7 +157,7 @@ impl ArmCore {
         };
         record.phase = match outcome.known() {
             None => CommandPhase::OutcomeUnknown {
-                finished_at_unix_nano: now.unix_nanos,
+                finished_unix_nano: now.unix_nano,
                 detail,
             },
             Some(KnownCommandOutcome::Failed)
@@ -171,7 +171,7 @@ impl ArmCore {
                     ) =>
             {
                 CommandPhase::NotStarted {
-                    finished_at_unix_nano: now.unix_nanos,
+                    finished_unix_nano: now.unix_nano,
                     outcome: NotStartedOutcome::Failed,
                     detail,
                 }
@@ -185,7 +185,7 @@ impl ArmCore {
                 };
                 CommandPhase::Finished {
                     completion: CommandCompletion {
-                        finished_at_unix_nano: now.unix_nanos,
+                        finished_unix_nano: now.unix_nano,
                         outcome,
                         detail,
                         gripper,
@@ -200,7 +200,7 @@ impl ArmCore {
     fn stop_before_start(&mut self, command_id: &str, detail: &str, now: Now) {
         if let Some(mut record) = self.records.get(command_id).cloned() {
             record.phase = CommandPhase::NotStarted {
-                finished_at_unix_nano: now.unix_nanos,
+                finished_unix_nano: now.unix_nano,
                 outcome: NotStartedOutcome::Stopped,
                 detail: Some(detail.to_owned()),
             };
@@ -235,7 +235,7 @@ impl ArmCore {
                 (Some(position), Some(quaternion))
             });
         Some(Achieved {
-            sampled_at: std::time::Duration::from_nanos(observed.sampled_at.unix_nanos.0)
+            sampled_at: std::time::Duration::from_nanos(observed.sampled_at.unix_nano.0)
                 .as_secs_f64(),
             joint_error_radians: record.target_joints().map(|target| {
                 joints

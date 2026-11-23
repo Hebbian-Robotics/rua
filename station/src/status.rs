@@ -113,9 +113,9 @@ async fn check_arm_feedback(
 
 fn feedback_advanced(initial: &ArmState, current: &ArmState) -> bool {
     !current.measured_joints.is_empty()
-        && current.sampled_at_unix_seconds.is_some_and(|timestamp| {
+        && current.sampled_unix_nano.is_some_and(|timestamp| {
             initial
-                .sampled_at_unix_seconds
+                .sampled_unix_nano
                 .is_none_or(|previous| timestamp > previous)
         })
 }

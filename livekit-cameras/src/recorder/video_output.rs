@@ -8,7 +8,7 @@ impl VideoOutput for RecordingArchive {
     }
 
     fn video(&self, camera: &str, timestamp: u64, packet: Vec<u8>) -> Result<(), RecorderError> {
-        RecordingArchive::video(self, camera, timestamp, packet)
+        RecordingArchive::video(self, camera, timestamp, &packet)
             .map_err(|error| RecorderError::Output(error.to_string()))
     }
 

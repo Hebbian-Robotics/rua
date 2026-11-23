@@ -1049,7 +1049,7 @@ mod tests {
             },
         );
         attempted.phase = CommandPhase::OutcomeUnknown {
-            finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
+            finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: Some("Canceled while moving".into()),
         };
         let mut prior = ActionSequenceRecord {
@@ -1191,7 +1191,7 @@ mod tests {
         assert!(!command_allows_next_step(&command));
         command.phase = CommandPhase::Finished {
             completion: CommandCompletion {
-                finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
+                finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
                 outcome: KnownCommandOutcome::Completed,
                 detail: None,
                 gripper: None,
@@ -1200,7 +1200,7 @@ mod tests {
         };
         assert!(command_allows_next_step(&command));
         command.phase = CommandPhase::OutcomeUnknown {
-            finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
+            finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: None,
         };
         assert!(!command_allows_next_step(&command));
@@ -1230,7 +1230,7 @@ mod tests {
         );
         command.phase = CommandPhase::Finished {
             completion: CommandCompletion {
-                finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
+                finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
                 outcome: KnownCommandOutcome::Completed,
                 detail: None,
                 gripper: None,
@@ -1270,7 +1270,7 @@ mod tests {
         ));
         assert_eq!(after_lease_loss.steps.len(), 2);
         command.phase = CommandPhase::OutcomeUnknown {
-            finished_at_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
+            finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: None,
         };
         assert_eq!(

@@ -539,12 +539,12 @@ export function createStationConnection(
         if (arm === undefined || arm.active_command?.command_id === commandId)
           return undefined;
         const finishedAt = BigInt(
-          commandResult(record)?.finished_at_unix_nano ?? 0,
+          commandResult(record)?.finished_unix_nano ?? 0,
         );
         // Commands that finish in one cycle show only the latest on that arm.
         return arm.last_command?.command_id === commandId ||
           BigInt(
-            commandResult(arm.last_command)?.finished_at_unix_nano ?? -1,
+            commandResult(arm.last_command)?.finished_unix_nano ?? -1,
           ) >= finishedAt
           ? true
           : undefined;

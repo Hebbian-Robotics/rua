@@ -76,15 +76,15 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
         }
         CommandPhase::NotStarted {
             detail,
-            finished_at_unix_nano,
+            finished_unix_nano,
             ..
         }
         | CommandPhase::OutcomeUnknown {
             detail,
-            finished_at_unix_nano,
+            finished_unix_nano,
         } => {
             fields.insert("completion".into(), serde_json::json!({
-                "outcome": command_record.outcome(), "detail": detail, "finished_at_unix_nano": finished_at_unix_nano,
+                "outcome": command_record.outcome(), "detail": detail, "finished_unix_nano": finished_unix_nano,
             }));
             if matches!(command_record.phase, CommandPhase::NotStarted { .. })
                 && command_record.target_status().is_none()
