@@ -34,7 +34,7 @@ class AnthropicRobotTools:
             {
                 "name": tool.name,
                 "description": tool.description,
-                "input_schema": tool.parameters_schema,
+                "input_schema": dict[str, object](tool.parameters_schema),
             }
             for tool in self.robot.tools
         ]
