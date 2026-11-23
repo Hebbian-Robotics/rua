@@ -1,12 +1,23 @@
-"""Robot tools for google-genai generate_content. Install the gemini extra."""
+"""Robot tools for google-genai Interactions and GenerateContent. Install the gemini extra."""
 
 from collections.abc import Mapping
 
 from google.genai import types
+from google.genai.interactions import (
+    ContentParam,
+    Interaction,
+    StepParam,
+    ToolParam,
+    UserInputStepParam,
+)
 
 from hebbian_rua.client.llm.recovery import capture_when_ready
 from hebbian_rua.client.llm.robot_tools import RobotTools
-from hebbian_rua.client.llm.tool_turn import ModelObservation, RobotToolTurn
+from hebbian_rua.client.llm.tool_turn import (
+    ModelObservation,
+    RobotToolTurn,
+    encode_camera,
+)
 from hebbian_rua.client.llm.types import RobotToolCall
 
 
@@ -127,3 +138,85 @@ def _image_message(text: str, cameras: Mapping[str, bytes]) -> types.Content:
         parts.append(types.Part.from_text(text=f"Camera: {name}"))
         parts.append(types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"))
     return types.Content(role="user", parts=parts)
+
+
+class GeminiInteractionRobotTools:
+    """Translate robot tools and new inputs for a stored Gemini interaction."""
+
+    def __init__(self, robot: RobotTools) -> None:
+        self.robot = robot
+
+    @property
+    def tools(self) -> list[ToolParam]:
+        return [
+            {
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters_schema,
+            }
+            for tool in self.robot.tools
+        ]
+
+    async def observe(
+        self, *, wait_for_recovery: bool = False
+    ) -> ModelObservation[StepParam]:
+        if wait_for_recovery:
+            captured, _ = await capture_when_ready(self.robot)
+            observation = captured.observation
+        else:
+            observation = await self.robot.observe()
+        return ModelObservation(
+            _observation_input(observation.text, observation.cameras),
+            observation.revisions,
+        )
+
+    async def execute(
+        self, response: Interaction, *, expected_revisions: Mapping[str, int]
+    ) -> RobotToolTurn[StepParam]:
+        """Execute a complete interaction and return new input steps for its successor."""
+        if response.status not in {"completed", "requires_action"}:
+            raise ValueError(
+                f"Cannot execute an incomplete Gemini interaction: {response.status}"
+            )
+        calls = [
+            RobotToolCall(call_id=step.id, name=step.name, arguments=step.arguments)
+            for step in response.steps or ()
+            if step.type == "function_call"
+        ]
+        results = await self.robot.execute(calls, expected_revisions=expected_revisions)
+        messages: list[StepParam] = [
+            {
+                "type": "function_result",
+                "name": result.call.name,
+                "call_id": result.call.call_id,
+                "result": [{"type": "text", "text": result.text}],
+                "is_error": result.is_error,
+            }
+            for result in results
+        ]
+        messages.extend(
+            _observation_input(
+                f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                result.cameras,
+            )
+            for result in results
+            if result.cameras
+        )
+        return RobotToolTurn(messages, results)
+
+
+def _observation_input(text: str, cameras: Mapping[str, bytes]) -> UserInputStepParam:
+    content: list[ContentParam] = [{"type": "text", "text": text}]
+    for camera_name, jpeg in cameras.items():
+        content.extend(
+            [
+                {"type": "text", "text": f"Camera: {camera_name}"},
+                {
+                    "type": "image",
+                    "mime_type": "image/jpeg",
+                    "data": encode_camera(jpeg),
+                },
+            ]
+        )
+    return {"type": "user_input", "content": content}
