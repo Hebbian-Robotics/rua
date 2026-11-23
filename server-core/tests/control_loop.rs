@@ -218,7 +218,7 @@ fn a_simulated_arm_recovers_from_just_outside_a_joint_limit() {
     let accepted = client.command(Command::Move {
         label: "recover".into(),
         plan: straight_plan("recover", [2.02, 0.0], [1.8, 0.0]),
-        joint_speed: 1.0,
+        joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
         path_limited: None,
         pose_limited: None,
     });
@@ -349,7 +349,7 @@ fn move_arms(client: &LinkClient, targets: [[f64; 2]; 2]) -> Vec<CommandRecord> 
         .map(|(arm, target)| ArmMove {
             arm: arm.into(),
             plan: straight_plan("group_target", [0.0, 0.0], target),
-            joint_speed: 1.0,
+            joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
             path_limited: None,
             pose_limited: None,
         })

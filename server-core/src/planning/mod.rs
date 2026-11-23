@@ -106,7 +106,7 @@ impl Planner {
             ));
         }
         self.require_joint_shape(start)?;
-        let joint_speed = JointSpeed::for_validated_request(
+        let joint_speed = JointSpeed::for_request(
             requested_speed,
             self.default_joint_speed,
             self.max_joint_speed,

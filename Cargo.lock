@@ -256,7 +256,7 @@ dependencies = [
  "rustc-hash 1.1.0",
  "shlex 1.3.0",
  "syn 2.0.119",
- "which",
+ "which 4.4.2",
 ]
 
 [[package]]
@@ -1344,6 +1344,7 @@ dependencies = [
  "hebbian-so101",
  "libc",
  "nalgebra",
+ "nix 0.31.3",
  "ort",
  "proptest",
  "reqwest 0.12.28",
@@ -1388,6 +1389,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "which 8.0.6",
 ]
 
 [[package]]
@@ -4973,6 +4975,15 @@ dependencies = [
  "home",
  "once_cell",
  "rustix 0.38.44",
+]
+
+[[package]]
+name = "which"
+version = "8.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bae2f2b2b816647a1cab1acc91f5bd20812d53cb344382635ec2181940c8034f"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

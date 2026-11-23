@@ -5,8 +5,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use hebbian_contracts::{
-    ActionSequenceRecord, ArmRecord, Event, Frame, LiveRun, RunEvent, ServerMessage, StationState,
-    TraceSpan, UnixNanos,
+    ActionSequenceRecord, ArmRecord, Event, Frame, LiveRun, RunEvent, ServerMessage,
+    StationEventSnapshot, StationState, TraceSpan, UnixNanos,
 };
 use tokio::sync::{broadcast, watch};
 
@@ -45,9 +45,16 @@ pub enum RunUpdate {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum Incoming {
+    Control(StreamControl),
     Known(Box<ServerMessage>),
     /// A kind this SDK does not know: skipped, so a newer station still works.
-    Unknown(#[allow(dead_code, reason = "only to accept any JSON")] serde_json::Value),
+    Unknown(#[allow(dead_code, reason = "only to accept any JSON")] serde::de::IgnoredAny),
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum StreamControl {
+    ResyncRequired,
 }
 
 #[derive(Default)]
@@ -162,7 +169,14 @@ impl Inner {
                 }
                 Some(*seq)
             }
-            _ => frame.seq,
+            Event::State(_)
+            | Event::Reply { .. }
+            | Event::Resync { .. }
+            | Event::Mode { .. }
+            | Event::Rejected { .. }
+            | Event::Tripped { .. }
+            | Event::ControllerUnavailable { .. }
+            | Event::ControllerAvailable => frame.seq,
         };
         if let Some(cursor) = cursor {
             self.resume_after.insert(arm.to_owned(), cursor);
@@ -322,20 +336,14 @@ impl Shared {
         if kind == "resync_required" {
             return Ok(StreamUpdate::SnapshotRequired);
         }
-        let payload: serde_json::Value =
-            serde_json::from_str(data).map_err(|error| error.to_string())?;
-        if payload.get("kind").and_then(serde_json::Value::as_str) == Some("resync_required") {
-            return Ok(StreamUpdate::SnapshotRequired);
-        }
         if kind == "snapshot" {
-            let items = payload
-                .get("items")
-                .and_then(serde_json::Value::as_array)
-                .ok_or("invalid station snapshot")?;
-            let run_sequence = payload
-                .get("run_sequence")
-                .and_then(serde_json::Value::as_u64)
-                .ok_or("invalid run cursor")?;
+            let snapshot: StationEventSnapshot<Incoming> = serde_json::from_str(data)
+                .map_err(|error| format!("Invalid station snapshot: {error}"))?;
+            let StationEventSnapshot {
+                items,
+                run_sequence,
+                ..
+            } = snapshot;
             let replay_after = self.update(|inner| {
                 inner.state = None;
                 inner.records.clear();
@@ -349,7 +357,7 @@ impl Shared {
             });
             if let Some(after) = replay_after {
                 let url = format!("{}/run/records", self.url.trim_end_matches('/'));
-                let records: Vec<serde_json::Value> = client
+                let records: Vec<Incoming> = client
                     .get(url)
                     .query(&[("after", after)])
                     .timeout(HANDSHAKE_TIMEOUT)
@@ -362,14 +370,18 @@ impl Shared {
                     .await
                     .map_err(|error| error.to_string())?;
                 for record in records {
-                    self.receive(&record.to_string());
+                    self.receive(record);
                 }
             }
             for item in items {
-                self.receive(&item.to_string());
+                self.receive(item);
             }
         } else if kind == "station" {
-            self.receive(data);
+            let incoming = serde_json::from_str(data).map_err(|error| error.to_string())?;
+            if matches!(incoming, Incoming::Control(StreamControl::ResyncRequired)) {
+                return Ok(StreamUpdate::SnapshotRequired);
+            }
+            self.receive(incoming);
         } else {
             return Ok(StreamUpdate::Continue);
         }
@@ -384,8 +396,8 @@ impl Shared {
         Ok(StreamUpdate::Continue)
     }
 
-    fn receive(&self, text: &str) {
-        let Ok(Incoming::Known(message)) = serde_json::from_str(text) else {
+    fn receive(&self, incoming: Incoming) {
+        let Incoming::Known(message) = incoming else {
             return;
         };
         match *message {
@@ -447,8 +459,12 @@ impl Shared {
             ServerMessage::Run { run } => {
                 let _ = self.run_updates.send(RunUpdate::Snapshot(run));
             }
-            // Hello again, and replies that name no request.
-            _ => {}
+            ServerMessage::Hello { .. }
+            | ServerMessage::ActionSequenceAccepted { .. }
+            | ServerMessage::Lease { .. }
+            | ServerMessage::CommandAnswer { .. }
+            | ServerMessage::PreviewAnswer { .. }
+            | ServerMessage::Refused { .. } => {}
         }
     }
 
