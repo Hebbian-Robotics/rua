@@ -196,12 +196,32 @@ pub(crate) struct ArmGate {
 
 pub struct Lease {
     duration: Duration,
-    held: Mutex<Option<Held>>,
+    authority: Mutex<AuthorityState>,
     arms: Mutex<Vec<LeasedArm>>,
-    // INVARIANT: Even while a controller is available, odd while it is unavailable.
-    // Changes on every transition so an acquisition cannot cross a reconnect.
-    controller_epoch: AtomicU64,
     authority_changes: tokio::sync::watch::Sender<()>,
+}
+
+struct AuthorityState {
+    held: Option<Held>,
+    controller: ControllerPresence,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ControllerEpoch(u64);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControllerPresence {
+    Ready(ControllerEpoch),
+    Lost(ControllerEpoch),
+}
+
+impl ControllerPresence {
+    fn ready_epoch(self) -> Option<ControllerEpoch> {
+        match self {
+            Self::Ready(epoch) => Some(epoch),
+            Self::Lost(_) => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -295,19 +315,21 @@ impl Lease {
     pub fn new(duration: Duration) -> Self {
         Self {
             duration,
-            held: Mutex::new(None),
+            authority: Mutex::new(AuthorityState {
+                held: None,
+                controller: ControllerPresence::Ready(ControllerEpoch(0)),
+            }),
             arms: Mutex::new(Vec::new()),
-            controller_epoch: AtomicU64::new(0),
             authority_changes: tokio::sync::watch::Sender::new(()),
         }
     }
 
     pub fn controller_lost(&self) {
-        let mut held = self.held.lock_unpoisoned();
-        if self.controller_epoch.load(Ordering::Acquire) & 1 == 0 {
-            self.controller_epoch.fetch_add(1, Ordering::AcqRel);
+        let mut authority = self.authority.lock_unpoisoned();
+        if let ControllerPresence::Ready(epoch) = authority.controller {
+            authority.controller = ControllerPresence::Lost(epoch);
         }
-        *held = None;
+        authority.held = None;
         for arm in self.arms.lock_unpoisoned().iter() {
             arm.generation.fetch_add(1, Ordering::AcqRel);
         }
@@ -315,9 +337,9 @@ impl Lease {
     }
 
     pub(crate) fn controller_ready(&self) {
-        let _held = self.held.lock_unpoisoned();
-        if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
-            self.controller_epoch.fetch_add(1, Ordering::AcqRel);
+        let mut authority = self.authority.lock_unpoisoned();
+        if let ControllerPresence::Lost(epoch) = authority.controller {
+            authority.controller = ControllerPresence::Ready(ControllerEpoch(epoch.0 + 1));
         }
     }
 
@@ -335,9 +357,10 @@ impl Lease {
     }
 
     pub fn stop_leased_motion(&self, token: &str) -> bool {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         if !self
-            .live(&mut held, Instant::now())
+            .live(held, Instant::now())
             .is_some_and(|claim| claim.is_active_holder(Some(token)))
         {
             return false;
@@ -353,9 +376,10 @@ impl Lease {
         generations: &mut [GenerationTicket],
         cancel_sequence: impl FnOnce() -> bool,
     ) -> Result<(), Rejection> {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         if !self
-            .live(&mut held, Instant::now())
+            .live(held, Instant::now())
             .is_some_and(|claim| claim.is_active_holder(Some(token)))
         {
             return Err(Rejection {
@@ -363,7 +387,7 @@ impl Lease {
                 detail: "The lease is no longer held".into(),
             });
         }
-        self.check_controller_generation(generations)?;
+        Self::check_controller_generation(authority.controller, generations)?;
         if !cancel_sequence() {
             return Ok(());
         }
@@ -405,14 +429,16 @@ impl Lease {
     }
 
     pub fn with_captured_lease(&self, token: Option<&str>, action: &mut dyn FnMut()) -> bool {
-        let mut held = self.held.lock_unpoisoned();
-        if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
+        let authority = self.authority.lock_unpoisoned();
+        if authority.controller.ready_epoch().is_none() {
             return false;
         }
-        let claim = self.live(&mut held, Instant::now());
-        let authorized = match (claim, token) {
+        let now = Instant::now();
+        let authorized = match (&authority.held, token) {
             (None, None) => true,
-            (Some(claim), Some(token)) => claim.is_active_holder(Some(token)),
+            (Some(claim), Some(token)) => {
+                claim.expires_at > now && claim.is_active_holder(Some(token))
+            }
             _ => false,
         };
         if authorized {
@@ -427,12 +453,14 @@ impl Lease {
         request: LeaseRequest,
         mode: AcquireMode,
     ) -> Result<LeaseGrant, AcquireError> {
-        let epoch = self.controller_epoch.load(Ordering::Acquire);
-        if epoch & 1 == 1 {
-            return Err(controller_unavailable());
-        }
+        let epoch = self
+            .authority
+            .lock_unpoisoned()
+            .controller
+            .ready_epoch()
+            .ok_or_else(controller_unavailable)?;
         let result = self.acquire_stopping_arms_inner(request, mode, epoch);
-        if self.controller_epoch.load(Ordering::Acquire) != epoch {
+        if self.authority.lock_unpoisoned().controller.ready_epoch() != Some(epoch) {
             if let Ok(grant) = &result {
                 self.return_lease(Some(&grant.lease_token), Instant::now());
             }
@@ -445,7 +473,7 @@ impl Lease {
         &self,
         request: LeaseRequest,
         mode: AcquireMode,
-        epoch: u64,
+        epoch: ControllerEpoch,
     ) -> Result<LeaseGrant, AcquireError> {
         if matches!(mode, AcquireMode::WaitOrFail) {
             match self.acquire(request.clone(), Instant::now()) {
@@ -471,15 +499,18 @@ impl Lease {
                     .collect::<Vec<_>>()
             },
         )?;
-        if self.controller_epoch.load(Ordering::Acquire) != epoch {
-            let mut held = self.held.lock_unpoisoned();
-            if held
-                .as_ref()
-                .is_some_and(|claim| claim.is_held_by(Some(&token.0)))
-            {
-                *held = None;
+        {
+            let mut authority = self.authority.lock_unpoisoned();
+            if authority.controller.ready_epoch() != Some(epoch) {
+                if authority
+                    .held
+                    .as_ref()
+                    .is_some_and(|claim| claim.is_held_by(Some(&token.0)))
+                {
+                    authority.held = None;
+                }
+                return Err(controller_unavailable());
             }
-            return Err(controller_unavailable());
         }
         let deadline = Instant::now() + TAKEOVER_TIMEOUT;
         let result = (|| -> Result<(), Rejection> {
@@ -589,13 +620,14 @@ impl Lease {
     }
 
     pub(crate) fn tick(&self, now: Instant) {
-        self.advance(&mut self.held.lock_unpoisoned(), now);
+        self.advance(&mut self.authority.lock_unpoisoned().held, now);
     }
 
     #[must_use]
     pub fn status(&self, now: Instant) -> Option<LeaseStatus> {
-        self.held
+        self.authority
             .lock_unpoisoned()
+            .held
             .as_ref()
             .map(|held| held.status(now))
     }
@@ -603,8 +635,9 @@ impl Lease {
     #[must_use]
     pub fn camera_requirements(&self) -> Option<CameraRequirements> {
         let now = Instant::now();
-        self.held
+        self.authority
             .lock_unpoisoned()
+            .held
             .as_ref()
             .filter(|claim| matches!(claim.phase, LeasePhase::Active) && claim.expires_at > now)
             .map(|claim| CameraRequirements {
@@ -619,9 +652,10 @@ impl Lease {
         camera: &str,
         available: bool,
     ) -> Result<(), CameraReportRefusal> {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         let Some(claim) = self
-            .live(&mut held, Instant::now())
+            .live(held, Instant::now())
             .filter(|claim| claim.is_active_holder(Some(token)))
         else {
             return Err(CameraReportRefusal::LeaseLost);
@@ -652,8 +686,9 @@ impl Lease {
     #[must_use]
     pub fn interlocks(&self, arm: &SharedInterlocks) -> (Vec<Interlock>, u64) {
         let cameras: Vec<Interlock> = {
-            self.held
+            self.authority
                 .lock_unpoisoned()
+                .held
                 .as_ref()
                 .map(|claim| {
                     claim
@@ -693,8 +728,9 @@ impl Lease {
             }
         };
         if raised && matches!(interlock, Interlock::RecoveryApprovalRequired { .. }) {
-            let mut held = self.held.lock_unpoisoned();
-            if self.live(&mut held, Instant::now()).is_some_and(|claim| {
+            let mut authority = self.authority.lock_unpoisoned();
+            let held = &mut authority.held;
+            if self.live(held, Instant::now()).is_some_and(|claim| {
                 matches!(claim.phase, LeasePhase::Active)
                     && claim.request.on_interruption == OnInterruption::ReturnLease
             }) {
@@ -716,8 +752,9 @@ impl Lease {
     }
 
     fn acquire(&self, request: LeaseRequest, now: Instant) -> Result<LeaseGrant, AcquireError> {
-        let mut held = self.held.lock_unpoisoned();
-        if let Some(existing) = self.live(&mut held, now) {
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
+        if let Some(existing) = self.live(held, now) {
             return Err(AcquireError::Held(existing.status(now)));
         }
         let claim = Held {
@@ -745,8 +782,9 @@ impl Lease {
         now: Instant,
         enqueue_stops: impl FnOnce() -> T,
     ) -> Result<(TakeoverReservation, T), AcquireError> {
-        let mut held = self.held.lock_unpoisoned();
-        if let Some(existing) = self.live(&mut held, now)
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
+        if let Some(existing) = self.live(held, now)
             && !existing.phase.can_start_takeover(mode)
         {
             return Err(AcquireError::Held(existing.status(now)));
@@ -772,7 +810,8 @@ impl Lease {
         now: Instant,
         result: TakeoverResult,
     ) -> Option<LeaseGrant> {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         let reservation = held
             .as_mut()
             .filter(|reservation| reservation.is_held_by(Some(&token.0)))?;
@@ -791,18 +830,20 @@ impl Lease {
     }
 
     pub fn retain(&self, token: Option<&str>, now: Instant) -> bool {
-        let mut held = self.held.lock_unpoisoned();
-        let duration = self.duration;
-        self.live(&mut held, now)
-            .filter(|claim| claim.is_active_holder(token))
-            .map(|claim| claim.expires_at = now + duration)
+        let mut authority = self.authority.lock_unpoisoned();
+        authority
+            .held
+            .as_mut()
+            .filter(|claim| claim.expires_at > now && claim.is_active_holder(token))
+            .map(|claim| claim.expires_at = now + self.duration)
             .is_some()
     }
 
     pub fn return_lease(&self, token: Option<&str>, now: Instant) {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         if self
-            .live(&mut held, now)
+            .live(held, now)
             .is_some_and(|claim| claim.is_active_holder(token))
         {
             *held = None;
@@ -811,9 +852,10 @@ impl Lease {
     }
 
     pub(crate) fn release_with(&self, token: &str, cancel_sequence: impl FnOnce() -> bool) -> bool {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         if !self
-            .live(&mut held, Instant::now())
+            .live(held, Instant::now())
             .is_some_and(|claim| claim.is_active_holder(Some(token)))
         {
             return false;
@@ -828,9 +870,10 @@ impl Lease {
 
     // INVARIANT: Queue the holder's disconnect stops before allowing another holder.
     pub(crate) fn return_after(&self, token: &str, now: Instant, stop: impl FnOnce()) {
-        let mut held = self.held.lock_unpoisoned();
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
         if self
-            .live(&mut held, now)
+            .live(held, now)
             .is_some_and(|claim| claim.is_active_holder(Some(token)))
         {
             stop();
@@ -841,8 +884,9 @@ impl Lease {
 
     // INVARIANT: An incomplete handoff cannot be revoked: its stop must finish before control can become available.
     pub fn revoke(&self) -> bool {
-        let mut held = self.held.lock_unpoisoned();
-        self.advance(&mut held, Instant::now());
+        let mut authority = self.authority.lock_unpoisoned();
+        let held = &mut authority.held;
+        self.advance(held, Instant::now());
         if held
             .as_ref()
             .is_none_or(|claim| matches!(claim.phase, LeasePhase::Active))
@@ -858,7 +902,7 @@ impl Lease {
 
     // INVARIANT: Invalidate prior submissions for this arm and queue its stop atomically.
     pub(crate) fn interrupt<T>(&self, generation: &AtomicU64, enqueue: impl FnOnce() -> T) -> T {
-        let _held = self.held.lock_unpoisoned();
+        let _held = self.authority.lock_unpoisoned();
         generation.fetch_add(1, Ordering::AcqRel);
         enqueue()
     }
@@ -869,17 +913,17 @@ impl Lease {
         generations: &[GenerationTicket],
         enqueue: impl FnOnce() -> T,
     ) -> Result<T, Rejection> {
-        let _held = self.held.lock_unpoisoned();
-        self.check_controller_generation(generations)?;
+        let authority = self.authority.lock_unpoisoned();
+        Self::check_controller_generation(authority.controller, generations)?;
         arm_generation.fetch_add(1, Ordering::AcqRel);
         Ok(enqueue())
     }
 
     fn check_controller_generation(
-        &self,
+        controller: ControllerPresence,
         generations: &[GenerationTicket],
     ) -> Result<(), Rejection> {
-        if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
+        if controller.ready_epoch().is_none() {
             return Err(crate::handoff::loop_not_running());
         }
         if generations.iter().any(|ticket| ticket.check().is_err()) {
@@ -897,8 +941,8 @@ impl Lease {
         generations: &[GenerationTicket],
         enqueue: impl FnOnce() -> T,
     ) -> Result<T, Rejection> {
-        let _held = self.held.lock_unpoisoned();
-        self.check_controller_generation(generations)?;
+        let authority = self.authority.lock_unpoisoned();
+        Self::check_controller_generation(authority.controller, generations)?;
         Ok(enqueue())
     }
 
@@ -911,11 +955,12 @@ impl Lease {
         admission: LeaseAdmission,
         act: impl FnOnce() -> T,
     ) -> Result<T, Rejection> {
-        let mut held = self.held.lock_unpoisoned();
-        if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
+        let mut authority = self.authority.lock_unpoisoned();
+        if authority.controller.ready_epoch().is_none() {
             return Err(crate::handoff::loop_not_running());
         }
-        self.advance(&mut held, now);
+        let held = &mut authority.held;
+        self.advance(held, now);
         let (manual_holder, cameras_unavailable) = held.as_ref().map_or((false, false), |claim| {
             (
                 claim.is_active_holder(token) && claim.request.holder == LeaseHolder::Manual,
@@ -1219,8 +1264,25 @@ mod tests {
         let status = lease.status(second).unwrap();
         assert!(status.expires_in_seconds > 0.0 && status.expires_in_seconds <= 1.0);
         let lapsed = second + Duration::from_secs(2);
+        let (arm, inbox) = crate::handoff::arm_channel();
+        lease.register_arm(
+            arm,
+            Arc::new(AtomicU64::new(0)),
+            SharedInterlocks::default(),
+        );
         assert!(lease.status(lapsed).is_some());
         assert!(!lease.retain(Some(&token), lapsed));
+        assert!(inbox.next().is_none());
+        lease.tick(lapsed);
+        assert!(matches!(
+            inbox.next(),
+            Some(crate::handoff::ArmRequest::Single(
+                crate::handoff::SingleArmRequest::Submit {
+                    command: Command::Stop,
+                    ..
+                }
+            ))
+        ));
         assert!(command(&lease, Some(&token), lapsed).is_err());
         assert!(command(&lease, None, lapsed).is_err());
         let (new_token, ()) = lease
