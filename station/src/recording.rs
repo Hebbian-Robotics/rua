@@ -89,6 +89,7 @@ impl RecordingState {
     }
 }
 
+#[deny(clippy::disallowed_methods)]
 fn finalized_recording(
     recording_name: String,
     controller_interrupted: bool,

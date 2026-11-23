@@ -90,14 +90,15 @@ impl Loop<'_> {
 
     pub(super) fn cycle_failure(
         &self,
-        feedback: &Feedback,
+        validated: crate::plant::TrustedFeedback<'_>,
         interval: f64,
         deadline_missed: Option<String>,
     ) -> Option<Trip> {
+        let feedback = validated.feedback;
         deadline_missed.map(Trip::Deadline).or_else(|| {
             validated_tracking_error(
                 self.config,
-                &feedback.positions,
+                validated.positions,
                 &self.previous_command,
                 &self.commanded_velocities,
                 interval,

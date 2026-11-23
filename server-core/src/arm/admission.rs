@@ -16,7 +16,6 @@ use hebbian_contracts::{
 pub(super) const RETAINED_RECORDS: usize = 200;
 // SAFETY: A fault is cleared only on feedback this fresh, taken after the fault.
 const FAULT_RECOVERY_FEEDBACK_MAX_AGE_SECONDS: f64 = 1.0;
-const POSE_QUATERNION_TOLERANCE: f64 = 1e-5;
 
 // WHY: Joint errors alone do not tell a model why a move stalled or where to aim next;
 // where the tool rests does. A limited move's segment claims no target position, so the
@@ -752,12 +751,9 @@ impl ArmCore {
                 "This controller has no policy loaded, so it cannot take a pose goal",
             ));
         }
-        let target = hebbian_robot_geometry::kinematics::pose_with_tolerance(
-            position,
-            quaternion,
-            POSE_QUATERNION_TOLERANCE,
-        )
-        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+        let target =
+            hebbian_robot_geometry::kinematics::stream_pose_from_xyzw(position, quaternion)
+                .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
         self.submit_stream(StreamGoal::Pose(target), stream_command_id, now)
     }
 

@@ -1,3 +1,5 @@
+#![deny(clippy::disallowed_methods)]
+
 // INVARIANT: Pure motion decisions. Record mutation and event publication happen only
 // after a decision succeeds, in `ArmCore`'s imperative admission shell.
 

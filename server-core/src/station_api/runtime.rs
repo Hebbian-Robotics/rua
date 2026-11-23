@@ -612,7 +612,10 @@ impl ExecutionRegistry {
         })
     }
 
-    pub fn install(&mut self, action_sequence: ActiveExecution) -> Result<(), &'static str> {
+    pub(super) fn install(
+        &mut self,
+        action_sequence: ActiveExecution,
+    ) -> Result<(), ExecutionRefusal> {
         let arms = action_sequence.progress.subscribe().borrow().arms.clone();
         if self.sequences.iter().any(|active| {
             active.is_running()
@@ -624,7 +627,7 @@ impl ExecutionRegistry {
                     .iter()
                     .any(|arm| arms.contains(arm))
         }) {
-            return Err("An action sequence is already running on this arm");
+            return Err(ExecutionRefusal::ArmBusy);
         }
         while self.sequences.len() >= 100 {
             let Some(index) = self
@@ -774,6 +777,35 @@ fn finish_step(
     StepAdvance::Continue
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ExecutionRefusal {
+    PriorUnknown,
+    PriorRunning,
+    StepAlreadyAttempted,
+    NoRemainingStep,
+    PrefixChanged,
+    ArmBusy,
+    LeaseLost,
+    UnknownArm(String),
+    Interlocked(hebbian_contracts::Interlock),
+}
+
+impl std::fmt::Display for ExecutionRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownArm(arm) => write!(formatter, "No arm named {arm}"),
+            Self::Interlocked(interlock) => interlock.fmt(formatter),
+            Self::PriorUnknown => formatter.write_str("Prior execution is unknown or expired"),
+            Self::PriorRunning => formatter.write_str("Finish or cancel the prior execution before continuing"),
+            Self::StepAlreadyAttempted => formatter.write_str("Continuation cannot repeat an attempted step; inspect partial outcomes and submit new work explicitly"),
+            Self::NoRemainingStep => formatter.write_str("Continuation must select at least one remaining step"),
+            Self::PrefixChanged => formatter.write_str("Continuation must preserve the consumed source prefix"),
+            Self::ArmBusy => formatter.write_str("An action sequence is already running on this arm"),
+            Self::LeaseLost => formatter.write_str("The lease was returned, taken or revoked"),
+        }
+    }
+}
+
 pub(super) fn run_compiled_program(
     owner: super::admission::AdmissionOwner,
     executions: &mut ExecutionRegistry,
@@ -782,13 +814,12 @@ pub(super) fn run_compiled_program(
     artifact: Arc<ProgramArtifact>,
     expected_revisions: BTreeMap<String, u64>,
     continuation: Option<hebbian_contracts::ProgramContinuation>,
-) -> Result<String, String> {
+) -> Result<String, ExecutionRefusal> {
     if let Some(continuation) = &continuation {
         let prior = executions
             .lookup(&continuation.prior_execution_id)
-            .ok_or("Prior execution is unknown or expired")?;
-        check_continuation(&prior, &artifact.compilation.source, continuation.next_step)
-            .map_err(str::to_owned)?;
+            .ok_or(ExecutionRefusal::PriorUnknown)?;
+        check_continuation(&prior, &artifact.compilation.source, continuation.next_step)?;
     }
     let sequence = ProgramExecution {
         continuation,
@@ -802,9 +833,9 @@ fn check_continuation(
     prior: &ActionSequenceRecord,
     revised: &ActionSequenceRequest,
     next_step: usize,
-) -> Result<(), &'static str> {
+) -> Result<(), ExecutionRefusal> {
     if matches!(prior.phase, ActionSequencePhase::Running { .. }) {
-        return Err("Finish or cancel the prior execution before continuing");
+        return Err(ExecutionRefusal::PriorRunning);
     }
     let prior_start = prior
         .continuation
@@ -820,17 +851,15 @@ fn check_continuation(
         | ActionSequencePhase::Stopped { .. } => recorded,
     };
     if next_step < consumed {
-        return Err(
-            "Continuation cannot repeat an attempted step; inspect partial outcomes and submit new work explicitly",
-        );
+        return Err(ExecutionRefusal::StepAlreadyAttempted);
     }
     if next_step >= revised.steps.len() {
-        return Err("Continuation must select at least one remaining step");
+        return Err(ExecutionRefusal::NoRemainingStep);
     }
     if next_step > prior.requested_steps.len()
         || revised.steps[..next_step] != prior.requested_steps[..next_step]
     {
-        return Err("Continuation must preserve the consumed source prefix");
+        return Err(ExecutionRefusal::PrefixChanged);
     }
     Ok(())
 }
@@ -841,15 +870,15 @@ fn start_execution(
     links: &BTreeMap<String, LinkHandle>,
     token: String,
     mut sequence: ProgramExecution,
-) -> Result<String, String> {
+) -> Result<String, ExecutionRefusal> {
     let arms = &sequence.artifact.compilation.compiled.arms;
     for arm in arms {
         let link = links
             .get(arm)
-            .ok_or_else(|| format!("No arm named {arm}"))?;
+            .ok_or_else(|| ExecutionRefusal::UnknownArm(arm.clone()))?;
         let (interlocks, revision) = link.interlocks();
         if let Some(interlock) = interlocks.first() {
-            return Err(interlock.to_string());
+            return Err(ExecutionRefusal::Interlocked(interlock.clone()));
         }
         sequence
             .expected_revisions
@@ -879,13 +908,13 @@ fn start_execution(
     let generation = links[&arms[0]]
         .with_lease(&token, || {
             executions.install(active)?;
-            Ok::<_, &'static str>(
+            Ok::<_, ExecutionRefusal>(
                 arms.iter()
                     .map(|arm| links[arm].fence_prior_submissions())
                     .collect(),
             )
         })
-        .ok_or("The lease was returned, taken or revoked")??;
+        .ok_or(ExecutionRefusal::LeaseLost)??;
     let admission = Arc::new(ExecutionAdmission {
         owner,
         links: links.clone(),
@@ -1076,7 +1105,7 @@ mod tests {
         };
         assert_eq!(
             check_continuation(&prior, &source, 1),
-            Err("Finish or cancel the prior execution before continuing")
+            Err(ExecutionRefusal::PriorRunning)
         );
         prior.phase = ActionSequencePhase::Stopped {
             failure: ExecutionFailure::Cancellation {
@@ -1096,7 +1125,7 @@ mod tests {
         *gripper_opening = 0.9;
         assert_eq!(
             check_continuation(&prior, &changed, 1),
-            Err("Continuation must preserve the consumed source prefix")
+            Err(ExecutionRefusal::PrefixChanged)
         );
         prior.continuation = Some(hebbian_contracts::ProgramContinuation {
             prior_execution_id: "earlier".into(),

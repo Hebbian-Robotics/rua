@@ -226,6 +226,7 @@ async fn supervise(
     });
 }
 
+#[deny(clippy::disallowed_methods)]
 fn restart_after_media_exit(
     run_duration: Duration,
     last_exit: String,

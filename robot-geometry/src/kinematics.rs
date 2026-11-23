@@ -116,7 +116,14 @@ pub fn pose_from_xyzw(position: [f64; 3], quaternion: [f64; 4]) -> anyhow::Resul
     pose_with_tolerance(position, quaternion, UNIT_QUATERNION_TOLERANCE)
 }
 
-pub fn pose_with_tolerance(
+pub fn stream_pose_from_xyzw(
+    position: [f64; 3],
+    quaternion: [f64; 4],
+) -> anyhow::Result<Isometry3<f64>> {
+    pose_with_tolerance(position, quaternion, 1e-5)
+}
+
+fn pose_with_tolerance(
     position: [f64; 3],
     quaternion: [f64; 4],
     tolerance: f64,
