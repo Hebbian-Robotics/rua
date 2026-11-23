@@ -82,8 +82,8 @@ With LiveKit configured, run `hebbian-robot-use phone-invite overhead` on the
 station host and open the printed URL on your phone. You can also use the
 HTTP request below and open the response’s `url`. On the camera page, allow camera access
 and select **Start streaming**. Keep the invite URL private. The station accepts
-invite requests over loopback. In the local viewer, open
-**Workspace → Add remote camera**. Enter a camera location and select
+invite requests over loopback. In the local viewer, open **Camera setup** in
+**Workspace**. Under **Remote camera**, enter a camera location and select
 **Create invite**. On your phone, open the invite link or scan its QR code.
 To connect manually, open **Manual LiveKit connection** in the viewer, then
 paste its **LiveKit server URL** and **Publishing token** into the camera page

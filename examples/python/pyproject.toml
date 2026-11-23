@@ -3,7 +3,7 @@ name = "rua-python-examples"
 version = "0.1.1"
 requires-python = ">=3.12"
 dependencies = [
-    "hebbian-rua",
+    "hebbian-rua==0.1.4",
     "openai>=3.49.0",
     "anthropic>=2.8.0",
     "google-genai>=3.1.0",
@@ -14,6 +14,4 @@ dependencies = [
 [tool.uv]
 package = false
 exclude-newer = "3 days"
-
-[tool.uv.sources]
-hebbian-rua = { path = "../..", editable = true }
+exclude-newer-package = { hebbian-rua = false }

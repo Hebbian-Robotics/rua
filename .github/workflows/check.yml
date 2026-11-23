@@ -110,7 +110,6 @@ jobs:
   rust:
     name: rust (${{ matrix.os }})
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,25 +128,35 @@ jobs:
       CARGO_INSTALL_ROOT: ${{ github.workspace }}/.cache/ci-cargo-tools
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        if: needs.changes.outputs.rust == 'true'
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-check-station
+        if: needs.changes.outputs.rust == 'true'
       - name: Attach the Cargo tools cache volume
+        if: needs.changes.outputs.rust == 'true'
         uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
         with:
           path: ${{ env.CARGO_INSTALL_ROOT }}
       - name: Install unused-dependency checker
+        if: needs.changes.outputs.rust == 'true'
         run: cargo install cargo-machete --version 0.9.2 --locked
       - name: Install architecture dependency checker
+        if: needs.changes.outputs.rust == 'true'
         run: |
           cargo install cargo-deny --version 0.20.2 --locked
           printf '%s\n' "${CARGO_INSTALL_ROOT}/bin" >> "$GITHUB_PATH"
       - run: uv run rua-dev check-architecture
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo fmt --all -- --check
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo machete --with-metadata --skip-target-dir
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        if: needs.changes.outputs.rust == 'true'
       - run: cargo test --locked --workspace --all-features
-      - if: runner.os == 'macOS'
+        if: needs.changes.outputs.rust == 'true'
+      - if: needs.changes.outputs.rust == 'true' && runner.os == 'macOS'
         run: uv run --locked rua-dev contracts --check --targets python rust
 
   typescript:
