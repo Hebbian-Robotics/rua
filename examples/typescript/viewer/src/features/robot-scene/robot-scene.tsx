@@ -11,8 +11,10 @@ import { Canvas, useThree } from "@react-three/fiber";
 import type { StationState } from "hebbian-rua";
 import {
   type ComponentRef,
+  type Ref,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -251,7 +253,7 @@ function SceneControls({
   target,
   onTargetChange,
   onTargetDrag,
-  resetCount,
+  resetViewRef,
   cameraPosition = DEFAULT_CAMERA_POSITION,
   cameraTarget = DEFAULT_CAMERA_TARGET,
 }: Pick<
@@ -262,7 +264,7 @@ function SceneControls({
   | "cameraPosition"
   | "cameraTarget"
 > & {
-  resetCount: number;
+  resetViewRef: Ref<() => void>;
 }) {
   const { camera, gl, invalidate } = useThree();
   const orbitControls = useRef<ComponentRef<typeof OrbitControls>>(null);
@@ -287,13 +289,14 @@ function SceneControls({
     },
     [gl, onTargetDrag],
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: The reset button advances resetCount to repeat the effect.
-  useEffect(() => {
+  const resetView = useCallback(() => {
     camera.position.set(...cameraPosition);
     orbitControls.current?.target.set(...cameraTarget);
     orbitControls.current?.update();
     invalidate();
-  }, [camera, cameraPosition, cameraTarget, invalidate, resetCount]);
+  }, [camera, cameraPosition, cameraTarget, invalidate]);
+  useImperativeHandle(resetViewRef, () => resetView, [resetView]);
+  useEffect(resetView, [resetView]);
   return (
     <>
       <OrbitControls
@@ -339,10 +342,10 @@ function SceneControls({
 function RobotSceneCanvas(
   props: RobotSceneProps & {
     modelArm: string;
-    resetCount: number;
+    resetViewRef: Ref<() => void>;
   },
 ) {
-  const { colorScheme, resetCount, modelArm } = props;
+  const { colorScheme, resetViewRef, modelArm } = props;
   const dark = colorScheme === "dark";
   const loaded = useRobotModel(
     `/model/${encodeURIComponent(modelArm)}/robot.urdf`,
@@ -382,7 +385,7 @@ function RobotSceneCanvas(
           target={props.target}
           onTargetChange={props.onTargetChange}
           onTargetDrag={props.onTargetDrag}
-          resetCount={resetCount}
+          resetViewRef={resetViewRef}
           cameraPosition={props.cameraPosition}
           cameraTarget={props.cameraTarget}
         />
@@ -392,7 +395,7 @@ function RobotSceneCanvas(
 }
 
 export function RobotScene(props: RobotSceneProps) {
-  const [resetCount, setResetCount] = useState(0);
+  const resetViewRef = useRef<(() => void) | null>(null);
   const modelArm = props.arms[0]?.arm;
   const supportedJoints =
     props.jointNames.length === SO101_JOINTS.length &&
@@ -400,10 +403,7 @@ export function RobotScene(props: RobotSceneProps) {
   return (
     <section className="robot-scene" aria-label="Robot visualization">
       <header>
-        <Button
-          variant="outline"
-          onClick={() => setResetCount((count) => count + 1)}
-        >
+        <Button variant="outline" onClick={() => resetViewRef.current?.()}>
           Reset view
         </Button>
       </header>
@@ -412,7 +412,7 @@ export function RobotScene(props: RobotSceneProps) {
           <RobotSceneCanvas
             {...props}
             modelArm={modelArm}
-            resetCount={resetCount}
+            resetViewRef={resetViewRef}
           />
         )}
         {!props.jointNames.length && <p>Waiting for arm data…</p>}
