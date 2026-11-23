@@ -591,6 +591,24 @@ mod tests {
         }
     }
 
+    fn start_test_movement(moving: &mut ArmCore) {
+        let movement = part("moving", [0.5, 0.0]);
+        moving
+            .submit(
+                Command::Move {
+                    label: "move_to_joints".into(),
+                    plan: movement.plan,
+                    joint_speed: movement.joint_speed,
+                    path_limited: None,
+                    pose_limited: None,
+                },
+                Now::current(),
+            )
+            .unwrap();
+        moving.next_job().unwrap();
+        moving.begin_moving();
+    }
+
     #[test]
     fn an_expired_manual_lease_allows_enable_only_after_every_arm_has_stopped() {
         let lease = Lease::new(Duration::from_secs(1));
@@ -620,21 +638,7 @@ mod tests {
         let prepared_before_expiry = [GenerationTicket::capture(&moving_generation)];
         let mut disabled = core();
         let mut moving = holding_core();
-        let movement = part("moving", [0.5, 0.0]);
-        moving
-            .submit(
-                Command::Move {
-                    label: "move_to_joints".into(),
-                    plan: movement.plan,
-                    joint_speed: movement.joint_speed,
-                    path_limited: None,
-                    pose_limited: None,
-                },
-                Now::current(),
-            )
-            .unwrap();
-        moving.next_job().unwrap();
-        moving.begin_moving();
+        start_test_movement(&mut moving);
         let mut cores = BTreeMap::from([("disabled", &mut disabled), ("moving", &mut moving)]);
 
         assert!(lease.status(expired).is_some());
