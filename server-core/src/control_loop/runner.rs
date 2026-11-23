@@ -765,10 +765,14 @@ impl<P: Plant> Runner<'_, P> {
             .policy
             .as_ref()
             .map_or(0.0, crate::policy::PolicyRuntime::inference_seconds);
-        if let Err(trip) = computed {
-            self.trip(feedback, trip, now);
-            self.state.next_command.clone_from(&feedback.positions);
-        }
+        let motion_effects = match computed {
+            Ok(effects) => Some(effects),
+            Err(trip) => {
+                self.trip(feedback, trip, now);
+                self.state.next_command.clone_from(&feedback.positions);
+                None
+            }
+        };
         let command_start_time = self.started.elapsed().as_secs_f64();
         let write_began = Instant::now();
         if let Err(failure) = self
@@ -781,6 +785,9 @@ impl<P: Plant> Runner<'_, P> {
         }
         self.timings.command_write_seconds = write_began.elapsed().as_secs_f64();
         let write_time = self.started.elapsed().as_secs_f64();
+        if let Some(effects) = motion_effects {
+            self.state.commit_motion_effects(effects, now);
+        }
         let mut record = self.trace.checkout();
         record.cycle = self.cycle_number;
         record.timings = self.timings;
