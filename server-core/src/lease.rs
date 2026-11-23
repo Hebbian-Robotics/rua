@@ -60,6 +60,12 @@ impl GenerationTicket {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum AcquireMode {
+    WaitOrFail,
+    Takeover,
+}
+
 pub(crate) enum CommandAuthority {
     Interrupt,
     ApproveRecovery,
@@ -419,13 +425,13 @@ impl Lease {
     pub fn acquire_stopping_arms(
         &self,
         request: LeaseRequest,
-        take: bool,
+        mode: AcquireMode,
     ) -> Result<LeaseGrant, AcquireError> {
         let epoch = self.controller_epoch.load(Ordering::Acquire);
         if epoch & 1 == 1 {
             return Err(controller_unavailable());
         }
-        let result = self.acquire_stopping_arms_inner(request, take, epoch);
+        let result = self.acquire_stopping_arms_inner(request, mode, epoch);
         if self.controller_epoch.load(Ordering::Acquire) != epoch {
             if let Ok(grant) = &result {
                 self.return_lease(Some(&grant.lease_token), Instant::now());
@@ -438,10 +444,10 @@ impl Lease {
     fn acquire_stopping_arms_inner(
         &self,
         request: LeaseRequest,
-        take: bool,
+        mode: AcquireMode,
         epoch: u64,
     ) -> Result<LeaseGrant, AcquireError> {
-        if !take {
+        if matches!(mode, AcquireMode::WaitOrFail) {
             match self.acquire(request.clone(), Instant::now()) {
                 Ok(grant) => return Ok(grant),
                 Err(AcquireError::Held(_)) => {}
@@ -451,10 +457,9 @@ impl Lease {
         let arms = self.arms.lock_unpoisoned().clone();
         let (token, stops) = self.begin_takeover(
             request,
-            if take {
-                TakeoverMode::Replace
-            } else {
-                TakeoverMode::Recover
+            match mode {
+                AcquireMode::WaitOrFail => TakeoverMode::Recover,
+                AcquireMode::Takeover => TakeoverMode::Replace,
             },
             Instant::now(),
             || {
@@ -1331,7 +1336,10 @@ mod tests {
         );
         assert!(
             lease
-                .acquire_stopping_arms(request(LeaseHolder::Agent, "offline"), false)
+                .acquire_stopping_arms(
+                    request(LeaseHolder::Agent, "offline"),
+                    AcquireMode::WaitOrFail
+                )
                 .is_err()
         );
         assert!(command(&lease, None, now).is_err());
@@ -1339,7 +1347,10 @@ mod tests {
         assert!(command(&lease, Some(&original), now).is_err());
         assert!(
             lease
-                .acquire_stopping_arms(request(LeaseHolder::Agent, "fresh"), false)
+                .acquire_stopping_arms(
+                    request(LeaseHolder::Agent, "fresh"),
+                    AcquireMode::WaitOrFail
+                )
                 .is_ok()
         );
     }
@@ -1482,7 +1493,10 @@ mod tests {
         );
 
         assert!(matches!(
-            lease.acquire_stopping_arms(request(LeaseHolder::Manual, "viewer"), true),
+            lease.acquire_stopping_arms(
+                request(LeaseHolder::Manual, "viewer"),
+                AcquireMode::Takeover
+            ),
             Err(AcquireError::StopFailed {
                 reason: RejectionReason::NotEnabled,
                 ..

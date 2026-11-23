@@ -1349,7 +1349,12 @@ async fn acquire_lease(
                         if input.request.holder == hebbian_contracts::LeaseHolder::Manual {
                             crate::lease::manual_control_ready_without_waiting(&links)?;
                         }
-                        link.acquire_lease(input.request, input.take)
+                        let mode = if input.take {
+                            crate::lease::AcquireMode::Takeover
+                        } else {
+                            crate::lease::AcquireMode::WaitOrFail
+                        };
+                        link.acquire_lease(input.request, mode)
                             .map_err(|error| error.to_string())
                     })();
                     completion.publish(result);

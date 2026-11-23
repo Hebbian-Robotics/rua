@@ -608,7 +608,9 @@ mod tests {
             required_cameras: vec![],
             on_interruption: OnInterruption::WaitForApproval,
         };
-        let grant = lease.acquire_stopping_arms(request.clone(), false).unwrap();
+        let grant = lease
+            .acquire_stopping_arms(request.clone(), crate::lease::AcquireMode::WaitOrFail)
+            .unwrap();
         let expired = Instant::now() + Duration::from_secs(2);
         let (disabled_handle, disabled_inbox) = arm_channel();
         let (moving_handle, moving_inbox) = arm_channel();
@@ -685,7 +687,9 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(enabled.label, "enable");
-        let fresh = lease.acquire_stopping_arms(request, false).unwrap();
+        let fresh = lease
+            .acquire_stopping_arms(request, crate::lease::AcquireMode::WaitOrFail)
+            .unwrap();
         assert_ne!(fresh.lease_token, grant.lease_token);
         let late_plan = lease.admit_generation(
             Some(&grant.lease_token),

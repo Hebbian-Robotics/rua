@@ -967,7 +967,7 @@ mod tests {
                     required_cameras: vec![],
                     on_interruption: hebbian_contracts::OnInterruption::WaitForApproval,
                 },
-                false,
+                crate::lease::AcquireMode::WaitOrFail,
             )
             .unwrap();
         let arms = vec!["arm".into()];
@@ -1024,7 +1024,7 @@ mod tests {
                     required_cameras: vec![],
                     on_interruption: hebbian_contracts::OnInterruption::WaitForApproval,
                 },
-                false,
+                crate::lease::AcquireMode::WaitOrFail,
             )
             .unwrap();
         let owner = super::super::admission::AdmissionOwner::start(

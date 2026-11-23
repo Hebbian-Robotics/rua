@@ -11,8 +11,8 @@ use crate::arm::{PoseGoalSettings, ReachGoal};
 use crate::config::ControllerConfig;
 use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
 use crate::lease::{
-    AcquireError, ArmGate, CommandAuthority, GenerationTicket, Lease, LeaseAdmission, LeaseRequest,
-    SharedInterlocks,
+    AcquireError, AcquireMode, ArmGate, CommandAuthority, GenerationTicket, Lease, LeaseAdmission,
+    LeaseRequest, SharedInterlocks,
 };
 use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
@@ -555,9 +555,9 @@ impl LinkHandle {
     pub fn acquire_lease(
         &self,
         request: LeaseRequest,
-        take: bool,
+        mode: AcquireMode,
     ) -> Result<hebbian_contracts::LeaseGrant, AcquireError> {
-        self.shared.lease.acquire_stopping_arms(request, take)
+        self.shared.lease.acquire_stopping_arms(request, mode)
     }
 
     #[must_use]
@@ -1002,7 +1002,7 @@ mod tests {
                     required_cameras: Vec::new(),
                     on_interruption: OnInterruption::WaitForApproval,
                 },
-                false,
+                AcquireMode::WaitOrFail,
             )
             .unwrap();
         let previous_execution = handle.fence_prior_submissions();
@@ -1047,7 +1047,7 @@ mod tests {
                         required_cameras: Vec::new(),
                         on_interruption: OnInterruption::WaitForApproval,
                     },
-                    false,
+                    AcquireMode::WaitOrFail,
                 )
                 .is_ok()
         );
