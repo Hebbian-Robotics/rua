@@ -228,7 +228,7 @@ impl SingleArmRequest {
 }
 
 impl GroupRequest {
-    pub(crate) fn apply(self, cores: &mut BTreeMap<&str, &mut ArmCore>) {
+    pub(crate) fn apply(self, cores: BTreeMap<&str, &mut ArmCore>) {
         match self {
             Self::ActionStep {
                 actions,
@@ -236,14 +236,12 @@ impl GroupRequest {
                 now,
                 reply,
             } => {
-                for core in cores.values_mut() {
-                    core.set_trace_context(trace_context.clone());
-                }
-                let answer = admit_action_step(cores, actions, now);
-                for core in cores.values_mut() {
-                    core.set_trace_context(None);
-                }
-                reply.send(answer);
+                reply.send(admit_action_step(
+                    cores,
+                    actions,
+                    now,
+                    trace_context.as_ref(),
+                ));
             }
         }
     }
@@ -251,7 +249,7 @@ impl GroupRequest {
 
 #[cfg(test)]
 pub(crate) fn admit_group(
-    cores: &mut BTreeMap<&str, &mut ArmCore>,
+    cores: BTreeMap<&str, &mut ArmCore>,
     label: &str,
     moves: Vec<ArmMove>,
     now: Now,
@@ -263,6 +261,7 @@ pub(crate) fn admit_group(
             .map(|part| PreparedArmAction::from_group_move(label, part))
             .collect(),
         now,
+        None,
     )
     .map(|records| records.into_iter().map(|record| record.record).collect())
 }
@@ -279,18 +278,19 @@ enum AdmittedMovement {
     },
 }
 
-struct AdmittedArmAction {
+struct AdmittedArmAction<'arm> {
     arm: String,
+    core: &'arm mut ArmCore,
     movement: Option<AdmittedMovement>,
     gripper: Option<GripperTarget>,
 }
 
 // INVARIANT: Decide the whole arm action without changing records, targets or events.
 fn prepare_arm_action(
-    core: &ArmCore,
+    core: &mut ArmCore,
     action: PreparedArmAction,
     motion_scope: MotionScope,
-) -> Result<AdmittedArmAction, Rejection> {
+) -> Result<AdmittedArmAction<'_>, Rejection> {
     let (arm, movement, gripper) = action.into_parts();
     let movement = movement
         .map(|movement| -> Result<_, Rejection> {
@@ -325,15 +325,13 @@ fn prepare_arm_action(
         .transpose()?;
     Ok(AdmittedArmAction {
         arm,
+        core,
         movement,
         gripper,
     })
 }
 
-fn check_group_clearance(
-    cores: &BTreeMap<&str, &mut ArmCore>,
-    actions: &[AdmittedArmAction],
-) -> anyhow::Result<()> {
+fn check_group_clearance(actions: &[AdmittedArmAction<'_>]) -> anyhow::Result<()> {
     use hebbian_robot_geometry::self_collision::CollisionWorkspace;
 
     const INTER_ARM_PENETRATION_METERS: f64 = 0.003;
@@ -344,9 +342,7 @@ fn check_group_clearance(
     let mut moving_arms = 0;
     let mut moving_jaws = 0;
     for action in actions {
-        let core = cores
-            .get(action.arm.as_str())
-            .ok_or_else(|| anyhow::anyhow!("No arm {}", action.arm))?;
+        let core = &*action.core;
         let geometry = core.group_collision.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "Arm {} needs a base pose and collision geometry for grouped motion",
@@ -438,18 +434,11 @@ fn check_group_clearance(
 }
 
 // INVARIANT: Validate every resource before admitting the entire step in one control-loop cycle.
-#[allow(
-    clippy::too_many_lines,
-    reason = "Keep validation, admission and failure cleanup together at the atomic boundary."
-)]
-#[expect(
-    clippy::expect_used,
-    reason = "Every arm is validated before admission and the exclusively borrowed map does not change membership."
-)]
-pub(crate) fn admit_action_step(
-    cores: &mut BTreeMap<&str, &mut ArmCore>,
+fn admit_action_step(
+    mut cores: BTreeMap<&str, &mut ArmCore>,
     actions: Vec<PreparedArmAction>,
     now: Now,
+    trace_context: Option<&TraceContext>,
 ) -> Result<Vec<ArmRecord>, Rejection> {
     let invalid = |detail: String| Rejection {
         reason: RejectionReason::InvalidTarget,
@@ -471,16 +460,11 @@ pub(crate) fn admit_action_step(
     } else {
         MotionScope::Grouped
     };
-    let trajectory_arms = actions
-        .iter()
-        .filter(|action| action.uses_trajectory())
-        .map(|action| action.arm().to_owned())
-        .collect::<Vec<_>>();
     let actions = actions
         .into_iter()
         .map(|action| {
             let core = cores
-                .get(action.arm())
+                .remove(action.arm())
                 .ok_or_else(|| invalid(format!("No arm {}", action.arm())))?;
             let arm = action.arm().to_owned();
             prepare_arm_action(core, action, scope).map_err(|refused| Rejection {
@@ -489,49 +473,71 @@ pub(crate) fn admit_action_step(
             })
         })
         .collect::<Result<Vec<_>, Rejection>>()?;
-    check_group_clearance(cores, &actions).map_err(|error| invalid(format!("{error:#}")))?;
-    let group = GroupMembership {
+    check_group_clearance(&actions).map_err(|error| invalid(format!("{error:#}")))?;
+    let group = matches!(scope, MotionScope::Grouped).then(|| GroupMembership {
         id: crate::arm::new_identifier().into(),
-        arms: trajectory_arms,
-    };
+        arms: actions
+            .iter()
+            .filter(|action| matches!(action.movement, Some(AdmittedMovement::Trajectory { .. })))
+            .map(|action| action.arm.clone())
+            .collect(),
+    });
     let mut records = Vec::new();
     for action in actions {
-        let core = cores
-            .get_mut(action.arm.as_str())
-            .expect("all arms validated");
+        action.commit(group.as_ref(), now, trace_context, &mut records);
+    }
+    Ok(records)
+}
+
+impl AdmittedArmAction<'_> {
+    fn commit(
+        self,
+        group: Option<&GroupMembership>,
+        now: Now,
+        trace_context: Option<&TraceContext>,
+        records: &mut Vec<ArmRecord>,
+    ) {
+        let Self {
+            arm,
+            core,
+            movement,
+            gripper,
+        } = self;
+        core.set_trace_context(trace_context.cloned());
         let mut jaw_motion_owner = None;
-        if let Some(movement) = action.movement {
-            let has_waypoint_jaw = matches!(&movement, AdmittedMovement::Trajectory { decision, .. } if decision.plan.segments.iter().any(|section| section.pass_through.is_some_and(|point| point.gripper_angle.is_some())));
+        if let Some(movement) = movement {
             let record = match movement {
                 AdmittedMovement::Trajectory {
                     label,
                     decision,
                     short,
-                } => core.apply_move(
-                    &label,
-                    decision,
-                    short,
-                    matches!(scope, MotionScope::Grouped).then(|| group.clone()),
-                    now,
-                ),
+                } => {
+                    let has_waypoint_jaw = decision.plan.segments.iter().any(|section| {
+                        section
+                            .pass_through
+                            .is_some_and(|point| point.gripper_angle.is_some())
+                    });
+                    let record = core.apply_move(&label, decision, short, group.cloned(), now);
+                    if has_waypoint_jaw {
+                        jaw_motion_owner = Some(record.command_id.clone());
+                    }
+                    record
+                }
                 AdmittedMovement::PolicyPose { label, goal } => core.apply_reach(&label, goal, now),
             };
-            if has_waypoint_jaw {
-                jaw_motion_owner = Some(record.command_id.clone());
-            }
             records.push(ArmRecord {
-                arm: action.arm.clone(),
+                arm: arm.clone(),
                 record,
             });
         }
-        if let Some(target) = action.gripper {
+        if let Some(target) = gripper {
             records.push(ArmRecord {
-                arm: action.arm,
+                arm,
                 record: core.apply_gripper(target, jaw_motion_owner, now),
             });
         }
+        core.set_trace_context(None);
     }
-    Ok(records)
 }
 
 #[cfg(test)]
@@ -789,16 +795,15 @@ mod tests {
     fn a_group_with_one_arm_that_refuses_is_queued_in_none() {
         let mut left = holding_core();
         let mut right = core();
-        let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+        let cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
         let refused = admit_group(
-            &mut cores,
+            cores,
             "together",
             vec![part("left", [0.5, 0.0]), part("right", [0.5, 0.0])],
             Now::current(),
         )
         .unwrap_err();
         assert!(refused.detail.starts_with("right: "), "{}", refused.detail);
-        drop(cores);
         assert!(
             left.next_job().is_none(),
             "the arm that could take its part was left alone"
@@ -809,9 +814,9 @@ mod tests {
     fn a_group_is_refused_when_either_arm_lacks_collision_geometry() {
         let mut left = holding_core();
         let mut right = holding_core();
-        let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+        let cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
         let refusal = admit_group(
-            &mut cores,
+            cores,
             "together",
             vec![part("left", [0.5, 0.0]), part("right", [0.0, 0.5])],
             Now::current(),
@@ -822,7 +827,6 @@ mod tests {
                 .detail
                 .contains("needs a base pose and collision geometry")
         );
-        drop(cores);
         assert!(left.next_job().is_none() && right.next_job().is_none());
     }
 
@@ -905,21 +909,22 @@ mod tests {
         ] {
             let mut left = so101_group_arm(guard.clone(), 1.0, start, jaw);
             let mut right = so101_group_arm(guard.clone(), -1.0, start, jaw);
-            let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
-            let outcome = admit_group(
-                &mut cores,
-                "crossing",
-                vec![
-                    so101_group_move("left", 1.0, start, target),
-                    so101_group_move("right", -1.0, start, target),
-                ],
-                Now::current(),
-            );
+            let cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+            let actions = [
+                so101_group_move("right", -1.0, start, target),
+                so101_group_move("left", 1.0, start, target),
+            ]
+            .into_iter()
+            .map(|movement| PreparedArmAction::from_group_move("crossing", movement))
+            .collect();
+            let outcome = admit_action_step(cores, actions, Now::current(), None);
             if accepted {
                 let records = outcome.unwrap();
                 assert_eq!(records.len(), 2);
-                assert_eq!(records[0].group_id(), records[1].group_id());
-                assert!(records[0].group_id().is_some());
+                assert_eq!(records[0].arm, "right");
+                assert_eq!(records[1].arm, "left");
+                assert_eq!(records[0].record.group_id(), records[1].record.group_id());
+                assert!(records[0].record.group_id().is_some());
             } else {
                 assert!(outcome.unwrap_err().detail.contains("allowed penetration"));
             }
@@ -958,11 +963,11 @@ mod tests {
         ] {
             let mut left = so101_group_arm(guard.clone(), 1.0, 0.5, 0.0);
             let mut right = so101_group_arm(guard.clone(), -1.0, 0.5, 0.0);
-            let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+            let cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
             let movement = so101_group_move("left", 1.0, 0.5, 0.8);
             let left_action = PreparedArmAction::from_group_move("move_to_joints", movement);
             let error =
-                admit_action_step(&mut cores, vec![left_action, right_action], Now::current())
+                admit_action_step(cores, vec![left_action, right_action], Now::current(), None)
                     .unwrap_err();
             assert!(error.detail.contains(reason), "{error:?}");
             assert!(left.next_job().is_none());
@@ -974,11 +979,15 @@ mod tests {
     #[test]
     fn a_group_is_refused_for_an_unknown_or_repeated_arm_or_no_arm() {
         let mut only = holding_core();
-        let mut cores = BTreeMap::from([("only", &mut only)]);
         let mut detail = |moves| {
-            admit_group(&mut cores, "x", moves, Now::current())
-                .unwrap_err()
-                .detail
+            admit_group(
+                BTreeMap::from([("only", &mut only)]),
+                "x",
+                moves,
+                Now::current(),
+            )
+            .unwrap_err()
+            .detail
         };
         assert!(detail(vec![]).contains("at least one arm"));
         assert_eq!(
@@ -1000,9 +1009,8 @@ mod tests {
             let mut right = holding_core();
             let left_poses = left.poses().cloned();
             let right_poses = right.poses().cloned();
-            let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
-            prop_assert!(admit_group(&mut cores, "generated", vec![part("left", [target, 0.0]), part("right", [outside, 0.0])], Now::current()).is_err());
-            drop(cores);
+            let cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
+            prop_assert!(admit_group(cores, "generated", vec![part("left", [target, 0.0]), part("right", [outside, 0.0])], Now::current()).is_err());
             prop_assert_eq!(left.poses(), left_poses.as_ref());
             prop_assert_eq!(right.poses(), right_poses.as_ref());
             prop_assert!(left.next_job().is_none());
