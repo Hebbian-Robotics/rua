@@ -1,6 +1,7 @@
 import { StationHttpError } from "hebbian-rua";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import type { ZodType } from "zod";
 import { DEFAULT_MODELS } from "../../../agent/src/providers/types.js";
@@ -35,6 +36,7 @@ export function createApp({
   const app = new Hono();
   app.use("/api/*", cors({ origin: allowedOrigins }));
   app.onError((error, context) => {
+    if (error instanceof HTTPException) return error.getResponse();
     if (error instanceof StationHttpError)
       return Response.json({ detail: error.message }, { status: error.status });
     if (error instanceof RunConflictError)

@@ -113,6 +113,34 @@ def test_manual_sessions_release_control_on_disconnect(
 
 
 @pytest.mark.typescript
+def test_recording_controls_reject_cross_site_form_posts(
+    server_binary: Path, tmp_path: Path
+) -> None:
+    with (
+        running_station(server_binary, enabled=False) as station,
+        viewer_backend(station.server, tmp_path) as viewer,
+        httpx2.Client(base_url=viewer, timeout=10) as client,
+    ):
+        for route in ("/api/recording/start", "/api/recording/stop"):
+            assert (
+                client.post(
+                    route,
+                    headers={
+                        "Origin": "https://example.invalid",
+                        "Sec-Fetch-Site": "cross-site",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    content="",
+                ).status_code
+                == 403
+            )
+        assert (
+            client.post("/api/recording/stop", headers={"Origin": viewer}).status_code
+            == 200
+        )
+
+
+@pytest.mark.typescript
 def test_viewer_abort_stops_an_admitted_move(
     server_binary: Path, tmp_path: Path
 ) -> None:

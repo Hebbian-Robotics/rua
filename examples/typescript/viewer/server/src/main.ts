@@ -5,6 +5,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createRecordingClient } from "hebbian-rua";
 import type { Context } from "hono";
+import { csrf } from "hono/csrf";
 import { proxy } from "hono/proxy";
 import {
   API_KEY_VARIABLES,
@@ -67,10 +68,15 @@ const recording = createRecordingClient(stationUrl);
 app.get("/api/recording/status", async (context) =>
   context.json(await recording.status()),
 );
-app.post("/api/recording/start", async (context) =>
+const protectRecordingWrite = csrf({
+  origin: (origin, context) =>
+    origin === new URL(context.req.url).origin ||
+    allowedOrigins.includes(origin),
+});
+app.post("/api/recording/start", protectRecordingWrite, async (context) =>
   context.json(await recording.start()),
 );
-app.post("/api/recording/stop", async (context) => {
+app.post("/api/recording/stop", protectRecordingWrite, async (context) => {
   await recording.stop();
   return context.json(null);
 });
