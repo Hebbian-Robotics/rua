@@ -73,12 +73,14 @@ function modelCommandRecord(
     const completion = phase["completion"];
     if (kind === "move" && isObject(completion)) {
       const outcome = completion["outcome"];
-      result["target_status"] =
-        outcome === "completed"
-          ? "reached"
-          : outcome === "stopped_short"
-            ? "stopped_short"
-            : "partial";
+      if (outcome === "completed") {
+        const limited =
+          command["pose_limited"] != null || command["path_limited"] != null;
+        result["target_status"] = limited ? "limited" : "reached";
+      } else {
+        result["target_status"] =
+          outcome === "stopped_short" ? "stopped_short" : "partial";
+      }
     }
   } else if (phaseKind === "not_started" || phaseKind === "outcome_unknown") {
     result["completion"] = {

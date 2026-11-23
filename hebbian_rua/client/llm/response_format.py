@@ -88,7 +88,12 @@ def _model_command_record(record: dict) -> dict:
             outcome = completion.get("outcome")
             match outcome:
                 case "completed":
-                    result["target_status"] = "reached"
+                    result["target_status"] = (
+                        "limited"
+                        if command.get("pose_limited") is not None
+                        or command.get("path_limited") is not None
+                        else "reached"
+                    )
                 case "stopped_short":
                     result["target_status"] = "stopped_short"
                 case _:

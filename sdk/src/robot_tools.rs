@@ -942,7 +942,12 @@ mod outcome_tests {
                 let mut record_data = example["record"].clone();
                 record_data["command"]["target_joints"] = serde_json::json!([0.123_456_789]);
                 record_data["command"]["joint_speed"] = serde_json::json!(0.123_456_789);
-                let record = serde_json::from_value(record_data.clone()).unwrap();
+                let record: hebbian_contracts::CommandRecord =
+                    serde_json::from_value(record_data.clone()).unwrap();
+                assert_eq!(
+                    serde_json::to_value(record.target_status()).unwrap(),
+                    example["expected_status"],
+                );
                 let outcome = command_records_outcome(
                     vec![ArmRecord {
                         arm: "follower".into(),

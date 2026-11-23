@@ -98,6 +98,13 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
             fields.insert("achieved".into(), phase["achieved"].clone());
             if is_move {
                 let status = match completion["outcome"].as_str() {
+                    Some("completed")
+                        if ["pose_limited", "path_limited"].iter().any(|field| {
+                            command.get(*field).is_some_and(|value| !value.is_null())
+                        }) =>
+                    {
+                        "limited"
+                    }
                     Some("completed") => "reached",
                     Some("stopped_short") => "stopped_short",
                     _ => "partial",
