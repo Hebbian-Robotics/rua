@@ -361,11 +361,16 @@ export function WorkspaceApp({
                   <PhoneCameraSetup />
                 </div>
               </details>
-              <p className="workspace-camera-status">
-                USB camera plugged into the station laptop? Configure LiveKit on
-                the station and add <code>--camera wrist=0</code> to its startup
-                command. The feed appears here when it starts streaming.
-              </p>
+              <details className="camera-setup">
+                <summary>Set up a USB camera</summary>
+                <p className="m-0 text-sm text-muted-foreground">
+                  Configure LiveKit on the station and connect the wrist camera.
+                  RUA uses the arm’s registered wrist camera selector to find
+                  the matching device. To choose a camera yourself, run{" "}
+                  <code>rua camera-devices</code> on the station laptop and pass{" "}
+                  <code>--camera wrist=DEVICE</code> at startup.
+                </p>
+              </details>
               {cameras.feeds.length > 0 && (
                 <div className="camera-grid">
                   {cameras.feeds.map((feed) => (
