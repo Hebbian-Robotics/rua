@@ -1,0 +1,28 @@
+default_job = "build"
+
+[jobs.build]
+command = ["cargo", "build", "--locked"]
+
+[jobs.media]
+command = [
+    "cargo",
+    "build",
+    "--locked",
+    "-p",
+    "hebbian-robot-use-server",
+    "-p",
+    "livekit-cameras",
+]
+
+[jobs.clippy-all]
+command = [
+    "cargo",
+    "clippy",
+    "--locked",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--",
+    "-D",
+    "warnings",
+]
