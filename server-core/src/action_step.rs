@@ -1,5 +1,5 @@
 use hebbian_contracts::{
-    CornerPlan, JawAngle, JointSpeed, PathLimited, PoseLimited, PoseOrientation,
+    Command, CornerPlan, JawAngle, JointSpeed, PathLimited, PoseLimited, PoseOrientation,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,19 +45,14 @@ impl PreparedArmAction {
         }
     }
 
-    pub(crate) fn new(
+    pub(crate) fn move_and_gripper(
         arm: String,
-        movement: Option<PreparedMovement>,
-        gripper: Option<PreparedGripper>,
-    ) -> Option<Self> {
-        match (movement, gripper) {
-            (Some(movement), Some(gripper)) => Some(Self {
-                arm,
-                action: PreparedAction::MoveAndGripper { movement, gripper },
-            }),
-            (Some(movement), None) => Some(Self::movement(arm, movement)),
-            (None, Some(gripper)) => Some(Self::gripper(arm, gripper)),
-            (None, None) => None,
+        movement: PreparedMovement,
+        gripper: PreparedGripper,
+    ) -> Self {
+        Self {
+            arm,
+            action: PreparedAction::MoveAndGripper { movement, gripper },
         }
     }
 
@@ -174,4 +169,42 @@ pub enum PreparedMovement {
 pub struct PreparedGripper {
     pub angle: JawAngle,
     pub joint_speed: Option<JointSpeed>,
+}
+
+impl PreparedMovement {
+    pub(crate) fn into_command(self) -> Command {
+        match self {
+            Self::Trajectory {
+                label,
+                plan,
+                joint_speed,
+                path_limited,
+                pose_limited,
+            } => Command::Move {
+                label,
+                plan,
+                joint_speed,
+                path_limited,
+                pose_limited,
+            },
+            Self::PolicyPose {
+                label,
+                position,
+                orientation,
+            } => Command::ReachPose {
+                label,
+                position,
+                orientation,
+            },
+        }
+    }
+}
+
+impl PreparedGripper {
+    pub(crate) fn into_command(self) -> Command {
+        Command::SetGripper {
+            angle: self.angle,
+            joint_speed: self.joint_speed,
+        }
+    }
 }

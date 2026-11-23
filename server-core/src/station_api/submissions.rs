@@ -191,7 +191,38 @@ impl ControllerStreamCommand {
     }
 }
 
-type Admission = Result<CommandAnswer, String>;
+pub(super) type Admission = Result<CommandAnswer, CommandOutcomeUnknown>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum CommandOutcomeUnknown {
+    AdmissionWorker,
+    ControllerReplyLost,
+    UnexpectedArmRecords,
+    MissingArm(String),
+    MissingCompletion(String),
+    CompletionWorker(String),
+}
+
+impl std::fmt::Display for CommandOutcomeUnknown {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AdmissionWorker => {
+                formatter.write_str("Command worker failed; outcome is unknown")
+            }
+            Self::ControllerReplyLost => {
+                formatter.write_str("Control loop reply lost; command outcome is unknown")
+            }
+            Self::UnexpectedArmRecords => {
+                formatter.write_str("Control loop returned unexpected arm records")
+            }
+            Self::MissingArm(arm) => write!(formatter, "Arm {arm} disappeared"),
+            Self::MissingCompletion(arm) => {
+                write!(formatter, "Completion for arm {arm} is unavailable")
+            }
+            Self::CompletionWorker(detail) => formatter.write_str(detail),
+        }
+    }
+}
 
 enum TerminalMotion {
     Finished(Vec<ArmRecord>),
@@ -200,7 +231,7 @@ enum TerminalMotion {
         detail: String,
     },
     CancelledBeforeAdmission,
-    OutcomeUnknown(String),
+    OutcomeUnknown(CommandOutcomeUnknown),
 }
 
 impl TerminalMotion {
@@ -214,8 +245,8 @@ impl TerminalMotion {
                 detail: detail.clone(),
             },
             Self::CancelledBeforeAdmission => OperationStatus::CancelledBeforeAdmission,
-            Self::OutcomeUnknown(detail) => OperationStatus::OutcomeUnknown {
-                detail: detail.clone(),
+            Self::OutcomeUnknown(failure) => OperationStatus::OutcomeUnknown {
+                detail: failure.to_string(),
             },
         }
     }
@@ -324,10 +355,8 @@ impl PendingAdmission {
 impl Drop for PendingAdmission {
     fn drop(&mut self) {
         if let Some(id) = self.id.take() {
-            self.operations.record_admission(
-                id,
-                Err("Command worker failed; outcome is unknown".to_owned()),
-            );
+            self.operations
+                .record_admission(id, Err(CommandOutcomeUnknown::AdmissionWorker));
         }
     }
 }
@@ -418,7 +447,11 @@ impl Operations {
         unfinished
     }
 
-    pub(super) fn motion_finished(&self, id: OperationId, result: Result<Vec<ArmRecord>, String>) {
+    pub(super) fn motion_finished(
+        &self,
+        id: OperationId,
+        result: Result<Vec<ArmRecord>, CommandOutcomeUnknown>,
+    ) {
         let mut entries = self
             .entries
             .lock()
@@ -779,8 +812,10 @@ mod tests {
         let SubmissionReservation::Existing(retry) = submissions.reserve(operation, request) else {
             panic!("retry must follow the original");
         };
-        assert_eq!(*response.borrow(), Some(Err(detail.clone())));
-        assert_eq!(*retry.borrow(), Some(Err(detail)));
+        let failure = super::CommandOutcomeUnknown::AdmissionWorker;
+        assert_eq!(detail, failure.to_string());
+        assert_eq!(*response.borrow(), Some(Err(failure.clone())));
+        assert_eq!(*retry.borrow(), Some(Err(failure)));
         assert!(matches!(
             submissions.cancel(operation, "lease"),
             CancellationResult::AlreadyStopped
@@ -810,7 +845,7 @@ mod tests {
                     "new commands must remain available after completed outcomes fill the cache"
                 );
             };
-            pending.complete(Err("completed".into()));
+            pending.complete(Err(super::CommandOutcomeUnknown::AdmissionWorker));
             requests.push((id, request));
         }
         assert!(requests.into_iter().any(|(id, request)| matches!(
@@ -875,7 +910,7 @@ mod tests {
             SubmissionReservation::Full
         ));
         for admission in pending {
-            admission.complete(Err("completed update".into()));
+            admission.complete(Err(super::CommandOutcomeUnknown::AdmissionWorker));
         }
         reserve(next_id).complete(accepted());
         let CancellationResult::Requested(CancellationTarget::Commands(records)) =

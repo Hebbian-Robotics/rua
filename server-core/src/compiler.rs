@@ -8,70 +8,20 @@ use sha2::{Digest, Sha256};
 
 use hebbian_contracts::{
     ActionSequenceArmAction, ActionSequenceMovement, ActionSequenceRequest, GripperOpening,
-    JointSpeed, StationCommand,
+    JointSpeed,
 };
 
-pub(crate) trait CompiledActionCommands {
-    fn requested_joints(&self) -> Option<&[f64]>;
-    fn into_commands(self) -> impl Iterator<Item = StationCommand>;
-}
-
-impl CompiledActionCommands for CompiledArmAction {
-    fn requested_joints(&self) -> Option<&[f64]> {
-        match self {
-            Self::Move {
-                movement: CompiledMovement::Joints { joints },
-                ..
-            } => Some(joints),
-            Self::Move {
-                movement: CompiledMovement::Pose { .. },
-                ..
-            }
-            | Self::Gripper { .. } => None,
+pub(crate) fn requested_joints(action: &CompiledArmAction) -> Option<&[f64]> {
+    match action {
+        CompiledArmAction::Move {
+            movement: CompiledMovement::Joints { joints },
+            ..
+        } => Some(joints),
+        CompiledArmAction::Move {
+            movement: CompiledMovement::Pose { .. },
+            ..
         }
-    }
-
-    fn into_commands(self) -> impl Iterator<Item = StationCommand> {
-        let (movement, gripper) = match self {
-            Self::Move {
-                movement,
-                gripper_opening,
-                max_joint_speed,
-            } => {
-                let command = match movement {
-                    CompiledMovement::Joints { joints } => StationCommand::MoveToJoints {
-                        joints,
-                        max_joint_speed,
-                    },
-                    CompiledMovement::Pose {
-                        position,
-                        orientation,
-                    } => StationCommand::MoveToPose {
-                        position,
-                        orientation,
-                        max_joint_speed,
-                    },
-                };
-                (
-                    Some(command),
-                    gripper_opening.map(|opening| StationCommand::SetGripper {
-                        opening,
-                        max_joint_speed,
-                    }),
-                )
-            }
-            Self::Gripper {
-                opening,
-                max_joint_speed,
-            } => (
-                None,
-                Some(StationCommand::SetGripper {
-                    opening,
-                    max_joint_speed,
-                }),
-            ),
-        };
-        movement.into_iter().chain(gripper)
+        | CompiledArmAction::Gripper { .. } => None,
     }
 }
 
@@ -441,16 +391,15 @@ mod tests {
             max_joint_speed: gripper_speed,
         };
         for (requested, expected) in [(None, 0.7), (Some(0.3), 0.3)] {
-            let commands = compile_arm_action(step(requested))
-                .unwrap()
-                .into_commands()
-                .collect::<Vec<_>>();
-            assert!(
-                matches!(commands[0], StationCommand::MoveToJoints { max_joint_speed: Some(speed), .. } if (speed.radians_per_second() - expected).abs() < f64::EPSILON)
-            );
-            assert!(
-                matches!(commands[1], StationCommand::SetGripper { max_joint_speed: Some(speed), .. } if (speed.radians_per_second() - expected).abs() < f64::EPSILON)
-            );
+            let compiled = compile_arm_action(step(requested)).unwrap();
+            assert!(matches!(
+                compiled,
+                CompiledArmAction::Move {
+                    movement: CompiledMovement::Joints { .. },
+                    gripper_opening: Some(_),
+                    max_joint_speed: Some(speed),
+                } if (speed.radians_per_second() - expected).abs() < f64::EPSILON
+            ));
         }
     }
 }
