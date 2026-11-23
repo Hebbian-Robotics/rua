@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { commandPlan, commandWasLimited, type StationState } from "hebbian-rua";
@@ -94,10 +94,15 @@ function JointChart({
   const seek = useRef(onSeek);
   seek.current = onSeek;
   const namesKey = JSON.stringify(jointNames);
+  const readSeriesVisibility = useEffectEvent(() => ({
+    showTarget,
+    showCommanded,
+  }));
   useEffect(() => {
     const element = container.current;
     if (!element) return;
     const names: string[] = JSON.parse(namesKey);
+    const visibility = readSeriesVisibility();
     const colors = getComputedStyle(element);
     const jointColor = (index: number) =>
       colors.getPropertyValue(
@@ -113,6 +118,7 @@ function JointChart({
     for (const [index, name] of names.entries())
       series.push({
         label: `${name} destination`,
+        show: visibility.showTarget,
         stroke: () => jointColor(index),
         width: 1,
         dash: [4, 4],
@@ -120,6 +126,7 @@ function JointChart({
     for (const [index, name] of names.entries())
       series.push({
         label: `${name} commanded`,
+        show: visibility.showCommanded,
         stroke: () => jointColor(index),
         width: 1,
         dash: [1, 3],
@@ -164,18 +171,17 @@ function JointChart({
         top: -10,
       });
   }, [arm, jointNames, times, startTime, currentTime]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Reapply visibility when a new plot is created for a different start time.
   useEffect(() => {
     const plot = chart.current;
     if (!plot) return;
-    const count = (JSON.parse(namesKey) as string[]).length;
+    const count = jointNames.length;
     plot.batch(() => {
       for (let index = 0; index < count; index += 1) {
         plot.setSeries(1 + count + index, { show: showTarget });
         plot.setSeries(1 + 2 * count + index, { show: showCommanded });
       }
     });
-  }, [namesKey, startTime, showTarget, showCommanded]);
+  }, [jointNames.length, showTarget, showCommanded]);
   return (
     <section className="joint-chart">
       <h3>{arm.arm} · joint angles</h3>
