@@ -14,6 +14,8 @@ struct MediaArguments {
 
 #[derive(Subcommand)]
 enum MediaCommand {
+    /// List local video capture devices.
+    CameraDevices,
     Record(livekit_cameras::recorder::Arguments),
     Serve(config::ServeArguments),
 }
@@ -168,10 +170,26 @@ fn run_with_runtime() -> Result<(), PublisherError> {
 
 async fn run() -> Result<(), PublisherError> {
     match MediaArguments::parse().command {
+        MediaCommand::CameraDevices => list_camera_devices(),
         MediaCommand::Serve(arguments) => serve(arguments).await,
         MediaCommand::Record(arguments) => {
             livekit_cameras::recorder::record(arguments).await?;
             Ok(())
         }
     }
+}
+
+fn list_camera_devices() -> Result<(), PublisherError> {
+    cameras::initialize()?;
+    let devices: Vec<_> = cameras::list_cameras()?
+        .into_iter()
+        .map(|camera| {
+            serde_json::json!({
+                "name": camera.human_name(),
+                "device": camera.index().as_string(),
+            })
+        })
+        .collect();
+    println!("{}", serde_json::Value::Array(devices));
+    Ok(())
 }

@@ -44,6 +44,7 @@ fn main() -> anyhow::Result<()> {
         Command::So101Discover {
             so101_config_directory,
         } => so101::print_discovered(so101_config_directory.as_deref()),
+        Command::CameraDevices { media_executable } => media::list_camera_devices(media_executable),
         Command::CheckArm { config } => tools::check_arm(&config),
         Command::Disable { config } => tools::disable_arm(&config),
         Command::ProbeRobot { trace } => tools::probe_robot(&trace),

@@ -55,6 +55,12 @@ pub(crate) enum Command {
         #[arg(long)]
         so101_config_directory: Option<PathBuf>,
     },
+    /// List local video capture devices and their selectors for serve --camera.
+    CameraDevices {
+        /// Media companion to run. Defaults to the companion selected by serve.
+        #[arg(long, env = "HEBBIAN_MEDIA")]
+        media_executable: Option<PathBuf>,
+    },
     /// Check the servos against the profile and print one reading, with torque
     /// untouched.
     CheckArm {

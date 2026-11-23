@@ -23,6 +23,14 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
    device path such as `/dev/video0`. Repeat the flag for each USB camera.
    The station publishes each named feed when it starts.
 
+If you need to identify the wrist camera, run `rua camera-devices` on the
+station laptop before starting the station. Each result includes the camera
+`name` and a `device` value, such as `2` for `--camera wrist=2`. From a source
+checkout with the media companion built, use
+`cargo run -p hebbian-robot-use-server -- camera-devices`.
+With the arm disabled, briefly cover the wrist lens and confirm that the
+`wrist` feed darkens.
+
 ## Watch a USB camera
 
 1. With LiveKit configured and the station running, get a viewer token on the
