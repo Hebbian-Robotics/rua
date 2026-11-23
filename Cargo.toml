@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "livekit-cameras", "sdk", "cli"]
+members = ["python-bindings", "robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "livekit-cameras", "sdk", "cli"]
 default-members = ["robot-geometry", "contracts", "server-core", "station", "station-access", "recordings", "sdk", "cli"]
 # livekit-cameras links libwebrtc (needs clang 21); build it with `-p livekit-cameras`.
 

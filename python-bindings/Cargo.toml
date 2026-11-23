@@ -1,0 +1,17 @@
+[package]
+name = "hebbian-rua-python"
+version = "0.1.4"
+edition = "2024"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+hebbian-rua = { path = "../sdk" }
+pyo3 = { version = "0.30", features = ["abi3-py312"] }
+pythonize = "0.30"
+
+[lints]
+workspace = true

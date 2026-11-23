@@ -37,17 +37,17 @@ gemini = [
 rua = "hebbian_rua.cli:main"
 
 [build-system]
-requires = [
-    "uv_build>=0.13.6,<0.14",
-]
-build-backend = "uv_build"
+requires = ["maturin>=1.12,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "python-bindings/Cargo.toml"
+module-name = "hebbian_rua._native"
+python-source = "."
+bindings = "pyo3"
 
 [tool.uv]
 exclude-newer = "3 days"
-
-[tool.uv.build-backend]
-module-root = ""
-module-name = "hebbian_rua"
 
 [tool.uv.sources.hebbian-rua]
 workspace = true

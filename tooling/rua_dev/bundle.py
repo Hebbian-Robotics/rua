@@ -1,25 +1,19 @@
-import shutil
 import subprocess
 import tempfile
 import tomllib
 from pathlib import Path, PurePosixPath
 from zipfile import ZipFile, ZipInfo
 
-import tomli_w
 from packaging.utils import parse_wheel_filename
 from wheel.wheelfile import WheelFile
 
 
-def assemble_bundle(
-    repository: Path, server_wheel: Path, media_wheel: Path, output: Path
-) -> Path:
-    source_manifest = tomllib.loads((repository / "pyproject.toml").read_text())
-    project = source_manifest["project"].copy()
-    if project["name"] != "hebbian-rua":
-        raise ValueError("The root package must be hebbian-rua")
-    version = project["version"]
+def bundle_platforms(
+    sdk_wheel: Path, server_wheel: Path, media_wheel: Path, version: str
+) -> set[str]:
     native_platforms: set[str] | None = None
     for artifact, expected_name in (
+        (sdk_wheel, "hebbian-rua"),
         (server_wheel, "hebbian-robot-use-server"),
         (media_wheel, "hebbian-robot-use-media"),
     ):
@@ -34,6 +28,22 @@ def assemble_bundle(
         )
     if not native_platforms:
         raise ValueError("Server and media wheels need matching native platform tags")
+    return native_platforms
+
+
+def assemble_bundle(
+    repository: Path,
+    sdk_wheel: Path,
+    server_wheel: Path,
+    media_wheel: Path,
+    output: Path,
+) -> Path:
+    source_manifest = tomllib.loads((repository / "pyproject.toml").read_text())
+    project = source_manifest["project"].copy()
+    if project["name"] != "hebbian-rua":
+        raise ValueError("The root package must be hebbian-rua")
+    version = project["version"]
+    native_platforms = bundle_platforms(sdk_wheel, server_wheel, media_wheel, version)
     platform_tag = ".".join(sorted(native_platforms))
     public_profiles = {
         profile.relative_to(repository).as_posix()
@@ -49,58 +59,21 @@ def assemble_bundle(
     # WHY: Keep staging on the output filesystem so publication is one atomic rename.
     with tempfile.TemporaryDirectory(prefix=".rua-bundle-", dir=output) as temporary:
         staging = Path(temporary)
-        shutil.copytree(
-            repository / "hebbian_rua",
-            staging / "hebbian_rua",
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-        )
-        shutil.copy2(
-            repository / "schemas/sim-plant.schema.json",
-            staging / "hebbian_rua/sim-plant.schema.json",
-        )
-        shutil.copy2(repository / "LICENSE", staging / "LICENSE")
-        shutil.copy2(repository / "README.md", staging / "README.md")
-        (staging / "pyproject.toml").write_text(
-            tomli_w.dumps(
-                {
-                    "project": project,
-                    "build-system": source_manifest["build-system"],
-                    "tool": {
-                        "uv": {
-                            "build-backend": {
-                                "module-root": "",
-                                "module-name": "hebbian_rua",
-                            }
-                        }
-                    },
-                }
-            )
-        )
-        subprocess.run(
-            [
-                "uv",
-                "build",
-                "--wheel",
-                "--project",
-                str(staging),
-                "--out-dir",
-                str(staging / "wheels"),
-            ],
-            check=True,
-        )
-        python_wheel = next((staging / "wheels").glob("*.whl"))
-        destination = output / f"hebbian_rua-{version}-py3-none-{platform_tag}.whl"
+        _, _, _, sdk_tags = parse_wheel_filename(sdk_wheel.name)
+        if {(tag.interpreter, tag.abi) for tag in sdk_tags} != {("cp312", "abi3")}:
+            raise ValueError(f"Expected a CPython 3.12 stable ABI wheel: {sdk_wheel}")
+        destination = output / f"hebbian_rua-{version}-cp312-abi3-{platform_tag}.whl"
         distribution = f"hebbian_rua-{version}"
         included: set[str] = set()
         staged_wheel = staging / destination.name
         with WheelFile(staged_wheel, "w") as bundle:
-            for artifact in (python_wheel, server_wheel, media_wheel):
+            for artifact in (sdk_wheel, server_wheel, media_wheel):
                 with ZipFile(artifact) as source:
                     for entry in source.infolist():
                         if entry.is_dir() or entry.filename.endswith("/RECORD"):
                             continue
                         parts = PurePosixPath(entry.filename).parts
-                        if artifact != python_wheel and parts[0].endswith(".dist-info"):
+                        if artifact != sdk_wheel and parts[0].endswith(".dist-info"):
                             continue
                         target = entry.filename
                         if parts[0].endswith(".data"):
@@ -117,16 +90,16 @@ def assemble_bundle(
                         included.add(target)
                         content = source.read(entry)
                         if target.endswith(".dist-info/WHEEL"):
-                            content = (
-                                content.decode()
-                                .replace(
-                                    "Root-Is-Purelib: true", "Root-Is-Purelib: false"
-                                )
-                                .replace(
-                                    "Tag: py3-none-any", f"Tag: py3-none-{platform_tag}"
-                                )
-                                .encode()
+                            metadata = [
+                                line
+                                for line in content.decode().splitlines()
+                                if not line.startswith("Tag:")
+                            ]
+                            metadata.extend(
+                                f"Tag: cp312-abi3-{platform}"
+                                for platform in sorted(native_platforms)
                             )
+                            content = ("\n".join(metadata) + "\n").encode()
                         if target.endswith(
                             "/data/share/hebbian-robot-use/THIRD_PARTY_NOTICES.md"
                         ):
@@ -137,6 +110,10 @@ def assemble_bundle(
                         copied_entry.external_attr = entry.external_attr
                         copied_entry.compress_type = entry.compress_type
                         bundle.writestr(copied_entry, content)
+            bundle.write(
+                str(repository / "schemas/sim-plant.schema.json"),
+                "hebbian_rua/sim-plant.schema.json",
+            )
         staged_wheel.replace(destination)
     return destination
 
@@ -162,8 +139,26 @@ def build_rua_bundle(repository: Path, *, source_directory: Path | None = None) 
         version = tomllib.loads((repository / "pyproject.toml").read_text())["project"][
             "version"
         ]
+        subprocess.run(
+            [
+                "uvx",
+                "--from",
+                "maturin>=1.12,<2",
+                "maturin",
+                "build",
+                "--locked",
+                "--release",
+                "--compatibility",
+                "off",
+                "--out",
+                str(directory),
+            ],
+            cwd=repository,
+            check=True,
+        )
         return assemble_bundle(
             source_directory or repository,
+            built_wheel(directory, "hebbian_rua", version),
             built_wheel(directory, "hebbian_robot_use_server", version),
             built_wheel(directory, "hebbian_robot_use_media", version),
             repository / "dist",
