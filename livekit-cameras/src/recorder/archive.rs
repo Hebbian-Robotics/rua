@@ -90,17 +90,12 @@ impl RecordingArchive {
         )
     }
 
-    pub fn video(
-        &self,
-        camera: &str,
-        timestamp: u64,
-        packet: Vec<u8>,
-    ) -> Result<(), RecorderError> {
+    pub fn video(&self, camera: &str, timestamp: u64, packet: &[u8]) -> Result<(), RecorderError> {
         self.write(
             &format!("/cameras/{camera}/video"),
             "protobuf",
             timestamp,
-            &messages::encode_compressed_video(timestamp, camera, &packet, "h264"),
+            &messages::encode_compressed_video(timestamp, camera, packet, "h264"),
             Payload::Video,
         )
     }

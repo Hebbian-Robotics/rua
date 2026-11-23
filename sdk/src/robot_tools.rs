@@ -285,7 +285,7 @@ impl<'a> RobotTools<'a> {
                         return Ok(RobotToolResult {
                             cameras: std::collections::BTreeMap::new(),
                             call_id: call.id,
-                            outcome: command_records_outcome(records, true)?,
+                            outcome: command_records_outcome(&records, true)?,
                         });
                     }
                     Err(Error::Refused { reason, detail }) => {
@@ -656,7 +656,7 @@ fn single_command_outcome(
         Err(error) => return Err(error),
     };
     command_records_outcome(
-        vec![ArmRecord {
+        &[ArmRecord {
             arm: arm.to_owned(),
             record,
         }],
@@ -665,18 +665,15 @@ fn single_command_outcome(
 }
 
 fn command_records_outcome(
-    records: Vec<ArmRecord>,
+    records: &[ArmRecord],
     grouped: bool,
 ) -> crate::Result<RobotToolOutcome> {
     let mut payloads = Vec::with_capacity(records.len());
     let mut limited = false;
     let mut complete = true;
     let mut stopped_short = false;
-    let group_id = records
-        .first()
-        .and_then(|record| record.record.group_id())
-        .map(str::to_owned);
-    for record in &records {
+    let group_id = records.first().and_then(|record| record.record.group_id());
+    for record in records {
         limited |= record.record.was_limited();
         let outcome = record.record.outcome();
         complete &= outcome == Some(CommandOutcome::Completed);
@@ -885,12 +882,12 @@ mod outcome_tests {
             }
         };
         assert!(matches!(
-            command_records_outcome(vec![record_with_outcome("interrupted")], true).unwrap(),
+            command_records_outcome(&[record_with_outcome("interrupted")], true).unwrap(),
             RobotToolOutcome::Interrupted(_)
         ));
         assert!(matches!(
             command_records_outcome(
-                vec![
+                &[
                     record_with_outcome("interrupted"),
                     record_with_outcome("faulted")
                 ],
@@ -919,7 +916,7 @@ mod outcome_tests {
                     example["expected_status"],
                 );
                 let outcome = command_records_outcome(
-                    vec![ArmRecord {
+                    &[ArmRecord {
                         arm: "follower".into(),
                         record,
                     }],
