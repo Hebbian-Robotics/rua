@@ -238,6 +238,7 @@ pub struct Segment {
     /// Slows the section to last at least this long, so arms moving together
     /// can arrive together. Only for a single straight section.
     #[serde(default)]
+    #[schemars(range(min = 0.0))]
     pub minimum_duration_seconds: Option<f64>,
     #[serde(default)]
     pub target_position: Option<[f64; 3]>,
@@ -248,6 +249,7 @@ pub struct Segment {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct CornerPlan {
     pub segments: Vec<Segment>,
+    #[schemars(range(min = 0.0))]
     pub peak_speed: f64,
 }
 
@@ -312,6 +314,7 @@ pub enum PoseOrientation {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ToolOrientation {
     pub approach: [f64; 3],
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
 }
 
@@ -319,7 +322,9 @@ pub struct ToolOrientation {
 /// Degrees follow the jaw yaw convention, from 0 up to 360, in order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct JawYawRange {
+    #[schemars(range(min = 0.0, max = 360.0))]
     pub from_degrees: f64,
+    #[schemars(range(min = 0.0, max = 360.0))]
     pub to_degrees: f64,
     pub reachable: bool,
     pub reason: Option<String>,
@@ -332,8 +337,10 @@ pub struct ProjectedPose {
     pub position: [f64; 3],
     pub quaternion: [f64; 4],
     pub orientation: ToolOrientation,
+    #[schemars(range(min = 0.0))]
     pub position_error_meters: f64,
     /// From the requested orientation; none when the solver chose it.
+    #[schemars(range(min = 0.0))]
     pub orientation_error_radians: Option<f64>,
 }
 
@@ -373,5 +380,6 @@ pub struct PoseProjection {
     /// The jaw yaws the arm can take at the projected position and approach;
     /// empty when nothing was projected or the arm has no wrist roll.
     pub jaw_yaw_ranges: Vec<JawYawRange>,
+    #[schemars(range(min = 0.0))]
     pub calculation_milliseconds: f64,
 }

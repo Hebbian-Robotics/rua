@@ -737,10 +737,10 @@ class JawYawRange(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    from_degrees: StrictFloat
+    from_degrees: Annotated[StrictFloat, Field(ge=0.0, le=360.0)]
     reachable: bool
     reason: str | None = None
-    to_degrees: StrictFloat
+    to_degrees: Annotated[StrictFloat, Field(ge=0.0, le=360.0)]
 
 
 class JawYawReference(StrEnum):
@@ -995,12 +995,16 @@ class PoseLimited(BaseModel):
     ]
     orientation_shortfall_radians: Annotated[
         StrictFloat,
-        Field(description="From the closest pose's orientation to the requested one."),
+        Field(
+            description="From the closest pose's orientation to the requested one.",
+            ge=0.0,
+        ),
     ]
     position_shortfall_meters: Annotated[
         StrictFloat,
         Field(
-            description="From the closest pose's tool position to the requested one."
+            description="From the closest pose's tool position to the requested one.",
+            ge=0.0,
         ),
     ]
     reason: IkFailure
@@ -1329,7 +1333,8 @@ class Segment(BaseModel):
     minimum_duration_seconds: Annotated[
         StrictFloat | None,
         Field(
-            description="Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section."
+            description="Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section.",
+            ge=0.0,
         ),
     ] = None
     target_position: Annotated[
@@ -1540,10 +1545,10 @@ class TargetComparison(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    approach_error_degrees: StrictFloat
-    jaw_yaw_degrees: StrictFloat
+    approach_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
+    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
     jaw_yaw_reference: JawYawReference
-    orientation_error_degrees: StrictFloat
+    orientation_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
 
 
 class ToolOrientation(BaseModel):
@@ -1552,7 +1557,7 @@ class ToolOrientation(BaseModel):
         frozen=True,
     )
     approach: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    jaw_yaw_degrees: StrictFloat
+    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
 
 
 class TraceContext(BaseModel):
@@ -1675,7 +1680,7 @@ class CornerPlan(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    peak_speed: StrictFloat
+    peak_speed: Annotated[StrictFloat, Field(ge=0.0)]
     segments: list[Segment]
 
 
@@ -1757,8 +1762,8 @@ class OrientationSummary(BaseModel):
         frozen=True,
     )
     approach: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    degrees_from_down: StrictFloat
-    jaw_yaw_degrees: StrictFloat
+    degrees_from_down: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
+    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
     jaw_yaw_reference: JawYawReference
     target: TargetComparison | None = None
 
@@ -1845,11 +1850,12 @@ class ProjectedPose(BaseModel):
     orientation_error_radians: Annotated[
         StrictFloat | None,
         Field(
-            description="From the requested orientation; none when the solver chose it."
+            description="From the requested orientation; none when the solver chose it.",
+            ge=0.0,
         ),
     ] = None
     position: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    position_error_meters: StrictFloat
+    position_error_meters: Annotated[StrictFloat, Field(ge=0.0)]
     quaternion: Annotated[list[StrictFloat], Field(max_length=4, min_length=4)]
 
 
@@ -1962,7 +1968,7 @@ class Achieved(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    joint_error_radians: StrictFloat | None = None
+    joint_error_radians: Annotated[StrictFloat | None, Field(ge=0.0)] = None
     joint_errors_radians: Annotated[
         list[StrictFloat] | None,
         Field(description="Each joint's absolute distance from the target joints."),
@@ -1974,7 +1980,7 @@ class Achieved(BaseModel):
             description="The tool orientation in grasp terms, against the target's when there is one."
         ),
     ] = None
-    orientation_error_radians: StrictFloat | None = None
+    orientation_error_radians: Annotated[StrictFloat | None, Field(ge=0.0)] = None
     position: Annotated[
         list[StrictFloat] | None,
         Field(
@@ -1983,7 +1989,7 @@ class Achieved(BaseModel):
             min_length=3,
         ),
     ] = None
-    position_error_meters: StrictFloat | None = None
+    position_error_meters: Annotated[StrictFloat | None, Field(ge=0.0)] = None
     quaternion: Annotated[
         list[StrictFloat] | None, Field(max_length=4, min_length=4)
     ] = None
@@ -2230,7 +2236,7 @@ class PoseProjection(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    calculation_milliseconds: StrictFloat
+    calculation_milliseconds: Annotated[StrictFloat, Field(ge=0.0)]
     jaw_yaw_ranges: Annotated[
         list[JawYawRange],
         Field(
