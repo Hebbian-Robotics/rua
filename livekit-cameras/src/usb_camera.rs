@@ -116,19 +116,22 @@ fn linux_capture_indices(
 
 #[cfg(target_os = "macos")]
 pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
-    let output = std::process::Command::new("/usr/sbin/system_profiler")
-        .args(["-timeout", "5", "-json", "SPUSBDataType"])
+    let output = std::process::Command::new("/usr/sbin/ioreg")
+        .args(["-a", "-r", "-c", "IOUSBHostDevice", "-d", "1"])
         .output()?;
     if !output.status.success() {
-        return Err(io::Error::other("Could not read the macOS USB device list"));
+        return Err(io::Error::other(format!(
+            "Could not read the macOS USB device list: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
     }
-    let profile: MacUsbProfile = serde_json::from_slice(&output.stdout)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    let devices = cameras::list_cameras().map_err(io::Error::other)?;
-    resolve_mac_camera(
+    let devices = read_mac_usb_devices(&output.stdout)?;
+    let location = mac_usb_location(identity, &devices)?;
+    let capture_devices = cameras::list_cameras().map_err(io::Error::other)?;
+    resolve_mac_capture_index(
         identity,
-        &profile,
-        devices
+        location,
+        capture_devices
             .iter()
             .map(|device| (device.misc(), device.index().as_string())),
     )
@@ -136,60 +139,48 @@ pub(crate) fn resolve(identity: &UsbCameraIdentity) -> io::Result<String> {
 
 #[cfg(any(target_os = "macos", test))]
 #[derive(serde::Deserialize)]
-struct MacUsbProfile {
-    #[serde(rename = "SPUSBDataType")]
-    devices: Vec<MacUsbDevice>,
-}
-
-#[cfg(any(target_os = "macos", test))]
-#[derive(serde::Deserialize)]
 struct MacUsbDevice {
-    vendor_id: Option<String>,
-    product_id: Option<String>,
-    serial_num: Option<String>,
-    location_id: Option<String>,
-    #[serde(rename = "_items", default)]
-    children: Vec<MacUsbDevice>,
+    #[serde(rename = "idVendor")]
+    vendor: Option<u16>,
+    #[serde(rename = "idProduct")]
+    product: Option<u16>,
+    #[serde(rename = "USB Serial Number")]
+    serial: Option<String>,
+    #[serde(rename = "locationID")]
+    location: Option<u32>,
 }
 
 #[cfg(any(target_os = "macos", test))]
-impl MacUsbDevice {
-    fn collect_matches<'a>(&'a self, identity: &UsbCameraIdentity, matches: &mut Vec<&'a Self>) {
-        let number = |field: Option<&str>| {
-            field
-                .and_then(|field| field.split_whitespace().next())
-                .and_then(parse_hex)
-        };
-        if number(self.vendor_id.as_deref()) == Some(identity.vendor)
-            && number(self.product_id.as_deref()) == Some(identity.product)
-            && self.serial_num.as_deref() == Some(&identity.serial)
-        {
-            matches.push(self);
-        }
-        for child in &self.children {
-            child.collect_matches(identity, matches);
-        }
+fn read_mac_usb_devices(archive: &[u8]) -> io::Result<Vec<MacUsbDevice>> {
+    // WHY: ioreg emits no archive when a rooted search finds no matching class.
+    if archive.is_empty() {
+        return Ok(Vec::new());
     }
+    plist::from_bytes(archive).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Could not decode the macOS USB device list: {error}"),
+        )
+    })
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn resolve_mac_camera(
+fn mac_usb_location(identity: &UsbCameraIdentity, devices: &[MacUsbDevice]) -> io::Result<u32> {
+    unique_device(devices.iter().filter(|device| {
+        device.vendor == Some(identity.vendor)
+            && device.product == Some(identity.product)
+            && device.serial.as_deref() == Some(identity.serial.as_str())
+    }))?
+    .location
+    .ok_or_else(|| io::Error::other("Matching USB camera has no macOS location ID"))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn resolve_mac_capture_index(
     identity: &UsbCameraIdentity,
-    profile: &MacUsbProfile,
+    location: u32,
     devices: impl Iterator<Item = (String, String)>,
 ) -> io::Result<String> {
-    let mut matches = Vec::new();
-    for device in &profile.devices {
-        device.collect_matches(identity, &mut matches);
-    }
-    let usb_device = unique_device(matches.into_iter())?;
-    let location = usb_device
-        .location_id
-        .as_deref()
-        .and_then(|value| value.split_whitespace().next())
-        .and_then(|value| value.strip_prefix("0x"))
-        .and_then(|value| u32::from_str_radix(value, 16).ok())
-        .ok_or_else(|| io::Error::other("Matching USB camera has no macOS location ID"))?;
     // WHY: Some USB capture IDs encode the location, vendor and product. Require all three or leave the camera unavailable.
     let expected_id = (u64::from(location) << 32)
         | (u64::from(identity.vendor) << 16)
@@ -225,29 +216,33 @@ mod tests {
     #[test]
     fn mac_camera_uses_usb_identity_and_rejects_duplicate_physical_devices() {
         let expected: UsbCameraIdentity = "1234:abcd:TEAM_CAMERA".parse().unwrap();
-        let usb_camera = |serial: &str, location: &str| {
-            serde_json::json!({
-                "vendor_id": "0x1234 (Example)",
-                "product_id": "0xabcd",
-                "serial_num": serial,
-                "location_id": location,
-            })
+        let usb_camera = |serial: &str, location: u32| {
+            format!(
+                "<dict>
+                    <key>idVendor</key><integer>4660</integer>
+                    <key>idProduct</key><integer>43981</integer>
+                    <key>USB Serial Number</key><string>{serial}</string>
+                    <key>locationID</key><integer>{location}</integer>
+                    <key>IOObjectClass</key><string>IOUSBHostDevice</string>
+                </dict>"
+            )
         };
         let mut cameras = vec![
-            usb_camera("TEAM_CAMERA", "0x14600000 / 4"),
-            usb_camera("LAPTOP_CAMERA", "0x14700000 / 3"),
+            usb_camera("TEAM_CAMERA", 0x1460_0000),
+            usb_camera("LAPTOP_CAMERA", 0x1470_0000),
         ];
-        let profile = |cameras: &[serde_json::Value]| {
-            serde_json::from_value::<MacUsbProfile>(serde_json::json!({
-                "SPUSBDataType": [{"_items": cameras}]
-            }))
-            .unwrap()
-        };
         let capture_devices = [("0x147000001234abcd", "0"), ("0x146000001234abcd", "2")];
-        let resolve = |cameras: &[serde_json::Value]| {
-            resolve_mac_camera(
+        let resolve = |cameras: &[String]| {
+            let archive = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <plist version="1.0"><array>{}</array></plist>"#,
+                cameras.concat()
+            );
+            let devices = read_mac_usb_devices(archive.as_bytes()).unwrap();
+            let location = mac_usb_location(&expected, &devices)?;
+            resolve_mac_capture_index(
                 &expected,
-                &profile(cameras),
+                location,
                 capture_devices
                     .into_iter()
                     .map(|(id, index)| (id.to_owned(), index.to_owned())),
@@ -258,7 +253,13 @@ mod tests {
             resolve(&cameras[1..]).unwrap_err().kind(),
             io::ErrorKind::NotFound
         );
-        cameras.push(usb_camera("TEAM_CAMERA", "0x14800000 / 5"));
+        assert_eq!(
+            mac_usb_location(&expected, &read_mac_usb_devices(b"").unwrap())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        cameras.push(usb_camera("TEAM_CAMERA", 0x1480_0000));
         assert!(
             resolve(&cameras)
                 .unwrap_err()
