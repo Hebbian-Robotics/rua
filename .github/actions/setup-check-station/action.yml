@@ -42,4 +42,4 @@ runs:
           uv
     - name: Prepare pinned robot assets
       shell: bash
-      run: uv run rua-dev setup
+      run: uv run --locked rua-dev setup

@@ -190,6 +190,8 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-check-station
       - uses: ./.github/actions/setup-check-node
-      - run: uv run --locked rua-dev contracts --check
+      - run: uv run --no-sync rua-dev contracts --check
       - name: Run station integration tests
-        run: uv run --locked pytest -m server
+        # Contract checks verify file contents but can change timestamps that
+        # uv uses to decide whether to rebuild the already installed extension.
+        run: uv run --no-sync pytest -m server
