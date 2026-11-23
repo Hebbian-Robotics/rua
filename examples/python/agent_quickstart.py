@@ -3,7 +3,8 @@ import asyncio
 import json
 import os
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from typing import Literal, TypedDict, cast
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,12 +18,14 @@ from hebbian_rua import (
 )
 from hebbian_rua.client.contract.station_api import ArmMode
 from hebbian_rua.client.environment import load_environment
+from hebbian_rua.client.llm.recovery import capture_when_ready
 from hebbian_rua.client.llm.robot_tools import CallWrapper
+from hebbian_rua.client.llm.tool_turn import RobotToolTurn, encode_camera
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
 Set a provider API key, then start a station and run the agent.
-The adapters translate tools, camera frames and results. You own the model loop.
+The provider stores conversation history. The loop executes the robot tools.
 """
 
 type Provider = Literal["openai", "anthropic", "gemini"]
@@ -99,22 +102,30 @@ async def run_openai(
     from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
     robot_tools = OpenAIRobotTools(robot)
-    messages: list[ResponseInputItemParam] = [{"role": "user", "content": task}]
+    pending_input: list[ResponseInputItemParam] = [{"role": "user", "content": task}]
+    previous_response_id: str | None = None
+    prompt_cache_key = f"hebbian-agent-{uuid4()}"
+    tools = robot_tools.tools
     async with AsyncOpenAI() as client:
         revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
-                messages.append(observation.message)
+                pending_input.append(observation.message)
                 revisions = observation.revisions
             response = await client.responses.create(
                 model=model,
                 instructions=instructions,
-                tools=robot_tools.tools,
-                input=messages,
+                tools=tools,
+                input=pending_input,
+                previous_response_id=previous_response_id,
+                store=True,
+                prompt_cache_key=prompt_cache_key,
             )
             turn = await robot_tools.execute(response, expected_revisions=revisions)
-            messages.extend(turn.messages)
+            previous_response_id = response.id
+            # The adapter starts its return value with the model outputs for stateless callers.
+            pending_input = turn.messages[len(response.output) :]
             revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
@@ -130,28 +141,88 @@ async def run_anthropic(
     robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from anthropic import AsyncAnthropic
-    from anthropic.types import MessageParam
+    from anthropic.types.beta import BetaContentBlockParam, BetaToolParam
 
-    from hebbian_rua.client.llm.anthropic import AnthropicRobotTools
+    def observation_blocks(
+        text: str, cameras: Mapping[str, bytes]
+    ) -> list[BetaContentBlockParam]:
+        blocks: list[BetaContentBlockParam] = [{"type": "text", "text": text}]
+        for camera_name, jpeg in cameras.items():
+            blocks.extend(
+                [
+                    {"type": "text", "text": f"Camera: {camera_name}"},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": encode_camera(jpeg),
+                        },
+                    },
+                ]
+            )
+        return blocks
 
-    robot_tools = AnthropicRobotTools(robot)
-    messages: list[MessageParam] = [{"role": "user", "content": task}]
+    tools: list[BetaToolParam] = [
+        {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": dict[str, object](tool.parameters_schema),
+        }
+        for tool in robot.tools
+    ]
+    pending_content: list[BetaContentBlockParam] = [{"type": "text", "text": task}]
     async with AsyncAnthropic() as client:
+        thread = client.beta.messages.thread(
+            model=model,
+            max_tokens=4096,
+            system=instructions,
+            tools=tools,
+            cache_control={"type": "ephemeral"},
+        )
         revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
             if revisions is None:
-                observation = await robot_tools.observe(wait_for_recovery=True)
-                messages.append(observation.message)
+                captured, _ = await capture_when_ready(robot)
+                observation = captured.observation
+                pending_content.extend(
+                    observation_blocks(observation.text, observation.cameras)
+                )
                 revisions = observation.revisions
-            response = await client.messages.create(
-                model=model,
-                max_tokens=4096,
-                system=instructions,
-                tools=robot_tools.tools,
-                messages=messages,
-            )
-            turn = await robot_tools.execute(response, expected_revisions=revisions)
-            messages.extend(turn.messages)
+            response = await thread.send({"role": "user", "content": pending_content})
+            if response.stop_reason not in {
+                "tool_use",
+                "end_turn",
+                "stop_sequence",
+                "refusal",
+            }:
+                raise ValueError(
+                    f"Cannot execute an incomplete Claude response: {response.stop_reason}"
+                )
+            calls = [
+                RobotToolCall(call_id=block.id, name=block.name, arguments=block.input)
+                for block in response.content
+                if block.type == "tool_use" and response.stop_reason != "refusal"
+            ]
+            results = await robot.execute(calls, expected_revisions=revisions)
+            pending_content = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": result.call.call_id,
+                    "content": result.text,
+                    "is_error": result.is_error,
+                }
+                for result in results
+            ]
+            for result in results:
+                if result.cameras:
+                    pending_content.extend(
+                        observation_blocks(
+                            f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                            result.cameras,
+                        )
+                    )
+            turn = RobotToolTurn(pending_content, results)
             revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
@@ -171,37 +242,106 @@ async def run_gemini(
     robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from google import genai
-    from google.genai import types
-
-    from hebbian_rua.client.llm.gemini import GeminiRobotTools
-
-    robot_tools = GeminiRobotTools(robot)
-    messages = [types.Content(role="user", parts=[types.Part.from_text(text=task)])]
-    configuration = types.GenerateContentConfig(
-        system_instruction=instructions,
-        tools=robot_tools.tools,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+    from google.genai.interactions import (
+        ContentParam,
+        Interaction,
+        ModelParam,
+        StepParam,
+        ToolParam,
+        UserInputStepParam,
     )
+
+    class Continuation(TypedDict, total=False):
+        previous_interaction_id: str
+
+    def observation_input(
+        text: str, cameras: Mapping[str, bytes]
+    ) -> UserInputStepParam:
+        content: list[ContentParam] = [{"type": "text", "text": text}]
+        for camera_name, jpeg in cameras.items():
+            content.extend(
+                [
+                    {"type": "text", "text": f"Camera: {camera_name}"},
+                    {
+                        "type": "image",
+                        "mime_type": "image/jpeg",
+                        "data": encode_camera(jpeg),
+                    },
+                ]
+            )
+        return {"type": "user_input", "content": content}
+
+    tools: list[ToolParam] = [
+        {
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters_schema,
+        }
+        for tool in robot.tools
+    ]
+    pending_input: list[StepParam] = [observation_input(task, {})]
+    continuation: Continuation = {}
     async with genai.Client().aio as client:
         revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
             if revisions is None:
-                observation = await robot_tools.observe(wait_for_recovery=True)
-                messages.append(observation.message)
+                captured, _ = await capture_when_ready(robot)
+                observation = captured.observation
+                pending_input.append(
+                    observation_input(observation.text, observation.cameras)
+                )
                 revisions = observation.revisions
-            response = await client.models.generate_content(
-                model=model,
-                config=configuration,
-                contents=messages,
+            response = await client.interactions.create(
+                model=cast(ModelParam, model),
+                stream=False,
+                system_instruction=instructions,
+                tools=tools,
+                store=True,
+                input=pending_input,
+                **continuation,
             )
-            turn = await robot_tools.execute(response, expected_revisions=revisions)
-            messages.extend(turn.messages)
+            if not isinstance(response, Interaction):
+                raise ValueError("Expected a non-streaming Gemini interaction")
+            if (
+                response.status not in {"completed", "requires_action"}
+                or not response.id
+            ):
+                raise ValueError(
+                    f"Cannot execute an incomplete Gemini interaction: {response.status}"
+                )
+            continuation = {"previous_interaction_id": response.id}
+            calls = [
+                RobotToolCall(call_id=step.id, name=step.name, arguments=step.arguments)
+                for step in response.steps or ()
+                if step.type == "function_call"
+            ]
+            results = await robot.execute(calls, expected_revisions=revisions)
+            pending_input = [
+                {
+                    "type": "function_result",
+                    "name": result.call.name,
+                    "call_id": result.call.call_id,
+                    "result": [{"type": "text", "text": result.text}],
+                    "is_error": result.is_error,
+                }
+                for result in results
+            ]
+            pending_input.extend(
+                observation_input(
+                    f"Images requested by tool call {result.call.call_id}.\n{result.text}",
+                    result.cameras,
+                )
+                for result in results
+                if result.cameras
+            )
+            turn = RobotToolTurn(pending_input, results)
             revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
             if turn.should_stop or not turn.results:
-                print(response.text or "")
+                print(response.output_text or "")
                 report_stop(turn.should_stop)
                 return
     raise SystemExit(f"No task outcome after {max_turns} model turns")

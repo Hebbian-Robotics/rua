@@ -77,7 +77,7 @@ function openaiResponse(overrides: Record<string, unknown>): Response {
     status: "completed",
     usage: {
       input_tokens: 100,
-      input_tokens_details: { cached_tokens: 40 },
+      input_tokens_details: { cached_tokens: 40, cache_write_tokens: 15 },
       output_tokens: 30,
       output_tokens_details: { reasoning_tokens: 12 },
     },
@@ -86,14 +86,14 @@ function openaiResponse(overrides: Record<string, unknown>): Response {
   } as unknown as Response;
 }
 
-test("OpenAI reasoning tokens come from the output token details", () => {
+test("OpenAI usage reports cache reads, cache writes and reasoning tokens", () => {
   expect(openaiUsage(openaiResponse({}))).toEqual({
     model: "gpt-answered",
     inputTokens: 100,
     cachedInputTokens: 40,
     outputTokens: 30,
     reasoningTokens: 12,
-    cacheWriteTokens: 0,
+    cacheWriteTokens: 15,
   });
   expect(openaiUsage(openaiResponse({ usage: undefined }))).toBeNull();
 });

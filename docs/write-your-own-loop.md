@@ -130,8 +130,11 @@ For OpenAI, Anthropic and Gemini, use the adapters from `hebbian_rua.client.llm.
 `.observe(wait_for_recovery=True)` returns a native message with its arm
 revisions. Send `observation.message` to the model and pass
 `expected_revisions=observation.revisions` to `.execute(response, ...)`.
-Append `turn.messages` and stop on `turn.should_stop` or empty `turn.results`.
-See the [three-provider example](../examples/python/agent_quickstart.py).
+For a client-managed transcript, append `turn.messages`. For server-managed
+history, send new tool results and observations with the provider's continuation
+ID or thread. The [three-provider example](../examples/python/agent_quickstart.py)
+uses OpenAI Responses, Claude Message Threads, and Gemini Interactions. Stop on
+`turn.should_stop` or empty `turn.results` when using the adapters.
 For other SDKs or mixed toolsets, use the provider-neutral types above and route
 calls yourself. Stop on a result's `halt` or `interrupted` flag.
 For interruptions, `capture_when_ready(robot)` waits for arm and required-camera

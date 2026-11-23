@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, type Interactions } from "@google/genai";
 import type { RobotToolResult } from "hebbian-rua";
 import { GeminiInteractionError } from "./errors.js";
 import {
@@ -13,36 +13,10 @@ import {
   type TokenUsage,
 } from "./types.js";
 
-// CONSTRAINT: The provider SDK does not export the interaction type by name; keep this local
-// shape limited to the fields the loop consumes.
-export interface GeminiInteraction {
-  id: string;
-  status?: string | undefined;
-  model?: string | undefined;
-  errors?: unknown;
-  usage?:
-    | {
-        total_input_tokens?: number | undefined;
-        total_cached_tokens?: number | undefined;
-        total_output_tokens?: number | undefined;
-        total_thought_tokens?: number | undefined;
-      }
-    | undefined;
-  steps?: readonly GeminiStep[] | undefined;
-}
-
-type GeminiStep =
-  | {
-      type: "function_call";
-      id: string;
-      name: string;
-      arguments: Record<string, unknown>;
-    }
-  | {
-      type: "thought";
-      summary?: ReadonlyArray<{ type: string; text?: string }> | undefined;
-    }
-  | { type: string };
+export type GeminiInteraction = Pick<
+  Interactions.Interaction,
+  "id" | "status" | "model" | "errors" | "usage" | "steps"
+>;
 
 export function geminiUsage(
   model: string,
@@ -77,13 +51,13 @@ export function geminiTurn(
   const toolCalls = [];
   const reasoningSummaries: string[] = [];
   for (const step of response.steps ?? []) {
-    if (step.type === "function_call" && "id" in step && "arguments" in step)
+    if (step.type === "function_call")
       toolCalls.push({
         id: step.id,
         name: step.name,
         arguments: step.arguments,
       });
-    else if (step.type === "thought" && "summary" in step)
+    else if (step.type === "thought")
       for (const part of step.summary ?? [])
         if (part.type === "text" && part.text)
           reasoningSummaries.push(part.text);

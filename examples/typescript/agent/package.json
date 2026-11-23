@@ -16,11 +16,11 @@
     "test": "vitest run --root ../../.. examples/typescript/agent/tests"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "1.8.0",
-    "@google/genai": "2.32.0",
-    "hebbian-rua": "workspace:*",
+    "@anthropic-ai/sdk": "1.11.0",
+    "@google/genai": "3.6.1",
     "@pydantic/genai-prices": "^0.2.3",
-    "openai": "7.55.0",
+    "hebbian-rua": "workspace:*",
+    "openai": "7.62.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
