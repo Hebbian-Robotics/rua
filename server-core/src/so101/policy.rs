@@ -346,24 +346,16 @@ impl Policy {
     }
 
     fn run_network(&mut self, goal: &[f64], history: &[f64]) -> anyhow::Result<[f64; JOINT_COUNT]> {
-        let to_tensor = |values: &[f64]| {
-            Tensor::from_array((
-                [1_usize, values.len()],
-                values
-                    .iter()
-                    .map(|value| {
-                        #[allow(clippy::cast_possible_truncation)]
-                        let narrowed = *value as f32;
-                        narrowed
-                    })
-                    .collect::<Vec<f32>>(),
-            ))
+        let to_tensor = |name: &str, features: &[f64]| -> anyhow::Result<_> {
+            let features = policy_float32_features(name, features)?;
+            Ok(Tensor::from_array(([1, features.len()], features))?)
         };
         let began = Instant::now();
-        let inference = self.session.run(ort::inputs![
-            "goal" => to_tensor(goal)?,
-            "history" => to_tensor(history)?,
-        ]);
+        let goal = to_tensor("goal", goal)?;
+        let history = to_tensor("history", history)?;
+        let inference = self
+            .session
+            .run(ort::inputs!["goal" => goal, "history" => history]);
         self.inference_seconds = began.elapsed().as_secs_f64();
         let outputs = inference?;
         let (_, values) = outputs["action"].try_extract_tensor::<f32>()?;
@@ -382,6 +374,23 @@ impl Policy {
         }
         Ok(action)
     }
+}
+
+fn policy_float32_features(name: &str, features: &[f64]) -> anyhow::Result<Vec<f32>> {
+    let mut input = Vec::with_capacity(features.len());
+    for (index, feature) in features.iter().enumerate() {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "The policy model expects float32 tensors; rounding is expected."
+        )]
+        let narrowed = *feature as f32;
+        ensure!(
+            narrowed.is_finite(),
+            "Policy input {name}[{index}] is not finite in float32"
+        );
+        input.push(narrowed);
+    }
+    Ok(input)
 }
 
 pub(crate) fn validate_joint_count(joint_count: usize) -> anyhow::Result<()> {
@@ -417,7 +426,7 @@ pub(crate) fn validate_profile(
 
 #[cfg(test)]
 mod tests {
-    use super::{ActionMapping, ActionStep, HardwareBinding, sha256_hex};
+    use super::{ActionMapping, ActionStep, HardwareBinding, policy_float32_features, sha256_hex};
     use std::path::Path;
 
     fn mapping(step: &str) -> ActionMapping {
@@ -445,6 +454,17 @@ mod tests {
             assert!(
                 ActionMapping::parse("0.12", offset, scale).is_err(),
                 "accepted {offset} {scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn policy_refuses_finite_features_that_overflow_float32() {
+        for (name, feature) in [("goal", f64::MAX), ("history", -f64::MAX)] {
+            let error = policy_float32_features(name, &[0.25, feature]).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("Policy input {name}[1] is not finite in float32")
             );
         }
     }

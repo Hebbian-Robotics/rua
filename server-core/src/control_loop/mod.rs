@@ -265,7 +265,7 @@ fn serve_requests<P: Plant>(
             match request {
                 ArmRequest::Single(request) => request.apply(runners[index].state.arm()),
                 ArmRequest::Group(request) => {
-                    let mut cores: BTreeMap<&str, &mut ArmCore> = runners
+                    let cores: BTreeMap<&str, &mut ArmCore> = runners
                         .iter_mut()
                         .map(|runner| {
                             let core = runner.state.arm();
@@ -275,7 +275,7 @@ fn serve_requests<P: Plant>(
                             (runner.name.as_str(), core)
                         })
                         .collect();
-                    request.apply(&mut cores);
+                    request.apply(cores);
                 }
             }
             if began.elapsed() >= budget {

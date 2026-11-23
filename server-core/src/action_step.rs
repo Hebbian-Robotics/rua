@@ -116,15 +116,6 @@ impl PreparedArmAction {
         }
     }
 
-    pub(crate) fn uses_trajectory(&self) -> bool {
-        match &self.action {
-            PreparedAction::Move { movement } | PreparedAction::MoveAndGripper { movement, .. } => {
-                matches!(movement, PreparedMovement::Trajectory { .. })
-            }
-            PreparedAction::Gripper { .. } => false,
-        }
-    }
-
     pub(crate) fn into_parts(self) -> (String, Option<PreparedMovement>, Option<PreparedGripper>) {
         let (movement, gripper) = match self.action {
             PreparedAction::Move { movement } => (Some(movement), None),
