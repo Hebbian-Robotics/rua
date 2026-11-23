@@ -7,13 +7,19 @@
 // SAFETY: Start the separate guard before torque goes on. If heartbeats stop it takes over the bus and supervises the hold; faults, effort, drift or the hold deadline release the arm.
 
 use std::io::{Read, Write};
-use std::os::fd::AsRawFd;
+use std::os::fd::AsFd;
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
+use nix::{
+    errno::Errno,
+    fcntl::{FcntlArg, OFlag, fcntl},
+    sys::signal::{Signal, kill},
+    unistd::Pid,
+};
 
 use crate::config::{ControllerConfig, GuardTiming};
 use crate::limits::{check_effort, max_joint_deviation};
@@ -149,15 +155,12 @@ fn kill_controller(controller_pid: u32) -> anyhow::Result<()> {
     if !controller_alive(controller_pid) {
         return Ok(());
     }
-    let process_id = libc::pid_t::try_from(controller_pid)
-        .context("The controller's process id is out of range")?;
-    // SAFETY: kill only reads its plain arguments.
-    if unsafe { libc::kill(process_id, libc::SIGKILL) } != 0 {
-        let error = std::io::Error::last_os_error();
-        // CONSTRAINT: A controller that exited in the meantime is what was wanted.
-        if error.raw_os_error() != Some(libc::ESRCH) {
-            return Err(error).context("Cannot kill the controller");
-        }
+    let process_id =
+        i32::try_from(controller_pid).context("The controller's process id is out of range")?;
+    match kill(Pid::from_raw(process_id), Signal::SIGKILL) {
+        // CONSTRAINT: The controller may have exited since the parent check.
+        Ok(()) | Err(Errno::ESRCH) => {}
+        Err(error) => return Err(error).context("Cannot kill the controller"),
     }
     let deadline = Instant::now() + CONTROLLER_EXIT;
     while controller_alive(controller_pid) {
@@ -330,14 +333,9 @@ pub fn guard<A: GuardedArm>(
     result
 }
 
-fn make_heartbeat_nonblocking(pipe: &impl AsRawFd) -> std::io::Result<()> {
-    // SAFETY: fcntl borrows a live descriptor; neither operation transfers ownership.
-    let flags = unsafe { libc::fcntl(pipe.as_raw_fd(), libc::F_GETFL) };
-    if flags == -1
-        || unsafe { libc::fcntl(pipe.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1
-    {
-        return Err(std::io::Error::last_os_error());
-    }
+fn make_heartbeat_nonblocking(pipe: &impl AsFd) -> std::io::Result<()> {
+    let flags = OFlag::from_bits_retain(fcntl(pipe, FcntlArg::F_GETFL)?);
+    fcntl(pipe, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
     Ok(())
 }
 

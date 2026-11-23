@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx2
+import psutil
 import pytest
 
 from hebbian_rua.client.contract.station_api import (
@@ -31,18 +32,12 @@ from tests.fixture_wait import wait_for_value, wait_until, wait_until_async
 
 
 def controller_pid(station_pid: int) -> int | None:
-    for task in Path(f"/proc/{station_pid}/task").iterdir():
-        try:
-            children = (task / "children").read_text()
-        except FileNotFoundError:
-            continue
-        for child in children.split():
-            try:
-                arguments = Path(f"/proc/{child}/cmdline").read_bytes().split(b"\0")
-            except FileNotFoundError:
-                continue
-            if b"controller" in arguments:
-                return int(child)
+    with contextlib.suppress(psutil.NoSuchProcess):
+        for child in psutil.Process(station_pid).children():
+            with contextlib.suppress(psutil.NoSuchProcess):
+                arguments = child.cmdline()
+                if len(arguments) > 1 and arguments[1] == "controller":
+                    return child.pid
     return None
 
 
@@ -72,7 +67,6 @@ def test_station_termination_waits_for_clean_controller_exit(
 
 
 @pytest.mark.server
-@pytest.mark.skipif(sys.platform != "linux", reason="uses Linux process inspection")
 def test_draining_station_rejects_new_work_and_keeps_program_outcomes(
     server_binary: Path,
 ) -> None:
@@ -156,7 +150,7 @@ def test_second_station_cannot_overwrite_an_active_work_directory(
 
 
 @pytest.mark.server
-@pytest.mark.skipif(sys.platform != "linux", reason="uses Linux process inspection")
+@pytest.mark.skipif(sys.platform != "linux", reason="requires /proc/self/exe")
 def test_station_reconnects_disabled_using_its_running_binary(
     tmp_path: Path, server_binary: Path
 ) -> None:
@@ -167,11 +161,11 @@ def test_station_reconnects_disabled_using_its_running_binary(
         wait_until_station_live(server)
         installed_binary.unlink()
         process_id = wait_for_value(lambda: controller_pid(station.process.pid))
-        command_line = Path(f"/proc/{process_id}/cmdline").read_bytes().split(b"\0")
+        command_line = psutil.Process(process_id).cmdline()
         arm_argument = next(
-            argument for argument in command_line if argument.startswith(b"arm=")
+            argument for argument in command_line if argument.startswith("arm=")
         )
-        configuration_path = Path(os.fsdecode(arm_argument.split(b"=", 1)[1]))
+        configuration_path = Path(arm_argument.split("=", 1)[1])
         configuration = configuration_path.read_bytes()
 
         async def exercise() -> None:
@@ -280,7 +274,6 @@ def test_station_reconnects_disabled_using_its_running_binary(
 
 
 @pytest.mark.server
-@pytest.mark.skipif(sys.platform != "linux", reason="uses Linux process inspection")
 def test_short_delay_recovers_but_a_stalled_controller_is_stopped(
     server_binary: Path,
 ) -> None:
