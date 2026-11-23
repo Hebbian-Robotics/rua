@@ -1,6 +1,9 @@
 //! Station telemetry, independent of camera and `LiveKit` connections.
 use crate::recorder::{RecorderError, archive::RecordingArchive};
-use hebbian_contracts::{Backoff, Event, Frame, ServerMessage, unix_nanoseconds};
+use hebbian_contracts::server_sent_events::ServerSentEvent;
+use hebbian_contracts::{
+    Backoff, Event, Frame, ServerMessage, StationEventSnapshot, unix_nanoseconds,
+};
 use std::{collections::BTreeMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -8,7 +11,42 @@ use tokio_util::sync::CancellationToken;
 #[serde(untagged)]
 enum IncomingMessage {
     Known(Box<ServerMessage>),
+    SourceGap(SourceGap),
     Unknown(serde_json::Value),
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SourceGap {
+    ResyncRequired {
+        detail: Option<String>,
+        arm: Option<String>,
+    },
+}
+
+enum RecorderDelivery {
+    Reconnect,
+    Apply {
+        delivery: Option<Delivery>,
+        data: String,
+        identifier: Option<String>,
+    },
+}
+
+impl From<ServerSentEvent> for RecorderDelivery {
+    fn from(event: ServerSentEvent) -> Self {
+        let delivery = match event.kind.as_str() {
+            "snapshot" => Some(Delivery::Snapshot),
+            "station" => Some(Delivery::Event),
+            "resync_required" => return Self::Reconnect,
+            _ => None,
+        };
+        Self::Apply {
+            delivery,
+            data: event.data,
+            identifier: event.identifier,
+        }
+    }
 }
 
 pub(crate) async fn subscribe(
@@ -87,21 +125,22 @@ async fn connection(
             }
         };
         if response.status() == reqwest::StatusCode::CONFLICT
-            && let Some(after) = event_cursor.take()
+            && let Some(after) = event_cursor.as_deref()
         {
             if let Some(archive) = archive {
                 record_gap(
                     archive,
                     "Station event history has a gap",
-                    Some(&after),
+                    Some(after),
                     None,
                 )?;
             }
+            *event_cursor = None;
         } else {
             break response.error_for_status()?;
         }
     };
-    let mut applied_station_event = false;
+
     let mut decoder = hebbian_contracts::server_sent_events::ServerSentEventDecoder::default();
     loop {
         let chunk = tokio::select! { () = stopped.cancelled() => return Ok(()), result = response.chunk() => result? };
@@ -113,60 +152,26 @@ async fn connection(
             .next_event()
             .map_err(|error| RecorderError::InvalidData(error.to_string()))?
         {
-            if event.kind == "resync_required" {
-                // WHY: The last successfully archived event still determines
-                // whether the server can replay the stream or must report a gap.
+            let RecorderDelivery::Apply {
+                delivery,
+                data,
+                identifier,
+            } = RecorderDelivery::from(event)
+            else {
                 return Ok(());
-            }
-            apply_event(&event.kind, &event.data, archive)?;
-            if !applied_station_event && matches!(event.kind.as_str(), "snapshot" | "station") {
-                applied_station_event = true;
+            };
+            if let Some(delivery) = delivery {
+                if let Some(archive) = archive {
+                    delivery.record(&data, archive)?;
+                }
                 backoff.reset();
             }
-            if let Some(identifier) = event.identifier.filter(|identifier| !identifier.is_empty()) {
-                *event_cursor = Some(identifier);
+            // Only a successfully applied delivery can change the replay position.
+            if let Some(identifier) = identifier {
+                *event_cursor = (!identifier.is_empty()).then_some(identifier);
             }
         }
     }
-}
-
-fn apply_event(
-    kind: &str,
-    data: &str,
-    archive: Option<&RecordingArchive>,
-) -> Result<(), RecorderError> {
-    let Some(archive) = archive else {
-        return Ok(());
-    };
-    let payload: serde_json::Value = serde_json::from_str(data)?;
-    match kind {
-        "snapshot" => {
-            let items = payload
-                .get("items")
-                .and_then(serde_json::Value::as_array)
-                .ok_or_else(|| RecorderError::InvalidData("invalid station snapshot".into()))?;
-            for item in items {
-                record_message(item.clone(), archive, Delivery::Snapshot)?;
-            }
-        }
-        "station" => {
-            if payload.get("kind").and_then(serde_json::Value::as_str) == Some("resync_required") {
-                record_gap(
-                    archive,
-                    payload
-                        .get("detail")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("Station source history has a gap"),
-                    None,
-                    payload.get("arm").and_then(serde_json::Value::as_str),
-                )?;
-            } else {
-                record_message(payload, archive, Delivery::Event)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 fn record_gap(
@@ -188,12 +193,37 @@ enum Delivery {
     Event,
 }
 
+impl Delivery {
+    fn record(self, data: &str, archive: &RecordingArchive) -> Result<(), RecorderError> {
+        match self {
+            Self::Snapshot => {
+                let snapshot: StationEventSnapshot<IncomingMessage> = serde_json::from_str(data)?;
+                for message in snapshot.items {
+                    record_message(message, archive, self)?;
+                }
+                Ok(())
+            }
+            Self::Event => record_message(serde_json::from_str(data)?, archive, self),
+        }
+    }
+}
+
 fn record_message(
-    payload: serde_json::Value,
+    incoming: IncomingMessage,
     archive: &RecordingArchive,
     delivery: Delivery,
 ) -> Result<(), RecorderError> {
-    let message = match serde_json::from_value::<IncomingMessage>(payload)? {
+    let message = match incoming {
+        IncomingMessage::SourceGap(SourceGap::ResyncRequired { detail, arm }) => {
+            return record_gap(
+                archive,
+                detail
+                    .as_deref()
+                    .unwrap_or("Station source history has a gap"),
+                None,
+                arm.as_deref(),
+            );
+        }
         IncomingMessage::Known(message) => *message,
         IncomingMessage::Unknown(raw) => {
             archive.json("/station/unknown_messages", &raw, unix_nanoseconds())?;
@@ -519,6 +549,54 @@ mod tests {
         subscriber.await??;
         server.abort();
         assert_eq!(observed?, (Some(None), Some(Some("event-42".to_owned()))));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn replay_resumes_after_the_last_applied_delivery()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use axum::{Router, routing::get};
+        let snapshot = "id: applied\nevent: snapshot\ndata: {\"station_instance_id\":\"station\",\"sequence\":1,\"run_sequence\":0,\"items\":[]}\n\n";
+        for (next_event, expected_cursor, success) in [
+            (
+                "id: gap\nevent: resync_required\ndata: lagged\n\n",
+                Some("applied"),
+                true,
+            ),
+            (
+                "id: broken\nevent: snapshot\ndata: {}\n\n",
+                Some("applied"),
+                false,
+            ),
+            (
+                "id:\nevent: station\ndata: {\"kind\":\"hello\",\"arms\":[]}\n\n",
+                None,
+                true,
+            ),
+        ] {
+            let body = format!("{snapshot}{next_event}");
+            let router = Router::new().route("/events", get(move || async move { body }));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let url = reqwest::Url::parse(&format!("http://{}/events", listener.local_addr()?))?;
+            let server = tokio::spawn(async move { axum::serve(listener, router).await });
+            let directory = tempfile::tempdir()?;
+            let archive = RecordingArchive::create(directory.path())?;
+            let mut cursor = None;
+            let result = connection(
+                &reqwest::Client::new(),
+                &url,
+                Some(&archive),
+                &mut cursor,
+                &mut Backoff::new(Duration::from_secs(1)),
+                &CancellationToken::new(),
+            )
+            .await;
+            server.abort();
+            assert_eq!(
+                (cursor.as_deref(), result.is_ok()),
+                (expected_cursor, success)
+            );
+        }
         Ok(())
     }
 
