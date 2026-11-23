@@ -249,3 +249,33 @@ async fn assert_forwarding(
         StatusCode::OK
     );
 }
+
+#[test]
+fn camera_devices_skips_non_executable_media_companion_on_path()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+
+    let directory = tempfile::tempdir()?;
+    let station = directory.path().join("station");
+    fs::copy(env!("CARGO_BIN_EXE_hebbian-robot-use-server"), &station)?;
+
+    let blocked = directory.path().join("blocked");
+    let working = directory.path().join("working");
+    fs::create_dir(&blocked)?;
+    fs::create_dir(&working)?;
+    let program = "hebbian-robot-use-media";
+    fs::write(blocked.join(program), b"not executable")?;
+    let companion = working.join(program);
+    fs::write(&companion, b"#!/bin/sh\nprintf '%s\\n' \"$1\"\n")?;
+    fs::set_permissions(&companion, fs::Permissions::from_mode(0o755))?;
+
+    let output = Command::new(station)
+        .arg("camera-devices")
+        .current_dir(directory.path())
+        .env_remove("HEBBIAN_MEDIA")
+        .env("PATH", std::env::join_paths([blocked, working])?)
+        .output()?;
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"camera-devices\n");
+    Ok(())
+}
