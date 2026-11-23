@@ -3,6 +3,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use hebbian_contracts::{ArmRecord, CommandRecord, RejectionReason};
 
+use crate::action_step::{PreparedArmAction, SingleCommandRoute};
 use crate::arm::Rejection;
 use crate::controller_transport::{
     ControllerAnswer, ControllerInstanceId, ControllerMessage, ControllerRequest,
@@ -142,6 +143,31 @@ impl StationSession {
             .arms
             .iter()
             .find_map(|(name, arm)| arm.next_request().map(|request| (name, request)))?;
+        let (request, answer) = match (request, answer.0) {
+            (
+                ControllerRequest::Submit {
+                    command,
+                    trace_context,
+                },
+                PendingStationAnswerKind::Submit(reply),
+            ) => match PreparedArmAction::from_single_command(arm.clone(), command) {
+                SingleCommandRoute::Prepared(action) => (
+                    ControllerRequest::ActionStep {
+                        actions: vec![action],
+                        trace_context,
+                    },
+                    PendingStationAnswerKind::SingleAction(reply),
+                ),
+                SingleCommandRoute::Direct(command) => (
+                    ControllerRequest::Submit {
+                        command,
+                        trace_context,
+                    },
+                    PendingStationAnswerKind::Submit(reply),
+                ),
+            },
+            (request, answer) => (request, answer),
+        };
         let request_id = ControllerRequestId(active.next_request);
         active.next_request = active
             .next_request
@@ -151,11 +177,7 @@ impl StationSession {
             ControllerRequest::ActionStep { actions, .. } => actions
                 .iter()
                 .flat_map(|action| {
-                    std::iter::repeat_n(
-                        action.arm.clone(),
-                        usize::from(action.movement.is_some())
-                            + usize::from(action.gripper.is_some()),
-                    )
+                    std::iter::repeat_n(action.arm().to_owned(), action.record_count())
                 })
                 .collect(),
             _ => vec![arm.clone()],
@@ -164,7 +186,7 @@ impl StationSession {
             request_id,
             PendingRequest {
                 arms: record_arms,
-                answer,
+                answer: PendingStationAnswer(answer),
             },
         );
         Some(ControllerMessage::Request {
@@ -195,12 +217,14 @@ impl StationSession {
             {
                 remember_record(&waiter.arms[0], record);
             }
-            (PendingStationAnswerKind::ActionStep(_), ControllerAnswer::ActionStep(records))
-                if records.len() == waiter.arms.len()
-                    && records
-                        .iter()
-                        .zip(&waiter.arms)
-                        .all(|(record, arm)| &record.arm == arm) =>
+            (
+                PendingStationAnswerKind::ActionStep(_) | PendingStationAnswerKind::SingleAction(_),
+                ControllerAnswer::ActionStep(records),
+            ) if records.len() == waiter.arms.len()
+                && records
+                    .iter()
+                    .zip(&waiter.arms)
+                    .all(|(record, arm)| &record.arm == arm) =>
             {
                 for record in records {
                     remember_record(&record.arm, &record.record);
@@ -256,6 +280,7 @@ enum PendingStationAnswerKind {
     Readiness(Sender<Result<bool, Rejection>>),
     CancelCommand(Sender<Result<(), Rejection>>),
     Submit(crate::handoff::CommandReply<Result<CommandRecord, Rejection>>),
+    SingleAction(crate::handoff::CommandReply<Result<CommandRecord, Rejection>>),
     ActionStep(crate::handoff::CommandReply<Result<Vec<ArmRecord>, Rejection>>),
 }
 
@@ -284,6 +309,20 @@ impl PendingStationAnswer {
                 PendingStationAnswerKind::ActionStep(reply),
                 ControllerAnswer::ActionStep(records),
             ) => reply.send(Ok(records)),
+            (
+                PendingStationAnswerKind::SingleAction(reply),
+                ControllerAnswer::ActionStep(records),
+            ) => {
+                let mut records = records.into_iter();
+                let record = match (records.next(), records.next()) {
+                    (Some(record), None) => Ok(record.record),
+                    _ => Err(refusal(
+                        RejectionReason::Malformed,
+                        "Expected one command record".into(),
+                    )),
+                };
+                reply.send(record);
+            }
             (pending, ControllerAnswer::Refused { reason, detail }) => {
                 pending.refuse(refusal(reason, detail));
             }
@@ -304,7 +343,7 @@ impl PendingStationAnswerKind {
             Self::CancelCommand(reply) => {
                 let _ = reply.send(Err(refusal));
             }
-            Self::Submit(reply) => {
+            Self::Submit(reply) | Self::SingleAction(reply) => {
                 reply.send(Err(refusal));
             }
             Self::ActionStep(reply) => {
@@ -470,6 +509,47 @@ mod tests {
             station_handle
                 .submit_unawaited(Command::Enable, None)
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_single_gripper_target_crosses_the_controller_boundary_as_an_action_step() {
+        let (handle, inbox) = arm_channel();
+        let mut session =
+            StationSession::new(BTreeMap::from([("arm".into(), StationArm::new(inbox))]));
+        let instance = ControllerInstanceId([1; 16]);
+        session.activate(instance).unwrap();
+        let reply = handle
+            .submit_unawaited(
+                Command::SetGripper {
+                    angle: 0.5,
+                    joint_speed: None,
+                },
+                None,
+            )
+            .unwrap();
+        let ControllerMessage::Request {
+            request_id,
+            request: ControllerRequest::ActionStep { actions, .. },
+            ..
+        } = session.next_message().unwrap()
+        else {
+            panic!("expected one prepared action step")
+        };
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].arm(), "arm");
+        assert!(session.answer(
+            instance,
+            request_id,
+            ControllerAnswer::Refused {
+                reason: RejectionReason::ArmBusy,
+                detail: "arm is busy".into(),
+            },
+            |_, _| panic!("a refusal has no record"),
+        ));
+        assert_eq!(
+            reply.recv().unwrap().unwrap_err().reason,
+            RejectionReason::ArmBusy
         );
     }
 

@@ -35,11 +35,8 @@ fn prepare_step(
                 reason: RejectionReason::InvalidTarget,
                 detail: format!("No arm named {arm}"),
             })?;
-        let mut action = PreparedArmAction {
-            arm: arm.clone(),
-            movement: None,
-            gripper: None,
-        };
+        let mut movement = None;
+        let mut gripper = None;
         for command in commands.action.clone().into_commands() {
             match super::commands::arm_command(link, arm, command).map_err(|(reason, detail)| {
                 ExecutionFailure::Preparation {
@@ -56,7 +53,7 @@ fn prepare_step(
                     path_limited,
                     pose_limited,
                 } => {
-                    action.movement = Some(PreparedMovement::Trajectory {
+                    movement = Some(PreparedMovement::Trajectory {
                         label,
                         plan,
                         joint_speed,
@@ -69,14 +66,14 @@ fn prepare_step(
                     position,
                     orientation,
                 } => {
-                    action.movement = Some(PreparedMovement::PolicyPose {
+                    movement = Some(PreparedMovement::PolicyPose {
                         label,
                         position,
                         orientation,
                     });
                 }
                 hebbian_contracts::Command::SetGripper { angle, joint_speed } => {
-                    action.gripper = Some(PreparedGripper { angle, joint_speed });
+                    gripper = Some(PreparedGripper { angle, joint_speed });
                 }
                 _ => {
                     return Err(ExecutionFailure::Runtime {
@@ -86,6 +83,12 @@ fn prepare_step(
                 }
             }
         }
+        let action = PreparedArmAction::new(arm.clone(), movement, gripper).ok_or_else(|| {
+            ExecutionFailure::Runtime {
+                step: source_step,
+                detail: format!("No movement or gripper target for {arm}"),
+            }
+        })?;
         actions.push(action);
     }
     Ok(actions)
@@ -171,7 +174,7 @@ async fn admit_prepared_step(
         .decide(move |_| {
             let first = actions
                 .first()
-                .and_then(|action| admission.links.get(&action.arm))
+                .and_then(|action| admission.links.get(action.arm()))
                 .ok_or_else(|| ExecutionFailure::Runtime {
                     step: source_step,
                     detail: "A prepared step needs an arm".into(),
@@ -1038,14 +1041,13 @@ mod tests {
             gates: vec![handle.gate(Some(0))],
             generation: vec![handle.submission_generation()],
         });
-        let prepared = vec![PreparedArmAction {
-            arm: "arm".into(),
-            movement: None,
-            gripper: Some(PreparedGripper {
+        let prepared = vec![PreparedArmAction::gripper(
+            "arm".into(),
+            PreparedGripper {
                 angle: 0.5,
                 joint_speed: None,
-            }),
-        }];
+            },
+        )];
         owner
             .decide(move |state| {
                 handle.release_lease_with(&grant.lease_token, || {

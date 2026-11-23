@@ -159,6 +159,35 @@ mod tests {
     }
 
     #[test]
+    fn an_action_step_rejects_an_arm_without_a_target_at_the_transport_boundary() {
+        let instance = ControllerInstanceId([1; 16]);
+        let envelope = serde_json::json!({
+            "instance": instance,
+            "message": {
+                "Request": {
+                    "request_id": 3,
+                    "arm": "left",
+                    "request": {
+                        "ActionStep": {
+                            "actions": [{"arm": "left", "movement": null, "gripper": null}],
+                            "trace_context": null
+                        }
+                    }
+                }
+            }
+        });
+        let body = serde_json::to_vec(&envelope).unwrap();
+        let length = u32::try_from(body.len()).unwrap();
+        let mut frame = length.to_be_bytes().to_vec();
+        frame.extend(body);
+        let mut controller = ControllerTransport::new(frame.as_slice(), instance);
+        assert_eq!(
+            controller.receive().unwrap_err().kind(),
+            io::ErrorKind::InvalidData,
+        );
+    }
+
+    #[test]
     fn a_message_from_an_earlier_instance_is_rejected() {
         let (old_station, new_controller) = UnixStream::pair().unwrap();
         let mut old_station = ControllerTransport::new(old_station, ControllerInstanceId([1; 16]));

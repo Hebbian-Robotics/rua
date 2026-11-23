@@ -466,14 +466,13 @@ mod tests {
                         .source_operation_id
                         .as_str(),
                 )]),
-                &[crate::action_step::PreparedArmAction {
-                    arm: "left".into(),
-                    movement: None,
-                    gripper: Some(crate::action_step::PreparedGripper {
+                &[crate::action_step::PreparedArmAction::gripper(
+                    "left".into(),
+                    crate::action_step::PreparedGripper {
                         angle: 0.6,
                         joint_speed: None,
-                    }),
-                }],
+                    },
+                )],
             )
             .unwrap();
         let prepared_path = directory.join("executions/execution-a/step-0.prepared.json");
