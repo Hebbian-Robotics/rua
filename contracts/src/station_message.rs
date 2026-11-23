@@ -134,6 +134,15 @@ pub enum ClientMessage {
     RunSpans { spans: Vec<TraceSpan> },
 }
 
+/// Initial event-stream snapshot with station and run replay cursors.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StationEventSnapshot<Item> {
+    pub station_instance_id: String,
+    pub sequence: u64,
+    pub run_sequence: u64,
+    pub items: Vec<Item>,
+}
+
 /// Station event and result models shared with SDKs.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
