@@ -148,7 +148,17 @@ impl std::error::Error for InvalidCameraName {}
 
 #[cfg(test)]
 mod camera_name_tests {
-    use super::CameraName;
+    use super::{CameraName, SnapshotName};
+
+    #[test]
+    fn simulator_views_round_trip_without_becoming_participant_names() {
+        let renderer_view = "sim_Left wrist/close-up";
+        let name: SnapshotName = serde_json::from_value(renderer_view.into()).unwrap();
+        assert_eq!(name.as_str(), renderer_view);
+        assert_eq!(serde_json::to_value(name).unwrap(), renderer_view);
+        assert!(CameraName::try_from(renderer_view).is_err());
+        assert!(serde_json::from_value::<SnapshotName>("../outside".into()).is_err());
+    }
 
     #[test]
     fn camera_names_use_safe_ascii_and_have_bounded_length() {
