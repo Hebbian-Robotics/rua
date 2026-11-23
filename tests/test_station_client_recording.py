@@ -7,8 +7,8 @@ import httpx2
 import pytest
 
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceArmAction,
     ActionSequenceJointsMovement,
+    ActionSequenceMove,
     ActionSequenceRequest,
     ActionSequenceStep,
     ArmMode,
@@ -84,7 +84,7 @@ def test_recording_continues_during_a_action_sequence(station: RunningStation) -
                         steps=[
                             ActionSequenceStep(
                                 arms={
-                                    ARM: ActionSequenceArmAction(
+                                    ARM: ActionSequenceMove(
                                         movement=ActionSequenceJointsMovement(
                                             joints=joints
                                         )

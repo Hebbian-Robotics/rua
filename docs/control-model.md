@@ -78,16 +78,14 @@ ordered steps. The runtime prepares each step from measured state.
 
 ```python
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceArmAction,
+    ActionSequenceGripper,
     ActionSequenceRequest,
     ActionSequenceStep,
     ProgramCompiled,
 )
 
 source = ActionSequenceRequest(
-    steps=[
-        ActionSequenceStep(arms={"arm": ActionSequenceArmAction(gripper_opening=0.8)})
-    ]
+    steps=[ActionSequenceStep(arms={"arm": ActionSequenceGripper(gripper_opening=0.8)})]
 )
 outcome = await station.compile_action_sequence(source)
 if isinstance(outcome, ProgramCompiled):

@@ -19,8 +19,8 @@ from pathlib import Path
 
 from hebbian_rua import StationClient
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceArmAction,
     ActionSequenceJointsMovement,
+    ActionSequenceMove,
     ActionSequenceRequest,
     ActionSequenceStep,
     ActionSequenceStopped,
@@ -76,7 +76,7 @@ async def check_compiler(station: StationClient, joints: list[float]) -> None:
         steps=[
             ActionSequenceStep(
                 arms={
-                    "arm": ActionSequenceArmAction(
+                    "arm": ActionSequenceMove(
                         movement=ActionSequenceJointsMovement(joints=joints)
                     )
                 }

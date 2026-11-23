@@ -82,30 +82,30 @@ export const apiSchemas = z.object({
     })
     .describe("Where the arm was, measured, when a command ended."),
   ActionSequenceArmAction: z
-    .object({
-      gripper_opening: z
-        .union([z.number().gte(0).lte(1), z.null()])
-        .default(null),
-      max_joint_speed: z
-        .union([
-          z
-            .number()
+    .union([
+      z
+        .object({
+          gripper_opening: z
+            .union([z.number().gte(0).lte(1), z.null()])
+            .default(null),
+          max_joint_speed: z
+            .union([
+              z
+                .number()
+                .describe(
+                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                ),
+            ])
             .describe(
               "Speed for both resources in rad/s; overrides the movement speed when provided.",
-            ),
-          z
-            .null()
-            .describe(
-              "Speed for both resources in rad/s; overrides the movement speed when provided.",
-            ),
-        ])
-        .describe(
-          "Speed for both resources in rad/s; overrides the movement speed when provided.",
-        )
-        .default(null),
-      movement: z
-        .union([
-          z
+            )
+            .default(null),
+          movement: z
             .union([
               z
                 .object({
@@ -160,12 +160,24 @@ export const apiSchemas = z.object({
             .describe(
               "One movement in an action sequence. The arm settles at each target.",
             ),
-          z.null(),
-        ])
-        .default(null),
-    })
-    .strict()
-    .describe("A movement and gripper target in the same step start together."),
+        })
+        .strict(),
+      z
+        .object({
+          gripper_opening: z.number().gte(0).lte(1),
+          max_joint_speed: z
+            .union([
+              z.number().describe("Gripper speed in rad/s."),
+              z.null().describe("Gripper speed in rad/s."),
+            ])
+            .describe("Gripper speed in rad/s.")
+            .default(null),
+        })
+        .strict(),
+    ])
+    .describe(
+      "An arm action must name a movement or gripper target. When both are present they start together.",
+    ),
   ActionSequenceMovement: z
     .union([
       z
@@ -406,30 +418,30 @@ export const apiSchemas = z.object({
               arms: z.record(
                 z.string(),
                 z
-                  .object({
-                    gripper_opening: z
-                      .union([z.number().gte(0).lte(1), z.null()])
-                      .default(null),
-                    max_joint_speed: z
-                      .union([
-                        z
-                          .number()
+                  .union([
+                    z
+                      .object({
+                        gripper_opening: z
+                          .union([z.number().gte(0).lte(1), z.null()])
+                          .default(null),
+                        max_joint_speed: z
+                          .union([
+                            z
+                              .number()
+                              .describe(
+                                "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                              ),
+                          ])
                           .describe(
                             "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                          ),
-                        z
-                          .null()
-                          .describe(
-                            "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                          ),
-                      ])
-                      .describe(
-                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                      )
-                      .default(null),
-                    movement: z
-                      .union([
-                        z
+                          )
+                          .default(null),
+                        movement: z
                           .union([
                             z
                               .object({
@@ -497,13 +509,23 @@ export const apiSchemas = z.object({
                           .describe(
                             "One movement in an action sequence. The arm settles at each target.",
                           ),
-                        z.null(),
-                      ])
-                      .default(null),
-                  })
-                  .strict()
+                      })
+                      .strict(),
+                    z
+                      .object({
+                        gripper_opening: z.number().gte(0).lte(1),
+                        max_joint_speed: z
+                          .union([
+                            z.number().describe("Gripper speed in rad/s."),
+                            z.null().describe("Gripper speed in rad/s."),
+                          ])
+                          .describe("Gripper speed in rad/s.")
+                          .default(null),
+                      })
+                      .strict(),
+                  ])
                   .describe(
-                    "A movement and gripper target in the same step start together.",
+                    "An arm action must name a movement or gripper target. When both are present they start together.",
                   ),
               ),
             })
@@ -940,30 +962,30 @@ export const apiSchemas = z.object({
             arms: z.record(
               z.string(),
               z
-                .object({
-                  gripper_opening: z
-                    .union([z.number().gte(0).lte(1), z.null()])
-                    .default(null),
-                  max_joint_speed: z
-                    .union([
-                      z
-                        .number()
+                .union([
+                  z
+                    .object({
+                      gripper_opening: z
+                        .union([z.number().gte(0).lte(1), z.null()])
+                        .default(null),
+                      max_joint_speed: z
+                        .union([
+                          z
+                            .number()
+                            .describe(
+                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                            ),
+                        ])
                         .describe(
                           "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                        ),
-                      z
-                        .null()
-                        .describe(
-                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                        ),
-                    ])
-                    .describe(
-                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                    )
-                    .default(null),
-                  movement: z
-                    .union([
-                      z
+                        )
+                        .default(null),
+                      movement: z
                         .union([
                           z
                             .object({
@@ -1031,13 +1053,23 @@ export const apiSchemas = z.object({
                         .describe(
                           "One movement in an action sequence. The arm settles at each target.",
                         ),
-                      z.null(),
-                    ])
-                    .default(null),
-                })
-                .strict()
+                    })
+                    .strict(),
+                  z
+                    .object({
+                      gripper_opening: z.number().gte(0).lte(1),
+                      max_joint_speed: z
+                        .union([
+                          z.number().describe("Gripper speed in rad/s."),
+                          z.null().describe("Gripper speed in rad/s."),
+                        ])
+                        .describe("Gripper speed in rad/s.")
+                        .default(null),
+                    })
+                    .strict(),
+                ])
                 .describe(
-                  "A movement and gripper target in the same step start together.",
+                  "An arm action must name a movement or gripper target. When both are present they start together.",
                 ),
             ),
           })
@@ -1065,30 +1097,30 @@ export const apiSchemas = z.object({
                 arms: z.record(
                   z.string(),
                   z
-                    .object({
-                      gripper_opening: z
-                        .union([z.number().gte(0).lte(1), z.null()])
-                        .default(null),
-                      max_joint_speed: z
-                        .union([
-                          z
-                            .number()
+                    .union([
+                      z
+                        .object({
+                          gripper_opening: z
+                            .union([z.number().gte(0).lte(1), z.null()])
+                            .default(null),
+                          max_joint_speed: z
+                            .union([
+                              z
+                                .number()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                ),
+                            ])
                             .describe(
                               "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                            ),
-                          z
-                            .null()
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                            ),
-                        ])
-                        .describe(
-                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                        )
-                        .default(null),
-                      movement: z
-                        .union([
-                          z
+                            )
+                            .default(null),
+                          movement: z
                             .union([
                               z
                                 .object({
@@ -1156,13 +1188,23 @@ export const apiSchemas = z.object({
                             .describe(
                               "One movement in an action sequence. The arm settles at each target.",
                             ),
-                          z.null(),
-                        ])
-                        .default(null),
-                    })
-                    .strict()
+                        })
+                        .strict(),
+                      z
+                        .object({
+                          gripper_opening: z.number().gte(0).lte(1),
+                          max_joint_speed: z
+                            .union([
+                              z.number().describe("Gripper speed in rad/s."),
+                              z.null().describe("Gripper speed in rad/s."),
+                            ])
+                            .describe("Gripper speed in rad/s.")
+                            .default(null),
+                        })
+                        .strict(),
+                    ])
                     .describe(
-                      "A movement and gripper target in the same step start together.",
+                      "An arm action must name a movement or gripper target. When both are present they start together.",
                     ),
                 ),
               })
@@ -1187,30 +1229,30 @@ export const apiSchemas = z.object({
       arms: z.record(
         z.string(),
         z
-          .object({
-            gripper_opening: z
-              .union([z.number().gte(0).lte(1), z.null()])
-              .default(null),
-            max_joint_speed: z
-              .union([
-                z
-                  .number()
+          .union([
+            z
+              .object({
+                gripper_opening: z
+                  .union([z.number().gte(0).lte(1), z.null()])
+                  .default(null),
+                max_joint_speed: z
+                  .union([
+                    z
+                      .number()
+                      .describe(
+                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                      ),
+                  ])
                   .describe(
                     "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                  ),
-                z
-                  .null()
-                  .describe(
-                    "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                  ),
-              ])
-              .describe(
-                "Speed for both resources in rad/s; overrides the movement speed when provided.",
-              )
-              .default(null),
-            movement: z
-              .union([
-                z
+                  )
+                  .default(null),
+                movement: z
                   .union([
                     z
                       .object({
@@ -1267,13 +1309,23 @@ export const apiSchemas = z.object({
                   .describe(
                     "One movement in an action sequence. The arm settles at each target.",
                   ),
-                z.null(),
-              ])
-              .default(null),
-          })
-          .strict()
+              })
+              .strict(),
+            z
+              .object({
+                gripper_opening: z.number().gte(0).lte(1),
+                max_joint_speed: z
+                  .union([
+                    z.number().describe("Gripper speed in rad/s."),
+                    z.null().describe("Gripper speed in rad/s."),
+                  ])
+                  .describe("Gripper speed in rad/s.")
+                  .default(null),
+              })
+              .strict(),
+          ])
           .describe(
-            "A movement and gripper target in the same step start together.",
+            "An arm action must name a movement or gripper target. When both are present they start together.",
           ),
       ),
     })
@@ -2868,30 +2920,30 @@ export const apiSchemas = z.object({
                     arms: z.record(
                       z.string(),
                       z
-                        .object({
-                          gripper_opening: z
-                            .union([z.number().gte(0).lte(1), z.null()])
-                            .default(null),
-                          max_joint_speed: z
-                            .union([
-                              z
-                                .number()
+                        .union([
+                          z
+                            .object({
+                              gripper_opening: z
+                                .union([z.number().gte(0).lte(1), z.null()])
+                                .default(null),
+                              max_joint_speed: z
+                                .union([
+                                  z
+                                    .number()
+                                    .describe(
+                                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                    ),
+                                ])
                                 .describe(
                                   "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                ),
-                            ])
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                            )
-                            .default(null),
-                          movement: z
-                            .union([
-                              z
+                                )
+                                .default(null),
+                              movement: z
                                 .union([
                                   z
                                     .object({
@@ -2965,13 +3017,25 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "One movement in an action sequence. The arm settles at each target.",
                                 ),
-                              z.null(),
-                            ])
-                            .default(null),
-                        })
-                        .strict()
+                            })
+                            .strict(),
+                          z
+                            .object({
+                              gripper_opening: z.number().gte(0).lte(1),
+                              max_joint_speed: z
+                                .union([
+                                  z
+                                    .number()
+                                    .describe("Gripper speed in rad/s."),
+                                  z.null().describe("Gripper speed in rad/s."),
+                                ])
+                                .describe("Gripper speed in rad/s.")
+                                .default(null),
+                            })
+                            .strict(),
+                        ])
                         .describe(
-                          "A movement and gripper target in the same step start together.",
+                          "An arm action must name a movement or gripper target. When both are present they start together.",
                         ),
                     ),
                   })
@@ -5133,30 +5197,30 @@ export const apiSchemas = z.object({
                 arms: z.record(
                   z.string(),
                   z
-                    .object({
-                      gripper_opening: z
-                        .union([z.number().gte(0).lte(1), z.null()])
-                        .default(null),
-                      max_joint_speed: z
-                        .union([
-                          z
-                            .number()
+                    .union([
+                      z
+                        .object({
+                          gripper_opening: z
+                            .union([z.number().gte(0).lte(1), z.null()])
+                            .default(null),
+                          max_joint_speed: z
+                            .union([
+                              z
+                                .number()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                ),
+                            ])
                             .describe(
                               "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                            ),
-                          z
-                            .null()
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                            ),
-                        ])
-                        .describe(
-                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                        )
-                        .default(null),
-                      movement: z
-                        .union([
-                          z
+                            )
+                            .default(null),
+                          movement: z
                             .union([
                               z
                                 .object({
@@ -5224,13 +5288,23 @@ export const apiSchemas = z.object({
                             .describe(
                               "One movement in an action sequence. The arm settles at each target.",
                             ),
-                          z.null(),
-                        ])
-                        .default(null),
-                    })
-                    .strict()
+                        })
+                        .strict(),
+                      z
+                        .object({
+                          gripper_opening: z.number().gte(0).lte(1),
+                          max_joint_speed: z
+                            .union([
+                              z.number().describe("Gripper speed in rad/s."),
+                              z.null().describe("Gripper speed in rad/s."),
+                            ])
+                            .describe("Gripper speed in rad/s.")
+                            .default(null),
+                        })
+                        .strict(),
+                    ])
                     .describe(
-                      "A movement and gripper target in the same step start together.",
+                      "An arm action must name a movement or gripper target. When both are present they start together.",
                     ),
                 ),
               })
@@ -5399,30 +5473,30 @@ export const apiSchemas = z.object({
                       arms: z.record(
                         z.string(),
                         z
-                          .object({
-                            gripper_opening: z
-                              .union([z.number().gte(0).lte(1), z.null()])
-                              .default(null),
-                            max_joint_speed: z
-                              .union([
-                                z
-                                  .number()
+                          .union([
+                            z
+                              .object({
+                                gripper_opening: z
+                                  .union([z.number().gte(0).lte(1), z.null()])
+                                  .default(null),
+                                max_joint_speed: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .describe(
+                                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                      ),
+                                  ])
                                   .describe(
                                     "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                  ),
-                                z
-                                  .null()
-                                  .describe(
-                                    "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                  ),
-                              ])
-                              .describe(
-                                "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                              )
-                              .default(null),
-                            movement: z
-                              .union([
-                                z
+                                  )
+                                  .default(null),
+                                movement: z
                                   .union([
                                     z
                                       .object({
@@ -5500,13 +5574,27 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "One movement in an action sequence. The arm settles at each target.",
                                   ),
-                                z.null(),
-                              ])
-                              .default(null),
-                          })
-                          .strict()
+                              })
+                              .strict(),
+                            z
+                              .object({
+                                gripper_opening: z.number().gte(0).lte(1),
+                                max_joint_speed: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .describe("Gripper speed in rad/s."),
+                                    z
+                                      .null()
+                                      .describe("Gripper speed in rad/s."),
+                                  ])
+                                  .describe("Gripper speed in rad/s.")
+                                  .default(null),
+                              })
+                              .strict(),
+                          ])
                           .describe(
-                            "A movement and gripper target in the same step start together.",
+                            "An arm action must name a movement or gripper target. When both are present they start together.",
                           ),
                       ),
                     })
@@ -21440,30 +21528,30 @@ export const apiSchemas = z.object({
                         arms: z.record(
                           z.string(),
                           z
-                            .object({
-                              gripper_opening: z
-                                .union([z.number().gte(0).lte(1), z.null()])
-                                .default(null),
-                              max_joint_speed: z
-                                .union([
-                                  z
-                                    .number()
+                            .union([
+                              z
+                                .object({
+                                  gripper_opening: z
+                                    .union([z.number().gte(0).lte(1), z.null()])
+                                    .default(null),
+                                  max_joint_speed: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .describe(
+                                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                        ),
+                                    ])
                                     .describe(
                                       "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
-                                )
-                                .default(null),
-                              movement: z
-                                .union([
-                                  z
+                                    )
+                                    .default(null),
+                                  movement: z
                                     .union([
                                       z
                                         .object({
@@ -21541,13 +21629,27 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "One movement in an action sequence. The arm settles at each target.",
                                     ),
-                                  z.null(),
-                                ])
-                                .default(null),
-                            })
-                            .strict()
+                                })
+                                .strict(),
+                              z
+                                .object({
+                                  gripper_opening: z.number().gte(0).lte(1),
+                                  max_joint_speed: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .describe("Gripper speed in rad/s."),
+                                      z
+                                        .null()
+                                        .describe("Gripper speed in rad/s."),
+                                    ])
+                                    .describe("Gripper speed in rad/s.")
+                                    .default(null),
+                                })
+                                .strict(),
+                            ])
                             .describe(
-                              "A movement and gripper target in the same step start together.",
+                              "An arm action must name a movement or gripper target. When both are present they start together.",
                             ),
                         ),
                       })

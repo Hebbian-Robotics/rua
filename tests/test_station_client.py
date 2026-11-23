@@ -8,8 +8,8 @@ import httpx2
 import pytest
 
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceArmAction,
     ActionSequenceJointsMovement,
+    ActionSequenceMove,
     ActionSequenceRequest,
     ActionSequenceStep,
     CommandAccepted,
@@ -108,7 +108,7 @@ def test_action_sequence_results_remain_available_after_a_new_action_sequence(
                     steps=[
                         ActionSequenceStep(
                             arms={
-                                ARM: ActionSequenceArmAction(
+                                ARM: ActionSequenceMove(
                                     movement=ActionSequenceJointsMovement(joints=joints)
                                 )
                             }
@@ -176,7 +176,7 @@ def test_canceled_sequence_releases_the_arm_for_the_next_sequence(
                         steps=[
                             ActionSequenceStep(
                                 arms={
-                                    ARM: ActionSequenceArmAction(
+                                    ARM: ActionSequenceMove(
                                         movement=ActionSequenceJointsMovement(
                                             joints=joints, max_joint_speed=0.1
                                         )
@@ -215,7 +215,7 @@ def test_revoking_the_lease_stops_an_action_sequence(server_binary: Path) -> Non
                     steps=[
                         ActionSequenceStep(
                             arms={
-                                ARM: ActionSequenceArmAction(
+                                ARM: ActionSequenceMove(
                                     movement=ActionSequenceJointsMovement(
                                         joints=joints, max_joint_speed=0.1
                                     )
@@ -224,7 +224,7 @@ def test_revoking_the_lease_stops_an_action_sequence(server_binary: Path) -> Non
                         ),
                         ActionSequenceStep(
                             arms={
-                                ARM: ActionSequenceArmAction(
+                                ARM: ActionSequenceMove(
                                     movement=ActionSequenceJointsMovement(joints=joints)
                                 )
                             }
@@ -258,7 +258,7 @@ def test_required_camera_loss_stops_a_action_sequence(server_binary: Path) -> No
                     steps=[
                         ActionSequenceStep(
                             arms={
-                                ARM: ActionSequenceArmAction(
+                                ARM: ActionSequenceMove(
                                     movement=ActionSequenceJointsMovement(
                                         joints=joints, max_joint_speed=0.1
                                     )
@@ -267,7 +267,7 @@ def test_required_camera_loss_stops_a_action_sequence(server_binary: Path) -> No
                         ),
                         ActionSequenceStep(
                             arms={
-                                ARM: ActionSequenceArmAction(
+                                ARM: ActionSequenceMove(
                                     movement=ActionSequenceJointsMovement(joints=joints)
                                 )
                             }
@@ -758,7 +758,7 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                 joints = (await client.arm(ARM).state()).measured_joints
                 combined = await arm.run_action_sequence(
                     [
-                        ActionSequenceArmAction(
+                        ActionSequenceMove(
                             movement=ActionSequenceJointsMovement(
                                 joints=joints, max_joint_speed=0.03
                             ),

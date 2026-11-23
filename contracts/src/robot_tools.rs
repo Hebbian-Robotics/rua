@@ -471,7 +471,18 @@ pub fn action_sequence_tool_schema(
     }
     configuration.validate()?;
     let source = model_arguments::<ActionSequenceArmAction>();
-    let mut action = inline(&source, &source["$defs"]);
+    let variants = inline(&source, &source["$defs"]);
+    let mut action = variants["anyOf"]
+        .as_array()
+        .expect("arm action variants")
+        .iter()
+        .find(|variant| variant["properties"].get("movement").is_some())
+        .expect("move action")
+        .clone();
+    let action_fields = action.as_object_mut().expect("move action schema");
+    action_fields.remove("required");
+    action_fields.remove("title");
+    action_fields.insert("description".into(), source["description"].clone());
     let properties = action["properties"]
         .as_object_mut()
         .expect("action properties");
@@ -479,7 +490,7 @@ pub fn action_sequence_tool_schema(
         || configuration.actions.contains(&SequenceAction::Joints)
     {
         let movement = properties.get_mut("movement").expect("movement schema");
-        let mut variants = movement["anyOf"][0]["oneOf"]
+        let mut variants = movement["oneOf"]
             .as_array()
             .expect("movement variants")
             .clone();
@@ -574,16 +585,13 @@ pub fn parse_sequence_tool_arguments(
             {
                 return Err(format!("Arm {arm} is not available in this sequence"));
             }
-            if action.movement.is_none() && action.gripper_opening.is_none() {
-                return Err("An arm action needs a movement or gripper target".into());
-            }
-            let movement_capability = action.movement.as_ref().map(|movement| match movement {
+            let movement_capability = action.movement().map(|movement| match movement {
                 crate::ActionSequenceMovement::Pose { .. } => SequenceAction::Pose,
                 crate::ActionSequenceMovement::Joints { .. } => SequenceAction::Joints,
             });
             if movement_capability
                 .is_some_and(|capability| !configuration.actions.contains(&capability))
-                || (action.gripper_opening.is_some()
+                || (action.gripper_opening().is_some()
                     && !configuration.actions.contains(&SequenceAction::Gripper))
             {
                 return Err("This action is not available in the configured sequence".into());
@@ -596,6 +604,21 @@ pub fn parse_sequence_tool_arguments(
 #[cfg(test)]
 mod sequence_configuration_tests {
     use super::*;
+
+    #[test]
+    fn the_wire_rejects_an_arm_action_without_a_target() {
+        for action in [
+            json!({}),
+            json!({"max_joint_speed": 0.5}),
+            json!({"gripper_opening": null}),
+        ] {
+            assert!(serde_json::from_value::<ActionSequenceArmAction>(action).is_err());
+        }
+        assert!(
+            serde_json::from_value::<ActionSequenceArmAction>(json!({"gripper_opening": 0.5}))
+                .is_ok()
+        );
+    }
 
     #[test]
     fn a_single_arm_pose_gripper_interface_has_no_joint_or_arm_choices_and_rejects_them() {
@@ -623,7 +646,7 @@ mod sequence_configuration_tests {
             "follower",
         )
         .unwrap();
-        assert_eq!(steps[0].arms["follower"].gripper_opening, Some(0.5));
+        assert_eq!(steps[0].arms["follower"].gripper_opening(), Some(0.5));
         for unavailable in [
             json!({"steps": [{"movement": {"kind": "joints", "joints": [0.0]}}]}),
             json!({"steps": [{"arms": {"right": {"gripper_opening": 0.5}}}]}),
@@ -654,7 +677,7 @@ mod sequence_configuration_tests {
         )
         .unwrap();
         assert_eq!(steps[0].arms.len(), 2);
-        assert_eq!(steps[0].arms["right"].gripper_opening, Some(0.8));
+        assert_eq!(steps[0].arms["right"].gripper_opening(), Some(0.8));
         assert!(
             parse_sequence_tool_arguments(
                 json!({"steps": [{"arms": {"other": {"gripper_opening": 0.5}}}]}),

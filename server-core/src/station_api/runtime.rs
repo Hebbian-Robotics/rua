@@ -1035,9 +1035,8 @@ mod tests {
                 .map(|opening| {
                     hebbian_contracts::ActionSequenceStep::single(
                         "arm",
-                        hebbian_contracts::ActionSequenceArmAction {
-                            movement: None,
-                            gripper_opening: Some(opening),
+                        hebbian_contracts::ActionSequenceArmAction::Gripper {
+                            gripper_opening: opening,
                             max_joint_speed: None,
                         },
                     )
@@ -1084,11 +1083,13 @@ mod tests {
         assert!(check_continuation(&prior, &source, 0).is_err());
         assert!(check_continuation(&prior, &source, 1).is_ok());
         let mut changed = source.clone();
-        changed.steps[0]
-            .arms
-            .get_mut("arm")
-            .unwrap()
-            .gripper_opening = Some(0.9);
+        let hebbian_contracts::ActionSequenceArmAction::Gripper {
+            gripper_opening, ..
+        } = changed.steps[0].arms.get_mut("arm").unwrap()
+        else {
+            panic!("the fixture starts with a gripper action");
+        };
+        *gripper_opening = 0.9;
         assert_eq!(
             check_continuation(&prior, &changed, 1),
             Err("Continuation must preserve the consumed source prefix")

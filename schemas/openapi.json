@@ -91,41 +91,66 @@
         "type": "object"
       },
       "ActionSequenceArmAction": {
-        "additionalProperties": false,
-        "description": "A movement and gripper target in the same step start together.",
-        "properties": {
-          "gripper_opening": {
-            "default": null,
-            "format": "double",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "max_joint_speed": {
-            "default": null,
-            "description": "Speed for both resources in rad/s; overrides the movement speed when provided.",
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "movement": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ActionSequenceMovement"
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "gripper_opening": {
+                "default": null,
+                "format": "double",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": [
+                  "number",
+                  "null"
+                ]
               },
-              {
-                "type": "null"
+              "max_joint_speed": {
+                "default": null,
+                "description": "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "movement": {
+                "$ref": "#/components/schemas/ActionSequenceMovement"
               }
+            },
+            "required": [
+              "movement"
             ],
-            "default": null
+            "title": "ActionSequenceMove",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "gripper_opening": {
+                "format": "double",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "max_joint_speed": {
+                "default": null,
+                "description": "Gripper speed in rad/s.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "gripper_opening"
+            ],
+            "title": "ActionSequenceGripper",
+            "type": "object"
           }
-        },
-        "type": "object"
+        ],
+        "description": "An arm action must name a movement or gripper target. When both are present they start together."
       },
       "ActionSequenceMovement": {
         "description": "One movement in an action sequence. The arm settles at each target.",

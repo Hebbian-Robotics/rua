@@ -387,9 +387,8 @@ mod tests {
             ActionSequenceRequest {
                 steps: vec![ActionSequenceStep::single(
                     "left",
-                    ActionSequenceArmAction {
-                        movement: None,
-                        gripper_opening: Some(0.8),
+                    ActionSequenceArmAction::Gripper {
+                        gripper_opening: 0.8,
                         max_joint_speed: None,
                     },
                 )],
