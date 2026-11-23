@@ -427,7 +427,7 @@ impl Lease {
         submitted
     }
 
-    pub fn with_lease(&self, token: &str, action: &mut dyn FnMut()) -> bool {
+    pub fn with_lease<R>(&self, token: &str, action: impl FnOnce() -> R) -> Option<R> {
         self.with_captured_lease(Some(token), action)
     }
 
@@ -436,20 +436,22 @@ impl Lease {
     }
 
     pub(crate) fn execution_authorized(&self, token: &str, gates: &[ArmGate]) -> bool {
-        let mut revisions_match = false;
-        self.with_lease(token, &mut || {
-            revisions_match = gates.iter().all(|gate| {
+        self.with_lease(token, || {
+            gates.iter().all(|gate| {
                 gate.expected_revision
                     .is_none_or(|revision| gate.interlocks.lock_unpoisoned().revision == revision)
-            });
-        }) && revisions_match
+            })
+        })
+        .unwrap_or(false)
     }
 
-    pub fn with_captured_lease(&self, token: Option<&str>, action: &mut dyn FnMut()) -> bool {
+    pub fn with_captured_lease<R>(
+        &self,
+        token: Option<&str>,
+        action: impl FnOnce() -> R,
+    ) -> Option<R> {
         let authority = self.authority.lock_unpoisoned();
-        if authority.controller.ready_epoch().is_none() {
-            return false;
-        }
+        authority.controller.ready_epoch()?;
         let now = Instant::now();
         let authorized = match (&authority.held, token) {
             (None, None) => true,
@@ -458,10 +460,7 @@ impl Lease {
             }
             _ => false,
         };
-        if authorized {
-            action();
-        }
-        authorized
+        authorized.then(action)
     }
 
     // CONSTRAINT: Lease transfer waits for every arm to stop before granting control and must run outside asynchronous workers.
@@ -1198,13 +1197,17 @@ mod tests {
     fn a_captured_unleased_command_cannot_stop_a_new_holder() {
         let (lease, now) = lease();
         let mut stopped = false;
-        assert!(lease.with_captured_lease(None, &mut || stopped = true));
+        assert!(lease.with_captured_lease(None, || stopped = true).is_some());
         assert!(stopped);
         stopped = false;
         let token = acquire_agent(&lease, now);
-        assert!(!lease.with_captured_lease(None, &mut || stopped = true));
+        assert!(lease.with_captured_lease(None, || stopped = true).is_none());
         assert!(!stopped);
-        assert!(lease.with_captured_lease(Some(&token), &mut || stopped = true));
+        assert!(
+            lease
+                .with_captured_lease(Some(&token), || stopped = true)
+                .is_some()
+        );
         assert!(stopped);
     }
 

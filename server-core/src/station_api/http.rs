@@ -653,7 +653,7 @@ async fn cancel_operation(
         let cancellation = match station_state
             .admission
             .decide(move |state| {
-                if lease_link.with_lease(&token, &mut || {}) {
+                if lease_link.with_lease(&token, || {}).is_some() {
                     Ok(state.operations.cancel(id, &token))
                 } else {
                     Err((StatusCode::CONFLICT, "Lease lost".to_owned()))

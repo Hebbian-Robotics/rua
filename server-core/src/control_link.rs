@@ -129,18 +129,14 @@ impl LinkHandle {
         command_id: String,
     ) -> hebbian_contracts::LeasedStopOutcome {
         use hebbian_contracts::LeasedStopOutcome;
-        let mut command_id = Some(command_id);
-        let mut outcome = LeasedStopOutcome::Unavailable;
-        if !self.with_lease(token, &mut || {
-            if let Some(id) = command_id.take()
-                && self.shared.arm.cancel_command(id).is_ok()
-            {
-                outcome = LeasedStopOutcome::Submitted;
+        self.with_lease(token, || {
+            if self.shared.arm.cancel_command(command_id).is_ok() {
+                LeasedStopOutcome::Submitted
+            } else {
+                LeasedStopOutcome::Unavailable
             }
-        }) {
-            return LeasedStopOutcome::LeaseLost;
-        }
-        outcome
+        })
+        .unwrap_or(LeasedStopOutcome::LeaseLost)
     }
 
     pub(crate) fn stop_execution(
@@ -192,26 +188,25 @@ impl LinkHandle {
         &self,
         token: Option<&str>,
         generation: Option<u64>,
-        mut enqueue: impl FnMut() -> Result<Reply, crate::arm::Rejection>,
+        enqueue: impl FnOnce() -> Result<Reply, crate::arm::Rejection>,
     ) -> Result<Reply, hebbian_contracts::LeasedStopOutcome> {
-        let mut reply = None;
-        let owned = self.shared.lease.with_captured_lease(token, &mut || {
-            if generation
-                .is_some_and(|expected| self.shared.generation.load(Ordering::Acquire) != expected)
-            {
-                return;
-            }
-            self.shared.generation.fetch_add(1, Ordering::AcqRel);
-            reply = enqueue().ok();
-        });
-        if !owned {
-            return Err(hebbian_contracts::LeasedStopOutcome::LeaseLost);
-        }
-        reply.ok_or(hebbian_contracts::LeasedStopOutcome::Unavailable)
+        self.shared
+            .lease
+            .with_captured_lease(token, || {
+                if generation.is_some_and(|expected| {
+                    self.shared.generation.load(Ordering::Acquire) != expected
+                }) {
+                    return None;
+                }
+                self.shared.generation.fetch_add(1, Ordering::AcqRel);
+                enqueue().ok()
+            })
+            .ok_or(hebbian_contracts::LeasedStopOutcome::LeaseLost)?
+            .ok_or(hebbian_contracts::LeasedStopOutcome::Unavailable)
     }
 
     #[must_use]
-    pub fn with_lease(&self, token: &str, action: &mut dyn FnMut()) -> bool {
+    pub fn with_lease<R>(&self, token: &str, action: impl FnOnce() -> R) -> Option<R> {
         self.shared.lease.with_lease(token, action)
     }
 

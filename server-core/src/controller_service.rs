@@ -658,12 +658,12 @@ mod tests {
                 &AtomicBool::new(false),
             )
         });
-        assert!(!station_lease.with_captured_lease(None, &mut || {}));
+        assert!(station_lease.with_captured_lease(None, || {}).is_none());
         let publishing = Arc::new(AtomicBool::new(false));
         let publisher =
             publish_disabled_feedback(Arc::clone(&controller_link), Arc::clone(&publishing));
         readiness.recv_timeout(Duration::from_secs(3)).unwrap();
-        assert!(station_lease.with_captured_lease(None, &mut || {}));
+        assert!(station_lease.with_captured_lease(None, || {}).is_some());
         let deadline = Instant::now() + Duration::from_secs(3);
         let pending = loop {
             if let Ok(pending) =
@@ -706,7 +706,7 @@ mod tests {
             recorded.outcome(),
             Some(hebbian_contracts::CommandOutcome::Interrupted)
         );
-        assert!(!station_lease.with_captured_lease(None, &mut || {}));
+        assert!(station_lease.with_captured_lease(None, || {}).is_none());
         assert!(
             station_link
                 .controller_loop_arm()
