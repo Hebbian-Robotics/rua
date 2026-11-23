@@ -48,6 +48,12 @@ enum CycleReading {
 }
 
 #[derive(Debug)]
+struct GripperWrite {
+    angle: f64,
+    completed: Option<GripperResult>,
+}
+
+#[derive(Debug)]
 pub(super) enum GripperCycleFailure {
     Control(anyhow::Error),
     Plant(anyhow::Error),
@@ -85,7 +91,7 @@ impl<P: Plant> Runner<'_, P> {
         self.plant_lost = self.plant.pacing().is_set_by_replies();
         let reason = format!("{failure:#}");
         self.report.trip.get_or_insert_with(|| reason.clone());
-        if self.state.powered {
+        if self.state.powered() {
             let cleanup_errors: Vec<String> = self
                 .plant
                 .release()
@@ -106,7 +112,7 @@ impl<P: Plant> Runner<'_, P> {
         }
         let reason = format!("{failure:#}");
         self.report.trip.get_or_insert_with(|| reason.clone());
-        self.recovery = if self.state.powered {
+        self.recovery = if self.state.powered() {
             BusRecovery::Reconnecting
         } else {
             BusRecovery::Disabled
@@ -374,14 +380,44 @@ impl<P: Plant> Runner<'_, P> {
         interval: f64,
         now: Now,
     ) -> Result<(), GripperCycleFailure> {
+        if let Some(write) = self
+            .prepare_gripper_write(feedback, interval, now)
+            .map_err(GripperCycleFailure::Control)?
+        {
+            let write_started = Instant::now();
+            self.plant
+                .command_gripper(write.angle)
+                .map_err(GripperCycleFailure::Plant)?;
+            self.timings.gripper_write_seconds = write_started.elapsed().as_secs_f64();
+            if let Some(result) = write.completed
+                && let Some(command_id) = self.state.gripper_command.take()
+            {
+                self.state.arm().finish_gripper(
+                    &command_id,
+                    CommandOutcome::Completed,
+                    Some(result.describe()),
+                    Some(result),
+                    now,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn prepare_gripper_write(
+        &mut self,
+        feedback: &Feedback,
+        interval: f64,
+        now: Now,
+    ) -> anyhow::Result<Option<GripperWrite>> {
         let (Some(measured), Some(_)) = (feedback.gripper_angle, self.state.gripper.as_ref())
         else {
-            if self.state.powered && self.config.gripper.is_some() {
-                return Err(GripperCycleFailure::Control(anyhow::anyhow!(
+            if self.state.powered() && self.config.gripper.is_some() {
+                return Err(anyhow::anyhow!(
                     "Missing measurement or controller for the configured gripper"
-                )));
+                ));
             }
-            return Ok(());
+            return Ok(None);
         };
         if self.state.arm().take_gripper_stop() {
             // INVARIANT: The record already ended stopped; the jaw holds where it is.
@@ -397,17 +433,14 @@ impl<P: Plant> Runner<'_, P> {
                     gripper_target.angle.radians(),
                     gripper_target.speed.radians_per_second(),
                     measured,
-                )
-                .map_err(GripperCycleFailure::Control)?;
+                )?;
             }
             self.state.gripper_command = Some(command_id);
         }
         let Some(jaw) = &mut self.state.gripper else {
-            return Ok(());
+            return Ok(None);
         };
-        let proposed_command = jaw
-            .step(measured, interval)
-            .map_err(GripperCycleFailure::Control)?;
+        let proposed_command = jaw.step(measured, interval)?;
         let target = jaw.target();
         // WHY: Check only this cycle's smoothed travel, rather than scanning the
         // entire opening in one motor cycle. Recheck at the current arm pose
@@ -430,46 +463,31 @@ impl<P: Plant> Runner<'_, P> {
                         now,
                     );
                 }
-                return Ok(());
+                return Ok(None);
             }
         };
         let jaw = self.state.gripper.as_mut().ok_or_else(|| {
-            GripperCycleFailure::Control(anyhow::anyhow!(
-                "The active gripper controller disappeared during its cycle"
-            ))
+            anyhow::anyhow!("The active gripper controller disappeared during its cycle")
         })?;
         let clipped = (command - proposed_command).abs() > 1e-8;
         if clipped {
             jaw.hold(command);
         }
         let state = jaw.state();
-        let write_started = Instant::now();
-        self.plant
-            .command_gripper(command)
-            .map_err(GripperCycleFailure::Plant)?;
-        self.timings.gripper_write_seconds = write_started.elapsed().as_secs_f64();
-        if state != GripperState::Moving
-            && let Some(command_id) = self.state.gripper_command.take()
-        {
-            let result = if state == GripperState::Reached && !clipped {
-                GripperResult::Reached {
-                    measured_angle_radians: measured,
-                }
-            } else {
-                GripperResult::StoppedShort {
-                    measured_angle_radians: measured,
-                    target_angle_radians: target,
-                }
-            };
-            self.state.arm().finish_gripper(
-                &command_id,
-                CommandOutcome::Completed,
-                Some(result.describe()),
-                Some(result),
-                now,
-            );
-        }
-        Ok(())
+        let completed = match (state, clipped) {
+            (GripperState::Moving, _) => None,
+            (GripperState::Reached, false) => Some(GripperResult::Reached {
+                measured_angle_radians: measured,
+            }),
+            _ => Some(GripperResult::StoppedShort {
+                measured_angle_radians: measured,
+                target_angle_radians: target,
+            }),
+        };
+        Ok(Some(GripperWrite {
+            angle: command,
+            completed,
+        }))
     }
 
     fn resolve_gripper_failure(
@@ -522,7 +540,7 @@ impl<P: Plant> Runner<'_, P> {
                 true
             }
             Job::Release { .. } => {
-                if self.state.powered {
+                if self.state.powered() {
                     self.release(now);
                 } else {
                     self.state.arm().failed(
@@ -532,7 +550,7 @@ impl<P: Plant> Runner<'_, P> {
                 }
                 true
             }
-            Job::Move { .. } | Job::Stream { .. } | Job::Reach { .. } if !self.state.powered => {
+            Job::Move { .. } | Job::Stream { .. } | Job::Reach { .. } if !self.state.powered() => {
                 self.state.arm().failed(
                     "The arm is not enabled; send enable, then repeat the command",
                     now,
@@ -681,7 +699,7 @@ impl<P: Plant> Runner<'_, P> {
             return CycleReading::Trusted(Begun::Done(self.finished_or_continue(), false));
         }
         self.timings.gripper_seconds = gripper_began.elapsed().as_secs_f64();
-        if !self.state.powered {
+        if !self.state.powered() {
             self.failed_cycles = 0;
             // CONSTRAINT: A paced plant (a simulator) moves time on only when told to.
             if let Err(failure) = self.plant.advance(interval) {

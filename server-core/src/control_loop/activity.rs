@@ -28,7 +28,6 @@ pub(super) enum Activity {
 pub(super) struct Loop<'a> {
     pub(super) config: &'a ControllerConfig,
     pub(super) core: ArmCore,
-    pub(super) powered: bool,
     pub(super) filter: ReferenceFilter,
     pub(super) guard: Option<SurfaceGuard>,
     pub(super) self_collision: Option<std::sync::Arc<SelfCollisionGuard>>,
@@ -54,6 +53,13 @@ impl Loop<'_> {
         &mut self.core
     }
 
+    pub(super) fn powered(&self) -> bool {
+        matches!(
+            self.core.mode(),
+            hebbian_contracts::ArmMode::Holding | hebbian_contracts::ArmMode::Moving
+        )
+    }
+
     pub(super) fn power_up(&mut self, positions: &[f64], gripper_angle: Option<f64>) {
         self.gripper = self
             .config
@@ -69,14 +75,12 @@ impl Loop<'_> {
         self.hold_at = None;
         self.tripped = None;
         self.activity = Activity::Idle;
-        self.powered = true;
     }
 
     // INVARIANT: Torque is off: no goal, hold or trip survives it. The state machine ends
     // the command that was running.
     pub(super) fn power_down(&mut self) {
         self.activity = Activity::Idle;
-        self.powered = false;
         self.gripper = None;
         self.gripper_command = None;
         self.hold_at = None;
@@ -336,7 +340,6 @@ pub(super) fn initialize_loop<'a>(
     Ok(Loop {
         config,
         core,
-        powered: false,
         filter: ReferenceFilter::new(config, &first.positions)?,
         guard: build_guard(config, robot.as_ref())?,
         self_collision,
