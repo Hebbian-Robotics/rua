@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use super::activity::Activity;
 use super::activity::Loop;
 use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
-use super::trajectory::GroupReference;
+use super::trajectory::{CycleEffects, GroupReference, MotionEffects};
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
 use crate::arm::{Job, Now};
 use crate::config::ControllerConfig;
@@ -34,6 +34,18 @@ pub(super) struct PendingCycle {
     pub(super) failure: Option<Trip>,
     pub(super) read_time: f64,
     pub(super) restart_timer: bool,
+}
+
+pub(super) struct FinishedCycle {
+    pub(super) flow: Flow,
+    pub(super) restart_timer: bool,
+    pub(super) group_write: Option<GroupWrite>,
+}
+
+pub(super) struct GroupWrite {
+    effects: MotionEffects,
+    now: Now,
+    interval: f64,
 }
 
 pub(super) enum Begun {
@@ -728,7 +740,7 @@ impl<P: Plant> Runner<'_, P> {
         &mut self,
         pending: PendingCycle,
         group: Option<Result<&GroupReference, &Trip>>,
-    ) -> (Flow, bool) {
+    ) -> FinishedCycle {
         let feedback = std::mem::take(&mut self.feedback);
         let finished = self.finish_cycle_with(&feedback, pending, group);
         self.feedback = feedback;
@@ -740,7 +752,7 @@ impl<P: Plant> Runner<'_, P> {
         feedback: &Feedback,
         pending: PendingCycle,
         group: Option<Result<&GroupReference, &Trip>>,
-    ) -> (Flow, bool) {
+    ) -> FinishedCycle {
         let PendingCycle {
             cycle_began,
             interval,
@@ -765,12 +777,12 @@ impl<P: Plant> Runner<'_, P> {
             .policy
             .as_ref()
             .map_or(0.0, crate::policy::PolicyRuntime::inference_seconds);
-        let motion_effects = match computed {
-            Ok(effects) => Some(effects),
+        let effects = match computed {
+            Ok(effects) => effects,
             Err(trip) => {
                 self.trip(feedback, trip, now);
                 self.state.next_command.clone_from(&feedback.positions);
-                None
+                CycleEffects::None
             }
         };
         let command_start_time = self.started.elapsed().as_secs_f64();
@@ -781,13 +793,26 @@ impl<P: Plant> Runner<'_, P> {
             .and_then(|()| self.plant.heartbeat())
         {
             self.bus_failed(&failure, now);
-            return (self.finished_or_continue(), false);
+            return FinishedCycle {
+                flow: self.finished_or_continue(),
+                restart_timer: false,
+                group_write: None,
+            };
         }
         self.timings.command_write_seconds = write_began.elapsed().as_secs_f64();
         let write_time = self.started.elapsed().as_secs_f64();
-        if let Some(effects) = motion_effects {
-            self.state.commit_motion_effects(effects, now);
-        }
+        let group_write = match effects {
+            CycleEffects::None => None,
+            CycleEffects::Arm(effects) => {
+                self.state.commit_motion_effects(effects, now);
+                None
+            }
+            CycleEffects::Group(effects) => Some(GroupWrite {
+                effects,
+                now,
+                interval,
+            }),
+        };
         let mut record = self.trace.checkout();
         record.cycle = self.cycle_number;
         record.timings = self.timings;
@@ -810,6 +835,18 @@ impl<P: Plant> Runner<'_, P> {
         record.write_time = write_time;
         self.trace.record(record);
         self.failed_cycles = 0;
+        self.accept_joint_setpoint(interval);
+        if group_write.is_none() {
+            self.publish(feedback, interval, true);
+        }
+        FinishedCycle {
+            flow: self.finished_or_continue(),
+            restart_timer,
+            group_write,
+        }
+    }
+
+    fn accept_joint_setpoint(&mut self, interval: f64) {
         // INVARIANT: What was sent is what the next cycle's checks compare against; the
         // old previous command's buffer is the next cycle's to fill.
         for ((velocity, next), previous) in self
@@ -829,8 +866,15 @@ impl<P: Plant> Runner<'_, P> {
             &mut self.state.previous_command,
             &mut self.state.next_command,
         );
-        self.publish(feedback, interval, true);
-        (self.finished_or_continue(), restart_timer)
+    }
+
+    pub(super) fn finish_group_write(&mut self, write: GroupWrite, confirmed: bool) {
+        if confirmed {
+            self.state.commit_motion_effects(write.effects, write.now);
+        }
+        let feedback = std::mem::take(&mut self.feedback);
+        self.publish(&feedback, write.interval, true);
+        self.feedback = feedback;
     }
 
     pub(super) fn finished_or_continue(&self) -> Flow {

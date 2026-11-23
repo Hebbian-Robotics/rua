@@ -751,7 +751,10 @@ fn every_enable_reading_must_have_the_arms_finite_joint_count() {
     }
 }
 
-fn start_short_move(runner: &mut Runner<'_, ScriptedPlant>) -> String {
+fn start_short_move(
+    runner: &mut Runner<'_, ScriptedPlant>,
+    group: Option<crate::arm::GroupMembership>,
+) -> String {
     let now = Now::current();
     let plan = hebbian_contracts::CornerPlan {
         peak_speed: 0.5,
@@ -771,7 +774,7 @@ fn start_short_move(runner: &mut Runner<'_, ScriptedPlant>) -> String {
             plan,
             hebbian_contracts::JointSpeed::new(0.5).unwrap(),
             crate::arm::ShortOfTarget::default(),
-            None,
+            group,
             now,
         )
         .unwrap()
@@ -794,7 +797,7 @@ fn the_completion_and_checkpoint_wait_for_the_confirming_plant_write() {
         let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
         let link = test_link(&config);
         let mut runner = powered_runner(&mut plant, &config, &link);
-        let command_id = start_short_move(&mut runner);
+        let command_id = start_short_move(&mut runner, None);
         (1..100)
             .find(|_| {
                 run_motion_cycle(&mut runner);
@@ -808,7 +811,7 @@ fn the_completion_and_checkpoint_wait_for_the_confirming_plant_write() {
         let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
         let link = test_link(&config);
         let mut runner = powered_runner(&mut plant, &config, &link);
-        let command_id = start_short_move(&mut runner);
+        let command_id = start_short_move(&mut runner, None);
         for _ in 1..completing_cycle {
             run_motion_cycle(&mut runner);
         }
@@ -839,7 +842,7 @@ fn a_stop_with_unconfirmed_writes_ends_as_interrupted_on_bus_loss() {
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
-    let command_id = start_short_move(&mut runner);
+    let command_id = start_short_move(&mut runner, None);
     run_motion_cycle(&mut runner);
     runner
         .state
@@ -855,6 +858,84 @@ fn a_stop_with_unconfirmed_writes_ends_as_interrupted_on_bus_loss() {
         record.outcome(),
         Some(hebbian_contracts::CommandOutcome::Interrupted)
     );
+}
+
+#[test]
+fn a_group_checkpoint_and_completion_require_both_terminal_writes() {
+    use super::group::{confirm_group_writes, form_groups, step_groups};
+    use super::trajectory::MotionStatus;
+    use crate::arm::GroupMembership;
+    use hebbian_contracts::CommandOutcome;
+
+    let left_config = config("confirm-group-write-left");
+    let right_config = config("confirm-group-write-right");
+    let left_link = test_link(&left_config);
+    let right_link = test_link(&right_config);
+    let mut left_plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let mut right_plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let mut runners = vec![
+        powered_runner(&mut left_plant, &left_config, &left_link),
+        powered_runner(&mut right_plant, &right_config, &right_link),
+    ];
+    runners[0].name = "left".into();
+    runners[1].name = "right".into();
+    let membership = GroupMembership {
+        id: "formation".into(),
+        arms: vec!["left".into(), "right".into()],
+    };
+    let command_ids: Vec<_> = runners
+        .iter_mut()
+        .map(|runner| start_short_move(runner, Some(membership.clone())))
+        .collect();
+    let mut groups = Vec::new();
+    let mut steps = Vec::new();
+    let mut measured = Vec::new();
+    let mut terminal_write_failed = false;
+    for _ in 0..100 {
+        let begun: Vec<_> = runners
+            .iter_mut()
+            .map(|runner| {
+                let Begun::Pending(pending) = runner.begin_cycle(Duration::from_millis(10), None)
+                else {
+                    panic!("expected a powered group cycle");
+                };
+                Some(pending)
+            })
+            .collect();
+        form_groups(&mut runners, &mut groups);
+        step_groups(&runners, &mut groups, &begun, &mut steps, &mut measured);
+        let terminal = groups[0].member_reference(0).status == MotionStatus::Reached;
+        let fail_this_write = terminal && !terminal_write_failed;
+        runners[1].plant.position_write_fails = fail_this_write;
+        let mut writes = begun
+            .into_iter()
+            .zip(&mut runners)
+            .zip(&steps)
+            .map(|((pending, runner), step)| {
+                let share = step.as_ref().map(|step| {
+                    step.as_ref()
+                        .map(|index| groups[index.group].member_reference(index.member))
+                });
+                runner.finish_cycle(pending.unwrap(), share).group_write
+            })
+            .collect::<Vec<_>>();
+        confirm_group_writes(&mut runners, &mut groups, &mut writes);
+        for (runner, command_id) in runners.iter().zip(&command_ids) {
+            let record = runner.state.core.record(command_id).unwrap();
+            if terminal && terminal_write_failed {
+                assert_eq!(record.outcome(), Some(CommandOutcome::Completed));
+                assert_eq!(record.checkpoints.len(), 1);
+            } else {
+                assert!(record.is_pending(), "{record:?}");
+                assert!(record.checkpoints.is_empty(), "{record:?}");
+            }
+        }
+        if terminal && terminal_write_failed {
+            return;
+        }
+        terminal_write_failed |= fail_this_write;
+    }
+    panic!("the group did not retry the terminal write");
 }
 
 #[test]

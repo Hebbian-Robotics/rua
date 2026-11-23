@@ -1,5 +1,5 @@
 use super::activity::Activity;
-use super::runner::{PendingCycle, Runner};
+use super::runner::{GroupWrite, PendingCycle, Runner};
 use super::trajectory::{ActiveGroupMember, GroupReference, MotionStatus};
 use crate::arm::{GroupMembership, Now};
 use crate::config::ControllerConfig;
@@ -45,7 +45,8 @@ pub(super) struct ActiveGroup {
     pub(super) members: Vec<usize>,
     pub(super) joint_counts: Vec<usize>,
     pub(super) supervisor: MotionSupervisor,
-    pub(super) checkpoints_sent: usize,
+    checkpoints_sent: usize,
+    step_pending: bool,
     shares: Vec<GroupReference>,
 }
 
@@ -113,6 +114,7 @@ impl ActiveGroup {
             joint_counts: configs.iter().map(|config| config.joint_count).collect(),
             supervisor,
             checkpoints_sent: 0,
+            step_pending: false,
             shares: configs
                 .iter()
                 .map(|config| GroupReference {
@@ -131,9 +133,14 @@ impl ActiveGroup {
         measured: &[f64],
         interval: f64,
     ) -> Result<&[GroupReference], Trip> {
+        // INVARIANT: A partial batch keeps its setpoint and checkpoints until all members
+        // confirm that same step in one cycle.
+        if self.step_pending {
+            return Ok(&self.shares);
+        }
         self.supervisor.advance(measured, interval)?;
+        self.step_pending = true;
         let checkpoints = self.supervisor.new_checkpoints(self.checkpoints_sent);
-        self.checkpoints_sent += checkpoints.len();
         let segment = self.supervisor.segment_label().map(|_| GROUP_SEGMENT_LABEL);
         let status = MotionStatus::of(&self.supervisor);
         let final_pose = (status != MotionStatus::Running).then(|| self.supervisor.final_pose());
@@ -171,6 +178,11 @@ impl ActiveGroup {
             }
         }
         Ok(&self.shares)
+    }
+
+    pub(super) fn confirm_step(&mut self) {
+        self.checkpoints_sent += self.supervisor.new_checkpoints(self.checkpoints_sent).len();
+        self.step_pending = false;
     }
 
     pub(super) fn member_reference(&self, index: usize) -> &GroupReference {
@@ -251,6 +263,14 @@ pub(super) fn step_groups<P: Plant>(
             .members
             .iter()
             .try_fold(f64::INFINITY, |interval, index| {
+                let runner = &runners[*index];
+                let member = runner.group_member()?;
+                if member.group.id != group.id
+                    || member.stop_reason.is_some()
+                    || runner.state.core.stop_requested()
+                {
+                    return None;
+                }
                 Some(interval.min(begun[*index].as_ref()?.interval))
             });
         let Some(interval) = interval else { continue };
@@ -274,6 +294,24 @@ pub(super) fn step_groups<P: Plant>(
                 for index in &group.members {
                     steps[*index] = Some(Err(trip.clone()));
                 }
+            }
+        }
+    }
+}
+
+pub(super) fn confirm_group_writes<P: Plant>(
+    runners: &mut [Runner<'_, P>],
+    groups: &mut [ActiveGroup],
+    writes: &mut [Option<GroupWrite>],
+) {
+    for group in groups {
+        let confirmed = group.members.iter().all(|index| writes[*index].is_some());
+        if confirmed {
+            group.confirm_step();
+        }
+        for &index in &group.members {
+            if let Some(write) = writes[index].take() {
+                runners[index].finish_group_write(write, confirmed);
             }
         }
     }
@@ -304,10 +342,9 @@ pub(super) fn settle_groups<P: Plant>(
             .filter(|index| !is_following(&runners[**index]))
             .find_map(|index| runners[*index].last_group_failure(&group.id));
         if let Some(detail) = ended_badly {
-            let now = Now::current();
             for index in &group.members {
                 if is_following(&runners[*index]) {
-                    runners[*index].state.cancel_group_member(&detail, now);
+                    runners[*index].state.request_group_stop(&detail);
                 }
             }
             return false;

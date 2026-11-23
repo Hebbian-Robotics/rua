@@ -372,7 +372,9 @@ fn grouped_arms_share_progress_and_complete_on_the_same_step() {
         let right_progress = right.reference.positions[1] / -0.3;
         assert!((left_progress - right_progress).abs() < 1e-10);
         assert_eq!(left.status, right.status);
-        saw_intermediate_progress |= left_progress > 0.1 && left_progress < 0.9;
+        let first_intermediate_step =
+            !saw_intermediate_progress && left_progress > 0.1 && left_progress < 0.9;
+        saw_intermediate_progress |= first_intermediate_step;
         if left.status == MotionStatus::Reached {
             assert!(saw_intermediate_progress);
             assert_eq!(left.final_pose, vec![0.6, 0.0]);
@@ -384,6 +386,17 @@ fn grouped_arms_share_progress_and_complete_on_the_same_step() {
             .iter()
             .flat_map(|share| share.reference.positions.iter().copied())
             .collect();
+        if first_intermediate_step {
+            let retry = group.step(&measured, 0.01).unwrap();
+            assert!(
+                retry
+                    .iter()
+                    .flat_map(|share| &share.reference.positions)
+                    .eq(&measured),
+                "an unconfirmed step must repeat its setpoint"
+            );
+        }
+        group.confirm_step();
     }
     panic!("the grouped motion did not complete in 10 simulated seconds");
 }

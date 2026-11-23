@@ -19,7 +19,7 @@ mod runner_tests;
 mod tests;
 
 use activity::initialize_loop;
-use group::{ActiveGroup, form_groups, settle_groups, step_groups};
+use group::{ActiveGroup, confirm_group_writes, form_groups, settle_groups, step_groups};
 pub(crate) use guards::{
     build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot,
 };
@@ -390,6 +390,7 @@ fn run_runners<P: Plant>(
     // WHY: Kept across cycles so a cycle allocates nothing for them.
     let mut begun: Vec<Option<PendingCycle>> = Vec::with_capacity(runners.len());
     let mut group_steps = Vec::with_capacity(runners.len());
+    let mut group_writes = Vec::with_capacity(runners.len());
     let mut group_feedback =
         Vec::with_capacity(runners.iter().map(|runner| runner.config.joint_count).sum());
     if !plant_paced {
@@ -466,6 +467,8 @@ fn run_runners<P: Plant>(
             &mut group_steps,
             &mut group_feedback,
         );
+        group_writes.clear();
+        group_writes.resize_with(runners.len(), || None);
         for (index, pending) in begun.drain(..).enumerate() {
             if let Some(pending) = pending {
                 let group_reference = group_steps[index].as_ref().map(|result| {
@@ -473,11 +476,13 @@ fn run_runners<P: Plant>(
                         .as_ref()
                         .map(|index| groups[index.group].member_reference(index.member))
                 });
-                let (flow, restart) = runners[index].finish_cycle(pending, group_reference);
-                restart_timer |= restart;
-                ended[index] = matches!(flow, Flow::End);
+                let finished = runners[index].finish_cycle(pending, group_reference);
+                restart_timer |= finished.restart_timer;
+                ended[index] = matches!(finished.flow, Flow::End);
+                group_writes[index] = finished.group_write;
             }
         }
+        confirm_group_writes(&mut runners, &mut groups, &mut group_writes);
         settle_groups(&mut runners, &mut groups);
         if restart_timer {
             timer.restart();
