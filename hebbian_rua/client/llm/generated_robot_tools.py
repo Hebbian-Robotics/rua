@@ -36,7 +36,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                 ]
               }
             ],
-            "description": "A movement and gripper target in the same step start together.",
+            "description": "An arm action must name a movement or gripper target. When both are present they start together.",
             "properties": {
               "gripper_opening": {
                 "maximum": 1.0,

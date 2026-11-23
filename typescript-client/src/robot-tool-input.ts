@@ -201,17 +201,8 @@ export function parseRobotToolCall(
                           : {}),
                       });
                     if (
-                      action.movement == null &&
-                      action.gripper_opening == null
-                    )
-                      throw new Error(
-                        "An arm action needs a movement or gripper target",
-                      );
-                    const capability =
-                      action.movement?.kind === "pose" ? "pose" : "joints";
-                    if (
-                      (action.movement != null &&
-                        !context.sequenceActions.has(capability)) ||
+                      ("movement" in action &&
+                        !context.sequenceActions.has(action.movement.kind)) ||
                       (action.gripper_opening != null &&
                         !context.sequenceActions.has("gripper"))
                     )

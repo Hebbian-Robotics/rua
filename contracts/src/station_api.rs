@@ -151,18 +151,50 @@ pub enum ActionSequenceMovement {
     },
 }
 
-/// A movement and gripper target in the same step start together.
+/// An arm action must name a movement or gripper target. When both are present they start together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ActionSequenceArmAction {
-    #[serde(default)]
-    pub movement: Option<ActionSequenceMovement>,
-    #[serde(default)]
-    #[schemars(range(min = 0.0, max = 1.0))]
-    pub gripper_opening: Option<f64>,
-    /// Speed for both resources in rad/s; overrides the movement speed when provided.
-    #[serde(default)]
-    pub max_joint_speed: Option<f64>,
+#[serde(untagged, deny_unknown_fields)]
+pub enum ActionSequenceArmAction {
+    #[schemars(title = "ActionSequenceMove")]
+    Move {
+        movement: ActionSequenceMovement,
+        #[serde(default)]
+        #[schemars(range(min = 0.0, max = 1.0))]
+        gripper_opening: Option<f64>,
+        /// Speed for both resources in rad/s; overrides the movement speed when provided.
+        #[serde(default)]
+        max_joint_speed: Option<f64>,
+    },
+    #[schemars(title = "ActionSequenceGripper")]
+    Gripper {
+        #[schemars(range(min = 0.0, max = 1.0))]
+        gripper_opening: f64,
+        /// Gripper speed in rad/s.
+        #[serde(default)]
+        max_joint_speed: Option<f64>,
+    },
+}
+
+impl ActionSequenceArmAction {
+    #[must_use]
+    pub fn movement(&self) -> Option<&ActionSequenceMovement> {
+        match self {
+            Self::Move { movement, .. } => Some(movement),
+            Self::Gripper { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn gripper_opening(&self) -> Option<f64> {
+        match self {
+            Self::Move {
+                gripper_opening, ..
+            } => *gripper_opening,
+            Self::Gripper {
+                gripper_opening, ..
+            } => Some(*gripper_opening),
+        }
+    }
 }
 
 /// One synchronized step; a single-arm action is a map with one entry.

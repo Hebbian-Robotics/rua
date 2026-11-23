@@ -8,7 +8,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceArmAction,
+    ActionSequenceGripper,
+    ActionSequenceMove,
     ActionSequenceStep,
 )
 from hebbian_rua.client.llm.tools import ROBOT_TOOLS, ActionSequenceInput
@@ -28,7 +29,7 @@ RobotToolName = Literal[
 
 class SingleArmInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    steps: list[ActionSequenceArmAction] = Field(min_length=1)
+    steps: list[ActionSequenceMove | ActionSequenceGripper] = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -250,10 +251,8 @@ def parse_sequence_arguments(
                 and arm not in configuration.sequence_scope.arms
             ):
                 raise ValueError(f"Arm {arm} is not available in this sequence")
-            if action.movement is None and action.gripper_opening is None:
-                raise ValueError("An arm action needs a movement or gripper target")
             if (
-                action.movement is not None
+                isinstance(action, ActionSequenceMove)
                 and action.movement.kind not in configuration.sequence_actions
             ) or (
                 action.gripper_opening is not None

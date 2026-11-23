@@ -10,7 +10,9 @@ use hebbian_contracts::{
 };
 
 use super::http::{StationState, validate_submission_id};
-use super::programs::{ArtifactLookup, CompilationRetention, ProgramCompilation};
+use super::programs::{
+    ArtifactLookup, COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramCompilation,
+};
 use super::submissions::{
     ProgramSubmissionRequest, RequestReservation, SubmissionCompletion, wait_for_outcome,
 };
@@ -100,14 +102,22 @@ pub(crate) async fn compile_action_sequence(
 
 pub(crate) async fn import_compilation(
     State(station_state): State<Arc<StationState>>,
-    Json(artifact): Json<CompilationArtifact>,
+    Json(artifact): Json<serde_json::Value>,
 ) -> Result<Response, HttpFailure> {
-    if artifact.schema_version != 1 {
+    if artifact
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(u64::from(COMPILATION_SCHEMA_VERSION))
+    {
         return Err((
             StatusCode::UNPROCESSABLE_ENTITY,
-            "Unsupported compilation schema; extract and compile the source explicitly".into(),
+            format!(
+                "Unsupported compilation schema. Extract the source, omit null movement fields from gripper-only actions, and compile again to produce schema version {COMPILATION_SCHEMA_VERSION}."
+            ),
         ));
     }
+    let artifact = serde_json::from_value::<CompilationArtifact>(artifact)
+        .map_err(|error| (StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
     compile_action_sequence(State(station_state), Json(artifact.source)).await
 }
 

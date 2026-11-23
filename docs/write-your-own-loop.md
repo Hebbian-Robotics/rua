@@ -81,7 +81,7 @@ import asyncio
 
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceJointsMovement,
-    ActionSequenceArmAction,
+    ActionSequenceMove,
 )
 from hebbian_rua.client.station_client import StationClient
 
@@ -91,11 +91,11 @@ async def main():
         async with station.holding_lease("action sequence example") as lease:
             result = await lease.arm("arm").run_action_sequence(
                 [
-                    ActionSequenceArmAction(
+                    ActionSequenceMove(
                         movement=ActionSequenceJointsMovement(joints=[0.1, 0, 0, 0, 0]),
                         gripper_opening=1.0,
                     ),
-                    ActionSequenceArmAction(
+                    ActionSequenceMove(
                         movement=ActionSequenceJointsMovement(joints=[0.0, 0, 0, 0, 0])
                     ),
                 ]
