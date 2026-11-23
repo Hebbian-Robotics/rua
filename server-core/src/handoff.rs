@@ -547,8 +547,14 @@ pub(crate) fn apply_single_request(request: ArmRequest, arm: &mut ArmCore) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicU64;
+    use std::time::{Duration, Instant};
+
     use crate::arm::Limits;
-    use hebbian_contracts::{CornerPlan, Segment};
+    use crate::lease::{AcquireMode, GenerationTicket, Lease, LeaseAdmission, SharedInterlocks};
+    use hebbian_contracts::{
+        CommandOutcome, CornerPlan, LeaseHolder, LeaseRequest, OnInterruption, Segment,
+    };
 
     fn core() -> ArmCore {
         ArmCore::new(
@@ -594,15 +600,6 @@ mod tests {
 
     #[test]
     fn an_expired_manual_lease_allows_enable_only_after_every_arm_has_stopped() {
-        use crate::lease::{
-            AcquireMode, GenerationTicket, Lease, LeaseAdmission, SharedInterlocks,
-        };
-        use hebbian_contracts::{
-            CommandOutcome, LeaseHolder, LeaseRequest, OnInterruption, RejectionReason,
-        };
-        use std::sync::atomic::AtomicU64;
-        use std::time::{Duration, Instant};
-
         let lease = Lease::new(Duration::from_secs(1));
         let request = LeaseRequest {
             holder: LeaseHolder::Manual,
