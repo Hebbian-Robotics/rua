@@ -29,25 +29,17 @@ pub(crate) fn find_media(explicit: Option<PathBuf>) -> PathBuf {
     }
     let beside = std::env::current_exe()
         .ok()
-        .and_then(|executable| executable.parent().map(|directory| directory.join(PROGRAM)));
-    let on_path = std::env::var_os("PATH")
-        .into_iter()
-        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
-        .map(|directory| directory.join(PROGRAM));
-    let development = std::env::current_dir()
-        .into_iter()
-        .flat_map(|directory| {
-            directory
-                .ancestors()
-                .map(Path::to_path_buf)
-                .collect::<Vec<_>>()
-        })
-        .map(|directory| directory.join("target").join("debug").join(PROGRAM));
+        .and_then(|executable| executable.parent().map(|directory| directory.join(PROGRAM)))
+        .filter(|path| path.is_file());
     beside
-        .into_iter()
-        .chain(on_path)
-        .chain(development)
-        .find(|path| path.is_file())
+        .or_else(|| which::which(PROGRAM).ok())
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()?
+                .ancestors()
+                .map(|directory| directory.join("target").join("debug").join(PROGRAM))
+                .find(|path| path.is_file())
+        })
         .unwrap_or_else(|| PathBuf::from(PROGRAM))
 }
 

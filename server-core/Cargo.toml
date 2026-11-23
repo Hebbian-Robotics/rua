@@ -18,6 +18,7 @@ async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }
 axum = "0.8.9"
 hdrhistogram = { version = "7.6.0", default-features = false }
 libc = "0.2"
+nix = { version = "0.31", features = ["fs", "process", "signal"] }
 nalgebra = "0.35.0"
 # The experimental policy loads its ONNX runtime only when selected. Ordinary
 # servers do not need the runtime or its platform-specific native libraries.
