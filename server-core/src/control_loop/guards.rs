@@ -35,22 +35,22 @@ pub(crate) fn guard_command(
         || !crate::limits::is_finite_joint_vector(previous_command, config.joint_count)
         || !crate::limits::is_finite_joint_vector(&feedback.positions, config.joint_count)
     {
-        return Err(Trip("Invalid servo setpoint".into()));
+        return Err(Trip::InvalidSetpoint);
     }
     if let Some(guard) = guard {
         let reason = guard
             .path_reason(&feedback.positions, command, feedback.gripper_angle)
-            .map_err(|error| Trip(error.to_string()))?;
+            .map_err(|error| Trip::SurfaceGuard(error.to_string()))?;
         if let Some(reason) = reason {
-            return Err(Trip(reason));
+            return Err(Trip::SurfaceGuard(reason));
         }
     }
     if let Some(self_collision) = self_collision {
         let reason = self_collision
             .path_reason(&feedback.positions, command, feedback.gripper_angle)
-            .map_err(|error| Trip(error.to_string()))?;
+            .map_err(|error| Trip::SelfCollision(error.to_string()))?;
         if let Some(reason) = reason {
-            return Err(Trip(reason));
+            return Err(Trip::SelfCollision(reason));
         }
     }
     Ok(())

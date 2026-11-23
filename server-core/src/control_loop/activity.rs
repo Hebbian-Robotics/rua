@@ -42,7 +42,7 @@ pub(super) struct Loop<'a> {
     // INVARIANT: Why the arm last tripped, while the check that tripped it still fails.
     // A tripped arm already holds; tripping again would move that hold point
     // and repeat the event. It also refuses new motion until the check passes.
-    pub(super) tripped: Option<String>,
+    pub(super) tripped: Option<Trip>,
     pub(super) shutdown_return_attempted: bool,
     pub(super) gripper: Option<GripperController>,
     pub(super) gripper_command: Option<String>,
@@ -93,7 +93,7 @@ impl Loop<'_> {
         interval: f64,
         deadline_missed: Option<String>,
     ) -> Option<Trip> {
-        deadline_missed.map(Trip).or_else(|| {
+        deadline_missed.map(Trip::Deadline).or_else(|| {
             validated_tracking_error(
                 self.config,
                 &feedback.positions,
@@ -112,18 +112,19 @@ impl Loop<'_> {
                 failure.into_trip(self.config, feedback, motion_speed)
             })
             .or_else(|| check_effort(self.config, &feedback.efforts).err())
-            .or_else(|| feedback.fault.clone().map(Trip))
+            .or_else(|| feedback.fault.clone().map(Trip::FeedbackFault))
         })
     }
 
-    pub(super) fn hold_after_trip(&mut self, reason: &str, feedback: &Feedback, now: Now) {
+    pub(super) fn hold_after_trip(&mut self, trip: Trip, feedback: &Feedback, now: Now) {
         self.filter.reset(&feedback.positions);
         self.hold_at = Some(feedback.positions.clone());
         self.activity = Activity::Idle;
-        self.tripped = Some(reason.to_owned());
+        let reason = trip.detail().to_owned();
+        self.tripped = Some(trip);
         self.arm().motion_ended(
             CommandOutcome::Tripped,
-            Some(reason.to_owned()),
+            Some(reason),
             &feedback.positions,
             now,
         );
@@ -223,7 +224,7 @@ impl Loop<'_> {
         now: Now,
     ) -> Result<(), Trip> {
         let Activity::Stream(stream) = &self.activity else {
-            return Err(Trip("No stream is running".into()));
+            return Err(Trip::Trajectory("No stream is running".into()));
         };
         if stop {
             self.end_stopped(now);
@@ -233,7 +234,7 @@ impl Loop<'_> {
         let timeout = self.config.control_timing.stream_goal_timeout;
         let timed_out = self.core.stream_timed_out(command_id, now.instant, timeout);
         let pose = match self.core.stream_goal(command_id) {
-            None => return Err(Trip("The stream has no goal".into())),
+            None => return Err(Trip::Trajectory("The stream has no goal".into())),
             Some(_) if timed_out => {
                 self.end_activity(
                     CommandOutcome::Stopped,

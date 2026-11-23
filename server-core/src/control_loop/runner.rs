@@ -502,7 +502,7 @@ impl<P: Plant> Runner<'_, P> {
                 let detail = format!("Gripper control failed: {failure:#}");
                 self.state.core.fail_gripper(&detail, now);
                 self.state.gripper_command = None;
-                self.trip(feedback, &detail, now);
+                self.trip(feedback, Trip::Gripper(detail), now);
                 if let Some(measured) = feedback.gripper_angle {
                     if let Some(jaw) = &mut self.state.gripper {
                         jaw.hold(measured);
@@ -560,7 +560,12 @@ impl<P: Plant> Runner<'_, P> {
             Job::Move { .. } | Job::Stream { .. } | Job::Reach { .. }
                 if self.state.tripped.is_some() =>
             {
-                let reason = self.state.tripped.clone().unwrap_or_default();
+                let reason = self
+                    .state
+                    .tripped
+                    .as_ref()
+                    .map_or("", Trip::detail)
+                    .to_owned();
                 self.state
                     .arm()
                     .failed(&format!("The arm is tripped: {reason}"), now);
@@ -747,9 +752,9 @@ impl<P: Plant> Runner<'_, P> {
         // INVARIANT: A tripped arm already holds where it tripped; faults, efforts and
         // temperatures still reach the clients in every state sample.
         if self.state.tripped.is_none()
-            && let Some(Trip(reason)) = failure
+            && let Some(trip) = failure
         {
-            self.trip(feedback, &reason, now);
+            self.trip(feedback, trip, now);
         }
         let stop = self.state.core.stop_requested();
         let computation_began = Instant::now();
@@ -761,7 +766,7 @@ impl<P: Plant> Runner<'_, P> {
             .as_ref()
             .map_or(0.0, crate::policy::PolicyRuntime::inference_seconds);
         if let Err(trip) = computed {
-            self.trip(feedback, &trip.0, now);
+            self.trip(feedback, trip, now);
             self.state.next_command.clone_from(&feedback.positions);
         }
         let command_start_time = self.started.elapsed().as_secs_f64();
@@ -831,12 +836,13 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    pub(super) fn trip(&mut self, feedback: &Feedback, reason: &str, now: Now) {
+    pub(super) fn trip(&mut self, feedback: &Feedback, trip: Trip, now: Now) {
+        let reason = trip.detail();
         self.report.trip.get_or_insert_with(|| reason.to_owned());
         self.link.publish(Event::Tripped {
             reason: reason.to_owned(),
         });
-        self.state.hold_after_trip(reason, feedback, now);
+        self.state.hold_after_trip(trip, feedback, now);
     }
 
     pub(super) fn publish(&mut self, feedback: &Feedback, interval: f64, command_sent: bool) {
@@ -867,7 +873,10 @@ impl<P: Plant> Runner<'_, P> {
         sample.voltages_volts.clone_from(&feedback.voltages_volts);
         sample.gripper_angle = feedback.gripper_angle;
         sample.fault.clone_from(&feedback.fault);
-        sample.active_trip.clone_from(&self.state.tripped);
+        assign_text(
+            &mut sample.active_trip,
+            self.state.tripped.as_ref().map(Trip::detail),
+        );
         sample.recovery_issue = match &self.recovery {
             BusRecovery::AwaitingApproval(issue) => Some(issue.clone()),
             BusRecovery::Disabled

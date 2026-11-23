@@ -224,7 +224,7 @@ impl ReferenceFilter {
             && is_finite_joint_vector(&reference.velocities, n)
             && is_finite_joint_vector(&reference.accelerations, n))
         {
-            return Err(Trip(
+            return Err(Trip::ReferenceFilter(
                 "Tracking controller produced an invalid reference".into(),
             ));
         }
@@ -263,8 +263,16 @@ impl ReferenceFilter {
         self.generator.delta_time = interval;
         match self.generator.update(&self.input, &mut self.output) {
             Ok(RuckigResult::Working | RuckigResult::Finished) => {}
-            Ok(other) => return Err(Trip(format!("Reference filter failed: {other:?}"))),
-            Err(error) => return Err(Trip(format!("Reference filter failed: {error}"))),
+            Ok(other) => {
+                return Err(Trip::ReferenceFilter(format!(
+                    "Reference filter failed: {other:?}"
+                )));
+            }
+            Err(error) => {
+                return Err(Trip::ReferenceFilter(format!(
+                    "Reference filter failed: {error}"
+                )));
+            }
         }
         // CONSTRAINT: Past its end Ruckig extrapolates the target state, which is what a
         // reference that keeps moving at the target velocity would do.
@@ -276,7 +284,7 @@ impl ReferenceFilter {
             if *position < self.recovery_lower[joint] - ROUNDING_TOLERANCE_RADIANS
                 || *position > self.recovery_upper[joint] + ROUNDING_TOLERANCE_RADIANS
             {
-                return Err(Trip(format!(
+                return Err(Trip::ReferenceFilter(format!(
                     "Filtered reference left the joint limits: joint {joint}, position {position:.12}, bounds {:.12}..{:.12}, velocity {:.12}, prev {:.12}, ref {:.12}, target {:.12}, latched {}",
                     self.recovery_lower[joint],
                     self.recovery_upper[joint],

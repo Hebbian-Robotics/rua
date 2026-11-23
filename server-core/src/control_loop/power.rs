@@ -52,7 +52,7 @@ impl<P: Plant> Runner<'_, P> {
             if let Some(fault) = &fresh.fault {
                 anyhow::bail!("Enable not confirmed: {fault}");
             }
-            check_effort(config, &fresh.efforts).map_err(|trip| anyhow::anyhow!(trip.0))?;
+            check_effort(config, &fresh.efforts).map_err(|trip| anyhow::anyhow!("{trip}"))?;
             if config.enable_checks.is_none() || observed_cycles >= observation_cycles {
                 return Ok(fresh);
             }
