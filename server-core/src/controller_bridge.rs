@@ -151,11 +151,7 @@ impl StationSession {
             ControllerRequest::ActionStep { actions, .. } => actions
                 .iter()
                 .flat_map(|action| {
-                    std::iter::repeat_n(
-                        action.arm.clone(),
-                        usize::from(action.movement.is_some())
-                            + usize::from(action.gripper.is_some()),
-                    )
+                    std::iter::repeat_n(action.arm().to_owned(), action.record_count())
                 })
                 .collect(),
             _ => vec![arm.clone()],

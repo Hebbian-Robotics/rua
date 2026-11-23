@@ -291,14 +291,8 @@ fn prepare_arm_action(
     action: PreparedArmAction,
     motion_scope: MotionScope,
 ) -> Result<AdmittedArmAction, Rejection> {
-    if action.movement.is_none() && action.gripper.is_none() {
-        return Err(Rejection {
-            reason: RejectionReason::InvalidTarget,
-            detail: "An action needs a movement or gripper target".into(),
-        });
-    }
-    let movement = action
-        .movement
+    let (arm, movement, gripper) = action.into_parts();
+    let movement = movement
         .map(|movement| -> Result<_, Rejection> {
             Ok(match movement {
                 PreparedMovement::Trajectory {
@@ -326,12 +320,11 @@ fn prepare_arm_action(
             })
         })
         .transpose()?;
-    let gripper = action
-        .gripper
+    let gripper = gripper
         .map(|gripper| core.check_gripper_target(gripper.angle, gripper.joint_speed))
         .transpose()?;
     Ok(AdmittedArmAction {
-        arm: action.arm,
+        arm,
         movement,
         gripper,
     })
@@ -467,7 +460,7 @@ pub(crate) fn admit_action_step(
     }
     let mut names = actions
         .iter()
-        .map(|action| action.arm.as_str())
+        .map(PreparedArmAction::arm)
         .collect::<Vec<_>>();
     names.sort_unstable();
     if let Some([duplicate, _]) = names.windows(2).find(|pair| pair[0] == pair[1]) {
@@ -480,16 +473,16 @@ pub(crate) fn admit_action_step(
     };
     let trajectory_arms = actions
         .iter()
-        .filter(|action| matches!(action.movement, Some(PreparedMovement::Trajectory { .. })))
-        .map(|action| action.arm.clone())
+        .filter(|action| action.uses_trajectory())
+        .map(|action| action.arm().to_owned())
         .collect::<Vec<_>>();
     let actions = actions
         .into_iter()
         .map(|action| {
             let core = cores
-                .get(action.arm.as_str())
-                .ok_or_else(|| invalid(format!("No arm {}", action.arm)))?;
-            let arm = action.arm.clone();
+                .get(action.arm())
+                .ok_or_else(|| invalid(format!("No arm {}", action.arm())))?;
+            let arm = action.arm().to_owned();
             prepare_arm_action(core, action, scope).map_err(|refused| Rejection {
                 reason: refused.reason,
                 detail: format!("{arm}: {}", refused.detail),
@@ -912,28 +905,26 @@ mod tests {
         let guard = so101_collision_guard();
         for (right_action, reason) in [
             (
-                PreparedArmAction {
-                    arm: "right".into(),
-                    movement: Some(PreparedMovement::PolicyPose {
+                PreparedArmAction::movement(
+                    "right".into(),
+                    PreparedMovement::PolicyPose {
                         label: "move_to_pose".into(),
                         position: [0.2, 0.0, 0.2],
                         orientation: hebbian_contracts::PoseOrientation::Quaternion {
                             quaternion: [0.0, 0.0, 0.0, 1.0],
                         },
-                    }),
-                    gripper: None,
-                },
+                    },
+                ),
                 "cannot check policy motion",
             ),
             (
-                PreparedArmAction {
-                    arm: "right".into(),
-                    movement: None,
-                    gripper: Some(crate::action_step::PreparedGripper {
+                PreparedArmAction::gripper(
+                    "right".into(),
+                    crate::action_step::PreparedGripper {
                         angle: 0.2,
                         joint_speed: None,
-                    }),
-                },
+                    },
+                ),
                 "separate steps",
             ),
         ] {
@@ -941,17 +932,7 @@ mod tests {
             let mut right = so101_group_arm(guard.clone(), -1.0, 0.5, 0.0);
             let mut cores = BTreeMap::from([("left", &mut left), ("right", &mut right)]);
             let movement = so101_group_move("left", 1.0, 0.5, 0.8);
-            let left_action = PreparedArmAction {
-                arm: movement.arm,
-                movement: Some(PreparedMovement::Trajectory {
-                    label: "move_to_joints".into(),
-                    plan: movement.plan,
-                    joint_speed: movement.joint_speed,
-                    path_limited: None,
-                    pose_limited: None,
-                }),
-                gripper: None,
-            };
+            let left_action = PreparedArmAction::from_group_move("move_to_joints", movement);
             let error =
                 admit_action_step(&mut cores, vec![left_action, right_action], Now::current())
                     .unwrap_err();
