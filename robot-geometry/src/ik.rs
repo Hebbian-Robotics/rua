@@ -74,11 +74,32 @@ pub struct IkSolver {
 
 struct Goal {
     position: Vector3<f64>,
-    rotation: UnitQuaternion<f64>,
-    orientation_weight: f64,
-    orientation_required: bool,
+    reference_rotation: UnitQuaternion<f64>,
+    orientation: OrientationObjective,
     position_tolerance: f64,
-    orientation_tolerance: f64,
+}
+
+enum OrientationObjective {
+    Required { tolerance_radians: f64 },
+    PreferHeld,
+    PositionOnly,
+}
+
+impl OrientationObjective {
+    fn weight(&self) -> f64 {
+        match self {
+            Self::Required { .. } => 1.0,
+            Self::PreferHeld => FREE_ORIENTATION_WEIGHT,
+            Self::PositionOnly => 0.0,
+        }
+    }
+
+    fn accepts(&self, orientation_error_radians: f64) -> bool {
+        match self {
+            Self::Required { tolerance_radians } => orientation_error_radians < *tolerance_radians,
+            Self::PreferHeld | Self::PositionOnly => true,
+        }
+    }
 }
 
 struct Visit {
@@ -116,10 +137,6 @@ impl IkSolver {
         &self.chain
     }
 
-    #[expect(
-        clippy::expect_used,
-        reason = "Every orientation goal tries at least the seed and middle; an unsolved attempt retains its best pose."
-    )]
     pub fn solve(
         &self,
         position: [f64; 3],
@@ -130,61 +147,69 @@ impl IkSolver {
         if !position.iter().all(|value| value.is_finite()) {
             return Err(IkRefusal::NotFinite);
         }
-        let held = self.chain.tool_pose(seed.as_slice()).rotation;
         let position = Vector3::from(position);
+        let (reference_rotation, orientation) = match orientation {
+            OrientationGoal::Required { quaternion } => (
+                required_rotation(quaternion)?,
+                OrientationObjective::Required {
+                    tolerance_radians: ORIENTATION_TOLERANCE_RADIANS,
+                },
+            ),
+            OrientationGoal::Free => (
+                self.chain.tool_pose(seed.as_slice()).rotation,
+                OrientationObjective::PreferHeld,
+            ),
+        };
+        let primary_goal = Goal {
+            position,
+            reference_rotation,
+            orientation,
+            position_tolerance: POSITION_TOLERANCE_METERS,
+        };
         // WHY: With the orientation free, the held orientation is a preference that can
         // trap the search in a pose that is far from the target; if every start
-        // falls short with it, the same starts run once more with no preference.
-        let goals = match orientation {
-            OrientationGoal::Required { quaternion } => vec![Goal {
-                position,
-                rotation: required_rotation(quaternion)?,
-                orientation_weight: 1.0,
-                orientation_required: true,
-                position_tolerance: POSITION_TOLERANCE_METERS,
-                orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
-            }],
-            OrientationGoal::Free => [FREE_ORIENTATION_WEIGHT, 0.0]
-                .into_iter()
-                .map(|orientation_weight| Goal {
-                    position,
-                    rotation: held,
-                    orientation_weight,
-                    orientation_required: false,
-                    position_tolerance: POSITION_TOLERANCE_METERS,
-                    orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
-                })
-                .collect(),
-        };
+        // falls short with it, the same starts run once more with no preference. The
+        // reference rotation still defines the orientation error reported with the pose.
+        let fallback_goal = matches!(primary_goal.orientation, OrientationObjective::PreferHeld)
+            .then_some(Goal {
+                orientation: OrientationObjective::PositionOnly,
+                ..primary_goal
+            });
         // CONSTRAINT: Beyond the arm's reach no start can succeed: the seed's and the middle's
         // searches stretch the arm toward the target, which is the closest pose.
         let out_of_reach = self
             .chain
             .out_of_reach(&position, POSITION_TOLERANCE_METERS);
-        let start_count = if out_of_reach { 2 } else { usize::MAX };
-        let mut best: Option<(IkFailure, Visit)> = None;
-        for goal in &goals {
-            for start in self.starts(&seed).take(start_count) {
-                let (reason, visit) = match self.attempt(goal, start, &seed) {
-                    Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
-                    Attempt::Fell { reason, best } => (reason, best),
-                };
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, held)| closer(&goals[0], &visit, held))
-                {
-                    best = Some((reason, visit));
-                }
+        let (mut best_reason, mut best_visit) =
+            match self.attempt(&primary_goal, seed.clone(), &seed) {
+                Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
+                Attempt::Fell { reason, best } => (reason, best),
+            };
+        let alternate_count = if out_of_reach { 1 } else { RESTARTS + 1 };
+        let alternate_starts = || self.alternate_starts().take(alternate_count);
+        let primary_attempts = alternate_starts().map(|start| (&primary_goal, start));
+        let fallback_attempts = fallback_goal.iter().flat_map(|goal| {
+            std::iter::once(seed.clone())
+                .chain(alternate_starts())
+                .map(move |start| (goal, start))
+        });
+        for (goal, start) in primary_attempts.chain(fallback_attempts) {
+            let (reason, visit) = match self.attempt(goal, start, &seed) {
+                Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
+                Attempt::Fell { reason, best } => (reason, best),
+            };
+            if closer(&primary_goal, &visit, &best_visit) {
+                best_reason = reason;
+                best_visit = visit;
             }
         }
-        let (reason, visit) = best.expect("two attempts ran");
         Ok(IkResult::Failed {
             reason: if out_of_reach {
                 IkFailure::OutOfReach
             } else {
-                reason
+                best_reason
             },
-            best: Self::pose(&visit),
+            best: Self::pose(&best_visit),
         })
     }
 
@@ -200,11 +225,11 @@ impl IkSolver {
         }
         let goal = Goal {
             position: Vector3::from(position),
-            rotation: required_rotation(quaternion)?,
-            orientation_weight: 1.0,
-            orientation_required: true,
+            reference_rotation: required_rotation(quaternion)?,
+            orientation: OrientationObjective::Required {
+                tolerance_radians: ORIENTATION_TOLERANCE_RADIANS / 1000.0,
+            },
             position_tolerance: POSITION_TOLERANCE_METERS / 1000.0,
-            orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS / 1000.0,
         };
         Ok(match self.attempt(&goal, seed.clone(), &seed) {
             Attempt::Reached(visit) => Some(Self::pose(&visit)),
@@ -212,9 +237,9 @@ impl IkSolver {
         })
     }
 
-    // WHY: Try the held pose before alternate elbow/wrist branches so a nearby target stays
-    // near its seed; deterministic restarts make failures reproducible.
-    fn starts(&self, seed: &DVector<f64>) -> impl Iterator<Item = DVector<f64>> + '_ {
+    // WHY: Start from the midpoint before sampling alternate elbow/wrist branches.
+    // Deterministic restarts make failures reproducible.
+    fn alternate_starts(&self) -> impl Iterator<Item = DVector<f64>> + '_ {
         let middle = DVector::from_iterator(
             self.limits.lower().len(),
             self.limits
@@ -231,7 +256,7 @@ impl IkSolver {
                     + (self.limits.upper()[joint] - self.limits.lower()[joint]) * fraction
             })
         });
-        [seed.clone(), middle].into_iter().chain(spread)
+        std::iter::once(middle).chain(spread)
     }
 
     fn checked_seed(&self, seed: &[f64]) -> Result<DVector<f64>, IkRefusal> {
@@ -277,14 +302,15 @@ impl IkSolver {
     }
 
     fn cost(goal: &Goal, visit: &Visit, seed: &DVector<f64>) -> f64 {
-        let weighted = goal.orientation_weight * visit.orientation_error;
-        let task = visit.position_error.powi(2) + weighted.powi(2);
-        f64::midpoint(task, POSTURE_WEIGHT * (&visit.joints - seed).norm_squared())
+        f64::midpoint(
+            squared_task_error(goal, visit),
+            POSTURE_WEIGHT * (&visit.joints - seed).norm_squared(),
+        )
     }
 
     fn reached(goal: &Goal, visit: &Visit) -> bool {
         visit.position_error < goal.position_tolerance
-            && (!goal.orientation_required || visit.orientation_error < goal.orientation_tolerance)
+            && goal.orientation.accepts(visit.orientation_error)
     }
 
     fn attempt(&self, goal: &Goal, start: DVector<f64>, seed: &DVector<f64>) -> Attempt {
@@ -296,6 +322,7 @@ impl IkSolver {
             orientation_error: current.orientation_error,
         };
         let mut damping = INITIAL_DAMPING;
+        let orientation_weight = goal.orientation.weight();
         for _ in 0..MAXIMUM_ITERATIONS {
             if Self::reached(goal, &current) {
                 return Attempt::Reached(current);
@@ -313,14 +340,14 @@ impl IkSolver {
             let mut jacobian = self.chain.jacobian(&frames);
             for column in 0..jacobian.ncols() {
                 for row in 3..6 {
-                    jacobian[(row, column)] *= goal.orientation_weight;
+                    jacobian[(row, column)] *= orientation_weight;
                 }
             }
             let mut error = DVector::zeros(6);
             error.fixed_rows_mut::<3>(0).copy_from(&position_residual);
             error
                 .fixed_rows_mut::<3>(3)
-                .copy_from(&(rotation_residual * goal.orientation_weight));
+                .copy_from(&(rotation_residual * orientation_weight));
             let count = jacobian.ncols();
             let hessian =
                 jacobian.tr_mul(&jacobian) + DMatrix::identity(count, count) * POSTURE_WEIGHT;
@@ -437,21 +464,20 @@ fn next_fraction(state: &mut u64) -> f64 {
         / f64::from(1_u32 << 24)
 }
 
-fn task_error(goal: &Goal, visit: &Visit) -> f64 {
-    (visit.position_error.powi(2) + (goal.orientation_weight * visit.orientation_error).powi(2))
-        .sqrt()
+fn squared_task_error(goal: &Goal, visit: &Visit) -> f64 {
+    visit.position_error.powi(2) + (goal.orientation.weight() * visit.orientation_error).powi(2)
 }
 
 // WHY: Report the best task error, excluding the seed penalty, so regularization cannot
 // make a less accurate pose look like the best achievable target.
 fn closer(goal: &Goal, visit: &Visit, held: &Visit) -> bool {
-    task_error(goal, visit) < task_error(goal, held)
+    squared_task_error(goal, visit).sqrt() < squared_task_error(goal, held).sqrt()
 }
 
 fn residual(goal: &Goal, tool: &Isometry3<f64>) -> (Vector3<f64>, Vector3<f64>) {
     (
         goal.position - tool.translation.vector,
-        (goal.rotation * tool.rotation.inverse()).scaled_axis(),
+        (goal.reference_rotation * tool.rotation.inverse()).scaled_axis(),
     )
 }
 

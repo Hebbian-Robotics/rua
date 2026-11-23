@@ -28,7 +28,7 @@ def scene_name(arm: str, name: str) -> str:
 
 def command_delay_seconds(model: mujoco.MjModel, arm: str) -> float:
     # WHY: The arm model carries the command delay fitted together with its servo response.
-    numeric = model.numeric(scene_name(arm, "command_delay_seconds"))  # ty: ignore[missing-attribute]  # Missing from the mujoco stubs.
+    numeric = model.numeric(scene_name(arm, "command_delay_seconds"))
     return float(numeric.data[0])
 
 
@@ -80,8 +80,14 @@ def compile_scene(
         # WHY: Attaching keeps the scene's solver options; the arm model's own (elliptic cones
         # and impedance ratio) come from the fitted model. The settings then set
         # the timestep and integrator.
-        for option in SOLVER_OPTIONS_FROM_ARM_MODEL:
-            setattr(spec.option, option, getattr(arm_spec.option, option))  # ty: ignore[missing-attribute]  # Missing from the mujoco stubs.
+        scene_options = spec.option
+        arm_options = arm_spec.option
+        scene_options.cone = arm_options.cone
+        scene_options.impratio = arm_options.impratio
+        scene_options.iterations = arm_options.iterations
+        scene_options.ls_iterations = arm_options.ls_iterations
+        scene_options.timestep = arm_options.timestep
+        scene_options.integrator = arm_options.integrator
         apply_joint_stops(
             arm_spec,
             config.station.joint_names,
@@ -116,16 +122,6 @@ def overview_camera(configs: dict[str, ArmConfig]) -> mujoco.MjvCamera:
     return camera
 
 
-SOLVER_OPTIONS_FROM_ARM_MODEL = (
-    "cone",
-    "impratio",
-    "iterations",
-    "ls_iterations",
-    "timestep",
-    "integrator",
-)
-
-
 def apply_joint_stops(
     arm_spec: mujoco.MjSpec,
     joint_names: list[str],
@@ -133,11 +129,15 @@ def apply_joint_stops(
     upper: list[float],
 ) -> None:
     for name, low, high in zip(joint_names, lower, upper, strict=True):
-        joint = arm_spec.joint(name)  # ty: ignore[missing-attribute]  # Missing from the mujoco stubs.
-        joint.limited = mujoco.mjtLimited.mjLIMITED_TRUE  # ty: ignore[missing-attribute]  # Missing from the mujoco stubs.
+        joint = arm_spec.joint(name)
+        if joint is None:
+            raise ValueError(f"MuJoCo arm model has no joint named {name!r}")
+        actuator = arm_spec.actuator(name)
+        if actuator is None:
+            raise ValueError(f"MuJoCo arm model has no actuator named {name!r}")
+        joint.limited = mujoco.mjtLimited.mjLIMITED_TRUE
         joint.range = [low, high]
-        actuator = arm_spec.actuator(name)  # ty: ignore[missing-attribute]  # Missing from the mujoco stubs.
-        actuator.ctrllimited = mujoco.mjtLimited.mjLIMITED_TRUE  # ty: ignore[missing-attribute]  # Missing from the mujoco stubs.
+        actuator.ctrllimited = mujoco.mjtLimited.mjLIMITED_TRUE
         actuator.ctrlrange = [low, high]
 
 

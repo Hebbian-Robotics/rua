@@ -1,5 +1,5 @@
-# The subset of MuJoCo 3.x that examples/mujoco_sim uses; the compiled
-# module's members are not visible to ty. MuJoCo is an optional dependency (the sim extra).
+# The subset of MuJoCo used by the simulator and its tests. The compiled
+# module's members are not visible to ty.
 from collections.abc import Sequence
 from enum import Enum
 
@@ -13,6 +13,11 @@ class mjtGeom(Enum):
     mjGEOM_BOX = 6
     mjGEOM_MESH = 7
 
+class mjtLimited(Enum):
+    mjLIMITED_FALSE = 0
+    mjLIMITED_TRUE = 1
+    mjLIMITED_AUTO = 2
+
 class MjsCompiler:
     fusestatic: bool
     boundmass: float
@@ -21,11 +26,28 @@ class MjsCompiler:
 class MjsElement:
     name: str
 
-class MjsJoint(MjsElement): ...
+class MjsJoint(MjsElement):
+    limited: mjtLimited
+    @property
+    def range(self) -> np.ndarray: ...
+    @range.setter
+    def range(self, values: Sequence[float]) -> None: ...
+
+class MjsActuator(MjsElement):
+    ctrllimited: mjtLimited
+    @property
+    def ctrlrange(self) -> np.ndarray: ...
+    @ctrlrange.setter
+    def ctrlrange(self, values: Sequence[float]) -> None: ...
+
 class MjsGeom(MjsElement): ...
 class MjsMesh(MjsElement): ...
 
 class _Options:
+    cone: int
+    impratio: float
+    iterations: int
+    ls_iterations: int
     integrator: int
     timestep: float
 
@@ -43,6 +65,9 @@ class _SiteView:
 class _BodyView:
     name: str
 
+class _NumericView:
+    data: np.ndarray
+
 class MjModel:
     ngeom: int
     geom_type: np.ndarray
@@ -55,6 +80,7 @@ class MjModel:
     @classmethod
     def from_xml_path(cls, path: str) -> MjModel: ...
     def site(self, name: str) -> _SiteView: ...
+    def numeric(self, name: str) -> _NumericView: ...
     opt: _Options
     actuator_gainprm: np.ndarray
     actuator_biasprm: np.ndarray
@@ -111,11 +137,14 @@ class MjsBody(MjsElement):
 class MjSpec:
     worldbody: MjsBody
     compiler: MjsCompiler
+    option: _Options
     bodies: list[MjsBody]
     joints: list[MjsJoint]
     geoms: list[MjsGeom]
     meshes: list[MjsMesh]
     def body(self, name: str) -> MjsBody: ...
+    def joint(self, name: str) -> MjsJoint | None: ...
+    def actuator(self, name: str) -> MjsActuator | None: ...
     def delete(self, element: MjsElement) -> None: ...
     @staticmethod
     def from_file(filename: str) -> MjSpec: ...

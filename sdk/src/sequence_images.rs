@@ -342,10 +342,6 @@ fn unix_seconds() -> f64 {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    reason = "Failed setup or missing evidence aborts the test."
-)]
 mod tests {
     use super::*;
 
