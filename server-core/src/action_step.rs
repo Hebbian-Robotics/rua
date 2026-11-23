@@ -1,4 +1,6 @@
-use hebbian_contracts::{CornerPlan, JointSpeed, PathLimited, PoseLimited, PoseOrientation};
+use hebbian_contracts::{
+    CornerPlan, JawAngle, JointSpeed, PathLimited, PoseLimited, PoseOrientation,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -170,6 +172,6 @@ pub enum PreparedMovement {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PreparedGripper {
-    pub angle: f64,
+    pub angle: JawAngle,
     pub joint_speed: Option<JointSpeed>,
 }

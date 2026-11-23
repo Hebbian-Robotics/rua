@@ -4,8 +4,9 @@ use super::types::{
     CommandState, GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Job, Now,
     PowerState, ReachGoal, Rejection, ShortOfTarget, ShutdownState, StreamGoal, rejection,
 };
-use crate::motion_values::{JointAngle, JointSpeed};
+use crate::motion_values::JointSpeed;
 use crate::planning::orientation::{from_xyzw, orientation_summary, pose_orientation_quaternion};
+use hebbian_contracts::JawAngle;
 use hebbian_contracts::{
     Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandPhase, CommandPose,
     CommandRecord, ControlAction, CornerPlan, Event, GripperResult, KnownCommandOutcome,
@@ -842,7 +843,7 @@ impl ArmCore {
         Ok(record)
     }
 
-    pub(crate) fn check_gripper(&self, angle: f64) -> Result<f64, Rejection> {
+    fn check_gripper(&self, angle: JawAngle) -> Result<JawAngle, Rejection> {
         if self.shutdown_requested() {
             return Err(Self::shutting_down());
         }
@@ -861,18 +862,13 @@ impl ArmCore {
                 "The arm is disabled; send enable, then repeat the command",
             ));
         }
-        if !angle.is_finite() {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                "A gripper goal must be finite",
-            ));
-        }
-        Ok(angle.clamp(minimum, maximum))
+        JawAngle::try_from(angle.radians().clamp(minimum, maximum))
+            .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))
     }
 
     pub(crate) fn check_gripper_target(
         &self,
-        angle: f64,
+        angle: JawAngle,
         requested_speed: Option<JointSpeed>,
     ) -> Result<GripperTarget, Rejection> {
         let angle = self.check_gripper(angle)?;
@@ -882,17 +878,12 @@ impl ArmCore {
             self.limits.max_joint_speed,
         )
         .map_err(|invalid| rejection(RejectionReason::InvalidTarget, invalid.to_string()))?;
-        let invalid =
-            |error: anyhow::Error| rejection(RejectionReason::InvalidTarget, error.to_string());
-        Ok(GripperTarget {
-            angle: JointAngle::new(angle).map_err(invalid)?,
-            speed,
-        })
+        Ok(GripperTarget { angle, speed })
     }
 
     pub(super) fn submit_gripper(
         &mut self,
-        angle: f64,
+        angle: JawAngle,
         requested_speed: Option<JointSpeed>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {

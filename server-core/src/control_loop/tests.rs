@@ -207,7 +207,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
         .core
         .submit(
             Command::SetGripper {
-                angle: 1.5,
+                angle: hebbian_contracts::JawAngle::try_from(1.5).unwrap(),
                 joint_speed: Some(hebbian_contracts::JointSpeed::new(1.0).unwrap()),
             },
             Now::current(),

@@ -891,7 +891,7 @@ fn a_missing_gripper_controller_fails_its_command_and_holds_without_reconnecting
         .core
         .submit(
             Command::SetGripper {
-                angle: 0.5,
+                angle: hebbian_contracts::JawAngle::try_from(0.5).unwrap(),
                 joint_speed: None,
             },
             Now::current(),

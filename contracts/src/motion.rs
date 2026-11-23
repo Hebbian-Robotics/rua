@@ -86,6 +86,61 @@ impl JsonSchema for JointSpeed {
     }
 }
 
+/// A finite gripper joint target in radians.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct JawAngle(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidJawAngle;
+
+impl std::fmt::Display for InvalidJawAngle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A gripper goal must be finite")
+    }
+}
+
+impl std::error::Error for InvalidJawAngle {}
+
+impl TryFrom<f64> for JawAngle {
+    type Error = InvalidJawAngle;
+
+    fn try_from(radians: f64) -> Result<Self, Self::Error> {
+        if radians.is_finite() {
+            Ok(Self(radians))
+        } else {
+            Err(InvalidJawAngle)
+        }
+    }
+}
+
+impl From<JawAngle> for f64 {
+    fn from(angle: JawAngle) -> Self {
+        angle.radians()
+    }
+}
+
+impl JawAngle {
+    #[must_use]
+    pub fn radians(self) -> f64 {
+        self.0
+    }
+}
+
+impl JsonSchema for JawAngle {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "JawAngle".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        f64::json_schema(generator)
+    }
+}
+
 /// Why a command was not accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -145,7 +200,7 @@ pub enum Command {
     #[schemars(title = "StreamJointsCommand")]
     StreamJoints {
         /// The gripper's newest target, applied together with the joints.
-        gripper_angle: Option<f64>,
+        gripper_angle: Option<JawAngle>,
         positions: Vec<f64>,
         joint_speed: Option<JointSpeed>,
         stream_command_id: Option<String>,
@@ -170,7 +225,7 @@ pub enum Command {
     /// Move the jaw to this angle (the URDF gripper joint's).
     #[schemars(title = "SetGripperCommand")]
     SetGripper {
-        angle: f64,
+        angle: JawAngle,
         joint_speed: Option<JointSpeed>,
     },
 }

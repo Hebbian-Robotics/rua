@@ -1,19 +1,3 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct JointAngle(f64);
-
-impl JointAngle {
-    pub(crate) fn new(radians: f64) -> anyhow::Result<Self> {
-        anyhow::ensure!(radians.is_finite(), "A joint angle must be finite");
-        Ok(Self(radians))
-    }
-
-    pub(crate) fn radians(self) -> f64 {
-        self.0
-    }
-}
-
-#[cfg(test)]
-pub(crate) use hebbian_contracts::InvalidSpeed;
 pub(crate) use hebbian_contracts::JointSpeed;
 
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +40,7 @@ impl GroupId {
 
 #[cfg(test)]
 mod tests {
-    use crate::motion_values::{InvalidSpeed, JointSpeed};
+    use hebbian_contracts::{InvalidSpeed, JointSpeed};
 
     #[test]
     fn an_over_speed_request_runs_at_the_maximum_and_a_nonsense_one_is_refused() {

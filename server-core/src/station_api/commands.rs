@@ -53,15 +53,15 @@ fn jaw_angle(
     link: &LinkHandle,
     arm: &str,
     opening: hebbian_contracts::GripperOpening,
-) -> Result<f64, Refusal> {
-    link.gripper()
-        .map(|gripper| gripper.angle(f64::from(opening)))
-        .ok_or_else(|| {
-            refused(
-                RejectionReason::InvalidTarget,
-                format!("{arm} has no gripper"),
-            )
-        })
+) -> Result<hebbian_contracts::JawAngle, Refusal> {
+    let gripper = link.gripper().ok_or_else(|| {
+        refused(
+            RejectionReason::InvalidTarget,
+            format!("{arm} has no gripper"),
+        )
+    })?;
+    hebbian_contracts::JawAngle::try_from(gripper.angle(f64::from(opening)))
+        .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
 }
 
 fn planned_move(

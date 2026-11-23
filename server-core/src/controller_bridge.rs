@@ -522,7 +522,7 @@ mod tests {
         let reply = handle
             .submit_unawaited(
                 Command::SetGripper {
-                    angle: 0.5,
+                    angle: hebbian_contracts::JawAngle::try_from(0.5).unwrap(),
                     joint_speed: None,
                 },
                 None,
