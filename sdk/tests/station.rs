@@ -1645,3 +1645,29 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_before_a_waypoint_leaves_the_gripper_closed() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("cancel before release"))).await??;
+    within(client.enable(ARM)).await??;
+    let source: ActionSequenceRequest = serde_json::from_value(json!({"steps":[{"arms":{(ARM):{
+        "goal":{"kind":"joints","joints":[0.4,-0.5,0.5,0.0,0.0]},
+        "waypoints":[{"at":{"kind":"joints","joints":[0.22,-0.5,0.5,0.0,0.0]},"gripper_opening":1.0}]
+    }}}]}))?;
+    let execution = within(lease.start_action_sequence(source)).await??;
+    within(client.wait_for_state(|state| (0.01..0.08).contains(&state.arms[0].measured_joints[0])))
+        .await??;
+    within(client.cancel_action_sequence(&execution)).await??;
+    let result = within(client.wait_for_action_sequence(&execution)).await??;
+    assert!(matches!(result.phase, ActionSequencePhase::Stopped { .. }));
+    let state = within(client.get_state()).await??;
+    assert!(state.arms[0].measured_joints[0] < 0.22);
+    assert!(
+        state.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| opening < 0.01)
+    );
+    Ok(())
+}

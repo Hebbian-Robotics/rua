@@ -172,12 +172,12 @@ changes the original view. TypeScript provides `mapTools` and
 
 For multiple arms, replace the sequence capability's scope with
 `NamedArmSequence(("left", "right"))`. Each step then has an `arms` map; every
-participating target is planned before the step is admitted together. TypeScript
+participating goal is planned before the step is admitted together. TypeScript
 uses `{ kind: "named", arms: ["left", "right"] }`; Rust uses `SequenceScope`.
 
 To replace the default mapping, select capabilities from
 `all_robot_tool_capabilities()` (TypeScript: `allRobotToolCapabilities()`), which
-also includes standalone goal, gripper and rehome tools. The default mapping
+also includes standalone move, gripper and rehome tools. The default mapping
 selects sequences, previews, observation and immediate stop. Individual SDK
 methods remain available regardless of the model catalog. Model speeds use
 degrees per second and are clamped to the profile maximum; SDK station arguments

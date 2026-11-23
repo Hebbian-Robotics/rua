@@ -2,7 +2,7 @@
 export const robotToolSpecifications = [
   {
     description:
-      "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.",
+      "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.",
     name: "action_sequence",
     operation: "start_action_sequence",
     parameters: {

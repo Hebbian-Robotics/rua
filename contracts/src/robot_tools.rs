@@ -541,7 +541,7 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         RobotToolDefinition {
             name: "action_sequence",
             operation: RobotToolOperation::StartActionSequence,
-            description: "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.".into(),
+            description: "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.".into(),
             parameters: action_sequence_tool_schema(&SequenceToolConfiguration::default()).expect("default sequence configuration"),
         },
         RobotToolDefinition {
