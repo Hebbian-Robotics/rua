@@ -2,9 +2,8 @@ import asyncio
 import json
 import math
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-import httpx2
 import pytest
 
 from hebbian_rua.client.contract.station_api import (
@@ -458,7 +457,7 @@ def test_taking_the_lease_notifies_the_previous_holder(server_binary: Path) -> N
                     # a five-second deadline races the first renewal itself.
                     await asyncio.wait_for(
                         first.lease_lost.wait(),
-                        timeout=first_lease.grant.lease_seconds,
+                        timeout=first_lease.status.expires_in_seconds,
                     )
                     with pytest.raises(LeaseLost):
                         await first_lease.stop_arm(ARM)
@@ -529,31 +528,20 @@ def test_late_command_cancellation_leaves_a_new_move_running(
             async with (
                 StationClient(station.server) as client,
                 client.holding_lease("late cancellation") as lease,
-                httpx2.AsyncClient(base_url=station.server) as http,
             ):
-                instance = (await http.get("/instance")).json()["id"]
-                submission_context = {
-                    "station_instance_id": instance,
-                    "lease_token": lease.grant.lease_token,
-                }
                 joints = list((await client.arm(ARM).state()).measured_joints)
 
-                async def submit_move(operation_id: str, displacement: float) -> str:
-                    response = await http.post(
-                        "/commands",
-                        json={
-                            **submission_context,
-                            "arm": ARM,
-                            "operation_id": operation_id,
-                            "command": {
-                                "kind": "move_to_joints",
-                                "joints": [joints[0] + displacement, *joints[1:]],
-                                "max_joint_speed": 0.2,
-                            },
-                        },
+                async def submit_move(operation_id: UUID, displacement: float) -> str:
+                    response = await lease.send(
+                        ARM,
+                        MoveToJointsCommand(
+                            joints=[joints[0] + displacement, *joints[1:]],
+                            max_joint_speed=0.2,
+                        ),
+                        operation_id=operation_id,
                     )
-                    response.raise_for_status()
-                    return str(response.json()["records"][0]["record"]["command_id"])
+                    assert isinstance(response, CommandAccepted)
+                    return response.records[0].record.command_id
 
                 async def wait_for_completion(command_id: str) -> str:
                     state = await client.wait_for_state(
@@ -569,23 +557,19 @@ def test_late_command_cancellation_leaves_a_new_move_running(
                     assert outcome is not None
                     return outcome.value
 
-                original = str(uuid4())
+                original = uuid4()
                 assert (
                     await wait_for_completion(await submit_move(original, 0.08))
                     == "completed"
                 )
-                newer = await submit_move(str(uuid4()), 0.35)
+                newer = await submit_move(uuid4(), 0.35)
                 await client.wait_for_state(
                     lambda state: (
                         (record := state.arms[0].active_command) is not None
                         and record.command_id == newer
                     )
                 )
-                response = await http.post(
-                    f"/operations/{original}/cancel",
-                    json=submission_context,
-                )
-                assert response.status_code == 204
+                await lease.cancel_operation(original)
                 assert await wait_for_completion(newer) == "completed"
 
         asyncio.run(asyncio.wait_for(exercise(), timeout=15))

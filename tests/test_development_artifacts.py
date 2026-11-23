@@ -84,8 +84,6 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
     repository.mkdir()
     (repository / "pyproject.toml").write_text(
         '[project]\nname = "hebbian-rua"\nversion = "0.1.0"\n'
-        '[build-system]\nrequires = ["uv_build>=0.13.6,<0.14"]\n'
-        'build-backend = "uv_build"\n'
     )
     (repository / "hebbian_rua").mkdir()
     (repository / "hebbian_rua/__init__.py").write_text("")

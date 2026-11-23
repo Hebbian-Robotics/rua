@@ -11,6 +11,15 @@ station requests, including observations. Set `media_server` or
 `HEBBIAN_MEDIA_SERVER` to use the media companion directly for individual camera
 reads and sequence images. The examples use the default model view.
 
+The Python package contains a PyO3 extension for CPython 3.12 and later.
+Published wheels include the Rust client. Source installs build it with maturin.
+A lease context awaits release on exit. The lease object exposes its status and
+operations. Use `Lease.send` and `Lease.cancel_operation` when you need a
+caller-assigned operation ID. A plain sequence wait can be cancelled independently
+of the accepted sequence; use `StationClient.cancel_action_sequence` to stop it.
+HTTP failures surface as `hebbian_rua.HttpError` with the status and response
+body in `args`.
+
 Use [the control model](../../docs/control-model.md) for a custom control
 program, or [model output](../../docs/model-output.md) to change presentation
 while keeping the existing loop.

@@ -34,20 +34,16 @@ from hebbian_rua.client.station_types import CameraUnavailable
 from tests.fixture_station import ARM, running_station
 
 
-def test_close_releases_http_clients_when_connection_close_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_closing_a_client_ends_its_telemetry_stream() -> None:
     async def exercise() -> None:
         client = StationClient("http://127.0.0.1:9")
-
-        async def fail_close() -> None:
-            raise RuntimeError("connection close failed")
-
-        monkeypatch.setattr(client._connection, "close", fail_close)
-        with pytest.raises(RuntimeError, match="connection close failed"):
-            await client.close()
-        assert client._api._station.is_closed
-        assert client._api._media.is_closed
+        telemetry = client.run_telemetry()
+        pending = asyncio.create_task(anext(telemetry, None))
+        await asyncio.sleep(0)
+        await client.close()
+        assert await asyncio.wait_for(pending, 2) is None
+        with pytest.raises(ConnectionError):
+            await client.state()
 
     asyncio.run(exercise())
 
@@ -81,13 +77,7 @@ def test_enable_move_and_stop_round_trip(server_binary: Path) -> None:
         asyncio.run(exercise())
 
 
-def test_an_unreachable_station_fails_on_the_first_call(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "hebbian_rua.client.station_connection.CONNECT_TIMEOUT_SECONDS", 0.5
-    )
-
+def test_an_unreachable_station_fails_on_the_first_call() -> None:
     async def exercise() -> None:
         async with StationClient("http://127.0.0.1:9") as client:
             with pytest.raises(ConnectionError, match=r"127\.0\.0\.1:9"):

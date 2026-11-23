@@ -45,5 +45,5 @@ __pycache__/
 # Generated from the pinned SO-101 release during source setup.
 /robots/so101/
 
-/hebbian_rua/_native*.so
-/hebbian_rua/_native*.pyd
+/hebbian_rua/bindings/_native*.so
+/hebbian_rua/bindings/_native*.pyd

@@ -35,17 +35,22 @@ impl std::fmt::Display for SequenceImageBoundary {
 }
 
 /// A historical JPEG with client retrieval timing, independent of robot state timing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SequenceImage {
     pub camera: String,
+    #[serde(serialize_with = "serialize_jpeg")]
     pub jpeg: Arc<[u8]>,
     pub retrieved_between_unix_seconds: [f64; 2],
     pub elapsed_seconds: f64,
     pub boundary: SequenceImageBoundary,
 }
 
+fn serialize_jpeg<S: serde::Serializer>(jpeg: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_bytes(jpeg)
+}
+
 /// Selected evidence from the latest model action sequence, bounded to eight images and 2 MiB.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SequenceImageHistory {
     pub call_id: String,
     pub images: Vec<SequenceImage>,

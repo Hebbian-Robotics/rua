@@ -5,8 +5,7 @@ from collections.abc import Collection
 from dataclasses import replace
 from typing import Literal
 
-from hebbian_rua._native import concise_output as concise_output
-from hebbian_rua._native import model_response as model_response
+from hebbian_rua.bindings import _native
 from hebbian_rua.client.llm.types import (
     ModelContent,
     RobotOutput,
@@ -15,12 +14,9 @@ from hebbian_rua.client.llm.types import (
     SequenceImageHistory,
 )
 
-
-def concise_response(value: object, *, keep_station_context: bool = False) -> object:
-    """The model view: the concise layer, then readable units and rounding."""
-    return model_response(
-        concise_output(value, keep_station_context=keep_station_context)
-    )
+concise_response = _native.concise_response
+concise_output = _native.concise_output
+model_response = _native.model_response
 
 
 def summarize_output(output: RobotOutput) -> RobotOutput:

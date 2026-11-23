@@ -12,10 +12,8 @@ authors = [
     { name = "Hebbian Robotics" },
 ]
 dependencies = [
-    "httpx2>=2.16.0",
     "pydantic>=2.11",
     "python-dotenv>=1.2.4",
-    "tenacity>=9.1.4",
 ]
 
 [project.urls]
@@ -42,12 +40,20 @@ build-backend = "maturin"
 
 [tool.maturin]
 manifest-path = "python-bindings/Cargo.toml"
-module-name = "hebbian_rua._native"
+module-name = "hebbian_rua.bindings._native"
 python-source = "."
 bindings = "pyo3"
+profile = "python-extension"
+locked = true
 
 [tool.uv]
 exclude-newer = "3 days"
+cache-keys = [
+    { file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "Cargo.lock" },
+    { file = "python-bindings/Cargo.toml" }, { file = "python-bindings/src/**/*.rs" },
+    { file = "sdk/Cargo.toml" }, { file = "sdk/src/**/*.rs" },
+    { file = "contracts/Cargo.toml" }, { file = "contracts/src/**/*.rs" },
+]
 
 [tool.uv.sources.hebbian-rua]
 workspace = true
@@ -158,15 +164,12 @@ name = "client transformations are independent of live station and provider adap
 type = "forbidden"
 source_modules = [
     "hebbian_rua.client.llm.tool_catalog",
-    "hebbian_rua.client.llm.robot_tool_rules",
     "hebbian_rua.client.llm.response_format",
-    "hebbian_rua.client.llm.tools",
     "hebbian_rua.client.llm.types",
     "hebbian_rua.client.rotations",
 ]
 forbidden_modules = [
     "hebbian_rua.client.station_client",
-    "hebbian_rua.client.station_connection",
     "hebbian_rua.client.environment",
     "hebbian_rua.client.llm.robot_tools",
     "hebbian_rua.client.llm.openai",
@@ -181,6 +184,7 @@ forbidden_modules = [
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.16.0",
     "rua-dev",
     "openai>=3.49.0",
     "anthropic>=2.8.0",

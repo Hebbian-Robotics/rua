@@ -34,11 +34,7 @@ SCHEMA_PATHS = (
     RESPONSE_FIELDS_PATH,
 )
 SDK_PATHS = {
-    SdkTarget.PYTHON: (
-        catalog.PYTHON_PATH,
-        commands.PYTHON_PATH,
-        routes.PYTHON_PATH,
-    ),
+    SdkTarget.PYTHON: (commands.PYTHON_PATH,),
     SdkTarget.RUST: (commands.RUST_PATH, routes.RUST_PATH),
     SdkTarget.TYPESCRIPT: (
         TYPESCRIPT_MODELS_PATH,
@@ -199,10 +195,7 @@ def generate_python_models() -> None:
             ],
             check=True,
         )
-    python_outputs = [
-        str(path)
-        for path in (catalog.PYTHON_PATH, commands.PYTHON_PATH, routes.PYTHON_PATH)
-    ]
+    python_outputs = [str(commands.PYTHON_PATH)]
     subprocess.run(["ruff", "check", "--fix", *python_outputs], check=True)
     subprocess.run(["ruff", "format", *python_outputs], check=True)
 

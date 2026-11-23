@@ -1,25 +1,21 @@
 import asyncio
 import json
 from collections.abc import Iterator
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
 
-from hebbian_rua.client.contract.station_api import (
-    LeaseGranted,
-    LeaseHolder,
-    LeaseStatus,
-    OnInterruption,
-)
-from hebbian_rua.client.llm.robot_tool_rules import (
-    convert_model_arguments_to_station_units,
-)
 from hebbian_rua.client.llm.robot_tools import RobotTools
-from hebbian_rua.client.llm.tool_catalog import RobotToolConfiguration
-from hebbian_rua.client.llm.tools import ROBOT_TOOLS
+from hebbian_rua.client.llm.tool_catalog import (
+    RobotToolConfiguration,
+    all_robot_tool_capabilities,
+    create_robot_tool_catalog,
+)
 from hebbian_rua.client.llm.types import RobotToolCall, RobotToolResult, RobotToolSpec
 from hebbian_rua.client.station_client import Lease, StationClient
 from tests.fixture_station import ARM
+from tests.fixture_station_http import scripted_http_station
 
 # CONSTRAINT: The JSON Schema keywords the tools use today, all accepted by the Anthropic,
 # OpenAI and Gemini APIs. A new keyword fails here, so someone checks it against
@@ -63,7 +59,11 @@ def schema_keywords(schema: object) -> set[str]:
     return keywords
 
 
-@pytest.mark.parametrize("tool", ROBOT_TOOLS, ids=lambda tool: tool.name)
+@pytest.mark.parametrize(
+    "tool",
+    create_robot_tool_catalog(all_robot_tool_capabilities()),
+    ids=lambda tool: tool.name,
+)
 def test_every_tool_schema_stays_within_what_all_providers_accept(
     tool: RobotToolSpec,
 ) -> None:
@@ -75,21 +75,17 @@ def test_every_tool_schema_stays_within_what_all_providers_accept(
 
 @pytest.fixture
 def robot() -> Iterator[RobotTools]:
-    client = StationClient("http://127.0.0.1:9")
-    lease = Lease(
-        client,
-        LeaseGranted(
-            lease_seconds=15,
-            lease_token="unused",
-            status=LeaseStatus(
-                expires_in_seconds=15,
-                holder=LeaseHolder.agent,
-                label="test",
-                on_interruption=OnInterruption.wait_for_approval,
-                required_cameras=[],
-            ),
-        ),
-    )
+    runner = asyncio.Runner()
+    stack = AsyncExitStack()
+
+    async def acquire() -> tuple[StationClient, Lease]:
+        station = await stack.enter_async_context(scripted_http_station())
+        station.grant_lease.set()
+        client = await stack.enter_async_context(StationClient(station.url))
+        lease = await stack.enter_async_context(client.holding_lease("model tools"))
+        return client, lease
+
+    client, lease = runner.run(acquire())
     yield RobotTools(
         client,
         lease,
@@ -106,7 +102,8 @@ def robot() -> Iterator[RobotTools]:
             )
         ),
     )
-    asyncio.run(client.close())
+    runner.run(stack.aclose())
+    runner.close()
 
 
 def test_mistakes_come_back_as_errors_the_model_can_fix(robot: RobotTools) -> None:
@@ -132,7 +129,7 @@ def test_mistakes_come_back_as_errors_the_model_can_fix(robot: RobotTools) -> No
         )
     )
     assert all(result.is_error for result in results)
-    assert "Unknown tool" in results[0].text
+    assert "fly" in results[0].text
     assert "orientation" in results[1].text
     assert "opening" in results[2].text
     ambiguous_units = asyncio.run(
@@ -217,53 +214,27 @@ def test_concise_views_match_the_shared_examples() -> None:
         ), fixture["name"]
 
 
-def test_calls_run_concurrently_and_results_keep_input_order(
-    robot: RobotTools, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from hebbian_rua.client.contract.station_api import (
-        CommandRefused,
-        RejectionReason,
-        StationSetGripperCommand,
-    )
-    from hebbian_rua.client.station_client import CommandResult
-
+def test_calls_run_concurrently_and_results_keep_input_order(robot: RobotTools) -> None:
     async def exercise() -> None:
-        started: list[float] = []
-        release_first = asyncio.Event()
-        all_started = asyncio.Event()
+        from collections.abc import Awaitable, Callable
 
-        async def run_command(
-            arm: str, command: object, **_options: object
-        ) -> CommandResult:
-            assert isinstance(command, StationSetGripperCommand)
-            opening = command.opening
-            started.append(opening)
-            if len(started) == 3:
-                all_started.set()
-            if opening == 0.1:
-                await release_first.wait()
-            reason = (
-                RejectionReason.stale_revision
-                if opening == 0.2
-                else RejectionReason.malformed
-            )
-            return CommandResult.of(CommandRefused(reason=reason, detail="refused"))
+        entered: list[str] = []
+        ready = asyncio.Event()
 
-        monkeypatch.setattr(robot.station, "_run", run_command)
-        calls = [
-            RobotToolCall(
-                str(opening), "set_arm_gripper", {"arm": ARM, "opening": opening}
-            )
-            for opening in (0.1, 0.2, 0.3)
-        ]
-        pending = asyncio.create_task(robot.execute(calls))
-        await all_started.wait()
-        assert started == [0.1, 0.2, 0.3]
-        release_first.set()
-        results = await pending
-        assert [result.call.call_id for result in results] == ["0.1", "0.2", "0.3"]
-        assert results[1].interrupted
-        assert results[2].is_error
+        async def wrap(
+            call: RobotToolCall, run: Callable[[], Awaitable[RobotToolResult]]
+        ) -> RobotToolResult:
+            entered.append(call.call_id)
+            if len(entered) == 3:
+                ready.set()
+            await ready.wait()
+            return await run()
+
+        calls = [RobotToolCall(str(index), "unknown", {}) for index in range(3)]
+        results = await asyncio.wait_for(robot.execute(calls, wrap), 2)
+        assert entered == ["0", "1", "2"]
+        assert [result.call.call_id for result in results] == entered
+        assert all(result.is_error for result in results)
 
     asyncio.run(exercise())
 
@@ -284,14 +255,16 @@ def test_output_mapping_preserves_original_error_and_leaves_source_view_unchange
         mapped = robot.with_output_formatter(custom_formatter).map_tools(reversed)
         result = await mapped.execute_one(call)
         assert result.text == "User-selected explanation"
-        assert result.data == "Unknown tool fly"
+        assert result.data == "Invalid input: Tool fly is not available"
         assert result.is_error
         assert not result.halt
         assert not result.interrupted
-        assert (await robot.execute_one(call)).text == "Unknown tool fly"
+        assert (
+            await robot.execute_one(call)
+        ).text == "Invalid input: Tool fly is not available"
         assert (
             await mapped.with_output_formatter(full_formatter).execute_one(call)
-        ).text == "Unknown tool fly"
+        ).text == "Invalid input: Tool fly is not available"
 
     asyncio.run(exercise())
 
@@ -304,8 +277,6 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
         default_robot_tool_mapping,
         filter_sequence_actions,
     )
-    from hebbian_rua.client.llm.tools import ActionSequenceInput
-    from hebbian_rua.client.llm.types import RobotToolResult
 
     specialized = (
         robot.map_tools(default_robot_tool_mapping)
@@ -339,29 +310,17 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
     movement_properties = movement["properties"]
     assert isinstance(movement_properties, dict)
     assert "position_mm" in movement_properties
-    assert isinstance(
-        specialized.parse(
-            RobotToolCall(
-                "hidden",
-                "action_sequence",
-                {"steps": [{"goal": {"joints_degrees": [0, 0, 0, 0, 0]}}]},
-            )
-        ),
-        RobotToolResult,
-    )
-    assert isinstance(
-        specialized.parse(
-            RobotToolCall("standalone", "set_arm_gripper", {"arm": ARM, "opening": 0.5})
-        ),
-        RobotToolResult,
-    )
-    implicit = specialized.parse(
+    for call in (
         RobotToolCall(
-            "implicit", "action_sequence", {"steps": [{"gripper_opening": 0.5}]}
-        )
-    )
-    assert isinstance(implicit, ActionSequenceInput)
-    assert implicit.steps[0].arms[ARM].gripper_opening == 0.5
+            "hidden",
+            "action_sequence",
+            {"steps": [{"goal": {"joints_degrees": [0, 0, 0, 0, 0]}}]},
+        ),
+        RobotToolCall("standalone", "set_arm_gripper", {"arm": ARM, "opening": 0.5}),
+    ):
+        result = asyncio.run(specialized.execute_one(call))
+        assert result.is_error
+        assert "not available" in result.text
     named = RobotTools(
         robot.station,
         robot.lease,
@@ -371,34 +330,17 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
             sequence_scope=NamedArmSequence(("left", "right")),
         ),
     )
-    parsed = named.parse(
-        RobotToolCall(
-            "named",
-            "action_sequence",
-            {
-                "steps": [
-                    {
-                        "arms": {
-                            "left": {"gripper_opening": 0.2},
-                            "right": {"gripper_opening": 0.8},
-                        }
-                    }
-                ]
-            },
-        )
-    )
-    assert isinstance(parsed, ActionSequenceInput)
-    assert set(parsed.steps[0].arms) == {"left", "right"}
-    assert isinstance(
-        named.parse(
+    result = asyncio.run(
+        named.execute_one(
             RobotToolCall(
                 "unknown-arm",
                 "action_sequence",
                 {"steps": [{"arms": {"other": {"gripper_opening": 0.5}}}]},
             )
-        ),
-        RobotToolResult,
+        )
     )
+    assert result.is_error
+    assert "Arm other is not available" in result.text
 
 
 @pytest.mark.parametrize(
@@ -423,17 +365,9 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
 def test_model_motion_inputs_reject_booleans(
     robot: RobotTools, name: str, arguments: object
 ) -> None:
-    result = robot.parse(RobotToolCall("boolean-input", name, arguments))
+    result = asyncio.run(
+        robot.execute_one(RobotToolCall("boolean-input", name, arguments))
+    )
     assert isinstance(result, RobotToolResult)
     assert result.is_error
     assert "Invalid input" in result.text
-
-
-def test_tool_input_units_match_the_station_contract() -> None:
-    fixture = json.loads(
-        (Path(__file__).parent / "fixtures/model-input-units.json").read_text()
-    )
-    assert (
-        convert_model_arguments_to_station_units(fixture["arguments"])
-        == fixture["station_command"]
-    )

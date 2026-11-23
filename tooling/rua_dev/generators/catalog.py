@@ -3,7 +3,6 @@ from pathlib import Path
 
 from rua_dev.models import SdkTarget
 
-PYTHON_PATH = Path("hebbian_rua/client/llm/generated_robot_tools.py")
 TYPESCRIPT_PATH = Path("typescript-client/src/generated/robot-tools.ts")
 
 
@@ -20,31 +19,6 @@ def generate(
     encoded_context = json.dumps(context, indent=2, ensure_ascii=False)
     encoded_units = json.dumps(input_units, indent=2, ensure_ascii=False)
     encoded_output_units = json.dumps(output_units, indent=2)
-    if SdkTarget.PYTHON in targets:
-        PYTHON_PATH.write_text(
-            '"""Generated from schemas/robot-tools.json; do not edit."""\n\n'
-            "import json\n\n"
-            "ROBOT_TOOL_CATALOG = json.loads(r'''\n" + encoded_catalog + "\n''')\n"
-        )
-        with PYTHON_PATH.open("a") as output:
-            output.write(
-                "\nROBOT_TOOL_CONTEXT = json.loads(r'''\n"
-                + encoded_context
-                + "\n''')\n"
-                + "\nROBOT_TOOL_INPUT_UNITS = json.loads(r'''\n"
-                + encoded_units
-                + "\n''')\n"
-                + "\nMODEL_OUTPUT_UNITS = json.loads(r'''\n"
-                + encoded_output_units
-                + "\n''')\n"
-                + "\nMODEL_OUTCOMES = json.loads(r'''\n"
-                + json.dumps(outcomes, indent=2)
-                + "\n''')\n"
-                + "\nMODEL_RESPONSE_FIELDS = json.loads(r'''\n"
-                + json.dumps(response_fields, indent=2)
-                + "\n''')\n"
-            )
-
     if SdkTarget.TYPESCRIPT in targets:
         TYPESCRIPT_PATH.write_text(
             "// Generated from schemas/robot-tools.json and robot-context.json; do not edit.\nexport const robotToolSpecifications = "

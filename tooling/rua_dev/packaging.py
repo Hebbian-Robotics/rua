@@ -64,6 +64,12 @@ def stage_server_assets(
         shutil.copy2(repository_directory / filename, asset_directory / filename)
     collect_rust_licenses(
         repository_directory,
+        "hebbian-rua-python",
+        asset_directory / "licenses/python-sdk",
+        target,
+    )
+    collect_rust_licenses(
+        repository_directory,
         "hebbian-robot-use-server",
         asset_directory / "licenses/rust",
         target,

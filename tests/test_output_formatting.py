@@ -17,7 +17,7 @@ from hebbian_rua.client.contract.station_api import (
     KnownCommandOutcome,
     RecordedMove,
 )
-from hebbian_rua.client.llm.robot_tools import records_result
+from hebbian_rua.client.llm.response_format import result_from_data
 from hebbian_rua.client.llm.types import RobotToolCall
 
 
@@ -39,7 +39,11 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
             achieved=Achieved(joints=[0.123456789], sampled_at=124.123456789),
         ),
     )
-    result = records_result(RobotToolCall("call-1", "set_arm_gripper", {}), [record])
+    result = result_from_data(
+        RobotToolCall("call-1", "set_arm_gripper", {}),
+        record.model_dump(mode="json"),
+        is_error=True,
+    )
     summary = json.loads(result.text)
     assert summary["completion"] == {
         "outcome": "stopped_short",

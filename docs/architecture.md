@@ -89,9 +89,7 @@ path. The [simulator contract](simulators.md) describes how to attach an engine.
 
 ## Client SDKs
 
-The [Python SDK](../hebbian_rua/client/README.md), [Rust SDK](../sdk/README.md)
-and [TypeScript SDK](../typescript-client/README.md) use generated routes from
-the shared Rust definitions and OpenAPI.
+The [Python SDK](../hebbian_rua/client/README.md) uses [PyO3 bindings](../python-bindings/src/lib.rs) to the [Rust client](../sdk/README.md). Both share station transport, leases, command execution and telemetry. The [TypeScript SDK](../typescript-client/README.md) uses the same contracts and implements its transport for browsers and Node.js.
 Provider adapters handle model-specific messages. See the
 [Python adapters](../hebbian_rua/client/llm/) and
 [TypeScript agent](../examples/typescript/agent/README.md). Rust applications

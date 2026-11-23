@@ -25,7 +25,7 @@ The SDK holds a bounded, temporary history in memory. Provider adapters attach
 labelled images to their tool replies. Application code can also use
 `sequence_images()` in Python and Rust or `sequenceImages()` in TypeScript.
 See capture and retention in
-[Python](../hebbian_rua/client/llm/sequence_images.py),
+[Python](../python-bindings/src/model_tools.rs),
 [TypeScript](../typescript-client/src/sequence-images.ts), and
 [Rust](../sdk/src/sequence_images.rs).
 

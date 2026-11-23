@@ -1,3 +1,4 @@
+from hebbian_rua.bindings._native import HttpError
 from hebbian_rua.client.llm.response_format import (
     concise_output,
     concise_response,
@@ -38,6 +39,7 @@ from hebbian_rua.client.station_types import ActionSequenceUnavailable
 __all__ = [
     "ActionSequenceTool",
     "ActionSequenceUnavailable",
+    "HttpError",
     "ModelContent",
     "NamedArmSequence",
     "OutputFormatter",
