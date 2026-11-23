@@ -17,6 +17,9 @@ INPUT_UNITS_PATH = Path("schemas/robot-tool-input-units.json")
 SIM_MODELS_PATH = Path("hebbian_rua/simulator/contract.py")
 PYTHON_MODELS_PATH = Path("hebbian_rua/client/contract/station_api.py")
 TYPESCRIPT_MODELS_PATH = Path("typescript-client/src/generated/api-schemas.ts")
+VIEWER_MEDIA_STATUS_PATH = Path(
+    "examples/typescript/viewer/shared/media-status-schema.ts"
+)
 SCHEMA_PATHS = (
     SIM_SCHEMA_PATH,
     OPENAPI_PATH,
@@ -33,6 +36,7 @@ SDK_PATHS = {
     SdkTarget.RUST: (commands.RUST_PATH, routes.RUST_PATH),
     SdkTarget.TYPESCRIPT: (
         TYPESCRIPT_MODELS_PATH,
+        VIEWER_MEDIA_STATUS_PATH,
         catalog.TYPESCRIPT_PATH,
         commands.TYPESCRIPT_PATH,
         routes.TYPESCRIPT_PATH,
@@ -196,6 +200,13 @@ def generate_typescript_models() -> None:
 
     generate_typescript_schema(
         OPENAPI_PATH, TYPESCRIPT_MODELS_PATH, "apiSchemas", "ApiSchemas"
+    )
+    generate_typescript_schema(
+        OPENAPI_PATH,
+        VIEWER_MEDIA_STATUS_PATH,
+        "mediaStatusSchema",
+        "MediaStatus",
+        component="MediaStatusReport",
     )
     subprocess.run(
         [

@@ -193,9 +193,6 @@ async fn supervise(
                         &[(Signal::SIGTERM, STOP_GRACE)],
                         |line| {
                             let _ = writeln!(std::io::stderr().lock(), "{line}");
-                            if let Some((camera, detail)) = parse_camera_problem(line) {
-                                status.record_camera_problem(camera, detail);
-                            }
                         },
                     )
                     .await;
@@ -240,19 +237,6 @@ fn restart_after_media_exit(
     (backoff, MediaState::Restarting { last_exit })
 }
 
-// CONSTRAINT: Capture failures use `Camera <name>: <message>`; reopening lines only announce
-// a retry and must not replace the original failure detail.
-fn parse_camera_problem(line: &str) -> Option<(&str, &str)> {
-    let (camera, detail) = line.strip_prefix("Camera ")?.split_once(": ")?;
-    let valid_name = (1..=40).contains(&camera.len())
-        && camera
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_');
-    let detail = detail.trim();
-    (valid_name && !detail.is_empty() && !detail.starts_with("reopening "))
-        .then_some((camera, detail))
-}
-
 #[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
@@ -292,60 +276,6 @@ mod tests {
             status.report().service,
             MediaState::Unavailable { .. }
         ));
-    }
-
-    #[test]
-    fn camera_problems_are_read_from_the_capture_failure_lines() {
-        assert_eq!(
-            parse_camera_problem(
-                "Camera wrist: camera backend: Could not open device 0x1: Device is null"
-            ),
-            Some((
-                "wrist",
-                "camera backend: Could not open device 0x1: Device is null"
-            ))
-        );
-        for ignored in [
-            "Camera wrist: reopening 0x1 in 3s",
-            "Camera Wrist: broken",
-            "Camera : broken",
-            "Camera wrist:",
-            "Camera initialization unavailable: no backend",
-            "Media serve exited (exit status: 1)",
-        ] {
-            assert_eq!(parse_camera_problem(ignored), None, "{ignored}");
-        }
-    }
-
-    #[tokio::test]
-    async fn a_camera_problem_is_reported_after_non_utf8_output() {
-        let directory = tempfile::tempdir().unwrap();
-        let program = directory.path().join("hebbian-robot-use-media");
-        std::fs::write(
-            &program,
-            "#!/bin/sh\nprintf '\\377\\n' >&2\nwhile true; do\n\
-             echo 'Camera wrist: camera backend: Could not open device 0x1: Device is null' >&2\n\
-             echo 'Camera wrist: reopening 0x1 in 3s' >&2\nsleep 0.05\ndone\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let status = MediaStatus::default();
-        let supervisor =
-            MediaSupervisor::spawn(&Handle::current(), program, Vec::new(), status.clone());
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let problem = loop {
-            if let Some(problem) = status.report().cameras.get("wrist") {
-                break problem.clone();
-            }
-            assert!(Instant::now() < deadline, "no problem was reported");
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        };
-        assert_eq!(
-            problem.detail,
-            "camera backend: Could not open device 0x1: Device is null"
-        );
-        assert!(problem.last_seen_unix_seconds > 0.0);
-        supervisor.shutdown().await;
     }
 
     #[tokio::test]

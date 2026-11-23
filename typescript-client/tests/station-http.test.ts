@@ -48,12 +48,10 @@ test("a camera without a frame checks the configured direct media service", asyn
       return Response.json([{ name: "wrist", available: false }]);
     if (url.pathname === "/viewer/api/media-status")
       return Response.json({
-        programs: {},
+        service: { state: "running" },
         cameras: {
-          wrist: {
-            detail: "camera backend: Device is null",
-            last_seen_unix_seconds: 1,
-          },
+          wrist: { state: "ambiguous" },
+          front: { state: "capturing", publication: { state: "publishing" } },
         },
       });
     return new Response("", { status: 404 });
@@ -68,11 +66,11 @@ test("a camera without a frame checks the configured direct media service", asyn
     name: "CameraUnavailableError",
     camera: "wrist",
     listed: [{ name: "wrist", available: false }],
-    lastError: "camera backend: Device is null",
+    lastError: expect.stringContaining("multiple matching devices"),
   });
   expect(String(failure)).toContain("wrist (unavailable)");
   expect(String(failure)).toContain(
-    "last error: camera backend: Device is null",
+    "last error: USB camera is ambiguous (multiple matching devices)",
   );
   expect(requested.map(({ url }) => url)).toEqual([
     "http://station:8781/cameras/wrist",

@@ -245,7 +245,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
     let scratch = scratch_directory("station");
     let media_status = hebbian_robot_use_server::media_status::MediaStatus::default();
-    media_status.record_camera_problem("wrist", "camera backend: Device is null");
     let settings = WebSettings {
         recordings_directory: scratch.join("recordings"),
         enable_recording: true,
@@ -328,10 +327,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     );
 
     let media = get_json(address, "/viewer/api/media-status");
-    assert_eq!(
-        media["cameras"]["wrist"]["detail"],
-        "camera backend: Device is null"
-    );
+    assert_eq!(media["cameras"], json!({}));
     assert_eq!(media["service"]["state"], "unavailable");
 
     // WHY: Tokens and phone invites are signed here, with no call to LiveKit.

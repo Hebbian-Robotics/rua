@@ -403,15 +403,18 @@ pub fn routes() -> Vec<Route> {
             Reply::Json(schema_of::<ControllerStatus>),
             false,
         ),
-        route(
-            "get_media_status",
-            "get",
-            "/viewer/api/media-status",
-            "Every media program's state by name, and each camera's latest problem.",
-            None,
-            Reply::Json(schema_of::<MediaStatusReport>),
-            false,
-        ),
+        Route {
+            direct_media: true,
+            ..route(
+                "get_media_status",
+                "get",
+                "/viewer/api/media-status",
+                "The media service and the current state of each configured camera.",
+                None,
+                Reply::Json(schema_of::<MediaStatusReport>),
+                false,
+            )
+        },
         route(
             "start_recording",
             "post",

@@ -143,8 +143,10 @@ async fn check_camera(
 }
 
 async fn camera_problem(client: &Client, station: &Url, name: CameraName<'_>) -> Option<String> {
+    use hebbian_contracts::MediaStatusReport;
+
     let url = endpoint(station, &["viewer", "api", "media-status"]).ok()?;
-    let status: serde_json::Value = client
+    let status: MediaStatusReport = client
         .get(url)
         .send()
         .await
@@ -154,9 +156,7 @@ async fn camera_problem(client: &Client, station: &Url, name: CameraName<'_>) ->
         .json()
         .await
         .ok()?;
-    status["cameras"][name.as_str()]["detail"]
-        .as_str()
-        .map(str::to_owned)
+    status.cameras.get(name.as_str())?.snapshot_problem()
 }
 
 #[derive(Deserialize)]

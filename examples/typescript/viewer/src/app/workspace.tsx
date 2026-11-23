@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import type { LiveRun, StationState } from "hebbian-rua";
 import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
 import { BotIcon, HandIcon } from "lucide-react";
@@ -23,6 +22,7 @@ import {
   CameraView,
 } from "../features/cameras/live-cameras.js";
 import { PhoneCameraSetup } from "../features/cameras/phone-camera-setup.js";
+import { useMediaStatus } from "../features/cameras/use-media-status.js";
 import { ArmControl } from "../features/control/arm-control.js";
 import { controlModeLockReason } from "../features/control/control-mode.js";
 import { ControllerRecovery } from "../features/control/controller-recovery.js";
@@ -56,29 +56,6 @@ type ControlMode = (typeof CONTROL_MODES)[number]["value"];
 const CONTROL_MODE_KEY = "hebbian-viewer-control-mode:v1";
 const EMPTY_SPANS: LiveRun["spans"] = [];
 const noSeek = (): void => {};
-
-function useMediaStatus(): string {
-  const query = useQuery({
-    queryKey: ["media-status"],
-    queryFn: async () =>
-      apiSchemas.shape.MediaStatusReport.parse(
-        await stationJson("api/media-status"),
-      ),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
-    retry: false,
-  });
-  if (query.isError || !query.data) return "";
-  const service = query.data.service;
-  switch (service.state) {
-    case "running":
-      return "";
-    case "restarting":
-      return `Media service restarting: ${service.last_exit}`;
-    case "unavailable":
-      return `Media service unavailable: ${service.reason}`;
-  }
-}
 
 function RecoveryControls({ state }: { state: StationState | null }) {
   const [messages, setMessages] = useState<Record<string, string>>({});
@@ -372,13 +349,8 @@ export function WorkspaceApp({
               <h2 id="workspace-cameras">Cameras</h2>
               <p className="workspace-camera-status" role="status">
                 {cameras.status}
+                {mediaStatus && <span className="block">{mediaStatus}</span>}
               </p>
-              {mediaStatus && (
-                <details className="workspace-camera-status">
-                  <summary>Camera service needs attention</summary>
-                  <p>{mediaStatus}</p>
-                </details>
-              )}
               <details className="camera-setup">
                 <summary>Add remote camera</summary>
                 <div className="grid gap-3">

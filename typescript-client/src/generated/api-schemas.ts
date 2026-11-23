@@ -2797,18 +2797,45 @@ export const apiSchemas = z.object({
   CameraListing: z
     .object({ available: z.boolean(), name: z.string() })
     .describe("A camera as the media service's `GET /cameras` lists it."),
-  CameraProblem: z
-    .object({
-      detail: z
-        .string()
-        .describe(
-          "The media service's message, such as `camera backend: Could not open device …`.",
-        ),
-      last_seen_unix_seconds: z.number(),
-    })
+  CameraPublication: z
+    .union([
+      z.object({ state: z.literal("disabled") }),
+      z.object({ state: z.literal("connecting") }),
+      z.object({ state: z.literal("publishing") }),
+      z.object({
+        detail: z.union([z.string(), z.null()]).optional(),
+        state: z.literal("reconnecting"),
+      }),
+    ])
     .describe(
-      "Why a camera is not producing frames: the latest error from the media service.",
+      "Room publication is independent of the local capture lifecycle.",
     ),
+  CameraStatus: z
+    .union([
+      z.object({ state: z.literal("resolving") }),
+      z.object({ state: z.literal("starting") }),
+      z.object({
+        publication: z
+          .union([
+            z.object({ state: z.literal("disabled") }),
+            z.object({ state: z.literal("connecting") }),
+            z.object({ state: z.literal("publishing") }),
+            z.object({
+              detail: z.union([z.string(), z.null()]).optional(),
+              state: z.literal("reconnecting"),
+            }),
+          ])
+          .describe(
+            "Room publication is independent of the local capture lifecycle.",
+          ),
+        state: z.literal("capturing"),
+      }),
+      z.object({ state: z.literal("disconnected") }),
+      z.object({ state: z.literal("ambiguous") }),
+      z.object({ state: z.literal("stalled") }),
+      z.object({ detail: z.string(), state: z.literal("failed") }),
+    ])
+    .describe("The current lifecycle of a configured camera."),
   Checkpoint: z
     .object({
       label: z.string(),
@@ -12090,17 +12117,31 @@ export const apiSchemas = z.object({
       cameras: z.record(
         z.string(),
         z
-          .object({
-            detail: z
-              .string()
-              .describe(
-                "The media service's message, such as `camera backend: Could not open device …`.",
-              ),
-            last_seen_unix_seconds: z.number(),
-          })
-          .describe(
-            "Why a camera is not producing frames: the latest error from the media service.",
-          ),
+          .union([
+            z.object({ state: z.literal("resolving") }),
+            z.object({ state: z.literal("starting") }),
+            z.object({
+              publication: z
+                .union([
+                  z.object({ state: z.literal("disabled") }),
+                  z.object({ state: z.literal("connecting") }),
+                  z.object({ state: z.literal("publishing") }),
+                  z.object({
+                    detail: z.union([z.string(), z.null()]).optional(),
+                    state: z.literal("reconnecting"),
+                  }),
+                ])
+                .describe(
+                  "Room publication is independent of the local capture lifecycle.",
+                ),
+              state: z.literal("capturing"),
+            }),
+            z.object({ state: z.literal("disconnected") }),
+            z.object({ state: z.literal("ambiguous") }),
+            z.object({ state: z.literal("stalled") }),
+            z.object({ detail: z.string(), state: z.literal("failed") }),
+          ])
+          .describe("The current lifecycle of a configured camera."),
       ),
       service: z.union([
         z.object({ state: z.literal("running") }),
@@ -12115,7 +12156,7 @@ export const apiSchemas = z.object({
       ]),
     })
     .describe(
-      "`GET /viewer/api/media-status`: the media service's state and each camera's latest problem.\nA problem stays until a newer one replaces it, so read it only for a camera that is\nunavailable.",
+      "`GET /viewer/api/media-status`: the media service and its configured cameras.",
     ),
   MoveArmsCommand: z
     .object({

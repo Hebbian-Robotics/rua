@@ -1,3 +1,5 @@
+mod camera_lifecycle;
+mod camera_worker;
 mod config;
 mod snapshots;
 mod usb_camera;
@@ -23,52 +25,12 @@ enum MediaCommand {
     Serve(config::ServeArguments),
 }
 
-use config::{CameraInput, ServeArguments};
+use config::ServeArguments;
 use error::PublisherError;
-use livekit_camera_publisher::{capture, publisher};
+use livekit_camera_publisher::capture;
 use station_access::Credentials;
-use std::{io, sync::Arc, time::Duration};
+use std::{io, sync::Arc};
 use tokio_util::sync::CancellationToken;
-
-async fn publish_camera_until_stopped(
-    camera: CameraInput,
-    room: String,
-    credentials: Arc<Credentials>,
-    stopped: CancellationToken,
-) {
-    const RETRY_DELAY: Duration = Duration::from_secs(3);
-    while !stopped.is_cancelled() {
-        let result = async {
-            let access = credentials.camera_access(
-                &room,
-                camera.name(),
-                station_access::CameraLifetime::Station,
-            )?;
-            let publishing_camera = camera.resolve().await?;
-            publisher::publish_camera(
-                publishing_camera,
-                &access.server_url,
-                &access.token,
-                stopped.clone(),
-            )
-            .await?;
-            Ok::<(), PublisherError>(())
-        }
-        .await;
-        if stopped.is_cancelled() {
-            break;
-        }
-        // PROTOCOL: The station reads per-camera status from unprefixed lines.
-        match result {
-            Ok(()) => eprintln!("Camera {}: publisher stopped", camera.name()),
-            Err(error) => eprintln!("Camera {}: {error}", camera.name()),
-        }
-        tokio::select! {
-            () = stopped.cancelled() => break,
-            () = tokio::time::sleep(RETRY_DELAY) => {},
-        }
-    }
-}
 
 async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
     // WHY: Capture subprocesses handle native permissions so HTTP can start while
@@ -79,41 +41,39 @@ async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
     let listener = tokio::net::TcpListener::bind(arguments.address).await?;
     let stopped = CancellationToken::new();
     let mut publishing_tasks = tokio::task::JoinSet::new();
-    let (local_cameras, expected_cameras) = if let Some(room) = &arguments.room {
-        let expected_cameras = cameras
+    let room = match &arguments.room {
+        Some(room) if !cameras.is_empty() => Some(Arc::new(camera_worker::RoomPublication {
+            room: room.clone(),
+            credentials: Credentials::from_environment()?,
+        })),
+        _ => None,
+    };
+    if room.is_some() {
+        let telemetry_stopped = stopped.clone();
+        publishing_tasks.spawn(async move {
+            if let Err(error) =
+                livekit_cameras::follow_station(&arguments.station_url, telemetry_stopped).await
+            {
+                tracing::warn!(%error, "Station telemetry stopped");
+            }
+        });
+    }
+    let snapshots = snapshots::Snapshots::start(
+        cameras
             .iter()
             .map(|camera| camera.name().to_owned())
-            .collect();
-        if !cameras.is_empty() {
-            let credentials = Arc::new(Credentials::from_environment()?);
-            for camera in cameras {
-                publishing_tasks.spawn(publish_camera_until_stopped(
-                    camera,
-                    room.clone(),
-                    credentials.clone(),
-                    stopped.clone(),
-                ));
-            }
-            let telemetry_stopped = stopped.clone();
-            publishing_tasks.spawn(async move {
-                if let Err(error) =
-                    livekit_cameras::follow_station(&arguments.station_url, telemetry_stopped).await
-                {
-                    tracing::warn!(%error, "Station telemetry stopped");
-                }
-            });
-        }
-        // WHY: Snapshots use the room's frames while publishers own the native devices.
-        (Vec::new(), expected_cameras)
-    } else {
-        (cameras, Vec::new())
-    };
-    let snapshots = snapshots::Snapshots::start(
-        local_cameras,
-        expected_cameras,
+            .collect(),
         arguments.camera_socket,
         arguments.room,
     );
+    for camera in cameras {
+        publishing_tasks.spawn(camera_worker::supervise(
+            camera,
+            room.clone(),
+            snapshots.clone(),
+            stopped.clone(),
+        ));
+    }
     let shutdown = stopped.clone();
     let result = axum::serve(listener, snapshots.router())
         .with_graceful_shutdown(async move {
