@@ -557,7 +557,7 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&shutdown);
     let loop_thread = std::thread::spawn(move || {
-        let reports = run_arms(&mut setups, Some(Duration::from_secs(3)), &stop);
+        let reports = run_arms(&mut setups, None, &stop);
         for setup in setups {
             assert_eq!(setup.config.trace_directory, test_config().trace_directory);
             setup.link.close();
