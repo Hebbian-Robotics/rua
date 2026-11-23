@@ -58,6 +58,12 @@ enum InwardRecovery {
     FromBelow,
 }
 
+enum JointTarget {
+    Unconstrained(f64),
+    Clamped(f64),
+    Recovering(f64),
+}
+
 pub(crate) struct ReferenceFilter {
     joint_count: usize,
     lower_limits: Vec<f64>,
@@ -184,7 +190,7 @@ impl ReferenceFilter {
             .collect()
     }
 
-    fn recovery_target(&mut self, joint: usize, wanted: f64) -> f64 {
+    fn recovery_target(&mut self, joint: usize, wanted: f64) -> JointTarget {
         // WHY: When an inward path starts outside a calibrated limit, aim the
         // filter at the limit until it has recovered. Chasing successive
         // outside waypoints can reverse velocity and move outward again.
@@ -208,16 +214,22 @@ impl ReferenceFilter {
             self.recovering_inward[joint] = InwardRecovery::Inactive;
         }
         match self.recovering_inward[joint] {
-            InwardRecovery::FromAbove => {
+            InwardRecovery::FromAbove => JointTarget::Recovering(
                 self.upper_limits[joint]
-                    - 0.002_f64.min((self.upper_limits[joint] - self.lower_limits[joint]) * 0.1)
-            }
-            InwardRecovery::FromBelow => {
+                    - 0.002_f64.min((self.upper_limits[joint] - self.lower_limits[joint]) * 0.1),
+            ),
+            InwardRecovery::FromBelow => JointTarget::Recovering(
                 self.lower_limits[joint]
-                    + 0.002_f64.min((self.upper_limits[joint] - self.lower_limits[joint]) * 0.1)
-            }
+                    + 0.002_f64.min((self.upper_limits[joint] - self.lower_limits[joint]) * 0.1),
+            ),
             InwardRecovery::Inactive => {
-                wanted.clamp(self.recovery_lower[joint], self.recovery_upper[joint])
+                let lower = self.recovery_lower[joint];
+                let upper = self.recovery_upper[joint];
+                if (lower..=upper).contains(&wanted) {
+                    JointTarget::Unconstrained(wanted)
+                } else {
+                    JointTarget::Clamped(wanted.clamp(lower, upper))
+                }
             }
         }
     }
@@ -241,32 +253,28 @@ impl ReferenceFilter {
             .speed_limit
             .map_or(self.velocity_limit, |limit| self.velocity_limit.min(limit));
         for joint in 0..n {
-            let wanted = reference.positions[joint];
-            let target = self.recovery_target(joint, wanted);
-            // WHY: `clamp` returns `wanted` itself when it is in range, so exact
-            // equality is the right test for "was moved to a limit".
-            #[allow(clippy::float_cmp)]
-            let at_limit =
-                target != wanted || self.recovering_inward[joint] != InwardRecovery::Inactive;
+            let (position, velocity, acceleration) =
+                match self.recovery_target(joint, reference.positions[joint]) {
+                    JointTarget::Unconstrained(position) => (
+                        position,
+                        reference.velocities[joint]
+                            .clamp(-INSIDE_CAP * velocity_limit, INSIDE_CAP * velocity_limit),
+                        reference.accelerations[joint].clamp(
+                            -INSIDE_CAP * self.acceleration_limit,
+                            INSIDE_CAP * self.acceleration_limit,
+                        ),
+                    ),
+                    JointTarget::Clamped(position) | JointTarget::Recovering(position) => {
+                        (position, 0.0, 0.0)
+                    }
+                };
             self.input.max_velocity[joint] = velocity_limit;
             self.input.current_position[joint] = self.positions[joint];
             self.input.current_velocity[joint] = self.velocities[joint];
             self.input.current_acceleration[joint] = self.accelerations[joint];
-            self.input.target_position[joint] = target;
-            self.input.target_velocity[joint] = if at_limit {
-                0.0
-            } else {
-                reference.velocities[joint]
-                    .clamp(-INSIDE_CAP * velocity_limit, INSIDE_CAP * velocity_limit)
-            };
-            self.input.target_acceleration[joint] = if at_limit {
-                0.0
-            } else {
-                reference.accelerations[joint].clamp(
-                    -INSIDE_CAP * self.acceleration_limit,
-                    INSIDE_CAP * self.acceleration_limit,
-                )
-            };
+            self.input.target_position[joint] = position;
+            self.input.target_velocity[joint] = velocity;
+            self.input.target_acceleration[joint] = acceleration;
         }
         // INVARIANT: Current state comes from the guarded values above, so a clamp,
         // reset or followed motion also invalidates Ruckig's cached prediction.
