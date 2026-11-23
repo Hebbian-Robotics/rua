@@ -110,9 +110,6 @@ select = [
 ]
 ignore = [
     "E501",
-    "B008",
-    "RET504",
-    "ANN401",
 ]
 
 [tool.ruff.lint.mccabe]
