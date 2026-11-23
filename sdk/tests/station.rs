@@ -505,7 +505,7 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
     assert_eq!(
         imported.compiled.steps[0][ARM].action,
         hebbian_rua::contracts::CompiledArmAction::Gripper {
-            opening: 0.8,
+            opening: 0.8.try_into().unwrap(),
             max_joint_speed: None,
         }
     );
@@ -1305,7 +1305,7 @@ async fn a_gripper_command_reports_whether_the_jaw_arrived_or_stopped_short() ->
     let lease = within(client.acquire_lease(agent("jaw"))).await??;
     within(client.enable(ARM)).await??;
 
-    let opened = within(lease.set_gripper(ARM, 0.5, None)).await??;
+    let opened = within(lease.set_gripper(ARM, 0.5.try_into()?, None)).await??;
     if !matches!(
         opened.phase,
         hebbian_contracts::CommandPhase::Finished {
@@ -1318,7 +1318,7 @@ async fn a_gripper_command_reports_whether_the_jaw_arrived_or_stopped_short() ->
     ) {
         return Err(format!("opening should arrive: {:?}", opened.phase).into());
     }
-    let closed = within(lease.set_gripper(ARM, 0.0, None)).await??;
+    let closed = within(lease.set_gripper(ARM, 0.0.try_into()?, None)).await??;
     let hebbian_contracts::CommandPhase::Finished { completion, .. } = closed.phase else {
         return Err("the close did not finish".into());
     };

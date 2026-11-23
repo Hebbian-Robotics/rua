@@ -1668,7 +1668,9 @@
             "additionalProperties": false,
             "properties": {
               "gripper_opening": {
-                "format": "double",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": [
                   "number",
                   "null"
@@ -1710,7 +1712,9 @@
                 ]
               },
               "opening": {
-                "format": "double",
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": "number"
               }
             },
@@ -5444,9 +5448,9 @@
               "gripper_opening": {
                 "default": null,
                 "description": "The initial gripper target, 0 closed to 1 open, if the stream drives it.",
-                "format": "double",
                 "maximum": 1.0,
                 "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": [
                   "number",
                   "null"
@@ -5497,9 +5501,9 @@
                 ]
               },
               "opening": {
-                "format": "double",
                 "maximum": 1.0,
                 "minimum": 0.0,
+                "title": "GripperOpening",
                 "type": "number"
               }
             },
@@ -5607,9 +5611,9 @@
           },
           "gripper_opening": {
             "default": null,
-            "format": "double",
             "maximum": 1.0,
             "minimum": 0.0,
+            "title": "GripperOpening",
             "type": [
               "number",
               "null"

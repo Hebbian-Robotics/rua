@@ -1006,7 +1006,7 @@ impl LeaseGuard {
         operation_id: uuid::Uuid,
         sequence: u32,
         joints: Vec<f64>,
-        gripper_opening: Option<f64>,
+        gripper_opening: Option<hebbian_contracts::GripperOpening>,
         expected_revision: Option<u64>,
     ) -> Result<Vec<ArmRecord>> {
         let answer = self

@@ -4985,7 +4985,7 @@ export const apiSchemas = z.object({
                   z
                     .object({
                       gripper_opening: z
-                        .union([z.number(), z.null()])
+                        .union([z.number().gte(0).lte(1), z.null()])
                         .optional(),
                       kind: z.literal("move"),
                       max_joint_speed: z
@@ -5057,7 +5057,7 @@ export const apiSchemas = z.object({
                       max_joint_speed: z
                         .union([z.number(), z.null()])
                         .optional(),
-                      opening: z.number(),
+                      opening: z.number().gte(0).lte(1),
                     })
                     .strict(),
                 ]),
@@ -5249,7 +5249,7 @@ export const apiSchemas = z.object({
                         z
                           .object({
                             gripper_opening: z
-                              .union([z.number(), z.null()])
+                              .union([z.number().gte(0).lte(1), z.null()])
                               .optional(),
                             kind: z.literal("move"),
                             max_joint_speed: z
@@ -5321,7 +5321,7 @@ export const apiSchemas = z.object({
                             max_joint_speed: z
                               .union([z.number(), z.null()])
                               .optional(),
-                            opening: z.number(),
+                            opening: z.number().gte(0).lte(1),
                           })
                           .strict(),
                       ]),
@@ -5533,7 +5533,9 @@ export const apiSchemas = z.object({
   CompiledArmAction: z.union([
     z
       .object({
-        gripper_opening: z.union([z.number(), z.null()]).optional(),
+        gripper_opening: z
+          .union([z.number().gte(0).lte(1), z.null()])
+          .optional(),
         kind: z.literal("move"),
         max_joint_speed: z.union([z.number(), z.null()]).optional(),
         movement: z.union([
@@ -5584,7 +5586,7 @@ export const apiSchemas = z.object({
       .object({
         kind: z.literal("gripper"),
         max_joint_speed: z.union([z.number(), z.null()]).optional(),
-        opening: z.number(),
+        opening: z.number().gte(0).lte(1),
       })
       .strict(),
   ]),
@@ -5635,7 +5637,9 @@ export const apiSchemas = z.object({
       action: z.union([
         z
           .object({
-            gripper_opening: z.union([z.number(), z.null()]).optional(),
+            gripper_opening: z
+              .union([z.number().gte(0).lte(1), z.null()])
+              .optional(),
             kind: z.literal("move"),
             max_joint_speed: z.union([z.number(), z.null()]).optional(),
             movement: z.union([
@@ -5689,7 +5693,7 @@ export const apiSchemas = z.object({
           .object({
             kind: z.literal("gripper"),
             max_joint_speed: z.union([z.number(), z.null()]).optional(),
-            opening: z.number(),
+            opening: z.number().gte(0).lte(1),
           })
           .strict(),
       ]),
@@ -5709,7 +5713,9 @@ export const apiSchemas = z.object({
             action: z.union([
               z
                 .object({
-                  gripper_opening: z.union([z.number(), z.null()]).optional(),
+                  gripper_opening: z
+                    .union([z.number().gte(0).lte(1), z.null()])
+                    .optional(),
                   kind: z.literal("move"),
                   max_joint_speed: z.union([z.number(), z.null()]).optional(),
                   movement: z.union([
@@ -5765,7 +5771,7 @@ export const apiSchemas = z.object({
                 .object({
                   kind: z.literal("gripper"),
                   max_joint_speed: z.union([z.number(), z.null()]).optional(),
-                  opening: z.number(),
+                  opening: z.number().gte(0).lte(1),
                 })
                 .strict(),
             ]),

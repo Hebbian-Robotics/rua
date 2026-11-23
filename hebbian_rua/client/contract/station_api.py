@@ -258,7 +258,7 @@ class CompiledArmAction2(BaseModel):
     )
     kind: Literal["gripper"] = "gripper"
     max_joint_speed: StrictFloat | None = None
-    opening: StrictFloat
+    opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0, title="GripperOpening")]
 
 
 class CompiledMovement1(BaseModel):
@@ -1361,6 +1361,7 @@ class StationStreamJointsCommand(BaseModel):
             description="The initial gripper target, 0 closed to 1 open, if the stream drives it.",
             ge=0.0,
             le=1.0,
+            title="GripperOpening",
         ),
     ] = None
     joints: list[StrictFloat]
@@ -1380,7 +1381,7 @@ class StationSetGripperCommand(BaseModel):
             description="Peak gripper speed in rad/s; uses the arm default and maximum."
         ),
     ] = None
-    opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
+    opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0, title="GripperOpening")]
 
 
 class StationInstance(BaseModel):
@@ -1397,7 +1398,9 @@ class StreamGoalUpdateRequest(BaseModel):
         frozen=True,
     )
     expected_revision: Annotated[int | None, Field(ge=0)] = None
-    gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
+    gripper_opening: Annotated[
+        StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
+    ] = None
     joints: list[StrictFloat]
     lease_token: str
     sequence: Annotated[
@@ -2465,7 +2468,9 @@ class CompiledArmAction1(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    gripper_opening: StrictFloat | None = None
+    gripper_opening: Annotated[
+        StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
+    ] = None
     kind: Literal["move"] = "move"
     max_joint_speed: StrictFloat | None = None
     movement: CompiledMovement1 | CompiledMovement2

@@ -486,6 +486,7 @@ export const robotToolSpecifications = [
         opening: {
           maximum: 1.0,
           minimum: 0.0,
+          title: "GripperOpening",
           type: "number",
         },
       },

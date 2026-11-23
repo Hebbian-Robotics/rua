@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::{ActionSequenceRequest, PoseOrientation};
+use crate::{ActionSequenceRequest, GripperOpening, PoseOrientation};
 
 pub type CompiledStep = BTreeMap<String, CompiledOperation>;
 
@@ -32,11 +32,11 @@ pub enum CompiledMovement {
 pub enum CompiledArmAction {
     Move {
         movement: CompiledMovement,
-        gripper_opening: Option<f64>,
+        gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<f64>,
     },
     Gripper {
-        opening: f64,
+        opening: GripperOpening,
         max_joint_speed: Option<f64>,
     },
 }

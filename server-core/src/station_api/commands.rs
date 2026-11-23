@@ -49,15 +49,13 @@ fn hold_pose(sample: Sample) -> Result<Vec<f64>, Refusal> {
     }
 }
 
-fn jaw_angle(link: &LinkHandle, arm: &str, opening: f64) -> Result<f64, Refusal> {
-    if !(0.0..=1.0).contains(&opening) {
-        return Err(refused(
-            RejectionReason::InvalidTarget,
-            "A gripper opening must be a finite number from 0 (closed) to 1 (open)",
-        ));
-    }
+fn jaw_angle(
+    link: &LinkHandle,
+    arm: &str,
+    opening: hebbian_contracts::GripperOpening,
+) -> Result<f64, Refusal> {
     link.gripper()
-        .map(|gripper| gripper.angle(opening))
+        .map(|gripper| gripper.angle(f64::from(opening)))
         .ok_or_else(|| {
             refused(
                 RejectionReason::InvalidTarget,
@@ -212,7 +210,7 @@ pub(super) fn joint_stream(
     link: &LinkHandle,
     arm: &str,
     positions: Vec<f64>,
-    gripper_opening: Option<f64>,
+    gripper_opening: Option<hebbian_contracts::GripperOpening>,
     admission: StreamAdmission,
 ) -> Result<Command, Refusal> {
     if link.has_policy() {
