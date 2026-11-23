@@ -819,10 +819,6 @@ fn check_continuation(
     Ok(())
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "with_lease invokes the callback at most once while holding admission authorization."
-)]
 fn start_execution(
     owner: super::admission::AdmissionOwner,
     executions: &mut ExecutionRegistry,
@@ -864,24 +860,16 @@ fn start_execution(
     };
     let (active, cancellation) = ActiveExecution::new(record, token.clone());
     let progress = active.progress.clone();
-    let mut active = Some(active);
-    let mut installed = None;
-    let mut generation = Vec::new();
-    let authorized = links[&arms[0]].with_lease(&token, &mut || {
-        installed = Some(executions.install(active.take().expect("called once")));
-        if installed.as_ref().is_some_and(Result::is_ok) {
-            generation = arms
-                .iter()
-                .map(|arm| links[arm].fence_prior_submissions())
-                .collect();
-        }
-    });
-    if !authorized {
-        return Err("The lease was returned, taken or revoked".into());
-    }
-    if let Some(Err(detail)) = installed {
-        return Err(detail.into());
-    }
+    let generation = links[&arms[0]]
+        .with_lease(&token, || {
+            executions.install(active)?;
+            Ok::<_, &'static str>(
+                arms.iter()
+                    .map(|arm| links[arm].fence_prior_submissions())
+                    .collect(),
+            )
+        })
+        .ok_or("The lease was returned, taken or revoked")??;
     let admission = Arc::new(ExecutionAdmission {
         owner,
         links: links.clone(),

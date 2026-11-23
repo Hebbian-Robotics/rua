@@ -11,6 +11,7 @@ class mjtIntegrator(Enum):
 
 class mjtGeom(Enum):
     mjGEOM_BOX = 6
+    mjGEOM_MESH = 7
 
 class MjsCompiler:
     fusestatic: bool
@@ -39,7 +40,18 @@ class _ActuatorView:
 class _SiteView:
     id: int
 
+class _BodyView:
+    name: str
+
 class MjModel:
+    ngeom: int
+    geom_type: np.ndarray
+    geom_bodyid: np.ndarray
+    geom_dataid: np.ndarray
+    mesh_vertadr: np.ndarray
+    mesh_vert: np.ndarray
+    mesh_vertnum: np.ndarray
+    def body(self, index: int) -> _BodyView: ...
     @classmethod
     def from_xml_path(cls, path: str) -> MjModel: ...
     def site(self, name: str) -> _SiteView: ...
@@ -54,6 +66,8 @@ class MjModel:
     def actuator(self, name: str) -> _ActuatorView: ...
 
 class MjData:
+    geom_xmat: np.ndarray
+    geom_xpos: np.ndarray
     site_xpos: np.ndarray
     site_xmat: np.ndarray
     qpos: np.ndarray

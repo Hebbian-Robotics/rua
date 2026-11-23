@@ -380,7 +380,7 @@ pub fn router(manager: RecordingManager, arms: crate::lease_routes::ServedArms) 
                 let stopped = manager.stop_recording_if(|stop| {
                     arms.get()
                         .and_then(|arms| arms.values().next())
-                        .is_some_and(|link| link.with_lease(&request.lease_token, stop))
+                        .is_some_and(|link| link.with_lease(&request.lease_token, stop).is_some())
                 });
                 if stopped {
                     Ok(Json(()))

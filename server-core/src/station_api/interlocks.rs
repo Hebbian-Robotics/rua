@@ -70,7 +70,7 @@ fn apply_sample(link: &LinkHandle, sample: hebbian_contracts::Sample) {
 mod tests {
     use std::sync::Arc;
 
-    use hebbian_contracts::{ArmRecoveryIssue, Event, Sample};
+    use hebbian_contracts::{ArmRecoveryIssue, Sample};
 
     use super::*;
     use crate::config::ControllerConfig;
@@ -94,7 +94,7 @@ mod tests {
             motors_without_torque: vec![2],
             detail: "Motor lost torque".into(),
         });
-        link.publish(Event::State(sample.clone()));
+        link.publish_sample(sample.clone());
         update(&handle, &admission).await.unwrap();
         assert_eq!(
             handle.interlocks().0,
@@ -105,7 +105,7 @@ mod tests {
 
         sample.recovery_issue = None;
         sample.cycle = 1;
-        link.publish(Event::State(sample));
+        link.publish_sample(sample);
         update(&handle, &admission).await.unwrap();
         assert_eq!(handle.interlocks().0, vec![Interlock::ArmDisconnected]);
         link.close();

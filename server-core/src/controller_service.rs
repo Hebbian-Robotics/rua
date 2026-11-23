@@ -136,15 +136,18 @@ fn publish_controller_event(
             "Controller reported an unknown arm",
         )
     })?;
-    if matches!(event, Event::State(_)) {
+    if let Event::State(sample) = event {
         feedback_times.insert(arm, Some(Instant::now()));
-    } else if !event.is_logged() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Controller sent an invalid event",
-        ));
+        link.publish_sample(sample);
+    } else {
+        let logged = hebbian_contracts::LoggedEvent::from_event(event).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Controller sent an invalid event",
+            )
+        })?;
+        link.publish_log(logged);
     }
-    link.publish(event);
     Ok(())
 }
 
@@ -520,7 +523,7 @@ mod tests {
             while !stopped.load(Ordering::Acquire) {
                 let mut sample = hebbian_contracts::Sample::blank();
                 sample.positions = vec![0.0, 0.0];
-                link.publish(Event::State(sample));
+                link.publish_sample(sample);
                 thread::sleep(Duration::from_millis(10));
             }
         })
@@ -658,12 +661,12 @@ mod tests {
                 &AtomicBool::new(false),
             )
         });
-        assert!(!station_lease.with_captured_lease(None, &mut || {}));
+        assert!(station_lease.with_captured_lease(None, || {}).is_none());
         let publishing = Arc::new(AtomicBool::new(false));
         let publisher =
             publish_disabled_feedback(Arc::clone(&controller_link), Arc::clone(&publishing));
         readiness.recv_timeout(Duration::from_secs(3)).unwrap();
-        assert!(station_lease.with_captured_lease(None, &mut || {}));
+        assert!(station_lease.with_captured_lease(None, || {}).is_some());
         let deadline = Instant::now() + Duration::from_secs(3);
         let pending = loop {
             if let Ok(pending) =
@@ -706,7 +709,7 @@ mod tests {
             recorded.outcome(),
             Some(hebbian_contracts::CommandOutcome::Interrupted)
         );
-        assert!(!station_lease.with_captured_lease(None, &mut || {}));
+        assert!(station_lease.with_captured_lease(None, || {}).is_none());
         assert!(
             station_link
                 .controller_loop_arm()

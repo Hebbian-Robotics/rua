@@ -108,7 +108,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
         "../../server-core/tests/support/two_joint_config.json"
     ))?;
     let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
-    link.publish(hebbian_contracts::Event::ControllerAvailable);
+    link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
     let server = start_station("127.0.0.1:0".into()).await?;
     server.attach_arms(BTreeMap::from([("left".into(), link.handle())]));
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-media"))
@@ -139,7 +139,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
     );
     // WHY: Distinguish the new recovery event from the initial available event.
     let recovered_after = hebbian_contracts::unix_nanoseconds();
-    link.publish(hebbian_contracts::Event::ControllerAvailable);
+    link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
     wait_for_recorded_message(
         &mut child,
         &recording,
