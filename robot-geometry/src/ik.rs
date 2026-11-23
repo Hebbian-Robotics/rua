@@ -116,10 +116,6 @@ impl IkSolver {
         &self.chain
     }
 
-    #[expect(
-        clippy::expect_used,
-        reason = "Every orientation goal tries at least the seed and middle; an unsolved attempt retains its best pose."
-    )]
     pub fn solve(
         &self,
         position: [f64; 3],
@@ -130,61 +126,65 @@ impl IkSolver {
         if !position.iter().all(|value| value.is_finite()) {
             return Err(IkRefusal::NotFinite);
         }
-        let held = self.chain.tool_pose(seed.as_slice()).rotation;
         let position = Vector3::from(position);
+        let (rotation, orientation_weight, orientation_required) = match orientation {
+            OrientationGoal::Required { quaternion } => (required_rotation(quaternion)?, 1.0, true),
+            OrientationGoal::Free => (
+                self.chain.tool_pose(seed.as_slice()).rotation,
+                FREE_ORIENTATION_WEIGHT,
+                false,
+            ),
+        };
+        let primary_goal = Goal {
+            position,
+            rotation,
+            orientation_weight,
+            orientation_required,
+            position_tolerance: POSITION_TOLERANCE_METERS,
+            orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
+        };
         // WHY: With the orientation free, the held orientation is a preference that can
         // trap the search in a pose that is far from the target; if every start
         // falls short with it, the same starts run once more with no preference.
-        let goals = match orientation {
-            OrientationGoal::Required { quaternion } => vec![Goal {
-                position,
-                rotation: required_rotation(quaternion)?,
-                orientation_weight: 1.0,
-                orientation_required: true,
-                position_tolerance: POSITION_TOLERANCE_METERS,
-                orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
-            }],
-            OrientationGoal::Free => [FREE_ORIENTATION_WEIGHT, 0.0]
-                .into_iter()
-                .map(|orientation_weight| Goal {
-                    position,
-                    rotation: held,
-                    orientation_weight,
-                    orientation_required: false,
-                    position_tolerance: POSITION_TOLERANCE_METERS,
-                    orientation_tolerance: ORIENTATION_TOLERANCE_RADIANS,
-                })
-                .collect(),
-        };
+        let fallback_goal = (!orientation_required).then_some(Goal {
+            orientation_weight: 0.0,
+            ..primary_goal
+        });
         // CONSTRAINT: Beyond the arm's reach no start can succeed: the seed's and the middle's
         // searches stretch the arm toward the target, which is the closest pose.
         let out_of_reach = self
             .chain
             .out_of_reach(&position, POSITION_TOLERANCE_METERS);
-        let start_count = if out_of_reach { 2 } else { usize::MAX };
-        let mut best: Option<(IkFailure, Visit)> = None;
-        for goal in &goals {
-            for start in self.starts(&seed).take(start_count) {
-                let (reason, visit) = match self.attempt(goal, start, &seed) {
-                    Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
-                    Attempt::Fell { reason, best } => (reason, best),
-                };
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, held)| closer(&goals[0], &visit, held))
-                {
-                    best = Some((reason, visit));
-                }
+        let (mut best_reason, mut best_visit) =
+            match self.attempt(&primary_goal, seed.clone(), &seed) {
+                Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
+                Attempt::Fell { reason, best } => (reason, best),
+            };
+        let alternate_count = if out_of_reach { 1 } else { RESTARTS + 1 };
+        let alternate_starts = || self.alternate_starts().take(alternate_count);
+        let primary_attempts = alternate_starts().map(|start| (&primary_goal, start));
+        let fallback_attempts = fallback_goal.iter().flat_map(|goal| {
+            std::iter::once(seed.clone())
+                .chain(alternate_starts())
+                .map(move |start| (goal, start))
+        });
+        for (goal, start) in primary_attempts.chain(fallback_attempts) {
+            let (reason, visit) = match self.attempt(goal, start, &seed) {
+                Attempt::Reached(visit) => return Ok(IkResult::Solved(Self::pose(&visit))),
+                Attempt::Fell { reason, best } => (reason, best),
+            };
+            if closer(&primary_goal, &visit, &best_visit) {
+                best_reason = reason;
+                best_visit = visit;
             }
         }
-        let (reason, visit) = best.expect("two attempts ran");
         Ok(IkResult::Failed {
             reason: if out_of_reach {
                 IkFailure::OutOfReach
             } else {
-                reason
+                best_reason
             },
-            best: Self::pose(&visit),
+            best: Self::pose(&best_visit),
         })
     }
 
@@ -212,9 +212,9 @@ impl IkSolver {
         })
     }
 
-    // WHY: Try the held pose before alternate elbow/wrist branches so a nearby target stays
-    // near its seed; deterministic restarts make failures reproducible.
-    fn starts(&self, seed: &DVector<f64>) -> impl Iterator<Item = DVector<f64>> + '_ {
+    // WHY: Start from the midpoint before sampling alternate elbow/wrist branches.
+    // Deterministic restarts make failures reproducible.
+    fn alternate_starts(&self) -> impl Iterator<Item = DVector<f64>> + '_ {
         let middle = DVector::from_iterator(
             self.limits.lower().len(),
             self.limits
@@ -231,7 +231,7 @@ impl IkSolver {
                     + (self.limits.upper()[joint] - self.limits.lower()[joint]) * fraction
             })
         });
-        [seed.clone(), middle].into_iter().chain(spread)
+        std::iter::once(middle).chain(spread)
     }
 
     fn checked_seed(&self, seed: &[f64]) -> Result<DVector<f64>, IkRefusal> {
