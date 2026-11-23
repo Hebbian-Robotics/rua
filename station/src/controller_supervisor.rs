@@ -48,6 +48,23 @@ impl ControllerPhase {
         matches!(self, Self::Online { .. } | Self::Unmanaged)
     }
 
+    fn reconnect_requested(&self) -> Result<Self, &'static str> {
+        match self {
+            Self::Unavailable {
+                reason, reports, ..
+            } => Ok(Self::WaitingForGuard {
+                reason: reason.clone(),
+                reports: reports.clone(),
+            }),
+            Self::Online { .. } => Err("The controller is already online"),
+            Self::Unmanaged => Err("The station does not supervise a controller"),
+            Self::Stopping => Err("The controller is stopping"),
+            Self::Starting | Self::WaitingForGuard { .. } => {
+                Err("Controller startup or recovery is already in progress")
+            }
+        }
+    }
+
     fn status(&self) -> ControllerStatus {
         match self {
             Self::Unmanaged => ControllerStatus::Unmanaged,
@@ -139,24 +156,11 @@ impl ControllerSupervisor {
             .phase
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let ControllerPhase::Unavailable {
-            reason, reports, ..
-        } = &*status
-        else {
-            return Err(match &*status {
-                ControllerPhase::Online { .. } => "The controller is already online",
-                ControllerPhase::Unmanaged => "The station does not supervise a controller",
-                ControllerPhase::Stopping => "The controller is stopping",
-                _ => "Controller startup or recovery is already in progress",
-            });
-        };
+        let next = status.reconnect_requested()?;
         self.requests
             .send(())
             .map_err(|_| "The controller supervisor stopped")?;
-        *status = ControllerPhase::WaitingForGuard {
-            reason: reason.clone(),
-            reports: reports.clone(),
-        };
+        *status = next;
         Ok(())
     }
 }
@@ -171,6 +175,7 @@ pub fn start(
     shutdown: Arc<AtomicBool>,
 ) -> (ControllerSupervisor, JoinHandle<()>) {
     let (requests, incoming) = mpsc::channel();
+    let _ = requests.send(());
     let supervisor = ControllerSupervisor {
         phase: Arc::new(Mutex::new(ControllerPhase::Starting)),
         requests,
@@ -321,16 +326,17 @@ fn run(
         }
     }
     let mut previous: Option<ControllerProcess> = None;
-    let mut start_requested = true;
     while !shutdown.load(Ordering::Acquire) {
-        if !start_requested {
-            if let Some(process) = previous.as_mut() {
-                refresh_guard_status(&supervisor, process);
-            }
-            if incoming.recv_timeout(POLL_INTERVAL).is_ok() {
-                start_requested = true;
-            }
-            continue;
+        if let Some(process) = previous.as_mut() {
+            refresh_guard_status(&supervisor, process);
+        }
+        match incoming.recv_timeout(POLL_INTERVAL) {
+            Ok(()) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        if shutdown.load(Ordering::Acquire) {
+            break;
         }
         if let Some(process) = previous.as_mut()
             && !wait_for_release(&supervisor, process, &shutdown)
@@ -348,7 +354,6 @@ fn run(
                     guard_released: true,
                     reports: Vec::new(),
                 });
-                start_requested = false;
                 continue;
             }
         };
@@ -387,7 +392,6 @@ fn run(
             reports: process.take_updated_reports().unwrap_or_default(),
         });
         previous = Some(process);
-        start_requested = false;
     }
 }
 

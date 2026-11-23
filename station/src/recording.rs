@@ -86,6 +86,36 @@ impl RecordingState {
     }
 }
 
+fn finalized_recording(
+    recording_name: String,
+    controller_interrupted: bool,
+    finalized: std::io::Result<ProcessExit>,
+) -> RecordingState {
+    let outcome = match finalized {
+        Ok(ProcessExit::Requested(status)) if status.success() => Ok(()),
+        Ok(ProcessExit::Requested(status)) => Err(format!(
+            "Recorder finalized with {status}; inspect the recording status for details"
+        )),
+        Ok(ProcessExit::Unexpected(status)) => {
+            Err(format!("Recorder exited unexpectedly: {status}"))
+        }
+        Err(error) => Err(error.to_string()),
+    };
+    match outcome {
+        Ok(()) if controller_interrupted => RecordingState::Failed {
+            name: recording_name,
+            detail: "The motor controller was unavailable during the recording".into(),
+        },
+        Ok(()) => RecordingState::Finished {
+            name: recording_name,
+        },
+        Err(detail) => RecordingState::Failed {
+            name: recording_name,
+            detail,
+        },
+    }
+}
+
 impl RecordingManager {
     #[must_use]
     pub fn new(configuration: Option<RecordingConfiguration>, station_url: String) -> Self {
@@ -235,16 +265,6 @@ impl RecordingManager {
                     },
                 )
                 .await;
-            let outcome = match finalized {
-                Ok(ProcessExit::Requested(status)) if status.success() => Ok(()),
-                Ok(ProcessExit::Requested(status)) => Err(format!(
-                    "Recorder finalized with {status}; inspect the recording status for details"
-                )),
-                Ok(ProcessExit::Unexpected(status)) => {
-                    Err(format!("Recorder exited unexpectedly: {status}"))
-                }
-                Err(error) => Err(error.to_string()),
-            };
             manager.announce(false);
             let mut state = manager
                 .state
@@ -253,19 +273,7 @@ impl RecordingManager {
             let controller_interrupted = state
                 .active_session()
                 .is_some_and(|session| session.controller_interrupted);
-            *state = match outcome {
-                Ok(()) if controller_interrupted => RecordingState::Failed {
-                    name: recording_name,
-                    detail: "The motor controller was unavailable during the recording".into(),
-                },
-                Ok(()) => RecordingState::Finished {
-                    name: recording_name,
-                },
-                Err(detail) => RecordingState::Failed {
-                    name: recording_name,
-                    detail,
-                },
-            };
+            *state = finalized_recording(recording_name, controller_interrupted, finalized);
             manager.ended.send_replace(());
         });
         Ok(name)
