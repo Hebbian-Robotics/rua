@@ -10,9 +10,9 @@ use crate::arm::{
     ShortOfTarget,
 };
 use crate::sync::LockUnpoisoned;
-use hebbian_contracts::{
-    ArmMove, ArmRecord, Command, CommandRecord, RejectionReason, TraceContext,
-};
+#[cfg(test)]
+use hebbian_contracts::ArmMove;
+use hebbian_contracts::{ArmRecord, Command, CommandRecord, RejectionReason, TraceContext};
 
 // CONSTRAINT: Bound per-arm admissions per cycle so a request flood cannot stretch the control deadline.
 pub(crate) const MAXIMUM_REQUESTS_PER_CYCLE: usize = 64;
@@ -62,13 +62,6 @@ pub(crate) enum GroupRequest {
         trace_context: Option<TraceContext>,
         now: Now,
         reply: CommandReply<Result<Vec<ArmRecord>, Rejection>>,
-    },
-    MoveArms {
-        label: String,
-        moves: Vec<ArmMove>,
-        trace_context: Option<TraceContext>,
-        now: Now,
-        reply: CommandReply<Result<Vec<CommandRecord>, Rejection>>,
     },
 }
 
@@ -196,41 +189,6 @@ impl ArmHandle {
         }))?;
         Ok(answer)
     }
-
-    pub(crate) fn move_arms_async(
-        &self,
-        label: String,
-        moves: Vec<ArmMove>,
-        trace_context: Option<TraceContext>,
-    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<CommandRecord>, Rejection>>, Rejection>
-    {
-        let (reply, answer) = tokio::sync::oneshot::channel();
-        self.enqueue(ArmRequest::Group(GroupRequest::MoveArms {
-            label,
-            moves,
-            trace_context,
-            now: Now::current(),
-            reply: CommandReply::Async(reply),
-        }))?;
-        Ok(answer)
-    }
-
-    pub(crate) fn move_arms_unawaited(
-        &self,
-        label: String,
-        moves: Vec<ArmMove>,
-        trace_context: Option<TraceContext>,
-    ) -> Result<Receiver<Result<Vec<CommandRecord>, Rejection>>, Rejection> {
-        let (reply, answer) = channel();
-        self.enqueue(ArmRequest::Group(GroupRequest::MoveArms {
-            label,
-            moves,
-            trace_context,
-            now: Now::current(),
-            reply: CommandReply::Blocking(reply),
-        }))?;
-        Ok(answer)
-    }
 }
 
 impl ArmInbox {
@@ -287,26 +245,11 @@ impl GroupRequest {
                 }
                 reply.send(answer);
             }
-            Self::MoveArms {
-                label,
-                moves,
-                trace_context,
-                now,
-                reply,
-            } => {
-                for core in cores.values_mut() {
-                    core.set_trace_context(trace_context.clone());
-                }
-                let answer = admit_group(cores, &label, moves, now);
-                for core in cores.values_mut() {
-                    core.set_trace_context(None);
-                }
-                reply.send(answer);
-            }
         }
     }
 }
 
+#[cfg(test)]
 pub(crate) fn admit_group(
     cores: &mut BTreeMap<&str, &mut ArmCore>,
     label: &str,
@@ -317,17 +260,7 @@ pub(crate) fn admit_group(
         cores,
         moves
             .into_iter()
-            .map(|part| PreparedArmAction {
-                arm: part.arm,
-                movement: Some(PreparedMovement::Trajectory {
-                    label: label.to_owned(),
-                    plan: part.plan,
-                    joint_speed: part.joint_speed,
-                    path_limited: part.path_limited,
-                    pose_limited: part.pose_limited,
-                }),
-                gripper: None,
-            })
+            .map(|part| PreparedArmAction::from_group_move(label, part))
             .collect(),
         now,
     )
@@ -690,7 +623,7 @@ mod tests {
             Arc::clone(&moving_generation),
             SharedInterlocks::default(),
         );
-        let prepared_before_expiry = [(moving_generation, 0)];
+        let prepared_before_expiry = [crate::lease::GenerationTicket::capture(&moving_generation)];
         let mut disabled = core();
         let mut moving = holding_core();
         let movement = part("moving", [0.5, 0.0]);

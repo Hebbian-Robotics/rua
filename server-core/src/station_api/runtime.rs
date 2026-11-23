@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, atomic::AtomicU64};
+use std::sync::Arc;
 
 use crate::action_step::{PreparedArmAction, PreparedGripper, PreparedMovement};
 use crate::control_link::LinkHandle;
-use crate::lease::ArmGate;
+use crate::lease::{ArmGate, GenerationTicket};
 use hebbian_contracts::{
     ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, ArmMode, ArmRecord,
     CommandOutcome, CommandRecord, ExecutionFailure, RejectionReason,
@@ -102,7 +102,7 @@ struct ExecutionAdmission {
     links: BTreeMap<String, LinkHandle>,
     token: String,
     gates: Vec<ArmGate>,
-    generation: Vec<(Arc<AtomicU64>, u64)>,
+    generation: Vec<GenerationTicket>,
 }
 
 // INVARIANT: Plan all commands before crossing the single atomic controller admission boundary.
@@ -383,9 +383,9 @@ async fn update_execution(
 async fn stop_program_motion(admission: &ExecutionAdmission, arms: &[String]) {
     // INVARIANT: Keep these arms reserved while their stops settle.
     let mut settling_arms = tokio::task::JoinSet::new();
-    for (arm, (_, generation)) in arms.iter().zip(&admission.generation) {
+    for (arm, generation) in arms.iter().zip(&admission.generation) {
         let link = admission.links[arm].clone();
-        if let Some(reply) = link.stop_execution(&admission.token, *generation) {
+        if let Some(reply) = link.stop_execution(&admission.token, generation) {
             settling_arms.spawn(async move {
                 if matches!(reply.await, Ok(Ok(_))) {
                     link.wait_for_execution_stop().await;

@@ -70,20 +70,6 @@ impl StationArm {
                 },
                 PendingStationAnswer(PendingStationAnswerKind::ActionStep(reply)),
             ),
-            ArmRequest::Group(GroupRequest::MoveArms {
-                label,
-                moves,
-                trace_context,
-                reply,
-                ..
-            }) => (
-                ControllerRequest::MoveArms {
-                    label,
-                    moves,
-                    trace_context,
-                },
-                PendingStationAnswer(PendingStationAnswerKind::MoveArms(reply)),
-            ),
         })
     }
 }
@@ -172,9 +158,6 @@ impl StationSession {
                     )
                 })
                 .collect(),
-            ControllerRequest::MoveArms { moves, .. } => {
-                moves.iter().map(|part| part.arm.clone()).collect()
-            }
             _ => vec![arm.clone()],
         };
         active.pending.insert(
@@ -221,13 +204,6 @@ impl StationSession {
             {
                 for record in records {
                     remember_record(&record.arm, &record.record);
-                }
-            }
-            (PendingStationAnswerKind::MoveArms(_), ControllerAnswer::MovedArms(records))
-                if records.len() == waiter.arms.len() =>
-            {
-                for (arm, record) in waiter.arms.iter().zip(records) {
-                    remember_record(arm, record);
                 }
             }
             (
@@ -280,7 +256,6 @@ enum PendingStationAnswerKind {
     Readiness(Sender<Result<bool, Rejection>>),
     CancelCommand(Sender<Result<(), Rejection>>),
     Submit(crate::handoff::CommandReply<Result<CommandRecord, Rejection>>),
-    MoveArms(crate::handoff::CommandReply<Result<Vec<CommandRecord>, Rejection>>),
     ActionStep(crate::handoff::CommandReply<Result<Vec<ArmRecord>, Rejection>>),
 }
 
@@ -309,9 +284,6 @@ impl PendingStationAnswer {
                 PendingStationAnswerKind::ActionStep(reply),
                 ControllerAnswer::ActionStep(records),
             ) => reply.send(Ok(records)),
-            (PendingStationAnswerKind::MoveArms(reply), ControllerAnswer::MovedArms(records)) => {
-                reply.send(Ok(records));
-            }
             (pending, ControllerAnswer::Refused { reason, detail }) => {
                 pending.refuse(refusal(reason, detail));
             }
@@ -333,9 +305,6 @@ impl PendingStationAnswerKind {
                 let _ = reply.send(Err(refusal));
             }
             Self::Submit(reply) => {
-                reply.send(Err(refusal));
-            }
-            Self::MoveArms(reply) => {
                 reply.send(Err(refusal));
             }
             Self::ActionStep(reply) => {
@@ -383,14 +352,6 @@ impl LoopArm {
                 .handle
                 .action_step_unawaited(actions, trace_context)
                 .map(PendingLoopAnswerKind::ActionStep),
-            ControllerRequest::MoveArms {
-                label,
-                moves,
-                trace_context,
-            } => self
-                .handle
-                .move_arms_unawaited(label, moves, trace_context)
-                .map(PendingLoopAnswerKind::MoveArms),
         };
         pending
             .map(PendingLoopAnswer)
@@ -407,7 +368,6 @@ enum PendingLoopAnswerKind {
     Readiness(Receiver<Result<bool, Rejection>>),
     CancelCommand(Receiver<Result<(), Rejection>>),
     Submit(Receiver<Result<CommandRecord, Rejection>>),
-    MoveArms(Receiver<Result<Vec<CommandRecord>, Rejection>>),
     ActionStep(Receiver<Result<Vec<ArmRecord>, Rejection>>),
 }
 
@@ -444,9 +404,6 @@ impl PendingLoopAnswer {
             }),
             PendingLoopAnswerKind::ActionStep(receiver) => {
                 convert(receiver.recv(), ControllerAnswer::ActionStep)
-            }
-            PendingLoopAnswerKind::MoveArms(receiver) => {
-                convert(receiver.recv(), ControllerAnswer::MovedArms)
             }
         }
     }

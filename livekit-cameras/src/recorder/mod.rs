@@ -103,15 +103,11 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     if interruption_marker_exists {
         archive.json("/station/recording_errors", &json!({"source": "controller", "detail": "Motor controller unavailable during recording"}), unix_nanoseconds())?;
     }
-    let status = if station_exited {
-        json!({"status": "incomplete", "reason": "The supervising station exited; the recording ended before it was asked to stop"})
-    } else if let Some(error) = result.as_ref().err().or(state_result.as_ref().err()) {
-        json!({"status": "incomplete", "reason": error.to_string()})
-    } else if controller_interrupted {
-        json!({"status": "incomplete", "reason": "The motor controller was unavailable during the recording; arm telemetry has a gap"})
-    } else {
-        json!({"status": "complete"})
-    };
+    let status = recording_verdict(
+        station_exited,
+        result.as_ref().err().or(state_result.as_ref().err()),
+        controller_interrupted,
+    );
     // INVARIANT: Written last, so a reader sees how the recording ended; a file without it was killed.
     let status_result = archive.json("/recording/status", &status, unix_nanoseconds());
     let finish_result = archive.finish();
@@ -130,6 +126,22 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     state_result?;
     status_result?;
     finish_result
+}
+
+fn recording_verdict(
+    station_exited: bool,
+    capture_error: Option<&RecorderError>,
+    controller_interrupted: bool,
+) -> serde_json::Value {
+    if station_exited {
+        json!({"status": "incomplete", "reason": "The supervising station exited; the recording ended before it was asked to stop"})
+    } else if let Some(error) = capture_error {
+        json!({"status": "incomplete", "reason": error.to_string()})
+    } else if controller_interrupted {
+        json!({"status": "incomplete", "reason": "The motor controller was unavailable during the recording; arm telemetry has a gap"})
+    } else {
+        json!({"status": "complete"})
+    }
 }
 
 async fn record_station_state(

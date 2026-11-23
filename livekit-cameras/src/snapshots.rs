@@ -201,16 +201,21 @@ async fn ask_socket(path: &PathBuf, request: serde_json::Value) -> Option<(Socke
     .ok()
     .flatten()
 }
+fn frame_is_fresh(received_at: Instant, now: Instant) -> bool {
+    now.saturating_duration_since(received_at) <= Duration::from_secs(3)
+}
+
 async fn list(State(state): State<Snapshots>) -> Json<Vec<hebbian_contracts::CameraListing>> {
     let mut names = BTreeMap::new();
     for name in state.local_names.iter() {
         names.insert(name.clone(), false);
     }
+    let now = Instant::now();
     for track in state.frames.tracks() {
         if cameras::validate_camera_name(&track.participant).is_ok() {
             let available = state
                 .latest(&track.participant)
-                .is_some_and(|frame| frame.received_at.elapsed() <= Duration::from_secs(3));
+                .is_some_and(|frame| frame_is_fresh(frame.received_at, now));
             names.insert(track.participant, available);
         }
     }
@@ -243,8 +248,9 @@ async fn snapshot(State(state): State<Snapshots>, Path(name): Path<String>) -> R
         return StatusCode::NOT_FOUND.into_response();
     }
     let frame = state.latest(&name);
+    let now = Instant::now();
     match frame {
-        Some(frame) if frame.received_at.elapsed() <= Duration::from_secs(3) => {
+        Some(frame) if frame_is_fresh(frame.received_at, now) => {
             image_response(frame.jpeg.to_vec(), frame.captured_at_unix_ns)
         }
         _ => StatusCode::NOT_FOUND.into_response(),

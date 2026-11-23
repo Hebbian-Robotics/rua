@@ -801,8 +801,6 @@ async fn command_submission_outcome<ReplyContext, ReplyRecords>(
     }
 }
 
-type SubmissionGeneration = (Arc<std::sync::atomic::AtomicU64>, u64);
-
 type CommandRefusal = (hebbian_contracts::RejectionReason, String);
 
 fn admission_unavailable(_: AdmissionClosed) -> (StatusCode, String) {
@@ -821,7 +819,7 @@ async fn submit_station_command<
     request: super::submissions::SubmissionRequest,
     prepare: impl FnOnce(
         &BTreeMap<String, LinkHandle>,
-        Vec<SubmissionGeneration>,
+        Vec<crate::lease::GenerationTicket>,
         tokio::sync::watch::Receiver<bool>,
     ) -> Result<Commit, CommandRefusal>
     + Send
@@ -996,14 +994,15 @@ async fn submit_group_command(
             })
         },
         |arms, records| {
-            if arms.len() != records.len() {
-                return Err("Control loop returned an unexpected number of records".to_owned());
+            if arms.len() != records.len()
+                || arms
+                    .iter()
+                    .zip(&records)
+                    .any(|(arm, record)| *arm != record.arm)
+            {
+                return Err("Control loop returned unexpected arm records".to_owned());
             }
-            Ok(arms
-                .into_iter()
-                .zip(records)
-                .map(|(arm, record)| hebbian_contracts::ArmRecord { arm, record })
-                .collect())
+            Ok(records)
         },
     )
     .await

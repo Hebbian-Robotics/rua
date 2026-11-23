@@ -202,13 +202,12 @@ async fn supervise(
                         return;
                     }
                 };
-                // WHY: Spawn alone does not establish that a media process can stay up.
-                if running_since.elapsed() >= STABLE_MEDIA_RUN {
-                    backoff.reset();
-                }
                 let last_exit = exit.to_string();
                 tracing::warn!(%last_exit, "Media process exited");
-                report(MediaState::Restarting { last_exit });
+                let (next_backoff, state) =
+                    restart_after_media_exit(running_since.elapsed(), last_exit, backoff);
+                backoff = next_backoff;
+                report(state);
             }
         }
         tokio::select! {
@@ -220,6 +219,17 @@ async fn supervise(
     report(MediaState::Unavailable {
         reason: "Media supervisor stopped".to_owned(),
     });
+}
+
+fn restart_after_media_exit(
+    run_duration: Duration,
+    last_exit: String,
+    mut backoff: Backoff,
+) -> (Backoff, MediaState) {
+    if run_duration >= STABLE_MEDIA_RUN {
+        backoff.reset();
+    }
+    (backoff, MediaState::Restarting { last_exit })
 }
 
 // CONSTRAINT: Capture failures use `Camera <name>: <message>`; reopening lines only announce

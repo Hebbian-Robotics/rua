@@ -24,6 +24,42 @@ use transition::{
 
 pub const LEASE: Duration = Duration::from_secs(15);
 
+#[derive(Clone)]
+pub(crate) struct GenerationTicket {
+    generation: Arc<AtomicU64>,
+    expected: u64,
+}
+
+pub(crate) struct StaleGeneration;
+
+impl GenerationTicket {
+    pub(crate) fn capture(generation: &Arc<AtomicU64>) -> Self {
+        Self {
+            generation: Arc::clone(generation),
+            expected: generation.load(Ordering::Acquire),
+        }
+    }
+
+    pub(crate) fn fence(generation: &Arc<AtomicU64>) -> Self {
+        Self {
+            generation: Arc::clone(generation),
+            expected: generation.fetch_add(1, Ordering::AcqRel) + 1,
+        }
+    }
+
+    pub(crate) fn expected_for(&self, generation: &Arc<AtomicU64>) -> Option<u64> {
+        Arc::ptr_eq(&self.generation, generation).then_some(self.expected)
+    }
+
+    fn check(&self) -> Result<(), StaleGeneration> {
+        if self.generation.load(Ordering::Acquire) == self.expected {
+            Ok(())
+        } else {
+            Err(StaleGeneration)
+        }
+    }
+}
+
 pub(crate) enum CommandAuthority {
     Interrupt,
     ApproveRecovery,
@@ -308,7 +344,7 @@ impl Lease {
     pub(crate) fn stop_leased_motion_for_submission(
         &self,
         token: &str,
-        generations: &mut [(Arc<AtomicU64>, u64)],
+        generations: &mut [GenerationTicket],
         cancel_sequence: impl FnOnce() -> bool,
     ) -> Result<(), Rejection> {
         let mut held = self.held.lock_unpoisoned();
@@ -328,8 +364,8 @@ impl Lease {
         if !self.stop_all_arms() {
             return Err(crate::handoff::loop_not_running());
         }
-        for (generation, captured) in generations {
-            *captured = generation.load(Ordering::Acquire);
+        for ticket in generations {
+            *ticket = GenerationTicket::capture(&ticket.generation);
         }
         Ok(())
     }
@@ -825,7 +861,7 @@ impl Lease {
     pub(crate) fn interrupt_if_current<T>(
         &self,
         arm_generation: &AtomicU64,
-        generations: &[(Arc<AtomicU64>, u64)],
+        generations: &[GenerationTicket],
         enqueue: impl FnOnce() -> T,
     ) -> Result<T, Rejection> {
         let _held = self.held.lock_unpoisoned();
@@ -836,15 +872,12 @@ impl Lease {
 
     fn check_controller_generation(
         &self,
-        generations: &[(Arc<AtomicU64>, u64)],
+        generations: &[GenerationTicket],
     ) -> Result<(), Rejection> {
         if self.controller_epoch.load(Ordering::Acquire) & 1 == 1 {
             return Err(crate::handoff::loop_not_running());
         }
-        if generations
-            .iter()
-            .any(|(current, expected)| current.load(Ordering::Acquire) != *expected)
-        {
+        if generations.iter().any(|ticket| ticket.check().is_err()) {
             return Err(Rejection {
                 reason: RejectionReason::ArmBusy,
                 detail: "The command was superseded by a stop or controller interruption".into(),
@@ -856,7 +889,7 @@ impl Lease {
     // SAFETY: Approving recovery is the operator's, whoever holds the lease.
     pub(crate) fn admit_recovery_approval<T>(
         &self,
-        generations: &[(Arc<AtomicU64>, u64)],
+        generations: &[GenerationTicket],
         enqueue: impl FnOnce() -> T,
     ) -> Result<T, Rejection> {
         let _held = self.held.lock_unpoisoned();
@@ -869,7 +902,7 @@ impl Lease {
         token: Option<&str>,
         now: Instant,
         gates: &[ArmGate],
-        generations: &[(Arc<AtomicU64>, u64)],
+        generations: &[GenerationTicket],
         admission: LeaseAdmission,
         act: impl FnOnce() -> T,
     ) -> Result<T, Rejection> {
@@ -915,10 +948,7 @@ impl Lease {
                 detail: "A camera the lease requires is unavailable. Motion resumes when it gives a fresh frame".to_owned(),
             });
         }
-        if generations
-            .iter()
-            .any(|(current, expected)| current.load(Ordering::Acquire) != *expected)
-        {
+        if generations.iter().any(|ticket| ticket.check().is_err()) {
             return Err(Rejection {
                 reason: RejectionReason::ArmBusy,
                 detail: "The command was superseded by a stop".to_owned(),
@@ -1320,7 +1350,7 @@ mod tests {
         let (arm, _inbox) = crate::handoff::arm_channel();
         let generation = Arc::new(AtomicU64::new(0));
         lease.register_arm(arm, Arc::clone(&generation), SharedInterlocks::default());
-        let captured = vec![(Arc::clone(&generation), 0)];
+        let captured = vec![GenerationTicket::capture(&generation)];
         lease.controller_lost();
         lease.controller_ready();
         assert!(lease.admit_recovery_approval(&captured, || ()).is_err());
@@ -1329,7 +1359,7 @@ mod tests {
                 .interrupt_if_current(&generation, &captured, || ())
                 .is_err()
         );
-        let fresh = vec![(Arc::clone(&generation), generation.load(Ordering::Acquire))];
+        let fresh = vec![GenerationTicket::capture(&generation)];
         assert!(lease.admit_recovery_approval(&fresh, || ()).is_ok());
         assert!(
             lease
@@ -1345,7 +1375,7 @@ mod tests {
         let (arm, _inbox) = crate::handoff::arm_channel();
         let generation = Arc::new(AtomicU64::new(0));
         lease.register_arm(arm, Arc::clone(&generation), SharedInterlocks::default());
-        let mut pending = vec![(Arc::clone(&generation), 0)];
+        let mut pending = vec![GenerationTicket::capture(&generation)];
         lease
             .stop_leased_motion_for_submission(&token, &mut pending, || true)
             .unwrap();
@@ -1371,8 +1401,8 @@ mod tests {
         let token = acquire_agent(&lease, now);
         let first_generation = Arc::new(AtomicU64::new(0));
         let second_generation = Arc::new(AtomicU64::new(0));
-        let first_submission = [(Arc::clone(&first_generation), 0)];
-        let second_submission = [(Arc::clone(&second_generation), 0)];
+        let first_submission = [GenerationTicket::capture(&first_generation)];
+        let second_submission = [GenerationTicket::capture(&second_generation)];
 
         lease.interrupt(&first_generation, || ());
 

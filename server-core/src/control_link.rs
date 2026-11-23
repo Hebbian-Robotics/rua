@@ -11,7 +11,8 @@ use crate::arm::{PoseGoalSettings, ReachGoal};
 use crate::config::ControllerConfig;
 use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
 use crate::lease::{
-    AcquireError, ArmGate, CommandAuthority, Lease, LeaseAdmission, LeaseRequest, SharedInterlocks,
+    AcquireError, ArmGate, CommandAuthority, GenerationTicket, Lease, LeaseAdmission, LeaseRequest,
+    SharedInterlocks,
 };
 use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
@@ -139,9 +140,10 @@ impl LinkHandle {
     pub(crate) fn stop_execution(
         &self,
         token: &str,
-        generation: u64,
+        ticket: &GenerationTicket,
     ) -> Option<tokio::sync::oneshot::Receiver<Result<CommandRecord, crate::arm::Rejection>>> {
-        self.stop_with_lease(Some(token), Some(generation), || {
+        let expected = ticket.expected_for(&self.shared.generation)?;
+        self.stop_with_lease(Some(token), Some(expected), || {
             self.shared
                 .arm
                 .submit_async(hebbian_contracts::Command::Stop, None)
@@ -215,7 +217,7 @@ impl LinkHandle {
     pub(crate) fn stop_leased_motion_for_submission(
         &self,
         token: &str,
-        generations: &mut [(Arc<AtomicU64>, u64)],
+        generations: &mut [GenerationTicket],
         cancel_sequence: impl FnOnce() -> bool,
     ) -> Result<(), crate::arm::Rejection> {
         self.shared
@@ -358,16 +360,12 @@ impl LinkHandle {
         self.shared.has_policy
     }
 
-    pub(crate) fn submission_generation(&self) -> (Arc<AtomicU64>, u64) {
-        let generation = Arc::clone(&self.shared.generation);
-        let current = generation.load(Ordering::Acquire);
-        (generation, current)
+    pub(crate) fn submission_generation(&self) -> GenerationTicket {
+        GenerationTicket::capture(&self.shared.generation)
     }
 
-    pub(crate) fn fence_prior_submissions(&self) -> (Arc<AtomicU64>, u64) {
-        let generation = Arc::clone(&self.shared.generation);
-        let current = generation.fetch_add(1, Ordering::AcqRel) + 1;
-        (generation, current)
+    pub(crate) fn fence_prior_submissions(&self) -> GenerationTicket {
+        GenerationTicket::fence(&self.shared.generation)
     }
 
     pub(crate) fn submit_command_async(
@@ -376,7 +374,7 @@ impl LinkHandle {
         token: Option<&str>,
         trace_context: Option<hebbian_contracts::TraceContext>,
         expected_revision: Option<u64>,
-        generation: &[(Arc<AtomicU64>, u64)],
+        generation: &[GenerationTicket],
     ) -> Result<
         tokio::sync::oneshot::Receiver<Result<CommandRecord, crate::arm::Rejection>>,
         crate::arm::Rejection,
@@ -415,7 +413,7 @@ impl LinkHandle {
         actions: Vec<crate::action_step::PreparedArmAction>,
         token: Option<&str>,
         gates: &[ArmGate],
-        generation: &[(Arc<AtomicU64>, u64)],
+        generation: &[GenerationTicket],
         cancellation: &tokio::sync::watch::Receiver<bool>,
     ) -> Result<
         tokio::sync::oneshot::Receiver<
@@ -449,9 +447,11 @@ impl LinkHandle {
         token: Option<&str>,
         trace_context: Option<hebbian_contracts::TraceContext>,
         gates: &[ArmGate],
-        generation: &[(Arc<AtomicU64>, u64)],
+        generation: &[GenerationTicket],
     ) -> Result<
-        tokio::sync::oneshot::Receiver<Result<Vec<CommandRecord>, crate::arm::Rejection>>,
+        tokio::sync::oneshot::Receiver<
+            Result<Vec<hebbian_contracts::ArmRecord>, crate::arm::Rejection>,
+        >,
         crate::arm::Rejection,
     > {
         enqueue_with_lease(
@@ -461,9 +461,13 @@ impl LinkHandle {
             gates,
             generation,
             || {
-                self.shared
-                    .arm
-                    .move_arms_async("move_arms".to_owned(), moves, trace_context)
+                let actions = moves
+                    .into_iter()
+                    .map(|part| {
+                        crate::action_step::PreparedArmAction::from_group_move("move_arms", part)
+                    })
+                    .collect();
+                self.shared.arm.action_step_async(actions, trace_context)
             },
         )
     }
@@ -970,7 +974,7 @@ fn enqueue_with_lease<R>(
     token: Option<&str>,
     admission: LeaseAdmission,
     gates: &[ArmGate],
-    generation: &[(Arc<AtomicU64>, u64)],
+    generation: &[GenerationTicket],
     enqueue: impl FnOnce() -> Result<R, crate::arm::Rejection>,
 ) -> Result<R, crate::arm::Rejection> {
     shared
@@ -1001,10 +1005,10 @@ mod tests {
                 false,
             )
             .unwrap();
-        let (_, previous_execution) = handle.fence_prior_submissions();
+        let previous_execution = handle.fence_prior_submissions();
         let current_execution = handle.fence_prior_submissions();
 
-        let _ = handle.stop_execution(&lease.lease_token, previous_execution);
+        let _ = handle.stop_execution(&lease.lease_token, &previous_execution);
 
         assert!(
             handle
