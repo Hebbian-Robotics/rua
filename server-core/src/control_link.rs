@@ -19,7 +19,7 @@ use crate::preview::{Preview, PreviewRequest};
 use crate::sync::LockUnpoisoned;
 use hebbian_contracts::{
     ArmMode, ArmMove, CommandRecord, Event, Frame, Interlock, LeaseStatus, PoseOrientation,
-    PoseProjection, RejectionReason, Sample,
+    PoseProjection, RejectionReason, Sample, UnixNanos,
 };
 
 const MAXIMUM_PENDING_SAMPLES: usize = 64;
@@ -82,6 +82,7 @@ struct Shared {
 pub struct ArmView {
     pub sample: Option<Sample>,
     pub sample_age: Option<Duration>,
+    pub sample_received_at: Option<UnixNanos>,
     pub active_record: Option<CommandRecord>,
     pub last_record: Option<CommandRecord>,
 }
@@ -734,13 +735,19 @@ impl Link {
     }
 }
 
+#[derive(Clone, Copy)]
+struct SampleReceipt {
+    monotonic: Instant,
+    unix: UnixNanos,
+}
+
 #[derive(Default)]
 struct Hub {
     clients: HashMap<u64, ClientSink>,
     log: VecDeque<Frame>,
     next_seq: u64,
     latest_sample: Option<Sample>,
-    latest_sample_at: Option<Instant>,
+    latest_sample_at: Option<SampleReceipt>,
     records: HashMap<String, CommandRecord>,
     record_order: VecDeque<String>,
     completion_waiters: HashMap<String, Vec<tokio::sync::oneshot::Sender<CommandRecord>>>,
@@ -778,8 +785,11 @@ impl Hub {
                 {
                     self.settled_last = Some(finished);
                 }
-                self.latest_sample_at = Some(Instant::now());
                 let frame = Frame::emitted_now(None, Event::State(sample));
+                self.latest_sample_at = Some(SampleReceipt {
+                    monotonic: Instant::now(),
+                    unix: frame.emitted_unix_nano,
+                });
                 self.broadcast(&frame);
                 if let Event::State(sample) = frame.event
                     && let Some(previous) = self.latest_sample.replace(sample)
@@ -821,7 +831,8 @@ impl Hub {
                 );
                 let _ = answer.send(ArmView {
                     sample: self.latest_sample.clone(),
-                    sample_age: self.latest_sample_at.map(|at| at.elapsed()),
+                    sample_age: self.latest_sample_at.map(|at| at.monotonic.elapsed()),
+                    sample_received_at: self.latest_sample_at.map(|at| at.unix),
                     active_record,
                     last_record: record(self.settled_last.as_ref().map(|(id, _)| id)),
                 });
@@ -986,6 +997,29 @@ fn enqueue_with_lease<R>(
 mod tests {
     use super::*;
     use hebbian_contracts::{Command, LeaseHolder, OnInterruption};
+
+    #[tokio::test]
+    async fn station_feedback_timestamp_only_changes_with_a_new_sample() {
+        use crate::station_api::station_state;
+        use std::collections::BTreeMap;
+
+        let config =
+            ControllerConfig::parse(include_str!("../tests/support/two_joint_config.json"))
+                .unwrap();
+        let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
+        let links = BTreeMap::from([("arm".to_owned(), link.handle())]);
+        link.publish(Event::State(Sample::blank()));
+        let first = station_state(&links).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let unchanged = station_state(&links).await.unwrap();
+        let sampled_at = first.arms[0].sampled_at_unix_seconds.unwrap();
+        assert_eq!(unchanged.arms[0].sampled_at_unix_seconds, Some(sampled_at));
+
+        link.publish(Event::State(Sample::blank()));
+        let next = station_state(&links).await.unwrap();
+        assert!(next.arms[0].sampled_at_unix_seconds.unwrap() > sampled_at);
+        link.close();
+    }
 
     #[test]
     fn cleanup_for_an_old_execution_leaves_the_next_command_admissible() {
