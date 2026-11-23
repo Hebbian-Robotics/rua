@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use hebbian_contracts::{
     ActionSequenceArmAction, ActionSequenceMovement, ActionSequenceRequest, GripperOpening,
-    StationCommand,
+    JointSpeed, StationCommand,
 };
 
 pub(crate) trait CompiledActionCommands {
@@ -275,10 +275,12 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
                 max_joint_speed, ..
             } => *max_joint_speed,
         });
-    let max_joint_speed = action.max_joint_speed.or(movement_speed);
-    if max_joint_speed.is_some_and(|speed| !speed.is_finite() || speed <= 0.0) {
-        return Err("A joint speed must be positive and finite");
-    }
+    let max_joint_speed = action
+        .max_joint_speed
+        .or(movement_speed)
+        .map(JointSpeed::new)
+        .transpose()
+        .map_err(|_| "A joint speed must be positive and finite")?;
     let gripper_opening = action
         .gripper_opening
         .map(GripperOpening::try_from)
@@ -444,10 +446,10 @@ mod tests {
                 .into_commands()
                 .collect::<Vec<_>>();
             assert!(
-                matches!(commands[0], StationCommand::MoveToJoints { max_joint_speed: Some(speed), .. } if (speed - expected).abs() < f64::EPSILON)
+                matches!(commands[0], StationCommand::MoveToJoints { max_joint_speed: Some(speed), .. } if (speed.radians_per_second() - expected).abs() < f64::EPSILON)
             );
             assert!(
-                matches!(commands[1], StationCommand::SetGripper { max_joint_speed: Some(speed), .. } if (speed - expected).abs() < f64::EPSILON)
+                matches!(commands[1], StationCommand::SetGripper { max_joint_speed: Some(speed), .. } if (speed.radians_per_second() - expected).abs() < f64::EPSILON)
             );
         }
     }

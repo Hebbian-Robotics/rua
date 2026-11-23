@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ArmRecord, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
+use crate::{ArmRecord, JointSpeed, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
 
 /// A normalized gripper target, from closed (0) to open (1).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -92,7 +92,7 @@ pub enum StationCommand {
         joints: Vec<f64>,
         /// Peak joint speed in rad/s; clamped to the profile's maximum.
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
     /// Move the tool to a world position and orientation.
     #[schemars(title = "MoveToPoseCommand")]
@@ -100,14 +100,14 @@ pub enum StationCommand {
         position: [f64; 3],
         orientation: PoseOrientation,
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
     /// Waypoints are corners: the arm comes to rest and settles at each one.
     #[schemars(title = "FollowPathCommand")]
     FollowPath {
         waypoints: Vec<Waypoint>,
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
     /// Start streaming joint destinations while the arm is holding. Send
     /// later goals to the operation's goal endpoint. The stream ends when
@@ -116,7 +116,7 @@ pub enum StationCommand {
     StreamJoints {
         joints: Vec<f64>,
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
         /// The initial gripper target, 0 closed to 1 open, if the stream drives it.
         #[serde(default)]
         gripper_opening: Option<GripperOpening>,
@@ -128,7 +128,7 @@ pub enum StationCommand {
         opening: GripperOpening,
         /// Peak gripper speed in rad/s; uses the arm default and maximum.
         #[serde(default)]
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<JointSpeed>,
     },
 }
 
@@ -309,7 +309,7 @@ pub struct MoveArmsCommand {
     #[schemars(schema_with = "nonempty_arm_targets")]
     pub targets: BTreeMap<String, Waypoint>,
     #[serde(default)]
-    pub max_joint_speed: Option<f64>,
+    pub max_joint_speed: Option<JointSpeed>,
 }
 
 fn nonempty_arm_targets(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -455,8 +455,17 @@ pub enum PreviewAnswer {
 }
 
 #[cfg(test)]
-mod gripper_opening_tests {
+mod motion_value_tests {
     use super::*;
+
+    #[test]
+    fn a_command_rejects_a_nonpositive_speed_at_the_wire_boundary() {
+        for speed in ["0", "-0.5"] {
+            let command =
+                format!(r#"{{"kind":"move_to_joints","joints":[0.0],"max_joint_speed":{speed}}}"#);
+            assert!(serde_json::from_str::<StationCommand>(&command).is_err());
+        }
+    }
 
     #[test]
     fn an_opening_accepts_the_closed_and_open_endpoints_as_wire_numbers() {

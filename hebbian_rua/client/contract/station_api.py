@@ -257,7 +257,9 @@ class CompiledArmAction2(BaseModel):
         frozen=True,
     )
     kind: Literal["gripper"] = "gripper"
-    max_joint_speed: StrictFloat | None = None
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
+    ] = None
     opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0, title="GripperOpening")]
 
 
@@ -1345,7 +1347,9 @@ class MoveToJointsCommand(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None,
         Field(
-            description="Peak joint speed in rad/s; clamped to the profile's maximum."
+            description="Peak joint speed in rad/s; clamped to the profile's maximum.",
+            gt=0.0,
+            title="JointSpeed",
         ),
     ] = None
 
@@ -1366,7 +1370,9 @@ class StationStreamJointsCommand(BaseModel):
     ] = None
     joints: list[StrictFloat]
     kind: Literal["stream_joints"] = "stream_joints"
-    max_joint_speed: StrictFloat | None = None
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
+    ] = None
 
 
 class StationSetGripperCommand(BaseModel):
@@ -1378,7 +1384,9 @@ class StationSetGripperCommand(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None,
         Field(
-            description="Peak gripper speed in rad/s; uses the arm default and maximum."
+            description="Peak gripper speed in rad/s; uses the arm default and maximum.",
+            gt=0.0,
+            title="JointSpeed",
         ),
     ] = None
     opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0, title="GripperOpening")]
@@ -1795,7 +1803,9 @@ class MoveToPoseCommand(BaseModel):
         frozen=True,
     )
     kind: Literal["move_to_pose"] = "move_to_pose"
-    max_joint_speed: StrictFloat | None = None
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
+    ] = None
     orientation: Annotated[
         GraspOrientation | QuaternionOrientation,
         Field(description="A tool orientation as a client gives it."),
@@ -2089,7 +2099,9 @@ class MoveArmsCommand(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    max_joint_speed: StrictFloat | None = None
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
+    ] = None
     targets: Annotated[dict[str, JointsWaypoint | PoseWaypoint], Field(min_length=1)]
 
 
@@ -2219,7 +2231,9 @@ class FollowPathCommand(BaseModel):
         frozen=True,
     )
     kind: Literal["follow_path"] = "follow_path"
-    max_joint_speed: StrictFloat | None = None
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
+    ] = None
     waypoints: list[JointsWaypoint | PoseWaypoint]
 
 
@@ -2472,7 +2486,9 @@ class CompiledArmAction1(BaseModel):
         StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
     ] = None
     kind: Literal["move"] = "move"
-    max_joint_speed: StrictFloat | None = None
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(gt=0.0, title="JointSpeed")
+    ] = None
     movement: CompiledMovement1 | CompiledMovement2
 
 

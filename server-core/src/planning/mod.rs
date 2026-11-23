@@ -96,7 +96,7 @@ impl Planner {
         &self,
         start: &[f64],
         waypoints: &[Waypoint],
-        requested_speed: Option<f64>,
+        requested_speed: Option<JointSpeed>,
         gripper_angle: Option<f64>,
     ) -> Result<PlannedMotion, PlanRefusal> {
         if waypoints.is_empty() {
@@ -106,7 +106,7 @@ impl Planner {
             ));
         }
         self.require_joint_shape(start)?;
-        let joint_speed = JointSpeed::for_request(
+        let joint_speed = JointSpeed::for_validated_request(
             requested_speed,
             self.default_joint_speed,
             self.max_joint_speed,

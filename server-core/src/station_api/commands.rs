@@ -67,7 +67,7 @@ fn jaw_angle(
 fn planned_move(
     link: &LinkHandle,
     waypoints: &[Waypoint],
-    max_joint_speed: Option<f64>,
+    max_joint_speed: Option<hebbian_contracts::JointSpeed>,
 ) -> Result<PlannedMotion, Refusal> {
     plan_from_sample(link, latest_sample(link)?, waypoints, max_joint_speed)
 }
@@ -76,7 +76,7 @@ fn plan_from_sample(
     link: &LinkHandle,
     sample: Sample,
     waypoints: &[Waypoint],
-    max_joint_speed: Option<f64>,
+    max_joint_speed: Option<hebbian_contracts::JointSpeed>,
 ) -> Result<PlannedMotion, Refusal> {
     let planner = link.planner().ok_or_else(|| {
         refused(
@@ -133,7 +133,8 @@ pub(crate) fn arm_command(
                     format!("Saved home pose: {error}"),
                 )
             })?;
-            let speed = config.max_joint_speed.min(2.0);
+            let speed = hebbian_contracts::JointSpeed::new(config.max_joint_speed.min(2.0))
+                .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))?;
             plan_from_sample(link, sample, &[Waypoint::Joints { joints }], Some(speed))
                 .map(|motion| move_command("rehome", motion))
         }
@@ -196,13 +197,15 @@ pub(crate) fn arm_command(
             max_joint_speed,
         } => Ok(Command::SetGripper {
             angle: jaw_angle(link, arm, opening)?,
-            joint_speed: max_joint_speed,
+            joint_speed: max_joint_speed.map(f64::from),
         }),
     }
 }
 
 pub(super) enum StreamAdmission {
-    Start { max_joint_speed: Option<f64> },
+    Start {
+        max_joint_speed: Option<hebbian_contracts::JointSpeed>,
+    },
     Update(ControllerStreamCommand),
 }
 
@@ -220,7 +223,7 @@ pub(super) fn joint_stream(
         .map(|opening| jaw_angle(link, arm, opening))
         .transpose()?;
     let (joint_speed, stream_command_id) = match admission {
-        StreamAdmission::Start { max_joint_speed } => (max_joint_speed, None),
+        StreamAdmission::Start { max_joint_speed } => (max_joint_speed.map(f64::from), None),
         StreamAdmission::Update(stream) => (None, Some(stream.into_controller_id())),
     };
     Ok(Command::StreamJoints {

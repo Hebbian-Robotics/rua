@@ -16,7 +16,7 @@ pub(crate) enum ToolOperation {
     SetGripper {
         arm: String,
         opening: hebbian_contracts::GripperOpening,
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<hebbian_contracts::JointSpeed>,
     },
     Stop {
         arm: String,

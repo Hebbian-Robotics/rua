@@ -840,7 +840,7 @@ impl LeaseGuard {
         arm: &str,
         position: [f64; 3],
         orientation: Option<PoseOrientation>,
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<hebbian_contracts::JointSpeed>,
     ) -> Result<CommandRecord> {
         self.move_to_pose_keeping_orientation_with(
             arm,
@@ -860,7 +860,7 @@ impl LeaseGuard {
         arm: &str,
         position: [f64; 3],
         orientation: Option<PoseOrientation>,
-        max_joint_speed: Option<f64>,
+        max_joint_speed: Option<hebbian_contracts::JointSpeed>,
         options: CommandOptions,
     ) -> Result<CommandRecord> {
         let orientation = match orientation {

@@ -12,41 +12,9 @@ impl JointAngle {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct InvalidSpeed;
-
-impl std::fmt::Display for InvalidSpeed {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("A joint speed must be positive and finite")
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct JointSpeed(f64);
-
-impl JointSpeed {
-    pub(crate) fn new(radians_per_second: f64) -> Result<Self, InvalidSpeed> {
-        if radians_per_second.is_finite() && radians_per_second > 0.0 {
-            Ok(Self(radians_per_second))
-        } else {
-            Err(InvalidSpeed)
-        }
-    }
-
-    pub(crate) fn for_request(
-        requested: Option<f64>,
-        default: f64,
-        maximum: f64,
-    ) -> Result<Self, InvalidSpeed> {
-        let speed = Self::new(requested.unwrap_or(default))?;
-        let cap = Self::new(maximum)?;
-        Ok(Self(speed.0.min(cap.0)))
-    }
-
-    pub(crate) fn radians_per_second(self) -> f64 {
-        self.0
-    }
-}
+#[cfg(test)]
+pub(crate) use hebbian_contracts::InvalidSpeed;
+pub(crate) use hebbian_contracts::JointSpeed;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MeasuredPositions<'a>(&'a [f64]);

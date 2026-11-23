@@ -69,7 +69,14 @@ fn joints(values: &[f64]) -> Waypoint {
 }
 
 fn planned(planner: &Planner, waypoints: &[Waypoint]) -> PlannedMotion {
-    planner.plan(&[0.0; 7], waypoints, Some(0.5), None).unwrap()
+    planner
+        .plan(
+            &[0.0; 7],
+            waypoints,
+            Some(hebbian_contracts::JointSpeed::new(0.5).unwrap()),
+            None,
+        )
+        .unwrap()
 }
 
 fn last_corner(motion: &PlannedMotion) -> &[f64] {

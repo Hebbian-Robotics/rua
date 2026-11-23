@@ -98,8 +98,9 @@ def fixed_length(schema: dict) -> int | None:
 def rust_named_type(schema: dict) -> str | None:
     if "$ref" in schema:
         return reference_name(schema)
-    if schema.get("title") == "GripperOpening":
-        return "GripperOpening"
+    title = schema.get("title")
+    if title in ("GripperOpening", "JointSpeed"):
+        return title
     return None
 
 

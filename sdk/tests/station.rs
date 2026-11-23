@@ -293,7 +293,7 @@ async fn a_stopped_move_is_an_incomplete_error() -> TestResult {
 
     // A slow move that a stop from another connection cuts short.
     let stopper = station.connect().await?;
-    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05));
+    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05.try_into()?));
     let stopping = async {
         // Stop once the move is the arm's active command.
         loop {
@@ -326,7 +326,7 @@ async fn a_refused_command_does_not_stop_the_holders_motion() -> TestResult {
 
     // The holder starts a slow move that is still under way when the former holder's
     // guard, whose lease was taken, probes.
-    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05));
+    let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05.try_into()?));
     let probing = async {
         former
             .wait_for_state(|state| state.arms[0].active_command.is_some())

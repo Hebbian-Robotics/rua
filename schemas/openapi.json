@@ -1681,7 +1681,8 @@
                 "type": "string"
               },
               "max_joint_speed": {
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -1705,7 +1706,8 @@
                 "type": "string"
               },
               "max_joint_speed": {
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -3252,7 +3254,8 @@
         "properties": {
           "max_joint_speed": {
             "default": null,
-            "format": "double",
+            "exclusiveMinimum": 0.0,
+            "title": "JointSpeed",
             "type": [
               "number",
               "null"
@@ -5360,7 +5363,8 @@
               "max_joint_speed": {
                 "default": null,
                 "description": "Peak joint speed in rad/s; clamped to the profile's maximum.",
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5384,7 +5388,8 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5421,7 +5426,8 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5469,7 +5475,8 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
@@ -5494,7 +5501,8 @@
               "max_joint_speed": {
                 "default": null,
                 "description": "Peak gripper speed in rad/s; uses the arm default and maximum.",
-                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "title": "JointSpeed",
                 "type": [
                   "number",
                   "null"
