@@ -1,0 +1,11 @@
+{
+  "completed": "completed",
+  "failed": "incomplete",
+  "faulted": "faulted",
+  "interrupted": "interrupted",
+  "stopped": "incomplete",
+  "stopped_short": "stopped_short",
+  "superseded": "incomplete",
+  "timed_out": "incomplete",
+  "tripped": "incomplete"
+}

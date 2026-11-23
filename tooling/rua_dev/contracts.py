@@ -13,6 +13,9 @@ SIM_SCHEMA_PATH = Path("schemas/sim-plant.schema.json")
 OPENAPI_PATH = Path("schemas/openapi.json")
 CATALOG_PATH = Path("schemas/robot-tools.json")
 CONTEXT_PATH = Path("schemas/robot-context.json")
+RESPONSE_FIELDS_PATH = Path("schemas/robot-model-response-fields.json")
+OUTCOMES_PATH = Path("schemas/robot-tool-outcomes.json")
+OUTPUT_UNITS_PATH = Path("schemas/robot-tool-output-units.json")
 INPUT_UNITS_PATH = Path("schemas/robot-tool-input-units.json")
 SIM_MODELS_PATH = Path("hebbian_rua/simulator/contract.py")
 PYTHON_MODELS_PATH = Path("hebbian_rua/client/contract/station_api.py")
@@ -26,6 +29,9 @@ SCHEMA_PATHS = (
     CATALOG_PATH,
     CONTEXT_PATH,
     INPUT_UNITS_PATH,
+    OUTPUT_UNITS_PATH,
+    OUTCOMES_PATH,
+    RESPONSE_FIELDS_PATH,
 )
 SDK_PATHS = {
     SdkTarget.PYTHON: (
@@ -80,6 +86,9 @@ def generate_contracts(targets: frozenset[SdkTarget], *, check: bool = False) ->
     for arguments, destination in (
         ([], CATALOG_PATH),
         (["--", "--context"], CONTEXT_PATH),
+        (["--", "--response-fields"], RESPONSE_FIELDS_PATH),
+        (["--", "--outcomes"], OUTCOMES_PATH),
+        (["--", "--output-units"], OUTPUT_UNITS_PATH),
         (["--", "--input-units"], INPUT_UNITS_PATH),
     ):
         result = subprocess.run(
@@ -104,6 +113,9 @@ def generate_contracts(targets: frozenset[SdkTarget], *, check: bool = False) ->
         json.loads(CATALOG_PATH.read_text()),
         json.loads(CONTEXT_PATH.read_text()),
         json.loads(INPUT_UNITS_PATH.read_text()),
+        json.loads(OUTPUT_UNITS_PATH.read_text()),
+        json.loads(OUTCOMES_PATH.read_text()),
+        json.loads(RESPONSE_FIELDS_PATH.read_text()),
         targets,
     )
     commands.generate(openapi_document, targets)

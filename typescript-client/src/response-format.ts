@@ -1,32 +1,15 @@
 /** Readable model responses; station records retain their original SI values. */
-const positionFields: Readonly<Record<string, string>> = {
-  position: "position_mm",
-  target_position: "target_position_mm",
-  tool_position: "tool_position_mm",
-  surface_height_meters: "surface_height_mm",
-  leeway_meters: "leeway_mm",
-  model_points: "model_points_mm",
-  position_error_meters: "position_error_mm",
-  position_shortfall_meters: "position_shortfall_mm",
-};
+import {
+  modelOutputUnits,
+  modelResponseFields,
+} from "./generated/robot-tools.js";
 
-const angleFields: Readonly<Record<string, string>> = {
-  joints: "joints_degrees",
-  measured_joints: "measured_joints_degrees",
-  measured_joint_velocities: "measured_joint_velocities_degrees_per_second",
-  commanded_joints: "commanded_joints_degrees",
-  rest_pose: "rest_pose_degrees",
-  target_joints: "target_joints_degrees",
-  goal_joints: "goal_joints_degrees",
-  joint_error_radians: "joint_error_degrees",
-  joint_errors_radians: "joint_errors_degrees",
-  orientation_error_radians: "orientation_error_degrees",
-  orientation_shortfall_radians: "orientation_shortfall_degrees",
-  measured_angle_radians: "measured_angle_degrees",
-  target_angle_radians: "target_angle_degrees",
-  joint_speed: "joint_speed_degrees_per_second",
-  max_joint_speed: "max_joint_speed_degrees_per_second",
-};
+const outputConversions = new Map<string, readonly [string, number]>(
+  modelOutputUnits.map(([stationField, modelField, factor]) => [
+    stationField,
+    [modelField, factor],
+  ]),
+);
 
 function rounded(value: number, decimals: number): number {
   const scale = 10 ** decimals;
@@ -115,12 +98,9 @@ function formatModelField(value: unknown, fieldName: string): unknown {
         (key === "checkpoints" && Array.isArray(item) && item.length === 0)
       )
         continue;
-      const positionField = positionFields[key];
-      const angleField = angleFields[key];
-      if (positionField !== undefined)
-        formatted[positionField] = scaleNumbers(item, 1000);
-      else if (angleField !== undefined)
-        formatted[angleField] = scaleNumbers(item, 180 / Math.PI);
+      const conversion = outputConversions.get(key);
+      if (conversion)
+        formatted[conversion[0]] = scaleNumbers(item, conversion[1]);
       else formatted[key] = formatModelField(item, key);
     }
     return formatted;
@@ -134,40 +114,7 @@ function formatModelField(value: unknown, fieldName: string): unknown {
   return value;
 }
 
-const stateFields = [
-  "robot",
-  "joint_names",
-  "max_joint_speed",
-  "surface_guard",
-];
-const stationContextFields = ["description", "lease"];
-const armFields = [
-  "arm",
-  "mode",
-  "status",
-  "fault",
-  "active_trip",
-  "interlocks",
-  "recovery_issue",
-  "revision",
-  "sampled_at_unix_seconds",
-  "measured_joints",
-  "tool",
-  "gripper_opening",
-];
-const diagnosticFields = [
-  "id",
-  "command_id",
-  "group_id",
-  "stream_command_id",
-  "sequence_id",
-  "action_sequence_id",
-  "checkpoints",
-  "trace_context",
-  "model_points",
-  "accepted_at",
-  "finished_at",
-];
+const diagnosticFields = new Set<string>(modelResponseFields.diagnostic);
 
 export interface ConciseOptions {
   /**
@@ -201,14 +148,7 @@ function compactEarlierStep(value: unknown): unknown {
       ...keepFields(entry, ["arm"]),
       record: keepFields(
         modelCommandRecord(record as Record<string, unknown>),
-        [
-          "label",
-          "completion",
-          "phase",
-          "target_status",
-          "pose_limited",
-          "path_limited",
-        ],
+        modelResponseFields.earlier_step,
       ),
     });
   });
@@ -230,11 +170,15 @@ export function conciseOutput(
     const arms = Array.isArray(record["arms"]) ? record["arms"] : [];
     return {
       ...keepFields(record, [
-        ...stateFields,
-        ...(options.keepStationContext ? stationContextFields : []),
+        ...modelResponseFields.state,
+        ...(options.keepStationContext
+          ? modelResponseFields.station_context
+          : []),
       ]),
       arms: arms.map((arm) =>
-        conciseOutput(keepFields(arm as Record<string, unknown>, armFields)),
+        conciseOutput(
+          keepFields(arm as Record<string, unknown>, modelResponseFields.arm),
+        ),
       ),
     };
   }
@@ -254,7 +198,7 @@ export function conciseOutput(
   }
   return Object.fromEntries(
     Object.entries(record)
-      .filter(([key]) => !diagnosticFields.includes(key))
+      .filter(([key]) => !diagnosticFields.has(key))
       .map(([key, item]) => [key, conciseOutput(item, options)]),
   );
 }

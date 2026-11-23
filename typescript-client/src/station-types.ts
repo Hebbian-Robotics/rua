@@ -79,6 +79,9 @@ export function commandResult(record: CommandRecord | null | undefined):
         detail: phase.detail,
       };
   }
+  throw new Error(
+    `Unknown command phase ${JSON.stringify(phase satisfies never)}`,
+  );
 }
 
 /** The admitted path and its limits, when this command has a planned move. */

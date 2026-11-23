@@ -6,10 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use hebbian_contracts::{
-    ActionSequencePhase, ActionSequenceRequest, ArmRecord, CommandOutcome, ObservationSource,
-    ObserveArguments, PreviewPoseArguments, RobotToolDefinition, RobotToolOperation,
-    SequenceToolConfiguration, StationCommand, StopArguments, action_sequence_tool_schema,
-    parse_sequence_tool_arguments, robot_tool_catalog, robot_tool_context,
+    ActionSequencePhase, ActionSequenceRequest, ArmRecord, CommandOutcome, ModelOutcome,
+    ObservationSource, ObserveArguments, PreviewPoseArguments, RobotToolDefinition,
+    RobotToolOperation, SequenceToolConfiguration, StationCommand, StopArguments,
+    action_sequence_tool_schema, parse_sequence_tool_arguments, robot_tool_catalog,
+    robot_tool_context,
 };
 use serde_json::Value;
 
@@ -708,9 +709,9 @@ fn command_records_outcome(
         .map(str::to_owned);
     for record in &records {
         limited |= record.record.was_limited();
-        let outcome = record.record.outcome();
-        complete &= outcome == Some(CommandOutcome::Completed);
-        stopped_short |= outcome == Some(CommandOutcome::StoppedShort);
+        let outcome = record.record.outcome().map(ModelOutcome::from);
+        complete &= outcome == Some(ModelOutcome::Completed);
+        stopped_short |= outcome == Some(ModelOutcome::StoppedShort);
         payloads.push(serde_json::to_value(&record.record).map_err(|error| {
             Error::Connection(format!("cannot serialize tool result: {error}"))
         })?);
@@ -744,11 +745,11 @@ fn classify_motion_outcome(
     value: Value,
 ) -> RobotToolOutcome {
     let mut interrupted = false;
-    for outcome in outcomes {
-        if outcome == CommandOutcome::Faulted {
+    for outcome in outcomes.map(ModelOutcome::from) {
+        if outcome == ModelOutcome::Faulted {
             return RobotToolOutcome::Faulted(value);
         }
-        interrupted |= outcome == CommandOutcome::Interrupted;
+        interrupted |= outcome == ModelOutcome::Interrupted;
     }
     if interrupted {
         RobotToolOutcome::Interrupted(value)
