@@ -39,16 +39,66 @@ async fn publish_camera_until_stopped(
     const RETRY_DELAY: Duration = Duration::from_secs(3);
     while !stopped.is_cancelled() {
         let result = async {
+            let resolved = camera.resolve().await?;
+            let capture = capture::CaptureWorker::start(&resolved)?;
+            {
+                let publication_stopped = stopped.child_token();
+                let publication = publish_capture_until_stopped(
+                    &resolved,
+                    &room,
+                    &credentials,
+                    &capture,
+                    &publication_stopped,
+                );
+                tokio::pin!(publication);
+                tokio::select! {
+                    () = capture.finished() => {
+                        publication_stopped.cancel();
+                        publication.await;
+                    }
+                    () = &mut publication => {}
+                }
+            }
+            capture.stop().await?;
+            Ok::<(), PublisherError>(())
+        }
+        .await;
+        if stopped.is_cancelled() {
+            break;
+        }
+        // PROTOCOL: The station reads per-camera status from unprefixed lines.
+        match result {
+            Ok(()) => eprintln!("Camera {}: capture stopped", camera.name()),
+            Err(error) => eprintln!("Camera {}: {error}", camera.name()),
+        }
+        tokio::select! {
+            () = stopped.cancelled() => break,
+            () = tokio::time::sleep(RETRY_DELAY) => {},
+        }
+    }
+}
+
+async fn publish_capture_until_stopped(
+    camera: &config::CameraConfiguration,
+    room: &str,
+    credentials: &Credentials,
+    capture: &capture::CaptureWorker,
+    stopped: &CancellationToken,
+) {
+    let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
+    while !stopped.is_cancelled() {
+        let started = std::time::Instant::now();
+        let result = async {
             let access = credentials.camera_access(
-                &room,
+                room,
                 camera.name(),
                 station_access::CameraLifetime::Station,
             )?;
-            let publishing_camera = camera.resolve().await?;
-            publisher::publish_camera(
-                publishing_camera,
+            publisher::publish_camera_frames(
+                camera,
                 &access.server_url,
                 &access.token,
+                capture.frames.clone(),
                 stopped.clone(),
             )
             .await?;
@@ -58,14 +108,17 @@ async fn publish_camera_until_stopped(
         if stopped.is_cancelled() {
             break;
         }
-        // PROTOCOL: The station reads per-camera status from unprefixed lines.
-        match result {
-            Ok(()) => eprintln!("Camera {}: publisher stopped", camera.name()),
-            Err(error) => eprintln!("Camera {}: {error}", camera.name()),
+        let Err(error) = result else {
+            // The frame stream closed. Let the outer loop resolve and reopen the camera.
+            break;
+        };
+        eprintln!("Camera {}: {error}", camera.name());
+        if started.elapsed() >= Duration::from_secs(3) {
+            backoff.reset();
         }
         tokio::select! {
             () = stopped.cancelled() => break,
-            () = tokio::time::sleep(RETRY_DELAY) => {},
+            () = tokio::time::sleep(backoff.next_delay()) => {},
         }
     }
 }

@@ -24,6 +24,10 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
    or if several physical devices match. A replug can be picked up while
    the station and viewer are running.
 
+If an active capture stops delivering frames for five seconds, RUA releases
+the stale capture process and looks up the USB camera again. LiveKit retries
+its connection separately, so a room outage leaves healthy capture running.
+
 Use `rua status --camera wrist` to see if a wrist snapshot is available and
 why a camera is missing. If you bring your own camera or several match the
 selector, run `rua camera-devices` on the station laptop. Each result includes
