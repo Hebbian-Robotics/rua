@@ -112,9 +112,10 @@ Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
 ## Local snapshots
 
-For local USB snapshots only, leave the LiveKit settings unset and keep the
-same `--camera` flag. The media companion captures frames directly. The CLI
-and SDKs still use the station URL for discovery and snapshots.
+For local USB snapshots only, leave the LiveKit settings unset. Use the
+registered wrist selector or pass an explicit `--camera` mapping. The media
+companion captures frames directly, and the station serves the snapshots to
+the CLI and SDKs.
 
 ```sh
 curl --fail http://127.0.0.1:8792/cameras

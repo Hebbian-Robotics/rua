@@ -44,7 +44,7 @@ See [viewer controls](so101-manual-control.md#controls) for details and
    pnpm start:agent
    ```
 
-2. In **Run a task**, open **Agent settings** and choose your provider. If you
+2. In **Agent**, open **Run options** and choose your provider. If you
    set up cameras, confirm their live feeds and select the views to share.
 3. With the arm enabled and holding, enter “Describe what you can observe. Keep
    the arm and gripper still.” Select **Start task** and check the reply. The
