@@ -168,6 +168,22 @@ pub struct LiveRun {
 }
 
 impl UnixNanos {
+    /// Convert a legacy fractional-seconds timestamp to the nearest nanosecond.
+    /// Negative timestamps and NaN read as zero. Overflow saturates at the maximum.
+    #[must_use]
+    pub fn from_unix_seconds(seconds: f64) -> Self {
+        let nanos = std::time::Duration::try_from_secs_f64(seconds.max(0.0))
+            .ok()
+            .and_then(|elapsed| u64::try_from(elapsed.as_nanos()).ok())
+            .unwrap_or(u64::MAX);
+        Self(nanos)
+    }
+
+    #[must_use]
+    pub fn as_unix_seconds(self) -> f64 {
+        std::time::Duration::from_nanos(self.0).as_secs_f64()
+    }
+
     /// The current time.
     #[must_use]
     pub fn now() -> Self {

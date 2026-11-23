@@ -1,5 +1,5 @@
 use crate::recorder::{RecorderError, archive::RecordingArchive};
-use hebbian_contracts::{Backoff, Event, Frame, ServerMessage, unix_nanoseconds};
+use hebbian_contracts::{Backoff, Event, Frame, ServerMessage, UnixNanos, unix_nanoseconds};
 use std::{collections::BTreeMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -350,7 +350,6 @@ fn record_command(
     )
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // CONSTRAINT: station command times are Unix seconds; span timestamps are nanoseconds.
 fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> RecordedSpan {
     use sha2::{Digest, Sha256};
     let digest = format!(
@@ -388,10 +387,13 @@ fn command_span(arm: &str, record: &hebbian_contracts::CommandRecord) -> Recorde
         span_id: digest[32..48].into(),
         parent_span_id: parent.map(|(_, span)| span),
         name: format!("{arm}: {}", record.label),
-        start_time_unix_nano: ((record.accepted_at * 1e9) as u64).to_string(),
-        end_time_unix_nano: record
-            .finished_at()
-            .map_or_else(|| "0".to_owned(), |time| ((time * 1e9) as u64).to_string()),
+        start_time_unix_nano: UnixNanos::from_unix_seconds(record.accepted_at)
+            .0
+            .to_string(),
+        end_time_unix_nano: record.finished_at().map_or_else(
+            || "0".to_owned(),
+            |time| UnixNanos::from_unix_seconds(time).0.to_string(),
+        ),
         attributes: BTreeMap::from([
             ("hebbian.active".into(), record.is_pending().into()),
             ("hebbian.kind".into(), "command".into()),
@@ -523,12 +525,13 @@ mod tests {
     #[test]
     fn interrupted_commands_are_recorded_as_errors() -> Result<(), Box<dyn std::error::Error>> {
         let record: hebbian_contracts::CommandRecord = serde_json::from_value(serde_json::json!({
-            "command_id": "command-1", "label": "move", "accepted_at": 1.0,
+            "command_id": "command-1", "label": "move", "accepted_at": 1_700_000_000.0 + 2_f64.powi(-22),
             "command": {"kind": "joint_stream", "goal_joints": [0.1], "joint_speed": 1.0},
             "phase": {"kind": "outcome_unknown", "finished_at": 2.0, "detail": "Disconnected"},
             "checkpoints": []
         }))?;
         let span = command_span("follower", &record);
+        assert_eq!(span.start_time_unix_nano, "1700000000000000238");
         assert_eq!(span.status.code, "STATUS_CODE_ERROR");
         assert_eq!(span.status.message.as_deref(), Some("Disconnected"));
         Ok(())
