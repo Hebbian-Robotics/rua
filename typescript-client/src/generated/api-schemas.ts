@@ -87,26 +87,6 @@ export const apiSchemas = z.object({
     .union([
       z
         .object({
-          gripper_opening: z
-            .union([z.number().gte(0).lte(1), z.null()])
-            .default(null),
-          max_joint_speed: z
-            .union([
-              z
-                .number()
-                .describe(
-                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                ),
-              z
-                .null()
-                .describe(
-                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                ),
-            ])
-            .describe(
-              "Speed for both resources in rad/s; overrides the goal speed when provided.",
-            )
-            .default(null),
           goal: z
             .union([
               z
@@ -162,6 +142,26 @@ export const apiSchemas = z.object({
             .describe(
               "One goal in an action sequence. The arm settles at each target.",
             ),
+          gripper_opening: z
+            .union([z.number().gte(0).lte(1), z.null()])
+            .default(null),
+          max_joint_speed: z
+            .union([
+              z
+                .number()
+                .describe(
+                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                ),
+            ])
+            .describe(
+              "Speed for both resources in rad/s; overrides the goal speed when provided.",
+            )
+            .default(null),
         })
         .strict(),
       z
@@ -423,26 +423,6 @@ export const apiSchemas = z.object({
                   .union([
                     z
                       .object({
-                        gripper_opening: z
-                          .union([z.number().gte(0).lte(1), z.null()])
-                          .default(null),
-                        max_joint_speed: z
-                          .union([
-                            z
-                              .number()
-                              .describe(
-                                "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                              ),
-                            z
-                              .null()
-                              .describe(
-                                "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                              ),
-                          ])
-                          .describe(
-                            "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                          )
-                          .default(null),
                         goal: z
                           .union([
                             z
@@ -511,6 +491,26 @@ export const apiSchemas = z.object({
                           .describe(
                             "One goal in an action sequence. The arm settles at each target.",
                           ),
+                        gripper_opening: z
+                          .union([z.number().gte(0).lte(1), z.null()])
+                          .default(null),
+                        max_joint_speed: z
+                          .union([
+                            z
+                              .number()
+                              .describe(
+                                "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                              ),
+                          ])
+                          .describe(
+                            "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                          )
+                          .default(null),
                       })
                       .strict(),
                     z
@@ -982,26 +982,6 @@ export const apiSchemas = z.object({
                 .union([
                   z
                     .object({
-                      gripper_opening: z
-                        .union([z.number().gte(0).lte(1), z.null()])
-                        .default(null),
-                      max_joint_speed: z
-                        .union([
-                          z
-                            .number()
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                            ),
-                          z
-                            .null()
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                            ),
-                        ])
-                        .describe(
-                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                        )
-                        .default(null),
                       goal: z
                         .union([
                           z
@@ -1070,6 +1050,26 @@ export const apiSchemas = z.object({
                         .describe(
                           "One goal in an action sequence. The arm settles at each target.",
                         ),
+                      gripper_opening: z
+                        .union([z.number().gte(0).lte(1), z.null()])
+                        .default(null),
+                      max_joint_speed: z
+                        .union([
+                          z
+                            .number()
+                            .describe(
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                            ),
+                        ])
+                        .describe(
+                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                        )
+                        .default(null),
                     })
                     .strict(),
                   z
@@ -1117,26 +1117,6 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
-                          gripper_opening: z
-                            .union([z.number().gte(0).lte(1), z.null()])
-                            .default(null),
-                          max_joint_speed: z
-                            .union([
-                              z
-                                .number()
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                ),
-                            ])
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                            )
-                            .default(null),
                           goal: z
                             .union([
                               z
@@ -1205,6 +1185,26 @@ export const apiSchemas = z.object({
                             .describe(
                               "One goal in an action sequence. The arm settles at each target.",
                             ),
+                          gripper_opening: z
+                            .union([z.number().gte(0).lte(1), z.null()])
+                            .default(null),
+                          max_joint_speed: z
+                            .union([
+                              z
+                                .number()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                ),
+                            ])
+                            .describe(
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                            )
+                            .default(null),
                         })
                         .strict(),
                       z
@@ -1249,26 +1249,6 @@ export const apiSchemas = z.object({
           .union([
             z
               .object({
-                gripper_opening: z
-                  .union([z.number().gte(0).lte(1), z.null()])
-                  .default(null),
-                max_joint_speed: z
-                  .union([
-                    z
-                      .number()
-                      .describe(
-                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                      ),
-                    z
-                      .null()
-                      .describe(
-                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                      ),
-                  ])
-                  .describe(
-                    "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                  )
-                  .default(null),
                 goal: z
                   .union([
                     z
@@ -1326,6 +1306,26 @@ export const apiSchemas = z.object({
                   .describe(
                     "One goal in an action sequence. The arm settles at each target.",
                   ),
+                gripper_opening: z
+                  .union([z.number().gte(0).lte(1), z.null()])
+                  .default(null),
+                max_joint_speed: z
+                  .union([
+                    z
+                      .number()
+                      .describe(
+                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                      ),
+                  ])
+                  .describe(
+                    "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                  )
+                  .default(null),
               })
               .strict(),
             z
@@ -2981,26 +2981,6 @@ export const apiSchemas = z.object({
                         .union([
                           z
                             .object({
-                              gripper_opening: z
-                                .union([z.number().gte(0).lte(1), z.null()])
-                                .default(null),
-                              max_joint_speed: z
-                                .union([
-                                  z
-                                    .number()
-                                    .describe(
-                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                )
-                                .default(null),
                               goal: z
                                 .union([
                                   z
@@ -3075,6 +3055,26 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "One goal in an action sequence. The arm settles at each target.",
                                 ),
+                              gripper_opening: z
+                                .union([z.number().gte(0).lte(1), z.null()])
+                                .default(null),
+                              max_joint_speed: z
+                                .union([
+                                  z
+                                    .number()
+                                    .describe(
+                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                )
+                                .default(null),
                             })
                             .strict(),
                           z
@@ -5180,13 +5180,6 @@ export const apiSchemas = z.object({
                 action: z.union([
                   z
                     .object({
-                      gripper_opening: z
-                        .union([z.number().gte(0).lte(1), z.null()])
-                        .optional(),
-                      kind: z.literal("move"),
-                      max_joint_speed: z
-                        .union([z.number().gt(0), z.null()])
-                        .optional(),
                       goal: z.union([
                         z
                           .object({
@@ -5245,6 +5238,13 @@ export const apiSchemas = z.object({
                           })
                           .strict(),
                       ]),
+                      gripper_opening: z
+                        .union([z.number().gte(0).lte(1), z.null()])
+                        .optional(),
+                      kind: z.literal("move"),
+                      max_joint_speed: z
+                        .union([z.number().gt(0), z.null()])
+                        .optional(),
                     })
                     .strict(),
                   z
@@ -5293,26 +5293,6 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
-                          gripper_opening: z
-                            .union([z.number().gte(0).lte(1), z.null()])
-                            .default(null),
-                          max_joint_speed: z
-                            .union([
-                              z
-                                .number()
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                ),
-                            ])
-                            .describe(
-                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                            )
-                            .default(null),
                           goal: z
                             .union([
                               z
@@ -5381,6 +5361,26 @@ export const apiSchemas = z.object({
                             .describe(
                               "One goal in an action sequence. The arm settles at each target.",
                             ),
+                          gripper_opening: z
+                            .union([z.number().gte(0).lte(1), z.null()])
+                            .default(null),
+                          max_joint_speed: z
+                            .union([
+                              z
+                                .number()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                ),
+                            ])
+                            .describe(
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                            )
+                            .default(null),
                         })
                         .strict(),
                       z
@@ -5454,13 +5454,6 @@ export const apiSchemas = z.object({
                       action: z.union([
                         z
                           .object({
-                            gripper_opening: z
-                              .union([z.number().gte(0).lte(1), z.null()])
-                              .optional(),
-                            kind: z.literal("move"),
-                            max_joint_speed: z
-                              .union([z.number().gt(0), z.null()])
-                              .optional(),
                             goal: z.union([
                               z
                                 .object({
@@ -5519,6 +5512,13 @@ export const apiSchemas = z.object({
                                 })
                                 .strict(),
                             ]),
+                            gripper_opening: z
+                              .union([z.number().gte(0).lte(1), z.null()])
+                              .optional(),
+                            kind: z.literal("move"),
+                            max_joint_speed: z
+                              .union([z.number().gt(0), z.null()])
+                              .optional(),
                           })
                           .strict(),
                         z
@@ -5569,26 +5569,6 @@ export const apiSchemas = z.object({
                           .union([
                             z
                               .object({
-                                gripper_opening: z
-                                  .union([z.number().gte(0).lte(1), z.null()])
-                                  .default(null),
-                                max_joint_speed: z
-                                  .union([
-                                    z
-                                      .number()
-                                      .describe(
-                                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                      ),
-                                    z
-                                      .null()
-                                      .describe(
-                                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                      ),
-                                  ])
-                                  .describe(
-                                    "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                  )
-                                  .default(null),
                                 goal: z
                                   .union([
                                     z
@@ -5667,6 +5647,26 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "One goal in an action sequence. The arm settles at each target.",
                                   ),
+                                gripper_opening: z
+                                  .union([z.number().gte(0).lte(1), z.null()])
+                                  .default(null),
+                                max_joint_speed: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .describe(
+                                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                  )
+                                  .default(null),
                               })
                               .strict(),
                             z
@@ -5753,11 +5753,6 @@ export const apiSchemas = z.object({
   CompiledArmAction: z.union([
     z
       .object({
-        gripper_opening: z
-          .union([z.number().gte(0).lte(1), z.null()])
-          .optional(),
-        kind: z.literal("move"),
-        max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
         goal: z.union([
           z
             .object({ joints: z.array(z.number()), kind: z.literal("joints") })
@@ -5800,6 +5795,11 @@ export const apiSchemas = z.object({
             })
             .strict(),
         ]),
+        gripper_opening: z
+          .union([z.number().gte(0).lte(1), z.null()])
+          .optional(),
+        kind: z.literal("move"),
+        max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
       })
       .strict(),
     z
@@ -5857,11 +5857,6 @@ export const apiSchemas = z.object({
       action: z.union([
         z
           .object({
-            gripper_opening: z
-              .union([z.number().gte(0).lte(1), z.null()])
-              .optional(),
-            kind: z.literal("move"),
-            max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
             goal: z.union([
               z
                 .object({
@@ -5907,6 +5902,11 @@ export const apiSchemas = z.object({
                 })
                 .strict(),
             ]),
+            gripper_opening: z
+              .union([z.number().gte(0).lte(1), z.null()])
+              .optional(),
+            kind: z.literal("move"),
+            max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
           })
           .strict(),
         z
@@ -5933,13 +5933,6 @@ export const apiSchemas = z.object({
             action: z.union([
               z
                 .object({
-                  gripper_opening: z
-                    .union([z.number().gte(0).lte(1), z.null()])
-                    .optional(),
-                  kind: z.literal("move"),
-                  max_joint_speed: z
-                    .union([z.number().gt(0), z.null()])
-                    .optional(),
                   goal: z.union([
                     z
                       .object({
@@ -5987,6 +5980,13 @@ export const apiSchemas = z.object({
                       })
                       .strict(),
                   ]),
+                  gripper_opening: z
+                    .union([z.number().gte(0).lte(1), z.null()])
+                    .optional(),
+                  kind: z.literal("move"),
+                  max_joint_speed: z
+                    .union([z.number().gt(0), z.null()])
+                    .optional(),
                 })
                 .strict(),
               z
@@ -21998,26 +21998,6 @@ export const apiSchemas = z.object({
                             .union([
                               z
                                 .object({
-                                  gripper_opening: z
-                                    .union([z.number().gte(0).lte(1), z.null()])
-                                    .default(null),
-                                  max_joint_speed: z
-                                    .union([
-                                      z
-                                        .number()
-                                        .describe(
-                                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                        ),
-                                      z
-                                        .null()
-                                        .describe(
-                                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                        ),
-                                    ])
-                                    .describe(
-                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
-                                    )
-                                    .default(null),
                                   goal: z
                                     .union([
                                       z
@@ -22096,6 +22076,26 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "One goal in an action sequence. The arm settles at each target.",
                                     ),
+                                  gripper_opening: z
+                                    .union([z.number().gte(0).lte(1), z.null()])
+                                    .default(null),
+                                  max_joint_speed: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .describe(
+                                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
+                                    )
+                                    .default(null),
                                 })
                                 .strict(),
                               z

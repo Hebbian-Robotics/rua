@@ -38,23 +38,6 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             ],
             "description": "An arm action must name a goal or gripper target. When both are present they start together.",
             "properties": {
-              "gripper_opening": {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              "max_joint_speed_degrees_per_second": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Peak speed in degrees per second; clamped to the profile maximum."
-              },
               "goal": {
                 "oneOf": [
                   {
@@ -183,6 +166,23 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                     "type": "object"
                   }
                 ]
+              },
+              "gripper_opening": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "max_joint_speed_degrees_per_second": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Peak speed in degrees per second; clamped to the profile maximum."
               }
             },
             "type": "object"

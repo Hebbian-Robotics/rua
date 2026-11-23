@@ -2353,6 +2353,12 @@ class ActionSequenceMove(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    goal: Annotated[
+        ActionSequenceJointsMovement | ActionSequencePoseMovement,
+        Field(
+            description="One goal in an action sequence. The arm settles at each target."
+        ),
+    ]
     gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
     max_joint_speed: Annotated[
         StrictFloat | None,
@@ -2360,12 +2366,6 @@ class ActionSequenceMove(BaseModel):
             description="Speed for both resources in rad/s; overrides the goal speed when provided."
         ),
     ] = None
-    goal: Annotated[
-        ActionSequenceJointsMovement | ActionSequencePoseMovement,
-        Field(
-            description="One goal in an action sequence. The arm settles at each target."
-        ),
-    ]
 
 
 class ActionSequenceStep(BaseModel):
@@ -2598,6 +2598,7 @@ class CompiledArmAction1(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    goal: CompiledGoal1 | CompiledGoal2
     gripper_opening: Annotated[
         StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
     ] = None
@@ -2605,7 +2606,6 @@ class CompiledArmAction1(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
-    goal: CompiledGoal1 | CompiledGoal2
 
 
 class CompiledOperation(BaseModel):
