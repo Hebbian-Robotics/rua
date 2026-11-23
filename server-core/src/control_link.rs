@@ -12,7 +12,7 @@ use crate::config::ControllerConfig;
 use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
 use crate::lease::{
     AcquireError, AcquireMode, ArmGate, CommandAuthority, GenerationTicket, Lease, LeaseAdmission,
-    LeaseRequest, SharedInterlocks,
+    LeaseRequest, MotionClaim, SharedInterlocks,
 };
 use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
@@ -29,7 +29,7 @@ const REMEMBERED_RECORDS: usize = 10_000;
 const WRITER_POLL: Duration = Duration::from_millis(20);
 
 pub(crate) struct SubmissionAuthority<'a> {
-    pub token: Option<&'a str>,
+    pub claim: MotionClaim<'a>,
     pub generation: &'a [GenerationTicket],
     pub clock: fn() -> Instant,
 }
@@ -976,7 +976,7 @@ fn enqueue_with_lease<R>(
     enqueue: impl FnOnce() -> Result<R, crate::arm::Rejection>,
 ) -> Result<R, crate::arm::Rejection> {
     shared.lease.admit_generation(
-        authority.token,
+        authority.claim,
         authority.clock,
         gates,
         authority.generation,
@@ -1063,7 +1063,7 @@ mod tests {
                 .submit_command_async(
                     Command::Enable,
                     SubmissionAuthority {
-                        token: Some(&lease.lease_token),
+                        claim: crate::lease::MotionClaim::Token(&lease.lease_token),
                         generation: &[current_execution],
                         clock: Instant::now
                     },
@@ -1086,7 +1086,7 @@ mod tests {
             .submit_command_async(
                 Command::Enable,
                 SubmissionAuthority {
-                    token: None,
+                    claim: MotionClaim::Unleased,
                     generation: &[],
                     clock: Instant::now,
                 },

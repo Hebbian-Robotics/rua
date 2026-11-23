@@ -151,6 +151,76 @@ fn poll_stops(pending: &mut Vec<PendingArmStop>) -> Settling {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum MotionClaim<'a> {
+    Unleased,
+    Token(&'a str),
+}
+
+impl<'a> From<Option<&'a str>> for MotionClaim<'a> {
+    fn from(token: Option<&'a str>) -> Self {
+        token.map_or(Self::Unleased, Self::Token)
+    }
+}
+
+enum MotionPermission<'a> {
+    Held(&'a Held),
+    Unleased,
+    Interrupted,
+}
+
+impl<'a> MotionPermission<'a> {
+    fn check(
+        held: Option<&'a Held>,
+        presented: MotionClaim<'_>,
+        admission: LeaseAdmission,
+        now: Instant,
+    ) -> Result<Self, Rejection> {
+        if let Some(claim) = held {
+            if matches!(
+                claim.phase,
+                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
+            ) && admission.permits_interrupted_lease()
+            {
+                return Ok(Self::Interrupted);
+            }
+            if !claim.active_at(now) {
+                return Err(Rejection {
+                    reason: RejectionReason::ArmBusy,
+                    detail: "The lease transfer has not finished; retry taking the lease"
+                        .to_owned(),
+                });
+            }
+            if !matches!(presented, MotionClaim::Token(token) if same_token(&claim.token, token)) {
+                return Err(Rejection {
+                    reason: RejectionReason::LeaseHeldElsewhere,
+                    detail: format!(
+                        "The lease is held by {} '{}'. Stop is always accepted; \
+                         otherwise wait for it to finish, or take the lease.",
+                        match claim.request.holder {
+                            LeaseHolder::Agent => "agent",
+                            LeaseHolder::Manual => "manual",
+                        },
+                        claim.request.label
+                    ),
+                });
+            }
+            return Ok(Self::Held(claim));
+        }
+        if matches!(presented, MotionClaim::Token(_)) {
+            return Err(Rejection {
+                reason: RejectionReason::LeaseHeldElsewhere,
+                detail: "The lease has ended; acquire it again".to_owned(),
+            });
+        }
+        Ok(Self::Unleased)
+    }
+
+    fn is_manual_holder(&self) -> bool {
+        matches!(self, Self::Held(claim) if claim.request.holder == LeaseHolder::Manual)
+    }
+}
+
 impl Held {
     fn status(&self, now: Instant) -> LeaseStatus {
         LeaseStatus {
@@ -967,7 +1037,7 @@ impl Lease {
 
     pub(crate) fn admit_generation<T>(
         &self,
-        token: Option<&str>,
+        claim: MotionClaim<'_>,
         clock: impl FnOnce() -> Instant,
         gates: &[ArmGate],
         generations: &[GenerationTicket],
@@ -1006,15 +1076,15 @@ impl Lease {
         }
         // WHY: Sample after acquiring the authority and interlock locks: contention can outlast a lease.
         let now = clock();
-        let (manual_holder, cameras_unavailable) = held.as_ref().map_or((false, false), |claim| {
-            (
-                claim.active_at(now)
-                    && claim.is_held_by(token)
-                    && claim.request.holder == LeaseHolder::Manual,
-                !claim.unavailable_cameras.is_empty(),
-            )
-        });
-        if admission.blocks_on_interlocks() && cameras_unavailable && !manual_holder {
+        let permission = MotionPermission::check(held.as_ref(), claim, admission, now);
+        if admission.blocks_on_interlocks()
+            && held
+                .as_ref()
+                .is_some_and(|claim| !claim.unavailable_cameras.is_empty())
+            && !permission
+                .as_ref()
+                .is_ok_and(MotionPermission::is_manual_holder)
+        {
             return Err(Rejection {
                 reason: RejectionReason::Interlocked,
                 detail: "A camera the lease requires is unavailable. Motion resumes when it gives a fresh frame".to_owned(),
@@ -1026,42 +1096,7 @@ impl Lease {
                 detail: "The command was superseded by a stop".to_owned(),
             });
         }
-        if let Some(claim) = held.as_ref() {
-            if matches!(
-                claim.phase,
-                LeasePhase::Interrupted | LeasePhase::ExpiredManual(_)
-            ) && admission.permits_interrupted_lease()
-            {
-                return Ok(act());
-            }
-            if !claim.active_at(now) {
-                return Err(Rejection {
-                    reason: RejectionReason::ArmBusy,
-                    detail: "The lease transfer has not finished; retry taking the lease"
-                        .to_owned(),
-                });
-            }
-            if !claim.is_held_by(token) {
-                return Err(Rejection {
-                    reason: RejectionReason::LeaseHeldElsewhere,
-                    detail: format!(
-                        "The lease is held by {} '{}'. Stop is always accepted; \
-                         otherwise wait for it to finish, or take the lease.",
-                        match claim.request.holder {
-                            LeaseHolder::Agent => "agent",
-                            LeaseHolder::Manual => "manual",
-                        },
-                        claim.request.label
-                    ),
-                });
-            }
-        } else if token.is_some() {
-            return Err(Rejection {
-                reason: RejectionReason::LeaseHeldElsewhere,
-                detail: "The lease has ended; acquire it again".to_owned(),
-            });
-        }
-        Ok(act())
+        permission.map(|_| act())
     }
 }
 
@@ -1125,7 +1160,14 @@ mod tests {
     }
 
     fn command(lease: &Lease, token: Option<&str>, now: Instant) -> Result<(), Rejection> {
-        lease.admit_generation(token, || now, &[], &[], LeaseAdmission::Normal, || ())
+        lease.admit_generation(
+            token.into(),
+            || now,
+            &[],
+            &[],
+            LeaseAdmission::Normal,
+            || (),
+        )
     }
 
     fn gated(
@@ -1135,7 +1177,7 @@ mod tests {
         expected_revision: Option<u64>,
     ) -> Result<(), Rejection> {
         lease.admit_generation(
-            token,
+            token.into(),
             Instant::now,
             &[ArmGate {
                 interlocks: arm.clone(),
@@ -1513,7 +1555,7 @@ mod tests {
         assert!(
             lease
                 .admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || now,
                     &[],
                     &first_submission,
@@ -1525,7 +1567,7 @@ mod tests {
         assert!(
             lease
                 .admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || now,
                     &[],
                     &second_submission,
@@ -1556,7 +1598,14 @@ mod tests {
         assert!(command(&lease, None, later).is_err());
         assert!(
             lease
-                .admit_generation(None, || later, &[], &[], LeaseAdmission::ClearFault, || ())
+                .admit_generation(
+                    None.into(),
+                    || later,
+                    &[],
+                    &[],
+                    LeaseAdmission::ClearFault,
+                    || ()
+                )
                 .is_ok()
         );
         let (retry, ()) = lease
@@ -1647,7 +1696,7 @@ mod tests {
             let interlock_guard = gate.interlocks.lock_unpoisoned();
             let submission = scope.spawn(|| {
                 lease.admit_generation(
-                    Some(&token),
+                    MotionClaim::Token(&token),
                     || *current_time.lock_unpoisoned(),
                     std::slice::from_ref(&gate),
                     &[],
@@ -1681,7 +1730,7 @@ mod tests {
         acquire_agent(&lease, now);
         let mut ran = false;
         let _ = lease.admit_generation(
-            None,
+            None.into(),
             || now,
             &[],
             &[],

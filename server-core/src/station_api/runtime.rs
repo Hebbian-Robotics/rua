@@ -136,7 +136,7 @@ async fn admit_prepared_step(
                 .action_step_async(
                     actions,
                     crate::control_link::SubmissionAuthority {
-                        token: Some(&admission.token),
+                        claim: crate::lease::MotionClaim::Token(&admission.token),
                         generation: &admission.generation,
                         clock: state.clock,
                     },

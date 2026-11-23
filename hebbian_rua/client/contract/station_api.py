@@ -656,51 +656,6 @@ class IkFailure(StrEnum):
     out_of_reach = "out_of_reach"
 
 
-class IkPose(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    joints: list[StrictFloat]
-    orientation_error_radians: Annotated[
-        StrictFloat,
-        Field(
-            description="From the required orientation, or from the seed's when it was free."
-        ),
-    ]
-    position_error_meters: StrictFloat
-    tool_position: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    tool_quaternion: Annotated[list[StrictFloat], Field(max_length=4, min_length=4)]
-
-
-class IkSolved(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    joints: list[StrictFloat]
-    orientation_error_radians: Annotated[
-        StrictFloat,
-        Field(
-            description="From the required orientation, or from the seed's when it was free."
-        ),
-    ]
-    position_error_meters: StrictFloat
-    tool_position: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    tool_quaternion: Annotated[list[StrictFloat], Field(max_length=4, min_length=4)]
-    outcome: Literal["solved"] = "solved"
-
-
-class IkFailed(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    best: IkPose
-    outcome: Literal["failed"] = "failed"
-    reason: IkFailure
-
-
 class ArmDisconnectedInterlock(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1319,27 +1274,6 @@ class Sample(BaseModel):
     ]
 
 
-class Segment(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    corners: list[list[StrictFloat]]
-    label: str
-    minimum_duration_seconds: Annotated[
-        StrictFloat | None,
-        Field(
-            description="Slows the section to last at least this long, so arms moving together\ncan arrive together. Only for a single straight section."
-        ),
-    ] = None
-    target_position: Annotated[
-        list[StrictFloat] | None, Field(max_length=3, min_length=3)
-    ] = None
-    target_quaternion: Annotated[
-        list[StrictFloat] | None, Field(max_length=4, min_length=4)
-    ] = None
-
-
 class ActionSequenceAccepted(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1670,15 +1604,6 @@ class CompilationTarget(BaseModel):
     supports_pose: bool
 
 
-class CornerPlan(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    peak_speed: StrictFloat
-    segments: list[Segment]
-
-
 class PreparationFailure(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1770,16 +1695,6 @@ class PlanStep(BaseModel):
     )
     status: PlanStepStatus
     text: str
-
-
-class PlannedMotion(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    path_limited: PathLimited | None = None
-    plan: CornerPlan
-    pose_limited: PoseLimited | None = None
 
 
 class PoseDescription(BaseModel):
@@ -2621,42 +2536,6 @@ class CompiledProgram(BaseModel):
     steps: list[dict[str, CompiledOperation]]
 
 
-class Reply(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    accepted: bool
-    description: Annotated[
-        PoseDescription | None, Field(description="The answer to a `describe_pose`.")
-    ] = None
-    detail: str | None = None
-    ik: Annotated[
-        IkSolved | IkFailed | None, Field(description="How a `solve_pose` ended.")
-    ] = None
-    kind: Literal["reply"] = "reply"
-    lease: Annotated[
-        LeaseGranted | LeaseHeld | None,
-        Field(description="The answer to a request about the lease."),
-    ] = None
-    plan: Annotated[
-        PlannedMotion | None, Field(description="The plan a `plan_motion` made.")
-    ] = None
-    projection: Annotated[
-        PoseProjection | None, Field(description="The answer to a `project_pose`.")
-    ] = None
-    reason: RejectionReason | None = None
-    record: CommandRecord | None = None
-    records: Annotated[
-        list[CommandRecord],
-        Field(
-            description="The records of a grouped move, one per arm in the order asked; empty\nfor any other request.",
-            validate_default=True,
-        ),
-    ] = []
-    request_id: str
-
-
 class GroupCommandSubmissionRequest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -3033,7 +2912,6 @@ class Frame(BaseModel):
     ]
     event: Annotated[
         State
-        | Reply
         | SnapshotTaken
         | Resync
         | Record

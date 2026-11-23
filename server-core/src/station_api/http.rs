@@ -995,7 +995,7 @@ async fn submit_group_command(
                     .action_step_async(
                         actions,
                         SubmissionAuthority {
-                            token,
+                            claim: token.into(),
                             generation: &generation,
                             clock: state.clock,
                         },
@@ -1053,7 +1053,7 @@ async fn submit_command(
                         link.submit_command_async(
                             command,
                             SubmissionAuthority {
-                                token,
+                                claim: token.into(),
                                 generation: &generation,
                                 clock: state.clock,
                             },
@@ -1069,7 +1069,7 @@ async fn submit_command(
                         link.submit_command_async(
                             command,
                             SubmissionAuthority {
-                                token,
+                                claim: token.into(),
                                 generation: &generation,
                                 clock: state.clock,
                             },
@@ -1123,7 +1123,7 @@ async fn update_stream_goal(
                         .submit_command_async(
                             command,
                             SubmissionAuthority {
-                                token: Some(&input.lease_token),
+                                claim: crate::lease::MotionClaim::Token(&input.lease_token),
                                 generation: &generation,
                                 clock: state.clock,
                             },

@@ -603,6 +603,7 @@ mod tests {
         let mode = AcquireMode::WaitOrFail;
         let grant = lease.acquire_stopping_arms(request.clone(), mode).unwrap();
         let expired = Instant::now() + Duration::from_secs(2);
+        let unleased = crate::lease::MotionClaim::Unleased;
         let (disabled_handle, disabled_inbox) = arm_channel();
         let (moving_handle, moving_inbox) = arm_channel();
         let moving_generation = Arc::new(AtomicU64::new(0));
@@ -645,7 +646,14 @@ mod tests {
         assert!(lease.status(expired).is_some());
         assert!(
             lease
-                .admit_generation(None, || expired, &[], &[], LeaseAdmission::Normal, || ())
+                .admit_generation(
+                    unleased,
+                    || expired,
+                    &[],
+                    &[],
+                    LeaseAdmission::Normal,
+                    || ()
+                )
                 .is_err()
         );
         for (name, inbox) in [("disabled", &disabled_inbox), ("moving", &moving_inbox)] {
@@ -675,14 +683,21 @@ mod tests {
                 .submit(Command::Enable, Now::current())
         };
         let enabled = lease
-            .admit_generation(None, || expired, &[], &[], LeaseAdmission::Normal, enable)
+            .admit_generation(
+                unleased,
+                || expired,
+                &[],
+                &[],
+                LeaseAdmission::Normal,
+                enable,
+            )
             .unwrap()
             .unwrap();
         assert_eq!(enabled.label, "enable");
         let fresh = lease.acquire_stopping_arms(request, mode).unwrap();
         assert_ne!(fresh.lease_token, grant.lease_token);
         let late_plan = lease.admit_generation(
-            Some(&grant.lease_token),
+            crate::lease::MotionClaim::Token(&grant.lease_token),
             || expired,
             &[],
             &prepared_before_expiry,

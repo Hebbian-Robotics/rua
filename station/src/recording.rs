@@ -174,17 +174,21 @@ impl RecordingManager {
 
     // INVARIANT: Preserve controller loss even when recording stops before telemetry arrives.
     pub fn mark_controller_interruption(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let RecordingState::Recording { session, .. } | RecordingState::Stopping(session) =
-            &mut *state
-        {
+        let recording_name = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (RecordingState::Recording { session, .. } | RecordingState::Stopping(session)) =
+                &mut *state
+            else {
+                return;
+            };
             session.controller_interrupted = true;
-            if let Err(error) = self.mark_interruption_file(&session.name) {
-                tracing::warn!(%error, "Could not mark the recording's controller interruption");
-            }
+            session.name.clone()
+        };
+        if let Err(error) = self.mark_interruption_file(&recording_name) {
+            tracing::warn!(%error, "Could not mark the recording's controller interruption");
         }
     }
 
