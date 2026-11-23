@@ -585,7 +585,7 @@ mod tests {
                 }],
                 peak_speed: 1.0,
             },
-            joint_speed: 1.0,
+            joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
             path_limited: None,
             pose_limited: None,
         }
@@ -921,7 +921,7 @@ mod tests {
                 PreparedArmAction::gripper(
                     "right".into(),
                     crate::action_step::PreparedGripper {
-                        angle: 0.2,
+                        angle: hebbian_contracts::JawAngle::try_from(0.2).unwrap(),
                         joint_speed: None,
                     },
                 ),

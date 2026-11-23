@@ -1044,7 +1044,7 @@ mod tests {
         let prepared = vec![PreparedArmAction::gripper(
             "arm".into(),
             PreparedGripper {
-                angle: 0.5,
+                angle: hebbian_contracts::JawAngle::try_from(0.5).unwrap(),
                 joint_speed: None,
             },
         )];

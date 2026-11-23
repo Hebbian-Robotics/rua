@@ -174,7 +174,7 @@ pub(super) struct HeldStreamGoal {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct GripperTarget {
-    pub(crate) angle: crate::motion_values::JointAngle,
+    pub(crate) angle: hebbian_contracts::JawAngle,
     pub(crate) speed: crate::motion_values::JointSpeed,
 }
 
