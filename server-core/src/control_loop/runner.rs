@@ -95,6 +95,10 @@ pub(super) struct Runner<'a, P: Plant> {
 }
 
 impl<P: Plant> Runner<'_, P> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "A plant failure may require releasing the motors before the runner exits."
+    )]
     pub(super) fn plant_failed(&mut self, failure: &anyhow::Error, now: Now) {
         self.plant_lost = self.plant.pacing().is_set_by_replies();
         let reason = format!("{failure:#}");
@@ -163,6 +167,10 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "An already powered arm needs a recovery hold before it can rejoin the loop."
+    )]
     fn inspect_reconnected_arm(&mut self) {
         if matches!(self.recovery, BusRecovery::Disabled) {
             self.finish_disabled_reconnection();
@@ -256,6 +264,10 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Approved recovery can restore torque once the runner verifies feedback."
+    )]
     fn approve_recovery(&mut self, now: Now) {
         let attempt = (|| -> anyhow::Result<Feedback> {
             let observation = self.plant.observe_recovery()?;
@@ -791,6 +803,10 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "The runner sends guarded joint and jaw setpoints to the plant."
+    )]
     fn write_setpoints(
         &mut self,
         gripper: &GripperEffect,

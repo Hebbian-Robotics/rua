@@ -1,8 +1,3 @@
-#![allow(
-    clippy::disallowed_methods,
-    reason = "The control loop owns writable plants and performs admitted motor operations."
-)]
-
 mod activity;
 mod cycle;
 mod group;

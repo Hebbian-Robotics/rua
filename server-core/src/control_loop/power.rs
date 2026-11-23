@@ -69,6 +69,10 @@ impl StartupHold {
 }
 
 impl<P: Plant> Runner<'_, P> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "Startup turns on torque after preflight and guard startup."
+    )]
     fn begin_enable(&mut self) -> anyhow::Result<StartupHold> {
         let config = self.config;
         self.plant.preflight()?;
@@ -149,6 +153,10 @@ impl<P: Plant> Runner<'_, P> {
         *feedback = fresh;
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "A failed startup must release any torque the attempt left on."
+    )]
     pub(super) fn fail_enable(&mut self, reason: &str, now: Now) {
         self.startup_hold = None;
         // INVARIANT: A refused preflight leaves the arm disabled; release what the
@@ -164,6 +172,10 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "The runner releases torque on disable and shutdown."
+    )]
     pub(super) fn release(&mut self, now: Now) {
         let cleanup_errors: Vec<String> = self
             .plant

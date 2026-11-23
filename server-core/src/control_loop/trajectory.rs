@@ -374,6 +374,10 @@ mod tests {
     use hebbian_contracts::{CornerPlan, Segment};
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "This tracking regression sends setpoints to a simulated plant."
+    )]
     fn a_lagging_axis_can_finish_without_raising_the_tracking_limit() -> Result<(), Trip> {
         let mut input = ControllerConfig::parse(TEST_CONFIG).unwrap().into_input();
         input.tracking_following_lag_seconds = 0.11;
