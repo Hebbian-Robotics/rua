@@ -15,7 +15,7 @@ use axum::{Json, Router};
 
 use crate::lease_routes::ServedArms;
 use crate::recording::{RecordingConfiguration, RecordingManager};
-use hebbian_contracts::{PhoneInvite, PhoneInviteRequest, ViewerControl, ViewerControlMode};
+use hebbian_contracts::{ControlCapabilities, PhoneInvite, PhoneInviteRequest};
 use hebbian_robot_use_core::control_link::LinkHandle;
 use station_access::{CameraConfiguration, Credentials, WatcherRole, new_room_name};
 
@@ -43,7 +43,6 @@ pub enum CameraForwarding {
 
 #[derive(Debug, Clone)]
 pub struct WebSettings {
-    pub viewer_directory: Option<PathBuf>,
     pub local_cameras_only: bool,
     pub recordings_directory: PathBuf,
     pub enable_recording: bool,
@@ -231,36 +230,29 @@ pub fn mount(
     let media_status = settings.media_status;
     let proxy = crate::camera_proxy::camera_proxy(media_connect_address);
     let status_proxy = proxy.clone();
-    let control_mode = ViewerControl {
-        mode: if settings.manual_control {
-            ViewerControlMode::So101Manual
-        } else {
-            ViewerControlMode::Llm
-        },
+    let control_capabilities = ControlCapabilities {
+        manual_pose_control: settings.manual_control,
     };
     let router = Router::new()
         .route(
-            "/viewer/api/recording-enabled",
+            "/recording/enabled",
             get(move || async move { Json(recording_enabled) }),
         )
-        .route("/viewer/api/token", get(create_token))
-        .route("/viewer/api/phone-invites", post(create_phone_invite))
+        .route("/media/access-token", get(create_token))
+        .route("/media/phone-invites", post(create_phone_invite))
         .with_state(access)
         .route(
-            "/viewer/api/control-mode",
-            get(move || async move { Json(control_mode) }),
+            "/control/capabilities",
+            get(move || async move { Json(control_capabilities) }),
         )
         .route(
-            "/viewer/api/media-status",
+            "/media/status",
             get(move || async move {
                 media_status_response(&media_status, status_proxy.as_deref()).await
             }),
         )
-        .nest(
-            "/viewer/api",
-            crate::recording::router(manager.clone(), arms.clone()),
-        )
-        .nest("/viewer/api", recordings::router(recording_library));
+        .merge(crate::recording::router(manager.clone(), arms.clone()))
+        .merge(recordings::router(recording_library));
     let router = router.merge(crate::camera_proxy::observation_router(
         arms.clone(),
         proxy.clone(),

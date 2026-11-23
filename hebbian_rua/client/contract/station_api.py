@@ -393,6 +393,19 @@ class ControlAction(StrEnum):
     shutdown = "shutdown"
 
 
+class ControlCapabilities(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    manual_pose_control: Annotated[
+        bool,
+        Field(
+            description="Whether this station is configured for manual pose control."
+        ),
+    ]
+
+
 class ControllerKind(StrEnum):
     ik = "ik"
     policy = "policy"
@@ -1547,11 +1560,6 @@ class UnixNanos(RootModel[str]):
     root: Annotated[str, Field(pattern="^[0-9]+$")]
 
 
-class ViewerControlMode(StrEnum):
-    llm = "llm"
-    so101_manual = "so101_manual"
-
-
 class JointsWaypoint(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1915,14 +1923,6 @@ class TraceSpan(BaseModel):
         "message": None,
     }
     trace_id: str
-
-
-class ViewerControl(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    mode: ViewerControlMode
 
 
 class PoseWaypoint(BaseModel):

@@ -51,9 +51,10 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-The station serves the resulting viewer assets from disk. Starting the viewer requires
-[LiveKit credentials](cameras.md#connect-a-usb-camera). For an API-only station,
-use `serve --headless`. Camera builds have
+The viewer in this checkout uses the published `v0.1.4` SDK. Follow
+[Getting started](getting-started.md#2-verify-manual-control) to serve it with
+the bundled `v0.1.4` station. The source-built station exposes the station API.
+Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
@@ -69,7 +70,7 @@ Run commands from the repository root. After pulling dependency changes, run
 | Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
 | TypeScript agent | `pnpm start:agent` | Restart the agent server to load example changes. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
-| Viewer served by the station | `pnpm build` | Refresh the browser; no station restart is needed. |
+| Viewer served by the bundled v0.1.4 station | `pnpm build` | Refresh the browser; no station restart is needed. |
 | Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
 | Rust SDK or PyO3 bindings | Run `uv sync` and restart the Python process to load the rebuilt extension. | The next Python process imports the new native module. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |

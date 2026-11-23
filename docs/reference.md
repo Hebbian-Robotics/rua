@@ -16,8 +16,7 @@ and defaults.
 
 The station supervises the controller and the media companion. A media
 restart interrupts snapshots and live publishing while control and state
-remain available. The viewer's media status endpoint reports service and camera
-errors. After a controller failure, use explicit recovery before resuming control.
+remain available. `GET /media/status` reports service and camera errors. After a controller failure, use explicit recovery before resuming control.
 
 Support and disable the arm before restarting the station to apply code,
 profile or environment changes. A graceful shutdown can attempt to return to

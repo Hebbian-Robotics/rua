@@ -151,7 +151,7 @@ async fn check_camera(
 async fn camera_problem(client: &Client, station: &Url, name: &SnapshotName) -> Option<String> {
     use hebbian_contracts::MediaStatusReport;
 
-    let url = endpoint(station, &["viewer", "api", "media-status"]).ok()?;
+    let url = endpoint(station, &["media", "status"]).ok()?;
     let status: MediaStatusReport = client
         .get(url)
         .send()
@@ -172,7 +172,7 @@ struct Refusal {
 
 async fn check_livekit(client: &Client, server: &Url) -> Result<String> {
     let response = client
-        .get(endpoint(server, &["viewer", "api", "token"])?)
+        .get(endpoint(server, &["media", "access-token"])?)
         .send()
         .await?;
     if response.status() == StatusCode::SERVICE_UNAVAILABLE {

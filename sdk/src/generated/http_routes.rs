@@ -272,6 +272,23 @@ impl Station {
         Ok(())
     }
 
+    /// Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn phone_invite(&self, body: &PhoneInviteRequest) -> Result<PhoneInvite> {
+        Ok(self
+            .request(
+                Method::POST,
+                &self.server,
+                &["media", "phone-invites"],
+                Some(body),
+            )
+            .await?
+            .json()
+            .await?)
+    }
+
     /// Capture selected arm state and camera frames under the same observation revisions.
     ///
     /// # Errors
@@ -354,6 +371,70 @@ impl Station {
             .await?)
     }
 
+    /// Start recording and return the recording's name.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn start_recording(&self) -> Result<String> {
+        Ok(self
+            .request(
+                Method::POST,
+                &self.server,
+                &["recording", "start"],
+                None::<&()>,
+            )
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// Whether the station is recording.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn recording_status(&self) -> Result<RecordingStatus> {
+        Ok(self
+            .request(
+                Method::GET,
+                &self.server,
+                &["recording", "status"],
+                None::<&()>,
+            )
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// Stop recording.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn stop_recording(&self) -> Result<()> {
+        self.request(
+            Method::POST,
+            &self.server,
+            &["recording", "stop"],
+            None::<&()>,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Stop recording only while the token still holds the lease.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub(crate) async fn stop_recording_for_lease(&self, body: &LeaseToken) -> Result<()> {
+        self.request(
+            Method::POST,
+            &self.server,
+            &["recording", "stop-for-lease"],
+            Some(body),
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Record a model-loop event.
     ///
     /// # Errors
@@ -405,86 +486,5 @@ impl Station {
     pub async fn get_trace_file(&self, name: &str) -> Result<Response> {
         self.request(Method::GET, &self.server, &["traces", name], None::<&()>)
             .await
-    }
-
-    /// Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.
-    ///
-    /// # Errors
-    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
-    pub async fn phone_invite(&self, body: &PhoneInviteRequest) -> Result<PhoneInvite> {
-        Ok(self
-            .request(
-                Method::POST,
-                &self.server,
-                &["viewer", "api", "phone-invites"],
-                Some(body),
-            )
-            .await?
-            .json()
-            .await?)
-    }
-
-    /// Start recording and return the recording's name.
-    ///
-    /// # Errors
-    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
-    pub async fn start_recording(&self) -> Result<String> {
-        Ok(self
-            .request(
-                Method::POST,
-                &self.server,
-                &["viewer", "api", "recording", "start"],
-                None::<&()>,
-            )
-            .await?
-            .json()
-            .await?)
-    }
-
-    /// Whether the station is recording.
-    ///
-    /// # Errors
-    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
-    pub async fn recording_status(&self) -> Result<RecordingStatus> {
-        Ok(self
-            .request(
-                Method::GET,
-                &self.server,
-                &["viewer", "api", "recording", "status"],
-                None::<&()>,
-            )
-            .await?
-            .json()
-            .await?)
-    }
-
-    /// Stop recording.
-    ///
-    /// # Errors
-    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
-    pub async fn stop_recording(&self) -> Result<()> {
-        self.request(
-            Method::POST,
-            &self.server,
-            &["viewer", "api", "recording", "stop"],
-            None::<&()>,
-        )
-        .await?;
-        Ok(())
-    }
-
-    /// Stop recording only while the token still holds the lease.
-    ///
-    /// # Errors
-    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
-    pub(crate) async fn stop_recording_for_lease(&self, body: &LeaseToken) -> Result<()> {
-        self.request(
-            Method::POST,
-            &self.server,
-            &["viewer", "api", "recording", "stop-for-lease"],
-            Some(body),
-        )
-        .await?;
-        Ok(())
     }
 }

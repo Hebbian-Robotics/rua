@@ -28,7 +28,6 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
     HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
-        None,
         Arc::new(hebbian_robot_use_server::run_telemetry::LiveRunStore::default()),
         Arc::default(),
         |runtime, address| {
@@ -36,7 +35,6 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
                 runtime,
                 address,
                 WebSettings {
-                    viewer_directory: None,
                     local_cameras_only: false,
                     recordings_directory: std::env::temp_dir(),
                     enable_recording: false,
@@ -84,7 +82,7 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
     let upstream_requests = Arc::new(Semaphore::new(0));
     let media = axum::Router::new()
         .route(
-            "/viewer/api/media-status",
+            "/media/status",
             get(|| async {
                 axum::Json(json!({
                     "service": {"state": "running"},
@@ -138,7 +136,7 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
             media_task.abort();
             let _ = media_task.await;
             let response = Client::new()
-                .get(format!("{base}/viewer/api/media-status"))
+                .get(format!("{base}/media/status"))
                 .send()
                 .await
                 .unwrap();
@@ -168,7 +166,7 @@ async fn assert_forwarding(
         .build()
         .unwrap();
     let status: serde_json::Value = client
-        .get(format!("{base}/viewer/api/media-status"))
+        .get(format!("{base}/media/status"))
         .send()
         .await
         .unwrap()

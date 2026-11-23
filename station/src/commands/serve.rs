@@ -20,7 +20,7 @@ pub(crate) struct ServeArguments {
     /// not for judging motion.
     #[arg(long)]
     pub(crate) no_physics_stand_in: bool,
-    /// Serve the station HTTP API, event stream and viewer on this address.
+    /// Serve the station HTTP API and event stream on this address.
     #[arg(long, default_value = "127.0.0.1:8792")]
     pub(crate) http_address: String,
     /// Serve camera snapshots and recordings (`hebbian-robot-use-media serve`) on this address.

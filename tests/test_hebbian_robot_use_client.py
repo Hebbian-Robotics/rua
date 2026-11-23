@@ -193,7 +193,7 @@ class _MediaWithOneStalledCamera(BaseHTTPRequestHandler):
             body = b'[{"name": "wrist", "available": false}]'
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-        elif self.path == "/viewer/api/media-status":
+        elif self.path == "/media/status":
             body = (
                 b'{"service":{"state":"running"},"cameras":{"wrist":{"state":"stalled"},'
                 b'"front":{"state":"capturing","publication":{"state":"publishing"}}}}'

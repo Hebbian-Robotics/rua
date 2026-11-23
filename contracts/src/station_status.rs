@@ -1,24 +1,15 @@
-//! What the station reports to its viewer.
+//! Station capabilities and service status.
 
 use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// What the viewer shows for driving the arm.
+/// `GET /control/capabilities`.
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewerControlMode {
-    /// A model loop drives; the viewer only watches.
-    Llm,
-    /// The viewer's pose controls drive a single SO-101.
-    So101Manual,
-}
-
-/// `GET /viewer/api/control-mode`.
-#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
-pub struct ViewerControl {
-    pub mode: ViewerControlMode,
+pub struct ControlCapabilities {
+    /// Whether this station is configured for manual pose control.
+    pub manual_pose_control: bool,
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
@@ -113,7 +104,7 @@ pub enum CameraPublication {
     Reconnecting { detail: Option<String> },
 }
 
-/// `GET /viewer/api/media-status`: the media service and its configured cameras.
+/// `GET /media/status`: the media service and its configured cameras.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub struct MediaStatusReport {
     pub service: MediaState,

@@ -60,10 +60,12 @@ precedence over these files.
 ## Watch a USB camera
 
 1. With LiveKit configured and the station running, get a viewer token on the
-   station host:
+   station host. The command below uses the source-built station's API. For the
+   bundled `v0.1.4` station used in [Getting started](getting-started.md),
+   use `/viewer/api/token`.
 
    ```sh
-   curl --fail http://127.0.0.1:8792/viewer/api/token
+   curl --fail http://127.0.0.1:8792/media/access-token
    ```
 
 2. Open the [hosted LiveKit Cameras page](https://hebbian-robotics.github.io/livekit-cameras/)
@@ -80,7 +82,7 @@ also watch the feed under **Workspace**.
 
 With LiveKit configured, run `hebbian-robot-use phone-invite overhead` on the
 station host and open the printed URL on your phone. You can also use the
-HTTP request below and open the response’s `url`. On the camera page, allow camera access
+HTTP request below against the source station and open the response’s `url`. On the camera page, allow camera access
 and select **Start streaming**. Keep the invite URL private. The station accepts
 invite requests over loopback. In the local viewer, open **Camera setup** in
 **Workspace**. Under **Remote camera**, enter a camera location and select
@@ -91,7 +93,7 @@ and select **Use connection**. The station creates the room name by default
 and issues a one-hour publishing token with each invite. Keep the token private.
 
 ```sh
-curl --fail http://127.0.0.1:8792/viewer/api/phone-invites \
+curl --fail http://127.0.0.1:8792/media/phone-invites \
   --json '{"label":"overhead"}'
 ```
 

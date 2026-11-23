@@ -1,7 +1,7 @@
 # Get started with an SO-101
 
 Use the browser viewer to verify manual control and run your first agent.
-These steps use the source checkout.
+These steps run the bundled `v0.1.4` station with the matching examples.
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).
 
@@ -19,7 +19,7 @@ arms, supervise the first motions, and keep a physical power cutoff accessible.
 Before starting the viewer, [add your LiveKit credentials to the station’s `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
 
 ```sh
-uv run cargo run -p hebbian-robot-use-server -- serve --manual-control
+HEBBIAN_VIEWER_DIRECTORY="$PWD/dist/viewer" uvx --from "hebbian-rua==0.1.4" rua serve --manual-control
 ```
 
 Wait for `measured_joints` to populate in [station state](http://127.0.0.1:8792/state).

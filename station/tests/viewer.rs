@@ -152,12 +152,6 @@ fn scratch_directory(name: &str) -> PathBuf {
     directory
 }
 
-fn viewer_directory() -> PathBuf {
-    let directory = scratch_directory("viewer");
-    std::fs::write(directory.join("index.html"), "<title>viewer</title>").unwrap();
-    directory
-}
-
 fn media_executable(directory: &Path) -> PathBuf {
     let path = directory.join("hebbian-robot-use-media");
     std::fs::write(&path, "#!/bin/sh\nexec sleep 30\n").unwrap();
@@ -228,7 +222,7 @@ fn submit_command(
 
 #[test]
 #[allow(clippy::too_many_lines)]
-fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
+fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
     // SAFETY: this is the only test in this binary, so nothing else reads the
     // environment while it is set.
     unsafe {
@@ -250,7 +244,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let scratch = scratch_directory("station");
     let media_status = hebbian_robot_use_server::media_status::MediaStatus::default();
     let settings = WebSettings {
-        viewer_directory: None,
         local_cameras_only: false,
         recordings_directory: scratch.join("recordings"),
         enable_recording: true,
@@ -268,7 +261,6 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
-        Some(viewer_directory()),
         live_run.clone(),
         Arc::default(),
         |runtime, bound| {
@@ -315,29 +307,22 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     let address = server.local_address();
     let started = Instant::now();
 
-    let (status, page) = get(address, "/viewer/");
-    assert_eq!((status, page.as_str()), (200, "<title>viewer</title>"));
-    assert_eq!(get(address, "/viewer/missing.js").0, 404);
-    assert_eq!(get(address, "/").0, 307, "the root redirects to the viewer");
+    assert_eq!(get(address, "/viewer/").0, 404);
+    assert_eq!(get(address, "/viewer/api/recordings").0, 404);
+    assert_eq!(get(address, "/").0, 404);
     assert_eq!(
-        get_json(address, "/viewer/api/control-mode"),
-        json!({"mode": "llm"})
+        get_json(address, "/control/capabilities"),
+        json!({"manual_pose_control": false})
     );
-    assert_eq!(
-        get_json(address, "/viewer/api/recording-enabled"),
-        json!(true)
-    );
-    assert_eq!(
-        get_json(address, "/viewer/api/recordings")["recordings"],
-        json!([])
-    );
+    assert_eq!(get_json(address, "/recording/enabled"), json!(true));
+    assert_eq!(get_json(address, "/recordings")["recordings"], json!([]));
 
-    let media = get_json(address, "/viewer/api/media-status");
+    let media = get_json(address, "/media/status");
     assert_eq!(media["cameras"], json!({}));
     assert_eq!(media["service"]["state"], "unavailable");
 
     // WHY: Tokens and phone invites are signed here, with no call to LiveKit.
-    let access = get_json(address, "/viewer/api/token");
+    let access = get_json(address, "/media/access-token");
     assert_eq!(access["server_url"], "wss://10.255.255.1:7880");
     assert!(
         access["token"]
@@ -346,7 +331,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     );
     let (status, invite) = post_json(
         address,
-        "/viewer/api/phone-invites",
+        "/media/phone-invites",
         &json!({"label": "table_left"}),
     );
     assert_eq!(status, 200, "{invite}");
@@ -356,14 +341,14 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     }));
     let (status, refusal) = post_json(
         address,
-        "/viewer/api/phone-invites",
+        "/media/phone-invites",
         &json!({"label": "Not A Name"}),
     );
     assert_eq!(status, 400, "{refusal}");
     assert!(refusal["detail"].is_string());
 
     // WHY: The room announcement goes to an address that never answers, off the request path.
-    let (status, recording) = post_json(address, "/viewer/api/recording/start", &json!({}));
+    let (status, recording) = post_json(address, "/recording/start", &json!({}));
     assert_eq!(status, 200, "{recording}");
 
     let (status, state) = get(address, "/state");
@@ -433,10 +418,7 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         started.elapsed() < Duration::from_secs(5),
         "a request waited on the network"
     );
-    assert_eq!(
-        get_json(address, "/viewer/api/recordings")["active"],
-        recording
-    );
+    assert_eq!(get_json(address, "/recordings")["active"], recording);
 
     assert_eq!(
         post_json(
@@ -448,16 +430,13 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
         204
     );
     wait_for_arm(address, no_interlocks);
-    assert_eq!(
-        get_json(address, "/viewer/api/recordings")["active"],
-        recording
-    );
-    let (status, stopped) = post_json(address, "/viewer/api/recording/stop", &json!({}));
+    assert_eq!(get_json(address, "/recordings")["active"], recording);
+    let (status, stopped) = post_json(address, "/recording/stop", &json!({}));
     assert_eq!(status, 200, "{stopped}");
 
     let granted = acquire_lease(address, "manual", &[]);
     let manual_token = granted["lease_token"].as_str().unwrap();
-    let (status, recording) = post_json(address, "/viewer/api/recording/start", &json!({}));
+    let (status, recording) = post_json(address, "/recording/start", &json!({}));
     assert_eq!(status, 200, "{recording}");
     let accepted = submit_command(
         address,
@@ -493,18 +472,12 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     }
     let refused = submit_command(address, Some(manual_token), &json!({"kind":"enable"}), None);
     assert_eq!(refused["status"], "refused", "{refused}");
-    assert_eq!(
-        get_json(address, "/viewer/api/recordings")["active"],
-        recording
-    );
+    assert_eq!(get_json(address, "/recordings")["active"], recording);
     bus_down.store(false, Ordering::Relaxed);
     wait_for_arm(address, no_interlocks);
     assert_eq!(releases.load(Ordering::Relaxed), 0);
     assert_eq!(recovery_enables.load(Ordering::Relaxed), 0);
-    assert_eq!(
-        get_json(address, "/viewer/api/recordings")["active"],
-        recording
-    );
+    assert_eq!(get_json(address, "/recordings")["active"], recording);
 
     bus_down.store(true, Ordering::Relaxed);
     wait_for_arm(address, |arm| has_interlock(arm, "arm_disconnected"));
@@ -535,34 +508,10 @@ fn tokens_leases_and_the_viewer_never_wait_on_an_unreachable_livekit() {
     plant_failed.store(true, Ordering::Relaxed);
     wait_for_arm(address, |arm| arm["mode"] == "faulted");
     plant_failed.store(false, Ordering::Relaxed);
-    assert_eq!(
-        get_json(address, "/viewer/api/recordings")["active"],
-        recording
-    );
-    let (status, stopped) = post_json(address, "/viewer/api/recording/stop", &json!({}));
+    assert_eq!(get_json(address, "/recordings")["active"], recording);
+    let (status, stopped) = post_json(address, "/recording/stop", &json!({}));
     assert_eq!(status, 200, "{stopped}");
     server.close();
     shutdown_requested.store(true, Ordering::Relaxed);
     loop_thread.join().unwrap();
-}
-
-#[test]
-fn viewer_startup_reports_only_missing_credentials_before_loading_the_arm() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-server"))
-        .current_dir(directory.path())
-        .env("HEBBIAN_VIEWER_DIRECTORY", directory.path())
-        .env("LIVEKIT_URL", "wss://example.invalid")
-        .env("LIVEKIT_API_KEY", "example-key")
-        .env("LIVEKIT_API_SECRET", "  ")
-        .args(["serve", "--profile", "missing-profile"])
-        .output()
-        .unwrap();
-    let message = String::from_utf8(output.stderr).unwrap();
-    assert!(!output.status.success());
-    assert!(message.contains("LIVEKIT_API_SECRET"));
-    assert!(message.contains(".env"));
-    assert!(!message.contains("LIVEKIT_API_KEY"));
-    assert!(!message.contains("example-key"));
-    assert!(!message.contains("--local-cameras-only"));
 }

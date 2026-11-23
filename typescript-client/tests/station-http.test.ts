@@ -46,7 +46,7 @@ test("a camera without a frame checks the configured direct media service", asyn
   const requested = stubFetch((url) => {
     if (url.pathname === "/cameras")
       return Response.json([{ name: "wrist", available: false }]);
-    if (url.pathname === "/viewer/api/media-status")
+    if (url.pathname === "/media/status")
       return Response.json({
         service: { state: "running" },
         cameras: {
@@ -75,13 +75,13 @@ test("a camera without a frame checks the configured direct media service", asyn
   expect(requested.map(({ url }) => url)).toEqual([
     "http://station:8781/cameras/wrist",
     "http://station:8781/cameras",
-    "http://station:8792/viewer/api/media-status",
+    "http://station:8792/media/status",
   ]);
 });
 
 test("phone invites post to the station and traces are listed and downloaded from it", async () => {
   const requested = stubFetch((url) => {
-    if (url.pathname === "/viewer/api/phone-invites")
+    if (url.pathname === "/media/phone-invites")
       return Response.json({
         camera_name: "phone_table",
         url: "https://x",

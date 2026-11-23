@@ -12,16 +12,14 @@ use axum::Json;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Path as UrlPath, Query, Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Serialize;
 use tokio::io::BufReader;
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
-use tower_http::services::ServeDir;
-use tower_http::set_header::SetResponseHeader;
 
 use crate::control_link::{LinkHandle, SubmissionAuthority};
 
@@ -97,7 +95,6 @@ impl HttpServer {
     pub fn start(
         address: &str,
         trace_directories: Vec<PathBuf>,
-        viewer_directory: Option<PathBuf>,
         telemetry: Arc<dyn crate::station_api::telemetry::RunTelemetry>,
         shutdown_requested: Arc<AtomicBool>,
         extra_routes: impl FnOnce(&tokio::runtime::Handle, SocketAddr) -> anyhow::Result<Router>,
@@ -127,7 +124,7 @@ impl HttpServer {
             events,
         });
         let extra = extra_routes(runtime.handle(), bound)?;
-        let router = router(Arc::clone(&station_state), viewer_directory).merge(extra);
+        let router = router(Arc::clone(&station_state)).merge(extra);
         let (shutdown, shutdown_requested) = oneshot::channel::<()>();
         runtime.spawn(async move {
             let http_server = axum::serve(
@@ -284,7 +281,7 @@ async fn reject_while_shutting_down(
     next.run(request).await
 }
 
-fn router(station_state: Arc<StationState>, viewer_directory: Option<PathBuf>) -> Router {
+fn router(station_state: Arc<StationState>) -> Router {
     let admission_routes = Router::new()
         .route("/commands", post(submit_command))
         .route("/group_commands", post(submit_group_command))
@@ -304,7 +301,7 @@ fn router(station_state: Arc<StationState>, viewer_directory: Option<PathBuf>) -
             Arc::clone(&station_state),
             reject_while_shutting_down,
         ));
-    let router = Router::new()
+    Router::new()
         .merge(admission_routes)
         .route("/health", get(|| async { Json(Health { status: "ok" }) }))
         .route(
@@ -336,21 +333,7 @@ fn router(station_state: Arc<StationState>, viewer_directory: Option<PathBuf>) -
         .route("/action_sequence", get(read_action_sequence))
         .route("/action_sequence/{id}", get(read_action_sequence_by_id))
         .route("/operations/{id}", get(read_operation))
-        .with_state(station_state);
-    match viewer_directory {
-        Some(directory) => router
-            .route("/", get(|| async { Redirect::temporary("/viewer/") }))
-            .nest_service(
-                "/viewer",
-                // WHY: A rebuilt viewer keeps its file names, so revalidate each time.
-                SetResponseHeader::overriding(
-                    ServeDir::new(directory),
-                    header::CACHE_CONTROL,
-                    HeaderValue::from_static("no-cache"),
-                ),
-            ),
-        None => router,
-    }
+        .with_state(station_state)
 }
 
 fn arms_not_set_up() -> Response {
@@ -1452,29 +1435,6 @@ pub(crate) async fn execute_pose_previews(
     })
 }
 
-pub const VIEWER_DIRECTORY_VARIABLE: &str = "HEBBIAN_VIEWER_DIRECTORY";
-
-#[must_use]
-pub fn default_viewer_directory() -> Option<PathBuf> {
-    if let Some(directory) =
-        std::env::var_os(VIEWER_DIRECTORY_VARIABLE).filter(|value| !value.is_empty())
-    {
-        return Some(PathBuf::from(directory));
-    }
-    let starts = std::env::current_exe()
-        .into_iter()
-        .chain(std::env::current_dir());
-    starts
-        .flat_map(|start| start.ancestors().map(Path::to_owned).collect::<Vec<_>>())
-        .flat_map(|ancestor| {
-            [
-                ancestor.join("share/hebbian-robot-use/dist/viewer"),
-                ancestor.join("dist/viewer"),
-            ]
-        })
-        .find(|candidate| candidate.join("index.html").is_file())
-}
-
 fn trace_files(directories: &[PathBuf]) -> Vec<(TraceFile, PathBuf)> {
     let mut files = Vec::new();
     for directory in directories {
@@ -1621,7 +1581,6 @@ mod event_stream_tests {
         let server = HttpServer::start(
             "127.0.0.1:0",
             vec![],
-            None,
             Arc::new(crate::station_api::telemetry::DiscardTelemetry),
             Arc::default(),
             |_, _| Ok(axum::Router::new()),

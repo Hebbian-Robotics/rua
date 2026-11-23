@@ -297,7 +297,6 @@ async fn start_station(address: String) -> Result<HttpServer, Box<dyn std::error
         HttpServer::start(
             &address,
             vec![],
-            None,
             Arc::new(LiveRunStore::default()),
             Arc::default(),
             |_, _| Ok(axum::Router::new()),
