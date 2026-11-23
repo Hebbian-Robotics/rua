@@ -191,3 +191,63 @@ impl<P: Plant> Runner<'_, P> {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hebbian_contracts::EnableChecks;
+
+    #[test]
+    fn startup_hold_waits_a_quarter_second_rounded_up_to_a_control_period() {
+        let mut config = ControllerConfig::parse(crate::config::TEST_CONFIG)
+            .unwrap()
+            .into_input();
+        config.frequency_hertz = 102.0;
+        config.enable_checks = Some(EnableChecks {
+            preflight_drift_limit_radians: 0.02,
+            enable_drift_limit_radians: 0.05,
+        });
+        let config = ControllerConfig::try_from(config).unwrap();
+        let initial = MeasuredPositions::new(&[0.0, 0.0], 2).unwrap();
+        let drifted = MeasuredPositions::new(&[0.06, 0.0], 2).unwrap();
+        let healthy_efforts = [0.0, 0.0];
+        let mut hold = StartupHold::new(&config, initial);
+
+        for period in 0..26 {
+            assert!(
+                matches!(
+                    hold.observe(initial, None, &healthy_efforts),
+                    Ok(EnableDecision::ObserveAgain)
+                ),
+                "confirmed before period {period} elapsed"
+            );
+        }
+        assert!(matches!(
+            hold.observe(drifted, None, &healthy_efforts),
+            Err(EnableRefusal::Drift)
+        ));
+        assert!(matches!(
+            hold.observe(initial, Some("voltage fault"), &healthy_efforts),
+            Err(EnableRefusal::FeedbackFault("voltage fault"))
+        ));
+        assert!(matches!(
+            hold.observe(initial, None, &[11.0, 0.0]),
+            Err(EnableRefusal::Effort(_))
+        ));
+        assert!(matches!(
+            hold.observe(initial, None, &healthy_efforts),
+            Ok(EnableDecision::Confirmed)
+        ));
+    }
+
+    #[test]
+    fn startup_without_drift_checks_confirms_the_first_healthy_observation() {
+        let config = ControllerConfig::parse(crate::config::TEST_CONFIG).unwrap();
+        let initial = MeasuredPositions::new(&[0.0, 0.0], 2).unwrap();
+        let mut hold = StartupHold::new(&config, initial);
+        assert!(matches!(
+            hold.observe(initial, None, &[0.0, 0.0]),
+            Ok(EnableDecision::Confirmed)
+        ));
+    }
+}
