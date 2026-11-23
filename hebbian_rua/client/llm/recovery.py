@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 from hebbian_rua.bindings._native import CommandRefused as NativeCommandRefused
+from hebbian_rua.bindings._native import HttpError
 from hebbian_rua.client.contract.station_api import ArmMode, ArmState
 from hebbian_rua.client.llm.robot_tools import (
     ArmCommunicationInterrupted,
@@ -114,6 +115,7 @@ async def capture_when_ready(
                 except (
                     LeaseLost,
                     NativeCommandRefused,
+                    HttpError,
                     ConnectionError,
                     TimeoutError,
                 ) as report_error:
@@ -138,6 +140,7 @@ async def capture_when_ready(
         except (
             LeaseLost,
             NativeCommandRefused,
+            HttpError,
             ConnectionError,
             TimeoutError,
         ) as report_error:

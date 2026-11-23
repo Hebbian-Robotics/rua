@@ -52,6 +52,7 @@ from hebbian_rua.client.contract.station_api import (
     ProgramRejected,
     QuaternionOrientation,
     RecordingStatus,
+    RejectionReason,
     RunEventRecord,
     RunMessage,
     RunResync,
@@ -110,21 +111,23 @@ async def _lease_operation(operation: Awaitable[None]) -> None:
     try:
         await operation
     except _native.CommandRefused as error:
-        if error.args[0] == "lease_held_elsewhere":
+        if error.reason == RejectionReason.lease_held_elsewhere:
             raise LeaseLost from error
         raise
+
+
+def _command_refusal(error: _native.CommandRefused) -> CommandRefused:
+    return CommandRefused(reason=RejectionReason(error.reason), detail=error.detail)
 
 
 async def _command_result(result: Awaitable[object]) -> CommandResult:
     try:
         record = await result
     except _native.CommandRefused as error:
-        return CommandResult.of(
-            CommandRefused(reason=error.args[0], detail=error.args[1])
-        )
+        return CommandResult(_command_refusal(error))
     except _native.CommandIncomplete as error:
-        record = error.args[0]
-    return CommandResult.of(CommandRecord.model_validate(record))
+        record = error.record
+    return CommandResult(CommandRecord.model_validate(record))
 
 
 class Arm(ArmPowerCommands):
@@ -265,13 +268,9 @@ class Lease:
                 _command_options(expected_revisions or {}, operation_id),
             )
         except _native.CommandRefused as error:
-            return [
-                CommandResult.of(
-                    CommandRefused(reason=error.args[0], detail=error.args[1])
-                )
-            ]
+            return [CommandResult(_command_refusal(error))]
         return [
-            CommandResult.of(entry.record)
+            CommandResult(entry.record)
             for entry in _arm_records.validate_python(records)
         ]
 
@@ -316,7 +315,7 @@ class Lease:
                 expected_revision,
             )
         except _native.CommandRefused as error:
-            return CommandRefused(reason=error.args[0], detail=error.args[1])
+            return _command_refusal(error)
         return CommandAccepted(records=_arm_records.validate_python(records))
 
     async def update_stream_goal(
@@ -334,7 +333,7 @@ class Lease:
                 str(operation_id), sequence, joints, gripper_opening, expected_revision
             )
         except _native.CommandRefused as error:
-            return CommandRefused(reason=error.args[0], detail=error.args[1])
+            return _command_refusal(error)
         return CommandAccepted(records=_arm_records.validate_python(records))
 
     async def cancel_operation(self, operation_id: uuid.UUID) -> None:
@@ -472,8 +471,8 @@ class StationClient:
         except _native.MissingCamera as error:
             raise CameraUnavailable(
                 name,
-                TypeAdapter(list[CameraListing]).validate_python(error.args[1]),
-                error.args[2],
+                TypeAdapter(list[CameraListing]).validate_python(error.listed),
+                error.last_error,
             ) from error
         return CameraJpeg(jpeg, (started, time.time()), captured)
 
@@ -617,9 +616,11 @@ class StationClient:
         try:
             guard = await self._native.acquire_lease(request, take)
         except _native.LeaseHeld as error:
-            holder_status = error.args[0]
+            holder_status = error.holder_status
             raise LeaseHeldElsewhere(
-                LeaseStatus.model_validate(holder_status) if holder_status else None
+                LeaseStatus.model_validate(holder_status)
+                if holder_status is not None
+                else None
             ) from error
         if self._closed:
             await guard.release()

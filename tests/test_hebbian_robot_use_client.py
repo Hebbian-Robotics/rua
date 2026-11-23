@@ -107,11 +107,11 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
         command=RecordedControl(action=ControlAction.enable),
         phase=PendingCommand(),
     )
-    assert CommandResult.of(unfinished).outcome is ResultOutcome.UNFINISHED
+    assert CommandResult(unfinished).outcome is ResultOutcome.UNFINISHED
     refused = CommandRefused(
         reason=RejectionReason.not_enabled, detail="enable it first"
     )
-    rejected = CommandResult.of(refused)
+    rejected = CommandResult(refused)
     assert rejected.outcome is ResultOutcome.REJECTED
     assert not rejected.completed
     assert "not_enabled" in (rejected.detail or "")
@@ -128,7 +128,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
                 )
             }
         )
-        result = CommandResult.of(terminal)
+        result = CommandResult(terminal)
         assert result.outcome is expected
         assert result.completed == (expected is ResultOutcome.COMPLETED)
     interrupted = unfinished.model_copy(
@@ -138,7 +138,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
             ),
         }
     )
-    result = CommandResult.of(interrupted)
+    result = CommandResult(interrupted)
     assert result.outcome.value == "interrupted"
     assert not result.completed
     assert result.detail == "Controller connection lost"
@@ -158,8 +158,8 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
             )
         ),
     )
-    assert CommandResult.of(completed).completed
-    assert not CommandResult.of(completed).was_limited
+    assert CommandResult(completed).completed
+    assert not CommandResult(completed).was_limited
     limits = [
         {"path_limited": PathLimited(reason="self-collision")},
         {
@@ -177,10 +177,10 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
         record = completed.model_copy(
             update={"command": completed.command.model_copy(update=limit)}
         )
-        result = CommandResult.of(record)
+        result = CommandResult(record)
         assert result.completed
         assert result.was_limited
-    refused = CommandResult.of(
+    refused = CommandResult(
         CommandRefused(reason=RejectionReason.not_enabled, detail="enable it first")
     )
     assert not refused.completed

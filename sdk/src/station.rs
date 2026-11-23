@@ -1215,22 +1215,36 @@ impl LeaseGuard {
     /// The arms keep doing what they were told.
     ///
     /// # Errors
-    /// Returns an error if the release request fails. Dropping the guard then
-    /// makes a best-effort background retry.
+    /// Returns an error if the release request fails. The local lease is cleared
+    /// and a single best-effort release retry runs in the background.
     pub async fn return_lease(&self) -> Result<()> {
         self.renewal.abort();
-        match self
+        let result = self
             .station
             .release_lease_http(&LeaseToken {
                 lease_token: self.lease_token.clone(),
             })
-            .await
-        {
-            Ok(()) | Err(Error::Http { status: 409, .. }) => {}
-            Err(error) => return Err(error),
-        }
+            .await;
         self.clear_local_lease();
-        Ok(())
+        match result {
+            Ok(()) | Err(Error::Http { status: 409, .. }) => Ok(()),
+            Err(error) => {
+                self.release_in_background();
+                Err(error)
+            }
+        }
+    }
+
+    fn release_in_background(&self) {
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let station = self.station.clone();
+            let token = LeaseToken {
+                lease_token: self.lease_token.clone(),
+            };
+            runtime.spawn(async move {
+                let _ = station.release_lease_http(&token).await;
+            });
+        }
     }
 
     fn clear_local_lease(&self) -> bool {
@@ -1243,15 +1257,8 @@ impl LeaseGuard {
 impl Drop for LeaseGuard {
     fn drop(&mut self) {
         self.renewal.abort();
-        let holding = self.clear_local_lease();
-        if holding && let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            let station = self.station.clone();
-            let token = LeaseToken {
-                lease_token: self.lease_token.clone(),
-            };
-            runtime.spawn(async move {
-                let _ = station.release_lease_http(&token).await;
-            });
+        if self.clear_local_lease() {
+            self.release_in_background();
         }
     }
 }

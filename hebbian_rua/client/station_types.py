@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import NewType, Self, assert_never
+from typing import NewType, assert_never
 
 from hebbian_rua.client.contract.arm_commands import StationCommand as StationCommand
 from hebbian_rua.client.contract.station_api import (
@@ -154,26 +154,22 @@ class CommandResult:
     A refused command has a CommandRefused record and did not move the arm.
     """
 
-    outcome: ResultOutcome
-    detail: str | None
     record: CommandRecord | CommandRefused
 
-    @classmethod
-    def of(cls, answer: CommandRecord | CommandRefused) -> Self:
-        if isinstance(answer, CommandRefused):
-            return cls(
-                ResultOutcome.REJECTED,
-                f"{answer.reason.value}: {answer.detail}",
-                answer,
-            )
-        outcome = command_record_outcome(answer)
-        return cls(
-            ResultOutcome.UNFINISHED
-            if outcome is None
-            else ResultOutcome.from_command_outcome(outcome),
-            command_record_detail(answer),
-            answer,
-        )
+    @property
+    def outcome(self) -> ResultOutcome:
+        if isinstance(self.record, CommandRefused):
+            return ResultOutcome.REJECTED
+        outcome = command_record_outcome(self.record)
+        if outcome is None:
+            return ResultOutcome.UNFINISHED
+        return ResultOutcome.from_command_outcome(outcome)
+
+    @property
+    def detail(self) -> str | None:
+        if isinstance(self.record, CommandRefused):
+            return f"{self.record.reason.value}: {self.record.detail}"
+        return command_record_detail(self.record)
 
     @property
     def completed(self) -> bool:

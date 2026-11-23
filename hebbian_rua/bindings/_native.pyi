@@ -55,10 +55,19 @@ class HttpError(RuntimeError):
     status: int
     body: str
 
-class CommandRefused(RuntimeError): ...
-class CommandIncomplete(RuntimeError): ...
-class LeaseHeld(RuntimeError): ...
-class MissingCamera(RuntimeError): ...
+class CommandRefused(RuntimeError):
+    reason: str
+    detail: str
+
+class CommandIncomplete(RuntimeError):
+    record: object
+
+class LeaseHeld(RuntimeError):
+    holder_status: object
+
+class MissingCamera(RuntimeError):
+    listed: object
+    last_error: str | None
 
 class NativeLease:
     def status(self) -> object: ...

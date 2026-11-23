@@ -1,8 +1,10 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextlib import aclosing
 
 import pytest
 
+from hebbian_rua.client.contract.station_api import RunEventRecord
 from hebbian_rua.client.station_client import LeaseHeldElsewhere, StationClient
 from tests.fixture_station_http import (
     STATION_ID,
@@ -123,5 +125,33 @@ def test_refused_lease_reports_the_current_holder_even_if_stream_is_stale() -> N
             with pytest.raises(LeaseHeldElsewhere, match="agent 'x'"):
                 async with client.holding_lease("test"):
                     pytest.fail("the station refused the lease")
+
+    run(exercise)
+
+
+def test_resumed_telemetry_delivers_retained_records_after_connect() -> None:
+    async def exercise() -> None:
+        async with (
+            scripted_http_station() as station,
+            StationClient(station.url, run_after=0) as client,
+        ):
+            expected_sequences = list(range(1, 4097))
+            station.retained_run_records = [
+                {
+                    "type": "run_event",
+                    "seq": sequence,
+                    "received_unix_nano": "1000000000",
+                    "event": {"type": "example"},
+                }
+                for sequence in expected_sequences
+            ]
+            await client.connect()
+            received_sequences: list[int] = []
+            async with aclosing(client.run_telemetry()) as telemetry:
+                for _ in expected_sequences:
+                    record = await anext(telemetry)
+                    assert isinstance(record, RunEventRecord)
+                    received_sequences.append(record.seq)
+            assert received_sequences == expected_sequences
 
     run(exercise)

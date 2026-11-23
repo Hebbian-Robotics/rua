@@ -6,6 +6,9 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of run events and spans the station can replay per connection.
+pub const MAX_RUN_REPLAY_RECORDS: usize = 4096;
+
 /// Unix nanoseconds, written as a decimal string because they outgrow
 /// JavaScript's exact integers (as OTLP/JSON writes 64-bit integers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
