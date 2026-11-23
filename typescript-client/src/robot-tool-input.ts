@@ -111,7 +111,7 @@ function convertModelArgumentsToStationUnits(value: unknown): unknown {
         unit.scale_to_station,
       );
     } else if (
-      (key === "arms" || key === "targets") &&
+      (key === "arms" || key === "goals") &&
       typeof item === "object" &&
       item !== null &&
       !Array.isArray(item)
@@ -196,13 +196,32 @@ export function parseRobotToolCall(
                     const action =
                       apiSchemas.shape.ActionSequenceArmAction.parse({
                         ...raw,
-                        ...("movement" in raw
-                          ? { movement: addMovementKind(raw["movement"]) }
+                        ...(Array.isArray(raw["waypoints"])
+                          ? {
+                              waypoints: raw["waypoints"].map(
+                                (value: unknown) => {
+                                  const point = argumentsObject.parse(value);
+                                  return {
+                                    ...point,
+                                    at: addMovementKind(point["at"]),
+                                  };
+                                },
+                              ),
+                            }
+                          : {}),
+                        ...("goal" in raw
+                          ? { goal: addMovementKind(raw["goal"]) }
                           : {}),
                       });
                     if (
-                      ("movement" in action &&
-                        !context.sequenceActions.has(action.movement.kind)) ||
+                      ("goal" in action &&
+                        (!context.sequenceActions.has(action.goal.kind) ||
+                          action.waypoints?.some(
+                            (point) =>
+                              !context.sequenceActions.has(point.at.kind) ||
+                              (point.gripper_opening != null &&
+                                !context.sequenceActions.has("gripper")),
+                          ))) ||
                       (action.gripper_opening != null &&
                         !context.sequenceActions.has("gripper"))
                     )
@@ -254,15 +273,15 @@ export function parseRobotToolCall(
           request_id: null,
           command: {
             ...args,
-            targets:
-              typeof args["targets"] === "object" && args["targets"] !== null
+            goals:
+              typeof args["goals"] === "object" && args["goals"] !== null
                 ? Object.fromEntries(
-                    Object.entries(args["targets"]).map(([name, target]) => [
+                    Object.entries(args["goals"]).map(([name, target]) => [
                       name,
                       addMovementKind(target),
                     ]),
                   )
-                : args["targets"],
+                : args["goals"],
           },
           expected_revisions: context.revisions ?? {},
         });

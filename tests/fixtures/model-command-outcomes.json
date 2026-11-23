@@ -9,13 +9,13 @@
       "checkpoints": [],
       "command": {
         "kind": "move",
-        "target_joints": [
+        "destination_joints": [
           0.1
         ],
         "joint_speed": 1.0,
         "group_id": "group-1",
-        "target_position": null,
-        "target_quaternion": null,
+        "destination_position": null,
+        "destination_quaternion": null,
         "path_limited": null,
         "pose_limited": null
       },
@@ -43,7 +43,7 @@
       "checkpoints": [],
       "command": {
         "kind": "move",
-        "target_joints": [
+        "destination_joints": [
           0.1
         ],
         "joint_speed": 1.0,
@@ -51,8 +51,8 @@
           "reason": "self-collision"
         },
         "group_id": "group-1",
-        "target_position": null,
-        "target_quaternion": null,
+        "destination_position": null,
+        "destination_quaternion": null,
         "pose_limited": null
       },
       "phase": {
@@ -79,13 +79,13 @@
       "checkpoints": [],
       "command": {
         "kind": "move",
-        "target_joints": [
+        "destination_joints": [
           0.1
         ],
         "joint_speed": 1.0,
         "group_id": "group-1",
-        "target_position": null,
-        "target_quaternion": null,
+        "destination_position": null,
+        "destination_quaternion": null,
         "path_limited": null,
         "pose_limited": null
       },

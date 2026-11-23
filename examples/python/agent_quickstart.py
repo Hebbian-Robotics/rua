@@ -1,7 +1,8 @@
 import json
 import os
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypedDict, cast
+from uuid import uuid4
 
 from cyclopts import App, Parameter, validators
 from pydantic import BaseModel, ConfigDict
@@ -21,7 +22,7 @@ from hebbian_rua.client.llm.robot_tools import CallWrapper
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
 Set a provider API key, then start a station and run the agent.
-The adapters translate tools, camera frames and results. You own the model loop.
+The provider stores conversation history. The loop executes the robot tools.
 """
 
 type Provider = Literal["openai", "anthropic", "gemini"]
@@ -99,22 +100,31 @@ async def run_openai(
     from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
     robot_tools = OpenAIRobotTools(robot)
-    messages: list[ResponseInputItemParam] = [{"role": "user", "content": task}]
+    pending_input: list[ResponseInputItemParam] = [{"role": "user", "content": task}]
+    previous_response_id: str | None = None
+    prompt_cache_key = f"hebbian-agent-{uuid4()}"
+    tools = robot_tools.tools
     async with AsyncOpenAI() as client:
         revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
-                messages.append(observation.message)
+                pending_input.append(observation.message)
                 revisions = observation.revisions
             response = await client.responses.create(
                 model=model,
                 instructions=instructions,
-                tools=robot_tools.tools,
-                input=messages,
+                tools=tools,
+                input=pending_input,
+                previous_response_id=previous_response_id,
+                store=True,
+                prompt_cache_key=prompt_cache_key,
             )
-            turn = await robot_tools.execute(response, expected_revisions=revisions)
-            messages.extend(turn.messages)
+            turn = await robot_tools.execute(
+                response, expected_revisions=revisions, include_model_output=False
+            )
+            previous_response_id = response.id
+            pending_input = turn.messages
             revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
@@ -130,28 +140,30 @@ async def run_anthropic(
     robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from anthropic import AsyncAnthropic
-    from anthropic.types import MessageParam
+    from anthropic.types.beta import BetaMessageParam
 
-    from hebbian_rua.client.llm.anthropic import AnthropicRobotTools
+    from hebbian_rua.client.llm.anthropic import AnthropicThreadRobotTools
 
-    robot_tools = AnthropicRobotTools(robot)
-    messages: list[MessageParam] = [{"role": "user", "content": task}]
+    robot_tools = AnthropicThreadRobotTools(robot)
+    pending_input: list[BetaMessageParam] = []
     async with AsyncAnthropic() as client:
+        thread = client.beta.messages.thread(
+            model=model,
+            max_tokens=4096,
+            system=instructions,
+            tools=robot_tools.tools,
+            messages=[{"role": "user", "content": task}],
+            cache_control={"type": "ephemeral"},
+        )
         revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
-                messages.append(observation.message)
+                pending_input.append(observation.message)
                 revisions = observation.revisions
-            response = await client.messages.create(
-                model=model,
-                max_tokens=4096,
-                system=instructions,
-                tools=robot_tools.tools,
-                messages=messages,
-            )
+            response = await thread.send(*pending_input)
             turn = await robot_tools.execute(response, expected_revisions=revisions)
-            messages.extend(turn.messages)
+            pending_input = turn.messages
             revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
@@ -171,37 +183,46 @@ async def run_gemini(
     robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
 ) -> None:
     from google import genai
-    from google.genai import types
+    from google.genai.interactions import Interaction, ModelParam, StepParam
 
-    from hebbian_rua.client.llm.gemini import GeminiRobotTools
+    from hebbian_rua.client.llm.gemini import GeminiInteractionRobotTools
 
-    robot_tools = GeminiRobotTools(robot)
-    messages = [types.Content(role="user", parts=[types.Part.from_text(text=task)])]
-    configuration = types.GenerateContentConfig(
-        system_instruction=instructions,
-        tools=robot_tools.tools,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-    )
+    class Continuation(TypedDict, total=False):
+        previous_interaction_id: str
+
+    robot_tools = GeminiInteractionRobotTools(robot)
+    tools = robot_tools.tools
+    pending_input: list[StepParam] = [
+        {"type": "user_input", "content": [{"type": "text", "text": task}]}
+    ]
+    continuation: Continuation = {}
     async with genai.Client().aio as client:
         revisions: Mapping[str, int] | None = None
         for _ in range(max_turns):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
-                messages.append(observation.message)
+                pending_input.append(observation.message)
                 revisions = observation.revisions
-            response = await client.models.generate_content(
-                model=model,
-                config=configuration,
-                contents=messages,
+            response = await client.interactions.create(
+                model=cast(ModelParam, model),
+                stream=False,
+                system_instruction=instructions,
+                tools=tools,
+                store=True,
+                input=pending_input,
+                **continuation,
             )
+            if not isinstance(response, Interaction) or not response.id:
+                raise ValueError("Expected a stored, non-streaming Gemini interaction")
             turn = await robot_tools.execute(response, expected_revisions=revisions)
-            messages.extend(turn.messages)
+            continuation = {"previous_interaction_id": response.id}
+            pending_input = turn.messages
             revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
             if turn.should_stop or not turn.results:
-                print(response.text or "")
+                print(response.output_text or "")
                 report_stop(turn.should_stop)
                 return
     raise SystemExit(f"No task outcome after {max_turns} model turns")

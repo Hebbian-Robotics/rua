@@ -4,7 +4,9 @@ from typing import Literal
 
 import pytest
 from anthropic.types import Message
+from anthropic.types.beta import BetaMessage
 from google.genai import types
+from google.genai.interactions import Interaction
 from openai.types.responses import Response
 
 from hebbian_rua import (
@@ -17,8 +19,11 @@ from hebbian_rua import (
     StationClient,
     default_formatter,
 )
-from hebbian_rua.client.llm.anthropic import AnthropicRobotTools
-from hebbian_rua.client.llm.gemini import GeminiRobotTools
+from hebbian_rua.client.llm.anthropic import (
+    AnthropicRobotTools,
+    AnthropicThreadRobotTools,
+)
+from hebbian_rua.client.llm.gemini import GeminiInteractionRobotTools, GeminiRobotTools
 from hebbian_rua.client.llm.openai import OpenAIRobotTools
 from hebbian_rua.client.llm.tool_turn import RobotToolTurn
 from tests.fixture_station_http import scripted_http_station
@@ -340,6 +345,111 @@ def test_provider_turn_preserves_history_correlation_and_robot_errors(
                     True,
                 ]
                 assert not turn.should_stop
+
+    asyncio.run(asyncio.wait_for(exercise(), timeout=10))
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "gemini"])
+def test_stored_provider_turn_sends_only_new_results_and_camera_frames(
+    provider: Provider,
+) -> None:
+    async def exercise() -> None:
+        async with scripted_http_station() as station:
+            station.grant_lease.set()
+            async with (
+                StationClient(station.url) as client,
+                client.holding_lease("stored provider adapter test") as lease,
+            ):
+
+                def format_observation(output: RobotOutput) -> ModelContent:
+                    if (
+                        output.kind == "result"
+                        and isinstance(output.data, dict)
+                        and "arms" in output.data
+                    ):
+                        return ModelContent(
+                            "fresh robot state", {"table": b"fresh frame"}
+                        )
+                    return default_formatter(output)
+
+                robot = RobotTools(client, lease, "follower").with_output_formatter(
+                    format_observation
+                )
+                revisions = (await robot.observe()).revisions
+                match provider:
+                    case "openai":
+                        turn = await OpenAIRobotTools(robot).execute(
+                            openai_response(),
+                            expected_revisions=revisions,
+                            include_model_output=False,
+                        )
+                        messages = json.loads(json.dumps(turn.messages))
+                        assert all(
+                            message.get("type") == "function_call_output"
+                            or message.get("role") == "user"
+                            for message in messages
+                        )
+                        result_ids = [
+                            message["call_id"]
+                            for message in messages
+                            if message.get("type") == "function_call_output"
+                        ]
+                    case "anthropic":
+                        turn = await AnthropicThreadRobotTools(robot).execute(
+                            BetaMessage.model_validate(
+                                anthropic_response().model_dump()
+                            ),
+                            expected_revisions=revisions,
+                        )
+                        messages = json.loads(json.dumps(turn.messages))
+                        assert [message["role"] for message in messages] == ["user"]
+                        result_ids = [
+                            block["tool_use_id"]
+                            for block in messages[0]["content"]
+                            if block["type"] == "tool_result"
+                        ]
+                    case "gemini":
+                        turn = await GeminiInteractionRobotTools(robot).execute(
+                            Interaction.model_validate(
+                                {
+                                    "id": "interaction-1",
+                                    "status": "requires_action",
+                                    "steps": [
+                                        {
+                                            "type": "function_call",
+                                            "id": call_id,
+                                            "name": name,
+                                            "arguments": {},
+                                        }
+                                        for call_id, name in (
+                                            ("first", "observe"),
+                                            ("second", "observe"),
+                                            ("invalid", "set_arm_gripper"),
+                                        )
+                                    ],
+                                }
+                            ),
+                            expected_revisions=revisions,
+                        )
+                        messages = json.loads(json.dumps(turn.messages))
+                        assert all(
+                            message["type"] in {"function_result", "user_input"}
+                            for message in messages
+                        )
+                        result_ids = [
+                            message["call_id"]
+                            for message in messages
+                            if message["type"] == "function_result"
+                        ]
+                assert result_ids == ["first", "second", "invalid"]
+                assert [result.is_error for result in turn.results] == [
+                    False,
+                    False,
+                    True,
+                ]
+                serialized_messages = json.dumps(messages)
+                assert "fresh robot state" in serialized_messages
+                assert "ZnJlc2ggZnJhbWU=" in serialized_messages
 
     asyncio.run(asyncio.wait_for(exercise(), timeout=10))
 

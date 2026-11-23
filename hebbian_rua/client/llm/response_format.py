@@ -53,12 +53,12 @@ def _model_command_record(record: dict) -> dict:
     }
     result.update(
         command.model_dump(
-            mode="json", exclude={"kind", "target_pose"}, exclude_unset=True
+            mode="json", exclude={"kind", "goal_pose"}, exclude_unset=True
         )
     )
     if command.kind == "policy_reach":
-        result["target_position"] = command.target_pose.position
-        result["target_quaternion"] = command.target_pose.quaternion
+        result["goal_position"] = command.goal_pose.position
+        result["goal_quaternion"] = command.goal_pose.quaternion
     match phase.kind:
         case "pending":
             pass
@@ -73,7 +73,7 @@ def _model_command_record(record: dict) -> dict:
             )
             if command.kind == "move":
                 rule = MODEL_OUTCOMES["commands"][phase.completion.outcome]
-                result["target_status"] = rule[
+                result["goal_status"] = rule[
                     "limited_target"
                     if command.pose_limited or command.path_limited
                     else "target"
@@ -87,7 +87,7 @@ def _model_command_record(record: dict) -> dict:
                 "finished_unix_nano": phase.finished_unix_nano,
             }
             if phase.kind == "not_started":
-                result["target_status" if command.kind == "move" else "phase"] = (
+                result["goal_status" if command.kind == "move" else "phase"] = (
                     "not_started"
                 )
         case _ as unreachable:

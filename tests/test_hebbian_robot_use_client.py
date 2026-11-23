@@ -160,7 +160,7 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
         label="move_to_pose",
         accepted_unix_nano="0",
         checkpoints=[],
-        command=RecordedMove(target_joints=[0.2], joint_speed=1.0),
+        command=RecordedMove(destination_joints=[0.2], joint_speed=1.0),
         phase=FinishedCommand(
             completion=CommandCompletion(
                 finished_unix_nano="1000000000",

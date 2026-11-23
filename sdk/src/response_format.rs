@@ -51,19 +51,19 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
         return record;
     };
     fields.remove("kind");
-    if let RecordedCommand::PolicyReach { target_pose } = &command_record.command {
-        fields.remove("target_pose");
+    if let RecordedCommand::PolicyReach { goal_pose } = &command_record.command {
+        fields.remove("goal_pose");
         fields.insert(
-            "target_position".into(),
-            serde_json::json!(target_pose.position),
+            "goal_position".into(),
+            serde_json::json!(goal_pose.position),
         );
         fields.insert(
-            "target_quaternion".into(),
-            serde_json::json!(target_pose.quaternion),
+            "goal_quaternion".into(),
+            serde_json::json!(goal_pose.quaternion),
         );
     }
-    if let Some(status) = command_record.target_status() {
-        fields.insert("target_status".into(), serde_json::json!(status));
+    if let Some(status) = command_record.goal_status() {
+        fields.insert("goal_status".into(), serde_json::json!(status));
     }
     match &command_record.phase {
         CommandPhase::Pending => {}
@@ -87,7 +87,7 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
                 "outcome": command_record.outcome(), "detail": detail, "finished_unix_nano": finished_unix_nano,
             }));
             if matches!(command_record.phase, CommandPhase::NotStarted { .. })
-                && command_record.target_status().is_none()
+                && command_record.goal_status().is_none()
             {
                 fields.insert("phase".into(), "not_started".into());
             }

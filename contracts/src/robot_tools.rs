@@ -3,7 +3,7 @@
 //! The model supplies orientation fields without the station's `kind` tag;
 //! SDK adapters add that tag before sending the request.
 
-use schemars::{JsonSchema, Schema, generate::SchemaSettings, schema_for};
+use schemars::{JsonSchema, Schema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -237,22 +237,22 @@ impl From<crate::CommandOutcome> for ModelOutcome {
 }
 
 /// Lowest to highest priority when combining command records into a group result.
-pub const MODEL_GROUP_STATUSES: [crate::TargetStatus; 4] = [
-    crate::TargetStatus::Reached,
-    crate::TargetStatus::Limited,
-    crate::TargetStatus::Partial,
-    crate::TargetStatus::StoppedShort,
+pub const MODEL_GROUP_STATUSES: [crate::GoalStatus; 4] = [
+    crate::GoalStatus::Reached,
+    crate::GoalStatus::Limited,
+    crate::GoalStatus::Partial,
+    crate::GoalStatus::StoppedShort,
 ];
 
 impl ModelOutcome {
     #[must_use]
-    pub fn target_status(self, limited: bool) -> crate::TargetStatus {
-        use crate::TargetStatus;
+    pub fn goal_status(self, limited: bool) -> crate::GoalStatus {
+        use crate::GoalStatus;
         match self {
-            Self::Completed if limited => TargetStatus::Limited,
-            Self::Completed => TargetStatus::Reached,
-            Self::StoppedShort => TargetStatus::StoppedShort,
-            Self::Incomplete | Self::Faulted | Self::Interrupted => TargetStatus::Partial,
+            Self::Completed if limited => GoalStatus::Limited,
+            Self::Completed => GoalStatus::Reached,
+            Self::StoppedShort => GoalStatus::StoppedShort,
+            Self::Incomplete | Self::Faulted | Self::Interrupted => GoalStatus::Partial,
         }
     }
 }
@@ -301,7 +301,7 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
         "label",
         "completion",
         "phase",
-        "target_status",
+        "goal_status",
         "pose_limited",
         "path_limited",
     ],
@@ -310,7 +310,8 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
 /// Station field, model field, and multiplier for model-facing output.
 pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
     ("position", "position_mm", 1000.0),
-    ("target_position", "target_position_mm", 1000.0),
+    ("goal_position", "goal_position_mm", 1000.0),
+    ("destination_position", "destination_position_mm", 1000.0),
     ("tool_position", "tool_position_mm", 1000.0),
     ("surface_height_meters", "surface_height_mm", 1000.0),
     ("leeway_meters", "leeway_mm", 1000.0),
@@ -339,8 +340,8 @@ pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
         180.0 / std::f64::consts::PI,
     ),
     (
-        "target_joints",
-        "target_joints_degrees",
+        "destination_joints",
+        "destination_joints_degrees",
         180.0 / std::f64::consts::PI,
     ),
     (
@@ -445,6 +446,7 @@ fn adapt(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.remove("format");
+            object.remove("x-omit-when-none");
             // Use the broadly supported anyOf spelling for nullable values.
             if let Some(Value::Array(types)) = object.get("type")
                 && types.len() == 2
@@ -574,7 +576,7 @@ impl RobotToolCapability {
         let (name, description, parameters) = match self {
             Self::ActionSequence(configuration) => (
                 "action_sequence",
-                "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.",
+                "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.",
                 action_sequence_tool_schema(configuration)?,
             ),
             Self::PreviewPose => (
@@ -584,7 +586,7 @@ impl RobotToolCapability {
             ),
             Self::MoveArms => (
                 "move_arms",
-                "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+                "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
                 model_arguments::<MoveArmsCommand>(),
             ),
             Self::SetArmGripper => (
@@ -623,12 +625,63 @@ pub fn robot_tool_context() -> Value {
     json!({
         "frames": "Positions are in the station world frame. Tool inputs and outputs use millimeters, degrees, and degrees per second.",
         "orientation": format!("Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds {}. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.", crate::JAW_REFERENCE_SWITCH_APPROACH_X),
-        "motion": "A pose target is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
+        "motion": "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
         "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
-        "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its movement speed for both movement and gripper.",
-        "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
+        "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
+        "outcomes": "A completed move with goal_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
         "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified."
     })
+}
+
+#[expect(
+    clippy::expect_used,
+    reason = "Schema references are local to the generated contract."
+)]
+fn inline_schema(value: &Value, definitions: &Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                let name = reference
+                    .strip_prefix("#/$defs/")
+                    .expect("local schema reference");
+                return inline_schema(&definitions[name], definitions);
+            }
+            Value::Object(
+                object
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "$defs")
+                    .map(|(key, value)| (key.clone(), inline_schema(value, definitions)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| inline_schema(item, definitions))
+                .collect(),
+        ),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
+    }
+}
+#[expect(
+    clippy::expect_used,
+    reason = "Pose and joint schemas define the two goal variants."
+)]
+fn select_goal_variants(goal: &mut Value, configuration: &SequenceToolConfiguration) {
+    let mut variants = goal["oneOf"].as_array().expect("goal variants").clone();
+    variants.retain(|variant| {
+        let capability = if variant["properties"].get("joints_degrees").is_some() {
+            SequenceAction::Joints
+        } else {
+            SequenceAction::Pose
+        };
+        configuration.actions.contains(&capability)
+    });
+    *goal = if variants.len() == 1 {
+        variants.remove(0)
+    } else {
+        json!({"oneOf": variants})
+    };
 }
 
 /// Compose the model's sequence schema without exposing unused actions or arm selectors.
@@ -639,46 +692,66 @@ pub fn action_sequence_tool_schema(
     configuration: &SequenceToolConfiguration,
 ) -> Result<Value, String> {
     configuration.validate()?;
-    let generator = SchemaSettings::default()
-        .with(|settings| settings.inline_subschemas = true)
-        .into_generator();
-    let source = adapt_model_schema(generator.into_root_schema_for::<ActionSequenceArmAction>());
-    let gripper = schema_variant(&source, "anyOf", "ActionSequenceGripper")?;
-    let mut properties = gripper["properties"]
-        .as_object()
-        .cloned()
-        .ok_or("Missing gripper action properties")?;
-    let mut required_actions = Vec::new();
-    if configuration.actions.contains(&SequenceAction::Joints)
-        || configuration.actions.contains(&SequenceAction::Pose)
+    let source = model_arguments::<ActionSequenceArmAction>();
+    let variants = inline_schema(&source, &source["$defs"]);
+    let mut action = variants["anyOf"]
+        .as_array()
+        .ok_or("arm action variants")?
+        .iter()
+        .find(|variant| variant["properties"].get("goal").is_some())
+        .ok_or("move action")?
+        .clone();
+    let action_fields = action.as_object_mut().ok_or("move action schema")?;
+    action_fields.remove("required");
+    action_fields.remove("title");
+    action_fields.insert("description".into(), source["description"].clone());
+    let properties = action["properties"]
+        .as_object_mut()
+        .ok_or("action properties")?;
+    if configuration.actions.contains(&SequenceAction::Pose)
+        || configuration.actions.contains(&SequenceAction::Joints)
     {
-        let movement =
-            &schema_variant(&source, "anyOf", "ActionSequenceMove")?["properties"]["movement"];
-        let variants = [
-            (SequenceAction::Joints, "ActionSequenceJointsMovement"),
-            (SequenceAction::Pose, "ActionSequencePoseMovement"),
-        ]
-        .into_iter()
-        .filter(|(action, _)| configuration.actions.contains(action))
-        .map(|(_, title)| schema_variant(movement, "oneOf", title))
-        .collect::<Result<Vec<_>, _>>()?;
-        let movement = match variants.as_slice() {
-            [only] => (*only).clone(),
-            _ => json!({"oneOf": variants}),
-        };
-        properties.insert("movement".into(), movement);
-        required_actions
-            .push(json!({"required":["movement"], "properties":{"movement":{"type":"object"}}}));
+        let goal = properties.get_mut("goal").ok_or("goal schema")?;
+        select_goal_variants(goal, configuration);
+    } else {
+        properties.remove("goal");
+        properties.remove("waypoints");
+    }
+    if let Some(points) = properties.get_mut("waypoints") {
+        let fields = points["items"]["properties"]
+            .as_object_mut()
+            .ok_or("waypoint fields")?;
+        select_goal_variants(
+            fields.get_mut("at").ok_or("waypoint configuration")?,
+            configuration,
+        );
+        if !configuration.actions.contains(&SequenceAction::Gripper) {
+            fields.remove("gripper_opening");
+        }
     }
     if configuration.actions.contains(&SequenceAction::Gripper) {
-        required_actions.push(json!({"required":["gripper_opening"], "properties":{"gripper_opening":{"type":"number"}}}));
+        let opening = properties
+            .get_mut("gripper_opening")
+            .ok_or("opening schema")?;
+        if let Some(opening) = opening.as_object_mut() {
+            opening.remove("anyOf");
+            opening.remove("default");
+            opening.insert("type".into(), json!("number"));
+        }
     } else {
         properties.remove("gripper_opening");
     }
-    let action = json!({
-        "type":"object", "additionalProperties":false, "description":source["description"],
-        "properties":properties, "anyOf":required_actions
-    });
+    let required_actions: Vec<_> = [("goal", "object"), ("gripper_opening", "number")]
+        .into_iter()
+        .filter(|(name, _)| properties.contains_key(*name))
+        .map(|(name, kind)| {
+            json!({
+                "required": [name],
+                "properties": {name: {"type": kind}},
+            })
+        })
+        .collect();
+    action["anyOf"] = json!(required_actions);
     let step = match &configuration.scope {
         SequenceScope::SingleArm => action,
         SequenceScope::NamedArms(arms) => json!({
@@ -731,9 +804,26 @@ pub fn parse_sequence_tool_arguments(
             {
                 return Err(format!("Arm {arm} is not available in this sequence"));
             }
-            let movement_capability = action.movement().map(|movement| match movement {
-                crate::ActionSequenceMovement::Pose { .. } => SequenceAction::Pose,
-                crate::ActionSequenceMovement::Joints { .. } => SequenceAction::Joints,
+            if let crate::ActionSequenceArmAction::Move { waypoints, .. } = action {
+                for point in waypoints {
+                    let capability = match point.at {
+                        crate::CompiledGoal::Joints { .. } => SequenceAction::Joints,
+                        crate::CompiledGoal::Pose { .. } => SequenceAction::Pose,
+                    };
+                    if !configuration.actions.contains(&capability)
+                        || (point.gripper_opening.is_some()
+                            && !configuration.actions.contains(&SequenceAction::Gripper))
+                    {
+                        return Err(
+                            "This waypoint action is not available in the configured sequence"
+                                .into(),
+                        );
+                    }
+                }
+            }
+            let movement_capability = action.goal().map(|goal| match goal {
+                crate::ActionSequenceGoal::Pose { .. } => SequenceAction::Pose,
+                crate::ActionSequenceGoal::Joints { .. } => SequenceAction::Joints,
             });
             if movement_capability
                 .is_some_and(|capability| !configuration.actions.contains(&capability))
@@ -775,16 +865,8 @@ mod sequence_configuration_tests {
         let schema = action_sequence_tool_schema(&configuration).unwrap();
         let fields = &schema["properties"]["steps"]["items"]["properties"];
         assert!(fields.get("arms").is_none());
-        assert!(
-            fields["movement"]["properties"]
-                .get("joints_degrees")
-                .is_none()
-        );
-        assert!(
-            fields["movement"]["properties"]
-                .get("position_mm")
-                .is_some()
-        );
+        assert!(fields["goal"]["properties"].get("joints_degrees").is_none());
+        assert!(fields["goal"]["properties"].get("position_mm").is_some());
         assert!(fields.get("gripper_opening").is_some());
         let steps = parse_sequence_tool_arguments(
             json!({"steps": [{"gripper_opening": 0.5}]}),
@@ -794,7 +876,7 @@ mod sequence_configuration_tests {
         .unwrap();
         assert_eq!(steps[0].arms["follower"].gripper_opening(), Some(0.5));
         for unavailable in [
-            json!({"steps": [{"movement": {"kind": "joints", "joints": [0.0]}}]}),
+            json!({"steps": [{"goal": {"kind": "joints", "joints": [0.0]}}]}),
             json!({"steps": [{"arms": {"right": {"gripper_opening": 0.5}}}]}),
             json!({"steps": [{}]}),
         ] {
@@ -813,7 +895,7 @@ mod sequence_configuration_tests {
         let schema = action_sequence_tool_schema(&configuration).unwrap();
         let arm_fields =
             &schema["properties"]["steps"]["items"]["properties"]["arms"]["properties"];
-        assert!(arm_fields["left"]["properties"].get("movement").is_none());
+        assert!(arm_fields["left"]["properties"].get("goal").is_none());
         let steps = parse_sequence_tool_arguments(
             json!({"steps": [{"arms": {
                 "left": {"gripper_opening": 0.2}, "right": {"gripper_opening": 0.8}

@@ -46,7 +46,7 @@ try {
   lease = await connection.acquireLease("my program");
   const actionSequenceId = await lease.startActionSequence({
     steps: [
-      { arms: { arm: { movement: { kind: "joints", joints: [0, 0, 0, 0, 0] }, gripper_opening: 1 } } },
+      { arms: { arm: { goal: { kind: "joints", joints: [0, 0, 0, 0, 0] }, gripper_opening: 1 } } },
     ],
   });
   const result = await connection.waitForActionSequence(actionSequenceId);

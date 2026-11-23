@@ -118,7 +118,7 @@ pub(crate) async fn import_compilation(
         return Err((
             StatusCode::UNPROCESSABLE_ENTITY,
             format!(
-                "Unsupported compilation schema. Extract the source, omit null movement fields from gripper-only actions, and compile again to produce schema version {COMPILATION_SCHEMA_VERSION}."
+                "Unsupported compilation schema. Compile the sequence using the current action schema to produce schema version {COMPILATION_SCHEMA_VERSION}."
             ),
         ));
     }

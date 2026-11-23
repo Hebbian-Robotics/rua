@@ -1,6 +1,6 @@
 {
   "arguments": {
-    "targets": {
+    "goals": {
       "position": {
         "position_mm": [250, -125, 0],
         "orientation": {"approach": "down", "jaw_yaw_degrees": 90}
@@ -10,7 +10,7 @@
     "max_joint_speed_degrees_per_second": 45
   },
   "station_command": {
-    "targets": {
+    "goals": {
       "position": {
         "position": [0.25, -0.125, 0.0],
         "orientation": {"approach": "down", "jaw_yaw_degrees": 90}

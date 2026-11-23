@@ -185,8 +185,8 @@ pub struct SurfaceGuardConfig {
 pub struct Checkpoint {
     pub label: String,
     pub measured_joints: Vec<f64>,
-    pub target_position: Option<[f64; 3]>,
-    pub target_quaternion: Option<[f64; 4]>,
+    pub destination_position: Option<[f64; 3]>,
+    pub destination_quaternion: Option<[f64; 4]>,
 }
 
 /// The tool-frame axis the gripper's jaws close along.
@@ -216,14 +216,14 @@ pub struct OrientationSummary {
     #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
     pub jaw_yaw_reference: JawYawReference,
-    pub target: Option<TargetComparison>,
+    pub goal: Option<GoalComparison>,
 }
 
 /// How an orientation compares with the one it was sent toward. Each jaw yaw
 /// names its own reference: a change of reference near the switch is not a
 /// physical error.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct TargetComparison {
+pub struct GoalComparison {
     #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
     pub jaw_yaw_reference: JawYawReference,
@@ -338,7 +338,7 @@ pub struct PoseLimited {
 /// Whether the arm ended where the command was aimed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum TargetStatus {
+pub enum GoalStatus {
     Reached,
     /// The arm reached an adjusted pose or path target.
     Limited,
@@ -404,16 +404,16 @@ pub enum ControlAction {
 pub enum RecordedCommand {
     #[schemars(title = "RecordedMove")]
     Move {
-        target_joints: Vec<f64>,
-        target_position: Option<[f64; 3]>,
-        target_quaternion: Option<[f64; 4]>,
+        destination_joints: Vec<f64>,
+        destination_position: Option<[f64; 3]>,
+        destination_quaternion: Option<[f64; 4]>,
         joint_speed: f64,
         path_limited: Option<PathLimited>,
         pose_limited: Option<PoseLimited>,
         group_id: Option<String>,
     },
     #[schemars(title = "RecordedPolicyReach")]
-    PolicyReach { target_pose: CommandPose },
+    PolicyReach { goal_pose: CommandPose },
     #[schemars(title = "RecordedJointStream")]
     JointStream {
         goal_joints: Vec<f64>,
@@ -425,7 +425,7 @@ pub enum RecordedCommand {
     Gripper {
         target_angle_radians: f64,
         joint_speed: f64,
-        /// The joint stream that issued this jaw goal, if any.
+        /// The motion or joint stream that owns this jaw command, if any.
         stream_command_id: Option<crate::CommandId>,
     },
     #[schemars(title = "RecordedControl")]
@@ -703,9 +703,11 @@ impl CommandRecord {
     }
 
     #[must_use]
-    pub fn target_joints(&self) -> Option<&[f64]> {
+    pub fn destination_joints(&self) -> Option<&[f64]> {
         match &self.command {
-            RecordedCommand::Move { target_joints, .. } => Some(target_joints),
+            RecordedCommand::Move {
+                destination_joints, ..
+            } => Some(destination_joints),
             RecordedCommand::PolicyReach { .. }
             | RecordedCommand::JointStream { .. }
             | RecordedCommand::PoseStream { .. }
@@ -715,12 +717,13 @@ impl CommandRecord {
     }
 
     #[must_use]
-    pub fn target_position(&self) -> Option<[f64; 3]> {
+    pub fn destination_position(&self) -> Option<[f64; 3]> {
         match &self.command {
             RecordedCommand::Move {
-                target_position, ..
-            } => *target_position,
-            RecordedCommand::PolicyReach { target_pose } => Some(target_pose.position),
+                destination_position,
+                ..
+            } => *destination_position,
+            RecordedCommand::PolicyReach { goal_pose } => Some(goal_pose.position),
             RecordedCommand::JointStream { .. }
             | RecordedCommand::PoseStream { .. }
             | RecordedCommand::Gripper { .. }
@@ -729,12 +732,13 @@ impl CommandRecord {
     }
 
     #[must_use]
-    pub fn target_quaternion(&self) -> Option<[f64; 4]> {
+    pub fn destination_quaternion(&self) -> Option<[f64; 4]> {
         match &self.command {
             RecordedCommand::Move {
-                target_quaternion, ..
-            } => *target_quaternion,
-            RecordedCommand::PolicyReach { target_pose } => Some(target_pose.quaternion),
+                destination_quaternion,
+                ..
+            } => *destination_quaternion,
+            RecordedCommand::PolicyReach { goal_pose } => Some(goal_pose.quaternion),
             RecordedCommand::JointStream { .. }
             | RecordedCommand::PoseStream { .. }
             | RecordedCommand::Gripper { .. }
@@ -753,21 +757,21 @@ impl CommandRecord {
     }
 
     #[must_use]
-    pub fn target_status(&self) -> Option<TargetStatus> {
-        self.target_joints()?;
+    pub fn goal_status(&self) -> Option<GoalStatus> {
+        self.destination_joints()?;
         match self.phase {
             CommandPhase::Pending | CommandPhase::OutcomeUnknown { .. } => None,
-            CommandPhase::NotStarted { .. } => Some(TargetStatus::NotStarted),
+            CommandPhase::NotStarted { .. } => Some(GoalStatus::NotStarted),
             CommandPhase::Finished { ref completion, .. } => Some(match completion.outcome {
-                KnownCommandOutcome::Completed if self.was_limited() => TargetStatus::Limited,
-                KnownCommandOutcome::Completed => TargetStatus::Reached,
-                KnownCommandOutcome::StoppedShort => TargetStatus::StoppedShort,
+                KnownCommandOutcome::Completed if self.was_limited() => GoalStatus::Limited,
+                KnownCommandOutcome::Completed => GoalStatus::Reached,
+                KnownCommandOutcome::StoppedShort => GoalStatus::StoppedShort,
                 KnownCommandOutcome::Stopped
                 | KnownCommandOutcome::Tripped
                 | KnownCommandOutcome::TimedOut
                 | KnownCommandOutcome::Superseded
                 | KnownCommandOutcome::Faulted
-                | KnownCommandOutcome::Failed => TargetStatus::Partial,
+                | KnownCommandOutcome::Failed => GoalStatus::Partial,
             }),
         }
     }

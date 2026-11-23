@@ -5,7 +5,7 @@ import json
 ROBOT_TOOL_CATALOG = json.loads(r"""
 [
   {
-    "description": "Run steps in order. Each step admits its commands together and waits for them to finish. The sequence stops on a refusal, incomplete target, or limited target.",
+    "description": "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.",
     "name": "action_sequence",
     "operation": "start_action_sequence",
     "parameters": {
@@ -17,12 +17,12 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
             "anyOf": [
               {
                 "properties": {
-                  "movement": {
+                  "goal": {
                     "type": "object"
                   }
                 },
                 "required": [
-                  "movement"
+                  "goal"
                 ]
               },
               {
@@ -36,26 +36,9 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                 ]
               }
             ],
-            "description": "An arm action must name a movement or gripper target. When both are present they start together.",
+            "description": "An arm action must name a goal or gripper opening. When both are present they start together.",
             "properties": {
-              "gripper_opening": {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              "max_joint_speed_degrees_per_second": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null,
-                "description": "Peak speed in degrees per second; clamped to the profile maximum."
-              },
-              "movement": {
+              "goal": {
                 "oneOf": [
                   {
                     "additionalProperties": false,
@@ -183,6 +166,155 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
                     "type": "object"
                   }
                 ]
+              },
+              "gripper_opening": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "max_joint_speed_degrees_per_second": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Peak speed in degrees per second; clamped to the profile maximum."
+              },
+              "waypoints": {
+                "default": [],
+                "description": "Pass through these intermediate configurations before settling at the goal.",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "An intermediate configuration along one continuous move.",
+                  "properties": {
+                    "at": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "joints_degrees": {
+                              "items": {
+                                "type": "number"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "joints_degrees"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "orientation": {
+                              "description": "A tool orientation as a client gives it.",
+                              "oneOf": [
+                                {
+                                  "description": "The approach direction and the jaw yaw about it, in degrees.",
+                                  "properties": {
+                                    "approach": {
+                                      "anyOf": [
+                                        {
+                                          "description": "A named approach direction.",
+                                          "oneOf": [
+                                            {
+                                              "const": "down",
+                                              "description": "World -Z.",
+                                              "type": "string"
+                                            },
+                                            {
+                                              "const": "forward",
+                                              "description": "World +X.",
+                                              "type": "string"
+                                            }
+                                          ]
+                                        },
+                                        {
+                                          "items": {
+                                            "type": "number"
+                                          },
+                                          "maxItems": 3,
+                                          "minItems": 3,
+                                          "title": "ApproachDirection",
+                                          "type": "array"
+                                        }
+                                      ],
+                                      "description": "The direction the jaws point along: a named one, or a nonzero world direction."
+                                    },
+                                    "jaw_yaw_degrees": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "approach",
+                                    "jaw_yaw_degrees"
+                                  ],
+                                  "title": "GraspOrientation",
+                                  "type": "object"
+                                },
+                                {
+                                  "description": "A raw quaternion, `[x, y, z, w]`.",
+                                  "properties": {
+                                    "quaternion": {
+                                      "items": {
+                                        "type": "number"
+                                      },
+                                      "maxItems": 4,
+                                      "minItems": 4,
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "quaternion"
+                                  ],
+                                  "title": "QuaternionOrientation",
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "position_mm": {
+                              "items": {
+                                "type": "number"
+                              },
+                              "maxItems": 3,
+                              "minItems": 3,
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "position_mm",
+                            "orientation"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "gripper_opening": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Start moving the gripper when passing this waypoint.",
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "title": "GripperOpening"
+                    }
+                  },
+                  "required": [
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -335,7 +467,7 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
     }
   },
   {
-    "description": "Move named arms together. Pose targets use a world position and orientation; joint targets use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+    "description": "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
     "name": "move_arms",
     "operation": "move_arms",
     "parameters": {
@@ -457,6 +589,13 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
       "additionalProperties": false,
       "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
       "properties": {
+        "goals": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Waypoint"
+          },
+          "minProperties": 1,
+          "type": "object"
+        },
         "max_joint_speed_degrees_per_second": {
           "anyOf": [
             {
@@ -470,17 +609,10 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
           "description": "Peak speed in degrees per second; clamped to the profile maximum.",
           "exclusiveMinimum": 0.0,
           "title": "JointSpeed"
-        },
-        "targets": {
-          "additionalProperties": {
-            "$ref": "#/$defs/Waypoint"
-          },
-          "minProperties": 1,
-          "type": "object"
         }
       },
       "required": [
-        "targets"
+        "goals"
       ],
       "type": "object"
     }
@@ -581,11 +713,11 @@ ROBOT_TOOL_CATALOG = json.loads(r"""
 ROBOT_TOOL_CONTEXT = json.loads(r"""
 {
   "frames": "Positions are in the station world frame. Tool inputs and outputs use millimeters, degrees, and degrees per second.",
-  "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its movement speed for both movement and gripper.",
+  "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
   "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
-  "motion": "A pose target is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
+  "motion": "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
   "orientation": "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
-  "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
+  "outcomes": "A completed move with goal_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
   "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit."
 }
 """)
@@ -618,8 +750,13 @@ MODEL_OUTPUT_UNITS = json.loads(r"""
     1000.0
   ],
   [
-    "target_position",
-    "target_position_mm",
+    "goal_position",
+    "goal_position_mm",
+    1000.0
+  ],
+  [
+    "destination_position",
+    "destination_position_mm",
     1000.0
   ],
   [
@@ -678,8 +815,8 @@ MODEL_OUTPUT_UNITS = json.loads(r"""
     57.29577951308232
   ],
   [
-    "target_joints",
-    "target_joints_degrees",
+    "destination_joints",
+    "destination_joints_degrees",
     57.29577951308232
   ],
   [
@@ -825,7 +962,7 @@ MODEL_RESPONSE_FIELDS = json.loads(r"""
     "label",
     "completion",
     "phase",
-    "target_status",
+    "goal_status",
     "pose_limited",
     "path_limited"
   ],

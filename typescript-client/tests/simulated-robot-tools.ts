@@ -143,14 +143,14 @@ try {
   assert.ok(homeJoints);
   const displacedJoints = [...homeJoints];
   displacedJoints[0] = (displacedJoints[0] ?? 0) + 0.15;
-  const [movement] = await robot.execute([
+  const [goal] = await robot.execute([
     {
       id: "move",
       name: "action_sequence",
       arguments: {
         steps: [
           {
-            movement: {
+            goal: {
               joints_degrees: displacedJoints.map(
                 (joint) => (joint * 180) / Math.PI,
               ),
@@ -160,7 +160,7 @@ try {
       },
     },
   ]);
-  assert.equal(movement?.isError, false);
+  assert.equal(goal?.isError, false);
   const beforeRehome = (await connection.state()).arms.find(
     (arm) => arm.arm === "arm",
   );
@@ -208,7 +208,7 @@ try {
       id: "group",
       name: "move_arms",
       arguments: {
-        targets: {
+        goals: {
           arm: {
             joints_degrees: joints.map((joint) => (joint * 180) / Math.PI),
           },
@@ -233,7 +233,7 @@ try {
       id: "limited",
       name: "move_arms",
       arguments: {
-        targets: {
+        goals: {
           arm: {
             position_mm: examples.limited_position_millimeters,
             orientation: { quaternion: currentPose.quaternion },

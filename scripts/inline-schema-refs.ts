@@ -85,7 +85,7 @@ function allowsNull(schema: Json): boolean {
   );
 }
 
-// CONSTRAINT: Serde writes every `Option` as null when absent, so received
+// CONSTRAINT: Unless explicitly omitted, Serde writes absent options as null, so received
 // nullable fields must be required to avoid adding undefined to their types.
 function requireNullableFields(node: Json): Json {
   if (Array.isArray(node)) return node.map(requireNullableFields);
@@ -97,7 +97,11 @@ function requireNullableFields(node: Json): Json {
   if (properties && typeof properties === "object" && !Array.isArray(properties)) {
     const alreadyRequired = Array.isArray(required) ? required : [];
     const nullable = Object.entries(properties)
-      .filter(([, schema]) => allowsNull(schema))
+      .filter(([, schema]) => {
+        if (!allowsNull(schema)) return false;
+        return typeof schema === "object" && schema !== null
+          && !Array.isArray(schema) && schema["x-omit-when-none"] !== true;
+      })
       .map(([name]) => name);
     result.required = [...new Set([...alreadyRequired, ...nullable])] as Json;
   }

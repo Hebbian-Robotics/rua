@@ -24,14 +24,20 @@ independently of it.
 | Input | Final reference owner |
 | --- | --- |
 | Planned joint-space sections | [Trajectory execution](../server-core/src/control_loop/trajectory.rs) and [scalar path generator](../server-core/src/corner_path.rs) |
+| Single-arm pass-through waypoints | [Continuous joint-space interpolant](../server-core/src/continuous_path.rs) |
 | Changing joint destinations and normal braking | [Reference filter](../server-core/src/reference_filter.rs) |
 | Learned pose goals | [Learned reach and stream handling](../server-core/src/control_loop/learned.rs) |
 
-Planned motion follows straight joint-space sections. The scalar trajectory
+Direct moves follow straight joint-space sections. The scalar trajectory
 targets the actual section endpoint and retains commanded velocity and
 acceleration between updates. Sending those setpoints through the destination
 filter again would change the checked path. [Tracking regressions](../server-core/tests/tracking.rs)
 exercise bounds, path geometry and stuck-arm behavior.
+
+A continuous move shares velocity and acceleration across adjacent sections.
+The planner checks the interpolated joint path. The controller checks tracking
+at each crossing and starts any waypoint jaw command after the arm setpoint
+write succeeds. It waits for the final jaw command before completing the move.
 
 Grouped trajectories share a progress gate and use feedback from the same cycle.
 The [group implementation](../server-core/src/control_loop/group.rs) handles member

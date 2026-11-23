@@ -582,7 +582,7 @@ fn a_move_into_a_collision_runs_to_the_last_clear_sample_and_says_why() {
     let segment = motion.plan.segments.last().unwrap();
     let stop = segment.corners.last().unwrap();
     assert!(!close(stop, &CLIPPED));
-    assert_eq!(segment.target_position, None);
+    assert_eq!(segment.destination_position, None);
     assert_eq!(path_refusal(&planner, &NOMINAL, stop), None);
     // WHY: The next sample on toward the target is the one the guard stops.
     let toward: Vec<f64> = stop

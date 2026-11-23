@@ -64,7 +64,7 @@ class ObserveInput(BaseModel):
 
 class ActionSequenceInput(BaseModel):
     """Execute steps in order. Each step can move and set the gripper together;
-    a single step is one action. Each movement settles before the next step.
+    a single step is one action. Each goal settles before the next step.
     The result reports completed steps and why execution stopped, if applicable."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

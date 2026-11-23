@@ -19,11 +19,11 @@ test("formatting views retain full history and measured progress from a failed m
     ...commandRecord("move"),
     command: {
       kind: "move",
-      target_joints: [0.3],
+      destination_joints: [0.3],
       joint_speed: 1,
       group_id: null,
-      target_position: null,
-      target_quaternion: null,
+      destination_position: null,
+      destination_quaternion: null,
       path_limited: null,
       pose_limited: null,
     },
@@ -51,8 +51,8 @@ test("formatting views retain full history and measured progress from a failed m
       {
         label: "start",
         measured_joints: [0.123456789],
-        target_position: null,
-        target_quaternion: null,
+        destination_position: null,
+        destination_quaternion: null,
       },
     ],
   });

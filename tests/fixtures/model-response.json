@@ -122,11 +122,11 @@
             "reason": "at_joint_limit",
             "waypoint": 0
           },
-          "target_joints": [
+          "destination_joints": [
             0.0
           ],
-          "target_position": null,
-          "target_quaternion": null
+          "destination_position": null,
+          "destination_quaternion": null
         },
         "command_id": "move-0",
         "label": "move_to_joints",
@@ -153,11 +153,11 @@
             "reason": "self_collision"
           },
           "pose_limited": null,
-          "target_joints": [
+          "destination_joints": [
             0.0
           ],
-          "target_position": null,
-          "target_quaternion": null
+          "destination_position": null,
+          "destination_quaternion": null
         },
         "command_id": "move-1",
         "label": "move_to_joints",
@@ -182,11 +182,11 @@
           "kind": "move",
           "path_limited": null,
           "pose_limited": null,
-          "target_joints": [
+          "destination_joints": [
             0.0
           ],
-          "target_position": null,
-          "target_quaternion": null
+          "destination_position": null,
+          "destination_quaternion": null
         },
         "command_id": "move-2",
         "label": "move_to_joints",
@@ -217,11 +217,11 @@
             "reason": "at_joint_limit",
             "waypoint": 0
           },
-          "target_joints": [
+          "destination_joints": [
             0.0
           ],
-          "target_position": null,
-          "target_quaternion": null
+          "destination_position": null,
+          "destination_quaternion": null
         },
         "command_id": "move-3",
         "label": "move_to_joints",
@@ -251,14 +251,14 @@
           "reason": "at_joint_limit",
           "waypoint": 0
         },
-        "target_joints_degrees": [
+        "destination_joints_degrees": [
           0.0
         ],
         "completion": {
           "finished_unix_nano": "2000000000",
           "outcome": "completed"
         },
-        "target_status": "limited"
+        "goal_status": "limited"
       },
       {
         "accepted_unix_nano": "1000000000",
@@ -268,28 +268,28 @@
         "path_limited": {
           "reason": "self_collision"
         },
-        "target_joints_degrees": [
+        "destination_joints_degrees": [
           0.0
         ],
         "completion": {
           "finished_unix_nano": "2000000000",
           "outcome": "completed"
         },
-        "target_status": "limited"
+        "goal_status": "limited"
       },
       {
         "accepted_unix_nano": "1000000000",
         "command_id": "move-2",
         "label": "move_to_joints",
         "joint_speed_degrees_per_second": 57.3,
-        "target_joints_degrees": [
+        "destination_joints_degrees": [
           0.0
         ],
         "completion": {
           "finished_unix_nano": "2000000000",
           "outcome": "completed"
         },
-        "target_status": "reached"
+        "goal_status": "reached"
       },
       {
         "accepted_unix_nano": "1000000000",
@@ -303,14 +303,14 @@
           "reason": "at_joint_limit",
           "waypoint": 0
         },
-        "target_joints_degrees": [
+        "destination_joints_degrees": [
           0.0
         ],
         "completion": {
           "finished_unix_nano": "2000000000",
           "outcome": "stopped_short"
         },
-        "target_status": "stopped_short"
+        "goal_status": "stopped_short"
       }
     ]
   }
