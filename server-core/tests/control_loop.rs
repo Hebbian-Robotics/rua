@@ -545,10 +545,9 @@ fn sim_setups(
 
 #[test]
 fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
-    let directory = std::env::temp_dir().join(format!("hebbian-sim-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
-    let (simulator_shutdown, simulator) = fake_simulator(&directory, 100_000);
-    let mut setups = sim_setups(&directory, 2.0);
+    let directory = tempfile::tempdir().unwrap();
+    let (simulator_shutdown, simulator) = fake_simulator(directory.path(), 100_000);
+    let mut setups = sim_setups(directory.path(), 2.0);
     let mut left_config = setups[0].config.clone().into_input();
     left_config.enable_checks = Some(hebbian_contracts::EnableChecks {
         preflight_drift_limit_radians: 0.02,
@@ -595,10 +594,9 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
 
 #[test]
 fn a_simulator_that_stops_answering_trips_the_arms_instead_of_hanging_the_loop() {
-    let directory = std::env::temp_dir().join(format!("hebbian-sim-stall-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
-    let (simulator_shutdown, simulator) = fake_simulator(&directory, 20);
-    let mut setups = sim_setups(&directory, 0.3);
+    let directory = tempfile::tempdir().unwrap();
+    let (simulator_shutdown, simulator) = fake_simulator(directory.path(), 20);
+    let mut setups = sim_setups(directory.path(), 0.3);
     let started = Instant::now();
     let reports = run_arms(
         &mut setups,
