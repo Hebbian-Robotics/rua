@@ -28,6 +28,7 @@ const SNAPSHOT_RECORDS: usize = 200;
 const REMEMBERED_RECORDS: usize = 10_000;
 const WRITER_POLL: Duration = Duration::from_millis(20);
 
+#[derive(Clone, Copy)]
 pub(crate) struct SubmissionAuthority<'a> {
     pub token: Option<&'a str>,
     pub generation: &'a [GenerationTicket],

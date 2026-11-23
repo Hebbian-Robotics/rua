@@ -4061,9 +4061,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -7015,9 +7013,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -7445,9 +7441,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -7948,9 +7942,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -9724,9 +9716,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("not_started"),
                               outcome: z
                                 .enum(["stopped", "failed"])
@@ -9918,9 +9908,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("outcome_unknown"),
                             })
                             .strict()
@@ -10175,9 +10163,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("not_started"),
                               outcome: z
                                 .enum(["stopped", "failed"])
@@ -10369,9 +10355,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("outcome_unknown"),
                             })
                             .strict()
@@ -10666,9 +10650,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("not_started"),
                               outcome: z
                                 .enum(["stopped", "failed"])
@@ -10860,9 +10842,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("outcome_unknown"),
                             })
                             .strict()
@@ -14096,9 +14076,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -14531,9 +14509,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -14966,9 +14942,7 @@ export const apiSchemas = z.object({
                               detail: z
                                 .union([z.string(), z.null()])
                                 .optional(),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -17953,9 +17927,7 @@ export const apiSchemas = z.object({
                         .array(
                           z
                             .object({
-                              accepted_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                               checkpoints: z.array(
                                 z
                                   .object({
@@ -18448,9 +18420,7 @@ export const apiSchemas = z.object({
                         .array(
                           z
                             .object({
-                              accepted_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                               checkpoints: z.array(
                                 z
                                   .object({
@@ -19309,9 +19279,7 @@ export const apiSchemas = z.object({
                           z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("not_started"),
                               outcome: z
                                 .enum(["stopped", "failed"])
@@ -19491,9 +19459,7 @@ export const apiSchemas = z.object({
                           z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               kind: z.literal("outcome_unknown"),
                             })
                             .strict()
@@ -21825,9 +21791,7 @@ export const apiSchemas = z.object({
                           arm: z.string(),
                           record: z
                             .object({
-                              accepted_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              accepted_unix_nano: z.string().regex(/^[0-9]+$/),
                               checkpoints: z.array(
                                 z
                                   .object({
@@ -23014,9 +22978,7 @@ export const apiSchemas = z.object({
                           completion: z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z
@@ -23519,9 +23481,7 @@ export const apiSchemas = z.object({
                           completion: z
                             .object({
                               detail: z.union([z.string(), z.null()]),
-                              finished_unix_nano: z
-                                .string()
-                                .regex(/^[0-9]+$/),
+                              finished_unix_nano: z.string().regex(/^[0-9]+$/),
                               gripper: z
                                 .union([
                                   z

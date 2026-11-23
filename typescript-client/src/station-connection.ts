@@ -543,9 +543,8 @@ export function createStationConnection(
         );
         // Commands that finish in one cycle show only the latest on that arm.
         return arm.last_command?.command_id === commandId ||
-          BigInt(
-            commandResult(arm.last_command)?.finished_unix_nano ?? -1,
-          ) >= finishedAt
+          BigInt(commandResult(arm.last_command)?.finished_unix_nano ?? -1) >=
+            finishedAt
           ? true
           : undefined;
       },

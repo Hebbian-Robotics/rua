@@ -111,7 +111,7 @@ def command_record_outcome(record: CommandRecord) -> CommandOutcome | None:
             assert_never(unreachable)
 
 
-def command_record_finished_at(record: CommandRecord) -> int | None:
+def command_record_finished_unix_nano(record: CommandRecord) -> int | None:
     phase = record.phase
     match phase.kind:
         case "pending":

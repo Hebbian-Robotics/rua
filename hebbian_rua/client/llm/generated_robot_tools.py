@@ -803,7 +803,7 @@ MODEL_RESPONSE_FIELDS = json.loads(r"""
     "interlocks",
     "recovery_issue",
     "revision",
-    "sampled_at_unix_seconds",
+    "sampled_unix_nano",
     "measured_joints",
     "tool",
     "gripper_opening"

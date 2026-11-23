@@ -680,7 +680,7 @@ export const modelResponseFields = {
     "interlocks",
     "recovery_issue",
     "revision",
-    "sampled_at_unix_seconds",
+    "sampled_unix_nano",
     "measured_joints",
     "tool",
     "gripper_opening",

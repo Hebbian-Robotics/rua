@@ -165,7 +165,7 @@ async fn connection(
                 }
                 backoff.reset();
             }
-            // Only a successfully applied delivery can change the replay position.
+            // INVARIANT: Only a successfully applied delivery can change the replay position.
             if let Some(identifier) = identifier {
                 *event_cursor = (!identifier.is_empty()).then_some(identifier);
             }

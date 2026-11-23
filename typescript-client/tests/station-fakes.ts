@@ -16,7 +16,11 @@ export function commandRecord(
       finishedAt === null
         ? { kind: "pending" }
         : outcome === "interrupted"
-          ? { kind: "outcome_unknown", finished_unix_nano: String(finishedAt * 1e9), detail: null }
+          ? {
+              kind: "outcome_unknown",
+              finished_unix_nano: String(finishedAt * 1e9),
+              detail: null,
+            }
           : {
               kind: "finished",
               achieved: null,

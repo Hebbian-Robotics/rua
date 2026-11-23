@@ -8,7 +8,7 @@ STATION_ID = "11111111-1111-4111-8111-111111111111"
 
 
 def command_record(
-    command_id: str, finished_unix_nano: float | None = None
+    command_id: str, finished_unix_nano: str | None = None
 ) -> dict[str, Any]:
     return {
         "command_id": command_id,
@@ -21,7 +21,7 @@ def command_record(
             "kind": "finished",
             "completion": {
                 "outcome": "completed",
-                "finished_unix_nano": str(round(finished_unix_nano * 1e9)),
+                "finished_unix_nano": finished_unix_nano,
                 "detail": None,
             },
         },
