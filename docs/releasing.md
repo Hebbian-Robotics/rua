@@ -28,7 +28,8 @@ artifact and keep the run associated with the commit.
 
 Before the first publication, verify ownership of any existing package and
 confirm the npm and crates.io accounts can create the new names. Build
-verification runs without publishing credentials.
+verification runs on Namespace without publishing credentials. Manual runs on
+`main` can update the release Cache Volumes for later builds.
 
 ## First SDK publication
 
@@ -55,6 +56,10 @@ Enable direct publishing in the npm registration. See the
 [PyPI](https://docs.pypi.org/trusted-publishers/adding-a-publisher/),
 [npm](https://docs.npmjs.com/trusted-publishers), and
 [crates.io](https://crates.io/docs/trusted-publishing) setup guides.
+
+The registry upload jobs use GitHub-hosted runners. npm requires them for
+Trusted Publishing, and
+[PyPA recommends them for its publishing action](https://github.com/pypa/gh-action-pypi-publish#non-goals).
 
 ## Publish an approved release
 

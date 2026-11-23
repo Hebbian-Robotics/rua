@@ -1,12 +1,5 @@
 name: Set up the station for checks
 description: Prepare native tools, dependencies, and pinned robot assets
-inputs:
-  cache-platform:
-    description: Runner image used as the Rust cache key
-    required: true
-  save-cache:
-    description: Whether this job is responsible for updating the Rust cache
-    default: 'false'
 runs:
   using: composite
   steps:
@@ -37,13 +30,16 @@ runs:
       with:
         version: "0.13.6"
         python-version: "3.14"
-        enable-cache: true
-    - name: Restore Rust build cache
-      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        enable-cache: false
+    - name: Load the pinned Rust toolchain
+      shell: bash
+      run: cargo --version
+    - name: Attach the Rust and uv cache volume
+      uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
       with:
-        shared-key: checks-${{ inputs.cache-platform }}
-        env-vars: CC CXX MACOSX_DEPLOYMENT_TARGET
-        save-if: ${{ inputs.save-cache == 'true' }}
+        cache: |
+          rust
+          uv
     - name: Prepare pinned robot assets
       shell: bash
       run: uv run rua-dev setup

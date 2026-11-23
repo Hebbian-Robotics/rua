@@ -1,116 +1,45 @@
 # Development reference
 
-Follow [Contributing](../CONTRIBUTING.md) for contribution workflow and language
-checks, and [architecture](architecture.md#components) for component ownership. Run the
-commands below from the repository root. Build/restart instructions live in
-[updating a checkout](install-from-source.md#updating-a-checkout).
+See [Contributing](../CONTRIBUTING.md) for local checks and
+[updating a checkout](install-from-source.md#updating-a-checkout) for build and
+restart instructions.
 
 ## Validation details
 
-Pull-request CI selects documentation, Python, TypeScript, Rust, and station
-integration checks from the changed paths. Station integration covers generated
-contracts and SDKs against the simulated station. Shared schemas, test fixtures,
-workflow changes, and unclassified paths select all checks. Pushes to `main`
-and manual runs always execute the full suite.
+The [Check workflow](../.github/workflows/check.yml) runs on Namespace. Pull
+requests select checks by changed path. Pushes to `main` and manual runs execute
+the full suite. Pull requests can reuse
+[Cache Volumes](https://namespace.so/docs/solutions/github-actions/caching), and
+only `main` can persist cache updates.
 
-Use `uv run rua-dev validate --help` for available lanes. Run
-`uv run rua-dev validate --lane viewer` for viewer checks and tests. Install
-the JavaScript dependencies with `pnpm install --frozen-lockfile` before running
-the `viewer`, `fast` or `full` lanes. Use `fast` for work without a Rust build
-and `full` for changes crossing runtime and SDK boundaries. The
-[validation implementation](../tooling/rua_dev/validation.py) owns the exact check
-selection, test filters and report paths. The [CLI](../tooling/rua_dev/cli.py)
-lists the available lanes.
-
-Validation prepares checksum-pinned robot assets, so an unprepared checkout
-needs the release download or a populated cache.
-
-Examples of targeted test invocations:
-
-```sh
-cargo test -p hebbian-robot-use-core profile::tests
-pnpm --filter hebbian-rua test
-```
-
-Run the lease protocol tests locally with:
-
-```sh
-cargo test --locked -p hebbian-robot-use-core --lib lease::tests
-```
-
-Cargo runs the tests after compiling them. They advance time and deliver
-controller replies in test code, so they run without a robot or a CI runner.
-Set `PROPTEST_RNG_SEED` to a fixed integer to repeat the same generated cases.
-
-Pytest runs serially so simulated station scenarios do not compete for
-control-loop deadlines. Shared helpers live in `tests/fixture_*.py`.
-Run `uv run pytest -m server` for native integration tests after
-`pnpm install --frozen-lockfile`. The `server` validation lane excludes tests
-marked `typescript`, which also need Node.js and pnpm.
-
-Policy replay skips unless `ORT_DYLIB_PATH` points to ONNX Runtime and
-`SO101_POLICY_GOLDEN_DIR` contains `policy.onnx` and `golden.npz`.
-For a controller cycle timing measurement, run on an idle host:
-
-```sh
-cargo test --release -p hebbian-robot-use-core --lib control_loop::tests::combined_motion_and_opening_meet_the_motor_cycle_deadline -- --ignored --exact --nocapture --test-threads=1
-```
-
-Validation builds the station once and passes its path through
-`HEBBIAN_ROBOT_USE_SERVER`. Standalone pytest builds it lazily through a shared
-fixture. When deliberately selecting an existing binary, set that variable to
-its absolute path and verify it matches the source under test. Documentation-only
-changes use the link checks in Contributing; they do not need runtime tests.
+For station integration tests, install JavaScript dependencies with
+`pnpm install --frozen-lockfile`, then run `uv run pytest -m server`. Keep these
+tests serial so simulated stations can meet control-loop deadlines. Pytest
+builds the station on demand. To use an existing binary, set
+`HEBBIAN_ROBOT_USE_SERVER` to its absolute path.
 
 ## Generated contracts and SDKs
 
-Edit the owning Rust types or route definitions, then regenerate:
+Edit the owning Rust types or the [station route table](../station/src/openapi.rs),
+then regenerate the schemas and SDKs from the repository root:
 
 ```sh
 uv run rua-dev contracts
 ```
 
-The command selects SDKs present in the checkout. Add `--targets python`
-or `--targets python rust` to avoid TypeScript tooling for a limited generation.
-A shared wire change still needs every affected SDK regenerated before merging.
+Use `--targets python` or `--targets python rust` for a partial run. Before
+merging a shared wire change, regenerate all affected SDKs and review hand-written
+adapters and callers, including lease requirements and retry behavior.
 
-| Source of truth | Generated output | Generator |
-| --- | --- | --- |
-| Rust station contracts and route table in `station/src/openapi.rs` | `schemas/openapi.json`, Python models and TypeScript Zod schemas | `tooling/rua_dev/contracts.py` |
-| OpenAPI `StationCommand` | Command wrappers in Python, TypeScript and Rust | `generators/commands.py` |
-| OpenAPI routes | HTTP helpers in all selected SDKs | `generators/routes.py` |
-| `contracts/src/robot_tools.rs` | `schemas/robot-tools.json`, `schemas/robot-context.json`, Python/TypeScript catalogs | `generators/catalog.py` |
-| [`contracts/src/sim_plant.rs`](../contracts/src/sim_plant.rs) | Simulator schema and fixture models when included | `contracts.py` |
-
-Generator paths in the table are relative to `tooling/rua_dev/`. The generators
-own output paths; do not maintain parallel lists in package scripts or edit
-generated wrappers. Hand-written SDK code owns convenience behavior. The command
-generator’s `LEASE_FREE_COMMANDS` determines which methods live on the ordinary
-client versus the lease handle; review it when adding a command. Route changes
-also need the OpenAPI table updated; `station/tests/openapi.rs` checks agreement
-with the routers.
-
-A wire change can also affect hand-written SDK adapters, the CLI, and agents. Check those callers after generation, including lease requirements,
-retry identity, revisions and cancellation. Regeneration does not update SDK
-convenience behavior or package-root exports. The tool catalog owns robot
-capabilities; examples own prompts and application tools.
-
-After reviewing and committing generated changes, verify reproducibility:
-
-```sh
-uv run rua-dev contracts --check
-```
-
-`--check` **regenerates files**, then compares them with Git HEAD, including
-staged differences and untracked outputs. It is not a read-only comparison with
-the index. New generated changes must be committed before this check can pass.
+After committing the generated files, run `uv run rua-dev contracts --check`.
+It regenerates files and compares the result with Git HEAD, including staged
+changes and untracked generated outputs. The
+[contracts generator](../tooling/rua_dev/contracts.py) owns the output paths.
 
 ## Dependency refreshes
 
-Update only the dependency families in scope. Preserve exact pins, upper bounds,
-native-library compatibility and the three-day release delay in uv/pnpm settings.
-The pinned Rust toolchain must still build the result. Refresh the independently
-resolved environments affected by the change:
+Refresh only the affected lockfiles. Preserve exact pins, compatibility bounds,
+and the three-day release delay in uv and pnpm.
 
 ```sh
 uv lock --upgrade
@@ -120,85 +49,25 @@ pnpm update --recursive --include-workspace-root --lockfile-only
 cargo update
 ```
 
-These commands refresh compatible resolutions; they do not replace a deliberate
-manifest change for an exact version or Git revision. `cargo upgrade` from
-cargo-edit can help update compatible manifest requirements; it is an optional
-developer tool, not a prerequisite for normal builds. Do not raise Python lower
-bounds merely because the lockfile selected a newer version.
-
-| Owned dependency | Pins to inspect when changing that integration |
-| --- | --- |
-| SO-101 | [Runtime and model asset pins](#so-101-dependency) |
-| LiveKit Cameras | Git dependencies in `livekit-cameras/Cargo.toml`; keep station access’s `livekit-api` compatible with the pinned LiveKit dependency graph |
-| MCAP Tools | Native dependencies in `livekit-cameras/Cargo.toml` |
-
-Validate upstream changes in their owning repository first, then update affected
-pins and Cargo/pnpm/uv lockfiles here. When Biome changes, update the checked-in schema URLs.
+Change exact manifest versions or Git revisions before refreshing their locks.
+See [Contributing](../CONTRIBUTING.md#making-a-change) for dependencies we maintain.
 
 ### SO-101 dependency
 
-RUA uses [Hebbian-Robotics/so101](https://github.com/Hebbian-Robotics/so101)
-for the hardware runtime and robot model assets. The upstream setup CLI
-handles arm calibration and servo setup.
-
-| What you need to update | Where it is pinned |
-| --- | --- |
-| Rust hardware runtime | [`server-core/Cargo.toml`](../server-core/Cargo.toml) and `Cargo.lock` |
-| Robot assemblies, URDFs and meshes | [`robots/so101-assets.toml`](../robots/so101-assets.toml) |
-
-Update the pin for the change you need. For a runtime update, refresh the
-Cargo lockfile and run the affected station tests. For an asset update, update
-the revision and file checksums, run `uv run rua-dev setup`, and check the
-affected profiles and geometry. The station wheel includes the pinned assets.
-
-## Worktrees and tooling
-
-Each worktree has its own `target/`. Optional sccache can share compiled crates;
-configure it in your user Cargo settings. Sharing `CARGO_TARGET_DIR` also shares
-build locks and lets worktrees invalidate each other’s workspace crates.
+Update the [hardware runtime pin](../server-core/Cargo.toml), refresh `Cargo.lock`,
+and run the affected station tests. To update robot models, change the revision
+and checksums in [the asset manifest](../robots/so101-assets.toml), run
+`uv run rua-dev setup`, and check the affected profiles and geometry.
 
 ## SO-101 reachability sweep
 
-Run this planner benchmark from a checkout with the bundled robot assets.
-It generates 30,000 pose requests across self-collision, table clearance with
-the open gripper, and a held-out seed with the default closed gripper.
+With the pinned robot assets installed, run the planner benchmark:
 
 ```sh
 RUA_REACH_SWEEP_OUTPUT=/tmp/rua-reach.jsonl \
-  timeout 180 cargo test -p hebbian-robot-use-core --lib reachability_sweep -- --ignored
+  cargo test -p hebbian-robot-use-core --lib reachability_sweep -- --ignored
 ```
 
-Each JSON line records the fixture, seed, case index, start joints, reference
-joints, target pose, and outcome. The reference joint path must clear the
-configured guards for a case to count toward reachability. Planned cases
-include endpoint error and planning latency. Compare revisions using the same
-fixtures and seeds, with separate Cargo target directories.
-
-Each complete line is a checkpoint. Replay held-out case 3288 with the
-half-open range from 3288 to 3289, or omit the end index to resume from a
-checkpoint. Use a separate output file for a resumed run.
-
-```sh
-RUA_REACH_SWEEP_PROFILE=held_out RUA_REACH_SWEEP_START=3288 RUA_REACH_SWEEP_END=3289 \
-  RUA_REACH_SWEEP_OUTPUT=/tmp/rua-replay-3288.jsonl \
-  timeout 180 cargo test -p hebbian-robot-use-core --lib reachability_sweep -- --ignored
-```
-
-Use the [MuJoCo fixture](simulation.md) to exercise station command outcomes
-and measured feedback separately. The fixture stops each joint at the limits the
-station writes to `<work-directory>/<arm>.json`: the URDF's, or a registered arm's
-calibrated travel with `serve --so101-config-directory CONFIGS --so101-serial SERIAL`.
-It simulates the SO-101 with the TPU gripper and wrist camera from the MuJoCo model
-generated upstream with `robot-soft-gripper-camera.urdf`, checked out on first run
-at the commit pinned in `robots/so101-assets.toml`.
-The stand-in with no physics (`--no-physics-stand-in`) takes the same options.
-
-To compare the cost of failed searches, run the companion benchmark. It
-measures planner and preview latency on targets beyond the arm's reach and
-on positions inside the workspace with an incompatible tool orientation.
-Both paths must report that each request falls short.
-
-```sh
-RUA_REACH_SWEEP_OUTPUT=/tmp/rua-impossible.jsonl \
-  timeout 180 cargo test -p hebbian-robot-use-core --lib impossible_pose_latency -- --ignored
-```
+Use the same fixtures and seeds when comparing revisions. The
+[benchmark source](../server-core/src/planning/tests/reach_sweep.rs) defines the
+replay controls and contains the companion `impossible_pose_latency` benchmark.

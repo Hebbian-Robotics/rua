@@ -21,6 +21,12 @@ Prompt an LLM and let it observe and act in the real world.</p>
   </a>
 </p>
 
+<p align="center">
+  <a href="https://namespace.so/github-actions?utm_source=oss&amp;utm_campaign=rua">
+    <img src="https://namespace.so/oss/badge.svg" alt="CI powered by Namespace, RUA's CI sponsor">
+  </a>
+</p>
+
 ## Get started
 
 Start with the [browser viewer example](docs/getting-started.md). Set up your
