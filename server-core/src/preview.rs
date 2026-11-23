@@ -1,8 +1,3 @@
-#![allow(
-    clippy::disallowed_methods,
-    reason = "Preview commands only its private NoPhysicsStandIn and never opens physical hardware."
-)]
-
 // SAFETY: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
 
 use std::time::{Duration, Instant};
@@ -157,7 +152,7 @@ impl Preview {
                     &feedback,
                 ) {
                     Ok(()) => {
-                        plant.command(&joint_goal, interval)?;
+                        plant.step(&joint_goal, interval);
                         previous_command.copy_from_slice(&joint_goal);
                     }
                     Err(trip) => ending = Some((PreviewOutcome::Blocked, Some(trip.to_string()))),

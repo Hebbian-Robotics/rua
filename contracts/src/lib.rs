@@ -199,7 +199,9 @@ pub enum JawYawReference {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct OrientationSummary {
     pub approach: [f64; 3],
+    #[schemars(range(min = 0.0, max = 180.0))]
     pub degrees_from_down: f64,
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
     pub jaw_yaw_reference: JawYawReference,
     pub target: Option<TargetComparison>,
@@ -210,9 +212,12 @@ pub struct OrientationSummary {
 /// physical error.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TargetComparison {
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
     pub jaw_yaw_degrees: f64,
     pub jaw_yaw_reference: JawYawReference,
+    #[schemars(range(min = 0.0, max = 180.0))]
     pub approach_error_degrees: f64,
+    #[schemars(range(min = 0.0, max = 180.0))]
     pub orientation_error_degrees: f64,
 }
 
@@ -308,8 +313,10 @@ pub struct PoseLimited {
     pub waypoint: usize,
     pub reason: IkFailure,
     /// From the closest pose's tool position to the requested one.
+    #[schemars(range(min = 0.0))]
     pub position_shortfall_meters: f64,
     /// From the closest pose's orientation to the requested one.
+    #[schemars(range(min = 0.0))]
     pub orientation_shortfall_radians: f64,
     /// The shortfall and the closest pose's tool position in millimetres, then what
     /// would be reachable exactly instead, in the terms a pose takes.
@@ -337,10 +344,13 @@ pub struct Achieved {
     /// The tool pose at `joints`; absent when the controller has no tool link.
     pub position: Option<[f64; 3]>,
     pub quaternion: Option<[f64; 4]>,
+    #[schemars(range(min = 0.0))]
     pub joint_error_radians: Option<f64>,
     /// Each joint's absolute distance from the target joints.
     pub joint_errors_radians: Option<Vec<f64>>,
+    #[schemars(range(min = 0.0))]
     pub position_error_meters: Option<f64>,
+    #[schemars(range(min = 0.0))]
     pub orientation_error_radians: Option<f64>,
     /// The tool orientation in grasp terms, against the target's when there is one.
     pub orientation: Option<OrientationSummary>,

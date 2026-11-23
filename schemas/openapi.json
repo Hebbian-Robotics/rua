@@ -6,6 +6,7 @@
         "properties": {
           "joint_error_radians": {
             "format": "double",
+            "minimum": 0.0,
             "type": [
               "number",
               "null"
@@ -42,6 +43,7 @@
           },
           "orientation_error_radians": {
             "format": "double",
+            "minimum": 0.0,
             "type": [
               "number",
               "null"
@@ -62,6 +64,7 @@
           },
           "position_error_meters": {
             "format": "double",
+            "minimum": 0.0,
             "type": [
               "number",
               "null"
@@ -2764,6 +2767,8 @@
         "properties": {
           "from_degrees": {
             "format": "double",
+            "maximum": 360.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "reachable": {
@@ -2777,6 +2782,8 @@
           },
           "to_degrees": {
             "format": "double",
+            "maximum": 360.0,
+            "minimum": 0.0,
             "type": "number"
           }
         },
@@ -3551,10 +3558,14 @@
           },
           "degrees_from_down": {
             "format": "double",
+            "maximum": 180.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "jaw_yaw_degrees": {
+            "exclusiveMaximum": 360.0,
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           },
           "jaw_yaw_reference": {
@@ -3704,11 +3715,13 @@
           "orientation_shortfall_radians": {
             "description": "From the closest pose's orientation to the requested one.",
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           },
           "position_shortfall_meters": {
             "description": "From the closest pose's tool position to the requested one.",
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           },
           "reason": {
@@ -3870,6 +3883,7 @@
         "properties": {
           "calculation_milliseconds": {
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           },
           "jaw_yaw_ranges": {
@@ -4010,6 +4024,7 @@
           "orientation_error_radians": {
             "description": "From the requested orientation; none when the solver chose it.",
             "format": "double",
+            "minimum": 0.0,
             "type": [
               "number",
               "null"
@@ -4026,6 +4041,7 @@
           },
           "position_error_meters": {
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           },
           "quaternion": {
@@ -5551,10 +5567,14 @@
         "properties": {
           "approach_error_degrees": {
             "format": "double",
+            "maximum": 180.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "jaw_yaw_degrees": {
+            "exclusiveMaximum": 360.0,
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           },
           "jaw_yaw_reference": {
@@ -5562,6 +5582,8 @@
           },
           "orientation_error_degrees": {
             "format": "double",
+            "maximum": 180.0,
+            "minimum": 0.0,
             "type": "number"
           }
         },
@@ -5586,7 +5608,9 @@
             "type": "array"
           },
           "jaw_yaw_degrees": {
+            "exclusiveMaximum": 360.0,
             "format": "double",
+            "minimum": 0.0,
             "type": "number"
           }
         },
