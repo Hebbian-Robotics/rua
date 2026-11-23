@@ -75,7 +75,7 @@ fn the_openapi_document_matches_the_routers() {
         live_run.clone(),
         Arc::default(),
         |runtime, bound| {
-            let (routes, _manager) = web::mount(runtime, bound, settings);
+            let (routes, _manager) = web::mount(runtime, bound, settings, || true);
             Ok(routes
                 .merge(hebbian_robot_use_server::run_telemetry::routes(live_run))
                 .merge(hebbian_robot_use_server::controller_supervisor::router(

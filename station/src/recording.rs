@@ -35,7 +35,7 @@ pub struct RecordingManager {
     announcements: watch::Sender<RecordingAnnouncement>,
     announced: watch::Receiver<u64>,
     state: Arc<Mutex<RecordingState>>,
-    controller_available: Arc<AtomicBool>,
+    controller_available: Arc<dyn Fn() -> bool + Send + Sync>,
     shutting_down: Arc<AtomicBool>,
     ended: watch::Sender<()>,
 }
@@ -118,7 +118,11 @@ fn finalized_recording(
 
 impl RecordingManager {
     #[must_use]
-    pub fn new(configuration: Option<RecordingConfiguration>, station_url: String) -> Self {
+    pub fn new(
+        configuration: Option<RecordingConfiguration>,
+        station_url: String,
+        controller_available: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Self {
         let recording = configuration.map(Arc::new);
         let (announcements, mut receiver) = watch::channel(RecordingAnnouncement::default());
         let (completed, announced) = watch::channel(0);
@@ -145,7 +149,7 @@ impl RecordingManager {
             announcements,
             announced,
             state: Arc::new(Mutex::new(RecordingState::Idle)),
-            controller_available: Arc::new(AtomicBool::new(true)),
+            controller_available: Arc::new(controller_available),
             shutting_down: Arc::new(AtomicBool::new(false)),
             ended: watch::Sender::new(()),
         }
@@ -166,8 +170,7 @@ impl RecordingManager {
     }
 
     // INVARIANT: Preserve controller loss even when recording stops before telemetry arrives.
-    pub fn controller_unavailable(&self) {
-        self.controller_available.store(false, Ordering::Release);
+    pub fn mark_controller_interruption(&self) {
         let mut state = self
             .state
             .lock()
@@ -182,9 +185,6 @@ impl RecordingManager {
         }
     }
 
-    pub fn controller_ready(&self) {
-        self.controller_available.store(true, Ordering::Release);
-    }
     #[must_use]
     pub fn active_recording(&self) -> Option<String> {
         self.state
@@ -233,7 +233,7 @@ impl RecordingManager {
             "{started_at_milliseconds}-{}",
             uuid::Uuid::new_v4().simple()
         );
-        let controller_interrupted = !self.controller_available.load(Ordering::Acquire);
+        let controller_interrupted = !(self.controller_available)();
         if controller_interrupted {
             self.mark_interruption_file(&name)?;
         }
@@ -270,9 +270,10 @@ impl RecordingManager {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let controller_interrupted = state
-                .active_session()
-                .is_some_and(|session| session.controller_interrupted);
+            let controller_interrupted = !(manager.controller_available)()
+                || state
+                    .active_session()
+                    .is_some_and(|session| session.controller_interrupted);
             *state = finalized_recording(recording_name, controller_interrupted, finalized);
             manager.ended.send_replace(());
         });

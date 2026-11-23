@@ -270,7 +270,8 @@ pub(crate) fn run_supervised(
         live_run.clone(),
         Arc::clone(&shutdown_requested),
         |runtime, bound| {
-            let (routes, mounted_routes) = web::mount(runtime, bound, web);
+            let (routes, mounted_routes) =
+                web::mount(runtime, bound, web, supervisor.availability_reader());
             supervisor.attach_recording(mounted_routes.recording.clone());
             mounted = Some(mounted_routes);
             Ok(routes
