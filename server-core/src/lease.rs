@@ -99,7 +99,18 @@ struct Held {
     phase: LeasePhase<Vec<PendingArmStop>>,
 }
 
-struct TakeoverReservation(String);
+struct TakeoverReservation {
+    token: String,
+    controller_epoch: ControllerEpoch,
+}
+
+type StopAcknowledgement =
+    Result<Receiver<Result<hebbian_contracts::CommandRecord, Rejection>>, Rejection>;
+
+struct TakeoverStopPlan {
+    arms: Vec<LeasedArm>,
+    acknowledgements: Vec<StopAcknowledgement>,
+}
 
 struct PendingArmStop {
     arm: ArmHandle,
@@ -453,28 +464,6 @@ impl Lease {
         request: LeaseRequest,
         mode: AcquireMode,
     ) -> Result<LeaseGrant, AcquireError> {
-        let epoch = self
-            .authority
-            .lock_unpoisoned()
-            .controller
-            .ready_epoch()
-            .ok_or_else(controller_unavailable)?;
-        let result = self.acquire_stopping_arms_inner(request, mode, epoch);
-        if self.authority.lock_unpoisoned().controller.ready_epoch() != Some(epoch) {
-            if let Ok(grant) = &result {
-                self.return_lease(Some(&grant.lease_token), Instant::now());
-            }
-            return Err(controller_unavailable());
-        }
-        result
-    }
-
-    fn acquire_stopping_arms_inner(
-        &self,
-        request: LeaseRequest,
-        mode: AcquireMode,
-        epoch: ControllerEpoch,
-    ) -> Result<LeaseGrant, AcquireError> {
         if matches!(mode, AcquireMode::WaitOrFail) {
             match self.acquire(request.clone(), Instant::now()) {
                 Ok(grant) => return Ok(grant),
@@ -483,7 +472,7 @@ impl Lease {
             }
         }
         let arms = self.arms.lock_unpoisoned().clone();
-        let (token, stops) = self.begin_takeover(
+        let (reservation, stop_plan) = self.begin_takeover(
             request,
             match mode {
                 AcquireMode::WaitOrFail => TakeoverMode::Recover,
@@ -491,62 +480,30 @@ impl Lease {
             },
             Instant::now(),
             || {
-                for arm in &arms {
-                    arm.generation.fetch_add(1, Ordering::AcqRel);
+                let acknowledgements = arms
+                    .iter()
+                    .map(|arm| {
+                        arm.generation.fetch_add(1, Ordering::AcqRel);
+                        arm.arm.submit_unawaited(Command::Stop, None)
+                    })
+                    .collect();
+                TakeoverStopPlan {
+                    arms,
+                    acknowledgements,
                 }
-                arms.iter()
-                    .map(|arm| arm.arm.submit_unawaited(Command::Stop, None))
-                    .collect::<Vec<_>>()
             },
         )?;
-        {
-            let mut authority = self.authority.lock_unpoisoned();
-            if authority.controller.ready_epoch() != Some(epoch) {
-                if authority
-                    .held
-                    .as_ref()
-                    .is_some_and(|claim| claim.is_held_by(Some(&token.0)))
-                {
-                    authority.held = None;
-                }
-                return Err(controller_unavailable());
-            }
-        }
-        let deadline = Instant::now() + TAKEOVER_TIMEOUT;
-        let result = (|| -> Result<(), Rejection> {
-            for stop in stops {
-                let answer = stop?;
-                answer
-                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                    .map_err(|_| crate::handoff::loop_not_running())??;
-            }
-            loop {
-                let mut all_ready = true;
-                for arm in &arms {
-                    let answer = arm.arm.control_handoff_readiness()?;
-                    let ready = answer
-                        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                        .map_err(|_| crate::handoff::loop_not_running())??;
-                    all_ready &= ready;
-                }
-                match transition::takeover_poll(all_ready, Instant::now(), deadline) {
-                    TakeoverPoll::Complete => return Ok(()),
-                    TakeoverPoll::Wait => std::thread::sleep(TAKEOVER_POLL_INTERVAL),
-                    TakeoverPoll::TimedOut => {
-                        return Err(Rejection {
-                            reason: RejectionReason::ArmBusy,
-                            detail: "Timed out waiting for the arms to stop".into(),
-                        });
-                    }
-                }
-            }
-        })();
+        let result = self.wait_for_takeover_stop(&reservation, stop_plan);
         let completion = if result.is_ok() {
             TakeoverResult::Settled
         } else {
             TakeoverResult::Failed
         };
-        let grant = self.finish_takeover(token, Instant::now(), completion);
+        let controller_epoch = reservation.controller_epoch;
+        let grant = self.finish_takeover(reservation, Instant::now(), completion);
+        if self.authority.lock_unpoisoned().controller.ready_epoch() != Some(controller_epoch) {
+            return Err(controller_unavailable());
+        }
         match result {
             Ok(()) => grant.ok_or_else(|| AcquireError::StopFailed {
                 reason: RejectionReason::ArmBusy,
@@ -556,6 +513,48 @@ impl Lease {
                 reason: refusal.reason,
                 detail: refusal.detail,
             }),
+        }
+    }
+
+    fn wait_for_takeover_stop(
+        &self,
+        reservation: &TakeoverReservation,
+        plan: TakeoverStopPlan,
+    ) -> Result<(), Rejection> {
+        let deadline = Instant::now() + TAKEOVER_TIMEOUT;
+        for acknowledgement in plan.acknowledgements {
+            let answer = acknowledgement?;
+            answer
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .map_err(|_| crate::handoff::loop_not_running())??;
+        }
+        loop {
+            let readiness = {
+                let authority = self.authority.lock_unpoisoned();
+                if authority.controller.ready_epoch() != Some(reservation.controller_epoch) {
+                    return Err(crate::handoff::loop_not_running());
+                }
+                plan.arms
+                    .iter()
+                    .map(|arm| arm.arm.control_handoff_readiness())
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            let mut all_ready = true;
+            for answer in readiness {
+                all_ready &= answer
+                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                    .map_err(|_| crate::handoff::loop_not_running())??;
+            }
+            match transition::takeover_poll(all_ready, Instant::now(), deadline) {
+                TakeoverPoll::Complete => return Ok(()),
+                TakeoverPoll::Wait => std::thread::sleep(TAKEOVER_POLL_INTERVAL),
+                TakeoverPoll::TimedOut => {
+                    return Err(Rejection {
+                        reason: RejectionReason::ArmBusy,
+                        detail: "Timed out waiting for the arms to stop".into(),
+                    });
+                }
+            }
         }
     }
 
@@ -753,6 +752,10 @@ impl Lease {
 
     fn acquire(&self, request: LeaseRequest, now: Instant) -> Result<LeaseGrant, AcquireError> {
         let mut authority = self.authority.lock_unpoisoned();
+        authority
+            .controller
+            .ready_epoch()
+            .ok_or_else(controller_unavailable)?;
         let held = &mut authority.held;
         if let Some(existing) = self.live(held, now) {
             return Err(AcquireError::Held(existing.status(now)));
@@ -783,6 +786,10 @@ impl Lease {
         enqueue_stops: impl FnOnce() -> T,
     ) -> Result<(TakeoverReservation, T), AcquireError> {
         let mut authority = self.authority.lock_unpoisoned();
+        let controller_epoch = authority
+            .controller
+            .ready_epoch()
+            .ok_or_else(controller_unavailable)?;
         let held = &mut authority.held;
         if let Some(existing) = self.live(held, now)
             && !existing.phase.can_start_takeover(mode)
@@ -796,7 +803,10 @@ impl Lease {
             expires_at: now + self.duration,
             phase: LeasePhase::Transferring,
         };
-        let token = TakeoverReservation(reservation.token.clone());
+        let token = TakeoverReservation {
+            token: reservation.token.clone(),
+            controller_epoch,
+        };
         *held = Some(reservation);
         self.authority_changes.send_replace(());
         Ok((token, enqueue_stops()))
@@ -811,10 +821,13 @@ impl Lease {
         result: TakeoverResult,
     ) -> Option<LeaseGrant> {
         let mut authority = self.authority.lock_unpoisoned();
+        if authority.controller.ready_epoch() != Some(token.controller_epoch) {
+            return None;
+        }
         let held = &mut authority.held;
         let reservation = held
             .as_mut()
-            .filter(|reservation| reservation.is_held_by(Some(&token.0)))?;
+            .filter(|reservation| reservation.is_held_by(Some(&token.token)))?;
         let completion = reservation.phase.finish_takeover(result)?;
         self.authority_changes.send_replace(());
         match completion {
@@ -1353,7 +1366,11 @@ mod tests {
                 || (),
             )
             .unwrap();
-        for token in [None, Some(old_token.as_str()), Some(reservation.0.as_str())] {
+        for token in [
+            None,
+            Some(old_token.as_str()),
+            Some(reservation.token.as_str()),
+        ] {
             assert_eq!(
                 command(&lease, token, now).unwrap_err().reason,
                 RejectionReason::ArmBusy
@@ -1393,11 +1410,6 @@ mod tests {
         assert!(!lease.retain(Some(&original), now));
         assert!(
             lease
-                .finish_takeover(transferring, now, TakeoverResult::Settled)
-                .is_none()
-        );
-        assert!(
-            lease
                 .acquire_stopping_arms(
                     request(LeaseHolder::Agent, "offline"),
                     AcquireMode::WaitOrFail
@@ -1407,14 +1419,18 @@ mod tests {
         assert!(command(&lease, None, now).is_err());
         lease.controller_ready();
         assert!(command(&lease, Some(&original), now).is_err());
+        let fresh = lease
+            .acquire_stopping_arms(
+                request(LeaseHolder::Agent, "fresh"),
+                AcquireMode::WaitOrFail,
+            )
+            .unwrap();
         assert!(
             lease
-                .acquire_stopping_arms(
-                    request(LeaseHolder::Agent, "fresh"),
-                    AcquireMode::WaitOrFail
-                )
-                .is_ok()
+                .finish_takeover(transferring, now, TakeoverResult::Settled)
+                .is_none()
         );
+        assert!(lease.retain(Some(&fresh.lease_token), now));
     }
 
     #[test]
