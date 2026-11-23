@@ -262,11 +262,13 @@ pub(crate) fn run_supervised(
     );
     let mut mounted = None;
     let media_status = web.media_status.clone();
+    let local_cameras_only = web.local_cameras_only;
+    let mut web = web;
     let live_run = Arc::new(LiveRunStore::default());
     let server = HttpServer::start(
         http_address,
         directories,
-        station_api::default_viewer_directory(),
+        web.viewer_directory.take(),
         live_run.clone(),
         Arc::clone(&shutdown_requested),
         |runtime, bound| {
@@ -300,6 +302,7 @@ pub(crate) fn run_supervised(
         &media,
         &web::local_http_url(server.local_address()),
         &media_status,
+        local_cameras_only,
     );
     // CONSTRAINT: Launchers read the bound address from this startup announcement.
     eprintln!("HTTP on http://{}", server.local_address());
