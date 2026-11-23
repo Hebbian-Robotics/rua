@@ -16,8 +16,7 @@ Complete the [source setup](install-from-source.md#prepare-the-checkout) and
 Support the arm before disabling it. Verify clearance from objects and other
 arms, supervise the first motions, and keep a physical power cutoff accessible.
 
-To stream camera video to the viewer, follow the [LiveKit camera setup](cameras.md#connect-a-usb-camera)
-before starting. Then run the station from the repository root:
+Before starting the viewer, [add your LiveKit credentials to the station’s `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
 
 ```sh
 uv run cargo run -p hebbian-robot-use-server -- serve --manual-control

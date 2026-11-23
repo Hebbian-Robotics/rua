@@ -108,7 +108,12 @@ impl Credentials {
         let missing: Vec<_> = VARIABLES
             .into_iter()
             .zip(&values)
-            .filter_map(|(name, value)| value.as_ref().is_none_or(String::is_empty).then_some(name))
+            .filter_map(|(name, value)| {
+                value
+                    .as_ref()
+                    .is_none_or(|value| value.trim().is_empty())
+                    .then_some(name)
+            })
             .collect();
         if !missing.is_empty() {
             return Err(AccessError::MissingCredentials(missing));

@@ -43,6 +43,8 @@ pub enum CameraForwarding {
 
 #[derive(Debug, Clone)]
 pub struct WebSettings {
+    pub viewer_directory: Option<PathBuf>,
+    pub local_cameras_only: bool,
     pub recordings_directory: PathBuf,
     pub enable_recording: bool,
     pub media_address: Option<SocketAddr>,
@@ -55,6 +57,7 @@ pub struct WebSettings {
 }
 
 enum Cameras {
+    LocalOnly,
     Off(String),
     On(Credentials),
 }
@@ -76,6 +79,10 @@ impl IntoResponse for Refusal {
 fn credentials(access: &Access) -> Result<&Credentials, Refusal> {
     match &access.cameras {
         Cameras::On(credentials) => Ok(credentials),
+        Cameras::LocalOnly => Err(Refusal(
+            StatusCode::CONFLICT,
+            "USB cameras only. Phone invites require LiveKit.".to_owned(),
+        )),
         Cameras::Off(reason) => Err(Refusal(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("Cameras are off: {reason}"),
@@ -213,7 +220,11 @@ pub fn mount(
     let recording_library =
         recording_library.with_active_recording(move || recording_manager.active_recording());
     let access = Arc::new(Access {
-        cameras: camera_access(),
+        cameras: if settings.local_cameras_only {
+            Cameras::LocalOnly
+        } else {
+            camera_access()
+        },
         room,
         phone_page_url: settings.phone_page_url,
     });

@@ -1,4 +1,4 @@
-import { apiSchemas } from "hebbian-rua";
+import { apiSchemas, StationHttpError } from "hebbian-rua";
 import {
   ConnectionState,
   type RemoteParticipant,
@@ -17,11 +17,13 @@ import { createCameraConnectionMachine } from "./camera-connection-machine.js";
 export type CameraFeed = { name: string; track: RemoteTrack };
 export type CameraRoomState = {
   status: string;
+  localCamerasOnly: boolean;
   feeds: CameraFeed[];
   roomMetadata: string | undefined;
 };
 
 type CameraConnection =
+  | "local"
   | "connecting"
   | "connected"
   | "reconnecting"
@@ -32,6 +34,8 @@ function connectionMessage(
   hasFeeds: boolean,
 ): string {
   switch (connection) {
+    case "local":
+      return "USB cameras only. Local snapshots are available from the station.";
     case "connecting":
       return "Connecting to LiveKit…";
     case "connected":
@@ -41,13 +45,15 @@ function connectionMessage(
     case "reconnecting":
       return "Reconnecting to LiveKit…";
     default:
-      return `Couldn’t connect to LiveKit. ${connection.error}`;
+      return `Couldn’t connect to LiveKit. Retrying. ${connection.error}`;
   }
 }
 
 export function useCameraRoom(): CameraRoomState {
   const [state, setState] = useState<
-    Omit<CameraRoomState, "status"> & { connection: CameraConnection }
+    Omit<CameraRoomState, "status" | "localCamerasOnly"> & {
+      connection: CameraConnection;
+    }
   >({
     connection: "connecting",
     feeds: [],
@@ -156,6 +162,15 @@ export function useCameraRoom(): CameraRoomState {
         await connecting.disconnect();
         if (!active) return;
         feeds.clear();
+        if (error instanceof StationHttpError && error.status === 409) {
+          setState((previous) => ({
+            ...previous,
+            feeds: [],
+            connection: "local",
+          }));
+          cameraActor.stop();
+          return;
+        }
         setState({
           connection: { error: errorMessage(error, "Unknown error.") },
           feeds: [],
@@ -178,6 +193,7 @@ export function useCameraRoom(): CameraRoomState {
   const { connection, ...roomState } = state;
   return {
     ...roomState,
+    localCamerasOnly: connection === "local",
     status: connectionMessage(connection, state.feeds.length > 0),
   };
 }

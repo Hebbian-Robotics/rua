@@ -142,6 +142,8 @@ pub(crate) enum Command {
 /// `LIVEKIT_API_SECRET`; without them `LiveKit` cameras are unavailable.
 #[derive(clap::Args)]
 pub(crate) struct WebArguments {
+    #[command(flatten)]
+    viewer: ViewerArguments,
     /// Where `hebbian-robot-use-media` writes recordings, one directory per recording.
     #[arg(
         long,
@@ -174,11 +176,31 @@ pub(crate) struct WebArguments {
     manual_control: bool,
 }
 
+#[derive(clap::Args)]
+struct ViewerArguments {
+    /// Serve the viewer with local camera snapshots only. Phone invites require `LiveKit`.
+    #[arg(long, conflicts_with = "enable_recording")]
+    local_cameras_only: bool,
+    /// Run without serving the example viewer.
+    #[arg(long)]
+    headless: bool,
+}
+
 impl WebArguments {
-    pub(crate) fn settings(self) -> hebbian_robot_use_server::web::WebSettings {
+    pub(crate) fn settings(self) -> anyhow::Result<hebbian_robot_use_server::web::WebSettings> {
         use hebbian_robot_use_server::web::{CameraForwarding, WebSettings};
 
-        WebSettings {
+        let viewer_directory = (!self.viewer.headless)
+            .then(hebbian_robot_use_core::station_api::default_viewer_directory)
+            .flatten();
+        if viewer_directory.is_some() && !self.viewer.local_cameras_only {
+            station_access::Credentials::from_environment().map_err(|error| anyhow::anyhow!(
+                "{error}. Add the missing settings to .env and rerun this command. LiveKit setup: https://github.com/Hebbian-Robotics/rua/blob/main/docs/cameras.md#connect-a-usb-camera"
+            ))?;
+        }
+        Ok(WebSettings {
+            viewer_directory,
+            local_cameras_only: self.viewer.local_cameras_only,
             recordings_directory: self.recordings_directory,
             enable_recording: self.enable_recording,
             media_address: None,
@@ -192,7 +214,7 @@ impl WebArguments {
             phone_page_url: self.phone_page_url,
             manual_control: self.manual_control,
             media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
-        }
+        })
     }
 }
 

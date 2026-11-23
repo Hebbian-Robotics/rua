@@ -351,22 +351,24 @@ export function WorkspaceApp({
                 {cameras.status}
                 {mediaStatus && <span className="block">{mediaStatus}</span>}
               </p>
-              <details className="camera-setup">
-                <summary>Add remote camera</summary>
-                <div className="grid gap-3">
-                  <p className="m-0 text-sm text-muted-foreground">
-                    Create an invite on the station laptop. Open its link on
-                    your phone or scan the QR code.
-                  </p>
-                  <PhoneCameraSetup />
-                </div>
-              </details>
+              {!cameras.localCamerasOnly && (
+                <details className="camera-setup">
+                  <summary>Add remote camera</summary>
+                  <div className="grid gap-3">
+                    <p className="m-0 text-sm text-muted-foreground">
+                      Create an invite on the station laptop. Open its link on
+                      your phone or scan the QR code.
+                    </p>
+                    <PhoneCameraSetup />
+                  </div>
+                </details>
+              )}
               <details className="camera-setup">
                 <summary>Set up a USB camera</summary>
                 <p className="m-0 text-sm text-muted-foreground">
-                  Configure LiveKit on the station and connect the wrist camera.
-                  RUA uses the arm’s registered wrist camera selector to find
-                  the matching device. To choose a camera yourself, run{" "}
+                  Connect the wrist camera to the station. RUA uses the arm’s
+                  registered wrist camera selector to find the matching device.
+                  To choose a camera yourself, run{" "}
                   <code>rua camera-devices</code> on the station laptop and pass{" "}
                   <code>--camera wrist=DEVICE</code> at startup.
                 </p>
