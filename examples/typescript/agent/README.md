@@ -24,6 +24,10 @@ pnpm --filter @hebbian/agent start --max-turns 3 -- "Describe the robot state. K
 Run `pnpm --filter @hebbian/agent start --help` for arm, station, provider,
 model, camera, and recording options.
 
+The example uses OpenTelemetry for model and tool spans. It sends span updates
+to the station as work starts and finishes. The viewer shows them live, and
+station recording saves them for playback.
+
 ## Use the loop in your own code
 
 [`src/loop.ts`](src/loop.ts) exports `runAgent`. See

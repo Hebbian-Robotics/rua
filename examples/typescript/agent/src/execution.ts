@@ -1,3 +1,4 @@
+import type { Span } from "@opentelemetry/api";
 import {
   parseModelData,
   type RobotToolCall,
@@ -15,7 +16,11 @@ import {
   updateNotesInputSchema,
   updatePlanInputSchema,
 } from "./tools.js";
-import { KIND_ATTRIBUTE, type Span } from "./tracing.js";
+import {
+  KIND_ATTRIBUTE,
+  markSpanError,
+  traceContextForSpan,
+} from "./tracing.js";
 
 interface IndexedCall {
   index: number;
@@ -81,8 +86,8 @@ function runMemoryTool(
   environment: RunEnvironment,
   call: RobotToolCall,
   span: Span,
-  unixNanoseconds: string,
 ): RobotToolResult {
+  const unixNanoseconds = (BigInt(Date.now()) * 1_000_000n).toString();
   const { memory } = environment;
   const payload = applyMemoryUpdate(call, memory, unixNanoseconds);
   if (payload.kind === "invalid") return invalidInput(call, payload.error);
@@ -148,7 +153,7 @@ function tracedCall(
   call: RobotToolCall,
   run: (span: Span) => Promise<RobotToolResult>,
 ): Promise<RobotToolResult> {
-  return environment.tracer.span(
+  return environment.withSpan(
     `execute_tool ${call.name}`,
     {
       [KIND_ATTRIBUTE]: "tool",
@@ -160,7 +165,7 @@ function tracedCall(
     async (span) => {
       const result = await run(span);
       span.setAttribute("gen_ai.tool.call.result", result.text);
-      if (result.isError) span.setError(result.text);
+      if (result.isError) markSpanError(span, result.text);
       environment.print(
         `${call.name} ${JSON.stringify(call.arguments)} -> ${result.text}`,
       );
@@ -197,12 +202,7 @@ export async function runToolBatch(
       resultsByCallIndex.set(
         index,
         await tracedCall(environment, call, async (span) =>
-          runMemoryTool(
-            environment,
-            call,
-            span,
-            environment.tracer.clock().toString(),
-          ),
+          runMemoryTool(environment, call, span),
         ),
       );
     }
@@ -218,7 +218,7 @@ export async function runToolBatch(
       );
     }
     const wrap: ToolCallWrapper = (call, run) =>
-      tracedCall(environment, call, (span) => run(span.traceContext()));
+      tracedCall(environment, call, (span) => run(traceContextForSpan(span)));
     const robotCalls = plan.robotCalls.map(({ call }) => call);
     if (new Set(robotCalls.map((call) => call.id)).size !== robotCalls.length)
       throw new Error("Robot tool call IDs must be unique within a batch");

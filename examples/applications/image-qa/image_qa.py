@@ -1,11 +1,12 @@
-import argparse
 import asyncio
 import base64
 import re
 import time
 from collections.abc import Awaitable
 from pathlib import Path
+from typing import Annotated
 
+from cyclopts import App, Parameter
 from openai import AsyncOpenAI
 
 from hebbian_rua import StationClient
@@ -91,22 +92,22 @@ async def expect(command: Awaitable[CommandResult]) -> None:
         raise SystemExit(f"Move did not complete: {result.outcome} {result.detail}")
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description=CLI_HELP)
-    parser.add_argument(
-        "--camera", required=True, help="Name of the station's wrist camera"
-    )
-    parser.add_argument("--model", default="gpt-6.2-astra", help="OpenAI model ID")
-    arguments = parser.parse_args()
+command_line = App(help=CLI_HELP, version_flags=())
+
+
+@command_line.default
+async def main(
+    *,
+    camera: Annotated[str, Parameter(help="Name of the station's wrist camera.")],
+    model: Annotated[str, Parameter(help="OpenAI model ID.")] = "gpt-6.2-astra",
+) -> None:
     load_environment()
     async with (
         StationClient() as station,
         AsyncOpenAI() as client,
-        station.holding_lease(
-            "image q&a", required_cameras=[arguments.camera]
-        ) as lease,
+        station.holding_lease("image q&a", required_cameras=[camera]) as lease,
     ):
-        await station.camera_jpeg(arguments.camera)
+        await station.camera_jpeg(camera)
         arm_name = await station.resolve_arm_name()
         arm = station.arm(arm_name)
         moving = lease.arm(arm_name)
@@ -122,8 +123,8 @@ async def main() -> None:
                     break
                 # Auto-exposure lags after a move; the first frames come out washed out.
                 await asyncio.sleep(EXPOSURE_SETTLE_SECONDS)
-                jpeg = (await station.camera_jpeg(arguments.camera)).jpeg
-                answer, text = await decide(client, arguments.model, jpeg, question)
+                jpeg = (await station.camera_jpeg(camera)).jpeg
+                answer, text = await decide(client, model, jpeg, question)
                 run = RUNS / time.strftime("%Y%m%d-%H%M%S")
                 run.mkdir(parents=True)
                 (run / "frame.jpg").write_bytes(jpeg)
@@ -137,4 +138,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    command_line()

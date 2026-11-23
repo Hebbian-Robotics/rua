@@ -1,5 +1,6 @@
-import argparse
-import asyncio
+from typing import Annotated
+
+from cyclopts import App, Parameter
 
 from hebbian_rua import StationClient
 from hebbian_rua.client.contract.station_api import (
@@ -15,17 +16,24 @@ from hebbian_rua.client.station_client import (
     WorldPositionMeters,
 )
 
+command_line = App(help="Preview and move an SO-101 arm.", version_flags=())
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description="Preview and move an SO-101 arm.")
-    parser.add_argument("--arm", help="Arm name. Defaults to the station's sole arm.")
-    arguments = parser.parse_args()
+
+@command_line.default
+async def main(
+    *,
+    requested_arm: Annotated[
+        str | None,
+        Parameter(name="--arm", help="Arm name. Defaults to the station's sole arm."),
+    ] = None,
+) -> int | None:
     load_environment()
     async with StationClient() as station:
         try:
-            arm_name = await station.resolve_arm_name(arguments.arm)
+            arm_name = await station.resolve_arm_name(requested_arm)
         except ValueError as error:
-            parser.error(str(error))
+            command_line.error_console.print(str(error), markup=False)
+            return 2
         arm = station.arm(arm_name)
         # Holding the lease keeps the viewer and other programs off the arm while we run.
         # Only the lease can move the arm; enable, stop and reads are on `arm`.
@@ -62,6 +70,8 @@ async def main() -> None:
             print((await moving_arm.set_gripper(1.0)).outcome)  # 0 is closed, 1 is open
             print((await arm.state()).tool)  # where the tool actually is
 
+    return None
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    command_line()

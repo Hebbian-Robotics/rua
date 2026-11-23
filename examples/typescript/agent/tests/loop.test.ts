@@ -131,6 +131,18 @@ test("a plan, a motion and a finish run end to end and are reported to the stati
       .filter((span) => span !== root)
       .every((span) => span.parent_span_id === root?.span_id),
   ).toBe(true);
+  for (const span of finished) {
+    const updates = station.spans.filter(
+      (update) => update.span_id === span.span_id,
+    );
+    expect(
+      updates.map((update) => update.attributes["hebbian.active"]),
+    ).toEqual([true, undefined]);
+    expect(updates[0]?.start_time_unix_nano).toBe(span.start_time_unix_nano);
+    expect(BigInt(span.end_time_unix_nano)).toBeGreaterThanOrEqual(
+      BigInt(span.start_time_unix_nano),
+    );
+  }
 });
 
 test("planning and previews return results without fresh images; observe refreshes once", async () => {
@@ -236,6 +248,13 @@ test("a provider error stops the arm and ends the run", async () => {
     "Model provider error; loop stopped: OpenAI response failed",
   );
   expect(station.leaseStops).toContain("follower");
+  expect(
+    station.finishedSpans().find((span) => span.name === "chat anthropic")
+      ?.status,
+  ).toEqual({
+    code: "STATUS_CODE_ERROR",
+    message: "OpenAI response failed",
+  });
 });
 
 test("an observation that went stale gets error results and a fresh observation, not a command", async () => {
