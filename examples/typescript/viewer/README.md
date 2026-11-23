@@ -16,16 +16,11 @@ served through the example backend. The station owns capture and storage.
 
 ## Use the viewer
 
-- **Workspace** shows the robot and cameras. Choose **Manual** or **Agent**
-  while the arm is disabled. Enable the arm, then adjust a target in **Manual**
-  or enter a task in **Agent**. See [arm controls](../../../docs/so101-manual-control.md#controls).
-- **Run options** under **Agent** configures the model and cameras for that task.
-- **Add remote camera** pairs a phone. See [Cameras](../../../docs/cameras.md)
-  for phone and USB camera setup.
-- **Recording** starts or stops capture and configures automatic recording.
-  **Recordings** opens saved sessions. See [Recording](../../../docs/recording.md).
-- **Settings** controls appearance, pose overlays, camera labels, and agent
-  connection status.
+See [arm controls](../../../docs/so101-manual-control.md#controls) for manual
+operation and [the agent example](../agent/README.md) for model setup. Open
+**Camera setup** in **Workspace** to connect a local or remote camera. See
+[the camera guide](../../../docs/cameras.md) for connection details and
+[the recording guide](../../../docs/recording.md) for capture and playback.
 
 ## Start without an agent
 
