@@ -34,12 +34,12 @@ impl PolicyRequest {
     ) -> Result<Self, Trip> {
         Ok(Self {
             session,
-            target: pose_from_xyzw(position, quaternion).map_err(policy_failure)?,
+            target: pose_from_xyzw(position, quaternion).map_err(|error| policy_failure(&error))?,
         })
     }
 }
 
-pub(super) fn policy_failure(error: anyhow::Error) -> Trip {
+pub(super) fn policy_failure(error: &anyhow::Error) -> Trip {
     Trip::Policy(format!("Policy failed: {error:#}"))
 }
 
@@ -79,7 +79,9 @@ impl Loop<'_> {
             .policy
             .as_ref()
             .ok_or_else(|| Trip::Policy("No policy is loaded".into()))?;
-        let tool = runtime.tool_pose(feedback).map_err(policy_failure)?;
+        let tool = runtime
+            .tool_pose(feedback)
+            .map_err(|error| policy_failure(&error))?;
         match active.assess(&tool, &feedback.velocities, interval) {
             ReachStatus::Running => {}
             ReachStatus::TimedOut => {

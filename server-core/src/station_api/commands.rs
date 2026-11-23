@@ -24,6 +24,7 @@ fn latest_sample(link: &LinkHandle) -> Result<Sample, Refusal> {
         .ok_or_else(|| refused(RejectionReason::ArmBusy, "No feedback from the arm yet"))
 }
 
+#[derive(Clone, Copy)]
 struct HoldingFeedback<'a> {
     pose: &'a [f64],
     gripper_angle: Option<f64>,
@@ -418,7 +419,7 @@ pub(crate) fn plan_group_move<'a>(
 pub fn answer_preview(
     links: &BTreeMap<String, LinkHandle>,
     arm: &str,
-    pose: PreviewPose,
+    pose: &PreviewPose,
 ) -> Result<PoseProjection, Refusal> {
     let link = links.get(arm).ok_or_else(|| {
         refused(
@@ -438,7 +439,7 @@ pub fn answer_preview(
 pub(crate) fn preview_answer(
     links: &BTreeMap<String, LinkHandle>,
     arm: &str,
-    pose: PreviewPose,
+    pose: &PreviewPose,
 ) -> hebbian_contracts::PreviewAnswer {
     match answer_preview(links, arm, pose) {
         Ok(projection) => hebbian_contracts::PreviewAnswer::Projected {

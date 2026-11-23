@@ -775,7 +775,7 @@ impl Hub {
                     self.announce_change();
                 }
             }
-            Outgoing::ControllerUnavailable(reason) => self.controller_unavailable(reason),
+            Outgoing::ControllerUnavailable(reason) => self.controller_unavailable(&reason),
             Outgoing::Connected(client, sink) => {
                 self.clients.insert(client, sink);
             }
@@ -873,13 +873,13 @@ impl Hub {
         }
     }
 
-    fn controller_unavailable(&mut self, reason: String) {
+    fn controller_unavailable(&mut self, reason: &str) {
         self.latest_sample_at = None;
         if let Some(sample) = &mut self.latest_sample {
             sample.active_command = None;
         }
         self.log_event(Event::ControllerUnavailable {
-            reason: reason.clone(),
+            reason: reason.to_owned(),
         });
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

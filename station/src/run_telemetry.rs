@@ -238,7 +238,7 @@ pub fn routes(store: Arc<LiveRunStore>) -> Router {
 mod tests {
     use super::*;
 
-    fn span(id: &str, attributes: serde_json::Value) -> TraceSpan {
+    fn span(id: &str, attributes: &serde_json::Value) -> TraceSpan {
         serde_json::from_value(serde_json::json!({
             "trace_id": "t", "span_id": id, "name": id,
             "start_time_unix_nano": "1", "end_time_unix_nano": 2,
@@ -254,10 +254,10 @@ mod tests {
     #[test]
     fn a_new_run_keeps_only_its_root_span_and_clears_the_memory() {
         let mut buffer = RunBuffer::default();
-        buffer.record_span(span("old", serde_json::json!({})));
+        buffer.record_span(span("old", &serde_json::json!({})));
         buffer.record_span(span(
             "root",
-            serde_json::json!({"hebbian.active": true, "hebbian.kind": "run"}),
+            &serde_json::json!({"hebbian.active": true, "hebbian.kind": "run"}),
         ));
         buffer.record_event(event(
             serde_json::json!({"type": "notes_update", "notes": ["a"]}),
@@ -290,7 +290,7 @@ mod tests {
             serde_json::json!({"type": "notes_update", "notes": ["a"]}),
         ));
         let seen = store.newest_seq();
-        store.record_spans(vec![span("s", serde_json::json!({}))]);
+        store.record_spans(vec![span("s", &serde_json::json!({}))]);
 
         let mut cursor = seen;
         let mut revision_sent = None;
@@ -319,7 +319,7 @@ mod tests {
     fn the_buffer_keeps_only_the_newest_records() {
         let mut buffer = RunBuffer::default();
         for index in 0..KEPT_RECORDS + 10 {
-            buffer.record_span(span(&index.to_string(), serde_json::json!({})));
+            buffer.record_span(span(&index.to_string(), &serde_json::json!({})));
         }
         assert_eq!(buffer.records.len(), KEPT_RECORDS);
         assert!(buffer.since(0).is_err());

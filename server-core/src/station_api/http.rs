@@ -1410,7 +1410,7 @@ pub(crate) async fn execute_pose_previews(
             let arm = request.arm.clone();
             workers.spawn_blocking(move || {
                 let answer =
-                    crate::station_api::commands::preview_answer(&arms, &arm, candidate.pose);
+                    crate::station_api::commands::preview_answer(&arms, &arm, &candidate.pose);
                 (
                     index,
                     hebbian_contracts::PosePreviewCandidateResult {

@@ -161,6 +161,10 @@ impl<'a> RobotTools<'a> {
 
     /// Select independently available tools, including standalone operations.
     #[must_use]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Keep the public consuming builder compatible with existing callers."
+    )]
     pub fn with_operations(mut self, operations: BTreeSet<RobotToolOperation>) -> Self {
         self.capabilities = hebbian_contracts::all_robot_tool_capabilities()
             .into_iter()
