@@ -7,12 +7,12 @@ use super::types::{
     CommandState, GripperCommand, HeldStreamGoal, Limits, Observation, Poses, PowerState,
     Rejection, ShutdownState, StreamGoal,
 };
-use hebbian_contracts::{ArmMode, CommandRecord, Event, TraceContext};
+use hebbian_contracts::{ArmMode, CommandRecord, LoggedEvent, TraceContext};
 
 pub struct ArmCore {
     pub(crate) group_collision: Option<crate::self_collision::GroupCollisionArm>,
     pub(super) limits: Limits,
-    pub(super) publish: Box<dyn Fn(Event) + Send>,
+    pub(super) publish: Box<dyn Fn(LoggedEvent) + Send>,
     pub(super) power: PowerState,
     pub(super) command_state: CommandState,
     pub(super) records: HashMap<String, CommandRecord>,
@@ -43,7 +43,7 @@ pub(crate) fn new_identifier() -> String {
 
 impl ArmCore {
     #[must_use]
-    pub fn new(limits: Limits, publish: impl Fn(Event) + Send + 'static) -> Self {
+    pub fn new(limits: Limits, publish: impl Fn(LoggedEvent) + Send + 'static) -> Self {
         Self {
             motion_origin: Vec::with_capacity(limits.joint_count),
             motion_advanced: false,

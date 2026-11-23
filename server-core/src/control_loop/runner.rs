@@ -16,7 +16,7 @@ use crate::limits::Trip;
 use crate::plant::{Feedback, Pacing, Plant, Reconnection};
 use crate::trace::TraceWriter;
 use hebbian_contracts::ArmRecoveryIssue;
-use hebbian_contracts::{ArmMode, CommandOutcome, Event};
+use hebbian_contracts::{ArmMode, CommandOutcome, LoggedEvent};
 use power::StartupHold;
 #[path = "power.rs"]
 mod power;
@@ -922,9 +922,7 @@ impl<P: Plant> Runner<'_, P> {
     fn publish_trip(&mut self, trip: Option<String>, feedback: &Feedback, now: Now) {
         let Some(reason) = trip else { return };
         self.report.trip.get_or_insert_with(|| reason.clone());
-        self.link.publish(Event::Tripped {
-            reason: reason.clone(),
-        });
+        self.link.publish_log(LoggedEvent::tripped(reason.clone()));
         self.state.arm().motion_ended(
             CommandOutcome::Tripped,
             Some(reason),
@@ -972,7 +970,7 @@ impl<P: Plant> Runner<'_, P> {
             | BusRecovery::VerifyingHold { .. } => None,
         };
         sample.cycle_seconds = interval;
-        self.link.publish(Event::State(sample));
+        self.link.publish_sample(sample);
         self.cycle_number += 1;
     }
 }

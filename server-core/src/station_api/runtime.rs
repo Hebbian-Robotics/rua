@@ -124,7 +124,7 @@ async fn admit_prepared_step(
 ) -> Result<Vec<ArmRecord>, ExecutionFailure> {
     let owner = admission.owner.clone();
     let reply = owner
-        .decide(move |_| {
+        .decide(move |state| {
             let first = actions
                 .first()
                 .and_then(|action| admission.links.get(action.arm()))
@@ -135,9 +135,13 @@ async fn admit_prepared_step(
             first
                 .action_step_async(
                     actions,
-                    Some(&admission.token),
+                    crate::control_link::SubmissionAuthority {
+                        token: Some(&admission.token),
+                        generation: &admission.generation,
+                        clock: state.clock,
+                    },
                     &admission.gates,
-                    &admission.generation,
+                    None,
                     &cancellation,
                 )
                 .map_err(|error| ExecutionFailure::Admission {
@@ -819,10 +823,6 @@ fn check_continuation(
     Ok(())
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "with_lease invokes the callback at most once while holding admission authorization."
-)]
 fn start_execution(
     owner: super::admission::AdmissionOwner,
     executions: &mut ExecutionRegistry,
@@ -864,24 +864,16 @@ fn start_execution(
     };
     let (active, cancellation) = ActiveExecution::new(record, token.clone());
     let progress = active.progress.clone();
-    let mut active = Some(active);
-    let mut installed = None;
-    let mut generation = Vec::new();
-    let authorized = links[&arms[0]].with_lease(&token, &mut || {
-        installed = Some(executions.install(active.take().expect("called once")));
-        if installed.as_ref().is_some_and(Result::is_ok) {
-            generation = arms
-                .iter()
-                .map(|arm| links[arm].fence_prior_submissions())
-                .collect();
-        }
-    });
-    if !authorized {
-        return Err("The lease was returned, taken or revoked".into());
-    }
-    if let Some(Err(detail)) = installed {
-        return Err(detail.into());
-    }
+    let generation = links[&arms[0]]
+        .with_lease(&token, || {
+            executions.install(active)?;
+            Ok::<_, &'static str>(
+                arms.iter()
+                    .map(|arm| links[arm].fence_prior_submissions())
+                    .collect(),
+            )
+        })
+        .ok_or("The lease was returned, taken or revoked")??;
     let admission = Arc::new(ExecutionAdmission {
         owner,
         links: links.clone(),
@@ -1035,9 +1027,8 @@ mod tests {
                 .map(|opening| {
                     hebbian_contracts::ActionSequenceStep::single(
                         "arm",
-                        hebbian_contracts::ActionSequenceArmAction {
-                            movement: None,
-                            gripper_opening: Some(opening),
+                        hebbian_contracts::ActionSequenceArmAction::Gripper {
+                            gripper_opening: opening,
                             max_joint_speed: None,
                         },
                     )
@@ -1084,11 +1075,13 @@ mod tests {
         assert!(check_continuation(&prior, &source, 0).is_err());
         assert!(check_continuation(&prior, &source, 1).is_ok());
         let mut changed = source.clone();
-        changed.steps[0]
-            .arms
-            .get_mut("arm")
-            .unwrap()
-            .gripper_opening = Some(0.9);
+        let hebbian_contracts::ActionSequenceArmAction::Gripper {
+            gripper_opening, ..
+        } = changed.steps[0].arms.get_mut("arm").unwrap()
+        else {
+            panic!("the fixture starts with a gripper action");
+        };
+        *gripper_opening = 0.9;
         assert_eq!(
             check_continuation(&prior, &changed, 1),
             Err("Continuation must preserve the consumed source prefix")

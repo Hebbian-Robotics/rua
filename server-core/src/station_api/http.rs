@@ -23,7 +23,7 @@ use tokio_util::io::ReaderStream;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeader;
 
-use crate::control_link::LinkHandle;
+use crate::control_link::{LinkHandle, SubmissionAuthority};
 
 use super::admission::{AdmissionClosed, AdmissionOwner, AdmissionState};
 use super::submissions::{
@@ -653,7 +653,7 @@ async fn cancel_operation(
         let cancellation = match station_state
             .admission
             .decide(move |state| {
-                if lease_link.with_lease(&token, &mut || {}) {
+                if lease_link.with_lease(&token, || {}).is_some() {
                     Ok(state.operations.cancel(id, &token))
                 } else {
                     Err((StatusCode::CONFLICT, "Lease lost".to_owned()))
@@ -977,26 +977,32 @@ async fn submit_group_command(
         station_state,
         super::submissions::SubmissionRequest::Group(input.clone()),
         move |links, generation, cancellation| {
-            let (link, moves, gates) =
+            let (link, actions, gates) =
                 super::commands::plan_group_move(links, &input.command, &input.expected_revisions)?;
             let link = link.clone();
+            let arms: Vec<_> = actions
+                .iter()
+                .map(|action| action.arm().to_owned())
+                .collect();
             Ok(move |state: &mut AdmissionState| {
                 let token = input.lease_token.as_deref();
-                let targets = moves
-                    .iter()
-                    .map(|part| part.arm.as_str())
-                    .collect::<Vec<_>>();
+                let targets: Vec<_> = arms.iter().map(String::as_str).collect();
                 state
                     .executions
                     .check_command_conflict(token, &targets)
                     .map_err(arm_busy)?;
-                let arms = moves
-                    .iter()
-                    .map(|part| part.arm.clone())
-                    .collect::<Vec<_>>();
-                let _admission = fence_cancelled_submission(&cancellation)?;
                 let reply = link
-                    .move_arms_async(moves, token, input.trace_context, &gates, &generation)
+                    .action_step_async(
+                        actions,
+                        SubmissionAuthority {
+                            token,
+                            generation: &generation,
+                            clock: state.clock,
+                        },
+                        &gates,
+                        input.trace_context,
+                        &cancellation,
+                    )
                     .map_err(|error| (error.reason, error.detail))?;
                 Ok((arms, reply))
             })
@@ -1046,10 +1052,13 @@ async fn submit_command(
                         }
                         link.submit_command_async(
                             command,
-                            token,
+                            SubmissionAuthority {
+                                token,
+                                generation: &generation,
+                                clock: state.clock,
+                            },
                             input.trace_context,
                             input.expected_revision,
-                            &generation,
                         )
                     }
                     command => {
@@ -1059,10 +1068,13 @@ async fn submit_command(
                             .map_err(arm_busy)?;
                         link.submit_command_async(
                             command,
-                            token,
+                            SubmissionAuthority {
+                                token,
+                                generation: &generation,
+                                clock: state.clock,
+                            },
                             input.trace_context,
                             input.expected_revision,
-                            &generation,
                         )
                     }
                 }
@@ -1110,10 +1122,13 @@ async fn update_stream_goal(
                     let reply = link
                         .submit_command_async(
                             command,
-                            Some(&input.lease_token),
+                            SubmissionAuthority {
+                                token: Some(&input.lease_token),
+                                generation: &generation,
+                                clock: state.clock,
+                            },
                             None,
                             input.expected_revision,
-                            &generation,
                         )
                         .map_err(|error| (error.reason, error.detail))?;
                     Ok((arm.to_owned(), reply))

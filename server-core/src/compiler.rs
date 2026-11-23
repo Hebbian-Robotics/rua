@@ -214,54 +214,56 @@ fn check_support(
 }
 
 fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmAction, &'static str> {
-    let movement_speed = action
-        .movement
-        .as_ref()
-        .and_then(|movement| match movement {
-            ActionSequenceMovement::Joints {
-                max_joint_speed, ..
-            }
-            | ActionSequenceMovement::Pose {
-                max_joint_speed, ..
-            } => *max_joint_speed,
-        });
-    let max_joint_speed = action
-        .max_joint_speed
-        .or(movement_speed)
-        .map(JointSpeed::new)
-        .transpose()
-        .map_err(|_| "A joint speed must be positive and finite")?;
-    let gripper_opening = action
-        .gripper_opening
-        .map(GripperOpening::try_from)
-        .transpose()
-        .map_err(|_| "A gripper opening must be finite and between 0 and 1")?;
-    match (action.movement, gripper_opening) {
-        (Some(movement), gripper_opening) => {
-            let movement = match movement {
-                ActionSequenceMovement::Joints { joints, .. } => {
-                    CompiledMovement::Joints { joints }
-                }
+    let speed = |requested: Option<f64>| {
+        requested
+            .map(JointSpeed::new)
+            .transpose()
+            .map_err(|_| "A joint speed must be positive and finite")
+    };
+    let opening = |requested| {
+        GripperOpening::try_from(requested)
+            .map_err(|_| "A gripper opening must be finite and between 0 and 1")
+    };
+    match action {
+        ActionSequenceArmAction::Move {
+            movement,
+            gripper_opening,
+            max_joint_speed,
+        } => {
+            let (movement, movement_speed) = match movement {
+                ActionSequenceMovement::Joints {
+                    joints,
+                    max_joint_speed,
+                } => (CompiledMovement::Joints { joints }, max_joint_speed),
                 ActionSequenceMovement::Pose {
                     position,
                     orientation,
-                    ..
-                } => CompiledMovement::Pose {
-                    position,
-                    orientation,
-                },
+                    max_joint_speed,
+                } => (
+                    CompiledMovement::Pose {
+                        position,
+                        orientation,
+                    },
+                    max_joint_speed,
+                ),
             };
+            let max_joint_speed = speed(max_joint_speed.or(movement_speed))?;
             Ok(CompiledArmAction::Move {
                 movement,
-                gripper_opening,
+                gripper_opening: gripper_opening.map(opening).transpose()?,
                 max_joint_speed,
             })
         }
-        (None, Some(opening)) => Ok(CompiledArmAction::Gripper {
-            opening,
+        ActionSequenceArmAction::Gripper {
+            gripper_opening,
             max_joint_speed,
-        }),
-        (None, None) => Err("An action sequence step must contain a movement or gripper target"),
+        } => {
+            let max_joint_speed = speed(max_joint_speed)?;
+            Ok(CompiledArmAction::Gripper {
+                opening: opening(gripper_opening)?,
+                max_joint_speed,
+            })
+        }
     }
 }
 
@@ -271,9 +273,8 @@ mod tests {
     #[test]
     fn revisions_reuse_only_unchanged_operations_with_matching_configuration() {
         let mut compiler = RobotUseCompiler::default();
-        let action = |opening| ActionSequenceArmAction {
-            movement: None,
-            gripper_opening: Some(opening),
+        let action = |opening| ActionSequenceArmAction::Gripper {
+            gripper_opening: opening,
             max_joint_speed: None,
         };
         let mut request = ActionSequenceRequest {
@@ -330,22 +331,20 @@ mod tests {
     }
 
     #[test]
-    fn structural_failure_identifies_the_later_step_and_arm() {
+    fn invalid_target_identifies_the_later_step_and_arm() {
         let request = ActionSequenceRequest {
             steps: vec![
                 hebbian_contracts::ActionSequenceStep::single(
                     "left",
-                    ActionSequenceArmAction {
-                        movement: None,
-                        gripper_opening: Some(0.5),
+                    ActionSequenceArmAction::Gripper {
+                        gripper_opening: 0.5,
                         max_joint_speed: None,
                     },
                 ),
                 hebbian_contracts::ActionSequenceStep::single(
                     "right",
-                    ActionSequenceArmAction {
-                        movement: None,
-                        gripper_opening: None,
+                    ActionSequenceArmAction::Gripper {
+                        gripper_opening: 1.5,
                         max_joint_speed: None,
                     },
                 ),
@@ -376,17 +375,17 @@ mod tests {
         assert_eq!(diagnostic.arm.as_deref(), Some("right"));
         assert_eq!(
             diagnostic.to_string(),
-            "Step 2, arm right: An action sequence step must contain a movement or gripper target"
+            "Step 2, arm right: A gripper opening must be finite and between 0 and 1"
         );
     }
 
     #[test]
     fn both_resources_use_the_same_effective_step_speed() {
-        let step = |gripper_speed| ActionSequenceArmAction {
-            movement: Some(ActionSequenceMovement::Joints {
+        let step = |gripper_speed| ActionSequenceArmAction::Move {
+            movement: ActionSequenceMovement::Joints {
                 joints: vec![0.1],
                 max_joint_speed: Some(0.7),
-            }),
+            },
             gripper_opening: Some(0.5),
             max_joint_speed: gripper_speed,
         };

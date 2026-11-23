@@ -9,6 +9,17 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictFloat
 
 
+class ActionSequenceGripper(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    gripper_opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
+    max_joint_speed: Annotated[
+        StrictFloat | None, Field(description="Gripper speed in rad/s.")
+    ] = None
+
+
 class ActionSequenceJointsMovement(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2331,7 +2342,7 @@ class FollowPathCommand(BaseModel):
     waypoints: list[JointsWaypoint | PoseWaypoint]
 
 
-class ActionSequenceArmAction(BaseModel):
+class ActionSequenceMove(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -2343,7 +2354,12 @@ class ActionSequenceArmAction(BaseModel):
             description="Speed for both resources in rad/s; overrides the movement speed when provided."
         ),
     ] = None
-    movement: ActionSequenceJointsMovement | ActionSequencePoseMovement | None = None
+    movement: Annotated[
+        ActionSequenceJointsMovement | ActionSequencePoseMovement,
+        Field(
+            description="One movement in an action sequence. The arm settles at each target."
+        ),
+    ]
 
 
 class ActionSequenceStep(BaseModel):
@@ -2351,7 +2367,7 @@ class ActionSequenceStep(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    arms: dict[str, ActionSequenceArmAction]
+    arms: dict[str, ActionSequenceMove | ActionSequenceGripper]
 
 
 class ArmRecord(BaseModel):

@@ -28,7 +28,9 @@ fn limits() -> Limits {
 fn core() -> (ArmCore, Arc<Mutex<Vec<Event>>>) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&events);
-    let core = ArmCore::new(limits(), move |event| sink.lock().unwrap().push(event));
+    let core = ArmCore::new(limits(), move |event| {
+        sink.lock().unwrap().push(event.into());
+    });
     (core, events)
 }
 

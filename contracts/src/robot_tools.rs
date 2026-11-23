@@ -208,6 +208,168 @@ pub fn filter_sequence_actions(
     }
 }
 
+/// Model-facing classification shared by command and sequence adapters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelOutcome {
+    Completed,
+    StoppedShort,
+    Faulted,
+    Interrupted,
+    Incomplete,
+}
+
+impl From<crate::CommandOutcome> for ModelOutcome {
+    fn from(outcome: crate::CommandOutcome) -> Self {
+        use crate::CommandOutcome;
+        match outcome {
+            CommandOutcome::Completed => Self::Completed,
+            CommandOutcome::StoppedShort => Self::StoppedShort,
+            CommandOutcome::Faulted => Self::Faulted,
+            CommandOutcome::Interrupted => Self::Interrupted,
+            CommandOutcome::Stopped
+            | CommandOutcome::Tripped
+            | CommandOutcome::TimedOut
+            | CommandOutcome::Superseded
+            | CommandOutcome::Failed => Self::Incomplete,
+        }
+    }
+}
+
+/// Fields selected by the concise model response formatter.
+#[derive(Debug, Serialize)]
+pub struct ModelResponseFields {
+    pub state: &'static [&'static str],
+    pub station_context: &'static [&'static str],
+    pub arm: &'static [&'static str],
+    pub diagnostic: &'static [&'static str],
+    pub earlier_step: &'static [&'static str],
+}
+
+/// Shared field selections for station snapshots and command history.
+pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
+    state: &["robot", "joint_names", "max_joint_speed", "surface_guard"],
+    station_context: &["description", "lease"],
+    arm: &[
+        "arm",
+        "mode",
+        "status",
+        "fault",
+        "active_trip",
+        "interlocks",
+        "recovery_issue",
+        "revision",
+        "sampled_at_unix_seconds",
+        "measured_joints",
+        "tool",
+        "gripper_opening",
+    ],
+    diagnostic: &[
+        "id",
+        "command_id",
+        "group_id",
+        "stream_command_id",
+        "sequence_id",
+        "action_sequence_id",
+        "checkpoints",
+        "trace_context",
+        "model_points",
+        "accepted_at",
+        "finished_at",
+    ],
+    earlier_step: &[
+        "label",
+        "completion",
+        "phase",
+        "target_status",
+        "pose_limited",
+        "path_limited",
+    ],
+};
+
+/// Station field, model field, and multiplier for model-facing output.
+pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
+    ("position", "position_mm", 1000.0),
+    ("target_position", "target_position_mm", 1000.0),
+    ("tool_position", "tool_position_mm", 1000.0),
+    ("surface_height_meters", "surface_height_mm", 1000.0),
+    ("leeway_meters", "leeway_mm", 1000.0),
+    ("model_points", "model_points_mm", 1000.0),
+    ("position_error_meters", "position_error_mm", 1000.0),
+    ("position_shortfall_meters", "position_shortfall_mm", 1000.0),
+    ("joints", "joints_degrees", 180.0 / std::f64::consts::PI),
+    (
+        "measured_joints",
+        "measured_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "measured_joint_velocities",
+        "measured_joint_velocities_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "commanded_joints",
+        "commanded_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "rest_pose",
+        "rest_pose_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "target_joints",
+        "target_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "goal_joints",
+        "goal_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_error_radians",
+        "joint_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_errors_radians",
+        "joint_errors_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "orientation_error_radians",
+        "orientation_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "orientation_shortfall_radians",
+        "orientation_shortfall_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "measured_angle_radians",
+        "measured_angle_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "target_angle_radians",
+        "target_angle_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_speed",
+        "joint_speed_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "max_joint_speed",
+        "max_joint_speed_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+];
+
 /// A numeric tool argument whose model units differ from the station contract.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ModelInputUnit {
@@ -471,7 +633,18 @@ pub fn action_sequence_tool_schema(
     }
     configuration.validate()?;
     let source = model_arguments::<ActionSequenceArmAction>();
-    let mut action = inline(&source, &source["$defs"]);
+    let variants = inline(&source, &source["$defs"]);
+    let mut action = variants["anyOf"]
+        .as_array()
+        .expect("arm action variants")
+        .iter()
+        .find(|variant| variant["properties"].get("movement").is_some())
+        .expect("move action")
+        .clone();
+    let action_fields = action.as_object_mut().expect("move action schema");
+    action_fields.remove("required");
+    action_fields.remove("title");
+    action_fields.insert("description".into(), source["description"].clone());
     let properties = action["properties"]
         .as_object_mut()
         .expect("action properties");
@@ -479,7 +652,7 @@ pub fn action_sequence_tool_schema(
         || configuration.actions.contains(&SequenceAction::Joints)
     {
         let movement = properties.get_mut("movement").expect("movement schema");
-        let mut variants = movement["anyOf"][0]["oneOf"]
+        let mut variants = movement["oneOf"]
             .as_array()
             .expect("movement variants")
             .clone();
@@ -574,16 +747,13 @@ pub fn parse_sequence_tool_arguments(
             {
                 return Err(format!("Arm {arm} is not available in this sequence"));
             }
-            if action.movement.is_none() && action.gripper_opening.is_none() {
-                return Err("An arm action needs a movement or gripper target".into());
-            }
-            let movement_capability = action.movement.as_ref().map(|movement| match movement {
+            let movement_capability = action.movement().map(|movement| match movement {
                 crate::ActionSequenceMovement::Pose { .. } => SequenceAction::Pose,
                 crate::ActionSequenceMovement::Joints { .. } => SequenceAction::Joints,
             });
             if movement_capability
                 .is_some_and(|capability| !configuration.actions.contains(&capability))
-                || (action.gripper_opening.is_some()
+                || (action.gripper_opening().is_some()
                     && !configuration.actions.contains(&SequenceAction::Gripper))
             {
                 return Err("This action is not available in the configured sequence".into());
@@ -596,6 +766,21 @@ pub fn parse_sequence_tool_arguments(
 #[cfg(test)]
 mod sequence_configuration_tests {
     use super::*;
+
+    #[test]
+    fn the_wire_rejects_an_arm_action_without_a_target() {
+        for action in [
+            json!({}),
+            json!({"max_joint_speed": 0.5}),
+            json!({"gripper_opening": null}),
+        ] {
+            assert!(serde_json::from_value::<ActionSequenceArmAction>(action).is_err());
+        }
+        assert!(
+            serde_json::from_value::<ActionSequenceArmAction>(json!({"gripper_opening": 0.5}))
+                .is_ok()
+        );
+    }
 
     #[test]
     fn a_single_arm_pose_gripper_interface_has_no_joint_or_arm_choices_and_rejects_them() {
@@ -623,7 +808,7 @@ mod sequence_configuration_tests {
             "follower",
         )
         .unwrap();
-        assert_eq!(steps[0].arms["follower"].gripper_opening, Some(0.5));
+        assert_eq!(steps[0].arms["follower"].gripper_opening(), Some(0.5));
         for unavailable in [
             json!({"steps": [{"movement": {"kind": "joints", "joints": [0.0]}}]}),
             json!({"steps": [{"arms": {"right": {"gripper_opening": 0.5}}}]}),
@@ -654,7 +839,7 @@ mod sequence_configuration_tests {
         )
         .unwrap();
         assert_eq!(steps[0].arms.len(), 2);
-        assert_eq!(steps[0].arms["right"].gripper_opening, Some(0.8));
+        assert_eq!(steps[0].arms["right"].gripper_opening(), Some(0.8));
         assert!(
             parse_sequence_tool_arguments(
                 json!({"steps": [{"arms": {"other": {"gripper_opening": 0.5}}}]}),

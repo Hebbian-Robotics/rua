@@ -377,11 +377,11 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     let joints_step = |joints: Vec<f64>| {
         ActionSequenceStep::single(
             ARM,
-            ActionSequenceArmAction {
-                movement: Some(ActionSequenceMovement::Joints {
+            ActionSequenceArmAction::Move {
+                movement: ActionSequenceMovement::Joints {
                     joints,
                     max_joint_speed: None,
-                }),
+                },
                 gripper_opening: None,
                 max_joint_speed: None,
             },
@@ -479,9 +479,8 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
     let source = ActionSequenceRequest {
         steps: vec![ActionSequenceStep::single(
             ARM,
-            ActionSequenceArmAction {
-                movement: None,
-                gripper_opening: Some(0.8),
+            ActionSequenceArmAction::Gripper {
+                gripper_opening: 0.8,
                 max_joint_speed: None,
             },
         )],
@@ -512,11 +511,22 @@ async fn imported_compilations_rebuild_source_without_trusting_saved_operations(
         }
     );
     assert!(client.get_state().await?.lease.is_none());
-    exported.schema_version = 99;
-    assert!(matches!(
-        client.import_compilation(&exported).await,
-        Err(Error::Http { status: 422, .. })
-    ));
+    assert_eq!(exported.schema_version, 2);
+    let mut legacy = serde_json::to_value(&exported)?;
+    legacy["schema_version"] = json!(1);
+    legacy["source"]["steps"][0]["arms"][ARM]["movement"] = serde_json::Value::Null;
+    let rejected = reqwest::Client::new()
+        .post(format!("{}/compilations/import", station.url))
+        .json(&legacy)
+        .send()
+        .await?;
+    assert_eq!(rejected.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        rejected
+            .text()
+            .await?
+            .contains("Unsupported compilation schema")
+    );
     Ok(())
 }
 
@@ -527,9 +537,8 @@ async fn compiled_submission_retries_share_one_physical_execution() -> TestResul
     let source = ActionSequenceRequest {
         steps: vec![ActionSequenceStep::single(
             ARM,
-            ActionSequenceArmAction {
-                movement: None,
-                gripper_opening: Some(0.8),
+            ActionSequenceArmAction::Gripper {
+                gripper_opening: 0.8,
                 max_joint_speed: None,
             },
         )],
@@ -898,11 +907,11 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
     let id = within(lease.start_action_sequence(ActionSequenceRequest {
         steps: vec![ActionSequenceStep::single(
             ARM,
-            ActionSequenceArmAction {
-                movement: Some(ActionSequenceMovement::Joints {
+            ActionSequenceArmAction::Move {
+                movement: ActionSequenceMovement::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
                     max_joint_speed: Some(0.05),
-                }),
+                },
                 gripper_opening: None,
                 max_joint_speed: None,
             },
@@ -933,11 +942,11 @@ async fn taking_the_lease_stops_the_previous_holders_action_sequence() -> TestRe
     let id = within(first_lease.start_action_sequence(ActionSequenceRequest {
         steps: vec![ActionSequenceStep::single(
             ARM,
-            ActionSequenceArmAction {
-                movement: Some(ActionSequenceMovement::Joints {
+            ActionSequenceArmAction::Move {
+                movement: ActionSequenceMovement::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
                     max_joint_speed: Some(0.05),
-                }),
+                },
                 gripper_opening: None,
                 max_joint_speed: None,
             },
@@ -963,11 +972,11 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
         .map(|joints| {
             ActionSequenceStep::single(
                 ARM,
-                ActionSequenceArmAction {
-                    movement: Some(ActionSequenceMovement::Joints {
+                ActionSequenceArmAction::Move {
+                    movement: ActionSequenceMovement::Joints {
                         joints,
                         max_joint_speed: None,
-                    }),
+                    },
                     gripper_opening: None,
                     max_joint_speed: None,
                 },
@@ -1396,11 +1405,11 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
     within(client.enable("left")).await??;
-    let action = |pan, gripper_opening| ActionSequenceArmAction {
-        movement: Some(ActionSequenceMovement::Joints {
+    let action = |pan, gripper_opening| ActionSequenceArmAction::Move {
+        movement: ActionSequenceMovement::Joints {
             joints: vec![pan, -0.5, 0.5, 0.0, 0.0],
             max_joint_speed: None,
-        }),
+        },
         gripper_opening,
         max_joint_speed: None,
     };

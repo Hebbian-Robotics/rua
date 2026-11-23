@@ -6,13 +6,12 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import copy, deepcopy
 from dataclasses import replace
 from math import degrees
-from typing import Self
+from typing import Self, assert_never
 from uuid import uuid4
 
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceRequest,
     ArmMode,
-    CommandOutcome,
     ObservationAnswer1,
     ObservationRequest,
     PosePreviewCandidate,
@@ -27,6 +26,7 @@ from hebbian_rua.client.llm.robot_tool_rules import (
     CapturedObservation,
     RobotToolRules,
     command_results,
+    model_record_outcome,
 )
 from hebbian_rua.client.llm.robot_tool_rules import (
     records_result as records_result,
@@ -69,7 +69,6 @@ from hebbian_rua.client.station_client import (
     StationClient,
 )
 from hebbian_rua.client.station_connection import MessageRefused
-from hebbian_rua.client.station_types import command_record_outcome
 
 type CallWrapper = Callable[
     [RobotToolCall, Callable[[], Awaitable[RobotToolResult]]],
@@ -395,6 +394,9 @@ class RobotTools(RobotToolRules):
                     set_sequence_id(sequence_id)
                     return await self._action_sequence_result(call, sequence_id)
 
+            case _ as unreachable:
+                assert_never(unreachable)
+
     async def _observe_tool(
         self, call: RobotToolCall, request: ObserveInput
     ) -> RobotToolResult:
@@ -454,7 +456,7 @@ class RobotTools(RobotToolRules):
             action_sequence_id
         )
         outcomes = {
-            command_record_outcome(record.record)
+            model_record_outcome(record.record)
             for step in action_sequence.steps
             for record in step
         }
@@ -467,7 +469,7 @@ class RobotTools(RobotToolRules):
             call,
             action_sequence.model_dump(mode="json"),
             is_error=action_sequence.phase.state != "completed",
-            halt=CommandOutcome.faulted in outcomes or ArmMode.faulted in modes,
-            interrupted=CommandOutcome.interrupted in outcomes
+            halt="faulted" in outcomes or ArmMode.faulted in modes,
+            interrupted="interrupted" in outcomes
             or bool(modes & {ArmMode.disconnected, ArmMode.reconnected}),
         )

@@ -9,7 +9,7 @@ use crate::planning::orientation::{from_xyzw, orientation_summary, pose_orientat
 use hebbian_contracts::JawAngle;
 use hebbian_contracts::{
     Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandPhase, CommandPose,
-    CommandRecord, ControlAction, CornerPlan, Event, GripperResult, KnownCommandOutcome,
+    CommandRecord, ControlAction, CornerPlan, GripperResult, KnownCommandOutcome, LoggedEvent,
     NotStartedOutcome, PoseOrientation, RecordedCommand, RejectionReason,
 };
 
@@ -116,7 +116,7 @@ impl ArmCore {
         if !record.is_pending() {
             self.last_finished = Some(id);
         }
-        (self.publish)(Event::Record(record));
+        (self.publish)(LoggedEvent::record(record));
     }
 
     pub(super) fn set_power(&mut self, power: PowerState) {
@@ -129,10 +129,7 @@ impl ArmCore {
         self.power = transition(previous);
         let mode = self.mode();
         if old_mode != mode {
-            (self.publish)(Event::Mode {
-                mode,
-                fault: self.fault().map(str::to_owned),
-            });
+            (self.publish)(LoggedEvent::mode(mode, self.fault().map(str::to_owned)));
         }
     }
 

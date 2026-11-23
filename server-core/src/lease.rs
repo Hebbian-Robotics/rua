@@ -427,7 +427,7 @@ impl Lease {
         submitted
     }
 
-    pub fn with_lease(&self, token: &str, action: &mut dyn FnMut()) -> bool {
+    pub fn with_lease<R>(&self, token: &str, action: impl FnOnce() -> R) -> Option<R> {
         self.with_captured_lease(Some(token), action)
     }
 
@@ -436,20 +436,22 @@ impl Lease {
     }
 
     pub(crate) fn execution_authorized(&self, token: &str, gates: &[ArmGate]) -> bool {
-        let mut revisions_match = false;
-        self.with_lease(token, &mut || {
-            revisions_match = gates.iter().all(|gate| {
+        self.with_lease(token, || {
+            gates.iter().all(|gate| {
                 gate.expected_revision
                     .is_none_or(|revision| gate.interlocks.lock_unpoisoned().revision == revision)
-            });
-        }) && revisions_match
+            })
+        })
+        .unwrap_or(false)
     }
 
-    pub fn with_captured_lease(&self, token: Option<&str>, action: &mut dyn FnMut()) -> bool {
+    pub fn with_captured_lease<R>(
+        &self,
+        token: Option<&str>,
+        action: impl FnOnce() -> R,
+    ) -> Option<R> {
         let authority = self.authority.lock_unpoisoned();
-        if authority.controller.ready_epoch().is_none() {
-            return false;
-        }
+        authority.controller.ready_epoch()?;
         let now = Instant::now();
         let authorized = match (&authority.held, token) {
             (None, None) => true,
@@ -458,10 +460,7 @@ impl Lease {
             }
             _ => false,
         };
-        if authorized {
-            action();
-        }
-        authorized
+        authorized.then(action)
     }
 
     // CONSTRAINT: Lease transfer waits for every arm to stop before granting control and must run outside asynchronous workers.
@@ -969,7 +968,7 @@ impl Lease {
     pub(crate) fn admit_generation<T>(
         &self,
         token: Option<&str>,
-        now: Instant,
+        clock: impl FnOnce() -> Instant,
         gates: &[ArmGate],
         generations: &[GenerationTicket],
         admission: LeaseAdmission,
@@ -980,14 +979,6 @@ impl Lease {
             return Err(crate::handoff::loop_not_running());
         }
         let held = &authority.held;
-        let (manual_holder, cameras_unavailable) = held.as_ref().map_or((false, false), |claim| {
-            (
-                claim.active_at(now)
-                    && claim.is_held_by(token)
-                    && claim.request.holder == LeaseHolder::Manual,
-                !claim.unavailable_cameras.is_empty(),
-            )
-        });
         for gate in gates {
             let interlocks = gate.interlocks.lock_unpoisoned();
             if gate
@@ -1013,6 +1004,16 @@ impl Lease {
                 });
             }
         }
+        // WHY: Sample after acquiring the authority and interlock locks: contention can outlast a lease.
+        let now = clock();
+        let (manual_holder, cameras_unavailable) = held.as_ref().map_or((false, false), |claim| {
+            (
+                claim.active_at(now)
+                    && claim.is_held_by(token)
+                    && claim.request.holder == LeaseHolder::Manual,
+                !claim.unavailable_cameras.is_empty(),
+            )
+        });
         if admission.blocks_on_interlocks() && cameras_unavailable && !manual_holder {
             return Err(Rejection {
                 reason: RejectionReason::Interlocked,
@@ -1124,7 +1125,7 @@ mod tests {
     }
 
     fn command(lease: &Lease, token: Option<&str>, now: Instant) -> Result<(), Rejection> {
-        lease.admit_generation(token, now, &[], &[], LeaseAdmission::Normal, || ())
+        lease.admit_generation(token, || now, &[], &[], LeaseAdmission::Normal, || ())
     }
 
     fn gated(
@@ -1135,7 +1136,7 @@ mod tests {
     ) -> Result<(), Rejection> {
         lease.admit_generation(
             token,
-            Instant::now(),
+            Instant::now,
             &[ArmGate {
                 interlocks: arm.clone(),
                 expected_revision,
@@ -1198,13 +1199,17 @@ mod tests {
     fn a_captured_unleased_command_cannot_stop_a_new_holder() {
         let (lease, now) = lease();
         let mut stopped = false;
-        assert!(lease.with_captured_lease(None, &mut || stopped = true));
+        assert!(lease.with_captured_lease(None, || stopped = true).is_some());
         assert!(stopped);
         stopped = false;
         let token = acquire_agent(&lease, now);
-        assert!(!lease.with_captured_lease(None, &mut || stopped = true));
+        assert!(lease.with_captured_lease(None, || stopped = true).is_none());
         assert!(!stopped);
-        assert!(lease.with_captured_lease(Some(&token), &mut || stopped = true));
+        assert!(
+            lease
+                .with_captured_lease(Some(&token), || stopped = true)
+                .is_some()
+        );
         assert!(stopped);
     }
 
@@ -1509,7 +1514,7 @@ mod tests {
             lease
                 .admit_generation(
                     Some(&token),
-                    now,
+                    || now,
                     &[],
                     &first_submission,
                     LeaseAdmission::Normal,
@@ -1521,7 +1526,7 @@ mod tests {
             lease
                 .admit_generation(
                     Some(&token),
-                    now,
+                    || now,
                     &[],
                     &second_submission,
                     LeaseAdmission::Normal,
@@ -1551,7 +1556,7 @@ mod tests {
         assert!(command(&lease, None, later).is_err());
         assert!(
             lease
-                .admit_generation(None, later, &[], &[], LeaseAdmission::ClearFault, || ())
+                .admit_generation(None, || later, &[], &[], LeaseAdmission::ClearFault, || ())
                 .is_ok()
         );
         let (retry, ()) = lease
@@ -1630,13 +1635,61 @@ mod tests {
     }
 
     #[test]
+    fn a_command_waiting_on_an_arm_gate_cannot_outlive_its_lease() {
+        let (lease, acquired_at) = lease();
+        let token = acquire_agent(&lease, acquired_at);
+        let gate = ArmGate {
+            interlocks: SharedInterlocks::default(),
+            expected_revision: None,
+        };
+        let current_time = Mutex::new(acquired_at);
+        std::thread::scope(|scope| {
+            let interlock_guard = gate.interlocks.lock_unpoisoned();
+            let submission = scope.spawn(|| {
+                lease.admit_generation(
+                    Some(&token),
+                    || *current_time.lock_unpoisoned(),
+                    std::slice::from_ref(&gate),
+                    &[],
+                    LeaseAdmission::Normal,
+                    || panic!("expired command was enqueued"),
+                )
+            });
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while lease.authority.try_lock().is_ok() {
+                assert!(
+                    Instant::now() < deadline,
+                    "admission did not reach the gate"
+                );
+                std::thread::yield_now();
+            }
+            *current_time.lock_unpoisoned() = acquired_at + LEASE_FOR_TESTS;
+            drop(interlock_guard);
+            assert!(matches!(
+                submission.join().unwrap(),
+                Err(Rejection {
+                    reason: RejectionReason::ArmBusy,
+                    ..
+                })
+            ));
+        });
+    }
+
+    #[test]
     fn a_refused_command_does_not_run() {
         let (lease, now) = lease();
         acquire_agent(&lease, now);
         let mut ran = false;
-        let _ = lease.admit_generation(None, now, &[], &[], LeaseAdmission::Normal, || {
-            ran = true;
-        });
+        let _ = lease.admit_generation(
+            None,
+            || now,
+            &[],
+            &[],
+            LeaseAdmission::Normal,
+            || {
+                ran = true;
+            },
+        );
         assert!(!ran);
     }
 

@@ -43,6 +43,26 @@ enum ControllerPhase {
     },
 }
 
+struct GuardObservation {
+    released: bool,
+    reports: Option<Vec<String>>,
+}
+
+impl GuardObservation {
+    fn read(process: &mut ControllerProcess) -> Self {
+        Self {
+            released: process.guard_released(),
+            reports: process.take_updated_reports(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LaunchDecision {
+    Wait,
+    Start,
+}
+
 impl ControllerPhase {
     fn is_available(&self) -> bool {
         matches!(self, Self::Online { .. } | Self::Unmanaged)
@@ -62,6 +82,38 @@ impl ControllerPhase {
             Self::Starting | Self::WaitingForGuard { .. } => {
                 Err("Controller startup or recovery is already in progress")
             }
+        }
+    }
+
+    fn poll_launch(&mut self, previous: Option<GuardObservation>) -> LaunchDecision {
+        match self {
+            Self::Starting => LaunchDecision::Start,
+            Self::Unavailable {
+                guard_released,
+                reports,
+                ..
+            } => {
+                if let Some(observation) = previous {
+                    *guard_released = observation.released;
+                    if let Some(updated) = observation.reports {
+                        *reports = updated;
+                    }
+                }
+                LaunchDecision::Wait
+            }
+            Self::WaitingForGuard { reports, .. } => {
+                if let Some(observation) = previous {
+                    if let Some(updated) = observation.reports {
+                        *reports = updated;
+                    }
+                    if !observation.released {
+                        return LaunchDecision::Wait;
+                    }
+                }
+                *self = Self::Starting;
+                LaunchDecision::Start
+            }
+            Self::Online { .. } | Self::Stopping | Self::Unmanaged => LaunchDecision::Wait,
         }
     }
 
@@ -91,17 +143,17 @@ impl ControllerPhase {
 #[derive(Clone)]
 pub struct ControllerSupervisor {
     phase: Arc<Mutex<ControllerPhase>>,
-    requests: mpsc::Sender<()>,
+    wake_worker: mpsc::Sender<()>,
     recording: Arc<Mutex<Option<RecordingManager>>>,
 }
 
 impl ControllerSupervisor {
     #[must_use]
     pub fn unmanaged() -> Self {
-        let (requests, _receiver) = mpsc::channel();
+        let (wake_worker, _receiver) = mpsc::channel();
         Self {
             phase: Arc::new(Mutex::new(ControllerPhase::Unmanaged)),
-            requests,
+            wake_worker,
             recording: Arc::new(Mutex::new(None)),
         }
     }
@@ -157,7 +209,7 @@ impl ControllerSupervisor {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let next = status.reconnect_requested()?;
-        self.requests
+        self.wake_worker
             .send(())
             .map_err(|_| "The controller supervisor stopped")?;
         *status = next;
@@ -174,11 +226,10 @@ pub fn start(
     lease: Arc<Lease>,
     shutdown: Arc<AtomicBool>,
 ) -> (ControllerSupervisor, JoinHandle<()>) {
-    let (requests, incoming) = mpsc::channel();
-    let _ = requests.send(());
+    let (wake_worker, wakeups) = mpsc::channel();
     let supervisor = ControllerSupervisor {
         phase: Arc::new(Mutex::new(ControllerPhase::Starting)),
-        requests,
+        wake_worker,
         recording: Arc::new(Mutex::new(None)),
     };
     let worker = supervisor.clone();
@@ -194,58 +245,10 @@ pub fn start(
             links,
             lease,
             shutdown,
-            incoming,
+            wakeups,
         );
     });
     (supervisor, thread)
-}
-
-fn refresh_guard_status(
-    supervisor: &ControllerSupervisor,
-    process: &mut ControllerProcess,
-) -> bool {
-    let released = process.guard_released();
-    let updated_reports = process.take_updated_reports();
-    let mut status = supervisor
-        .phase
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    match &mut *status {
-        ControllerPhase::Unavailable {
-            guard_released,
-            reports,
-            ..
-        } => {
-            *guard_released = released;
-            if let Some(updated_reports) = updated_reports {
-                *reports = updated_reports;
-            }
-        }
-        ControllerPhase::WaitingForGuard { reports, .. } => {
-            if let Some(updated_reports) = updated_reports {
-                *reports = updated_reports;
-            }
-        }
-        ControllerPhase::Starting
-        | ControllerPhase::Stopping
-        | ControllerPhase::Online { .. }
-        | ControllerPhase::Unmanaged => {}
-    }
-    released
-}
-
-fn wait_for_release(
-    supervisor: &ControllerSupervisor,
-    process: &mut ControllerProcess,
-    shutdown: &AtomicBool,
-) -> bool {
-    while !shutdown.load(Ordering::Acquire) {
-        if refresh_guard_status(supervisor, process) {
-            return true;
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-    false
 }
 
 fn start_connection(
@@ -311,7 +314,7 @@ fn run(
     links: BTreeMap<String, Arc<Link>>,
     lease: Arc<Lease>,
     shutdown: Arc<AtomicBool>,
-    incoming: mpsc::Receiver<()>,
+    wakeups: mpsc::Receiver<()>,
 ) {
     let mut startup_timeout = CONTROLLER_CONNECT_TIMEOUT;
     if matches!(configuration.plant, PlantSelection::Simulator { .. }) {
@@ -327,24 +330,22 @@ fn run(
     }
     let mut previous: Option<ControllerProcess> = None;
     while !shutdown.load(Ordering::Acquire) {
-        if let Some(process) = previous.as_mut() {
-            refresh_guard_status(&supervisor, process);
-        }
-        match incoming.recv_timeout(POLL_INTERVAL) {
-            Ok(()) => {}
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        let observation = previous.as_mut().map(GuardObservation::read);
+        let decision = supervisor
+            .phase
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .poll_launch(observation);
+        if decision == LaunchDecision::Wait {
+            match wakeups.recv_timeout(POLL_INTERVAL) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         }
         if shutdown.load(Ordering::Acquire) {
             break;
         }
-        if let Some(process) = previous.as_mut()
-            && !wait_for_release(&supervisor, process, &shutdown)
-        {
-            break;
-        }
         previous = None;
-        supervisor.set_phase(ControllerPhase::Starting);
         let mut process = match ControllerProcess::start(&configuration) {
             Ok(process) => process,
             Err(error) => {
@@ -368,7 +369,7 @@ fn run(
                 |ready| {
                     ready.restore_motion_authority(&lease);
                     for link in links.values() {
-                        link.publish(hebbian_contracts::Event::ControllerAvailable);
+                        link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
                     }
                     supervisor.set_phase(ControllerPhase::Online { _readiness: ready });
                 },
@@ -423,4 +424,58 @@ pub fn router(supervisor: ControllerSupervisor) -> Router {
         .route("/viewer/api/controller", get(read_status))
         .route("/viewer/api/controller/reconnect", post(reconnect))
         .with_state(supervisor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconnect_requires_both_an_operator_request_and_guard_release() {
+        let mut phase = ControllerPhase::Unavailable {
+            reason: "Controller exited".into(),
+            guard_released: false,
+            reports: vec![],
+        };
+        assert_eq!(
+            phase.poll_launch(Some(GuardObservation {
+                released: true,
+                reports: None,
+            })),
+            LaunchDecision::Wait
+        );
+        phase = phase.reconnect_requested().unwrap();
+        assert_eq!(
+            phase.poll_launch(Some(GuardObservation {
+                released: false,
+                reports: Some(vec!["Releasing motors".into()]),
+            })),
+            LaunchDecision::Wait
+        );
+        assert!(
+            matches!(phase.status(), ControllerStatus::WaitingForGuard {reports, ..}
+            if reports == ["Releasing motors"])
+        );
+        assert!(phase.reconnect_requested().is_err());
+        assert_eq!(
+            phase.poll_launch(Some(GuardObservation {
+                released: true,
+                reports: None,
+            })),
+            LaunchDecision::Start
+        );
+        assert!(matches!(phase.status(), ControllerStatus::Starting));
+    }
+
+    #[test]
+    fn a_failed_spawn_can_be_retried_without_a_previous_process() {
+        let mut phase = ControllerPhase::Unavailable {
+            reason: "Spawn failed".into(),
+            guard_released: true,
+            reports: vec![],
+        };
+        assert_eq!(phase.poll_launch(None), LaunchDecision::Wait);
+        phase = phase.reconnect_requested().unwrap();
+        assert_eq!(phase.poll_launch(None), LaunchDecision::Start);
+    }
 }

@@ -5,13 +5,16 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 from examples.mujoco_sim.so101_model import So101MujocoModelPin
 from tests.fixture_station import resolve_simulator_arm
+
+if TYPE_CHECKING:
+    import mujoco
 
 ARM_JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")
 # CONSTRAINT: The joint ranges the policy's training goals are drawn from.
@@ -25,12 +28,12 @@ MEDIAN_TOLERANCE_MILLIMETRES = 2.0
 P95_TOLERANCE_MILLIMETRES = 5.0
 
 
-def lowest_moving_mesh_point(model: Any, data: Any) -> float:
+def lowest_moving_mesh_point(model: "mujoco.MjModel", data: "mujoco.MjData") -> float:
     import mujoco
 
     lowest = np.inf
     for geom in range(model.ngeom):
-        if model.geom_type[geom] != mujoco.mjtGeom.mjGEOM_MESH:  # ty: ignore[missing-attribute]
+        if model.geom_type[geom] != mujoco.mjtGeom.mjGEOM_MESH:
             continue
         if model.body(model.geom_bodyid[geom]).name in ("world", "base_link"):
             continue

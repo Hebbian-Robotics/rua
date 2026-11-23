@@ -175,10 +175,10 @@ pub(crate) struct WebArguments {
 }
 
 impl WebArguments {
-    pub(crate) fn settings(self) -> anyhow::Result<hebbian_robot_use_server::web::WebSettings> {
+    pub(crate) fn settings(self) -> hebbian_robot_use_server::web::WebSettings {
         use hebbian_robot_use_server::web::{CameraForwarding, WebSettings};
 
-        Ok(WebSettings {
+        WebSettings {
             recordings_directory: self.recordings_directory,
             enable_recording: self.enable_recording,
             media_address: None,
@@ -192,7 +192,7 @@ impl WebArguments {
             phone_page_url: self.phone_page_url,
             manual_control: self.manual_control,
             media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
-        })
+        }
     }
 }
 

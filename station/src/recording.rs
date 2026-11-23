@@ -75,14 +75,17 @@ impl RecordingState {
         }
     }
 
-    fn stop(&mut self) {
-        *self = match std::mem::replace(self, Self::Idle) {
+    fn stop(&mut self) -> Option<oneshot::Sender<()>> {
+        match std::mem::replace(self, Self::Idle) {
             Self::Recording { session, stop } => {
-                let _ = stop.send(());
-                Self::Stopping(session)
+                *self = Self::Stopping(session);
+                Some(stop)
             }
-            other => other,
-        };
+            state => {
+                *self = state;
+                None
+            }
+        }
     }
 }
 
@@ -215,16 +218,6 @@ impl RecordingManager {
         }
     }
     pub fn start_recording(&self) -> Result<String, String> {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if self.shutting_down.load(Ordering::Acquire) {
-            return Err("The station is shutting down".into());
-        }
-        if state.active_session().is_some() {
-            return Err("A recording is already active".into());
-        }
         let started_at_milliseconds = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|error| error.to_string())?
@@ -233,18 +226,46 @@ impl RecordingManager {
             "{started_at_milliseconds}-{}",
             uuid::Uuid::new_v4().simple()
         );
-        let controller_interrupted = !(self.controller_available)();
-        if controller_interrupted {
-            self.mark_interruption_file(&name)?;
-        }
-        let recorder = self.launch_recorder(&name)?;
         let (stop, stopped) = oneshot::channel();
-        *state = RecordingState::Recording {
-            session: RecordingSession {
-                name: name.clone(),
-                controller_interrupted,
-            },
-            stop,
+        let controller_interrupted = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.shutting_down.load(Ordering::Acquire) {
+                return Err("The station is shutting down".into());
+            }
+            if state.active_session().is_some() {
+                return Err("A recording is already active".into());
+            }
+            if self.recording.is_none() {
+                return Err("LiveKit recording is not configured".into());
+            }
+            let controller_interrupted = !(self.controller_available)();
+            *state = RecordingState::Recording {
+                session: RecordingSession {
+                    name: name.clone(),
+                    controller_interrupted,
+                },
+                stop,
+            };
+            controller_interrupted
+        };
+        // INVARIANT: The reservation owns this stop receiver through launch. A concurrent
+        // stop or shutdown can signal it before the process starts waiting.
+        let recorder = match self.launch_recorder(&name, controller_interrupted) {
+            Ok(process) => process,
+            Err(detail) => {
+                *self
+                    .state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = RecordingState::Failed {
+                    name,
+                    detail: detail.clone(),
+                };
+                self.ended.send_replace(());
+                return Err(detail);
+            }
         };
         self.announce(true);
         let manager = self.clone();
@@ -295,11 +316,22 @@ impl RecordingManager {
     }
 
     pub fn stop_recording_if(&self, authorize: impl FnOnce(&mut dyn FnMut()) -> bool) -> bool {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        authorize(&mut || state.stop())
+        let mut signal = None;
+        let authorized = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            authorize(&mut || {
+                if let Some(stop) = state.stop() {
+                    signal = Some(stop);
+                }
+            })
+        };
+        if let Some(stop) = signal {
+            let _ = stop.send(());
+        }
+        authorized
     }
     // INVARIANT: Close admission and finish recording/announcement work before dropping the
     // server runtime so pending finalization is not abandoned.
@@ -334,7 +366,11 @@ impl RecordingManager {
             .active_session()
             .is_some()
     }
-    fn launch_recorder(&self, name: &str) -> Result<ChildProcessGroup, String> {
+    fn launch_recorder(
+        &self,
+        name: &str,
+        controller_interrupted: bool,
+    ) -> Result<ChildProcessGroup, String> {
         let configuration = self
             .recording
             .as_ref()
@@ -355,6 +391,9 @@ impl RecordingManager {
             Ok(url)
         });
         let station_url = station_url?;
+        if controller_interrupted {
+            self.mark_interruption_file(name)?;
+        }
         ChildProcessGroup::spawn(
             Command::new(&configuration.executable)
                 .args(["record", "--room", &configuration.room, "--directory"])
@@ -380,7 +419,7 @@ pub fn router(manager: RecordingManager, arms: crate::lease_routes::ServedArms) 
                 let stopped = manager.stop_recording_if(|stop| {
                     arms.get()
                         .and_then(|arms| arms.values().next())
-                        .is_some_and(|link| link.with_lease(&request.lease_token, stop))
+                        .is_some_and(|link| link.with_lease(&request.lease_token, stop).is_some())
                 });
                 if stopped {
                     Ok(Json(()))

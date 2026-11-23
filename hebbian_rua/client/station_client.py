@@ -19,7 +19,8 @@ from hebbian_rua.client.contract.arm_commands import (
 )
 from hebbian_rua.client.contract.http_routes import StationApi
 from hebbian_rua.client.contract.station_api import (
-    ActionSequenceArmAction,
+    ActionSequenceGripper,
+    ActionSequenceMove,
     ActionSequenceRecord,
     ActionSequenceRequest,
     ActionSequenceStartRequest,
@@ -171,7 +172,7 @@ class LeasedArm(ArmMotionCommands):
 
     async def run_action_sequence(
         self,
-        steps: list[ActionSequenceArmAction],
+        steps: list[ActionSequenceMove | ActionSequenceGripper],
         *,
         expected_revision: int | None = None,
     ) -> ActionSequenceRecord:

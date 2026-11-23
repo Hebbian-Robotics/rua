@@ -645,7 +645,7 @@ mod tests {
         assert!(lease.status(expired).is_some());
         assert!(
             lease
-                .admit_generation(None, expired, &[], &[], LeaseAdmission::Normal, || ())
+                .admit_generation(None, || expired, &[], &[], LeaseAdmission::Normal, || ())
                 .is_err()
         );
         for (name, inbox) in [("disabled", &disabled_inbox), ("moving", &moving_inbox)] {
@@ -668,13 +668,14 @@ mod tests {
         lease.tick(expired);
         assert!(lease.status(expired).is_none());
         assert!(!lease.retain(Some(&grant.lease_token), expired));
+        let enable = || {
+            cores
+                .get_mut("disabled")
+                .unwrap()
+                .submit(Command::Enable, Now::current())
+        };
         let enabled = lease
-            .admit_generation(None, expired, &[], &[], LeaseAdmission::Normal, || {
-                cores
-                    .get_mut("disabled")
-                    .unwrap()
-                    .submit(Command::Enable, Now::current())
-            })
+            .admit_generation(None, || expired, &[], &[], LeaseAdmission::Normal, enable)
             .unwrap()
             .unwrap();
         assert_eq!(enabled.label, "enable");
@@ -682,7 +683,7 @@ mod tests {
         assert_ne!(fresh.lease_token, grant.lease_token);
         let late_plan = lease.admit_generation(
             Some(&grant.lease_token),
-            expired,
+            || expired,
             &[],
             &prepared_before_expiry,
             LeaseAdmission::Normal,
