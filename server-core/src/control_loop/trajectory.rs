@@ -89,14 +89,17 @@ pub(super) struct MotionEffects {
 pub(super) enum CycleEffects {
     None,
     Arm(MotionEffects),
-    Group(MotionEffects),
+    Group {
+        effects: MotionEffects,
+        attempt: GroupWriteAttempt,
+    },
 }
 
 impl CycleEffects {
     pub(super) fn ends_motion(&self) -> bool {
         match self {
             Self::None => false,
-            Self::Arm(effects) | Self::Group(effects) => effects.completion.is_some(),
+            Self::Arm(effects) | Self::Group { effects, .. } => effects.completion.is_some(),
         }
     }
 }
@@ -107,7 +110,14 @@ struct MotionCompletion {
     hold: Vec<f64>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum GroupWriteAttempt {
+    First,
+    Retry,
+}
+
 pub(super) struct GroupReference {
+    pub(super) attempt: GroupWriteAttempt,
     pub(super) reference: Reference,
     pub(super) checkpoints: Vec<Checkpoint>,
     pub(super) segment: Option<&'static str>,
@@ -329,7 +339,10 @@ impl Loop<'_> {
                 final_pose: share.final_pose.clone(),
             },
         );
-        Ok(CycleEffects::Group(effects))
+        Ok(CycleEffects::Group {
+            effects,
+            attempt: share.attempt,
+        })
     }
 }
 

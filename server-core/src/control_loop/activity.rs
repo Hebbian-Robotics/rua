@@ -174,7 +174,7 @@ impl Loop<'_> {
 
     pub(super) fn request_group_stop(&mut self, detail: &str) {
         if let Activity::Group(member) = &mut self.activity {
-            member.stop_reason = Some(detail.to_owned());
+            member.stop_reason.get_or_insert_with(|| detail.to_owned());
         }
     }
 

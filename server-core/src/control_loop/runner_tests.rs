@@ -861,13 +861,15 @@ fn a_stop_with_unconfirmed_writes_ends_as_interrupted_on_bus_loss() {
 }
 
 #[test]
-fn a_group_checkpoint_and_completion_require_both_terminal_writes() {
+fn a_group_retries_partial_writes_without_tripping_or_publishing_completion_early() {
     use super::group::{confirm_group_writes, form_groups, step_groups};
     use super::trajectory::MotionStatus;
     use crate::arm::GroupMembership;
     use hebbian_contracts::CommandOutcome;
 
-    let left_config = config("confirm-group-write-left");
+    let mut left_input = config("confirm-group-write-left").into_input();
+    left_input.tracking_static_margin_radians = 0.000_01;
+    let left_config = ControllerConfig::try_from(left_input).unwrap();
     let right_config = config("confirm-group-write-right");
     let left_link = test_link(&left_config);
     let right_link = test_link(&right_config);
@@ -890,6 +892,7 @@ fn a_group_checkpoint_and_completion_require_both_terminal_writes() {
     let mut groups = Vec::new();
     let mut steps = Vec::new();
     let mut measured = Vec::new();
+    let mut moving_write_failures = 0;
     let mut terminal_write_failed = false;
     for _ in 0..100 {
         let begun: Vec<_> = runners
@@ -903,10 +906,18 @@ fn a_group_checkpoint_and_completion_require_both_terminal_writes() {
             })
             .collect();
         form_groups(&mut runners, &mut groups);
-        step_groups(&runners, &mut groups, &begun, &mut steps, &mut measured);
-        let terminal = groups[0].member_reference(0).status == MotionStatus::Reached;
-        let fail_this_write = terminal && !terminal_write_failed;
-        runners[1].plant.position_write_fails = fail_this_write;
+        step_groups(&mut runners, &mut groups, &begun, &mut steps, &mut measured);
+        let share = groups[0].member_reference(0);
+        let terminal = share.status == MotionStatus::Reached;
+        let fail_moving_write = if moving_write_failures == 0 {
+            !terminal
+                && (share.reference.positions[0] - runners[0].plant.last.positions[0]).abs()
+                    > left_config.tracking_static_margin_radians
+        } else {
+            moving_write_failures == 1
+        };
+        let fail_terminal_write = terminal && !terminal_write_failed;
+        runners[1].plant.position_write_fails = fail_moving_write || fail_terminal_write;
         let mut writes = begun
             .into_iter()
             .zip(&mut runners)
@@ -920,6 +931,15 @@ fn a_group_checkpoint_and_completion_require_both_terminal_writes() {
             })
             .collect::<Vec<_>>();
         confirm_group_writes(&mut runners, &mut groups, &mut writes);
+        if fail_moving_write {
+            moving_write_failures += 1;
+        } else {
+            let left = &mut runners[0];
+            left.plant
+                .last
+                .positions
+                .clone_from(&left.state.previous_command);
+        }
         for (runner, command_id) in runners.iter().zip(&command_ids) {
             let record = runner.state.core.record(command_id).unwrap();
             if terminal && terminal_write_failed {
@@ -931,9 +951,10 @@ fn a_group_checkpoint_and_completion_require_both_terminal_writes() {
             }
         }
         if terminal && terminal_write_failed {
+            assert_eq!(moving_write_failures, 2);
             return;
         }
-        terminal_write_failed |= fail_this_write;
+        terminal_write_failed |= fail_terminal_write;
     }
     panic!("the group did not retry the terminal write");
 }

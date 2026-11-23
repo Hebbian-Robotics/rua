@@ -418,7 +418,7 @@ fn when_one_arm_of_a_group_ends_early_the_others_stop_and_hold() {
     assert!(
         right
             .detail()
-            .is_some_and(|detail| detail.contains("left ended stopped")),
+            .is_some_and(|detail| detail.contains("left requested stop")),
         "{right:?}"
     );
     arms.right.read_until(in_mode(ArmMode::Holding));

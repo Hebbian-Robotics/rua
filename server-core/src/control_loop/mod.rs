@@ -461,7 +461,7 @@ fn run_runners<P: Plant>(
         }
         form_groups(&mut runners, &mut groups);
         step_groups(
-            &runners,
+            &mut runners,
             &mut groups,
             &begun,
             &mut group_steps,

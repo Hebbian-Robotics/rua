@@ -1,6 +1,6 @@
 use super::activity::Activity;
 use super::runner::{GroupWrite, PendingCycle, Runner};
-use super::trajectory::{ActiveGroupMember, GroupReference, MotionStatus};
+use super::trajectory::{ActiveGroupMember, GroupReference, GroupWriteAttempt, MotionStatus};
 use crate::arm::{GroupMembership, Now};
 use crate::config::ControllerConfig;
 use crate::corner_path::{MotionSupervisor, ValidatedPlan};
@@ -118,6 +118,7 @@ impl ActiveGroup {
             shares: configs
                 .iter()
                 .map(|config| GroupReference {
+                    attempt: GroupWriteAttempt::First,
                     reference: Reference::at_rest(&config.lower_limits, None),
                     checkpoints: Vec::new(),
                     segment: None,
@@ -136,6 +137,9 @@ impl ActiveGroup {
         // INVARIANT: A partial batch keeps its setpoint and checkpoints until all members
         // confirm that same step in one cycle.
         if self.step_pending {
+            for share in &mut self.shares {
+                share.attempt = GroupWriteAttempt::Retry;
+            }
             return Ok(&self.shares);
         }
         self.supervisor.advance(measured, interval)?;
@@ -170,6 +174,7 @@ impl ActiveGroup {
                     target_position: checkpoint.target_position,
                     target_quaternion: checkpoint.target_quaternion,
                 }));
+            share.attempt = GroupWriteAttempt::First;
             share.segment = segment;
             share.status = status;
             share.final_pose.clear();
@@ -248,7 +253,7 @@ pub(super) struct GroupMemberReferenceIndex {
 }
 
 pub(super) fn step_groups<P: Plant>(
-    runners: &[Runner<'_, P>],
+    runners: &mut [Runner<'_, P>],
     groups: &mut [ActiveGroup],
     begun: &[Option<PendingCycle>],
     steps: &mut Vec<Option<Result<GroupMemberReferenceIndex, Trip>>>,
@@ -257,6 +262,25 @@ pub(super) fn step_groups<P: Plant>(
     steps.clear();
     steps.resize_with(runners.len(), || None);
     for (group_index, group) in groups.iter_mut().enumerate() {
+        if let Some(stopping) = group.members.iter().copied().find(|&index| {
+            runners[index]
+                .group_member()
+                .is_some_and(|member| member.group.id == group.id)
+                && runners[index].state.core.stop_requested()
+        }) {
+            let reason = format!("{} requested stop", runners[stopping].name);
+            for &index in &group.members {
+                if index != stopping
+                    && runners[index]
+                        .group_member()
+                        .is_some_and(|member| member.group.id == group.id)
+                    && !runners[index].state.core.stop_requested()
+                {
+                    runners[index].state.request_group_stop(&reason);
+                }
+            }
+            continue;
+        }
         // INVARIANT: A member that did not read this cycle (its plant failed) cannot be
         // stepped with; the others hold until the group is settled.
         let interval = group

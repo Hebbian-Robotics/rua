@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use super::activity::Activity;
 use super::activity::Loop;
 use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
-use super::trajectory::{CycleEffects, GroupReference, MotionEffects};
+use super::trajectory::{CycleEffects, GroupReference, GroupWriteAttempt, MotionEffects};
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
 use crate::arm::{Job, Now};
 use crate::config::ControllerConfig;
@@ -801,13 +801,20 @@ impl<P: Plant> Runner<'_, P> {
         }
         self.timings.command_write_seconds = write_began.elapsed().as_secs_f64();
         let write_time = self.started.elapsed().as_secs_f64();
+        let repeated_group_setpoint = matches!(
+            effects,
+            CycleEffects::Group {
+                attempt: GroupWriteAttempt::Retry,
+                ..
+            }
+        );
         let group_write = match effects {
             CycleEffects::None => None,
             CycleEffects::Arm(effects) => {
                 self.state.commit_motion_effects(effects, now);
                 None
             }
-            CycleEffects::Group(effects) => Some(GroupWrite {
+            CycleEffects::Group { effects, .. } => Some(GroupWrite {
                 effects,
                 now,
                 interval,
@@ -835,7 +842,7 @@ impl<P: Plant> Runner<'_, P> {
         record.write_time = write_time;
         self.trace.record(record);
         self.failed_cycles = 0;
-        self.accept_joint_setpoint(interval);
+        self.accept_joint_setpoint(interval, repeated_group_setpoint);
         if group_write.is_none() {
             self.publish(feedback, interval, true);
         }
@@ -846,7 +853,7 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    fn accept_joint_setpoint(&mut self, interval: f64) {
+    fn accept_joint_setpoint(&mut self, interval: f64, repeated_group_setpoint: bool) {
         // INVARIANT: What was sent is what the next cycle's checks compare against; the
         // old previous command's buffer is the next cycle's to fill.
         for ((velocity, next), previous) in self
@@ -856,6 +863,11 @@ impl<P: Plant> Runner<'_, P> {
             .zip(&self.state.next_command)
             .zip(&self.state.previous_command)
         {
+            // WHY: A repeated setpoint can still be ahead of the moving joint.
+            // Keep its tracking allowance until the group can advance again.
+            if repeated_group_setpoint && next.to_bits() == previous.to_bits() {
+                continue;
+            }
             *velocity = if interval > 0.0 {
                 (next - previous) / interval
             } else {
