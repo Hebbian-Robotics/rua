@@ -1,4 +1,4 @@
-use super::runner::Runner;
+use super::{Runner, WRITE_PERMIT};
 use crate::arm::Now;
 use crate::config::ControllerConfig;
 use crate::limits::{Trip, check_effort, max_joint_deviation};
@@ -30,7 +30,7 @@ impl std::fmt::Display for EnableRefusal<'_> {
     }
 }
 
-pub(super) struct StartupHold {
+pub(in crate::control_loop) struct StartupHold {
     initial: Vec<f64>,
     remaining_observations: f64,
 }
@@ -69,14 +69,10 @@ impl StartupHold {
 }
 
 impl<P: Plant> Runner<'_, P> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "Startup turns on torque after preflight and guard startup."
-    )]
     fn begin_enable(&mut self) -> anyhow::Result<StartupHold> {
         let config = self.config;
         self.plant.preflight()?;
-        let initial = self.plant.read_feedback()?;
+        let initial = self.read_plant_feedback()?;
         let initial_positions = initial.measured_positions(config)?;
         if let Err(error) = config.recovery_limits().clamp(initial_positions.as_slice()) {
             return Err(match error {
@@ -89,7 +85,7 @@ impl<P: Plant> Runner<'_, P> {
         // INVARIANT: The guard watches from before torque goes on.
         self.plant.start_guard()?;
         if let Some(checks) = &config.enable_checks {
-            let settled = self.plant.read_feedback()?;
+            let settled = self.read_plant_feedback()?;
             let settled_positions = settled.measured_positions(config)?;
             anyhow::ensure!(
                 max_joint_deviation(settled_positions.as_slice(), initial_positions.as_slice())
@@ -97,7 +93,7 @@ impl<P: Plant> Runner<'_, P> {
                 "Moved during preflight"
             );
         }
-        self.plant.enable()?;
+        self.plant.enable(&WRITE_PERMIT)?;
         Ok(StartupHold::new(config, initial_positions))
     }
 
@@ -112,7 +108,7 @@ impl<P: Plant> Runner<'_, P> {
         &mut self,
         hold: &mut StartupHold,
     ) -> anyhow::Result<(EnableDecision, Feedback)> {
-        let fresh = self.plant.read_feedback()?;
+        let fresh = self.read_plant_feedback()?;
         let decision = hold
             .observe(
                 self.config,
@@ -153,16 +149,12 @@ impl<P: Plant> Runner<'_, P> {
         *feedback = fresh;
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "A failed startup must release any torque the attempt left on."
-    )]
-    pub(super) fn fail_enable(&mut self, reason: &str, now: Now) {
+    pub(in crate::control_loop) fn fail_enable(&mut self, reason: &str, now: Now) {
         self.startup_hold = None;
         // INVARIANT: A refused preflight leaves the arm disabled; release what the
         // attempt may have left on.
         let detail = format!("Enable failed: {reason}");
-        match self.plant.release() {
+        match self.plant.release(&WRITE_PERMIT) {
             Ok(()) => self.state.arm().failed(&detail, now),
             Err(failure) => self.state.arm().enter_fault(
                 &detail,
@@ -172,14 +164,10 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "The runner releases torque on disable and shutdown."
-    )]
     pub(super) fn release(&mut self, now: Now) {
         let cleanup_errors: Vec<String> = self
             .plant
-            .release()
+            .release(&WRITE_PERMIT)
             .err()
             .map(|error| format!("{error:#}"))
             .into_iter()

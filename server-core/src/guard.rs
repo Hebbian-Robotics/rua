@@ -23,7 +23,7 @@ use nix::{
 
 use crate::config::{ControllerConfig, GuardTiming};
 use crate::limits::{check_effort, max_joint_deviation};
-use crate::plant::{Feedback, Plant, Reconnection};
+use crate::plant::{Feedback, Plant, PlantWritePermit, Reconnection};
 use crate::so101::driver::{SerialBus, Servos};
 
 const CONTROLLER_EXIT: Duration = Duration::from_secs(2);
@@ -100,7 +100,7 @@ impl GuardedArm for Servos<SerialBus> {
     }
 
     fn release(&mut self) -> anyhow::Result<()> {
-        Plant::release(self)
+        Servos::release(self).map_err(crate::so101::driver::station_error)
     }
 }
 
@@ -508,6 +508,17 @@ impl<P: Plant> GuardedPlant<P> {
         // failure path releases torque before detaching any guard that may be live.
         self.guard.insert(guard).attach()
     }
+    fn detach_guard_after_release(&mut self, released: anyhow::Result<()>) -> anyhow::Result<()> {
+        // INVARIANT: A guard is let go only once the motors are off; after a failed
+        // release it is kept, and with the heartbeats stopped it takes over
+        // and supervises the hold.
+        released?;
+        let cleanup_errors = self.stop_guard();
+        if let Some(error) = cleanup_errors.into_iter().next() {
+            bail!(error);
+        }
+        Ok(())
+    }
 }
 
 impl<P: Plant> Plant for GuardedPlant<P> {
@@ -515,20 +526,25 @@ impl<P: Plant> Plant for GuardedPlant<P> {
         self.inner.read_feedback_into(feedback)
     }
 
-    fn command(&mut self, positions: &[f64], seconds: f64) -> anyhow::Result<()> {
-        self.inner.command(positions, seconds)
+    fn command(
+        &mut self,
+        permit: &PlantWritePermit,
+        positions: &[f64],
+        seconds: f64,
+    ) -> anyhow::Result<()> {
+        self.inner.command(permit, positions, seconds)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
-        self.inner.command_gripper(angle)
+    fn command_gripper(&mut self, permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
+        self.inner.command_gripper(permit, angle)
     }
 
     fn preflight(&mut self) -> anyhow::Result<()> {
         self.inner.preflight()
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
-        self.inner.enable()
+    fn enable(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        self.inner.enable(permit)
     }
 
     fn reconnect(&mut self) -> Reconnection {
@@ -539,27 +555,24 @@ impl<P: Plant> Plant for GuardedPlant<P> {
         self.inner.observe_recovery()
     }
 
-    fn hold_recovery(&mut self) -> anyhow::Result<crate::plant::RecoveryObservation> {
-        self.inner.hold_recovery()
+    fn hold_recovery(
+        &mut self,
+        permit: &PlantWritePermit,
+    ) -> anyhow::Result<crate::plant::RecoveryObservation> {
+        self.inner.hold_recovery(permit)
     }
 
     fn enable_recovery(
         &mut self,
+        permit: &PlantWritePermit,
         drift_limit_radians: f64,
     ) -> anyhow::Result<crate::plant::RecoveryObservation> {
-        self.inner.enable_recovery(drift_limit_radians)
+        self.inner.enable_recovery(permit, drift_limit_radians)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
-        // INVARIANT: A guard is let go only once the motors are off; after a failed
-        // release it is kept, and with the heartbeats stopped it takes over
-        // and supervises the hold.
-        self.inner.release()?;
-        let cleanup_errors = self.stop_guard();
-        if let Some(error) = cleanup_errors.into_iter().next() {
-            bail!(error);
-        }
-        Ok(())
+    fn release(&mut self, permit: &PlantWritePermit) -> anyhow::Result<()> {
+        let released = self.inner.release(permit);
+        self.detach_guard_after_release(released)
     }
 
     fn start_guard(&mut self) -> anyhow::Result<()> {
@@ -759,27 +772,47 @@ mod tests {
         release_works: bool,
     }
 
+    impl StuckPlant {
+        fn try_release(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(self.release_works, "bus down");
+            Ok(())
+        }
+    }
+
     impl Plant for StuckPlant {
         fn read_feedback_into(&mut self, reading: &mut Feedback) -> anyhow::Result<()> {
             *reading = feedback(&[0.0]);
             Ok(())
         }
-        fn command(&mut self, _positions: &[f64], _seconds: f64) -> anyhow::Result<()> {
+        fn command(
+            &mut self,
+            _permit: &PlantWritePermit,
+            _positions: &[f64],
+            _seconds: f64,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
-        fn command_gripper(&mut self, _angle: f64) -> anyhow::Result<()> {
+        fn command_gripper(
+            &mut self,
+            _permit: &PlantWritePermit,
+            _angle: f64,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
         fn preflight(&mut self) -> anyhow::Result<()> {
             Ok(())
         }
-        fn enable(&mut self) -> anyhow::Result<()> {
+        fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
             Ok(())
         }
-        fn release(&mut self) -> anyhow::Result<()> {
-            anyhow::ensure!(self.release_works, "bus down");
-            Ok(())
+        fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
+            self.try_release()
         }
+    }
+
+    fn release_stand_in(plant: &mut GuardedPlant<StuckPlant>) -> anyhow::Result<()> {
+        let released = plant.inner.try_release();
+        plant.detach_guard_after_release(released)
     }
 
     fn plant_with_a_stand_in_guard(release_works: bool) -> GuardedPlant<StuckPlant> {
@@ -823,13 +856,13 @@ mod tests {
             plant.start_guard().is_err(),
             "a failed attachment cannot authorize enable"
         );
-        assert!(plant.release().is_err());
+        assert!(release_stand_in(&mut plant).is_err());
         assert!(
             plant.guard.is_some(),
             "the guard still owns a possible takeover"
         );
         plant.inner.release_works = true;
-        plant.release().unwrap();
+        release_stand_in(&mut plant).unwrap();
         assert!(
             plant.guard.is_none(),
             "the failed guard is detached and reaped"
@@ -839,7 +872,7 @@ mod tests {
     #[test]
     fn a_failed_release_keeps_the_guard_and_a_successful_one_lets_it_go() {
         let mut stuck = plant_with_a_stand_in_guard(false);
-        assert!(stuck.release().is_err());
+        assert!(release_stand_in(&mut stuck).is_err());
         assert!(
             stuck.guard.is_some(),
             "the guard stays to supervise the hold"
@@ -849,7 +882,7 @@ mod tests {
             let _ = guard.child.wait().unwrap();
         }
         let mut working = plant_with_a_stand_in_guard(true);
-        working.release().unwrap();
+        release_stand_in(&mut working).unwrap();
         assert!(working.guard.is_none());
     }
 

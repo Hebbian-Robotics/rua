@@ -4,11 +4,13 @@
     reason = "This adapter translates control-loop operations to the standalone hardware driver."
 )]
 
-use crate::plant::{CommunicationFailure, Feedback, Plant, Reconnection, RecoveryObservation};
+use crate::plant::{
+    CommunicationFailure, Feedback, Plant, PlantWritePermit, Reconnection, RecoveryObservation,
+};
 pub use hebbian_so101::driver::{BusTiming, SerialBus, ServoBus, Servos, StateBlock};
 use hebbian_so101::telemetry as hardware;
 
-fn station_error(error: anyhow::Error) -> anyhow::Error {
+pub(crate) fn station_error(error: anyhow::Error) -> anyhow::Error {
     if error.is::<hardware::CommunicationFailure>() {
         let message = error.to_string();
         error.context(CommunicationFailure(message))
@@ -74,23 +76,32 @@ impl<B: ServoBus> Plant for Servos<B> {
             .map_err(station_error)
     }
 
-    fn hold_recovery(&mut self) -> anyhow::Result<RecoveryObservation> {
+    fn hold_recovery(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<RecoveryObservation> {
         Servos::hold_recovery(self)
             .map(Into::into)
             .map_err(station_error)
     }
 
-    fn enable_recovery(&mut self, drift_limit_radians: f64) -> anyhow::Result<RecoveryObservation> {
+    fn enable_recovery(
+        &mut self,
+        _permit: &PlantWritePermit,
+        drift_limit_radians: f64,
+    ) -> anyhow::Result<RecoveryObservation> {
         Servos::enable_recovery(self, drift_limit_radians)
             .map(Into::into)
             .map_err(station_error)
     }
 
-    fn command(&mut self, positions: &[f64], _seconds: f64) -> anyhow::Result<()> {
+    fn command(
+        &mut self,
+        _permit: &PlantWritePermit,
+        positions: &[f64],
+        _seconds: f64,
+    ) -> anyhow::Result<()> {
         Servos::command(self, positions).map_err(station_error)
     }
 
-    fn command_gripper(&mut self, angle: f64) -> anyhow::Result<()> {
+    fn command_gripper(&mut self, _permit: &PlantWritePermit, angle: f64) -> anyhow::Result<()> {
         Servos::command_gripper(self, angle).map_err(station_error)
     }
 
@@ -98,11 +109,11 @@ impl<B: ServoBus> Plant for Servos<B> {
         Servos::preflight(self).map_err(station_error)
     }
 
-    fn enable(&mut self) -> anyhow::Result<()> {
+    fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         Servos::enable(self).map_err(station_error)
     }
 
-    fn release(&mut self) -> anyhow::Result<()> {
+    fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()> {
         Servos::release(self).map_err(station_error)
     }
 
