@@ -130,7 +130,7 @@ test("provider priority and model environment defaults can be overridden", () =>
 test("bad input is refused with a message", () => {
   expect(() =>
     parseCommandLine(["--take-over", "follower", "Wave"], {}),
-  ).toThrow("Unknown option");
+  ).toThrow(/unknown option.*--take-over/i);
   expect(() => parseCommandLine(["--provider", "openai"], {})).toThrow(
     "Pass <task> or <arm> <task>",
   );
@@ -139,7 +139,7 @@ test("bad input is refused with a message", () => {
   ).toThrow("Choose the arm either with --arm or before the task");
   expect(() =>
     parseCommandLine(["--provider", "mistral", "a", "t"], {}),
-  ).toThrow("--provider must be one of");
+  ).toThrow(/--provider.*mistral/);
   expect(() =>
     parseCommandLine(
       ["--provider", "openai", "--reasoning-effort", "max", "a", "t"],

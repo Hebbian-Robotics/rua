@@ -26,8 +26,8 @@ export async function observe(
   note: string,
   alreadyCaptured?: RobotObservation,
 ): Promise<RevisedObservation> {
-  const { robot, tracer, memory } = environment;
-  const captured = await tracer.span(
+  const { robot, withSpan, memory } = environment;
+  const captured = await withSpan(
     "observe",
     {
       [KIND_ATTRIBUTE]: "observe",

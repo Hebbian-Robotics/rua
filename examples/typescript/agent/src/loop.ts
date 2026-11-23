@@ -1,3 +1,4 @@
+import type { Span } from "@opentelemetry/api";
 import {
   ArmRecoveryEndedError,
   apiSchemas,
@@ -29,12 +30,7 @@ import {
   type TokenUsage,
 } from "./providers/types.js";
 import { AGENT_TOOLS, systemPrompt, TaskMemory } from "./tools.js";
-import {
-  KIND_ATTRIBUTE,
-  type Span,
-  stationSpanSink,
-  Tracer,
-} from "./tracing.js";
+import { KIND_ATTRIBUTE, markSpanError, withStationTrace } from "./tracing.js";
 import { estimateModelCost, RunUsage, type UsageSnapshot } from "./usage.js";
 
 const MAXIMUM_LEASE_LABEL_CHARACTERS = 200;
@@ -193,22 +189,11 @@ export async function drive(
   try {
     const recording = createRecordingClient(endpoints.stationUrl);
     if (config.record) await recording.ensure();
-    const tracer = new Tracer(stationSpanSink(connection));
-    const environment: RunEnvironment = {
-      connection,
-      robot,
-      lease,
-      tracer,
-      memory: new TaskMemory(config.task),
-      arm: config.arm,
-      cameras: config.cameras,
-      leaseLost: () => leaseLost,
-      print,
-    };
     let taskEnded = false;
     let cancelled = false;
     let incomplete = false;
-    const result = await tracer.span(
+    const result = await withStationTrace(
+      connection,
       "invoke_agent hebbian",
       {
         [KIND_ATTRIBUTE]: "run",
@@ -218,7 +203,18 @@ export async function drive(
         "hebbian.arm": config.arm,
         "hebbian.task": config.task,
       },
-      async (runSpan) => {
+      async (runSpan, withSpan) => {
+        const environment: RunEnvironment = {
+          connection,
+          robot,
+          lease,
+          withSpan,
+          memory: new TaskMemory(config.task),
+          arm: config.arm,
+          cameras: config.cameras,
+          leaseLost: () => leaseLost,
+          print,
+        };
         const outcome = await runLoop(config, environment, usage, options).then(
           (ending) => {
             taskEnded = true;
@@ -391,7 +387,7 @@ async function setTurnAttributes(
       span.setAttribute("hebbian.reasoning_summaries", turn.reasoningSummaries);
   } else {
     span.setAttribute("hebbian.tool_calls", []);
-    span.setError("The model declined the task");
+    markSpanError(span, "The model declined the task");
   }
   if (turn.usage) {
     const estimatedCost = await estimateModelCost(provider, turn.usage);
@@ -415,7 +411,7 @@ async function runTurns(
   firstObservation: RevisedObservation,
   signal: AbortSignal | undefined,
 ): Promise<LoopEnding> {
-  const { connection, robot, lease, tracer, arm } = environment;
+  const { connection, robot, lease, withSpan, arm } = environment;
   let lastObservation = firstObservation;
   let modelTurns = 0;
   while (
@@ -445,7 +441,7 @@ async function runTurns(
         `Arm fault; loop stopped: ${faultedArms.map((snapshot) => `${snapshot.arm}: ${snapshot.fault}`).join("; ")}`,
       );
     modelTurns += 1;
-    const turn = await tracer.span(
+    const turn = await withSpan(
       `chat ${config.provider}`,
       {
         [KIND_ATTRIBUTE]: "model",

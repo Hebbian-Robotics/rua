@@ -1,7 +1,20 @@
-// Report spans at start and finish so the viewer can show work in progress.
-// A small sink suffices here: IDs, parents, attributes and W3C trace context.
-
-import { randomBytes } from "node:crypto";
+import {
+  type Attributes,
+  type Context,
+  defaultTextMapSetter,
+  type HrTime,
+  ROOT_CONTEXT,
+  type Span,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from "@opentelemetry/api";
+import { W3CTraceContextPropagator } from "@opentelemetry/core";
+import {
+  type ReadableSpan,
+  type SpanProcessor,
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import type {
   ClientMessage,
   StationConnection,
@@ -11,116 +24,115 @@ import { StationConnectionError } from "hebbian-rua";
 
 export const KIND_ATTRIBUTE = "hebbian.kind";
 
-export type AttributeValue = string | number | boolean | string[];
-export type Attributes = Record<string, AttributeValue>;
 export type WireSpan = Required<
   Extract<ClientMessage, { kind: "run_spans" }>["spans"][number]
 >;
 
-export type SpanSink = (spans: WireSpan[]) => void;
+const wireStatusCodes = {
+  [SpanStatusCode.UNSET]: "STATUS_CODE_UNSET",
+  [SpanStatusCode.OK]: "STATUS_CODE_OK",
+  [SpanStatusCode.ERROR]: "STATUS_CODE_ERROR",
+} as const;
 
-export type UnixNanosecondsClock = () => bigint;
-const systemClock: UnixNanosecondsClock = () => BigInt(Date.now()) * 1_000_000n;
+function unixNanoseconds([seconds, nanoseconds]: HrTime): string {
+  return (BigInt(seconds) * 1_000_000_000n + BigInt(nanoseconds)).toString();
+}
 
-export function stationSpanSink(connection: StationConnection): SpanSink {
-  return (spans) => {
+function stationSpanProcessor(connection: StationConnection): SpanProcessor {
+  function reportSpan(span: ReadableSpan, active: boolean): void {
+    const { spanId, traceId } = span.spanContext();
+    const start = unixNanoseconds(span.startTime);
+
     try {
-      connection.recordRunSpans(spans);
+      connection.recordRunSpans([
+        {
+          trace_id: traceId,
+          span_id: spanId,
+          parent_span_id: span.parentSpanContext?.spanId ?? null,
+          name: span.name,
+          start_time_unix_nano: start,
+          end_time_unix_nano: active ? start : unixNanoseconds(span.endTime),
+          attributes: active
+            ? { ...span.attributes, "hebbian.active": true }
+            : span.attributes,
+          status: {
+            code: wireStatusCodes[span.status.code],
+            message: span.status.message ?? null,
+          },
+        },
+      ]);
     } catch (error) {
       if (!(error instanceof StationConnectionError)) throw error;
     }
+  }
+
+  return {
+    // The viewer uses the start update to show work while the span is open.
+    onStart: (span) => reportSpan(span, true),
+    onEnd: (span) => reportSpan(span, false),
+    forceFlush: () => Promise.resolve(),
+    shutdown: () => Promise.resolve(),
   };
 }
 
-export class Span {
-  private readonly attributes: Attributes;
-  private status: WireSpan["status"] = {
-    code: "STATUS_CODE_UNSET",
-    message: null,
-  };
-  private readonly startNanoseconds: bigint;
-  readonly spanId = randomBytes(8).toString("hex");
+const traceContextPropagator = new W3CTraceContextPropagator();
 
-  constructor(
-    private readonly tracer: Tracer,
-    readonly name: string,
-    attributes: Attributes,
-    readonly traceId: string,
-    private readonly parentSpanId: string | null,
-  ) {
-    this.attributes = { ...attributes };
-    this.startNanoseconds = tracer.clock();
-    tracer.sink([
-      this.wire({ ...this.attributes, "hebbian.active": true }, tracer.clock()),
-    ]);
-  }
-
-  setAttribute(key: string, value: AttributeValue): void {
-    this.attributes[key] = value;
-  }
-
-  setAttributes(attributes: Attributes): void {
-    Object.assign(this.attributes, attributes);
-  }
-
-  setError(message: string): void {
-    this.status = { code: "STATUS_CODE_ERROR", message };
-  }
-
-  traceContext(): TraceContext {
-    return {
-      traceparent: `00-${this.traceId}-${this.spanId}-01`,
-      tracestate: null,
-    };
-  }
-
-  end(): void {
-    this.tracer.sink([this.wire(this.attributes, this.tracer.clock())]);
-  }
-
-  private wire(attributes: Attributes, endNanoseconds: bigint): WireSpan {
-    return {
-      trace_id: this.traceId,
-      span_id: this.spanId,
-      parent_span_id: this.parentSpanId,
-      name: this.name,
-      start_time_unix_nano: this.startNanoseconds.toString(),
-      end_time_unix_nano: endNanoseconds.toString(),
-      attributes,
-      status: this.status,
-    };
-  }
+export function traceContextForSpan(span: Span): TraceContext | undefined {
+  const headers: Record<string, string> = {};
+  traceContextPropagator.inject(
+    trace.setSpan(ROOT_CONTEXT, span),
+    headers,
+    defaultTextMapSetter,
+  );
+  const { traceparent, tracestate } = headers;
+  return traceparent === undefined
+    ? undefined
+    : { traceparent, tracestate: tracestate ?? null };
 }
 
-export class Tracer {
-  private readonly traceId = randomBytes(16).toString("hex");
-  private root: Span | null = null;
+export function markSpanError(span: Span, message: string): void {
+  span.setStatus({ code: SpanStatusCode.ERROR, message });
+}
 
-  constructor(
-    readonly sink: SpanSink,
-    readonly clock: UnixNanosecondsClock = systemClock,
-  ) {}
-
-  async span<Result>(
+function spanRunner(tracer: Tracer, parent: Context) {
+  return async function withSpan<Result>(
     name: string,
     attributes: Attributes,
     work: (span: Span) => Promise<Result>,
   ): Promise<Result> {
-    const span = new Span(
-      this,
-      name,
-      attributes,
-      this.traceId,
-      this.root?.spanId ?? null,
-    );
-    this.root ??= span;
+    const span = tracer.startSpan(name, { attributes }, parent);
     try {
       return await work(span);
     } catch (error) {
-      span.setError(error instanceof Error ? error.message : String(error));
+      markSpanError(
+        span,
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     } finally {
       span.end();
     }
+  };
+}
+
+export type SpanRunner = ReturnType<typeof spanRunner>;
+
+export async function withStationTrace<Result>(
+  connection: StationConnection,
+  name: string,
+  attributes: Attributes,
+  work: (runSpan: Span, withChildSpan: SpanRunner) => Promise<Result>,
+): Promise<Result> {
+  const provider = new TracerProvider({
+    spanProcessors: [stationSpanProcessor(connection)],
+  });
+  const tracer = provider.getTracer("hebbian.agent");
+  const withRootSpan = spanRunner(tracer, ROOT_CONTEXT);
+  try {
+    return await withRootSpan(name, attributes, (runSpan) =>
+      work(runSpan, spanRunner(tracer, trace.setSpan(ROOT_CONTEXT, runSpan))),
+    );
+  } finally {
+    await provider.shutdown();
   }
 }

@@ -18,8 +18,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",
     "@google/genai": "2.32.0",
-    "hebbian-rua": "workspace:*",
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/core": "2.12.0",
+    "@opentelemetry/sdk-trace": "2.12.0",
     "@pydantic/genai-prices": "^0.2.3",
+    "commander": "15.1.0",
+    "hebbian-rua": "workspace:*",
     "openai": "7.55.0",
     "zod": "4.6.7"
   },

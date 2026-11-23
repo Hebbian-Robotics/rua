@@ -1,13 +1,12 @@
-import argparse
-import asyncio
 import base64
 import json
 import re
 import time
 from collections.abc import Awaitable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
+from cyclopts import App, Parameter
 from openai import AsyncOpenAI
 
 from hebbian_rua import RobotTools, StationClient
@@ -155,21 +154,21 @@ async def ask(
             await expect(arm.disable())  # the rest pose is supported by the table
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description=CLI_HELP)
-    parser.add_argument(
-        "--camera", required=True, help="Name of the station's wrist camera"
-    )
-    parser.add_argument("--model", default="gpt-6.2-astra", help="OpenAI model ID")
-    parser.add_argument(
-        "--workspace",
-        default=DEFAULT_WORKSPACE,
-        help="Where questions apply; objects elsewhere are ignored",
-    )
-    arguments = parser.parse_args()
+command_line = App(help=CLI_HELP, version_flags=())
+
+
+@command_line.default
+async def main(
+    *,
+    camera: Annotated[str, Parameter(help="Name of the station's wrist camera.")],
+    model: Annotated[str, Parameter(help="OpenAI model ID.")] = "gpt-6.2-astra",
+    workspace: Annotated[
+        str, Parameter(help="Where questions apply. Objects elsewhere are ignored.")
+    ] = DEFAULT_WORKSPACE,
+) -> None:
     load_environment()
     async with StationClient() as station, AsyncOpenAI() as client:
-        await station.camera_jpeg(arguments.camera)
+        await station.camera_jpeg(camera)
         while True:
             # No lease is held here; main-thread stdin lets Ctrl-C exit promptly.
             question = input(  # noqa: ASYNC250
@@ -180,12 +179,12 @@ async def main() -> None:
             await ask(
                 station,
                 client,
-                arguments.model,
-                arguments.workspace,
+                model,
+                workspace,
                 question,
-                arguments.camera,
+                camera,
             )
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    command_line()

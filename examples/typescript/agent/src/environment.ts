@@ -3,7 +3,7 @@
 import type { createRobotTools, Lease, StationConnection } from "hebbian-rua";
 import { StationConnectionError } from "hebbian-rua";
 import type { TaskMemory } from "./tools.js";
-import type { Tracer } from "./tracing.js";
+import type { SpanRunner } from "./tracing.js";
 
 type RobotTools = ReturnType<typeof createRobotTools>;
 
@@ -12,7 +12,7 @@ export interface RunEnvironment {
   robot: RobotTools;
 
   lease: Lease;
-  tracer: Tracer;
+  withSpan: SpanRunner;
   memory: TaskMemory;
   arm: string;
 

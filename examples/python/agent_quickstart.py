@@ -1,10 +1,9 @@
-import argparse
-import asyncio
 import json
 import os
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from typing import Annotated, Literal
 
+from cyclopts import App, Parameter, validators
 from pydantic import BaseModel, ConfigDict
 
 from hebbian_rua import (
@@ -34,6 +33,7 @@ DEFAULT_MODELS: Mapping[Provider, str] = {
     "anthropic": "claude-fable-5-2",
 }
 DEFAULT_MAX_TURNS = 20
+command_line = App(help=CLI_HELP, version_flags=())
 
 
 class FinishArguments(BaseModel):
@@ -255,13 +255,6 @@ async def run_task(
                 await run_gemini(robot, task, model, instructions, max_turns)
 
 
-def positive_turn_limit(value: str) -> int:
-    turns = int(value)
-    if turns < 1:
-        raise argparse.ArgumentTypeError("expected a positive turn limit")
-    return turns
-
-
 def resolve_model(
     provider: Provider, explicit_model: str | None, environment: Mapping[str, str]
 ) -> str:
@@ -307,56 +300,73 @@ def resolve_provider(
     )
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=CLI_HELP)
-    parser.add_argument("task")
-    parser.add_argument(
-        "--provider",
-        choices=PROVIDER_PRIORITY,
-        help="Default: first configured API key in order OpenAI, Gemini, Anthropic",
-    )
-    parser.add_argument(
-        "--model",
-        help="Model ID (overrides OPENAI_MODEL, ANTHROPIC_MODEL or GEMINI_MODEL)",
-    )
-    parser.add_argument(
-        "--max-turns",
-        type=positive_turn_limit,
-        default=DEFAULT_MAX_TURNS,
-        help=f"Maximum number of model turns (default: {DEFAULT_MAX_TURNS})",
-    )
-    parser.add_argument("--arm", help="Arm name. Defaults to the station's sole arm.")
-    parser.add_argument("--camera", action="append", default=[])
-    parser.add_argument("--server", help="Station URL (overrides HEBBIAN_STATION_URL)")
-    parser.add_argument(
-        "--media-server", help="Media URL (overrides HEBBIAN_MEDIA_SERVER)"
-    )
-    arguments = parser.parse_args()
+@command_line.default
+async def main(
+    task: str,
+    /,
+    *,
+    provider: Annotated[
+        Provider | None,
+        Parameter(
+            help="Defaults to the first configured key in order OpenAI, Gemini, Anthropic."
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        Parameter(
+            help="Model ID. Overrides OPENAI_MODEL, ANTHROPIC_MODEL or GEMINI_MODEL."
+        ),
+    ] = None,
+    max_turns: Annotated[
+        int,
+        Parameter(
+            help="Maximum number of model turns.", validator=validators.Number(gte=1)
+        ),
+    ] = DEFAULT_MAX_TURNS,
+    arm: Annotated[
+        str | None, Parameter(help="Arm name. Defaults to the station's sole arm.")
+    ] = None,
+    camera: Annotated[
+        tuple[str, ...],
+        Parameter(help="Camera name. Repeat for multiple cameras.", negative=False),
+    ] = (),
+    server: Annotated[
+        str | None, Parameter(help="Station URL. Overrides HEBBIAN_STATION_URL.")
+    ] = None,
+    media_server: Annotated[
+        str | None, Parameter(help="Media URL. Overrides HEBBIAN_MEDIA_SERVER.")
+    ] = None,
+) -> int | None:
     load_environment()
-    provider = resolve_provider(arguments.provider, os.environ)
+    resolved_provider = resolve_provider(provider, os.environ)
     try:
-        model = resolve_model(provider, arguments.model, os.environ)
+        resolved_model = resolve_model(resolved_provider, model, os.environ)
     except ValueError as error:
-        parser.error(str(error))
-    if configured_api_key(provider, os.environ) is None:
-        parser.error(f"Set {provider.upper()}_API_KEY before running the agent")
+        command_line.error_console.print(str(error), markup=False)
+        return 2
+    if configured_api_key(resolved_provider, os.environ) is None:
+        command_line.error_console.print(
+            f"Set {resolved_provider.upper()}_API_KEY before running the agent"
+        )
+        return 2
 
-    async def main() -> None:
-        async with StationClient(
-            arguments.server, media_server=arguments.media_server
-        ) as station:
-            try:
-                arm_name = await station.resolve_arm_name(arguments.arm)
-            except ValueError as error:
-                parser.error(str(error))
-            await run_task(
-                station,
-                provider,
-                model,
-                arguments.task,
-                arm_name,
-                arguments.camera,
-                arguments.max_turns,
-            )
+    async with StationClient(server, media_server=media_server) as station:
+        try:
+            arm_name = await station.resolve_arm_name(arm)
+        except ValueError as error:
+            command_line.error_console.print(str(error), markup=False)
+            return 2
+        await run_task(
+            station,
+            resolved_provider,
+            resolved_model,
+            task,
+            arm_name,
+            list(camera),
+            max_turns,
+        )
+    return None
 
-    asyncio.run(main())
+
+if __name__ == "__main__":
+    command_line()

@@ -9,7 +9,7 @@
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
+import { Command, CommanderError, Option } from "commander";
 import { DEFAULT_STATION_URL, type OnInterruption } from "hebbian-rua";
 import { type LoopConfig, requirePositiveModelTurnLimit } from "./loop.js";
 import { cameraNames } from "./observation.js";
@@ -25,33 +25,68 @@ import { apiKeyFromEnvironment, configuredApiKey, runAgent } from "./run.js";
 
 const PROVIDER_PRIORITY = ["openai", "gemini", "anthropic"] as const;
 
-export const USAGE = `Usage: hebbian-agent [options] [--] [<arm>] <task>
+function createCommand(): Command {
+  return new Command("hebbian-agent")
+    .usage("[options] [--] [<arm>] <task>")
+    .allowExcessArguments()
+    .option("--arm <name>", "Arm name. Defaults to the station's sole arm.")
+    .option(
+      "--server <url>",
+      `Station URL. Defaults to HEBBIAN_STATION_URL or ${DEFAULT_STATION_URL}.`,
+    )
+    .option(
+      "--media-server <url>",
+      "Direct camera service. Defaults to HEBBIAN_MEDIA_SERVER or the station URL.",
+    )
+    .option("--camera <names>", "Comma-separated cameras to show the model.")
+    .option(
+      "--optional-camera <names>",
+      "Comma-separated cameras that may be unavailable.",
+    )
+    .addOption(
+      new Option(
+        "--provider <name>",
+        "Defaults to the first configured key in order OpenAI, Gemini, Anthropic.",
+      ).choices(PROVIDERS),
+    )
+    .option(
+      "--model <id>",
+      "Defaults to the provider's *_MODEL variable or example model.",
+    )
+    .option("--max-turns <count>", "Maximum number of model turns.", (value) =>
+      requirePositiveModelTurnLimit(Number(value)),
+    )
+    .addOption(
+      new Option(
+        "--reasoning-effort <level>",
+        "Most Gemini models refuse xhigh.",
+      )
+        .choices(REASONING_EFFORTS)
+        .default(DEFAULT_REASONING_EFFORT),
+    )
+    .addOption(
+      new Option(
+        "--on-interruption <action>",
+        "What to do when the arm needs recovery.",
+      )
+        .choices(["wait_for_approval", "return_lease"])
+        .default("wait_for_approval"),
+    )
+    .option("--record", "Record this run.");
+}
 
-  --arm NAME              Arm name; defaults to the station's sole arm
-
-  --server URL            The station's HTTP URL (default $HEBBIAN_STATION_URL or ${DEFAULT_STATION_URL})
-  --media-server URL      Direct camera service (default $HEBBIAN_MEDIA_SERVER or the station URL)
-  --camera NAMES          Comma-separated cameras to show the model; omitted sends state only
-  --optional-camera NAMES Comma-separated cameras that may be unavailable
-  --provider NAME         ${PROVIDERS.join(", ")} (default: first configured key in order OpenAI, Gemini, Anthropic)
-  --model ID              Model ID (default: provider's *_MODEL variable or example model)
-  --max-turns COUNT       Optional maximum number of model turns
-  --reasoning-effort LVL  ${REASONING_EFFORTS.join(", ")} (default ${DEFAULT_REASONING_EFFORT}); most Gemini models refuse xhigh
-  --on-interruption WHAT  wait_for_approval (default) or return_lease when the arm needs recovery
-  --record                Record this run
-  -h, --help              Print this usage`;
-
-function oneOf<Choice extends string>(
-  name: string,
-  value: string,
-  choices: readonly Choice[],
-): Choice {
-  const choice = choices.find((candidate) => candidate === value);
-  if (choice === undefined)
-    throw new Error(
-      `--${name} must be one of ${choices.join(", ")}, not ${value}`,
-    );
-  return choice;
+interface CommandOptions {
+  arm?: string;
+  server?: string;
+  mediaServer?: string;
+  camera?: string;
+  optionalCamera?: string;
+  provider?: Provider;
+  model?: string;
+  maxTurns?: number;
+  reasoningEffort: ReasoningEffort;
+  onInterruption: OnInterruption;
+  record?: boolean;
 }
 
 export interface CommandLine {
@@ -64,26 +99,21 @@ export function parseCommandLine(
   argv: string[],
   environment: NodeJS.ProcessEnv = process.env,
 ): CommandLine | "help" {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      arm: { type: "string" },
-      server: { type: "string" },
-      "media-server": { type: "string" },
-      camera: { type: "string" },
-      "optional-camera": { type: "string" },
-      provider: { type: "string" },
-      model: { type: "string" },
-      "max-turns": { type: "string" },
-      "reasoning-effort": { type: "string" },
-      "on-interruption": { type: "string" },
-      record: { type: "boolean" },
-      help: { type: "boolean", short: "h" },
-    },
-  });
-  if (values.help) return "help";
-  const [armOrTask, taskForNamedArm, ...extra] = positionals;
+  const command = createCommand()
+    .exitOverride()
+    .configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  try {
+    command.parse(argv, { from: "user" });
+  } catch (error) {
+    if (
+      error instanceof CommanderError &&
+      error.code === "commander.helpDisplayed"
+    )
+      return "help";
+    throw error;
+  }
+  const values = command.opts<CommandOptions>();
+  const [armOrTask, taskForNamedArm, ...extra] = command.args;
   if (armOrTask === undefined || extra.length > 0)
     throw new Error("Pass <task> or <arm> <task>");
   if (values.arm !== undefined && taskForNamedArm !== undefined)
@@ -91,29 +121,21 @@ export function parseCommandLine(
   const arm =
     values.arm ?? (taskForNamedArm === undefined ? undefined : armOrTask);
   const required = cameraNames(values.camera);
-  const optional = cameraNames(values["optional-camera"]);
+  const optional = cameraNames(values.optionalCamera);
   if (required.some((name) => optional.includes(name)))
     throw new Error("Camera names must be unique");
   const provider =
-    values.provider === undefined
-      ? (PROVIDER_PRIORITY.find(
-          (candidate) => configuredApiKey(candidate, environment) !== undefined,
-        ) ?? PROVIDER_PRIORITY[0])
-      : oneOf<Provider>("provider", values.provider, PROVIDERS);
+    values.provider ??
+    PROVIDER_PRIORITY.find(
+      (candidate) => configuredApiKey(candidate, environment) !== undefined,
+    ) ??
+    PROVIDER_PRIORITY[0];
   const environmentModel = environment[`${provider.toUpperCase()}_MODEL`];
   const model =
     values.model ?? (environmentModel?.trim() ? environmentModel : null);
   if (model !== null && !model.trim())
     throw new Error("Pass a nonempty model ID with --model");
-  const maxModelTurns =
-    values["max-turns"] === undefined
-      ? undefined
-      : requirePositiveModelTurnLimit(Number(values["max-turns"]));
-  const reasoningEffort = oneOf<ReasoningEffort>(
-    "reasoning-effort",
-    values["reasoning-effort"] ?? DEFAULT_REASONING_EFFORT,
-    REASONING_EFFORTS,
-  );
+  const { maxTurns: maxModelTurns, reasoningEffort } = values;
   const effortProblem = unsupportedReasoningEffort(
     provider,
     model,
@@ -125,7 +147,7 @@ export function parseCommandLine(
   return {
     server,
     mediaServer:
-      values["media-server"] ?? environment["HEBBIAN_MEDIA_SERVER"] ?? server,
+      values.mediaServer ?? environment["HEBBIAN_MEDIA_SERVER"] ?? server,
     config: {
       ...(arm === undefined ? {} : { arm }),
       task: taskForNamedArm ?? armOrTask,
@@ -135,11 +157,7 @@ export function parseCommandLine(
       model,
       ...(maxModelTurns === undefined ? {} : { maxModelTurns }),
       reasoningEffort,
-      onInterruption: oneOf<OnInterruption>(
-        "on-interruption",
-        values["on-interruption"] ?? "wait_for_approval",
-        ["wait_for_approval", "return_lease"],
-      ),
+      onInterruption: values.onInterruption,
       record: values.record ?? false,
     },
   };
@@ -160,7 +178,7 @@ async function main(): Promise<number> {
   loadDotEnvironment();
   const commandLine = parseCommandLine(process.argv.slice(2));
   if (commandLine === "help") {
-    console.log(USAGE);
+    createCommand().outputHelp();
     return 0;
   }
   const { config, server, mediaServer } = commandLine;
