@@ -429,7 +429,7 @@ mod tests {
         let directory = artifact.directory().unwrap();
         let original_compilation = std::fs::read(directory.join("compilation.json")).unwrap();
         let manifest: serde_json::Value = serde_json::from_slice(&original_compilation).unwrap();
-        assert_eq!(manifest["schema_version"], 1);
+        assert_eq!(manifest["schema_version"], COMPILATION_SCHEMA_VERSION);
         assert_eq!(
             manifest["compilation_id"],
             artifact.compilation.compilation_id
