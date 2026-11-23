@@ -4,6 +4,8 @@ packages:
   - typescript-client
   - examples/typescript/agent
 minimumReleaseAge: 4320
+minimumReleaseAgeExclude:
+  - "hebbian-rua@0.1.4"
 allowBuilds:
   esbuild: true
   workerd: true

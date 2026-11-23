@@ -3,7 +3,7 @@
 Run an example robot-use agent built with the
 [TypeScript SDK](../../../typescript-client/README.md). Give it a task and
 the LLM uses robot observations and tools to decide what to do.
-The example uses the local workspace SDK and supports Anthropic, OpenAI,
+The example installs the published TypeScript SDK and supports Anthropic, OpenAI,
 and Gemini.
 
 ## Run the agent
