@@ -23,6 +23,11 @@ enum PreparedAction {
     },
 }
 
+pub(crate) enum SingleCommandRoute {
+    Prepared(PreparedArmAction),
+    Direct(hebbian_contracts::Command),
+}
+
 impl PreparedArmAction {
     pub(crate) fn movement(arm: String, movement: PreparedMovement) -> Self {
         Self {
@@ -51,6 +56,55 @@ impl PreparedArmAction {
             (Some(movement), None) => Some(Self::movement(arm, movement)),
             (None, Some(gripper)) => Some(Self::gripper(arm, gripper)),
             (None, None) => None,
+        }
+    }
+
+    pub(crate) fn from_single_command(
+        arm: String,
+        command: hebbian_contracts::Command,
+    ) -> SingleCommandRoute {
+        use hebbian_contracts::Command;
+
+        match command {
+            Command::Move {
+                label,
+                plan,
+                joint_speed,
+                path_limited,
+                pose_limited,
+            } => SingleCommandRoute::Prepared(Self::movement(
+                arm,
+                PreparedMovement::Trajectory {
+                    label,
+                    plan,
+                    joint_speed,
+                    path_limited,
+                    pose_limited,
+                },
+            )),
+            Command::ReachPose {
+                label,
+                position,
+                orientation,
+            } => SingleCommandRoute::Prepared(Self::movement(
+                arm,
+                PreparedMovement::PolicyPose {
+                    label,
+                    position,
+                    orientation,
+                },
+            )),
+            Command::SetGripper { angle, joint_speed } => SingleCommandRoute::Prepared(
+                Self::gripper(arm, PreparedGripper { angle, joint_speed }),
+            ),
+            other @ (Command::Enable
+            | Command::ApproveRecovery
+            | Command::Disable
+            | Command::Stop
+            | Command::ClearFault
+            | Command::Shutdown
+            | Command::StreamJoints { .. }
+            | Command::StreamPose { .. }) => SingleCommandRoute::Direct(other),
         }
     }
 
