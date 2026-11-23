@@ -60,7 +60,9 @@ precedence over these files.
 ## Watch a USB camera
 
 1. With LiveKit configured and the station running, get a viewer token on the
-   station host:
+   station host. The command below uses the source-built station's API. For the
+   bundled `v0.1.4` station used in [Getting started](getting-started.md),
+   use `/viewer/api/token`.
 
    ```sh
    curl --fail http://127.0.0.1:8792/media/access-token
