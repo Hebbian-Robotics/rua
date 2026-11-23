@@ -68,7 +68,6 @@ fn station_without_arms_reports_unavailable() {
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
-        None,
         Arc::new(DiscardTelemetry),
         Arc::default(),
         |_, _| Ok(axum::Router::new()),
@@ -91,7 +90,6 @@ fn health_answers_and_a_trace_is_listed_and_served_compressed() {
     let server = HttpServer::start(
         "127.0.0.1:0",
         vec![traces],
-        None,
         Arc::new(DiscardTelemetry),
         Arc::default(),
         |_, _| Ok(axum::Router::new()),
@@ -137,7 +135,6 @@ fn an_address_in_use_is_refused_with_the_address_and_the_reason() {
     let Err(error) = HttpServer::start(
         &address,
         Vec::new(),
-        None,
         Arc::new(DiscardTelemetry),
         Arc::default(),
         |_, _| Ok(axum::Router::new()),

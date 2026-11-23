@@ -92,7 +92,6 @@ impl SimulatedStation {
             HttpServer::start(
                 "127.0.0.1:0",
                 vec![],
-                None,
                 Arc::new(LiveRunStore::default()),
                 Arc::default(),
                 |runtime, address| {
@@ -100,7 +99,6 @@ impl SimulatedStation {
                         runtime,
                         address,
                         WebSettings {
-                            viewer_directory: None,
                             local_cameras_only: false,
                             recordings_directory: std::env::temp_dir(),
                             enable_recording: false,

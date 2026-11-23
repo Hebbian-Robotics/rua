@@ -794,7 +794,7 @@ async fn run_telemetry_resumes_after_the_last_action_sequence_number() -> TestRe
 
 type StubRequests = Arc<std::sync::Mutex<Vec<(String, String, serde_json::Value)>>>;
 
-/// Stands in for the station's `/viewer/api` lease and recording routes: logs each
+/// Stands in for the station's media and recording routes: logs each
 /// request and answers with the shapes the real ones return.
 fn stub_station_routes(requests: StubRequests) -> axum::Router {
     async fn answer(
@@ -819,7 +819,7 @@ fn stub_station_routes(requests: StubRequests) -> axum::Router {
             ("GET", path) if path.ends_with("/recording/status") => {
                 serde_json::json!({"state": "idle"})
             }
-            ("GET", path) if path.ends_with("/media-status") => {
+            ("GET", "/media/status") => {
                 serde_json::json!({
                     "service": {"state": "running"},
                     "cameras": {
@@ -834,7 +834,8 @@ fn stub_station_routes(requests: StubRequests) -> axum::Router {
         axum::Json(reply)
     }
     axum::Router::new()
-        .route("/viewer/api/{*rest}", axum::routing::any(answer))
+        .route("/recording/{*rest}", axum::routing::any(answer))
+        .route("/media/status", axum::routing::get(answer))
         .with_state(requests)
 }
 
@@ -856,7 +857,7 @@ async fn a_lease_sends_its_token_with_its_recording_route() -> TestResult {
     let [(_, recording_path, recording)] = seen.as_slice() else {
         return Err(format!("unexpected requests {seen:?}").into());
     };
-    assert_eq!(recording_path, "/viewer/api/recording/stop-for-lease");
+    assert_eq!(recording_path, "/recording/stop-for-lease");
     assert!(recording["lease_token"].is_string());
     Ok(())
 }

@@ -263,12 +263,10 @@ pub(crate) fn run_supervised(
     let mut mounted = None;
     let media_status = web.media_status.clone();
     let local_cameras_only = web.local_cameras_only;
-    let mut web = web;
     let live_run = Arc::new(LiveRunStore::default());
     let server = HttpServer::start(
         http_address,
         directories,
-        web.viewer_directory.take(),
         live_run.clone(),
         Arc::clone(&shutdown_requested),
         |runtime, bound| {

@@ -19,7 +19,7 @@ pub(crate) struct Arguments {
 pub(crate) enum Command {
     /// Serve the station for a robot profile: build each arm's config, drive its
     /// servos, an external simulator or the no-physics stand-in, and serve the HTTP API,
-    /// the viewer, recording and lease routes over HTTP.
+    /// recordings and lease routes.
     Serve {
         #[command(flatten)]
         arguments: serve::ServeArguments,
@@ -141,9 +141,11 @@ pub(crate) enum Command {
 /// `LiveKit` credentials come from `LIVEKIT_URL`, `LIVEKIT_API_KEY` and
 /// `LIVEKIT_API_SECRET`; without them `LiveKit` cameras are unavailable.
 #[derive(clap::Args)]
+#[expect(clippy::struct_excessive_bools, reason = "Independent CLI switches")]
 pub(crate) struct WebArguments {
-    #[command(flatten)]
-    viewer: ViewerArguments,
+    /// Use local camera snapshots only. Phone invites require `LiveKit`.
+    #[arg(long, conflicts_with = "enable_recording")]
+    local_cameras_only: bool,
     /// Where `hebbian-robot-use-media` writes recordings, one directory per recording.
     #[arg(
         long,
@@ -176,31 +178,12 @@ pub(crate) struct WebArguments {
     manual_control: bool,
 }
 
-#[derive(clap::Args)]
-struct ViewerArguments {
-    /// Serve the viewer with local camera snapshots only. Phone invites require `LiveKit`.
-    #[arg(long, conflicts_with = "enable_recording")]
-    local_cameras_only: bool,
-    /// Run without serving the example viewer.
-    #[arg(long)]
-    headless: bool,
-}
-
 impl WebArguments {
-    pub(crate) fn settings(self) -> anyhow::Result<hebbian_robot_use_server::web::WebSettings> {
+    pub(crate) fn settings(self) -> hebbian_robot_use_server::web::WebSettings {
         use hebbian_robot_use_server::web::{CameraForwarding, WebSettings};
 
-        let viewer_directory = (!self.viewer.headless)
-            .then(hebbian_robot_use_core::station_api::default_viewer_directory)
-            .flatten();
-        if viewer_directory.is_some() && !self.viewer.local_cameras_only {
-            station_access::Credentials::from_environment().map_err(|error| anyhow::anyhow!(
-                "{error}. Add the missing settings to .env and rerun this command. LiveKit setup: https://github.com/Hebbian-Robotics/rua/blob/main/docs/cameras.md#connect-a-usb-camera"
-            ))?;
-        }
-        Ok(WebSettings {
-            viewer_directory,
-            local_cameras_only: self.viewer.local_cameras_only,
+        WebSettings {
+            local_cameras_only: self.local_cameras_only,
             recordings_directory: self.recordings_directory,
             enable_recording: self.enable_recording,
             media_address: None,
@@ -214,7 +197,7 @@ impl WebArguments {
             phone_page_url: self.phone_page_url,
             manual_control: self.manual_control,
             media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
-        })
+        }
     }
 }
 

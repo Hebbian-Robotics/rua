@@ -62,7 +62,7 @@ export function createStationHttpClient(
   async function cameraProblem(name: string): Promise<string | null> {
     try {
       const status = apiSchemas.shape.MediaStatusReport.parse(
-        await stationRequest(new URL("/viewer/api/media-status", stationUrl)),
+        await stationRequest(new URL("/media/status", stationUrl)),
       );
       const camera = status.cameras[name];
       return camera ? snapshotProblem(camera) : null;

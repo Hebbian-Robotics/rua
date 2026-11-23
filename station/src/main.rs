@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
         .with_ansi(false)
         .init();
     match Arguments::parse().command {
-        Command::Serve { arguments, web } => serve::serve(arguments, web.settings()?),
+        Command::Serve { arguments, web } => serve::serve(arguments, web.settings()),
         Command::Controller {
             arms,
             station_socket,

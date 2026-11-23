@@ -7209,6 +7209,15 @@ export const apiSchemas = z.object({
       "shutdown",
     ])
     .describe("State-changing commands with no position target."),
+  ControlCapabilities: z
+    .object({
+      manual_pose_control: z
+        .boolean()
+        .describe(
+          "Whether this station is configured for manual pose control.",
+        ),
+    })
+    .describe("`GET /control/capabilities`."),
   ControllerKind: z.enum(["ik", "policy"]),
   ControllerStatus: z.union([
     z.object({ phase: z.literal("unmanaged") }),
@@ -10841,7 +10850,7 @@ export const apiSchemas = z.object({
       ]),
     })
     .describe(
-      "`GET /viewer/api/media-status`: the media service and its configured cameras.",
+      "`GET /media/status`: the media service and its configured cameras.",
     ),
   MoveArmsCommand: z
     .object({
@@ -13756,7 +13765,7 @@ export const apiSchemas = z.object({
     .object({
       label: z.string().describe("The phone streams as `phone_<label>`."),
     })
-    .describe("`POST /viewer/api/phone-invites`."),
+    .describe("`POST /media/phone-invites`."),
   PlanStep: z.object({
     status: z.enum(["pending", "active", "done", "failed"]),
     text: z.string(),
@@ -21182,30 +21191,6 @@ export const apiSchemas = z.object({
     })
     .describe("One span of a model loop's trace, in OpenTelemetry's terms."),
   UnixNanos: z.string().regex(/^[0-9]+$/),
-  ViewerControl: z
-    .object({
-      mode: z
-        .union([
-          z
-            .literal("llm")
-            .describe("A model loop drives; the viewer only watches."),
-          z
-            .literal("so101_manual")
-            .describe("The viewer's pose controls drive a single SO-101."),
-        ])
-        .describe("What the viewer shows for driving the arm."),
-    })
-    .describe("`GET /viewer/api/control-mode`."),
-  ViewerControlMode: z
-    .union([
-      z
-        .literal("llm")
-        .describe("A model loop drives; the viewer only watches."),
-      z
-        .literal("so101_manual")
-        .describe("The viewer's pose controls drive a single SO-101."),
-    ])
-    .describe("What the viewer shows for driving the arm."),
   Waypoint: z
     .union([
       z.object({ joints: z.array(z.number()), kind: z.literal("joints") }),

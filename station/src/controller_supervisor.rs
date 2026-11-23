@@ -422,8 +422,8 @@ async fn reconnect(
 
 pub fn router(supervisor: ControllerSupervisor) -> Router {
     Router::new()
-        .route("/viewer/api/controller", get(read_status))
-        .route("/viewer/api/controller/reconnect", post(reconnect))
+        .route("/controller", get(read_status))
+        .route("/controller/reconnect", post(reconnect))
         .with_state(supervisor)
 }
 

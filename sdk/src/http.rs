@@ -119,12 +119,7 @@ impl Station {
 
     async fn camera_problem(&self, name: &str) -> Option<String> {
         let status: MediaStatusReport = self
-            .request(
-                Method::GET,
-                &self.server,
-                &["viewer", "api", "media-status"],
-                None::<&()>,
-            )
+            .request(Method::GET, &self.server, &["media", "status"], None::<&()>)
             .await
             .ok()?
             .json()

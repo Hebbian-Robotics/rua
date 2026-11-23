@@ -82,7 +82,7 @@ impl CameraProxy {
         std::collections::BTreeMap<hebbian_contracts::CameraName, hebbian_contracts::CameraStatus>,
     > {
         let mut url = self.camera_list_url.clone();
-        url.set_path("/viewer/api/media-status");
+        url.set_path("/media/status");
         self.client
             .get(url)
             .timeout(Duration::from_secs(1))

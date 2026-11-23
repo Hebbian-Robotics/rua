@@ -1,6 +1,6 @@
 [package]
 name = "hebbian-robot-use-core"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 rust-version = "1.92"
 authors = ["Hebbian Robotics"]
@@ -31,7 +31,6 @@ sha2 = "0.10.9"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "fs", "sync", "io-util", "time", "macros"] }
 tokio-stream = "0.1.19"
 tokio-util = { version = "0.7.20", features = ["io"] }
-tower-http = { version = "0.6.11", default-features = false, features = ["fs", "set-header"] }
 toml = "0.9.12"
 urdf-rs = "0.10.0"
 uuid = { version = "1", features = ["v4"] }
