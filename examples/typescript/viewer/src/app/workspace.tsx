@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import type { LiveRun, StationState } from "hebbian-rua";
 import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
 import { BotIcon, HandIcon } from "lucide-react";
@@ -13,10 +12,6 @@ import {
 import { Alert } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
-import {
-  type MediaStatus,
-  mediaStatusSchema,
-} from "../../shared/media-status-schema.js";
 import { agentApi, resolveAgentUrl } from "../agent-api.js";
 import { stationJson } from "../api.js";
 import { errorMessage } from "../errors.js";
@@ -27,6 +22,7 @@ import {
   CameraView,
 } from "../features/cameras/live-cameras.js";
 import { PhoneCameraSetup } from "../features/cameras/phone-camera-setup.js";
+import { useMediaStatus } from "../features/cameras/use-media-status.js";
 import { ArmControl } from "../features/control/arm-control.js";
 import { controlModeLockReason } from "../features/control/control-mode.js";
 import { ControllerRecovery } from "../features/control/controller-recovery.js";
@@ -60,51 +56,6 @@ type ControlMode = (typeof CONTROL_MODES)[number]["value"];
 const CONTROL_MODE_KEY = "hebbian-viewer-control-mode:v1";
 const EMPTY_SPANS: LiveRun["spans"] = [];
 const noSeek = (): void => {};
-
-function useMediaStatus(): string {
-  const query = useQuery<MediaStatus>({
-    queryKey: ["media-status"],
-    queryFn: async () =>
-      mediaStatusSchema.parse(await stationJson("api/media-status")),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
-    retry: false,
-  });
-  if (query.isError || !query.data) return "";
-  const service = query.data.service;
-  switch (service.state) {
-    case "running":
-      return Object.entries(query.data.cameras)
-        .flatMap(([name, camera]) => {
-          switch (camera.state) {
-            case "resolving":
-            case "starting":
-              return [];
-            case "disconnected":
-              return [`${name}: camera disconnected`];
-            case "ambiguous":
-              return [`${name}: multiple USB cameras matched`];
-            case "stalled":
-              return [`${name}: capture stalled, retrying`];
-            case "failed":
-              return [`${name}: ${camera.detail}`];
-            case "capturing":
-              return camera.publication.state === "reconnecting"
-                ? [`${name}: local capture active, reconnecting to LiveKit`]
-                : [];
-            default: {
-              const unexpected: never = camera;
-              return unexpected;
-            }
-          }
-        })
-        .join(" · ");
-    case "restarting":
-      return `Media service restarting: ${service.last_exit}`;
-    case "unavailable":
-      return `Media service unavailable: ${service.reason}`;
-  }
-}
 
 function RecoveryControls({ state }: { state: StationState | null }) {
   const [messages, setMessages] = useState<Record<string, string>>({});

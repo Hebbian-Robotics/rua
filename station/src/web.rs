@@ -148,6 +148,23 @@ impl Mounted {
     }
 }
 
+async fn media_status_response(
+    media_status: &crate::media_status::MediaStatus,
+    proxy: Option<&crate::camera_proxy::CameraProxy>,
+) -> Result<Json<hebbian_contracts::MediaStatusReport>, Refusal> {
+    media_status
+        .report_with_cameras(proxy)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            tracing::debug!(%error, "Camera status unavailable");
+            Refusal(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Camera status could not be refreshed".to_owned(),
+            )
+        })
+}
+
 pub fn mount(
     runtime: &tokio::runtime::Handle,
     address: SocketAddr,
@@ -225,11 +242,7 @@ pub fn mount(
         .route(
             "/viewer/api/media-status",
             get(move || async move {
-                Json(
-                    media_status
-                        .report_with_cameras(status_proxy.as_deref())
-                        .await,
-                )
+                media_status_response(&media_status, status_proxy.as_deref()).await
             }),
         )
         .nest(

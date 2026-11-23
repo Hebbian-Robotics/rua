@@ -809,11 +809,11 @@ fn stub_station_routes(requests: StubRequests) -> axum::Router {
             }
             ("GET", path) if path.ends_with("/media-status") => {
                 serde_json::json!({
-                    "programs": {},
-                    "cameras": {"wrist": {
-                        "detail": "camera backend: Could not open device 0x1: Device is null",
-                        "last_seen_unix_seconds": 1.0
-                    }}
+                    "service": {"state": "running"},
+                    "cameras": {
+                        "wrist": {"state": "disconnected"},
+                        "front": {"state": "capturing", "publication": {"state": "publishing"}}
+                    }
                 })
             }
             _ => serde_json::Value::Null,
@@ -1380,7 +1380,7 @@ async fn a_camera_without_a_frame_reports_the_cameras_listed_and_the_latest_fail
     assert_eq!(listed.len(), 1);
     assert_eq!(
         last_error.as_deref(),
-        Some("camera backend: Could not open device 0x1: Device is null")
+        Some("USB camera disconnected (no matching device)")
     );
     media_task.abort();
     Ok(())

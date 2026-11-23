@@ -34,16 +34,13 @@ impl MediaStatus {
     pub(crate) async fn report_with_cameras(
         &self,
         proxy: Option<&crate::camera_proxy::CameraProxy>,
-    ) -> MediaStatusReport {
+    ) -> reqwest::Result<MediaStatusReport> {
         let mut report = self.report();
         if let Some(proxy) = proxy
             && report.service == MediaState::Running
         {
-            match proxy.camera_status().await {
-                Ok(cameras) => report.cameras = cameras,
-                Err(error) => tracing::debug!(%error, "Camera status unavailable"),
-            }
+            report.cameras = proxy.camera_status().await?;
         }
-        report
+        Ok(report)
     }
 }

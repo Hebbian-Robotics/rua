@@ -39,6 +39,7 @@ from hebbian_rua.client.contract.station_api import (
     LeaseRequest,
     LeaseStatus,
     LeaseToken,
+    MediaStatusReport,
     MoveArmsCommand,
     ObservationAnswer,
     ObservationRequest,
@@ -505,15 +506,45 @@ class StationClient:
         )
 
     async def _camera_problem(self, name: str) -> str | None:
-        """The latest failure the station saw in the media service's output for a
-        camera, or None when it has none or cannot be asked."""
         try:
             response = await self._station_http.get("/viewer/api/media-status")
             response.raise_for_status()
-            detail = response.json()["cameras"][name]["detail"]
-        except (httpx2.HTTPError, KeyError, ValueError):
+            camera = MediaStatusReport.model_validate_json(
+                response.content
+            ).cameras.get(name)
+        except (httpx2.HTTPError, ValueError):
             return None
-        return detail if isinstance(detail, str) else None
+        if camera is None:
+            return None
+        match camera.state:
+            case "resolving":
+                return "Looking up the camera"
+            case "starting":
+                return "Waiting for the first local frame"
+            case "disconnected":
+                return "USB camera disconnected (no matching device)"
+            case "ambiguous":
+                return (
+                    "USB camera is ambiguous (multiple matching devices). "
+                    "Use rua camera-devices and pass --camera NAME=DEVICE"
+                )
+            case "stalled":
+                return "Local camera capture stalled. Retrying"
+            case "failed":
+                return camera.detail
+            case "capturing":
+                publication = camera.publication
+                match publication.state:
+                    case "connecting":
+                        return "Local frames available. Connecting to LiveKit"
+                    case "reconnecting":
+                        return (
+                            "Local frames available. LiveKit reconnecting"
+                            if publication.detail is None
+                            else f"Local frames available. LiveKit reconnecting: {publication.detail}"
+                        )
+                    case "disabled" | "publishing":
+                        return None
 
     async def start_recording(self) -> str:
         return await self._api.start_recording()

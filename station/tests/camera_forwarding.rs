@@ -134,6 +134,17 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
             )
             .await;
             media_task.abort();
+            let _ = media_task.await;
+            let response = Client::new()
+                .get(format!("{base}/viewer/api/media-status"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(
+                response.json::<serde_json::Value>().await.unwrap(),
+                json!({"detail": "Camera status could not be refreshed"})
+            );
         });
     shutdown.store(true, Ordering::Release);
     controller.join().unwrap();

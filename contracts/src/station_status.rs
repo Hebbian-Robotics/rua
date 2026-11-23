@@ -71,6 +71,38 @@ pub enum CameraStatus {
     Failed { detail: String },
 }
 
+impl CameraStatus {
+    /// Explain why a fresh snapshot may be unavailable.
+    #[must_use]
+    pub fn snapshot_problem(&self) -> Option<String> {
+        let detail = match self {
+            Self::Resolving => "Looking up the camera",
+            Self::Starting => "Waiting for the first local frame",
+            Self::Disconnected => "USB camera disconnected (no matching device)",
+            Self::Ambiguous => {
+                "USB camera is ambiguous (multiple matching devices). Use rua camera-devices and pass --camera NAME=DEVICE"
+            }
+            Self::Stalled => "Local camera capture stalled. Retrying",
+            Self::Failed { detail } => detail,
+            Self::Capturing { publication } => match publication {
+                CameraPublication::Connecting => "Local frames available. Connecting to LiveKit",
+                CameraPublication::Reconnecting {
+                    detail: Some(detail),
+                } => {
+                    return Some(format!(
+                        "Local frames available. LiveKit reconnecting: {detail}"
+                    ));
+                }
+                CameraPublication::Reconnecting { detail: None } => {
+                    "Local frames available. LiveKit reconnecting"
+                }
+                CameraPublication::Disabled | CameraPublication::Publishing => return None,
+            },
+        };
+        Some(detail.to_owned())
+    }
+}
+
 /// Room publication is independent of the local capture lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "state", rename_all = "snake_case")]

@@ -202,8 +202,8 @@ class _MediaWithOneStalledCamera(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
         elif self.path == "/viewer/api/media-status":
             body = (
-                b'{"service": {"state": "running"}, "cameras": {"wrist": {"detail": '
-                b'"camera backend: Device is null", "last_seen_unix_seconds": 1.0}}}'
+                b'{"service":{"state":"running"},"cameras":{"wrist":{"state":"stalled"},'
+                b'"front":{"state":"capturing","publication":{"state":"publishing"}}}}'
             )
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -239,7 +239,9 @@ def test_a_camera_without_a_frame_names_the_cameras_the_media_service_lists(
             assert failure.value.name == "wrist"
             assert [camera.name for camera in failure.value.listed] == ["wrist"]
             assert "wrist (unavailable)" in str(failure.value)
-            assert failure.value.last_error == "camera backend: Device is null"
-            assert "last error: camera backend: Device is null" in str(failure.value)
+            assert failure.value.last_error == "Local camera capture stalled. Retrying"
+            assert "last error: Local camera capture stalled. Retrying" in str(
+                failure.value
+            )
 
     asyncio.run(exercise())

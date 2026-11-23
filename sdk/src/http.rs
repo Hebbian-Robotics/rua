@@ -1,7 +1,7 @@
 //! The station's HTTP routes: the generated per-route methods (`generated/http_routes.rs`)
 //! and the few that read more than a body.
 
-use hebbian_contracts::RecordingStatus;
+use hebbian_contracts::{MediaStatusReport, RecordingStatus};
 use reqwest::{Method, Response, Url};
 use serde::Serialize;
 
@@ -96,10 +96,8 @@ impl Station {
         })
     }
 
-    /// The latest failure the station saw in the media programs' output for a camera, when
-    /// it can be asked and has one.
     async fn camera_problem(&self, name: &str) -> Option<String> {
-        let status: serde_json::Value = self
+        let status: MediaStatusReport = self
             .request(
                 Method::GET,
                 &self.server,
@@ -111,9 +109,7 @@ impl Station {
             .json()
             .await
             .ok()?;
-        status["cameras"][name]["detail"]
-            .as_str()
-            .map(str::to_owned)
+        status.cameras.get(name)?.snapshot_problem()
     }
 
     /// Start recording, or join the recording already running (as across a
