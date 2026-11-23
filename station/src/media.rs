@@ -68,6 +68,7 @@ pub(crate) struct MediaPlan {
     pub address: SocketAddr,
     pub room: String,
     pub cameras: BTreeMap<String, String>,
+    pub usb_cameras: BTreeMap<String, String>,
     pub simulator_camera_socket: Option<PathBuf>,
 }
 
@@ -93,6 +94,9 @@ impl MediaPlan {
         }
         for (name, device) in &self.cameras {
             arguments.extend(["--camera".to_owned(), format!("{name}={device}")]);
+        }
+        for (name, identity) in &self.usb_cameras {
+            arguments.extend(["--usb-camera".to_owned(), format!("{name}={identity}")]);
         }
         arguments
     }

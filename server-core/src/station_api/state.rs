@@ -1,7 +1,7 @@
 // SAFETY: Expired feedback must be presented as unavailable or faulted, never as a live arm.
 
 use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use crate::control_link::LinkHandle;
 use hebbian_contracts::{ArmMode, ArmState, ControllerKind, StationState};
@@ -43,12 +43,10 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
         link.planner()
             .and_then(|planner| planner.describe(&sample.positions).ok())
     });
-    let sampled_at_unix_seconds = age.and_then(|age| {
-        SystemTime::now()
-            .checked_sub(age)
-            .and_then(|at| at.duration_since(UNIX_EPOCH).ok())
-            .map(|since| since.as_secs_f64())
-    });
+    let sampled_at_unix_seconds = view
+        .as_ref()
+        .and_then(|view| view.sample_received_at)
+        .map(|at| Duration::from_nanos(at.0).as_secs_f64());
     let (interlocks, revision) = link.interlocks();
     ArmState {
         arm: arm.to_owned(),

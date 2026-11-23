@@ -24,6 +24,23 @@ profile or environment changes. A graceful shutdown can attempt to return to
 the recorded rest pose before releasing torque. See
 [failure handling](control-invariants.md#failure-responses).
 
+### Check a running station
+
+```sh
+rua status --camera wrist
+```
+
+The check looks for advancing arm feedback, which works with torque off, and
+requests a fresh JPEG from the named camera. Leave out `--camera` to skip the
+snapshot check. For a station on another address, pass `--server URL`.
+If the station serves snapshots only from its media companion, pass
+`--media-server URL`.
+
+The LiveKit check briefly joins the room without publishing or subscribing to
+tracks. It reports whether video is published, the room is waiting for cameras,
+or the join failed. With LiveKit off, local station and camera checks still
+run. A failed check returns a nonzero exit status.
+
 ### HTTP and event access
 
 Use the [OpenAPI contract](../schemas/openapi.json) for routes and payloads.

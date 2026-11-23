@@ -4,7 +4,10 @@ pub use hebbian_so101::discovery::{
     ControllerMatch, ControllerSerial, UsbController, discover, match_controllers,
 };
 use hebbian_so101::setup::{ArmSetup, ModelVariant};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 pub fn default_config_directory() -> anyhow::Result<PathBuf> {
     if let Some(directory) =
@@ -103,6 +106,37 @@ fn apply_motion_overrides(path: &Path, profile: &mut RobotProfile) -> anyhow::Re
     Ok(())
 }
 
+fn read_camera_file<T: serde::de::DeserializeOwned + Default>(path: &Path) -> anyhow::Result<T> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            toml::from_str(&content).with_context(|| format!("Cannot parse {}", path.display()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+        Err(error) => Err(error).with_context(|| format!("Cannot read {}", path.display())),
+    }
+}
+
+fn registered_cameras(
+    arm_directory: &Path,
+    model_variant: ModelVariant,
+) -> anyhow::Result<BTreeMap<String, String>> {
+    let model = match model_variant {
+        ModelVariant::Stock => "stock",
+        ModelVariant::SoftGripperCamera => "soft-gripper-camera",
+    };
+    let mut cameras = BTreeMap::new();
+    if let Some(registry) = arm_directory.parent().and_then(Path::parent) {
+        let mut defaults: BTreeMap<String, BTreeMap<String, String>> =
+            read_camera_file(&registry.join("camera-defaults.toml"))?;
+        cameras.extend(defaults.remove(model).unwrap_or_default());
+    }
+    let overrides: BTreeMap<String, String> =
+        read_camera_file(&arm_directory.join("cameras.toml"))?;
+    cameras.extend(overrides);
+    cameras.retain(|_, identity| identity != "none");
+    Ok(cameras)
+}
+
 impl RegisteredController {
     pub fn load_profile(&self, profile_directory: &Path) -> anyhow::Result<RobotProfile> {
         let setup_path = self.directory.join("setup.toml");
@@ -124,6 +158,7 @@ impl RegisteredController {
         // WHY: Give native hardware setup time for bounded serial fault cleanup before guard takeover.
         profile.guard.heartbeat_timeout_seconds = 3.0;
         apply_motion_overrides(&self.directory.join("motion.toml"), &mut profile)?;
+        profile.usb_cameras = registered_cameras(&self.directory, setup.model_variant)?;
         profile.name = format!("so101-{}", setup.serial);
         let arm_name = "arm".to_owned();
         profile.arms = vec![arm_name.clone()];

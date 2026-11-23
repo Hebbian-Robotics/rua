@@ -185,8 +185,15 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
     }
     // INVARIANT: The station and the media service must name the same room.
     let room = web.room.get_or_insert_with(new_room_name).clone();
-    let mut cameras = robot_profile.cameras.clone();
+    let mut cameras = robot_profile.cameras;
+    let mut usb_cameras = if matches!(plant, PlantSelection::Servos) {
+        robot_profile.usb_cameras
+    } else {
+        std::collections::BTreeMap::new()
+    };
+    usb_cameras.retain(|name, _| !cameras.contains_key(name));
     for (name, device) in arguments.cameras {
+        usb_cameras.remove(&name);
         match device {
             Some(device) => cameras.insert(name, device),
             None => cameras.remove(&name),
@@ -197,6 +204,7 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
         address: arguments.media_address,
         room,
         cameras,
+        usb_cameras,
         simulator_camera_socket: matches!(plant, PlantSelection::Simulator { .. })
             .then(|| directory.join(SIMULATOR_CAMERA_SOCKET)),
     };

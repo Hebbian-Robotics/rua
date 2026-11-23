@@ -1,5 +1,6 @@
 mod config;
 mod snapshots;
+mod usb_camera;
 
 use livekit_cameras::error;
 
@@ -16,19 +17,21 @@ struct MediaArguments {
 enum MediaCommand {
     /// List local video capture devices.
     CameraDevices,
+    #[command(hide = true)]
+    ProbeLivekit,
     Record(livekit_cameras::recorder::Arguments),
     Serve(config::ServeArguments),
 }
 
-use config::{CameraConfiguration, ServeArguments};
+use config::{CameraInput, ServeArguments};
 use error::PublisherError;
 use livekit_camera_publisher::{capture, publisher};
 use station_access::Credentials;
-use std::{sync::Arc, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 async fn publish_camera_until_stopped(
-    camera: CameraConfiguration,
+    camera: CameraInput,
     room: String,
     credentials: Arc<Credentials>,
     stopped: CancellationToken,
@@ -41,9 +44,7 @@ async fn publish_camera_until_stopped(
                 camera.name(),
                 station_access::CameraLifetime::Station,
             )?;
-            let mut publishing_camera =
-                CameraConfiguration::new(camera.name().to_owned(), camera.device().to_owned())?;
-            publishing_camera.publishing = camera.publishing;
+            let publishing_camera = camera.resolve().await?;
             publisher::publish_camera(
                 publishing_camera,
                 &access.server_url,
@@ -171,6 +172,7 @@ fn run_with_runtime() -> Result<(), PublisherError> {
 async fn run() -> Result<(), PublisherError> {
     match MediaArguments::parse().command {
         MediaCommand::CameraDevices => list_camera_devices(),
+        MediaCommand::ProbeLivekit => probe_livekit().await,
         MediaCommand::Serve(arguments) => serve(arguments).await,
         MediaCommand::Record(arguments) => {
             livekit_cameras::recorder::record(arguments).await?;
@@ -191,5 +193,26 @@ fn list_camera_devices() -> Result<(), PublisherError> {
         })
         .collect();
     println!("{}", serde_json::Value::Array(devices));
+    Ok(())
+}
+
+async fn probe_livekit() -> Result<(), PublisherError> {
+    use hebbian_contracts::RoomAccess;
+    use livekit::{Room, RoomOptions, track::TrackKind};
+
+    // INVARIANT: Read the short-lived room token from stdin to keep it out of process arguments.
+    let access: RoomAccess = serde_json::from_reader(io::stdin().lock())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid room access input"))?;
+    let mut options = RoomOptions::default();
+    options.auto_subscribe = false;
+    let (room, _events) = Room::connect(&access.server_url, &access.token, options).await?;
+    let has_video = room.remote_participants().values().any(|participant| {
+        participant
+            .track_publications()
+            .values()
+            .any(|publication| publication.kind() == TrackKind::Video && !publication.is_muted())
+    });
+    room.close().await?;
+    println!("{has_video}");
     Ok(())
 }

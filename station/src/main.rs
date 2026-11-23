@@ -3,6 +3,7 @@ mod media;
 mod run;
 mod serve;
 mod so101;
+mod status;
 mod tools;
 
 use clap::Parser;
@@ -44,6 +45,18 @@ fn main() -> anyhow::Result<()> {
         Command::So101Discover {
             so101_config_directory,
         } => so101::print_discovered(so101_config_directory.as_deref()),
+        Command::Status {
+            server,
+            media_server,
+            camera,
+        } => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(status::check(
+                &server,
+                media_server.as_ref(),
+                camera.as_deref(),
+            )),
         Command::CameraDevices { media_executable } => media::list_camera_devices(media_executable),
         Command::CheckArm { config } => tools::check_arm(&config),
         Command::Disable { config } => tools::disable_arm(&config),

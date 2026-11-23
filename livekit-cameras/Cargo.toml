@@ -37,6 +37,9 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "process", "io-util"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+v4l = "0.14"
+
 [dev-dependencies]
 prost = "0.14"
 hebbian-robot-use-core = { path = "../server-core" }
