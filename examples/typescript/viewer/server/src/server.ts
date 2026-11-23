@@ -8,6 +8,7 @@ import type { ZodType } from "zod";
 import { DEFAULT_MODELS } from "../../../agent/src/providers/types.js";
 import {
   type Provider,
+  RUN_STREAM_HEARTBEAT_EVENT,
   type RunEvent,
   runRequestSchema,
 } from "../../shared/run-api.js";
@@ -17,6 +18,8 @@ import {
   RunNotFoundError,
   RunSettingsError,
 } from "./run-manager.js";
+
+const RUN_STREAM_HEARTBEAT_MILLISECONDS = 10_000;
 
 export interface AppOptions {
   manager: RunManager;
@@ -97,7 +100,21 @@ export function createApp({
               ended = true;
           }
           if (!ended && !stream.aborted && queue.length === 0) {
-            await new Promise<void>((resolve) => (wake = resolve));
+            const isIdle = await new Promise<boolean>((resolve) => {
+              const timer = setTimeout(
+                () => resolve(true),
+                RUN_STREAM_HEARTBEAT_MILLISECONDS,
+              );
+              wake = () => {
+                clearTimeout(timer);
+                resolve(false);
+              };
+            });
+            if (isIdle && !stream.aborted)
+              await stream.writeSSE({
+                event: RUN_STREAM_HEARTBEAT_EVENT,
+                data: "",
+              });
           }
         }
       } finally {

@@ -4,6 +4,8 @@
 import { z } from "zod";
 import { REASONING_EFFORTS } from "../../agent/src/providers/types.js";
 
+export const RUN_STREAM_HEARTBEAT_EVENT = "heartbeat";
+
 export const reasoningEffortSchema = z.enum(REASONING_EFFORTS);
 export const providerSchema = z.enum(["anthropic", "openai", "gemini"]);
 export type Provider = z.infer<typeof providerSchema>;

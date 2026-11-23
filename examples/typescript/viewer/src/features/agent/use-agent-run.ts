@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { match } from "ts-pattern";
 import {
   isRunActive,
+  RUN_STREAM_HEARTBEAT_EVENT,
   type Run,
   runEventSchema,
 } from "../../../shared/run-api.js";
@@ -10,6 +11,7 @@ import { agentApi } from "../../agent-api.js";
 import { errorMessage } from "../../errors.js";
 
 const IDLE_POLL_MILLISECONDS = 3000;
+const STREAM_IDLE_MILLISECONDS = 30_000;
 const OUTPUT_LINE_LIMIT = 200;
 
 type AgentServerStatus = "checking" | "reachable" | "unreachable";
@@ -59,7 +61,23 @@ export function useAgentRun(baseUrl: string) {
   useEffect(() => {
     if (activeId === null || streamFailed) return;
     const source = new EventSource(`${baseUrl}/api/runs/${activeId}/events`);
+    let idleDeadline: ReturnType<typeof setTimeout>;
+    function closeStream() {
+      clearTimeout(idleDeadline);
+      source.close();
+    }
+    function fallBackToPolling() {
+      closeStream();
+      setStreamFailed(true);
+    }
+    function resetIdleDeadline() {
+      clearTimeout(idleDeadline);
+      idleDeadline = setTimeout(fallBackToPolling, STREAM_IDLE_MILLISECONDS);
+    }
+    resetIdleDeadline();
+    source.addEventListener(RUN_STREAM_HEARTBEAT_EVENT, resetIdleDeadline);
     source.onmessage = (message) => {
+      resetIdleDeadline();
       let payload: unknown;
       try {
         payload = JSON.parse(message.data);
@@ -72,7 +90,7 @@ export function useAgentRun(baseUrl: string) {
         .with({ type: "snapshot" }, ({ run }) => setRun(run))
         .with({ type: "phase" }, ({ phase }) => {
           setRun((previous) => previous && { ...previous, phase });
-          if (phase.state === "ended") source.close();
+          if (phase.state === "ended") closeStream();
         })
         .with({ type: "persistence_error" }, ({ detail }) =>
           setRun(
@@ -94,11 +112,8 @@ export function useAgentRun(baseUrl: string) {
         )
         .exhaustive();
     };
-    source.onerror = () => {
-      source.close();
-      setStreamFailed(true);
-    };
-    return () => source.close();
+    source.onerror = fallBackToPolling;
+    return closeStream;
   }, [baseUrl, activeId, streamFailed, setRun]);
 
   return {

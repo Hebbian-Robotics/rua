@@ -2130,6 +2130,7 @@ dependencies = [
  "axum",
  "cameras",
  "clap",
+ "futures-util",
  "hebbian-mcap",
  "hebbian-robot-use-core",
  "hebbian-robot-use-server",
