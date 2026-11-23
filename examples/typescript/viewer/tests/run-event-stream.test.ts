@@ -1,3 +1,4 @@
+import { ok } from "node:assert/strict";
 import { afterEach, expect, test, vi } from "vitest";
 import { RUN_STREAM_HEARTBEAT_EVENT } from "../shared/run-api.js";
 import {
@@ -46,7 +47,7 @@ test("a quiet stream switches to polling and a successful poll reopens it", () =
 
   openCurrentRun();
   const [first] = RunEventSource.instances;
-  if (!first) throw new Error("The active run did not open a stream");
+  ok(first, "The active run did not open a stream");
   vi.advanceTimersByTime(20_000);
   first.dispatchEvent(new Event(RUN_STREAM_HEARTBEAT_EVENT));
   vi.advanceTimersByTime(20_000);
@@ -60,8 +61,7 @@ test("a quiet stream switches to polling and a successful poll reopens it", () =
   recovery = runStreamRecovery("poll_succeeded");
   const cleanup = openCurrentRun();
   const [, reopened] = RunEventSource.instances;
-  if (!reopened)
-    throw new Error("The successful poll did not reopen the stream");
+  ok(reopened, "The successful poll did not reopen the stream");
   expect(reopened.url).toBe(first.url);
   expect(reopened.closed).toBe(false);
   cleanup?.();
