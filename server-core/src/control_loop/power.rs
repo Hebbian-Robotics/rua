@@ -2,19 +2,82 @@ use std::time::Instant;
 
 use super::runner::Runner;
 use crate::arm::Now;
-use crate::limits::{check_effort, max_joint_deviation};
+use crate::config::ControllerConfig;
+use crate::limits::{Trip, check_effort, max_joint_deviation};
+use crate::motion_values::MeasuredPositions;
 use crate::plant::{Feedback, Pacing, Plant};
 use hebbian_robot_geometry::joint_limits::RecoveryRefusal;
 const STARTUP_HOLD_SECONDS: f64 = 0.25;
 const SHUTDOWN_AT_REST_RADIANS: f64 = 0.01;
+
+enum EnableDecision {
+    ObserveAgain,
+    Confirmed,
+}
+
+#[derive(Debug)]
+enum EnableRefusal<'a> {
+    Drift,
+    FeedbackFault(&'a str),
+    Effort(Trip),
+}
+
+impl std::fmt::Display for EnableRefusal<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Drift => formatter.write_str("Moved during enable"),
+            Self::FeedbackFault(fault) => write!(formatter, "Enable not confirmed: {fault}"),
+            Self::Effort(trip) => formatter.write_str(&trip.0),
+        }
+    }
+}
+
+struct StartupHold<'a> {
+    config: &'a ControllerConfig,
+    initial: MeasuredPositions<'a>,
+    remaining_observations: f64,
+}
+
+impl<'a> StartupHold<'a> {
+    fn new(config: &'a ControllerConfig, initial: MeasuredPositions<'a>) -> Self {
+        Self {
+            config,
+            initial,
+            remaining_observations: (STARTUP_HOLD_SECONDS * config.frequency_hertz).ceil(),
+        }
+    }
+
+    fn observe<'feedback>(
+        &mut self,
+        fresh: MeasuredPositions<'_>,
+        fault: Option<&'feedback str>,
+        efforts: &[f64],
+    ) -> Result<EnableDecision, EnableRefusal<'feedback>> {
+        if let Some(checks) = &self.config.enable_checks
+            && max_joint_deviation(fresh.as_slice(), self.initial.as_slice())
+                > checks.enable_drift_limit_radians
+        {
+            return Err(EnableRefusal::Drift);
+        }
+        if let Some(fault) = fault {
+            return Err(EnableRefusal::FeedbackFault(fault));
+        }
+        check_effort(self.config, efforts).map_err(EnableRefusal::Effort)?;
+        if self.config.enable_checks.is_none() || self.remaining_observations <= 0.0 {
+            return Ok(EnableDecision::Confirmed);
+        }
+        self.remaining_observations -= 1.0;
+        Ok(EnableDecision::ObserveAgain)
+    }
+}
 
 impl<P: Plant> Runner<'_, P> {
     pub(super) fn enable_checked(&mut self) -> anyhow::Result<Feedback> {
         let config = self.config;
         self.plant.preflight()?;
         let initial = self.plant.read_feedback()?;
-        initial.measured_positions(config)?;
-        if let Err(error) = config.recovery_limits().clamp(&initial.positions) {
+        let initial_positions = initial.measured_positions(config)?;
+        if let Err(error) = config.recovery_limits().clamp(initial_positions.as_slice()) {
             return Err(match error {
                 RecoveryRefusal::OutsideRecovery { .. } => anyhow::anyhow!(
                     "{error}; move the arm inside its limits by hand before enabling"
@@ -28,7 +91,7 @@ impl<P: Plant> Runner<'_, P> {
             let settled = self.plant.read_feedback()?;
             let settled_positions = settled.measured_positions(config)?;
             anyhow::ensure!(
-                max_joint_deviation(settled_positions.as_slice(), &initial.positions)
+                max_joint_deviation(settled_positions.as_slice(), initial_positions.as_slice())
                     <= checks.preflight_drift_limit_radians,
                 "Moved during preflight"
             );
@@ -36,25 +99,20 @@ impl<P: Plant> Runner<'_, P> {
         self.plant.enable()?;
         let period_seconds = 1.0 / config.frequency_hertz;
         let period = config.control_timing.period;
-        let observation_cycles = (STARTUP_HOLD_SECONDS * config.frequency_hertz).ceil();
-        let mut observed_cycles = 0.0;
+        let mut startup_hold = StartupHold::new(config, initial_positions);
         loop {
             let cycle_started = Instant::now();
             let fresh = self.plant.read_feedback()?;
-            let fresh_positions = fresh.measured_positions(config)?;
-            if let Some(checks) = &config.enable_checks {
-                anyhow::ensure!(
-                    max_joint_deviation(fresh_positions.as_slice(), &initial.positions)
-                        <= checks.enable_drift_limit_radians,
-                    "Moved during enable"
-                );
-            }
-            if let Some(fault) = &fresh.fault {
-                anyhow::bail!("Enable not confirmed: {fault}");
-            }
-            check_effort(config, &fresh.efforts).map_err(|trip| anyhow::anyhow!(trip.0))?;
-            if config.enable_checks.is_none() || observed_cycles >= observation_cycles {
-                return Ok(fresh);
+            match startup_hold
+                .observe(
+                    fresh.measured_positions(config)?,
+                    fresh.fault.as_deref(),
+                    &fresh.efforts,
+                )
+                .map_err(|refusal| anyhow::anyhow!("{refusal}"))?
+            {
+                EnableDecision::Confirmed => return Ok(fresh),
+                EnableDecision::ObserveAgain => {}
             }
 
             self.plant.heartbeat()?;
@@ -62,7 +120,6 @@ impl<P: Plant> Runner<'_, P> {
             if self.plant.pacing() != Pacing::RepliesAsFastAsPossible {
                 std::thread::sleep(period.saturating_sub(cycle_started.elapsed()));
             }
-            observed_cycles += 1.0;
         }
     }
 
