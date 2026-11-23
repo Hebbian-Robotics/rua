@@ -63,7 +63,7 @@ fn mv_planned(from: [f64; 2], to: [f64; 2]) -> Command {
     Command::Move {
         label: "move_to_joints".into(),
         plan: plan(from, to),
-        joint_speed: 1.0,
+        joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
         path_limited: None,
         pose_limited: None,
     }
@@ -185,7 +185,8 @@ fn a_gripper_goal_past_its_range_is_clamped_and_a_non_finite_one_refused() {
             .submit(
                 Command::SetGripper {
                     angle: 0.5,
-                    joint_speed: requested,
+                    joint_speed: requested
+                        .map(|speed| hebbian_contracts::JointSpeed::new(speed).unwrap()),
                 },
                 at(2.0),
             )
@@ -200,15 +201,11 @@ fn a_gripper_goal_past_its_range_is_clamped_and_a_non_finite_one_refused() {
             expected
         );
     }
-    assert_eq!(
-        reason(core.submit(
-            Command::SetGripper {
-                angle: 0.5,
-                joint_speed: Some(0.0)
-            },
-            at(2.0)
-        )),
-        RejectionReason::InvalidTarget
+    assert!(
+        serde_json::from_value::<Command>(serde_json::json!({
+            "kind": "set_gripper", "angle": 0.5, "joint_speed": 0.0
+        }))
+        .is_err()
     );
 }
 
@@ -310,7 +307,7 @@ fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
             Command::StreamJoints {
                 gripper_angle: None,
                 positions: vec![0.1, 2.0],
-                joint_speed: Some(0.5),
+                joint_speed: Some(hebbian_contracts::JointSpeed::new(0.5).unwrap()),
                 stream_command_id: None,
             },
             at(2.0),
@@ -328,7 +325,7 @@ fn a_stream_takes_goals_by_id_until_it_ends_and_then_says_so() {
     assert_eq!(reason(wrong_length), RejectionReason::InvalidTarget);
     assert_eq!(stream_record_joints(&start), [0.1, 2.0]);
     assert_eq!(record_speed(&start), 0.5);
-    for joint_speed in [Some(9.0), None] {
+    for joint_speed in [Some(hebbian_contracts::JointSpeed::new(9.0).unwrap()), None] {
         let update = core
             .submit(
                 Command::StreamJoints {
@@ -673,7 +670,7 @@ fn stopped_short_detail(target_position: Option<[f64; 3]>) -> Option<String> {
     let command = Command::Move {
         label: "move_to_pose".into(),
         plan: pose_plan,
-        joint_speed: 1.0,
+        joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
         path_limited: None,
         pose_limited: None,
     };
@@ -737,7 +734,7 @@ fn malformed_motion_plans_are_refused_without_occupying_the_motion_channel() {
         let command = Command::Move {
             label: "invalid".into(),
             plan: motion_plan,
-            joint_speed: 0.5,
+            joint_speed: hebbian_contracts::JointSpeed::new(0.5).unwrap(),
             path_limited: None,
             pose_limited: None,
         };
@@ -832,14 +829,14 @@ proptest::proptest! {
     ) {
         use proptest::{prop_assert, prop_assert_eq};
         let (mut core, _) = enabled_core();
-        let gripper = core.submit(Command::SetGripper { angle: gripper_target, joint_speed: Some(speed) }, at(2.0)).unwrap();
+        let gripper = core.submit(Command::SetGripper { angle: gripper_target, joint_speed: Some(hebbian_contracts::JointSpeed::new(speed).unwrap()) }, at(2.0)).unwrap();
         let stream = core.submit(Command::StreamJoints {
-            positions: vec![0.25, 0.0], joint_speed: Some(speed), stream_command_id: None, gripper_angle: None,
+            positions: vec![0.25, 0.0], joint_speed: Some(hebbian_contracts::JointSpeed::new(speed).unwrap()), stream_command_id: None, gripper_angle: None,
         }, at(2.0)).unwrap();
         let previous_goal = core.stream_goal(&stream.command_id).unwrap().0.clone();
         let previous_record = core.record(&gripper.command_id).unwrap().clone();
         let invalid = Command::StreamJoints {
-            positions: vec![joint_target, 0.0], joint_speed: Some(speed),
+            positions: vec![joint_target, 0.0], joint_speed: Some(hebbian_contracts::JointSpeed::new(speed).unwrap()),
             stream_command_id: Some(stream.command_id.clone()), gripper_angle: Some(f64::NAN),
         };
         prop_assert!(core.submit(invalid, at(3.0)).is_err());

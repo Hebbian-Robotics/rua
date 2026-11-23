@@ -585,7 +585,7 @@ mod tests {
                 }],
                 peak_speed: 1.0,
             },
-            joint_speed: 1.0,
+            joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
             path_limited: None,
             pose_limited: None,
         }

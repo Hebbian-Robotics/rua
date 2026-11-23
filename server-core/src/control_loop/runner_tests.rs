@@ -793,7 +793,7 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
                 .submit_move(
                     "group",
                     motion(),
-                    0.5,
+                    hebbian_contracts::JointSpeed::new(0.5).unwrap(),
                     ShortOfTarget::default(),
                     Some(membership.clone()),
                     now,

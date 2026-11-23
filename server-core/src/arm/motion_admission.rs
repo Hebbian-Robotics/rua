@@ -106,7 +106,7 @@ impl MoveDecision {
     pub(crate) fn prepare(
         core: &ArmCore,
         plan: CornerPlan,
-        speed: f64,
+        speed: JointSpeed,
         scope: MotionScope,
     ) -> Result<Self, Rejection> {
         let invalid =
@@ -118,8 +118,6 @@ impl MoveDecision {
         let poses = core
             .poses()
             .ok_or_else(|| rejection(RejectionReason::NotEnabled, "Not holding"))?;
-        let speed = JointSpeed::new(speed)
-            .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
         if speed.radians_per_second() > core.limits.max_joint_speed {
             return Err(rejection(
                 RejectionReason::InvalidTarget,

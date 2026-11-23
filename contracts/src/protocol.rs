@@ -4,8 +4,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArmMode, ArmRecoveryIssue, CommandRecord, CornerPlan, IkResult, LeaseAnswer, PathLimited,
-    PlannedMotion, PoseDescription, PoseLimited, PoseProjection, RejectionReason, UnixNanos,
+    ArmMode, ArmRecoveryIssue, CommandRecord, CornerPlan, IkResult, JointSpeed, LeaseAnswer,
+    PathLimited, PlannedMotion, PoseDescription, PoseLimited, PoseProjection, RejectionReason,
+    UnixNanos,
 };
 
 /// One arm's part of a grouped move: a single straight run from where the arm
@@ -15,7 +16,7 @@ pub struct ArmMove {
     pub arm: String,
     pub plan: CornerPlan,
     /// The speed the plan was made at, after clamping; recorded.
-    pub joint_speed: f64,
+    pub joint_speed: JointSpeed,
     pub path_limited: Option<PathLimited>,
     pub pose_limited: Option<PoseLimited>,
 }

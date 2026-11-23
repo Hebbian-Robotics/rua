@@ -195,7 +195,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
             Command::Move {
                 label: "combined".into(),
                 plan: motion.plan,
-                joint_speed: 1.0,
+                joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
                 path_limited: None,
                 pose_limited: None,
             },
@@ -208,7 +208,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
         .submit(
             Command::SetGripper {
                 angle: 1.5,
-                joint_speed: Some(1.0),
+                joint_speed: Some(hebbian_contracts::JointSpeed::new(1.0).unwrap()),
             },
             Now::current(),
         )

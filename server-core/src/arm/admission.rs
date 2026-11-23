@@ -582,7 +582,7 @@ impl ArmCore {
         &mut self,
         label: &str,
         plan: CornerPlan,
-        joint_speed: f64,
+        joint_speed: JointSpeed,
         short: ShortOfTarget,
         group: Option<GroupMembership>,
         now: Now,
@@ -708,7 +708,7 @@ impl ArmCore {
     pub(super) fn submit_stream_joints(
         &mut self,
         positions: Vec<f64>,
-        joint_speed: Option<f64>,
+        joint_speed: Option<JointSpeed>,
         stream_command_id: Option<String>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
@@ -873,7 +873,7 @@ impl ArmCore {
     pub(crate) fn check_gripper_target(
         &self,
         angle: f64,
-        requested_speed: Option<f64>,
+        requested_speed: Option<JointSpeed>,
     ) -> Result<GripperTarget, Rejection> {
         let angle = self.check_gripper(angle)?;
         let speed = JointSpeed::for_request(
@@ -893,7 +893,7 @@ impl ArmCore {
     pub(super) fn submit_gripper(
         &mut self,
         angle: f64,
-        requested_speed: Option<f64>,
+        requested_speed: Option<JointSpeed>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
         let target = self.check_gripper_target(angle, requested_speed)?;

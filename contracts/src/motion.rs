@@ -51,18 +51,9 @@ impl JointSpeed {
     }
 
     /// # Errors
-    /// Refuses invalid requested, default or maximum speeds.
-    pub fn for_request(
-        requested: Option<f64>,
-        default: f64,
-        maximum: f64,
-    ) -> Result<Self, InvalidSpeed> {
-        Self::for_validated_request(requested.map(Self::new).transpose()?, default, maximum)
-    }
-
     /// # Errors
     /// Refuses invalid default or maximum speeds.
-    pub fn for_validated_request(
+    pub fn for_request(
         requested: Option<Self>,
         default: f64,
         maximum: f64,
@@ -146,7 +137,7 @@ pub enum Command {
         label: String,
         plan: CornerPlan,
         /// The speed the plan was made at, after clamping; recorded.
-        joint_speed: f64,
+        joint_speed: JointSpeed,
         path_limited: Option<PathLimited>,
         pose_limited: Option<PoseLimited>,
     },
@@ -156,7 +147,7 @@ pub enum Command {
         /// The gripper's newest target, applied together with the joints.
         gripper_angle: Option<f64>,
         positions: Vec<f64>,
-        joint_speed: Option<f64>,
+        joint_speed: Option<JointSpeed>,
         stream_command_id: Option<String>,
     },
     /// Reach this tool pose with the learned policy; later goals carry the id.
@@ -180,7 +171,7 @@ pub enum Command {
     #[schemars(title = "SetGripperCommand")]
     SetGripper {
         angle: f64,
-        joint_speed: Option<f64>,
+        joint_speed: Option<JointSpeed>,
     },
 }
 

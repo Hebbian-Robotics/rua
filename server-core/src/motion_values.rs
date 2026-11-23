@@ -61,20 +61,15 @@ mod tests {
     #[test]
     fn an_over_speed_request_runs_at_the_maximum_and_a_nonsense_one_is_refused() {
         assert_eq!(
-            JointSpeed::for_request(Some(9.0), 1.0, 2.0).map(JointSpeed::radians_per_second),
+            JointSpeed::for_request(Some(JointSpeed::new(9.0).unwrap()), 1.0, 2.0)
+                .map(JointSpeed::radians_per_second),
             Ok(2.0)
         );
         assert_eq!(
             JointSpeed::for_request(None, 1.0, 2.0).map(JointSpeed::radians_per_second),
             Ok(1.0)
         );
-        assert_eq!(
-            JointSpeed::for_request(Some(0.0), 1.0, 2.0),
-            Err(InvalidSpeed)
-        );
-        assert_eq!(
-            JointSpeed::for_request(Some(f64::NAN), 1.0, 2.0),
-            Err(InvalidSpeed)
-        );
+        assert_eq!(JointSpeed::new(0.0), Err(InvalidSpeed));
+        assert_eq!(JointSpeed::new(f64::NAN), Err(InvalidSpeed));
     }
 }

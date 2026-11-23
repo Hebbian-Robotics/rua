@@ -91,14 +91,19 @@ fn plan_from_sample(
         .map_err(|refusal| (refusal.reason, refusal.detail))
 }
 
-fn move_command(label: &str, motion: PlannedMotion) -> Command {
-    Command::Move {
+fn planned_speed(motion: &PlannedMotion) -> Result<hebbian_contracts::JointSpeed, Refusal> {
+    hebbian_contracts::JointSpeed::new(motion.plan.peak_speed)
+        .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
+}
+
+fn move_command(label: &str, motion: PlannedMotion) -> Result<Command, Refusal> {
+    Ok(Command::Move {
         label: label.to_owned(),
-        joint_speed: motion.plan.peak_speed,
+        joint_speed: planned_speed(&motion)?,
         plan: motion.plan,
         path_limited: motion.path_limited,
         pose_limited: motion.pose_limited,
-    }
+    })
 }
 
 const POLICY_POSES_ONLY: &str = "With learned control, send one pose at a time using move_to_pose";
@@ -136,7 +141,7 @@ pub(crate) fn arm_command(
             let speed = hebbian_contracts::JointSpeed::new(config.max_joint_speed.min(2.0))
                 .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))?;
             plan_from_sample(link, sample, &[Waypoint::Joints { joints }], Some(speed))
-                .map(|motion| move_command("rehome", motion))
+                .and_then(|motion| move_command("rehome", motion))
         }
         StationCommand::MoveToJoints {
             joints,
@@ -146,7 +151,7 @@ pub(crate) fn arm_command(
                 return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
             }
             planned_move(link, &[Waypoint::Joints { joints }], max_joint_speed)
-                .map(|motion| move_command("move_to_joints", motion))
+                .and_then(|motion| move_command("move_to_joints", motion))
         }
         StationCommand::MoveToPose {
             position,
@@ -169,7 +174,7 @@ pub(crate) fn arm_command(
                 }],
                 max_joint_speed,
             )
-            .map(|motion| move_command("move_to_pose", motion))
+            .and_then(|motion| move_command("move_to_pose", motion))
         }
         StationCommand::FollowPath {
             waypoints,
@@ -179,7 +184,7 @@ pub(crate) fn arm_command(
                 return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
             }
             planned_move(link, &waypoints, max_joint_speed)
-                .map(|motion| move_command("follow_path", motion))
+                .and_then(|motion| move_command("follow_path", motion))
         }
         StationCommand::StreamJoints {
             joints,
@@ -197,7 +202,7 @@ pub(crate) fn arm_command(
             max_joint_speed,
         } => Ok(Command::SetGripper {
             angle: jaw_angle(link, arm, opening)?,
-            joint_speed: max_joint_speed.map(f64::from),
+            joint_speed: max_joint_speed,
         }),
     }
 }
@@ -223,7 +228,7 @@ pub(super) fn joint_stream(
         .map(|opening| jaw_angle(link, arm, opening))
         .transpose()?;
     let (joint_speed, stream_command_id) = match admission {
-        StreamAdmission::Start { max_joint_speed } => (max_joint_speed.map(f64::from), None),
+        StreamAdmission::Start { max_joint_speed } => (max_joint_speed, None),
         StreamAdmission::Update(stream) => (None, Some(stream.into_controller_id())),
     };
     Ok(Command::StreamJoints {
@@ -262,7 +267,7 @@ pub(crate) fn plan_group_move<'a>(
             command.max_joint_speed,
         )
         .map_err(prefixed)?;
-        let joint_speed = motion.plan.peak_speed;
+        let joint_speed = planned_speed(&motion).map_err(prefixed)?;
         let PlannedMotion {
             plan,
             path_limited,
