@@ -201,16 +201,51 @@ fn runner<'a>(
     runner
 }
 
-fn enabling_error(readings: Vec<Feedback>, test_name: &str) -> (String, Calls) {
+fn wait_for_enable(
+    runner: &mut Runner<'_, ScriptedPlant>,
+    command_id: &str,
+) -> hebbian_contracts::CommandRecord {
+    for _ in 0..100 {
+        let record = runner.state.core.record(command_id).unwrap();
+        if !record.is_pending() {
+            return record.clone();
+        }
+        let Begun::Done(_, _) = runner.begin_cycle(runner.config.control_timing.period, None)
+        else {
+            panic!("Enable must confirm before commanding joints");
+        };
+    }
+    panic!("Enable did not finish");
+}
+
+fn request_enable(runner: &mut Runner<'_, ScriptedPlant>) -> String {
+    runner
+        .state
+        .arm()
+        .submit(Command::Enable, Now::current())
+        .unwrap()
+        .command_id
+}
+
+fn enabling_error(mut readings: Vec<Feedback>, test_name: &str) -> (String, Calls) {
+    readings.insert(0, readings[0].clone());
     let calls = Calls::default();
     let config = config(test_name);
     let mut plant = ScriptedPlant::new(readings, &calls);
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
-    let Err(refusal) = runner.enable_checked() else {
-        panic!("the enable is refused");
-    };
-    let refusal = refusal.to_string();
+    let command_id = request_enable(&mut runner);
+    let record = wait_for_enable(&mut runner, &command_id);
+    assert_eq!(
+        record.outcome(),
+        Some(hebbian_contracts::CommandOutcome::Failed)
+    );
+    let refusal = record
+        .detail()
+        .unwrap()
+        .strip_prefix("Enable failed: ")
+        .unwrap()
+        .to_owned();
     (refusal, calls)
 }
 
@@ -258,13 +293,15 @@ fn drift_after_the_first_good_enable_sample_releases_torque_without_following_it
             at([0.0, 0.0]),
             at([0.0, 0.0]),
             at([0.0, 0.0]),
+            at([0.0, 0.0]),
             at([0.06, 0.0]),
         ],
         &calls,
     );
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
-    runner.enable(Now::current());
+    let command_id = request_enable(&mut runner);
+    wait_for_enable(&mut runner, &command_id);
     assert_eq!(count(&calls.enable), 1);
     assert_eq!(count(&calls.release), 1);
     assert_eq!(count(&calls.position_writes), 0);
@@ -286,13 +323,12 @@ fn a_servo_fault_reported_with_the_enable_reading_refuses_it() {
 fn a_refused_enable_releases_whatever_the_attempt_left_on_and_fails_the_command() {
     let calls = Calls::default();
     let config = config("refused-enable");
-    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0]), at([2.5, 0.0])], &calls);
+    let mut plant =
+        ScriptedPlant::new(vec![at([0.0, 0.0]), at([0.0, 0.0]), at([2.5, 0.0])], &calls);
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
-    let now = Now::current();
-    runner.state.arm().submit(Command::Enable, now).unwrap();
-    runner.state.arm().next_job();
-    runner.enable(now);
+    let command_id = request_enable(&mut runner);
+    wait_for_enable(&mut runner, &command_id);
     assert_eq!(count(&calls.release), 1);
     assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
     assert!(!runner.state.powered());
@@ -305,10 +341,18 @@ fn a_clean_enable_turns_torque_on_once_and_powers_the_loop_up() {
     let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
-    let now = Now::current();
-    runner.state.arm().submit(Command::Enable, now).unwrap();
-    runner.state.arm().next_job();
-    runner.enable(now);
+    let command_id = request_enable(&mut runner);
+    let Begun::Done(_, _) = runner.begin_cycle(config.control_timing.period, None) else {
+        panic!("The first observation must leave startup hold pending");
+    };
+    assert!(runner.state.core.record(&command_id).unwrap().is_pending());
+    assert_eq!(count(&calls.enable), 1);
+    assert_eq!(count(&calls.position_writes), 0);
+    let record = wait_for_enable(&mut runner, &command_id);
+    assert_eq!(
+        record.outcome(),
+        Some(hebbian_contracts::CommandOutcome::Completed)
+    );
     assert_eq!(count(&calls.enable), 1);
     assert!(runner.state.powered());
     assert_eq!(runner.state.arm().mode(), ArmMode::Holding);
@@ -861,6 +905,45 @@ fn a_stop_with_unconfirmed_writes_ends_as_interrupted_on_bus_loss() {
 }
 
 #[test]
+fn a_stream_reports_stopped_only_after_its_braking_write_succeeds() {
+    let config = config("confirm-stream-stop");
+    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
+    let command_id = runner
+        .state
+        .core
+        .submit(
+            Command::StreamJoints {
+                gripper_angle: None,
+                positions: vec![0.3, 0.0],
+                joint_speed: None,
+                stream_command_id: None,
+            },
+            Now::current(),
+        )
+        .unwrap()
+        .command_id;
+    run_motion_cycle(&mut runner);
+    runner
+        .state
+        .core
+        .submit(Command::Stop, Now::current())
+        .unwrap();
+
+    runner.plant.position_write_fails = true;
+    run_motion_cycle(&mut runner);
+    assert!(runner.state.core.record(&command_id).unwrap().is_pending());
+
+    runner.plant.position_write_fails = false;
+    run_motion_cycle(&mut runner);
+    assert_eq!(
+        runner.state.core.record(&command_id).unwrap().outcome(),
+        Some(hebbian_contracts::CommandOutcome::Stopped)
+    );
+}
+
+#[test]
 fn a_group_retries_partial_writes_without_tripping_or_publishing_completion_early() {
     use super::group::{confirm_group_writes, form_groups, step_groups};
     use super::trajectory::MotionStatus;
@@ -1126,4 +1209,39 @@ fn a_missing_gripper_controller_fails_its_command_and_holds_without_reconnecting
     assert_eq!(runner.failed_cycles, 0);
     assert_eq!(runner.state.previous_command, vec![0.0, 0.0]);
     assert_eq!(count(&calls.gripper_writes), 1);
+}
+
+#[test]
+fn a_feedback_trip_blocks_the_pending_jaw_write_in_the_same_cycle() {
+    use hebbian_contracts::CommandOutcome;
+
+    let calls = Calls::default();
+    let config = gripper_config("trip-before-jaw-write");
+    let mut initial = at([0.0, 0.0]);
+    initial.gripper_angle = Some(0.0);
+    let mut plant = ScriptedPlant::new(vec![initial], &calls);
+    let link = test_link(&config);
+    let mut runner = runner(&mut plant, &config, &link);
+    runner.state.power_up(&[0.0, 0.0], Some(0.0));
+    runner.state.core.enabled(&[0.0, 0.0], Now::current());
+    let gripper = runner
+        .state
+        .core
+        .submit(
+            Command::SetGripper {
+                angle: hebbian_contracts::JawAngle::try_from(0.5).unwrap(),
+                joint_speed: None,
+            },
+            Now::current(),
+        )
+        .unwrap();
+    runner.plant.last.fault = Some("Overvoltage".into());
+
+    run_motion_cycle(&mut runner);
+
+    assert_eq!(count(&calls.gripper_writes), 0);
+    assert_eq!(count(&calls.position_writes), 1);
+    let record = runner.state.core.record(&gripper.command_id).unwrap();
+    assert_eq!(record.outcome(), Some(CommandOutcome::Failed));
+    assert!(record.detail().unwrap().contains("Overvoltage"));
 }

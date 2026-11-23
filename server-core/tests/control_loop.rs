@@ -547,6 +547,12 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
     std::fs::create_dir_all(&directory).unwrap();
     let (simulator_shutdown, simulator) = fake_simulator(&directory, 100_000);
     let mut setups = sim_setups(&directory, 2.0);
+    let mut left_config = setups[0].config.clone().into_input();
+    left_config.enable_checks = Some(hebbian_contracts::EnableChecks {
+        preflight_drift_limit_radians: 0.02,
+        enable_drift_limit_radians: 0.05,
+    });
+    setups[0].config = ControllerConfig::try_from(left_config).unwrap();
     let left_handle = setups[0].link.handle();
     let shutdown = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&shutdown);
