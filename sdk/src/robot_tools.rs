@@ -827,8 +827,8 @@ fn scale_argument(value: &mut Value, factor: f64) -> std::result::Result<(), Str
 fn normalize_arguments(value: &mut Value) {
     match value {
         Value::Object(object) => {
-            if let Some(movement) = object.get_mut("movement") {
-                normalize_movement(movement);
+            if let Some(goal) = object.get_mut("goal") {
+                normalize_movement(goal);
             }
             if let Some(Value::Object(targets)) = object.get_mut("targets") {
                 for target in targets.values_mut() {
@@ -863,18 +863,18 @@ fn normalize_arguments(value: &mut Value) {
 }
 
 fn normalize_movement(value: &mut Value) {
-    if let Value::Object(movement) = value
-        && !movement.contains_key("kind")
+    if let Value::Object(goal) = value
+        && !goal.contains_key("kind")
     {
-        let kind = if movement.contains_key("joints") {
+        let kind = if goal.contains_key("joints") {
             Some("joints")
-        } else if movement.contains_key("position") {
+        } else if goal.contains_key("position") {
             Some("pose")
         } else {
             None
         };
         if let Some(kind) = kind {
-            movement.insert("kind".into(), Value::String(kind.into()));
+            goal.insert("kind".into(), Value::String(kind.into()));
         }
     }
 }

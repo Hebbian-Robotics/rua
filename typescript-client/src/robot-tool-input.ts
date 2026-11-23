@@ -196,13 +196,13 @@ export function parseRobotToolCall(
                     const action =
                       apiSchemas.shape.ActionSequenceArmAction.parse({
                         ...raw,
-                        ...("movement" in raw
-                          ? { movement: addMovementKind(raw["movement"]) }
+                        ...("goal" in raw
+                          ? { goal: addMovementKind(raw["goal"]) }
                           : {}),
                       });
                     if (
-                      ("movement" in action &&
-                        !context.sequenceActions.has(action.movement.kind)) ||
+                      ("goal" in action &&
+                        !context.sequenceActions.has(action.goal.kind)) ||
                       (action.gripper_opening != null &&
                         !context.sequenceActions.has("gripper"))
                     )

@@ -183,8 +183,8 @@ def create_robot_tool_catalog(
             action = steps["items"]
             properties = action["properties"]
             if configuration.sequence_actions & {"pose", "joints"}:
-                movement = properties["movement"]
-                variants = movement.get("oneOf", [movement])
+                goal = properties["goal"]
+                variants = goal.get("oneOf", [goal])
                 available = [
                     variant
                     for variant in variants
@@ -195,11 +195,11 @@ def create_robot_tool_catalog(
                     )
                     in configuration.sequence_actions
                 ]
-                properties["movement"] = (
+                properties["goal"] = (
                     available[0] if len(available) == 1 else {"oneOf": available}
                 )
             else:
-                properties.pop("movement", None)
+                properties.pop("goal", None)
             if "gripper" not in configuration.sequence_actions:
                 properties.pop("gripper_opening", None)
             action["anyOf"] = [
@@ -253,7 +253,7 @@ def parse_sequence_arguments(
                 raise ValueError(f"Arm {arm} is not available in this sequence")
             if (
                 isinstance(action, ActionSequenceMove)
-                and action.movement.kind not in configuration.sequence_actions
+                and action.goal.kind not in configuration.sequence_actions
             ) or (
                 action.gripper_opening is not None
                 and "gripper" not in configuration.sequence_actions

@@ -132,10 +132,10 @@ pub enum StationCommand {
     },
 }
 
-/// One movement in an action sequence. The arm settles at each target.
+/// One goal in an action sequence. The arm settles at each target.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ActionSequenceMovement {
+pub enum ActionSequenceGoal {
     #[schemars(title = "ActionSequenceJointsMovement")]
     Joints {
         joints: Vec<f64>,
@@ -151,17 +151,17 @@ pub enum ActionSequenceMovement {
     },
 }
 
-/// An arm action must name a movement or gripper target. When both are present they start together.
+/// An arm action must name a goal or gripper target. When both are present they start together.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum ActionSequenceArmAction {
     #[schemars(title = "ActionSequenceMove")]
     Move {
-        movement: ActionSequenceMovement,
+        goal: ActionSequenceGoal,
         #[serde(default)]
         #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
-        /// Speed for both resources in rad/s; overrides the movement speed when provided.
+        /// Speed for both resources in rad/s; overrides the goal speed when provided.
         #[serde(default)]
         max_joint_speed: Option<f64>,
     },
@@ -177,9 +177,9 @@ pub enum ActionSequenceArmAction {
 
 impl ActionSequenceArmAction {
     #[must_use]
-    pub fn movement(&self) -> Option<&ActionSequenceMovement> {
+    pub fn goal(&self) -> Option<&ActionSequenceGoal> {
         match self {
-            Self::Move { movement, .. } => Some(movement),
+            Self::Move { goal, .. } => Some(goal),
             Self::Gripper { .. } => None,
         }
     }

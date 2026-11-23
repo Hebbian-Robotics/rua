@@ -77,7 +77,7 @@ async def check_compiler(station: StationClient, joints: list[float]) -> None:
             ActionSequenceStep(
                 arms={
                     "arm": ActionSequenceMove(
-                        movement=ActionSequenceJointsMovement(joints=joints)
+                        goal=ActionSequenceJointsMovement(joints=joints)
                     )
                 }
             )

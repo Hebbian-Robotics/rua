@@ -92,11 +92,11 @@ async def main():
             result = await lease.arm("arm").run_action_sequence(
                 [
                     ActionSequenceMove(
-                        movement=ActionSequenceJointsMovement(joints=[0.1, 0, 0, 0, 0]),
+                        goal=ActionSequenceJointsMovement(joints=[0.1, 0, 0, 0, 0]),
                         gripper_opening=1.0,
                     ),
                     ActionSequenceMove(
-                        movement=ActionSequenceJointsMovement(joints=[0.0, 0, 0, 0, 0])
+                        goal=ActionSequenceJointsMovement(joints=[0.0, 0, 0, 0, 0])
                     ),
                 ]
             )
@@ -177,7 +177,7 @@ uses `{ kind: "named", arms: ["left", "right"] }`; Rust uses `SequenceScope`.
 
 To replace the default mapping, select capabilities from
 `all_robot_tool_capabilities()` (TypeScript: `allRobotToolCapabilities()`), which
-also includes standalone movement, gripper and rehome tools. The default mapping
+also includes standalone goal, gripper and rehome tools. The default mapping
 selects sequences, previews, observation and immediate stop. Individual SDK
 methods remain available regardless of the model catalog. Model speeds use
 degrees per second and are clamped to the profile maximum; SDK station arguments

@@ -282,7 +282,7 @@ async fn a_action_sequence_runs_from_a_file() -> TestResult {
         "hebbian-cli-action_sequence-{}.json",
         std::process::id()
     ));
-    let step = |joints: [f64; 5]| serde_json::json!({"arms": {ARM: {"movement": {"kind": "joints", "joints": joints}}}});
+    let step = |joints: [f64; 5]| serde_json::json!({"arms": {ARM: {"goal": {"kind": "joints", "joints": joints}}}});
     std::fs::write(
         &file,
         serde_json::json!({"steps": [step([0.2, -0.5, 0.5, 0.0, 0.0]), step([-0.2, -0.5, 0.5, 0.0, 0.0])]})

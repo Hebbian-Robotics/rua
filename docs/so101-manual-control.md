@@ -145,8 +145,8 @@ From a terminal, `hebbian-robot-use state`, `enable <arm>` and `stop <arm>` (see
 Choose **Manual** while the arm is disabled, then select and enable the arm.
 Enabling acquires the manual lease. If another client holds control, it must
 release control first. Disabling the last enabled arm releases the lease and
-clears the target and preview. You can then switch to **Agent** and start a task.
-If the viewer loses its lease while the arm is still enabled, the target clears.
+clears the goal and preview. You can then switch to **Agent** and start a task.
+If the viewer loses its lease while the arm is still enabled, the goal clears.
 Use **Reconnect manual control** when control is available again.
 The station checks [interlocks and command requirements](control-model.md).
 
@@ -159,19 +159,19 @@ The station checks [interlocks and command requirements](control-model.md).
   that joint. A saved angle beyond that tolerance is refused.
 - **Disable in place…** is below the main arm controls and removes torque at
   the current pose. Physically support the arm before confirming.
-- **Target current pose** copies the measured tool position and gripper
+- **Use current position** copies the measured tool position and gripper
   opening into a preview. Drag the 3D arrows, or open **Motion options** to
   enter X, Y and Z in millimetres and select **Preview coordinates**.
   Previewing does not move the motors.
 - **Approach** lets the solver choose an orientation, or holds a downward,
   forward or current approach. **Jaw yaw** sets the gripper rotation. The
   station reports unreachable yaw ranges and reasons when available.
-- **Move to target** sends the latest confirmed preview and then applies the
+- **Move to goal** sends the latest confirmed preview and then applies the
   previewed gripper opening. A constrained preview is a feasible local result,
   not a globally closest-pose guarantee. An IK arm moves to the previewed
   joints; a policy arm receives the requested pose. The ghost is a prediction,
   not proof of physical tracking or object clearance.
-- **Follow target while dragging** is opt-in for IK arms. Dragging streams
+- **Follow goal while dragging** is opt-in for IK arms. Dragging streams
   previewed destinations through the station's motion smoother; releasing,
   losing focus or stale feedback stops following. The gripper slider sends
   coalesced updates while follow is enabled. On release, the viewer waits for
@@ -179,8 +179,8 @@ The station checks [interlocks and command requirements](control-model.md).
 - **Speed** sets the joint-speed cap for the next movement or drag. It does not
   retime a movement already accepted by the station. Learned motion uses the
   profile's joint-speed limit.
-- **Clear target** removes the target and preview and stops following. An old
-  preview response cannot authorize a move after the target changes or clears.
+- **Clear goal** removes the goal and preview and stops following. An old
+  preview response cannot authorize a move after the goal changes or clears.
 
 The preview checks the robot display meshes against the station's configured
 surface plane and leeway. A blocked preview cannot be used for a move or follow

@@ -87,10 +87,8 @@ export function createRobotToolCatalog(
       const action = schemaObject(steps["items"]);
       const properties = schemaObject(action["properties"]);
       if (sequenceActions.has("pose") || sequenceActions.has("joints")) {
-        const movement = schemaObject(properties["movement"]);
-        const variants = Array.isArray(movement["oneOf"])
-          ? movement["oneOf"]
-          : [movement];
+        const goal = schemaObject(properties["goal"]);
+        const variants = Array.isArray(goal["oneOf"]) ? goal["oneOf"] : [goal];
         const available = variants.filter((variant) => {
           const movementProperties = schemaObject(
             schemaObject(variant)["properties"],
@@ -99,9 +97,9 @@ export function createRobotToolCatalog(
             "joints_degrees" in movementProperties ? "joints" : "pose",
           );
         });
-        properties["movement"] =
+        properties["goal"] =
           available.length === 1 ? (available[0] ?? {}) : { oneOf: available };
-      } else delete properties["movement"];
+      } else delete properties["goal"];
       if (!sequenceActions.has("gripper")) delete properties["gripper_opening"];
       const requirements = action["anyOf"];
       if (Array.isArray(requirements))

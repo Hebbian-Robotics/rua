@@ -19,7 +19,7 @@ fn default_station_url() -> String {
 /// help cannot drift from the contract.
 macro_rules! action_sequence_request_example {
     () => {
-        r#"{"steps": [{"arms": {"arm": {"movement": {"kind": "joints", "joints": [0.0, -0.5, 0.5, 0.0, 0.0]}, "gripper_opening": 1.0}}}, {"arms": {"arm": {"gripper_opening": 0.0}}}]}"#
+        r#"{"steps": [{"arms": {"arm": {"goal": {"kind": "joints", "joints": [0.0, -0.5, 0.5, 0.0, 0.0]}, "gripper_opening": 1.0}}}, {"arms": {"arm": {"gripper_opening": 0.0}}}]}"#
     };
 }
 
@@ -277,9 +277,9 @@ pub enum ActionSequenceCommand {
     /// Example: hebbian-robot-use action-sequence run steps.json
     #[command(after_long_help = concat!(
         "A request (steps run in order; arms within a step start together and settle before \
-         the next step; movement and gripper targets on an arm start together):\n",
+         the next step; goal and gripper targets on an arm start together):\n",
         action_sequence_request_example!(),
-        "\nA pose movement is {\"kind\": \"pose\", \"position\": [x, y, z], \"orientation\": ...}, \
+        "\nA pose goal is {\"kind\": \"pose\", \"position\": [x, y, z], \"orientation\": ...}, \
          where orientation is {\"kind\": \"quaternion\", \"quaternion\": [x, y, z, w]} or \
          {\"kind\": \"grasp\", \"approach\": [x, y, z], \"jaw_yaw_degrees\": d}."
     ))]

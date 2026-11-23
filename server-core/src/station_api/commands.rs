@@ -6,9 +6,9 @@ use crate::config::ControllerConfig;
 use crate::control_link::LinkHandle;
 use crate::planning::Planner;
 use hebbian_contracts::{
-    ArmMode, Command, CompiledArmAction, CompiledMovement, GripperOpening, JointSpeed,
-    MoveArmsCommand, PlannedMotion, PoseOrientation, PoseProjection, PreviewPose, RejectionReason,
-    Sample, StationCommand, Waypoint,
+    ArmMode, Command, CompiledArmAction, CompiledGoal, GripperOpening, JointSpeed, MoveArmsCommand,
+    PlannedMotion, PoseOrientation, PoseProjection, PreviewPose, RejectionReason, Sample,
+    StationCommand, Waypoint,
 };
 
 type Refusal = (RejectionReason, String);
@@ -293,15 +293,15 @@ pub(super) fn prepare_compiled_action(
 ) -> Result<PreparedArmAction, Refusal> {
     match action {
         CompiledArmAction::Move {
-            movement,
+            goal,
             gripper_opening,
             max_joint_speed,
         } => {
-            let movement = match movement {
-                CompiledMovement::Joints { joints } => {
+            let movement = match goal {
+                CompiledGoal::Joints { joints } => {
                     StationMovement::joints(joints.clone(), *max_joint_speed)
                 }
-                CompiledMovement::Pose {
+                CompiledGoal::Pose {
                     position,
                     orientation,
                 } => StationMovement::Pose {

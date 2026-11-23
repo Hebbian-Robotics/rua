@@ -30,7 +30,7 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@hebbian/mcap-tools": "github:Hebbian-Robotics/mcap-tools#9a9d57c10cd8adb5d4b5afe27bc2dadb9923b0a1",
-    "hebbian-rua": "0.1.3",
+    "hebbian-rua": "workspace:*",
     "@hebbian/so101-model": "github:Hebbian-Robotics/so101#37db91fad4a5f16e1d88bf791ef55a00af1d81b2",
     "@hono/node-server": "2.1.6",
     "@mcap/core": "^2.4.0",

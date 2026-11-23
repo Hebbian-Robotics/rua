@@ -136,9 +136,8 @@ imported = await station.import_compilation(saved)
 ```
 
 Run this after the successful-compilation branch above. Import accepts schema
-version 2 and always recompiles the saved source against this station. For a
-version 1 export, extract `source`, omit `movement: null` on gripper-only
-actions, and compile the source to create a new export. Saved operations,
+version 3 and always recompiles the saved source against this station.
+Saved operations,
 configuration identities and compiler versions grant no authority. The imported
 result has a new compilation ID and still requires explicit execution.
 

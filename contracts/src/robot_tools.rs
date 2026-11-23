@@ -591,7 +591,7 @@ pub fn robot_tool_context() -> Value {
         "orientation": format!("Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds {}. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.", crate::JAW_REFERENCE_SWITCH_APPROACH_X),
         "motion": "A pose target is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
         "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
-        "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its movement speed for both movement and gripper.",
+        "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its goal speed for both goal and gripper.",
         "outcomes": "A completed move with target_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
         "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified."
     })
@@ -638,7 +638,7 @@ pub fn action_sequence_tool_schema(
         .as_array()
         .expect("arm action variants")
         .iter()
-        .find(|variant| variant["properties"].get("movement").is_some())
+        .find(|variant| variant["properties"].get("goal").is_some())
         .expect("move action")
         .clone();
     let action_fields = action.as_object_mut().expect("move action schema");
@@ -651,11 +651,8 @@ pub fn action_sequence_tool_schema(
     if configuration.actions.contains(&SequenceAction::Pose)
         || configuration.actions.contains(&SequenceAction::Joints)
     {
-        let movement = properties.get_mut("movement").expect("movement schema");
-        let mut variants = movement["oneOf"]
-            .as_array()
-            .expect("movement variants")
-            .clone();
+        let goal = properties.get_mut("goal").expect("goal schema");
+        let mut variants = goal["oneOf"].as_array().expect("goal variants").clone();
         variants.retain(|variant| {
             let capability = if variant["properties"].get("joints_degrees").is_some() {
                 SequenceAction::Joints
@@ -664,13 +661,13 @@ pub fn action_sequence_tool_schema(
             };
             configuration.actions.contains(&capability)
         });
-        *movement = if variants.len() == 1 {
+        *goal = if variants.len() == 1 {
             variants.remove(0)
         } else {
             json!({"oneOf": variants})
         };
     } else {
-        properties.remove("movement");
+        properties.remove("goal");
     }
     if configuration.actions.contains(&SequenceAction::Gripper) {
         let opening = properties
@@ -684,7 +681,7 @@ pub fn action_sequence_tool_schema(
     } else {
         properties.remove("gripper_opening");
     }
-    let required_actions: Vec<_> = [("movement", "object"), ("gripper_opening", "number")]
+    let required_actions: Vec<_> = [("goal", "object"), ("gripper_opening", "number")]
         .into_iter()
         .filter(|(name, _)| properties.contains_key(*name))
         .map(|(name, kind)| {
@@ -747,9 +744,9 @@ pub fn parse_sequence_tool_arguments(
             {
                 return Err(format!("Arm {arm} is not available in this sequence"));
             }
-            let movement_capability = action.movement().map(|movement| match movement {
-                crate::ActionSequenceMovement::Pose { .. } => SequenceAction::Pose,
-                crate::ActionSequenceMovement::Joints { .. } => SequenceAction::Joints,
+            let movement_capability = action.goal().map(|goal| match goal {
+                crate::ActionSequenceGoal::Pose { .. } => SequenceAction::Pose,
+                crate::ActionSequenceGoal::Joints { .. } => SequenceAction::Joints,
             });
             if movement_capability
                 .is_some_and(|capability| !configuration.actions.contains(&capability))
@@ -791,16 +788,8 @@ mod sequence_configuration_tests {
         let schema = action_sequence_tool_schema(&configuration).unwrap();
         let fields = &schema["properties"]["steps"]["items"]["properties"];
         assert!(fields.get("arms").is_none());
-        assert!(
-            fields["movement"]["properties"]
-                .get("joints_degrees")
-                .is_none()
-        );
-        assert!(
-            fields["movement"]["properties"]
-                .get("position_mm")
-                .is_some()
-        );
+        assert!(fields["goal"]["properties"].get("joints_degrees").is_none());
+        assert!(fields["goal"]["properties"].get("position_mm").is_some());
         assert!(fields.get("gripper_opening").is_some());
         let steps = parse_sequence_tool_arguments(
             json!({"steps": [{"gripper_opening": 0.5}]}),
@@ -810,7 +799,7 @@ mod sequence_configuration_tests {
         .unwrap();
         assert_eq!(steps[0].arms["follower"].gripper_opening(), Some(0.5));
         for unavailable in [
-            json!({"steps": [{"movement": {"kind": "joints", "joints": [0.0]}}]}),
+            json!({"steps": [{"goal": {"kind": "joints", "joints": [0.0]}}]}),
             json!({"steps": [{"arms": {"right": {"gripper_opening": 0.5}}}]}),
             json!({"steps": [{}]}),
         ] {
@@ -829,7 +818,7 @@ mod sequence_configuration_tests {
         let schema = action_sequence_tool_schema(&configuration).unwrap();
         let arm_fields =
             &schema["properties"]["steps"]["items"]["properties"]["arms"]["properties"];
-        assert!(arm_fields["left"]["properties"].get("movement").is_none());
+        assert!(arm_fields["left"]["properties"].get("goal").is_none());
         let steps = parse_sequence_tool_arguments(
             json!({"steps": [{"arms": {
                 "left": {"gripper_opening": 0.2}, "right": {"gripper_opening": 0.8}

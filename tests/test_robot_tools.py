@@ -117,7 +117,7 @@ def test_mistakes_come_back_as_errors_the_model_can_fix(robot: RobotTools) -> No
                     "action_sequence",
                     {
                         "steps": [
-                            {"movement": {"kind": "pose", "position_mm": [200, 0, 50]}}
+                            {"goal": {"kind": "pose", "position_mm": [200, 0, 50]}}
                         ]
                     },
                 ),
@@ -328,13 +328,13 @@ def test_specialized_catalog_limits_both_schema_and_parsed_actions(
     fields = schema["properties"]["steps"]["items"]["properties"]
     assert "arms" not in fields
     assert "joints_degrees" not in json.dumps(fields)
-    assert "position_mm" in fields["movement"]["properties"]
+    assert "position_mm" in fields["goal"]["properties"]
     assert isinstance(
         specialized.parse(
             RobotToolCall(
                 "hidden",
                 "action_sequence",
-                {"steps": [{"movement": {"joints_degrees": [0, 0, 0, 0, 0]}}]},
+                {"steps": [{"goal": {"joints_degrees": [0, 0, 0, 0, 0]}}]},
             )
         ),
         RobotToolResult,

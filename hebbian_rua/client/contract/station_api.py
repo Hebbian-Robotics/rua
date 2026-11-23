@@ -359,7 +359,7 @@ class CompiledArmAction2(BaseModel):
     opening: Annotated[StrictFloat, Field(ge=0.0, le=1.0, title="GripperOpening")]
 
 
-class CompiledMovement1(BaseModel):
+class CompiledGoal1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -2090,7 +2090,7 @@ class CommandRecord(BaseModel):
     trace_context: TraceContext | None = None
 
 
-class CompiledMovement2(BaseModel):
+class CompiledGoal2(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
@@ -2357,13 +2357,13 @@ class ActionSequenceMove(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None,
         Field(
-            description="Speed for both resources in rad/s; overrides the movement speed when provided."
+            description="Speed for both resources in rad/s; overrides the goal speed when provided."
         ),
     ] = None
-    movement: Annotated[
+    goal: Annotated[
         ActionSequenceJointsMovement | ActionSequencePoseMovement,
         Field(
-            description="One movement in an action sequence. The arm settles at each target."
+            description="One goal in an action sequence. The arm settles at each target."
         ),
     ]
 
@@ -2605,7 +2605,7 @@ class CompiledArmAction1(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
-    movement: CompiledMovement1 | CompiledMovement2
+    goal: CompiledGoal1 | CompiledGoal2
 
 
 class CompiledOperation(BaseModel):

@@ -95,19 +95,19 @@ export const apiSchemas = z.object({
               z
                 .number()
                 .describe(
-                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                 ),
               z
                 .null()
                 .describe(
-                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                 ),
             ])
             .describe(
-              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+              "Speed for both resources in rad/s; overrides the goal speed when provided.",
             )
             .default(null),
-          movement: z
+          goal: z
             .union([
               z
                 .object({
@@ -160,7 +160,7 @@ export const apiSchemas = z.object({
                 .strict(),
             ])
             .describe(
-              "One movement in an action sequence. The arm settles at each target.",
+              "One goal in an action sequence. The arm settles at each target.",
             ),
         })
         .strict(),
@@ -178,9 +178,9 @@ export const apiSchemas = z.object({
         .strict(),
     ])
     .describe(
-      "An arm action must name a movement or gripper target. When both are present they start together.",
+      "An arm action must name a goal or gripper target. When both are present they start together.",
     ),
-  ActionSequenceMovement: z
+  ActionSequenceGoal: z
     .union([
       z
         .object({
@@ -229,7 +229,7 @@ export const apiSchemas = z.object({
         .strict(),
     ])
     .describe(
-      "One movement in an action sequence. The arm settles at each target.",
+      "One goal in an action sequence. The arm settles at each target.",
     ),
   ActionSequencePhase: z
     .union([
@@ -431,19 +431,19 @@ export const apiSchemas = z.object({
                             z
                               .number()
                               .describe(
-                                "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                "Speed for both resources in rad/s; overrides the goal speed when provided.",
                               ),
                             z
                               .null()
                               .describe(
-                                "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                "Speed for both resources in rad/s; overrides the goal speed when provided.",
                               ),
                           ])
                           .describe(
-                            "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                            "Speed for both resources in rad/s; overrides the goal speed when provided.",
                           )
                           .default(null),
-                        movement: z
+                        goal: z
                           .union([
                             z
                               .object({
@@ -509,7 +509,7 @@ export const apiSchemas = z.object({
                               .strict(),
                           ])
                           .describe(
-                            "One movement in an action sequence. The arm settles at each target.",
+                            "One goal in an action sequence. The arm settles at each target.",
                           ),
                       })
                       .strict(),
@@ -527,7 +527,7 @@ export const apiSchemas = z.object({
                       .strict(),
                   ])
                   .describe(
-                    "An arm action must name a movement or gripper target. When both are present they start together.",
+                    "An arm action must name a goal or gripper target. When both are present they start together.",
                   ),
               ),
             })
@@ -990,19 +990,19 @@ export const apiSchemas = z.object({
                           z
                             .number()
                             .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
                             ),
                           z
                             .null()
                             .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
                             ),
                         ])
                         .describe(
-                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
                         )
                         .default(null),
-                      movement: z
+                      goal: z
                         .union([
                           z
                             .object({
@@ -1068,7 +1068,7 @@ export const apiSchemas = z.object({
                             .strict(),
                         ])
                         .describe(
-                          "One movement in an action sequence. The arm settles at each target.",
+                          "One goal in an action sequence. The arm settles at each target.",
                         ),
                     })
                     .strict(),
@@ -1086,7 +1086,7 @@ export const apiSchemas = z.object({
                     .strict(),
                 ])
                 .describe(
-                  "An arm action must name a movement or gripper target. When both are present they start together.",
+                  "An arm action must name a goal or gripper target. When both are present they start together.",
                 ),
             ),
           })
@@ -1125,19 +1125,19 @@ export const apiSchemas = z.object({
                               z
                                 .number()
                                 .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                 ),
                             ])
                             .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
                             )
                             .default(null),
-                          movement: z
+                          goal: z
                             .union([
                               z
                                 .object({
@@ -1203,7 +1203,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "One movement in an action sequence. The arm settles at each target.",
+                              "One goal in an action sequence. The arm settles at each target.",
                             ),
                         })
                         .strict(),
@@ -1221,7 +1221,7 @@ export const apiSchemas = z.object({
                         .strict(),
                     ])
                     .describe(
-                      "An arm action must name a movement or gripper target. When both are present they start together.",
+                      "An arm action must name a goal or gripper target. When both are present they start together.",
                     ),
                 ),
               })
@@ -1257,19 +1257,19 @@ export const apiSchemas = z.object({
                     z
                       .number()
                       .describe(
-                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
                       ),
                     z
                       .null()
                       .describe(
-                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
                       ),
                   ])
                   .describe(
-                    "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                    "Speed for both resources in rad/s; overrides the goal speed when provided.",
                   )
                   .default(null),
-                movement: z
+                goal: z
                   .union([
                     z
                       .object({
@@ -1324,7 +1324,7 @@ export const apiSchemas = z.object({
                       .strict(),
                   ])
                   .describe(
-                    "One movement in an action sequence. The arm settles at each target.",
+                    "One goal in an action sequence. The arm settles at each target.",
                   ),
               })
               .strict(),
@@ -1342,7 +1342,7 @@ export const apiSchemas = z.object({
               .strict(),
           ])
           .describe(
-            "An arm action must name a movement or gripper target. When both are present they start together.",
+            "An arm action must name a goal or gripper target. When both are present they start together.",
           ),
       ),
     })
@@ -2989,19 +2989,19 @@ export const apiSchemas = z.object({
                                   z
                                     .number()
                                     .describe(
-                                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                     ),
                                   z
                                     .null()
                                     .describe(
-                                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                     ),
                                 ])
                                 .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                 )
                                 .default(null),
-                              movement: z
+                              goal: z
                                 .union([
                                   z
                                     .object({
@@ -3073,7 +3073,7 @@ export const apiSchemas = z.object({
                                     .strict(),
                                 ])
                                 .describe(
-                                  "One movement in an action sequence. The arm settles at each target.",
+                                  "One goal in an action sequence. The arm settles at each target.",
                                 ),
                             })
                             .strict(),
@@ -3093,7 +3093,7 @@ export const apiSchemas = z.object({
                             .strict(),
                         ])
                         .describe(
-                          "An arm action must name a movement or gripper target. When both are present they start together.",
+                          "An arm action must name a goal or gripper target. When both are present they start together.",
                         ),
                     ),
                   })
@@ -5187,7 +5187,7 @@ export const apiSchemas = z.object({
                       max_joint_speed: z
                         .union([z.number().gt(0), z.null()])
                         .optional(),
-                      movement: z.union([
+                      goal: z.union([
                         z
                           .object({
                             joints: z.array(z.number()),
@@ -5301,19 +5301,19 @@ export const apiSchemas = z.object({
                               z
                                 .number()
                                 .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                 ),
                               z
                                 .null()
                                 .describe(
-                                  "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                  "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                 ),
                             ])
                             .describe(
-                              "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                              "Speed for both resources in rad/s; overrides the goal speed when provided.",
                             )
                             .default(null),
-                          movement: z
+                          goal: z
                             .union([
                               z
                                 .object({
@@ -5379,7 +5379,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "One movement in an action sequence. The arm settles at each target.",
+                              "One goal in an action sequence. The arm settles at each target.",
                             ),
                         })
                         .strict(),
@@ -5397,7 +5397,7 @@ export const apiSchemas = z.object({
                         .strict(),
                     ])
                     .describe(
-                      "An arm action must name a movement or gripper target. When both are present they start together.",
+                      "An arm action must name a goal or gripper target. When both are present they start together.",
                     ),
                 ),
               })
@@ -5461,7 +5461,7 @@ export const apiSchemas = z.object({
                             max_joint_speed: z
                               .union([z.number().gt(0), z.null()])
                               .optional(),
-                            movement: z.union([
+                            goal: z.union([
                               z
                                 .object({
                                   joints: z.array(z.number()),
@@ -5577,19 +5577,19 @@ export const apiSchemas = z.object({
                                     z
                                       .number()
                                       .describe(
-                                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                       ),
                                     z
                                       .null()
                                       .describe(
-                                        "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                        "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                       ),
                                   ])
                                   .describe(
-                                    "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                    "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                   )
                                   .default(null),
-                                movement: z
+                                goal: z
                                   .union([
                                     z
                                       .object({
@@ -5665,7 +5665,7 @@ export const apiSchemas = z.object({
                                       .strict(),
                                   ])
                                   .describe(
-                                    "One movement in an action sequence. The arm settles at each target.",
+                                    "One goal in an action sequence. The arm settles at each target.",
                                   ),
                               })
                               .strict(),
@@ -5687,7 +5687,7 @@ export const apiSchemas = z.object({
                               .strict(),
                           ])
                           .describe(
-                            "An arm action must name a movement or gripper target. When both are present they start together.",
+                            "An arm action must name a goal or gripper target. When both are present they start together.",
                           ),
                       ),
                     })
@@ -5758,7 +5758,7 @@ export const apiSchemas = z.object({
           .optional(),
         kind: z.literal("move"),
         max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
-        movement: z.union([
+        goal: z.union([
           z
             .object({ joints: z.array(z.number()), kind: z.literal("joints") })
             .strict(),
@@ -5810,7 +5810,7 @@ export const apiSchemas = z.object({
       })
       .strict(),
   ]),
-  CompiledMovement: z.union([
+  CompiledGoal: z.union([
     z
       .object({ joints: z.array(z.number()), kind: z.literal("joints") })
       .strict(),
@@ -5862,7 +5862,7 @@ export const apiSchemas = z.object({
               .optional(),
             kind: z.literal("move"),
             max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
-            movement: z.union([
+            goal: z.union([
               z
                 .object({
                   joints: z.array(z.number()),
@@ -5940,7 +5940,7 @@ export const apiSchemas = z.object({
                   max_joint_speed: z
                     .union([z.number().gt(0), z.null()])
                     .optional(),
-                  movement: z.union([
+                  goal: z.union([
                     z
                       .object({
                         joints: z.array(z.number()),
@@ -22006,19 +22006,19 @@ export const apiSchemas = z.object({
                                       z
                                         .number()
                                         .describe(
-                                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                         ),
                                       z
                                         .null()
                                         .describe(
-                                          "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                          "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                         ),
                                     ])
                                     .describe(
-                                      "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                                      "Speed for both resources in rad/s; overrides the goal speed when provided.",
                                     )
                                     .default(null),
-                                  movement: z
+                                  goal: z
                                     .union([
                                       z
                                         .object({
@@ -22094,7 +22094,7 @@ export const apiSchemas = z.object({
                                         .strict(),
                                     ])
                                     .describe(
-                                      "One movement in an action sequence. The arm settles at each target.",
+                                      "One goal in an action sequence. The arm settles at each target.",
                                     ),
                                 })
                                 .strict(),
@@ -22116,7 +22116,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "An arm action must name a movement or gripper target. When both are present they start together.",
+                              "An arm action must name a goal or gripper target. When both are present they start together.",
                             ),
                         ),
                       })

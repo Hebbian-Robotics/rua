@@ -14,11 +14,11 @@ export const robotToolSpecifications = [
             anyOf: [
               {
                 properties: {
-                  movement: {
+                  goal: {
                     type: "object",
                   },
                 },
-                required: ["movement"],
+                required: ["goal"],
               },
               {
                 properties: {
@@ -30,7 +30,7 @@ export const robotToolSpecifications = [
               },
             ],
             description:
-              "An arm action must name a movement or gripper target. When both are present they start together.",
+              "An arm action must name a goal or gripper target. When both are present they start together.",
             properties: {
               gripper_opening: {
                 maximum: 1.0,
@@ -50,7 +50,7 @@ export const robotToolSpecifications = [
                 description:
                   "Peak speed in degrees per second; clamped to the profile maximum.",
               },
-              movement: {
+              goal: {
                 oneOf: [
                   {
                     additionalProperties: false,
@@ -554,7 +554,7 @@ export const robotToolContext = {
   frames:
     "Positions are in the station world frame. Tool inputs and outputs use millimeters, degrees, and degrees per second.",
   gripper:
-    "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its movement speed for both movement and gripper.",
+    "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. A step speed overrides its goal speed for both goal and gripper.",
   limitations:
     "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
   motion:

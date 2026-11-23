@@ -109,7 +109,7 @@ def test_action_sequence_results_remain_available_after_a_new_action_sequence(
                         ActionSequenceStep(
                             arms={
                                 ARM: ActionSequenceMove(
-                                    movement=ActionSequenceJointsMovement(joints=joints)
+                                    goal=ActionSequenceJointsMovement(joints=joints)
                                 )
                             }
                         )
@@ -177,7 +177,7 @@ def test_canceled_sequence_releases_the_arm_for_the_next_sequence(
                             ActionSequenceStep(
                                 arms={
                                     ARM: ActionSequenceMove(
-                                        movement=ActionSequenceJointsMovement(
+                                        goal=ActionSequenceJointsMovement(
                                             joints=joints, max_joint_speed=0.1
                                         )
                                     )
@@ -216,7 +216,7 @@ def test_revoking_the_lease_stops_an_action_sequence(server_binary: Path) -> Non
                         ActionSequenceStep(
                             arms={
                                 ARM: ActionSequenceMove(
-                                    movement=ActionSequenceJointsMovement(
+                                    goal=ActionSequenceJointsMovement(
                                         joints=joints, max_joint_speed=0.1
                                     )
                                 )
@@ -225,7 +225,7 @@ def test_revoking_the_lease_stops_an_action_sequence(server_binary: Path) -> Non
                         ActionSequenceStep(
                             arms={
                                 ARM: ActionSequenceMove(
-                                    movement=ActionSequenceJointsMovement(joints=joints)
+                                    goal=ActionSequenceJointsMovement(joints=joints)
                                 )
                             }
                         ),
@@ -259,7 +259,7 @@ def test_required_camera_loss_stops_a_action_sequence(server_binary: Path) -> No
                         ActionSequenceStep(
                             arms={
                                 ARM: ActionSequenceMove(
-                                    movement=ActionSequenceJointsMovement(
+                                    goal=ActionSequenceJointsMovement(
                                         joints=joints, max_joint_speed=0.1
                                     )
                                 )
@@ -268,7 +268,7 @@ def test_required_camera_loss_stops_a_action_sequence(server_binary: Path) -> No
                         ActionSequenceStep(
                             arms={
                                 ARM: ActionSequenceMove(
-                                    movement=ActionSequenceJointsMovement(joints=joints)
+                                    goal=ActionSequenceJointsMovement(joints=joints)
                                 )
                             }
                         ),
@@ -759,7 +759,7 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                 combined = await arm.run_action_sequence(
                     [
                         ActionSequenceMove(
-                            movement=ActionSequenceJointsMovement(
+                            goal=ActionSequenceJointsMovement(
                                 joints=joints, max_joint_speed=0.03
                             ),
                             gripper_opening=0.0,

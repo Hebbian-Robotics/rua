@@ -85,9 +85,7 @@ def test_recording_continues_during_a_action_sequence(station: RunningStation) -
                             ActionSequenceStep(
                                 arms={
                                     ARM: ActionSequenceMove(
-                                        movement=ActionSequenceJointsMovement(
-                                            joints=joints
-                                        )
+                                        goal=ActionSequenceJointsMovement(joints=joints)
                                     )
                                 }
                             )

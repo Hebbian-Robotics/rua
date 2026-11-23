@@ -401,7 +401,7 @@ test("single-arm pose/gripper specialization hides and rejects joint targets and
     {
       id: "joint",
       name: "action_sequence",
-      arguments: { steps: [{ movement: { joints_degrees: [0, 0, 0, 0, 0] } }] },
+      arguments: { steps: [{ goal: { joints_degrees: [0, 0, 0, 0, 0] } }] },
     },
     {
       id: "standalone",

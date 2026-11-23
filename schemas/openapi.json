@@ -98,6 +98,9 @@
           {
             "additionalProperties": false,
             "properties": {
+              "goal": {
+                "$ref": "#/components/schemas/ActionSequenceGoal"
+              },
               "gripper_opening": {
                 "default": null,
                 "format": "double",
@@ -110,19 +113,16 @@
               },
               "max_joint_speed": {
                 "default": null,
-                "description": "Speed for both resources in rad/s; overrides the movement speed when provided.",
+                "description": "Speed for both resources in rad/s; overrides the goal speed when provided.",
                 "format": "double",
                 "type": [
                   "number",
                   "null"
                 ]
-              },
-              "movement": {
-                "$ref": "#/components/schemas/ActionSequenceMovement"
               }
             },
             "required": [
-              "movement"
+              "goal"
             ],
             "title": "ActionSequenceMove",
             "type": "object"
@@ -153,10 +153,10 @@
             "type": "object"
           }
         ],
-        "description": "An arm action must name a movement or gripper target. When both are present they start together."
+        "description": "An arm action must name a goal or gripper target. When both are present they start together."
       },
-      "ActionSequenceMovement": {
-        "description": "One movement in an action sequence. The arm settles at each target.",
+      "ActionSequenceGoal": {
+        "description": "One goal in an action sequence. The arm settles at each target.",
         "oneOf": [
           {
             "additionalProperties": false,
@@ -1833,6 +1833,9 @@
           {
             "additionalProperties": false,
             "properties": {
+              "goal": {
+                "$ref": "#/components/schemas/CompiledGoal"
+              },
               "gripper_opening": {
                 "maximum": 1.0,
                 "minimum": 0.0,
@@ -1853,14 +1856,11 @@
                   "number",
                   "null"
                 ]
-              },
-              "movement": {
-                "$ref": "#/components/schemas/CompiledMovement"
               }
             },
             "required": [
               "kind",
-              "movement"
+              "goal"
             ],
             "type": "object"
           },
@@ -1894,7 +1894,7 @@
           }
         ]
       },
-      "CompiledMovement": {
+      "CompiledGoal": {
         "oneOf": [
           {
             "additionalProperties": false,
