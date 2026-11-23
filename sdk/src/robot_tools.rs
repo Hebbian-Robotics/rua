@@ -39,7 +39,9 @@ pub enum RobotToolOutcome {
         detail: String,
     },
     Incomplete(Value),
-    /// A fault or communication interruption ended the operation.
+    /// A hard fault ended the operation and powered off the motors.
+    Faulted(Value),
+    /// A communication interruption ended the operation.
     Interrupted(Value),
 }
 
@@ -68,6 +70,7 @@ impl RobotToolResult {
         match &self.outcome {
             RobotToolOutcome::Returned(value)
             | RobotToolOutcome::Incomplete(value)
+            | RobotToolOutcome::Faulted(value)
             | RobotToolOutcome::Interrupted(value) => value.clone(),
             RobotToolOutcome::InvalidInput(detail) => Value::String(detail.clone()),
             RobotToolOutcome::Failed(error) => Value::String(error.to_string()),
@@ -635,41 +638,38 @@ impl<'a> RobotTools<'a> {
         answer: ToolOperationAnswer,
     ) -> crate::Result<RobotToolOutcome> {
         let station = self.lease.station();
-        let mut interrupted = false;
-        let (value, incomplete) = match answer {
+        let value = match answer {
             ToolOperationAnswer::Refused { reason, detail } => {
                 return Ok(RobotToolOutcome::Refused { reason, detail });
             }
-            ToolOperationAnswer::PosePreviews { results } => (
-                Ok(
-                    serde_json::json!({ "results": results.into_iter().map(|candidate| serde_json::json!({"answer": candidate.answer})).collect::<Vec<_>>() }),
-                ),
-                false,
-            ),
-            ToolOperationAnswer::Observation { state } => (serde_json::to_value(state), false),
+            ToolOperationAnswer::PosePreviews { results } => {
+                serde_json::json!({ "results": results.into_iter().map(|candidate| serde_json::json!({"answer": candidate.answer})).collect::<Vec<_>>() })
+            }
+            ToolOperationAnswer::Observation { state } => {
+                serde_json::to_value(state).map_err(|error| {
+                    Error::Connection(format!("cannot serialize tool result: {error}"))
+                })?
+            }
             ToolOperationAnswer::ActionSequence { action_sequence_id } => {
                 let sequence = station
                     .wait_for_action_sequence(&action_sequence_id)
                     .await?;
-                interrupted = sequence.steps.iter().flatten().any(|record| {
-                    matches!(
-                        record.record.outcome(),
-                        Some(CommandOutcome::Faulted | CommandOutcome::Interrupted)
-                    )
-                });
                 let incomplete = !matches!(sequence.phase, ActionSequencePhase::Completed);
-                (serde_json::to_value(sequence), incomplete)
+                let value = serde_json::to_value(&sequence).map_err(|error| {
+                    Error::Connection(format!("cannot serialize tool result: {error}"))
+                })?;
+                return Ok(classify_motion_outcome(
+                    sequence
+                        .steps
+                        .iter()
+                        .flatten()
+                        .filter_map(|record| record.record.outcome()),
+                    incomplete,
+                    value,
+                ));
             }
         };
-        let value = value
-            .map_err(|error| Error::Connection(format!("cannot serialize tool result: {error}")))?;
-        Ok(if interrupted {
-            RobotToolOutcome::Interrupted(value)
-        } else if incomplete {
-            RobotToolOutcome::Incomplete(value)
-        } else {
-            RobotToolOutcome::Returned(value)
-        })
+        Ok(RobotToolOutcome::Returned(value))
     }
 }
 
@@ -702,21 +702,16 @@ fn command_records_outcome(
     let mut limited = false;
     let mut complete = true;
     let mut stopped_short = false;
-    let mut interrupted = false;
     let group_id = records
         .first()
         .and_then(|record| record.record.group_id())
         .map(str::to_owned);
-    for record in records {
+    for record in &records {
         limited |= record.record.was_limited();
         let outcome = record.record.outcome();
         complete &= outcome == Some(CommandOutcome::Completed);
         stopped_short |= outcome == Some(CommandOutcome::StoppedShort);
-        interrupted |= matches!(
-            outcome,
-            Some(CommandOutcome::Faulted | CommandOutcome::Interrupted)
-        );
-        payloads.push(serde_json::to_value(record.record).map_err(|error| {
+        payloads.push(serde_json::to_value(&record.record).map_err(|error| {
             Error::Connection(format!("cannot serialize tool result: {error}"))
         })?);
     }
@@ -736,13 +731,32 @@ fn command_records_outcome(
             .next()
             .ok_or_else(|| Error::Connection("missing command record".into()))?
     };
-    Ok(if interrupted {
+    Ok(classify_motion_outcome(
+        records.iter().filter_map(|record| record.record.outcome()),
+        incomplete,
+        value,
+    ))
+}
+
+fn classify_motion_outcome(
+    outcomes: impl Iterator<Item = CommandOutcome>,
+    incomplete: bool,
+    value: Value,
+) -> RobotToolOutcome {
+    let mut interrupted = false;
+    for outcome in outcomes {
+        if outcome == CommandOutcome::Faulted {
+            return RobotToolOutcome::Faulted(value);
+        }
+        interrupted |= outcome == CommandOutcome::Interrupted;
+    }
+    if interrupted {
         RobotToolOutcome::Interrupted(value)
     } else if incomplete {
         RobotToolOutcome::Incomplete(value)
     } else {
         RobotToolOutcome::Returned(value)
-    })
+    }
 }
 
 // Model-facing units are converted before station variants are parsed.
@@ -880,6 +894,44 @@ mod outcome_tests {
     }
 
     #[test]
+    fn grouped_motion_distinguishes_faults_from_interruptions() {
+        let examples: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/model-command-outcomes.json"
+        ))
+        .unwrap();
+        let record_with_outcome = |outcome: &str| {
+            let mut record = examples[0]["record"].clone();
+            if outcome == "interrupted" {
+                record["phase"] = serde_json::json!({
+                    "kind": "outcome_unknown",
+                    "finished_at": 2.0
+                });
+            } else {
+                record["phase"]["completion"]["outcome"] = serde_json::json!(outcome);
+            }
+            ArmRecord {
+                arm: outcome.into(),
+                record: serde_json::from_value(record).unwrap(),
+            }
+        };
+        assert!(matches!(
+            command_records_outcome(vec![record_with_outcome("interrupted")], true).unwrap(),
+            RobotToolOutcome::Interrupted(_)
+        ));
+        assert!(matches!(
+            command_records_outcome(
+                vec![
+                    record_with_outcome("interrupted"),
+                    record_with_outcome("faulted")
+                ],
+                true,
+            )
+            .unwrap(),
+            RobotToolOutcome::Faulted(_)
+        ));
+    }
+
+    #[test]
     fn group_outcomes_match_the_shared_examples() {
         let examples: Vec<serde_json::Value> = serde_json::from_str(include_str!(
             "../../tests/fixtures/model-command-outcomes.json"
@@ -890,7 +942,12 @@ mod outcome_tests {
                 let mut record_data = example["record"].clone();
                 record_data["command"]["target_joints"] = serde_json::json!([0.123_456_789]);
                 record_data["command"]["joint_speed"] = serde_json::json!(0.123_456_789);
-                let record = serde_json::from_value(record_data.clone()).unwrap();
+                let record: hebbian_contracts::CommandRecord =
+                    serde_json::from_value(record_data.clone()).unwrap();
+                assert_eq!(
+                    serde_json::to_value(record.target_status()).unwrap(),
+                    example["expected_status"],
+                );
                 let outcome = command_records_outcome(
                     vec![ArmRecord {
                         arm: "follower".into(),

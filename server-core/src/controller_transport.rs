@@ -3,9 +3,7 @@
 use std::io::{self, Read, Write};
 
 use crate::action_step::PreparedArmAction;
-use hebbian_contracts::{
-    ArmMove, ArmRecord, Command, CommandRecord, Event, RejectionReason, TraceContext,
-};
+use hebbian_contracts::{ArmRecord, Command, CommandRecord, Event, RejectionReason, TraceContext};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -28,11 +26,6 @@ pub enum ControllerRequest {
         actions: Vec<PreparedArmAction>,
         trace_context: Option<TraceContext>,
     },
-    MoveArms {
-        label: String,
-        moves: Vec<ArmMove>,
-        trace_context: Option<TraceContext>,
-    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,7 +33,6 @@ pub enum ControllerAnswer {
     ControlHandoffReadiness(bool),
     CancelledCommand,
     Submitted(Box<CommandRecord>),
-    MovedArms(Vec<CommandRecord>),
     ActionStep(Vec<ArmRecord>),
     Refused {
         reason: RejectionReason,

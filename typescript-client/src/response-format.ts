@@ -73,12 +73,14 @@ function modelCommandRecord(
     const completion = phase["completion"];
     if (kind === "move" && isObject(completion)) {
       const outcome = completion["outcome"];
-      result["target_status"] =
-        outcome === "completed"
-          ? "reached"
-          : outcome === "stopped_short"
-            ? "stopped_short"
-            : "partial";
+      if (outcome === "completed") {
+        const limited =
+          command["pose_limited"] != null || command["path_limited"] != null;
+        result["target_status"] = limited ? "limited" : "reached";
+      } else {
+        result["target_status"] =
+          outcome === "stopped_short" ? "stopped_short" : "partial";
+      }
     }
   } else if (phaseKind === "not_started" || phaseKind === "outcome_unknown") {
     result["completion"] = {
@@ -113,14 +115,6 @@ function formatModelField(value: unknown, fieldName: string): unknown {
         (key === "checkpoints" && Array.isArray(item) && item.length === 0)
       )
         continue;
-      if (
-        key === "target_status" &&
-        item === "reached" &&
-        (record["pose_limited"] != null || record["path_limited"] != null)
-      ) {
-        formatted[key] = "limited";
-        continue;
-      }
       const positionField = positionFields[key];
       const angleField = angleFields[key];
       if (positionField !== undefined)

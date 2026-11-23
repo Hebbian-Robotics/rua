@@ -353,13 +353,20 @@ fn move_arms(client: &LinkClient, targets: [[f64; 2]; 2]) -> Vec<CommandRecord> 
             path_limited: None,
             pose_limited: None,
         })
+        .map(|part| {
+            hebbian_robot_use_core::action_step::PreparedArmAction::from_group_move(
+                "move_arms",
+                part,
+            )
+        })
         .collect();
-    match client.submit(ControllerRequest::MoveArms {
-        label: "move_arms".into(),
-        moves,
+    match client.submit(ControllerRequest::ActionStep {
+        actions: moves,
         trace_context: None,
     }) {
-        ControllerAnswer::MovedArms(records) => records,
+        ControllerAnswer::ActionStep(records) => {
+            records.into_iter().map(|entry| entry.record).collect()
+        }
         answer => panic!("group move was not accepted: {answer:?}"),
     }
 }

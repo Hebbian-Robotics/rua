@@ -105,7 +105,9 @@ requests retained sequence images instead. The application attaches labelled
 JPEGs from `result.cameras` to its model messages. `Station::camera_jpeg` remains
 available for direct snapshot access. `tools.execute_calls(calls, options).await` executes
 calls concurrently, waits for every outcome, and returns results in input order.
-An unconfirmed call is `RobotToolOutcome::Failed`; inspect the arm before proceeding.
+End the agent loop on `RobotToolOutcome::Faulted`, which indicates the motors
+have powered off. A communication interruption returns
+`RobotToolOutcome::Interrupted`. An unconfirmed call is `RobotToolOutcome::Failed`; inspect the arm before proceeding.
 Each call can request a speed; station limits apply in every SDK.
 
 Use `with_cameras(vec!["wrist".into()])` to sample images while model action

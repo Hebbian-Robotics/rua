@@ -254,6 +254,8 @@ pub struct PoseLimited {
 #[serde(rename_all = "snake_case")]
 pub enum TargetStatus {
     Reached,
+    /// The arm reached an adjusted pose or path target.
+    Limited,
     // Rest outside the settled tolerance, no longer closing on the target.
     StoppedShort,
     Partial,
@@ -602,6 +604,7 @@ impl CommandRecord {
             CommandPhase::Pending | CommandPhase::OutcomeUnknown { .. } => None,
             CommandPhase::NotStarted { .. } => Some(TargetStatus::NotStarted),
             CommandPhase::Finished { ref completion, .. } => Some(match completion.outcome {
+                KnownCommandOutcome::Completed if self.was_limited() => TargetStatus::Limited,
                 KnownCommandOutcome::Completed => TargetStatus::Reached,
                 KnownCommandOutcome::StoppedShort => TargetStatus::StoppedShort,
                 KnownCommandOutcome::Stopped

@@ -89,46 +89,75 @@
     }
   },
   {
-    "name": "completed execution distinguishes limited requested targets from reached targets",
+    "name": "completed moves report limited only when they reach an adjusted target",
     "input": [
       {
-        "completion": {
-          "outcome": "completed"
+        "command_id": "move-0",
+        "command": {
+          "kind": "move",
+          "pose_limited": {
+            "position_shortfall_meters": 0.0011
+          }
         },
-        "target_status": "reached",
-        "pose_limited": {
-          "position_shortfall_meters": 0.0011
+        "phase": {
+          "kind": "finished",
+          "achieved": null,
+          "completion": {
+            "outcome": "completed"
+          }
         }
       },
       {
-        "completion": {
-          "outcome": "completed"
+        "command_id": "move-1",
+        "command": {
+          "kind": "move",
+          "path_limited": {
+            "reason": "self_collision"
+          }
         },
-        "target_status": "reached",
-        "path_limited": {
-          "reason": "self_collision"
+        "phase": {
+          "kind": "finished",
+          "achieved": null,
+          "completion": {
+            "outcome": "completed"
+          }
         }
       },
       {
-        "completion": {
-          "outcome": "completed"
+        "command_id": "move-2",
+        "command": {
+          "kind": "move",
+          "pose_limited": null,
+          "path_limited": null
         },
-        "target_status": "reached",
-        "pose_limited": null,
-        "path_limited": null
+        "phase": {
+          "kind": "finished",
+          "achieved": null,
+          "completion": {
+            "outcome": "completed"
+          }
+        }
       },
       {
-        "completion": {
-          "outcome": "stopped_short"
+        "command_id": "move-3",
+        "command": {
+          "kind": "move",
+          "pose_limited": {
+            "position_shortfall_meters": 0.0011
+          }
         },
-        "target_status": "stopped_short",
-        "pose_limited": {
-          "position_shortfall_meters": 0.0011
+        "phase": {
+          "kind": "finished",
+          "achieved": null,
+          "completion": {
+            "outcome": "stopped_short"
+          }
         }
       }
     ],
     "expected": [
       {
+        "command_id": "move-0",
         "completion": {
           "outcome": "completed"
         },
@@ -138,6 +167,7 @@
         }
       },
       {
+        "command_id": "move-1",
         "completion": {
           "outcome": "completed"
         },
@@ -147,12 +177,14 @@
         }
       },
       {
+        "command_id": "move-2",
         "completion": {
           "outcome": "completed"
         },
         "target_status": "reached"
       },
       {
+        "command_id": "move-3",
         "completion": {
           "outcome": "stopped_short"
         },
