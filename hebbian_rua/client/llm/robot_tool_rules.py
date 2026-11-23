@@ -2,14 +2,15 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import assert_never
 
 from hebbian_rua.client.contract.station_api import (
-    CommandOutcome,
     CommandRecord,
     CommandRefused,
 )
-from hebbian_rua.client.llm.generated_robot_tools import ROBOT_TOOL_INPUT_UNITS
+from hebbian_rua.client.llm.generated_robot_tools import (
+    MODEL_OUTCOMES,
+    ROBOT_TOOL_INPUT_UNITS,
+)
 from hebbian_rua.client.llm.response_format import result_from_data
 from hebbian_rua.client.llm.tool_catalog import (
     RobotToolConfiguration,
@@ -31,52 +32,6 @@ from hebbian_rua.client.station_types import (
     command_record_was_limited,
 )
 
-
-def outcome_is_error(outcome: CommandOutcome | None) -> bool:
-    """Whether the model is told the command did not do what it asked; a command
-    with no outcome yet did not finish."""
-    match outcome:
-        case CommandOutcome.completed:
-            return False
-        case (
-            None
-            | CommandOutcome.stopped
-            | CommandOutcome.tripped
-            | CommandOutcome.timed_out
-            | CommandOutcome.stopped_short
-            | CommandOutcome.superseded
-            | CommandOutcome.faulted
-            | CommandOutcome.interrupted
-            | CommandOutcome.failed
-        ):
-            return True
-        case _ as unreachable:
-            assert_never(unreachable)
-
-
-def outcome_halts_the_loop(outcome: CommandOutcome | None) -> bool:
-    """A hard fault powers off the motors, so a loop ends rather than ask the model
-    again. A trip does not: the arm holds, and the model sees the result and the
-    frames."""
-    match outcome:
-        case CommandOutcome.faulted:
-            return True
-        case (
-            None
-            | CommandOutcome.completed
-            | CommandOutcome.stopped
-            | CommandOutcome.tripped
-            | CommandOutcome.timed_out
-            | CommandOutcome.stopped_short
-            | CommandOutcome.superseded
-            | CommandOutcome.interrupted
-            | CommandOutcome.failed
-        ):
-            return False
-        case _ as unreachable:
-            assert_never(unreachable)
-
-
 # Runs one call: a loop can wrap it to trace or log each call.
 type CallWrapper = Callable[
     [RobotToolCall, Callable[[], RobotToolResult]], RobotToolResult
@@ -91,19 +46,24 @@ class CapturedObservation:
     captures: dict[str, CameraJpeg] = field(default_factory=dict)
 
 
+def model_record_outcome(record: CommandRecord) -> str:
+    outcome = command_record_outcome(record)
+    return MODEL_OUTCOMES[outcome] if outcome is not None else "incomplete"
+
+
 def records_result(
     call: RobotToolCall, records: list[CommandRecord], *, grouped: bool = False
 ) -> RobotToolResult:
     """Report incomplete or limited commands as errors; group moves by status."""
     limited = any(command_record_was_limited(record) for record in records)
     payloads = [record.model_dump(mode="json") for record in records]
-    outcomes = {command_record_outcome(record) for record in records}
+    outcomes = {model_record_outcome(record) for record in records}
     if grouped:
-        if outcomes == {CommandOutcome.completed} and limited:
+        if outcomes == {"completed"} and limited:
             status = "limited"
-        elif outcomes == {CommandOutcome.completed}:
+        elif outcomes == {"completed"}:
             status = "reached"
-        elif CommandOutcome.stopped_short in outcomes:
+        elif "stopped_short" in outcomes:
             status = "stopped_short"
         else:
             status = "partial"
@@ -122,9 +82,9 @@ def records_result(
     return result_from_data(
         call,
         payload,
-        is_error=limited or any(outcome_is_error(outcome) for outcome in outcomes),
-        halt=any(outcome_halts_the_loop(outcome) for outcome in outcomes),
-        interrupted=CommandOutcome.interrupted in outcomes,
+        is_error=limited or any(outcome != "completed" for outcome in outcomes),
+        halt="faulted" in outcomes,
+        interrupted="interrupted" in outcomes,
     )
 
 

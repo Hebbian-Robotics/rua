@@ -208,6 +208,117 @@ pub fn filter_sequence_actions(
     }
 }
 
+/// Model-facing classification shared by command and sequence adapters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelOutcome {
+    Completed,
+    StoppedShort,
+    Faulted,
+    Interrupted,
+    Incomplete,
+}
+
+impl From<crate::CommandOutcome> for ModelOutcome {
+    fn from(outcome: crate::CommandOutcome) -> Self {
+        use crate::CommandOutcome;
+        match outcome {
+            CommandOutcome::Completed => Self::Completed,
+            CommandOutcome::StoppedShort => Self::StoppedShort,
+            CommandOutcome::Faulted => Self::Faulted,
+            CommandOutcome::Interrupted => Self::Interrupted,
+            CommandOutcome::Stopped
+            | CommandOutcome::Tripped
+            | CommandOutcome::TimedOut
+            | CommandOutcome::Superseded
+            | CommandOutcome::Failed => Self::Incomplete,
+        }
+    }
+}
+
+/// Station field, model field, and multiplier for model-facing output.
+pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
+    ("position", "position_mm", 1000.0),
+    ("target_position", "target_position_mm", 1000.0),
+    ("tool_position", "tool_position_mm", 1000.0),
+    ("surface_height_meters", "surface_height_mm", 1000.0),
+    ("leeway_meters", "leeway_mm", 1000.0),
+    ("model_points", "model_points_mm", 1000.0),
+    ("position_error_meters", "position_error_mm", 1000.0),
+    ("position_shortfall_meters", "position_shortfall_mm", 1000.0),
+    ("joints", "joints_degrees", 180.0 / std::f64::consts::PI),
+    (
+        "measured_joints",
+        "measured_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "measured_joint_velocities",
+        "measured_joint_velocities_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "commanded_joints",
+        "commanded_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "rest_pose",
+        "rest_pose_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "target_joints",
+        "target_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "goal_joints",
+        "goal_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_error_radians",
+        "joint_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_errors_radians",
+        "joint_errors_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "orientation_error_radians",
+        "orientation_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "orientation_shortfall_radians",
+        "orientation_shortfall_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "measured_angle_radians",
+        "measured_angle_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "target_angle_radians",
+        "target_angle_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_speed",
+        "joint_speed_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "max_joint_speed",
+        "max_joint_speed_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+];
+
 /// A numeric tool argument whose model units differ from the station contract.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ModelInputUnit {

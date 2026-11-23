@@ -276,38 +276,11 @@ pub fn model_response(value: Value) -> Value {
 }
 
 fn model_unit_field(field: &str) -> Option<(&'static str, f64)> {
-    const DEGREES_PER_RADIAN: f64 = 180.0 / std::f64::consts::PI;
-    match field {
-        "position" => Some(("position_mm", 1000.0)),
-        "target_position" => Some(("target_position_mm", 1000.0)),
-        "tool_position" => Some(("tool_position_mm", 1000.0)),
-        "surface_height_meters" => Some(("surface_height_mm", 1000.0)),
-        "leeway_meters" => Some(("leeway_mm", 1000.0)),
-        "model_points" => Some(("model_points_mm", 1000.0)),
-        "position_error_meters" => Some(("position_error_mm", 1000.0)),
-        "position_shortfall_meters" => Some(("position_shortfall_mm", 1000.0)),
-        "joints" => Some(("joints_degrees", DEGREES_PER_RADIAN)),
-        "measured_joints" => Some(("measured_joints_degrees", DEGREES_PER_RADIAN)),
-        "measured_joint_velocities" => Some((
-            "measured_joint_velocities_degrees_per_second",
-            DEGREES_PER_RADIAN,
-        )),
-        "commanded_joints" => Some(("commanded_joints_degrees", DEGREES_PER_RADIAN)),
-        "rest_pose" => Some(("rest_pose_degrees", DEGREES_PER_RADIAN)),
-        "target_joints" => Some(("target_joints_degrees", DEGREES_PER_RADIAN)),
-        "goal_joints" => Some(("goal_joints_degrees", DEGREES_PER_RADIAN)),
-        "joint_error_radians" => Some(("joint_error_degrees", DEGREES_PER_RADIAN)),
-        "joint_errors_radians" => Some(("joint_errors_degrees", DEGREES_PER_RADIAN)),
-        "orientation_error_radians" => Some(("orientation_error_degrees", DEGREES_PER_RADIAN)),
-        "orientation_shortfall_radians" => {
-            Some(("orientation_shortfall_degrees", DEGREES_PER_RADIAN))
-        }
-        "measured_angle_radians" => Some(("measured_angle_degrees", DEGREES_PER_RADIAN)),
-        "target_angle_radians" => Some(("target_angle_degrees", DEGREES_PER_RADIAN)),
-        "joint_speed" => Some(("joint_speed_degrees_per_second", DEGREES_PER_RADIAN)),
-        "max_joint_speed" => Some(("max_joint_speed_degrees_per_second", DEGREES_PER_RADIAN)),
-        _ => None,
-    }
+    hebbian_contracts::MODEL_OUTPUT_UNITS.iter().find_map(
+        |&(station_field, model_field, factor)| {
+            (station_field == field).then_some((model_field, factor))
+        },
+    )
 }
 
 fn format_model_field(value: Value, field: &str) -> Value {

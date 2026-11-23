@@ -6,6 +6,7 @@ from collections.abc import Collection
 from dataclasses import replace
 from typing import Literal
 
+from hebbian_rua.client.llm.generated_robot_tools import MODEL_OUTPUT_UNITS
 from hebbian_rua.client.llm.types import (
     ModelContent,
     RobotOutput,
@@ -14,32 +15,8 @@ from hebbian_rua.client.llm.types import (
     SequenceImageHistory,
 )
 
-_POSITION_FIELDS = {
-    "position": "position_mm",
-    "target_position": "target_position_mm",
-    "tool_position": "tool_position_mm",
-    "surface_height_meters": "surface_height_mm",
-    "leeway_meters": "leeway_mm",
-    "model_points": "model_points_mm",
-    "position_error_meters": "position_error_mm",
-    "position_shortfall_meters": "position_shortfall_mm",
-}
-_ANGLE_FIELDS = {
-    "joints": "joints_degrees",
-    "measured_joints": "measured_joints_degrees",
-    "measured_joint_velocities": "measured_joint_velocities_degrees_per_second",
-    "commanded_joints": "commanded_joints_degrees",
-    "rest_pose": "rest_pose_degrees",
-    "target_joints": "target_joints_degrees",
-    "goal_joints": "goal_joints_degrees",
-    "joint_error_radians": "joint_error_degrees",
-    "joint_errors_radians": "joint_errors_degrees",
-    "orientation_error_radians": "orientation_error_degrees",
-    "orientation_shortfall_radians": "orientation_shortfall_degrees",
-    "measured_angle_radians": "measured_angle_degrees",
-    "target_angle_radians": "target_angle_degrees",
-    "joint_speed": "joint_speed_degrees_per_second",
-    "max_joint_speed": "max_joint_speed_degrees_per_second",
+_OUTPUT_CONVERSIONS = {
+    field: (name, scale) for field, name, scale in MODEL_OUTPUT_UNITS
 }
 
 
@@ -126,10 +103,9 @@ def _format_model_field(value: object, field_name: str) -> object:
         for key, item in value.items():
             if item is None or (key == "checkpoints" and item == []):
                 continue
-            if key in _POSITION_FIELDS:
-                formatted[_POSITION_FIELDS[key]] = _scale_numbers(item, 1000.0)
-            elif key in _ANGLE_FIELDS:
-                formatted[_ANGLE_FIELDS[key]] = _scale_numbers(item, 180.0 / math.pi)
+            if conversion := _OUTPUT_CONVERSIONS.get(key):
+                model_field, factor = conversion
+                formatted[model_field] = _scale_numbers(item, factor)
             else:
                 formatted[key] = _format_model_field(item, key)
         return formatted

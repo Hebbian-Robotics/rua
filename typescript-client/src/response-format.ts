@@ -1,32 +1,12 @@
 /** Readable model responses; station records retain their original SI values. */
-const positionFields: Readonly<Record<string, string>> = {
-  position: "position_mm",
-  target_position: "target_position_mm",
-  tool_position: "tool_position_mm",
-  surface_height_meters: "surface_height_mm",
-  leeway_meters: "leeway_mm",
-  model_points: "model_points_mm",
-  position_error_meters: "position_error_mm",
-  position_shortfall_meters: "position_shortfall_mm",
-};
+import { modelOutputUnits } from "./generated/robot-tools.js";
 
-const angleFields: Readonly<Record<string, string>> = {
-  joints: "joints_degrees",
-  measured_joints: "measured_joints_degrees",
-  measured_joint_velocities: "measured_joint_velocities_degrees_per_second",
-  commanded_joints: "commanded_joints_degrees",
-  rest_pose: "rest_pose_degrees",
-  target_joints: "target_joints_degrees",
-  goal_joints: "goal_joints_degrees",
-  joint_error_radians: "joint_error_degrees",
-  joint_errors_radians: "joint_errors_degrees",
-  orientation_error_radians: "orientation_error_degrees",
-  orientation_shortfall_radians: "orientation_shortfall_degrees",
-  measured_angle_radians: "measured_angle_degrees",
-  target_angle_radians: "target_angle_degrees",
-  joint_speed: "joint_speed_degrees_per_second",
-  max_joint_speed: "max_joint_speed_degrees_per_second",
-};
+const outputConversions = new Map<string, readonly [string, number]>(
+  modelOutputUnits.map(([stationField, modelField, factor]) => [
+    stationField,
+    [modelField, factor],
+  ]),
+);
 
 function rounded(value: number, decimals: number): number {
   const scale = 10 ** decimals;
@@ -115,12 +95,9 @@ function formatModelField(value: unknown, fieldName: string): unknown {
         (key === "checkpoints" && Array.isArray(item) && item.length === 0)
       )
         continue;
-      const positionField = positionFields[key];
-      const angleField = angleFields[key];
-      if (positionField !== undefined)
-        formatted[positionField] = scaleNumbers(item, 1000);
-      else if (angleField !== undefined)
-        formatted[angleField] = scaleNumbers(item, 180 / Math.PI);
+      const conversion = outputConversions.get(key);
+      if (conversion)
+        formatted[conversion[0]] = scaleNumbers(item, conversion[1]);
       else formatted[key] = formatModelField(item, key);
     }
     return formatted;

@@ -1,6 +1,6 @@
 import { match } from "ts-pattern";
 import { apiSchemas } from "./generated/api-schemas.js";
-import { robotToolContext } from "./generated/robot-tools.js";
+import { modelOutcomes, robotToolContext } from "./generated/robot-tools.js";
 import {
   defaultFormatter,
   type OutputFormatter,
@@ -33,6 +33,7 @@ import { DEFAULT_MEDIA_URL } from "./station-http.js";
 import {
   type ArmState,
   type CommandAnswer,
+  type CommandRecord,
   commandPlan,
   commandResult,
   commandWasLimited,
@@ -89,6 +90,11 @@ function result(
   };
 }
 
+function modelRecordOutcome(record: CommandRecord) {
+  const outcome = commandResult(record)?.outcome;
+  return outcome ? modelOutcomes[outcome] : "incomplete";
+}
+
 function toolCommandResult(
   call: RobotToolCall,
   answer: CommandAnswer,
@@ -104,7 +110,7 @@ function toolCommandResult(
       ),
     );
   const records = answer.records.map(({ record }) => record);
-  const outcomes = records.map((record) => commandResult(record)?.outcome);
+  const outcomes = records.map(modelRecordOutcome);
   const limited = records.some(commandWasLimited);
   const payloads = records;
   const payload =
@@ -586,7 +592,7 @@ function createRobotToolsCore(
                   );
                   const outcomes = sequence.steps
                     .flat()
-                    .map((record) => commandResult(record.record)?.outcome);
+                    .map(({ record }) => modelRecordOutcome(record));
                   const modes = (await stationState()).arms
                     .filter((candidate) =>
                       sequence.arms.includes(candidate.arm),
