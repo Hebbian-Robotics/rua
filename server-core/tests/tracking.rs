@@ -313,30 +313,35 @@ fn a_constant_target_preserves_the_continuous_jerk_limited_profile() {
 }
 
 #[test]
-fn pass_through_keeps_velocity_at_a_waypoint_and_settles_at_the_goal() {
+fn continuous_move_carries_velocity_through_the_waypoint_and_settles_at_the_goal() {
     let config = config();
     let mut path = plan();
-    let mut final_section = path.segments[0].clone();
-    final_section.corners = vec![vec![0.6, -0.3], vec![1.0, -0.1]];
+    let waypoint = vec![0.3, -0.1];
+    let mut continuation = path.segments[0].clone();
+    continuation.corners[0].clone_from(&waypoint);
+    path.segments[0].corners[1].clone_from(&waypoint);
     path.segments[0].pass_through = Some(hebbian_contracts::PassThrough {
         gripper_angle: None,
     });
-    path.segments.push(final_section);
-    let mut motion = MotionSupervisor::new(path, &config.motion, 2).unwrap();
+    path.segments.push(continuation);
+    let mut motion = MotionSupervisor::new(path.clone(), &config.motion, 2).unwrap();
     let mut measured = vec![0.0; 2];
-    let mut crossed = false;
+    let mut crossing = false;
     for _ in 0..2000 {
         let reference = motion.step(&measured, 0.01).unwrap();
-        if measured[0] < 0.6 && reference.positions[0] >= 0.6 {
-            assert!(reference.velocities[0] > 0.01);
+        if measured[0] < waypoint[0] && reference.positions[0] >= waypoint[0] {
             assert_eq!(motion.stage(), Stage::Moving);
-            crossed = true;
+            assert!(reference.velocities[0] > 0.01);
+            crossing = true;
         }
         measured = reference.positions;
         if motion.done() {
             break;
         }
     }
-    assert!(crossed && motion.done());
-    assert_eq!(measured, vec![1.0, -0.1]);
+    assert!(crossing && motion.done());
+    assert_eq!(measured, path.segments[1].corners[1]);
+    assert_eq!(motion.reference().velocities, [0.0, 0.0]);
+    path.segments[1].corners[1] = vec![0.0; 2];
+    assert!(MotionSupervisor::new(path, &config.motion, 2).is_err());
 }

@@ -2605,11 +2605,12 @@ class CompiledArmAction1(BaseModel):
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
     waypoints: Annotated[
-        list[ActionSequenceWaypoint] | None,
+        list[ActionSequenceWaypoint],
         Field(
-            description="Pass through these intermediate configurations before settling at the goal."
+            description="Pass through these intermediate configurations before settling at the goal.",
+            validate_default=True,
         ),
-    ] = None
+    ] = []
 
 
 class CompiledOperation(BaseModel):
@@ -2827,11 +2828,12 @@ class ActionSequenceMove(BaseModel):
         ),
     ] = None
     waypoints: Annotated[
-        list[ActionSequenceWaypoint] | None,
+        list[ActionSequenceWaypoint],
         Field(
-            description="Pass through these intermediate configurations before settling at the goal."
+            description="Pass through these intermediate configurations before settling at the goal.",
+            validate_default=True,
         ),
-    ] = None
+    ] = []
 
 
 class ActionSequenceStep(BaseModel):

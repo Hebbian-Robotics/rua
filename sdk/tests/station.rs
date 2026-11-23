@@ -1616,6 +1616,21 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
         expected_revisions: BTreeMap::new(),
     }))
     .await??;
+    let before_waypoint = within(
+        client.wait_for_state(|state| (0.02..0.08).contains(&state.arms[0].measured_joints[0])),
+    )
+    .await??;
+    assert!(
+        before_waypoint.arms[0]
+            .gripper_opening
+            .is_some_and(|opening| opening < 0.01)
+    );
+    within(client.wait_for_state(|state| {
+        let arm = &state.arms[0];
+        (0.1..0.22).contains(&arm.measured_joints[0])
+            && arm.gripper_opening.is_some_and(|opening| opening > 0.01)
+    }))
+    .await??;
     let result = within(client.wait_for_action_sequence(&execution)).await??;
     assert_eq!(result.phase, ActionSequencePhase::Completed);
     assert_eq!(

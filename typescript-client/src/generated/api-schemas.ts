@@ -241,7 +241,7 @@ export const apiSchemas = z.object({
             .describe(
               "Pass through these intermediate configurations before settling at the goal.",
             )
-            .optional(),
+            .default([]),
         })
         .strict(),
       z
@@ -684,7 +684,7 @@ export const apiSchemas = z.object({
                           .describe(
                             "Pass through these intermediate configurations before settling at the goal.",
                           )
-                          .optional(),
+                          .default([]),
                       })
                       .strict(),
                     z
@@ -1337,7 +1337,7 @@ export const apiSchemas = z.object({
                         .describe(
                           "Pass through these intermediate configurations before settling at the goal.",
                         )
-                        .optional(),
+                        .default([]),
                     })
                     .strict(),
                   z
@@ -1573,7 +1573,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "Pass through these intermediate configurations before settling at the goal.",
                             )
-                            .optional(),
+                            .default([]),
                         })
                         .strict(),
                       z
@@ -1785,7 +1785,7 @@ export const apiSchemas = z.object({
                   .describe(
                     "Pass through these intermediate configurations before settling at the goal.",
                   )
-                  .optional(),
+                  .default([]),
               })
               .strict(),
             z
@@ -3699,7 +3699,7 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "Pass through these intermediate configurations before settling at the goal.",
                                 )
-                                .optional(),
+                                .default([]),
                             })
                             .strict(),
                           z
@@ -5963,7 +5963,7 @@ export const apiSchemas = z.object({
                         .describe(
                           "Pass through these intermediate configurations before settling at the goal.",
                         )
-                        .optional(),
+                        .default([]),
                     })
                     .strict(),
                   z
@@ -6200,7 +6200,7 @@ export const apiSchemas = z.object({
                             .describe(
                               "Pass through these intermediate configurations before settling at the goal.",
                             )
-                            .optional(),
+                            .default([]),
                         })
                         .strict(),
                       z
@@ -6439,7 +6439,7 @@ export const apiSchemas = z.object({
                               .describe(
                                 "Pass through these intermediate configurations before settling at the goal.",
                               )
-                              .optional(),
+                              .default([]),
                           })
                           .strict(),
                         z
@@ -6693,7 +6693,7 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "Pass through these intermediate configurations before settling at the goal.",
                                   )
-                                  .optional(),
+                                  .default([]),
                               })
                               .strict(),
                             z
@@ -6906,7 +6906,7 @@ export const apiSchemas = z.object({
           .describe(
             "Pass through these intermediate configurations before settling at the goal.",
           )
-          .optional(),
+          .default([]),
       })
       .strict(),
     z
@@ -7099,7 +7099,7 @@ export const apiSchemas = z.object({
               .describe(
                 "Pass through these intermediate configurations before settling at the goal.",
               )
-              .optional(),
+              .default([]),
           })
           .strict(),
         z
@@ -7270,7 +7270,7 @@ export const apiSchemas = z.object({
                     .describe(
                       "Pass through these intermediate configurations before settling at the goal.",
                     )
-                    .optional(),
+                    .default([]),
                 })
                 .strict(),
               z
@@ -23570,7 +23570,7 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "Pass through these intermediate configurations before settling at the goal.",
                                     )
-                                    .optional(),
+                                    .default([]),
                                 })
                                 .strict(),
                               z

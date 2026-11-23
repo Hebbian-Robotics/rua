@@ -209,7 +209,8 @@ impl Loop<'_> {
             match self
                 .core
                 .record(command_id)
-                .and_then(hebbian_contracts::CommandRecord::outcome)
+                .ok_or_else(|| Trip::Gripper("Lost the waypoint jaw command record".into()))?
+                .outcome()
             {
                 Some(CommandOutcome::Completed) => active.waypoint_gripper_command = None,
                 Some(outcome) => {

@@ -174,6 +174,7 @@ export const robotToolSpecifications = [
                   "Peak speed in degrees per second; clamped to the profile maximum.",
               },
               waypoints: {
+                default: [],
                 description:
                   "Pass through these intermediate configurations before settling at the goal.",
                 items: {
