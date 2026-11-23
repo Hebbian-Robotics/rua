@@ -362,7 +362,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 [[package]]
 name = "cameras"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=ab7c9b97c68a67a69e51c3ae858a0af805d40587#ab7c9b97c68a67a69e51c3ae858a0af805d40587"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=9eec0c193399865e7138afc62f4f51710e25ca1e#9eec0c193399865e7138afc62f4f51710e25ca1e"
 dependencies = [
  "clap",
  "image",
@@ -2075,7 +2075,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-frames"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=ab7c9b97c68a67a69e51c3ae858a0af805d40587#ab7c9b97c68a67a69e51c3ae858a0af805d40587"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=9eec0c193399865e7138afc62f4f51710e25ca1e#9eec0c193399865e7138afc62f4f51710e25ca1e"
 dependencies = [
  "cameras",
  "livekit",
@@ -2088,7 +2088,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-invite"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=ab7c9b97c68a67a69e51c3ae858a0af805d40587#ab7c9b97c68a67a69e51c3ae858a0af805d40587"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=9eec0c193399865e7138afc62f4f51710e25ca1e#9eec0c193399865e7138afc62f4f51710e25ca1e"
 dependencies = [
  "base64 0.23.1",
  "qrcode",
@@ -2099,7 +2099,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-publisher"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=ab7c9b97c68a67a69e51c3ae858a0af805d40587#ab7c9b97c68a67a69e51c3ae858a0af805d40587"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=9eec0c193399865e7138afc62f4f51710e25ca1e#9eec0c193399865e7138afc62f4f51710e25ca1e"
 dependencies = [
  "cameras",
  "clap",
@@ -2113,7 +2113,7 @@ dependencies = [
 [[package]]
 name = "livekit-camera-recorder"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=ab7c9b97c68a67a69e51c3ae858a0af805d40587#ab7c9b97c68a67a69e51c3ae858a0af805d40587"
+source = "git+https://github.com/Hebbian-Robotics/livekit-cameras?rev=9eec0c193399865e7138afc62f4f51710e25ca1e#9eec0c193399865e7138afc62f4f51710e25ca1e"
 dependencies = [
  "cameras",
  "chrono",

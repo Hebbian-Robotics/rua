@@ -16,10 +16,10 @@ path = "src/main.rs"
 [dependencies]
 tracing.workspace = true
 tracing-subscriber.workspace = true
-livekit-camera-frames = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "ab7c9b97c68a67a69e51c3ae858a0af805d40587" }
-livekit-camera-recorder = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "ab7c9b97c68a67a69e51c3ae858a0af805d40587" }
-cameras = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "ab7c9b97c68a67a69e51c3ae858a0af805d40587" }
-livekit-camera-publisher = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "ab7c9b97c68a67a69e51c3ae858a0af805d40587" }
+livekit-camera-frames = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "9eec0c193399865e7138afc62f4f51710e25ca1e" }
+livekit-camera-recorder = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "9eec0c193399865e7138afc62f4f51710e25ca1e" }
+cameras = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "9eec0c193399865e7138afc62f4f51710e25ca1e" }
+livekit-camera-publisher = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "9eec0c193399865e7138afc62f4f51710e25ca1e" }
 clap = { version = "4.6.7", features = ["derive"] }
 livekit = { version = "=0.11.0", features = ["rustls-tls-native-roots"] }
 station-access = { path = "../station-access" }
