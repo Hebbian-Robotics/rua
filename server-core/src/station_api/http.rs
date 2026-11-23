@@ -1192,13 +1192,6 @@ async fn stream_events(
 ) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
     use crate::station_api::events::EventSubscription;
     use axum::response::sse::Event;
-    #[derive(Serialize)]
-    struct Snapshot<'a> {
-        station_instance_id: &'a str,
-        sequence: u64,
-        run_sequence: u64,
-        items: Vec<&'a super::events::StreamPayload>,
-    }
     let cursor = parse_event_cursor(&headers)?;
     let (initial, mut updates) = match cursor {
         None => {
@@ -1212,8 +1205,8 @@ async fn stream_events(
             let event = Event::default()
                 .event("snapshot")
                 .id(format!("{}:{sequence}", station_state.instance_id))
-                .json_data(Snapshot {
-                    station_instance_id: &station_state.instance_id,
+                .json_data(hebbian_contracts::StationEventSnapshot {
+                    station_instance_id: station_state.instance_id.clone(),
                     sequence,
                     run_sequence: station_state.telemetry.newest_seq(),
                     items: snapshot.iter().map(AsRef::as_ref).collect(),

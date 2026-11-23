@@ -12,14 +12,26 @@ from pydantic import Field, TypeAdapter, ValidationError
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceRecord,
     ActionSequenceState,
+    ArmFrame,
     ArmRecord,
     CommandRecord,
+    Event1,
+    Event2,
+    Frame,
+    Mode,
+    Record,
+    Rejected,
+    Reply,
+    Resync,
     RunEventRecord,
     RunMessage,
     RunResync,
     RunSpanRecord,
+    SnapshotTaken,
+    State,
     StateMessage,
     StationState,
+    Tripped,
 )
 from hebbian_rua.client.station_events import (
     StationStreamEvent,
@@ -46,7 +58,8 @@ type RunUpdate = RunEventRecord | RunSpanRecord | RunResync | RunMessage
 
 _STATION_EVENT_MESSAGE = TypeAdapter(
     Annotated[
-        StateMessage | ActionSequenceState | RunUpdate, Field(discriminator="kind")
+        ArmFrame | StateMessage | ActionSequenceState | RunUpdate,
+        Field(discriminator="kind"),
     ]
 )
 
@@ -415,12 +428,6 @@ class StationConnection:
         if not isinstance(kind, str):
             log.debug("Ignoring station message without a kind")
             return
-        if kind == "frame":
-            # Only retained command records need validation on the frame fast path.
-            async with self._condition:
-                self._keep_frame(str(message["arm"]), message.get("frame", {}))
-                self._condition.notify_all()
-            return
         try:
             update = _STATION_EVENT_MESSAGE.validate_python(message)
         except ValidationError as error:
@@ -434,6 +441,10 @@ class StationConnection:
                     raise
 
         match update:
+            case ArmFrame(arm=arm, frame=frame):
+                async with self._condition:
+                    self._keep_frame(arm, frame)
+                    self._condition.notify_all()
             case StateMessage(state=state):
                 async with self._condition:
                     self._state = state
@@ -465,40 +476,47 @@ class StationConnection:
         self._run_after = record.seq
         self._publish_run(record)
 
-    def _keep_frame(self, arm: str, frame: object) -> None:
-        """Keep a frame's command records and advance the arm's resume cursor.
-
-        A frame at or before the cursor was already seen. A snapshot also carries
-        the retained log, whose records are kept the same way.
-        """
-        if not isinstance(frame, dict) or not isinstance(frame.get("event"), dict):
-            return
-        action_sequence = frame.get("seq")
+    def _keep_frame(self, arm: str, frame: Frame) -> None:
+        """Keep command records and advance the arm's resume cursor."""
+        cursor = frame.seq
         previous = self._last_action_sequence.get(arm)
-        if (
-            isinstance(action_sequence, int)
-            and previous is not None
-            and action_sequence <= previous
-        ):
+        if cursor is not None and previous is not None and cursor <= previous:
             return
-        event = frame["event"]
-        cursor = action_sequence if isinstance(action_sequence, int) else None
-        if event.get("kind") == "record":
-            self._keep_record(
-                ArmRecord(
-                    arm=arm,
-                    record=CommandRecord.model_validate(
-                        {key: value for key, value in event.items() if key != "kind"}
-                    ),
-                )
-            )
-        elif event.get("kind") == "snapshot":
-            for retained in event.get("log", []):
-                self._keep_frame(arm, retained)
-            for record in event.get("records", []):
+
+        match frame.event:
+            case Record() as event:
                 self._keep_record(
-                    ArmRecord(arm=arm, record=CommandRecord.model_validate(record))
+                    ArmRecord(
+                        arm=arm,
+                        record=CommandRecord(
+                            accepted_at=event.accepted_at,
+                            checkpoints=event.checkpoints,
+                            command=event.command,
+                            command_id=event.command_id,
+                            label=event.label,
+                            phase=event.phase,
+                            trace_context=event.trace_context,
+                        ),
+                    )
                 )
-            cursor = int(event["seq"])
+            case SnapshotTaken(log=retained_frames, records=records, seq=sequence):
+                for retained in retained_frames:
+                    self._keep_frame(arm, retained)
+                for record in records:
+                    self._keep_record(ArmRecord(arm=arm, record=record))
+                cursor = sequence
+            case (
+                State()
+                | Reply()
+                | Resync()
+                | Mode()
+                | Rejected()
+                | Tripped()
+                | Event1()
+                | Event2()
+            ):
+                pass
+            case _ as unreachable:
+                assert_never(unreachable)
         if cursor is not None:
             self._last_action_sequence[arm] = cursor
