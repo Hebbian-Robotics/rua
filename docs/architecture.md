@@ -37,8 +37,10 @@ flowchart TB
    configured arm capabilities and translates it into typed operations,
    preserving the ordered steps and their arm groups. This stage can run
    before the client acquires a lease and can reuse unchanged operations.
-2. The **Robot Use Runtime** prepares each step from current arm feedback and
-   submits the participating commands together and records each step’s outcome.
+2. The **Robot Use Runtime** prepares each step from arm feedback and submits
+   the participating actions together. Direct moves and compiled steps share
+   the station planner. The link provides the latest sample or waits for the
+   first one when planning needs feedback.
 3. **Command admission** orders direct commands, sequence steps, and
    cancellations in one station task. Prepared work passes the live authority
    check at controller handoff.

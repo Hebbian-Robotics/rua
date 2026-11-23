@@ -26,7 +26,10 @@ use tower_http::set_header::SetResponseHeader;
 use crate::control_link::LinkHandle;
 
 use super::admission::{AdmissionClosed, AdmissionOwner, AdmissionState};
-use super::submissions::{OperationId, PendingAdmission, SubmissionCompletion, wait_for_outcome};
+use super::submissions::{
+    Admission, CommandOutcomeUnknown, OperationId, PendingAdmission, SubmissionCompletion,
+    wait_for_outcome,
+};
 
 const WORKER_THREADS: usize = 2;
 const PREVIEW_WORKERS: usize = 4;
@@ -683,7 +686,9 @@ async fn cancel_operation(
                     Ok(Ok(hebbian_contracts::CommandAnswer::Refused { .. })) => {
                         return Ok(StatusCode::NO_CONTENT);
                     }
-                    Ok(Err(detail)) => return Err((StatusCode::SERVICE_UNAVAILABLE, detail)),
+                    Ok(Err(failure)) => {
+                        return Err((StatusCode::SERVICE_UNAVAILABLE, failure.to_string()));
+                    }
                     Err(_) => {
                         return Err((
                             StatusCode::SERVICE_UNAVAILABLE,
@@ -728,7 +733,7 @@ async fn cancel_operation(
     })?
 }
 
-type CommandSubmissionOutcome = Option<Result<hebbian_contracts::CommandAnswer, String>>;
+type CommandSubmissionOutcome = Option<Admission>;
 
 fn follow_or_start_submission(
     reservation: crate::station_api::submissions::SubmissionReservation,
@@ -781,10 +786,11 @@ async fn command_submission_outcome<ReplyContext, ReplyRecords>(
     into_arm_records: impl FnOnce(
         ReplyContext,
         ReplyRecords,
-    ) -> Result<Vec<hebbian_contracts::ArmRecord>, String>,
-) -> Result<hebbian_contracts::CommandAnswer, String> {
+    )
+        -> Result<Vec<hebbian_contracts::ArmRecord>, CommandOutcomeUnknown>,
+) -> Admission {
     let (context, reply) = match admitted {
-        Err(_) => return Err("Command worker failed; outcome is unknown".to_owned()),
+        Err(_) => return Err(CommandOutcomeUnknown::AdmissionWorker),
         Ok(Err((reason, detail))) => {
             return Ok(hebbian_contracts::CommandAnswer::Refused { reason, detail });
         }
@@ -797,7 +803,7 @@ async fn command_submission_outcome<ReplyContext, ReplyRecords>(
             reason: error.reason,
             detail: error.detail,
         }),
-        Err(_) => Err("Control loop reply lost; command outcome is unknown".to_owned()),
+        Err(_) => Err(CommandOutcomeUnknown::ControllerReplyLost),
     }
 }
 
@@ -827,7 +833,8 @@ async fn submit_station_command<
     into_arm_records: impl FnOnce(
         ReplyContext,
         ReplyRecords,
-    ) -> Result<Vec<hebbian_contracts::ArmRecord>, String>
+    )
+        -> Result<Vec<hebbian_contracts::ArmRecord>, CommandOutcomeUnknown>
     + Send
     + 'static,
 ) -> Result<Json<hebbian_contracts::CommandAnswer>, (StatusCode, String)> {
@@ -902,13 +909,13 @@ async fn submit_station_command<
             )
         })?
         .map(Json)
-        .map_err(|detail| (StatusCode::INTERNAL_SERVER_ERROR, detail))
+        .map_err(|failure| (StatusCode::INTERNAL_SERVER_ERROR, failure.to_string()))
 }
 
 async fn await_motion_completion(
     links: &BTreeMap<String, LinkHandle>,
     mut records: Vec<hebbian_contracts::ArmRecord>,
-) -> Result<Vec<hebbian_contracts::ArmRecord>, String> {
+) -> Result<Vec<hebbian_contracts::ArmRecord>, CommandOutcomeUnknown> {
     // WHY: Each wait registers with the link that owns terminal controller records.
     // Register every member concurrently so a short move's outcome survives a
     // longer move on another arm.
@@ -921,19 +928,20 @@ async fn await_motion_completion(
         let link = links
             .get(&entry.arm)
             .cloned()
-            .ok_or_else(|| format!("Arm {} disappeared", entry.arm))?;
+            .ok_or_else(|| CommandOutcomeUnknown::MissingArm(entry.arm.clone()))?;
         let arm = entry.arm.clone();
         let command_id = entry.record.command_id.clone();
         completions.spawn(async move {
             let record = link
                 .await_completion(command_id)
                 .await
-                .ok_or_else(|| format!("Completion for arm {arm} is unavailable"))?;
-            Ok::<_, String>((index, record))
+                .ok_or(CommandOutcomeUnknown::MissingCompletion(arm))?;
+            Ok::<_, CommandOutcomeUnknown>((index, record))
         });
     }
     while let Some(completion) = completions.join_next().await {
-        let (index, record) = completion.map_err(|error| error.to_string())??;
+        let (index, record) = completion
+            .map_err(|error| CommandOutcomeUnknown::CompletionWorker(error.to_string()))??;
         records[index].record = record;
     }
     Ok(records)
@@ -1000,7 +1008,7 @@ async fn submit_group_command(
                     .zip(&records)
                     .any(|(arm, record)| *arm != record.arm)
             {
-                return Err("Control loop returned unexpected arm records".to_owned());
+                return Err(CommandOutcomeUnknown::UnexpectedArmRecords);
             }
             Ok(records)
         },
@@ -1118,7 +1126,7 @@ async fn update_stream_goal(
             .await;
     outcome
         .map(Json)
-        .map_err(|detail| (StatusCode::SERVICE_UNAVAILABLE, detail))
+        .map_err(|failure| (StatusCode::SERVICE_UNAVAILABLE, failure.to_string()))
 }
 
 async fn record_run_event(

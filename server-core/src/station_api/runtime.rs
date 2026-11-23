@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::action_step::{PreparedArmAction, PreparedGripper, PreparedMovement};
+use crate::action_step::PreparedArmAction;
 use crate::control_link::LinkHandle;
 use crate::lease::{ArmGate, GenerationTicket};
 use hebbian_contracts::{
@@ -12,7 +12,7 @@ use tokio::sync::watch;
 use tokio::time::{Duration, Instant, sleep_until};
 
 use super::programs::ProgramArtifact;
-use crate::compiler::{CompiledActionCommands, CompiledStep};
+use crate::compiler::{CompiledStep, requested_joints};
 
 struct ProgramExecution {
     continuation: Option<hebbian_contracts::ProgramContinuation>,
@@ -35,60 +35,13 @@ fn prepare_step(
                 reason: RejectionReason::InvalidTarget,
                 detail: format!("No arm named {arm}"),
             })?;
-        let mut movement = None;
-        let mut gripper = None;
-        for command in commands.action.clone().into_commands() {
-            match super::commands::arm_command(link, arm, command).map_err(|(reason, detail)| {
-                ExecutionFailure::Preparation {
-                    step: source_step,
-                    arm: arm.clone(),
-                    reason,
-                    detail,
-                }
-            })? {
-                hebbian_contracts::Command::Move {
-                    label,
-                    plan,
-                    joint_speed,
-                    path_limited,
-                    pose_limited,
-                } => {
-                    movement = Some(PreparedMovement::Trajectory {
-                        label,
-                        plan,
-                        joint_speed,
-                        path_limited,
-                        pose_limited,
-                    });
-                }
-                hebbian_contracts::Command::ReachPose {
-                    label,
-                    position,
-                    orientation,
-                } => {
-                    movement = Some(PreparedMovement::PolicyPose {
-                        label,
-                        position,
-                        orientation,
-                    });
-                }
-                hebbian_contracts::Command::SetGripper { angle, joint_speed } => {
-                    gripper = Some(PreparedGripper { angle, joint_speed });
-                }
-                _ => {
-                    return Err(ExecutionFailure::Runtime {
-                        step: source_step,
-                        detail: "Unsupported compiled operation".into(),
-                    });
-                }
-            }
-        }
-        let action = PreparedArmAction::new(arm.clone(), movement, gripper).ok_or_else(|| {
-            ExecutionFailure::Runtime {
+        let action = super::commands::prepare_compiled_action(link, arm, &commands.action)
+            .map_err(|(reason, detail)| ExecutionFailure::Preparation {
                 step: source_step,
-                detail: format!("No movement or gripper target for {arm}"),
-            }
-        })?;
+                arm: arm.clone(),
+                reason,
+                detail,
+            })?;
         actions.push(action);
     }
     Ok(actions)
@@ -768,7 +721,7 @@ fn finish_step(
     let limited_joints = records.iter().any(|record| {
         commands
             .get(&record.arm)
-            .and_then(|operation| operation.action.requested_joints())
+            .and_then(|operation| requested_joints(&operation.action))
             .is_some_and(|requested| {
                 record.record.target_joints().is_some_and(|target| {
                     target.len() != requested.len()
@@ -949,6 +902,7 @@ fn start_execution(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action_step::PreparedGripper;
     use hebbian_contracts::{
         CommandCompletion, CommandPhase, CommandPose, KnownCommandOutcome, RecordedCommand,
     };

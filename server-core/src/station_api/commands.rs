@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
 
 use super::submissions::ControllerStreamCommand;
+use crate::action_step::{PreparedArmAction, PreparedGripper, PreparedMovement};
+use crate::config::ControllerConfig;
 use crate::control_link::LinkHandle;
+use crate::planning::Planner;
 use hebbian_contracts::{
-    ArmMode, ArmMove, Command, MoveArmsCommand, PlannedMotion, PoseProjection, PreviewPose,
-    RejectionReason, Sample, StationCommand, Waypoint,
+    ArmMode, ArmMove, Command, CompiledArmAction, CompiledMovement, GripperOpening, JointSpeed,
+    MoveArmsCommand, PlannedMotion, PoseOrientation, PoseProjection, PreviewPose, RejectionReason,
+    Sample, StationCommand, Waypoint,
 };
 
 type Refusal = (RejectionReason, String);
@@ -16,36 +20,37 @@ fn refused(reason: RejectionReason, detail: impl Into<String>) -> Refusal {
 const FIRST_SAMPLE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 fn latest_sample(link: &LinkHandle) -> Result<Sample, Refusal> {
-    let deadline = std::time::Instant::now() + FIRST_SAMPLE_WAIT;
-    loop {
-        if let Some(sample) = link.latest_sample_blocking() {
-            return Ok(sample);
-        }
-        if std::time::Instant::now() > deadline {
-            return Err(refused(
-                RejectionReason::ArmBusy,
-                "No feedback from the arm yet",
-            ));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    link.wait_for_sample(FIRST_SAMPLE_WAIT)
+        .ok_or_else(|| refused(RejectionReason::ArmBusy, "No feedback from the arm yet"))
 }
 
-fn hold_pose(sample: Sample) -> Result<Vec<f64>, Refusal> {
-    match (sample.mode, sample.hold_pose) {
-        (ArmMode::Holding, Some(pose)) => Ok(pose),
-        (ArmMode::Disabled, _) => Err(refused(
-            RejectionReason::NotEnabled,
-            "The arm is disabled; send enable, then repeat the command",
-        )),
-        (ArmMode::Faulted, _) => Err(refused(
-            RejectionReason::Faulted,
-            "The arm is faulted; send clear_fault after inspecting it",
-        )),
-        _ => Err(refused(
-            RejectionReason::ArmBusy,
-            "Another command is active; send stop first",
-        )),
+struct HoldingFeedback<'a> {
+    pose: &'a [f64],
+    gripper_angle: Option<f64>,
+}
+
+impl<'a> TryFrom<&'a Sample> for HoldingFeedback<'a> {
+    type Error = Refusal;
+
+    fn try_from(sample: &'a Sample) -> Result<Self, Refusal> {
+        match (sample.mode, sample.hold_pose.as_deref()) {
+            (ArmMode::Holding, Some(pose)) => Ok(Self {
+                pose,
+                gripper_angle: sample.gripper_angle,
+            }),
+            (ArmMode::Disabled, _) => Err(refused(
+                RejectionReason::NotEnabled,
+                "The arm is disabled; send enable, then repeat the command",
+            )),
+            (ArmMode::Faulted, _) => Err(refused(
+                RejectionReason::Faulted,
+                "The arm is faulted; send clear_fault after inspecting it",
+            )),
+            _ => Err(refused(
+                RejectionReason::ArmBusy,
+                "Another command is active; send stop first",
+            )),
+        }
     }
 }
 
@@ -64,40 +69,38 @@ fn jaw_angle(
         .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
 }
 
-fn planned_move(
-    link: &LinkHandle,
-    waypoints: &[Waypoint],
-    max_joint_speed: Option<hebbian_contracts::JointSpeed>,
-) -> Result<PlannedMotion, Refusal> {
-    plan_from_sample(link, latest_sample(link)?, waypoints, max_joint_speed)
-}
-
-fn plan_from_sample(
-    link: &LinkHandle,
-    sample: Sample,
-    waypoints: &[Waypoint],
-    max_joint_speed: Option<hebbian_contracts::JointSpeed>,
-) -> Result<PlannedMotion, Refusal> {
-    let planner = link.planner().ok_or_else(|| {
+fn planner_or_refuse(planner: Option<&Planner>) -> Result<&Planner, Refusal> {
+    planner.ok_or_else(|| {
         refused(
             RejectionReason::InvalidTarget,
             "This arm has no tool link to plan for",
         )
-    })?;
-    let gripper_angle = sample.gripper_angle;
-    let start = hold_pose(sample)?;
+    })
+}
+
+fn plan_trajectory(
+    planner: &Planner,
+    holding: HoldingFeedback<'_>,
+    waypoints: &[Waypoint],
+    max_joint_speed: Option<JointSpeed>,
+) -> Result<PlannedMotion, Refusal> {
     planner
-        .plan(&start, waypoints, max_joint_speed, gripper_angle)
+        .plan(
+            holding.pose,
+            waypoints,
+            max_joint_speed,
+            holding.gripper_angle,
+        )
         .map_err(|refusal| (refusal.reason, refusal.detail))
 }
 
-fn planned_speed(motion: &PlannedMotion) -> Result<hebbian_contracts::JointSpeed, Refusal> {
-    hebbian_contracts::JointSpeed::new(motion.plan.peak_speed)
+fn planned_speed(motion: &PlannedMotion) -> Result<JointSpeed, Refusal> {
+    JointSpeed::new(motion.plan.peak_speed)
         .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))
 }
 
-fn move_command(label: &str, motion: PlannedMotion) -> Result<Command, Refusal> {
-    Ok(Command::Move {
+fn prepare_trajectory(label: &str, motion: PlannedMotion) -> Result<PreparedMovement, Refusal> {
+    Ok(PreparedMovement::Trajectory {
         label: label.to_owned(),
         joint_speed: planned_speed(&motion)?,
         plan: motion.plan,
@@ -108,102 +111,222 @@ fn move_command(label: &str, motion: PlannedMotion) -> Result<Command, Refusal> 
 
 const POLICY_POSES_ONLY: &str = "With learned control, send one pose at a time using move_to_pose";
 
-pub(crate) fn arm_command(
-    link: &LinkHandle,
-    arm: &str,
-    command: StationCommand,
-) -> Result<Command, Refusal> {
-    let policy = link.has_policy();
-    match command {
-        StationCommand::Enable => Ok(Command::Enable),
-        StationCommand::ApproveRecovery => Ok(Command::ApproveRecovery),
-        StationCommand::Disable => Ok(Command::Disable),
-        StationCommand::Stop => Ok(Command::Stop),
-        StationCommand::ClearFault => Ok(Command::ClearFault),
-        StationCommand::Rehome => {
-            if policy {
-                return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
-            }
-            let sample = latest_sample(link)?;
+enum StationMovement {
+    Rehome,
+    Trajectory {
+        label: &'static str,
+        waypoints: Vec<Waypoint>,
+        max_joint_speed: Option<JointSpeed>,
+    },
+    Pose {
+        position: [f64; 3],
+        orientation: PoseOrientation,
+        max_joint_speed: Option<JointSpeed>,
+    },
+}
+
+impl StationMovement {
+    fn joints(joints: Vec<f64>, max_joint_speed: Option<JointSpeed>) -> Self {
+        Self::Trajectory {
+            label: "move_to_joints",
+            waypoints: vec![Waypoint::Joints { joints }],
+            max_joint_speed,
+        }
+    }
+
+    fn rejects_policy(&self) -> bool {
+        matches!(self, Self::Rehome | Self::Trajectory { .. })
+    }
+}
+
+fn plan_station_movement(
+    movement: StationMovement,
+    config: &ControllerConfig,
+    planner: Option<&Planner>,
+    uses_policy: bool,
+    sample: &Sample,
+) -> Result<PreparedMovement, Refusal> {
+    let (label, waypoints, max_joint_speed) = match movement {
+        StationMovement::Pose {
+            position,
+            orientation,
+            ..
+        } if uses_policy => {
+            HoldingFeedback::try_from(sample)?;
+            return Ok(PreparedMovement::PolicyPose {
+                label: "move_to_pose".to_owned(),
+                position,
+                orientation,
+            });
+        }
+        StationMovement::Pose {
+            position,
+            orientation,
+            max_joint_speed,
+        } => (
+            "move_to_pose",
+            vec![Waypoint::Pose {
+                position,
+                orientation,
+            }],
+            max_joint_speed,
+        ),
+        StationMovement::Trajectory {
+            label,
+            waypoints,
+            max_joint_speed,
+        } => (label, waypoints, max_joint_speed),
+        StationMovement::Rehome => {
             let rest_pose = sample.rest_pose.as_deref().ok_or_else(|| {
                 refused(
                     RejectionReason::NotEnabled,
                     "The arm has no saved home pose; enable it first",
                 )
             })?;
-            let config = link.config();
             let joints = config.recovery_limits().clamp(rest_pose).map_err(|error| {
                 refused(
                     RejectionReason::InvalidTarget,
                     format!("Saved home pose: {error}"),
                 )
             })?;
-            let speed = hebbian_contracts::JointSpeed::new(config.max_joint_speed.min(2.0))
+            let speed = JointSpeed::new(config.max_joint_speed.min(2.0))
                 .map_err(|error| refused(RejectionReason::InvalidTarget, error.to_string()))?;
-            plan_from_sample(link, sample, &[Waypoint::Joints { joints }], Some(speed))
-                .and_then(|motion| move_command("rehome", motion))
+            ("rehome", vec![Waypoint::Joints { joints }], Some(speed))
         }
+    };
+    let planner = planner_or_refuse(planner)?;
+    let holding = HoldingFeedback::try_from(sample)?;
+    plan_trajectory(planner, holding, &waypoints, max_joint_speed)
+        .and_then(|motion| prepare_trajectory(label, motion))
+}
+
+fn prepare_movement(
+    link: &LinkHandle,
+    movement: StationMovement,
+) -> Result<PreparedMovement, Refusal> {
+    let uses_policy = link.has_policy();
+    if uses_policy && movement.rejects_policy() {
+        return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
+    }
+    plan_station_movement(
+        movement,
+        link.config(),
+        link.planner(),
+        uses_policy,
+        &latest_sample(link)?,
+    )
+}
+
+fn prepare_gripper(
+    link: &LinkHandle,
+    arm: &str,
+    opening: GripperOpening,
+    max_joint_speed: Option<JointSpeed>,
+) -> Result<PreparedGripper, Refusal> {
+    Ok(PreparedGripper {
+        angle: jaw_angle(link, arm, opening)?,
+        joint_speed: max_joint_speed,
+    })
+}
+
+pub(crate) fn arm_command(
+    link: &LinkHandle,
+    arm: &str,
+    command: StationCommand,
+) -> Result<Command, Refusal> {
+    let movement = match command {
+        StationCommand::Enable => return Ok(Command::Enable),
+        StationCommand::ApproveRecovery => return Ok(Command::ApproveRecovery),
+        StationCommand::Disable => return Ok(Command::Disable),
+        StationCommand::Stop => return Ok(Command::Stop),
+        StationCommand::ClearFault => return Ok(Command::ClearFault),
+        StationCommand::Rehome => StationMovement::Rehome,
         StationCommand::MoveToJoints {
             joints,
             max_joint_speed,
-        } => {
-            if policy {
-                return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
-            }
-            planned_move(link, &[Waypoint::Joints { joints }], max_joint_speed)
-                .and_then(|motion| move_command("move_to_joints", motion))
-        }
+        } => StationMovement::joints(joints, max_joint_speed),
         StationCommand::MoveToPose {
             position,
             orientation,
             max_joint_speed,
-        } => {
-            if policy {
-                hold_pose(latest_sample(link)?)?;
-                return Ok(Command::ReachPose {
-                    label: "move_to_pose".to_owned(),
-                    position,
-                    orientation,
-                });
-            }
-            planned_move(
-                link,
-                &[Waypoint::Pose {
-                    position,
-                    orientation,
-                }],
-                max_joint_speed,
-            )
-            .and_then(|motion| move_command("move_to_pose", motion))
-        }
+        } => StationMovement::Pose {
+            position,
+            orientation,
+            max_joint_speed,
+        },
         StationCommand::FollowPath {
             waypoints,
             max_joint_speed,
-        } => {
-            if policy {
-                return Err(refused(RejectionReason::InvalidTarget, POLICY_POSES_ONLY));
-            }
-            planned_move(link, &waypoints, max_joint_speed)
-                .and_then(|motion| move_command("follow_path", motion))
-        }
+        } => StationMovement::Trajectory {
+            label: "follow_path",
+            waypoints,
+            max_joint_speed,
+        },
         StationCommand::StreamJoints {
             joints,
             max_joint_speed,
             gripper_opening,
-        } => joint_stream(
-            link,
-            arm,
-            joints,
-            gripper_opening,
-            StreamAdmission::Start { max_joint_speed },
-        ),
+        } => {
+            return joint_stream(
+                link,
+                arm,
+                joints,
+                gripper_opening,
+                StreamAdmission::Start { max_joint_speed },
+            );
+        }
         StationCommand::SetGripper {
             opening,
             max_joint_speed,
-        } => Ok(Command::SetGripper {
-            angle: jaw_angle(link, arm, opening)?,
-            joint_speed: max_joint_speed,
-        }),
+        } => {
+            return prepare_gripper(link, arm, opening, max_joint_speed)
+                .map(PreparedGripper::into_command);
+        }
+    };
+    prepare_movement(link, movement).map(PreparedMovement::into_command)
+}
+
+pub(super) fn prepare_compiled_action(
+    link: &LinkHandle,
+    arm: &str,
+    action: &CompiledArmAction,
+) -> Result<PreparedArmAction, Refusal> {
+    match action {
+        CompiledArmAction::Move {
+            movement,
+            gripper_opening,
+            max_joint_speed,
+        } => {
+            let movement = match movement {
+                CompiledMovement::Joints { joints } => {
+                    StationMovement::joints(joints.clone(), *max_joint_speed)
+                }
+                CompiledMovement::Pose {
+                    position,
+                    orientation,
+                } => StationMovement::Pose {
+                    position: *position,
+                    orientation: *orientation,
+                    max_joint_speed: *max_joint_speed,
+                },
+            };
+            let movement = prepare_movement(link, movement)?;
+            let action = match gripper_opening {
+                Some(opening) => {
+                    let gripper = prepare_gripper(link, arm, *opening, *max_joint_speed)?;
+                    PreparedArmAction::move_and_gripper(arm.to_owned(), movement, gripper)
+                }
+                None => PreparedArmAction::movement(arm.to_owned(), movement),
+            };
+            Ok(action)
+        }
+        CompiledArmAction::Gripper {
+            opening,
+            max_joint_speed,
+        } => {
+            let gripper = prepare_gripper(link, arm, *opening, *max_joint_speed)?;
+            Ok(PreparedArmAction::gripper(arm.to_owned(), gripper))
+        }
     }
 }
 
@@ -261,8 +384,12 @@ pub(crate) fn plan_group_move<'a>(
             ));
         }
         let prefixed = |(reason, detail): Refusal| (reason, format!("{arm}: {detail}"));
-        let motion = planned_move(
-            link,
+        let sample = latest_sample(link).map_err(prefixed)?;
+        let planner = planner_or_refuse(link.planner()).map_err(prefixed)?;
+        let holding = HoldingFeedback::try_from(&sample).map_err(prefixed)?;
+        let motion = plan_trajectory(
+            planner,
+            holding,
             std::slice::from_ref(waypoint),
             command.max_joint_speed,
         )

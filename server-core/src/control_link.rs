@@ -38,8 +38,13 @@ enum Outgoing {
     Snapshot(u64),
     FindRecord(String, tokio::sync::oneshot::Sender<Option<CommandRecord>>),
     AwaitCompletion(String, tokio::sync::oneshot::Sender<CommandRecord>),
-    LatestSample(tokio::sync::oneshot::Sender<Option<Sample>>),
+    WaitForSample(SampleRequest),
     View(tokio::sync::oneshot::Sender<ArmView>),
+}
+
+struct SampleRequest {
+    deadline: Instant,
+    answer: SyncSender<Sample>,
 }
 
 // CONSTRAINT: Disconnect clients whose output queue is full so one slow reader cannot stall other clients.
@@ -316,14 +321,16 @@ impl LinkHandle {
     }
 
     // CONSTRAINT: Waiting for the writer blocks; call this outside the async runtime.
-    #[must_use]
-    pub fn latest_sample_blocking(&self) -> Option<Sample> {
-        let (answer, answered) = tokio::sync::oneshot::channel();
+    pub(crate) fn wait_for_sample(&self, timeout: Duration) -> Option<Sample> {
+        let (answer, answered) = sync_channel(1);
+        let deadline = Instant::now() + timeout;
         self.shared
             .outgoing
-            .send(Outgoing::LatestSample(answer))
+            .send(Outgoing::WaitForSample(SampleRequest { deadline, answer }))
             .ok()?;
-        answered.blocking_recv().ok().flatten()
+        answered
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .ok()
     }
 
     pub async fn view(&self) -> Option<ArmView> {
@@ -748,6 +755,7 @@ struct Hub {
     next_seq: u64,
     latest_sample: Option<Sample>,
     latest_sample_at: Option<SampleReceipt>,
+    sample_waiters: Vec<SampleRequest>,
     records: HashMap<String, CommandRecord>,
     record_order: VecDeque<String>,
     completion_waiters: HashMap<String, Vec<tokio::sync::oneshot::Sender<CommandRecord>>>,
@@ -769,41 +777,7 @@ impl Hub {
 
     fn handle(&mut self, message: Outgoing, pending_samples: &AtomicUsize) {
         match message {
-            Outgoing::Sample(sample) => {
-                let changed = self.latest_sample_at.is_none()
-                    || self.latest_sample.as_ref().is_none_or(|previous| {
-                        previous.mode != sample.mode
-                            || previous.active_command != sample.active_command
-                            || previous.active_trip != sample.active_trip
-                            || previous.recovery_issue != sample.recovery_issue
-                    });
-                if let Some(finished) = self.pending_finished.take()
-                    && self
-                        .settled_last
-                        .as_ref()
-                        .is_none_or(|(_, settled_at)| finished.1 >= *settled_at)
-                {
-                    self.settled_last = Some(finished);
-                }
-                let frame = Frame::emitted_now(None, Event::State(sample));
-                self.latest_sample_at = Some(SampleReceipt {
-                    monotonic: Instant::now(),
-                    unix: frame.emitted_unix_nano,
-                });
-                self.broadcast(&frame);
-                if let Event::State(sample) = frame.event
-                    && let Some(previous) = self.latest_sample.replace(sample)
-                    && let Some(recycle) = &self.recycle_sample
-                {
-                    // WHY: Keep the newest sample and recycle the previous buffers without copying either.
-                    let _ = recycle.try_send(previous);
-                }
-                // INVARIANT: Release the writer slot after publishing and recycling.
-                pending_samples.fetch_sub(1, Ordering::Release);
-                if changed {
-                    self.announce_change();
-                }
-            }
+            Outgoing::Sample(sample) => self.receive_sample(sample, pending_samples),
             Outgoing::Log(event) => {
                 self.log_event(event);
                 self.announce_change();
@@ -837,8 +811,16 @@ impl Hub {
                     last_record: record(self.settled_last.as_ref().map(|(id, _)| id)),
                 });
             }
-            Outgoing::LatestSample(answer) => {
-                let _ = answer.send(self.latest_sample.clone());
+            Outgoing::WaitForSample(request) => {
+                let now = Instant::now();
+                if now < request.deadline {
+                    if let Some(sample) = &self.latest_sample {
+                        let _ = request.answer.try_send(sample.clone());
+                    } else {
+                        self.sample_waiters.retain(|waiting| now < waiting.deadline);
+                        self.sample_waiters.push(request);
+                    }
+                }
             }
             Outgoing::FindRecord(command_id, answer) => {
                 let _ = answer.send(self.records.get(&command_id).cloned());
@@ -855,6 +837,52 @@ impl Hub {
                     }
                 }
             }
+        }
+    }
+
+    fn receive_sample(&mut self, sample: Sample, pending_samples: &AtomicUsize) {
+        let changed = self.latest_sample_at.is_none()
+            || self.latest_sample.as_ref().is_none_or(|previous| {
+                previous.mode != sample.mode
+                    || previous.active_command != sample.active_command
+                    || previous.active_trip != sample.active_trip
+                    || previous.recovery_issue != sample.recovery_issue
+            });
+        if let Some(finished) = self.pending_finished.take()
+            && self
+                .settled_last
+                .as_ref()
+                .is_none_or(|(_, settled_at)| finished.1 >= *settled_at)
+        {
+            self.settled_last = Some(finished);
+        }
+        let frame = Frame::emitted_now(None, Event::State(sample));
+        self.latest_sample_at = Some(SampleReceipt {
+            monotonic: Instant::now(),
+            unix: frame.emitted_unix_nano,
+        });
+        self.broadcast(&frame);
+        if let Event::State(sample) = frame.event
+            && let Some(previous) = self.latest_sample.replace(sample)
+            && let Some(recycle) = &self.recycle_sample
+        {
+            // WHY: Keep the newest sample and recycle the previous buffers without copying either.
+            let _ = recycle.try_send(previous);
+        }
+        if let Some(sample) = &self.latest_sample
+            && !self.sample_waiters.is_empty()
+        {
+            let now = Instant::now();
+            for request in self.sample_waiters.drain(..) {
+                if now < request.deadline {
+                    let _ = request.answer.try_send(sample.clone());
+                }
+            }
+        }
+        // INVARIANT: Release the writer slot after publishing and recycling.
+        pending_samples.fetch_sub(1, Ordering::Release);
+        if changed {
+            self.announce_change();
         }
     }
 
@@ -997,6 +1025,28 @@ fn enqueue_with_lease<R>(
 mod tests {
     use super::*;
     use hebbian_contracts::{Command, LeaseHolder, OnInterruption};
+
+    #[test]
+    fn a_feedback_request_made_before_publication_receives_the_first_sample() {
+        let config = ControllerConfig::parse(crate::config::TEST_CONFIG).unwrap();
+        let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
+        let handle = link.handle();
+        let (answer, received) = sync_channel(1);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        handle
+            .shared
+            .outgoing
+            .send(Outgoing::WaitForSample(SampleRequest { deadline, answer }))
+            .unwrap();
+
+        let mut first = Sample::blank();
+        first.positions = vec![0.1, 0.2];
+        link.publish(Event::State(first));
+
+        let sample = received.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(sample.positions, vec![0.1, 0.2]);
+        link.close();
+    }
 
     #[tokio::test]
     async fn station_feedback_timestamp_only_changes_with_a_new_sample() {
