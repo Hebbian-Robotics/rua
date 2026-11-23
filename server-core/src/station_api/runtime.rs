@@ -124,7 +124,7 @@ async fn admit_prepared_step(
 ) -> Result<Vec<ArmRecord>, ExecutionFailure> {
     let owner = admission.owner.clone();
     let reply = owner
-        .decide(move |_| {
+        .decide(move |state| {
             let first = actions
                 .first()
                 .and_then(|action| admission.links.get(action.arm()))
@@ -135,9 +135,13 @@ async fn admit_prepared_step(
             first
                 .action_step_async(
                     actions,
-                    Some(&admission.token),
+                    crate::control_link::SubmissionAuthority {
+                        token: Some(&admission.token),
+                        generation: &admission.generation,
+                        clock: state.clock,
+                    },
                     &admission.gates,
-                    &admission.generation,
+                    None,
                     &cancellation,
                 )
                 .map_err(|error| ExecutionFailure::Admission {

@@ -18,8 +18,8 @@ use crate::planning::Planner;
 use crate::preview::{Preview, PreviewRequest};
 use crate::sync::LockUnpoisoned;
 use hebbian_contracts::{
-    ArmMode, ArmMove, CommandRecord, Event, Frame, Interlock, LeaseStatus, LoggedEvent,
-    PoseOrientation, PoseProjection, RejectionReason, Sample, UnixNanos,
+    ArmMode, CommandRecord, Event, Frame, Interlock, LeaseStatus, LoggedEvent, PoseOrientation,
+    PoseProjection, RejectionReason, Sample, UnixNanos,
 };
 
 const MAXIMUM_PENDING_SAMPLES: usize = 64;
@@ -27,6 +27,12 @@ const RETAINED_LOG_LENGTH: usize = 4096;
 const SNAPSHOT_RECORDS: usize = 200;
 const REMEMBERED_RECORDS: usize = 10_000;
 const WRITER_POLL: Duration = Duration::from_millis(20);
+
+pub(crate) struct SubmissionAuthority<'a> {
+    pub token: Option<&'a str>,
+    pub generation: &'a [GenerationTicket],
+    pub clock: fn() -> Instant,
+}
 
 enum Outgoing {
     Sample(Sample),
@@ -374,26 +380,25 @@ impl LinkHandle {
     pub(crate) fn submit_command_async(
         &self,
         command: hebbian_contracts::Command,
-        token: Option<&str>,
+        authority: SubmissionAuthority<'_>,
         trace_context: Option<hebbian_contracts::TraceContext>,
         expected_revision: Option<u64>,
-        generation: &[GenerationTicket],
     ) -> Result<
         tokio::sync::oneshot::Receiver<Result<CommandRecord, crate::arm::Rejection>>,
         crate::arm::Rejection,
     > {
-        let authority = CommandAuthority::for_command(&command);
+        let command_authority = CommandAuthority::for_command(&command);
         let enqueue = || self.shared.arm.submit_async(command, trace_context);
-        match authority {
+        match command_authority {
             CommandAuthority::Interrupt => self.shared.lease.interrupt_if_current(
                 &self.shared.generation,
-                generation,
+                authority.generation,
                 enqueue,
             )?,
             CommandAuthority::ApproveRecovery => self
                 .shared
                 .lease
-                .admit_recovery_approval(generation, enqueue)?,
+                .admit_recovery_approval(authority.generation, enqueue)?,
             CommandAuthority::Lease(admission) => {
                 let gate = ArmGate {
                     interlocks: Arc::clone(&self.shared.interlocks),
@@ -401,10 +406,9 @@ impl LinkHandle {
                 };
                 enqueue_with_lease(
                     &self.shared,
-                    token,
+                    authority,
                     admission,
                     std::slice::from_ref(&gate),
-                    generation,
                     enqueue,
                 )
             }
@@ -414,9 +418,9 @@ impl LinkHandle {
     pub(crate) fn action_step_async(
         &self,
         actions: Vec<crate::action_step::PreparedArmAction>,
-        token: Option<&str>,
+        authority: SubmissionAuthority<'_>,
         gates: &[ArmGate],
-        generation: &[GenerationTicket],
+        trace_context: Option<hebbian_contracts::TraceContext>,
         cancellation: &tokio::sync::watch::Receiver<bool>,
     ) -> Result<
         tokio::sync::oneshot::Receiver<
@@ -426,50 +430,19 @@ impl LinkHandle {
     > {
         enqueue_with_lease(
             &self.shared,
-            token,
+            authority,
             LeaseAdmission::Normal,
             gates,
-            generation,
             || {
-                // INVARIANT: Cancellation and enqueue are ordered while admission holds the lease.
+                // INVARIANT: Lease operations may cancel executions while holding authority.
+                // Acquire the cancellation fence second and retain it through enqueue.
                 let cancelled = cancellation.borrow();
                 if *cancelled {
                     return Err(crate::arm::Rejection {
                         reason: hebbian_contracts::RejectionReason::ArmBusy,
-                        detail: "Program execution canceled".into(),
+                        detail: "Motion submission canceled".into(),
                     });
                 }
-                self.shared.arm.action_step_async(actions, None)
-            },
-        )
-    }
-
-    pub(crate) fn move_arms_async(
-        &self,
-        moves: Vec<ArmMove>,
-        token: Option<&str>,
-        trace_context: Option<hebbian_contracts::TraceContext>,
-        gates: &[ArmGate],
-        generation: &[GenerationTicket],
-    ) -> Result<
-        tokio::sync::oneshot::Receiver<
-            Result<Vec<hebbian_contracts::ArmRecord>, crate::arm::Rejection>,
-        >,
-        crate::arm::Rejection,
-    > {
-        enqueue_with_lease(
-            &self.shared,
-            token,
-            LeaseAdmission::Normal,
-            gates,
-            generation,
-            || {
-                let actions = moves
-                    .into_iter()
-                    .map(|part| {
-                        crate::action_step::PreparedArmAction::from_group_move("move_arms", part)
-                    })
-                    .collect();
                 self.shared.arm.action_step_async(actions, trace_context)
             },
         )
@@ -997,15 +970,19 @@ impl Hub {
 
 fn enqueue_with_lease<R>(
     shared: &Shared,
-    token: Option<&str>,
+    authority: SubmissionAuthority<'_>,
     admission: LeaseAdmission,
     gates: &[ArmGate],
-    generation: &[GenerationTicket],
     enqueue: impl FnOnce() -> Result<R, crate::arm::Rejection>,
 ) -> Result<R, crate::arm::Rejection> {
-    shared
-        .lease
-        .admit_generation(token, Instant::now(), gates, generation, admission, enqueue)?
+    shared.lease.admit_generation(
+        authority.token,
+        authority.clock,
+        gates,
+        authority.generation,
+        admission,
+        enqueue,
+    )?
 }
 
 #[cfg(test)]
@@ -1085,10 +1062,13 @@ mod tests {
             handle
                 .submit_command_async(
                     Command::Enable,
-                    Some(&lease.lease_token),
+                    SubmissionAuthority {
+                        token: Some(&lease.lease_token),
+                        generation: &[current_execution],
+                        clock: Instant::now
+                    },
                     None,
                     None,
-                    &[current_execution],
                 )
                 .is_ok()
         );
@@ -1103,7 +1083,16 @@ mod tests {
         let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let handle = link.handle();
         let mut reply = handle
-            .submit_command_async(Command::Enable, None, None, None, &[])
+            .submit_command_async(
+                Command::Enable,
+                SubmissionAuthority {
+                    token: None,
+                    generation: &[],
+                    clock: Instant::now,
+                },
+                None,
+                None,
+            )
             .unwrap();
         assert!(matches!(
             reply.try_recv(),
