@@ -493,7 +493,7 @@ fn adapt(value: &mut Value) {
                 adapt(item);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 
@@ -628,7 +628,7 @@ pub fn action_sequence_tool_schema(
             Value::Array(items) => {
                 Value::Array(items.iter().map(|item| inline(item, definitions)).collect())
             }
-            _ => value.clone(),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
         }
     }
     configuration.validate()?;

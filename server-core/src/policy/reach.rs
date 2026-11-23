@@ -40,17 +40,10 @@ impl ActiveReach {
         interval: f64,
     ) -> ReachStatus {
         self.elapsed += interval;
-        let distance =
-            (tool.translation.vector - nalgebra::Vector3::from(self.goal.position)).norm();
-        let rotation = tool.rotation;
-        let alignment = (rotation.i * self.goal.quaternion[0]
-            + rotation.j * self.goal.quaternion[1]
-            + rotation.k * self.goal.quaternion[2]
-            + rotation.w * self.goal.quaternion[3])
-            .abs()
-            .min(1.0);
+        let distance = (tool.translation.vector - self.goal.target.translation.vector).norm();
+        let angle = tool.rotation.angle_to(&self.goal.target.rotation);
         let reached = distance <= self.goal.position_tolerance_meters
-            && 2.0 * alignment.acos() <= self.goal.orientation_tolerance_radians;
+            && angle <= self.goal.orientation_tolerance_radians;
         let at_rest = velocities
             .iter()
             .all(|velocity| velocity.abs() <= self.settled_velocity_radians_per_second);

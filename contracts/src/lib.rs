@@ -1,3 +1,4 @@
+#![deny(clippy::wildcard_enum_match_arm)]
 //! Shared station state and command-record contracts.
 
 mod controller_config;
@@ -555,7 +556,11 @@ impl CommandRecord {
     pub fn group_id(&self) -> Option<&str> {
         match &self.command {
             RecordedCommand::Move { group_id, .. } => group_id.as_deref(),
-            _ => None,
+            RecordedCommand::PolicyReach { .. }
+            | RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -563,7 +568,11 @@ impl CommandRecord {
     pub fn target_joints(&self) -> Option<&[f64]> {
         match &self.command {
             RecordedCommand::Move { target_joints, .. } => Some(target_joints),
-            _ => None,
+            RecordedCommand::PolicyReach { .. }
+            | RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -574,7 +583,10 @@ impl CommandRecord {
                 target_position, ..
             } => *target_position,
             RecordedCommand::PolicyReach { target_pose } => Some(target_pose.position),
-            _ => None,
+            RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -585,7 +597,10 @@ impl CommandRecord {
                 target_quaternion, ..
             } => *target_quaternion,
             RecordedCommand::PolicyReach { target_pose } => Some(target_pose.quaternion),
-            _ => None,
+            RecordedCommand::JointStream { .. }
+            | RecordedCommand::PoseStream { .. }
+            | RecordedCommand::Gripper { .. }
+            | RecordedCommand::Control { .. } => None,
         }
     }
 
@@ -593,7 +608,9 @@ impl CommandRecord {
     pub fn achieved(&self) -> Option<&Achieved> {
         match &self.phase {
             CommandPhase::Finished { achieved, .. } => achieved.as_deref(),
-            _ => None,
+            CommandPhase::Pending
+            | CommandPhase::NotStarted { .. }
+            | CommandPhase::OutcomeUnknown { .. } => None,
         }
     }
 

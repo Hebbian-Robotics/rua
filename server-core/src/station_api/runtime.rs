@@ -218,13 +218,7 @@ async fn execute_program(
                 wait.cancellation.clone(),
             )
             .await
-            .map_err(|failure| match failure {
-                ExecutionFailure::AdmissionUnknown { .. } => failure,
-                _ => wait
-                    .check_cancellation(source_step)
-                    .err()
-                    .unwrap_or(failure),
-            })?;
+            .map_err(|failure| wait.submission_failure(failure, source_step))?;
             let records = match wait.for_step(records, source_step).await {
                 Ok(records) => records,
                 Err((detail, records)) => {
@@ -381,6 +375,24 @@ struct ExecutionWait<'a> {
 }
 
 impl ExecutionWait<'_> {
+    fn submission_failure(
+        &self,
+        failure: ExecutionFailure,
+        source_step: usize,
+    ) -> ExecutionFailure {
+        match failure {
+            ExecutionFailure::AdmissionUnknown { .. } => failure,
+            ExecutionFailure::Preparation { .. }
+            | ExecutionFailure::Admission { .. }
+            | ExecutionFailure::Execution { .. }
+            | ExecutionFailure::Cancellation { .. }
+            | ExecutionFailure::Authority { .. }
+            | ExecutionFailure::Runtime { .. } => self
+                .check_cancellation(source_step)
+                .err()
+                .unwrap_or(failure),
+        }
+    }
     fn check_cancellation(&self, source_step: usize) -> Result<(), ExecutionFailure> {
         check_execution_cancellation(&self.cancellation, source_step)
     }

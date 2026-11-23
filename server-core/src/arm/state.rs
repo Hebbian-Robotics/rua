@@ -45,7 +45,7 @@ impl ArmCore {
     #[must_use]
     pub fn new(limits: Limits, publish: impl Fn(LoggedEvent) + Send + 'static) -> Self {
         Self {
-            motion_origin: Vec::with_capacity(limits.joint_count),
+            motion_origin: Vec::with_capacity(limits.joint_bounds.lower().len()),
             motion_advanced: false,
             group_collision: None,
             limits,

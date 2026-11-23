@@ -491,8 +491,8 @@ impl LinkHandle {
                 planner.project_by_policy(joints, position, orientation, |position, quaternion| {
                     let request = PreviewRequest {
                         goal: ReachGoal {
-                            position,
-                            quaternion,
+                            target: crate::kinematics::pose_from_xyzw(position, quaternion)
+                                .map_err(|error| error.to_string())?,
                             position_tolerance_meters: settings.position_tolerance_meters,
                             orientation_tolerance_radians: settings.orientation_tolerance_radians,
                         },
@@ -924,7 +924,13 @@ impl Hub {
                 }
             }
             Event::Mode { mode, fault } => self.mode = Some((*mode, fault.clone())),
-            _ => {}
+            Event::State(_)
+            | Event::Snapshot { .. }
+            | Event::Resync { .. }
+            | Event::Rejected { .. }
+            | Event::Tripped { .. }
+            | Event::ControllerUnavailable { .. }
+            | Event::ControllerAvailable => {}
         }
         self.next_seq = self.next_seq.max(1);
         let frame = Frame::emitted_now(Some(self.next_seq), event);

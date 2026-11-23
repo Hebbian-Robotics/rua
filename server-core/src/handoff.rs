@@ -552,10 +552,12 @@ mod tests {
     fn core() -> ArmCore {
         ArmCore::new(
             Limits {
-                joint_count: 2,
-                lower: vec![-2.0, -2.0],
-                upper: vec![2.0, 2.0],
-                joint_limit_recovery_tolerance_radians: 0.035,
+                joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits::new(
+                    &[-2.0, -2.0],
+                    &[2.0, 2.0],
+                    0.035,
+                )
+                .unwrap(),
                 gripper: None,
                 pose_goals: None,
                 jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
@@ -850,10 +852,10 @@ mod tests {
     ) -> ArmCore {
         let mut arm = ArmCore::new(
             Limits {
-                joint_count: 5,
-                lower: vec![-1.5; 5],
-                upper: vec![1.5; 5],
-                joint_limit_recovery_tolerance_radians: 0.035,
+                joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits::new(
+                    &[-1.5; 5], &[1.5; 5], 0.035,
+                )
+                .unwrap(),
                 gripper: Some((0.0, 1.5)),
                 pose_goals: Some(crate::arm::PoseGoalSettings {
                     position_tolerance_meters: 0.01,

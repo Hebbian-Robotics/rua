@@ -489,7 +489,10 @@ impl ArmCore {
                 self.command_state = CommandState::Superseding(None);
                 job
             }
-            other => {
+            other @ (CommandState::Idle
+            | CommandState::Starting(_)
+            | CommandState::Executing { .. }
+            | CommandState::Stopping(_)) => {
                 self.command_state = other;
                 None
             }
@@ -657,17 +660,11 @@ impl ArmCore {
         if let Some(refused) = self.mode_rejection() {
             return Err(refused);
         }
-        if !position.iter().all(|value| value.is_finite()) {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                "A pose goal needs a finite position",
-            ));
-        }
         let quaternion = pose_orientation_quaternion(orientation, self.limits.jaw_closing_axis)
             .map_err(|why| rejection(RejectionReason::InvalidTarget, why.to_string()))?;
         Ok(ReachGoal {
-            position,
-            quaternion,
+            target: crate::kinematics::pose_from_xyzw(position, quaternion)
+                .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?,
             position_tolerance_meters: settings.position_tolerance_meters,
             orientation_tolerance_radians: settings.orientation_tolerance_radians,
         })
@@ -689,8 +686,8 @@ impl ArmCore {
             label,
             RecordedCommand::PolicyReach {
                 target_pose: CommandPose {
-                    position: goal.position,
-                    quaternion: goal.quaternion,
+                    position: goal.target.translation.vector.into(),
+                    quaternion: goal.target.rotation.coords.into(),
                 },
             },
             now,
@@ -712,9 +709,9 @@ impl ArmCore {
     ) -> Result<CommandRecord, Rejection> {
         let positions = crate::joint_limits::JointTarget::parse(
             positions,
-            self.limits.joint_count,
-            &self.limits.lower,
-            &self.limits.upper,
+            self.limits.joint_bounds.lower().len(),
+            self.limits.joint_bounds.lower(),
+            self.limits.joint_bounds.upper(),
         )
         .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
         let requested_speed = JointSpeed::for_request(
@@ -755,23 +752,13 @@ impl ArmCore {
                 "This controller has no policy loaded, so it cannot take a pose goal",
             ));
         }
-        let norm = quaternion.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if position.iter().chain(&quaternion).any(|v| !v.is_finite())
-            || (norm - 1.0).abs() > POSE_QUATERNION_TOLERANCE
-        {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                "A pose goal needs a finite position and a unit quaternion",
-            ));
-        }
-        self.submit_stream(
-            StreamGoal::Pose {
-                position,
-                quaternion,
-            },
-            stream_command_id,
-            now,
+        let target = hebbian_robot_geometry::kinematics::pose_with_tolerance(
+            position,
+            quaternion,
+            POSE_QUATERNION_TOLERANCE,
         )
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+        self.submit_stream(StreamGoal::Pose(target), stream_command_id, now)
     }
 
     pub(super) fn submit_stream(

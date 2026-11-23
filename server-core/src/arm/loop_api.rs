@@ -88,7 +88,11 @@ impl ArmCore {
     pub(crate) fn next_job(&mut self) -> Option<Job> {
         let job = match std::mem::replace(&mut self.command_state, CommandState::Idle) {
             CommandState::Queued(job) => job,
-            other => {
+            other @ (CommandState::Idle
+            | CommandState::Superseding(_)
+            | CommandState::Starting(_)
+            | CommandState::Executing { .. }
+            | CommandState::Stopping(_)) => {
                 self.command_state = other;
                 return None;
             }
@@ -115,7 +119,11 @@ impl ArmCore {
         }
         self.transition_power(|power| match power {
             PowerState::Holding(poses) => PowerState::Moving(poses),
-            other => other,
+            unchanged @ (PowerState::Moving(_)
+            | PowerState::Disabled
+            | PowerState::Faulted(_)
+            | PowerState::Disconnected(_)
+            | PowerState::Reconnected) => unchanged,
         });
     }
 
@@ -143,7 +151,11 @@ impl ArmCore {
         self.set_hold(hold);
         self.transition_power(|power| match power {
             PowerState::Moving(poses) => PowerState::Holding(poses),
-            other => other,
+            unchanged @ (PowerState::Holding(_)
+            | PowerState::Disabled
+            | PowerState::Faulted(_)
+            | PowerState::Disconnected(_)
+            | PowerState::Reconnected) => unchanged,
         });
     }
 
@@ -188,7 +200,11 @@ impl ArmCore {
         self.set_hold(hold);
         self.transition_power(|power| match power {
             PowerState::Moving(poses) => PowerState::Holding(poses),
-            other => other,
+            unchanged @ (PowerState::Holding(_)
+            | PowerState::Disabled
+            | PowerState::Faulted(_)
+            | PowerState::Disconnected(_)
+            | PowerState::Reconnected) => unchanged,
         });
         self.end_active(outcome, detail, now);
     }

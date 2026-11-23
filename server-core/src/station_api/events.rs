@@ -193,7 +193,17 @@ impl JournalState {
                 ServerMessage::ActionSequenceState {
                     action_sequence: Some(record),
                 } => Some(SnapshotKey::ActionSequence(record.arms.clone())),
-                _ => None,
+                ServerMessage::ActionSequenceAccepted { .. }
+                | ServerMessage::Hello { .. }
+                | ServerMessage::Lease { .. }
+                | ServerMessage::CommandAnswer { .. }
+                | ServerMessage::PreviewAnswer { .. }
+                | ServerMessage::LeaseLost { .. }
+                | ServerMessage::ActionSequenceState { .. }
+                | ServerMessage::RunEvent { .. }
+                | ServerMessage::RunSpan { .. }
+                | ServerMessage::RunResync { .. }
+                | ServerMessage::Refused { .. } => None,
             };
             if let Some(key) = key {
                 self.snapshots.insert(key, event.clone());
@@ -229,7 +239,12 @@ impl JournalState {
                     self.records.pop_front();
                 }
             }
-            _ => {}
+            Event::Resync { .. }
+            | Event::Mode { .. }
+            | Event::Rejected { .. }
+            | Event::Tripped { .. }
+            | Event::ControllerUnavailable { .. }
+            | Event::ControllerAvailable => {}
         }
         self.refresh_arm_snapshot(arm, frame);
         None

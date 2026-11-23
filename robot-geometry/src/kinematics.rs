@@ -113,9 +113,21 @@ impl SerialChain {
 pub const UNIT_QUATERNION_TOLERANCE: f64 = 0.00011;
 
 pub fn pose_from_xyzw(position: [f64; 3], quaternion: [f64; 4]) -> anyhow::Result<Isometry3<f64>> {
+    pose_with_tolerance(position, quaternion, UNIT_QUATERNION_TOLERANCE)
+}
+
+pub fn pose_with_tolerance(
+    position: [f64; 3],
+    quaternion: [f64; 4],
+    tolerance: f64,
+) -> anyhow::Result<Isometry3<f64>> {
+    ensure!(
+        position.iter().all(|value| value.is_finite()),
+        "A pose goal needs a finite position"
+    );
     let squared = quaternion.iter().map(|value| value * value).sum::<f64>();
     ensure!(
-        (squared.sqrt() - 1.0).abs() <= UNIT_QUATERNION_TOLERANCE,
+        (squared.sqrt() - 1.0).abs() <= tolerance,
         "The target quaternion must be a unit quaternion"
     );
     Ok(Isometry3::from_parts(

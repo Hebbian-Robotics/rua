@@ -83,7 +83,8 @@ impl<P: Plant> Runner<'_, P> {
                 RecoveryRefusal::OutsideRecovery { .. } => anyhow::anyhow!(
                     "{error}; move the arm inside its limits by hand before enabling"
                 ),
-                error => anyhow::anyhow!(error),
+                error @ (RecoveryRefusal::WrongJointCount { .. }
+                | RecoveryRefusal::NotFinite { .. }) => anyhow::anyhow!(error),
             });
         }
         // INVARIANT: The guard watches from before torque goes on.

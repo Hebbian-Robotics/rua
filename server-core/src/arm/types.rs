@@ -32,10 +32,7 @@ pub struct PoseGoalSettings {
 
 #[derive(Debug, Clone)]
 pub struct Limits {
-    pub joint_count: usize,
-    pub lower: Vec<f64>,
-    pub upper: Vec<f64>,
-    pub joint_limit_recovery_tolerance_radians: f64,
+    pub joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits,
     pub gripper: Option<(f64, f64)>,
     pub pose_goals: Option<PoseGoalSettings>,
     pub jaw_closing_axis: JawClosingAxis,
@@ -109,8 +106,7 @@ pub(crate) struct GroupMembership {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReachGoal {
-    pub position: [f64; 3],
-    pub quaternion: [f64; 4],
+    pub target: nalgebra::Isometry3<f64>,
     pub position_tolerance_meters: f64,
     pub orientation_tolerance_radians: f64,
 }
@@ -121,17 +117,14 @@ pub(crate) enum StreamGoal {
         positions: crate::joint_limits::JointTarget<Vec<f64>>,
         joint_speed: JointSpeed,
     },
-    Pose {
-        position: [f64; 3],
-        quaternion: [f64; 4],
-    },
+    Pose(nalgebra::Isometry3<f64>),
 }
 
 impl StreamGoal {
     pub(super) fn label(&self) -> &'static str {
         match self {
             Self::Joints { .. } => "stream_joints",
-            Self::Pose { .. } => "stream_pose",
+            Self::Pose(_) => "stream_pose",
         }
     }
 
@@ -145,13 +138,10 @@ impl StreamGoal {
                 goal_joints: positions.as_slice().to_vec(),
                 joint_speed: joint_speed.radians_per_second(),
             },
-            Self::Pose {
-                position,
-                quaternion,
-            } => RecordedCommand::PoseStream {
+            Self::Pose(target) => RecordedCommand::PoseStream {
                 goal_pose: CommandPose {
-                    position: *position,
-                    quaternion: *quaternion,
+                    position: target.translation.vector.into(),
+                    quaternion: target.rotation.coords.into(),
                 },
             },
         }
@@ -160,7 +150,7 @@ impl StreamGoal {
     pub(super) fn joint_speed(&self) -> Option<JointSpeed> {
         match self {
             Self::Joints { joint_speed, .. } => Some(*joint_speed),
-            Self::Pose { .. } => None,
+            Self::Pose(_) => None,
         }
     }
 }

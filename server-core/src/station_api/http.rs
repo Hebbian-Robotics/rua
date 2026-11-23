@@ -1061,7 +1061,15 @@ async fn submit_command(
                             input.expected_revision,
                         )
                     }
-                    command => {
+                    command @ (hebbian_contracts::Command::Enable
+                    | hebbian_contracts::Command::ApproveRecovery
+                    | hebbian_contracts::Command::ClearFault
+                    | hebbian_contracts::Command::Shutdown
+                    | hebbian_contracts::Command::Move { .. }
+                    | hebbian_contracts::Command::StreamJoints { .. }
+                    | hebbian_contracts::Command::StreamPose { .. }
+                    | hebbian_contracts::Command::ReachPose { .. }
+                    | hebbian_contracts::Command::SetGripper { .. }) => {
                         state
                             .executions
                             .check_command_conflict(token, &[&input.arm])

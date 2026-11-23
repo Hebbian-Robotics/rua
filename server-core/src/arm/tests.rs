@@ -10,10 +10,12 @@ use hebbian_contracts::{
 
 fn limits() -> Limits {
     Limits {
-        joint_count: 2,
-        lower: vec![-2.0, -2.0],
-        upper: vec![2.0, 2.0],
-        joint_limit_recovery_tolerance_radians: 0.035,
+        joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits::new(
+            &[-2.0, -2.0],
+            &[2.0, 2.0],
+            0.035,
+        )
+        .unwrap(),
         gripper: Some((0.0, 1.0)),
         pose_goals: Some(PoseGoalSettings {
             position_tolerance_meters: 0.02,
@@ -908,6 +910,8 @@ fn record_speed(record: &hebbian_contracts::CommandRecord) -> f64 {
         RecordedCommand::Move { joint_speed, .. }
         | RecordedCommand::JointStream { joint_speed, .. }
         | RecordedCommand::Gripper { joint_speed, .. } => joint_speed,
-        _ => panic!("Expected a command with a speed: {record:?}"),
+        RecordedCommand::PolicyReach { .. }
+        | RecordedCommand::PoseStream { .. }
+        | RecordedCommand::Control { .. } => panic!("Expected a command with a speed: {record:?}"),
     }
 }

@@ -406,7 +406,14 @@ fn profile_tables(directory: &Path, name: &str, depth: usize) -> anyhow::Result<
             .into_iter()
             .map(|base| match base {
                 toml::Value::String(base) => Ok(base),
-                other => bail!("{}: extends names a non-string {other}", path.display()),
+                other @ (toml::Value::Integer(_)
+                | toml::Value::Float(_)
+                | toml::Value::Boolean(_)
+                | toml::Value::Datetime(_)
+                | toml::Value::Array(_)
+                | toml::Value::Table(_)) => {
+                    bail!("{}: extends names a non-string {other}", path.display())
+                }
             })
             .collect::<anyhow::Result<_>>()?,
         Some(other) => bail!(
