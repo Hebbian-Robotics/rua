@@ -1,5 +1,6 @@
 //! Format model-facing results while retaining SI values in station records.
 
+use hebbian_contracts::MODEL_RESPONSE_FIELDS;
 use serde_json::{Map, Number, Value};
 
 fn scaled(value: Value, factor: f64) -> Value {
@@ -23,36 +24,6 @@ pub struct ConciseOptions {
     /// Observations leave them out because the model is given the conventions separately.
     pub keep_station_context: bool,
 }
-
-const STATE_FIELDS: [&str; 4] = ["robot", "joint_names", "max_joint_speed", "surface_guard"];
-const STATION_CONTEXT_FIELDS: [&str; 2] = ["description", "lease"];
-const ARM_FIELDS: [&str; 12] = [
-    "arm",
-    "mode",
-    "status",
-    "fault",
-    "active_trip",
-    "interlocks",
-    "recovery_issue",
-    "revision",
-    "sampled_at_unix_seconds",
-    "measured_joints",
-    "tool",
-    "gripper_opening",
-];
-const DIAGNOSTIC_FIELDS: [&str; 11] = [
-    "id",
-    "command_id",
-    "group_id",
-    "stream_command_id",
-    "sequence_id",
-    "action_sequence_id",
-    "checkpoints",
-    "trace_context",
-    "model_points",
-    "accepted_at",
-    "finished_at",
-];
 
 fn keep_fields(object: &Map<String, Value>, kept: &[&str]) -> Map<String, Value> {
     kept.iter()
@@ -162,14 +133,7 @@ fn compact_earlier_step(value: Value) -> Value {
                     "record".to_owned(),
                     Value::Object(keep_fields(
                         &model_command_record(record.clone()),
-                        &[
-                            "label",
-                            "completion",
-                            "phase",
-                            "target_status",
-                            "pose_limited",
-                            "path_limited",
-                        ],
+                        MODEL_RESPONSE_FIELDS.earlier_step,
                     )),
                 );
                 concise_output(Value::Object(compact), ConciseOptions::default())
@@ -192,9 +156,9 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
         Value::Object(object)
             if object.contains_key("arms") && object.contains_key("joint_names") =>
         {
-            let mut state = keep_fields(&object, &STATE_FIELDS);
+            let mut state = keep_fields(&object, MODEL_RESPONSE_FIELDS.state);
             if options.keep_station_context {
-                state.extend(keep_fields(&object, &STATION_CONTEXT_FIELDS));
+                state.extend(keep_fields(&object, MODEL_RESPONSE_FIELDS.station_context));
             }
             let arms = object
                 .get("arms")
@@ -204,7 +168,7 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
                 .map(|arm| {
                     let fields = arm
                         .as_object()
-                        .map(|arm| keep_fields(arm, &ARM_FIELDS))
+                        .map(|arm| keep_fields(arm, MODEL_RESPONSE_FIELDS.arm))
                         .unwrap_or_default();
                     concise_output(Value::Object(fields), ConciseOptions::default())
                 })
@@ -247,7 +211,7 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
         Value::Object(object) => Value::Object(
             model_command_record(object)
                 .into_iter()
-                .filter(|(key, _)| !DIAGNOSTIC_FIELDS.contains(&key.as_str()))
+                .filter(|(key, _)| !MODEL_RESPONSE_FIELDS.diagnostic.contains(&key.as_str()))
                 .map(|(key, value)| (key, concise_output(value, options)))
                 .collect(),
         ),
@@ -276,38 +240,11 @@ pub fn model_response(value: Value) -> Value {
 }
 
 fn model_unit_field(field: &str) -> Option<(&'static str, f64)> {
-    const DEGREES_PER_RADIAN: f64 = 180.0 / std::f64::consts::PI;
-    match field {
-        "position" => Some(("position_mm", 1000.0)),
-        "target_position" => Some(("target_position_mm", 1000.0)),
-        "tool_position" => Some(("tool_position_mm", 1000.0)),
-        "surface_height_meters" => Some(("surface_height_mm", 1000.0)),
-        "leeway_meters" => Some(("leeway_mm", 1000.0)),
-        "model_points" => Some(("model_points_mm", 1000.0)),
-        "position_error_meters" => Some(("position_error_mm", 1000.0)),
-        "position_shortfall_meters" => Some(("position_shortfall_mm", 1000.0)),
-        "joints" => Some(("joints_degrees", DEGREES_PER_RADIAN)),
-        "measured_joints" => Some(("measured_joints_degrees", DEGREES_PER_RADIAN)),
-        "measured_joint_velocities" => Some((
-            "measured_joint_velocities_degrees_per_second",
-            DEGREES_PER_RADIAN,
-        )),
-        "commanded_joints" => Some(("commanded_joints_degrees", DEGREES_PER_RADIAN)),
-        "rest_pose" => Some(("rest_pose_degrees", DEGREES_PER_RADIAN)),
-        "target_joints" => Some(("target_joints_degrees", DEGREES_PER_RADIAN)),
-        "goal_joints" => Some(("goal_joints_degrees", DEGREES_PER_RADIAN)),
-        "joint_error_radians" => Some(("joint_error_degrees", DEGREES_PER_RADIAN)),
-        "joint_errors_radians" => Some(("joint_errors_degrees", DEGREES_PER_RADIAN)),
-        "orientation_error_radians" => Some(("orientation_error_degrees", DEGREES_PER_RADIAN)),
-        "orientation_shortfall_radians" => {
-            Some(("orientation_shortfall_degrees", DEGREES_PER_RADIAN))
-        }
-        "measured_angle_radians" => Some(("measured_angle_degrees", DEGREES_PER_RADIAN)),
-        "target_angle_radians" => Some(("target_angle_degrees", DEGREES_PER_RADIAN)),
-        "joint_speed" => Some(("joint_speed_degrees_per_second", DEGREES_PER_RADIAN)),
-        "max_joint_speed" => Some(("max_joint_speed_degrees_per_second", DEGREES_PER_RADIAN)),
-        _ => None,
-    }
+    hebbian_contracts::MODEL_OUTPUT_UNITS.iter().find_map(
+        |&(station_field, model_field, factor)| {
+            (station_field == field).then_some((model_field, factor))
+        },
+    )
 }
 
 fn format_model_field(value: Value, field: &str) -> Value {

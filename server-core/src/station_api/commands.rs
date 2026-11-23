@@ -6,7 +6,7 @@ use crate::config::ControllerConfig;
 use crate::control_link::LinkHandle;
 use crate::planning::Planner;
 use hebbian_contracts::{
-    ArmMode, ArmMove, Command, CompiledArmAction, CompiledMovement, GripperOpening, JointSpeed,
+    ArmMode, Command, CompiledArmAction, CompiledMovement, GripperOpening, JointSpeed,
     MoveArmsCommand, PlannedMotion, PoseOrientation, PoseProjection, PreviewPose, RejectionReason,
     Sample, StationCommand, Waypoint,
 };
@@ -366,7 +366,14 @@ pub(crate) fn plan_group_move<'a>(
     links: &'a BTreeMap<String, LinkHandle>,
     command: &MoveArmsCommand,
     expected_revisions: &BTreeMap<String, u64>,
-) -> Result<(&'a LinkHandle, Vec<ArmMove>, Vec<crate::lease::ArmGate>), Refusal> {
+) -> Result<
+    (
+        &'a LinkHandle,
+        Vec<PreparedArmAction>,
+        Vec<crate::lease::ArmGate>,
+    ),
+    Refusal,
+> {
     let mut moves = Vec::new();
     let mut gates = Vec::new();
     let mut first_link = None;
@@ -401,13 +408,16 @@ pub(crate) fn plan_group_move<'a>(
             pose_limited,
         } = motion;
         gates.push(link.gate(expected_revisions.get(arm).copied()));
-        moves.push(ArmMove {
-            arm: arm.clone(),
-            plan,
-            joint_speed,
-            path_limited,
-            pose_limited,
-        });
+        moves.push(PreparedArmAction::movement(
+            arm.clone(),
+            PreparedMovement::Trajectory {
+                label: "move_arms".into(),
+                plan,
+                joint_speed,
+                path_limited,
+                pose_limited,
+            },
+        ));
         first_link.get_or_insert(link);
     }
     let link = first_link

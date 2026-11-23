@@ -609,3 +609,187 @@ ROBOT_TOOL_INPUT_UNITS = json.loads(r"""
   }
 ]
 """)
+
+MODEL_OUTPUT_UNITS = json.loads(r"""
+[
+  [
+    "position",
+    "position_mm",
+    1000.0
+  ],
+  [
+    "target_position",
+    "target_position_mm",
+    1000.0
+  ],
+  [
+    "tool_position",
+    "tool_position_mm",
+    1000.0
+  ],
+  [
+    "surface_height_meters",
+    "surface_height_mm",
+    1000.0
+  ],
+  [
+    "leeway_meters",
+    "leeway_mm",
+    1000.0
+  ],
+  [
+    "model_points",
+    "model_points_mm",
+    1000.0
+  ],
+  [
+    "position_error_meters",
+    "position_error_mm",
+    1000.0
+  ],
+  [
+    "position_shortfall_meters",
+    "position_shortfall_mm",
+    1000.0
+  ],
+  [
+    "joints",
+    "joints_degrees",
+    57.29577951308232
+  ],
+  [
+    "measured_joints",
+    "measured_joints_degrees",
+    57.29577951308232
+  ],
+  [
+    "measured_joint_velocities",
+    "measured_joint_velocities_degrees_per_second",
+    57.29577951308232
+  ],
+  [
+    "commanded_joints",
+    "commanded_joints_degrees",
+    57.29577951308232
+  ],
+  [
+    "rest_pose",
+    "rest_pose_degrees",
+    57.29577951308232
+  ],
+  [
+    "target_joints",
+    "target_joints_degrees",
+    57.29577951308232
+  ],
+  [
+    "goal_joints",
+    "goal_joints_degrees",
+    57.29577951308232
+  ],
+  [
+    "joint_error_radians",
+    "joint_error_degrees",
+    57.29577951308232
+  ],
+  [
+    "joint_errors_radians",
+    "joint_errors_degrees",
+    57.29577951308232
+  ],
+  [
+    "orientation_error_radians",
+    "orientation_error_degrees",
+    57.29577951308232
+  ],
+  [
+    "orientation_shortfall_radians",
+    "orientation_shortfall_degrees",
+    57.29577951308232
+  ],
+  [
+    "measured_angle_radians",
+    "measured_angle_degrees",
+    57.29577951308232
+  ],
+  [
+    "target_angle_radians",
+    "target_angle_degrees",
+    57.29577951308232
+  ],
+  [
+    "joint_speed",
+    "joint_speed_degrees_per_second",
+    57.29577951308232
+  ],
+  [
+    "max_joint_speed",
+    "max_joint_speed_degrees_per_second",
+    57.29577951308232
+  ]
+]
+""")
+
+MODEL_OUTCOMES = json.loads(r"""
+{
+  "completed": "completed",
+  "failed": "incomplete",
+  "faulted": "faulted",
+  "interrupted": "interrupted",
+  "stopped": "incomplete",
+  "stopped_short": "stopped_short",
+  "superseded": "incomplete",
+  "timed_out": "incomplete",
+  "tripped": "incomplete"
+}
+""")
+
+MODEL_RESPONSE_FIELDS = json.loads(r"""
+{
+  "arm": [
+    "arm",
+    "mode",
+    "status",
+    "fault",
+    "active_trip",
+    "interlocks",
+    "recovery_issue",
+    "revision",
+    "sampled_at_unix_seconds",
+    "measured_joints",
+    "tool",
+    "gripper_opening"
+  ],
+  "diagnostic": [
+    "id",
+    "command_id",
+    "group_id",
+    "stream_command_id",
+    "sequence_id",
+    "action_sequence_id",
+    "checkpoints",
+    "trace_context",
+    "model_points",
+    "accepted_at",
+    "finished_at"
+  ],
+  "earlier_step": [
+    "label",
+    "completion",
+    "phase",
+    "target_status",
+    "pose_limited",
+    "path_limited"
+  ],
+  "state": [
+    "robot",
+    "joint_names",
+    "max_joint_speed",
+    "surface_guard"
+  ],
+  "station_context": [
+    "description",
+    "lease"
+  ]
+}
+""")

@@ -33,6 +33,40 @@ fn recording_manager(
 }
 
 #[tokio::test]
+async fn a_failed_launch_releases_the_session_for_retry() -> Result<(), Box<dyn std::error::Error>>
+{
+    let directory = tempfile::tempdir()?;
+    let executable = directory.path().join("recorder");
+    let manager = recording_manager(directory.path(), executable.clone(), || true)?;
+    let error = manager.start_recording().unwrap_err();
+    let RecordingStatus::Failed {
+        name: failed_name,
+        detail,
+    } = manager.recording_status()
+    else {
+        return Err("missing failed launch status".into());
+    };
+    assert_eq!(detail, error);
+    assert!(!manager.is_active());
+    std::os::unix::fs::symlink(recorder_fixture("offline-recorder.sh"), executable)?;
+    let retry = manager.start_recording()?;
+    assert_ne!(retry, failed_name);
+    let ready = directory.path().join("recorder-ready");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !ready.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    manager.stop_recording();
+    tokio::time::timeout(Duration::from_secs(5), manager.wait_until_inactive()).await?;
+    assert!(
+        matches!(manager.recording_status(), RecordingStatus::Finished { name } if name == retry)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn recording_started_offline_stays_incomplete_after_controller_recovers()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;

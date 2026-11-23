@@ -208,6 +208,168 @@ pub fn filter_sequence_actions(
     }
 }
 
+/// Model-facing classification shared by command and sequence adapters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelOutcome {
+    Completed,
+    StoppedShort,
+    Faulted,
+    Interrupted,
+    Incomplete,
+}
+
+impl From<crate::CommandOutcome> for ModelOutcome {
+    fn from(outcome: crate::CommandOutcome) -> Self {
+        use crate::CommandOutcome;
+        match outcome {
+            CommandOutcome::Completed => Self::Completed,
+            CommandOutcome::StoppedShort => Self::StoppedShort,
+            CommandOutcome::Faulted => Self::Faulted,
+            CommandOutcome::Interrupted => Self::Interrupted,
+            CommandOutcome::Stopped
+            | CommandOutcome::Tripped
+            | CommandOutcome::TimedOut
+            | CommandOutcome::Superseded
+            | CommandOutcome::Failed => Self::Incomplete,
+        }
+    }
+}
+
+/// Fields selected by the concise model response formatter.
+#[derive(Debug, Serialize)]
+pub struct ModelResponseFields {
+    pub state: &'static [&'static str],
+    pub station_context: &'static [&'static str],
+    pub arm: &'static [&'static str],
+    pub diagnostic: &'static [&'static str],
+    pub earlier_step: &'static [&'static str],
+}
+
+/// Shared field selections for station snapshots and command history.
+pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
+    state: &["robot", "joint_names", "max_joint_speed", "surface_guard"],
+    station_context: &["description", "lease"],
+    arm: &[
+        "arm",
+        "mode",
+        "status",
+        "fault",
+        "active_trip",
+        "interlocks",
+        "recovery_issue",
+        "revision",
+        "sampled_at_unix_seconds",
+        "measured_joints",
+        "tool",
+        "gripper_opening",
+    ],
+    diagnostic: &[
+        "id",
+        "command_id",
+        "group_id",
+        "stream_command_id",
+        "sequence_id",
+        "action_sequence_id",
+        "checkpoints",
+        "trace_context",
+        "model_points",
+        "accepted_at",
+        "finished_at",
+    ],
+    earlier_step: &[
+        "label",
+        "completion",
+        "phase",
+        "target_status",
+        "pose_limited",
+        "path_limited",
+    ],
+};
+
+/// Station field, model field, and multiplier for model-facing output.
+pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
+    ("position", "position_mm", 1000.0),
+    ("target_position", "target_position_mm", 1000.0),
+    ("tool_position", "tool_position_mm", 1000.0),
+    ("surface_height_meters", "surface_height_mm", 1000.0),
+    ("leeway_meters", "leeway_mm", 1000.0),
+    ("model_points", "model_points_mm", 1000.0),
+    ("position_error_meters", "position_error_mm", 1000.0),
+    ("position_shortfall_meters", "position_shortfall_mm", 1000.0),
+    ("joints", "joints_degrees", 180.0 / std::f64::consts::PI),
+    (
+        "measured_joints",
+        "measured_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "measured_joint_velocities",
+        "measured_joint_velocities_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "commanded_joints",
+        "commanded_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "rest_pose",
+        "rest_pose_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "target_joints",
+        "target_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "goal_joints",
+        "goal_joints_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_error_radians",
+        "joint_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_errors_radians",
+        "joint_errors_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "orientation_error_radians",
+        "orientation_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "orientation_shortfall_radians",
+        "orientation_shortfall_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "measured_angle_radians",
+        "measured_angle_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "target_angle_radians",
+        "target_angle_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "joint_speed",
+        "joint_speed_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "max_joint_speed",
+        "max_joint_speed_degrees_per_second",
+        180.0 / std::f64::consts::PI,
+    ),
+];
+
 /// A numeric tool argument whose model units differ from the station contract.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ModelInputUnit {
