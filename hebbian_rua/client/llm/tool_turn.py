@@ -20,8 +20,9 @@ class ModelObservation[Message]:
 class RobotToolTurn[Message]:
     """Append messages to the conversation, then check results before continuing.
 
-    Messages include the original model response and tool results, preserving
-    reasoning and signatures. No model requests are made by an adapter.
+    Messages contain the new tool results and observations. Adapters for
+    client-managed history also include the original model response, preserving
+    reasoning and signatures. The caller sends the next model request.
     """
 
     messages: list[Message]

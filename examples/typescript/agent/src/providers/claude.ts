@@ -91,8 +91,7 @@ export class ClaudeConversation implements ModelConversation {
       })),
       output_config: { effort: settings.reasoningEffort },
       thinking: { type: "adaptive", display: "summarized" },
-      // Caches the last block of every turn's prefix (tools, system, history),
-      // so only the newest observation is uncached.
+      // Let the API advance the cache breakpoint as the thread grows.
       cache_control: { type: "ephemeral" },
       // If the API cannot thread a request, send each turn's full history instead.
       unsupportedRequestBehavior: "continue_unthreaded",

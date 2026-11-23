@@ -57,8 +57,13 @@ class OpenAIRobotTools:
         )
 
     async def execute(
-        self, response: Response, *, expected_revisions: Mapping[str, int]
+        self,
+        response: Response,
+        *,
+        expected_revisions: Mapping[str, int],
+        include_model_output: bool = True,
     ) -> RobotToolTurn[ResponseInputItemParam]:
+        """Format a tool turn. Set include_model_output=False when chaining stored responses."""
         if response.status != "completed":
             raise ValueError(
                 f"Cannot execute an incomplete model response: {response.status}"
@@ -72,14 +77,15 @@ class OpenAIRobotTools:
             for output in response.output
             if output.type == "function_call"
         ]
-        # Retain every model output, including reasoning, before executing any motion.
-        # Materialize SDK Iterable fields so history can be reused on later turns.
-        messages: list[ResponseInputItemParam] = _RESPONSE_INPUT.dump_python(
-            _RESPONSE_INPUT.validate_python(
-                [output.model_dump(exclude_none=True) for output in response.output]
-            ),
-            mode="json",
-        )
+        messages: list[ResponseInputItemParam] = []
+        if include_model_output:
+            # Materialize SDK Iterable fields before motion so the client can replay the response.
+            messages = _RESPONSE_INPUT.dump_python(
+                _RESPONSE_INPUT.validate_python(
+                    [output.model_dump(exclude_none=True) for output in response.output]
+                ),
+                mode="json",
+            )
         results = await self.robot.execute(calls, expected_revisions=expected_revisions)
         messages.extend(
             {
