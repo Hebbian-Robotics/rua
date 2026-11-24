@@ -13,7 +13,7 @@ use hebbian_contracts::{
 };
 use tokio::sync::{broadcast, watch};
 
-use crate::connection::{LeaseState, RunUpdate, Shared};
+use crate::connection::{RunUpdate, Shared};
 use crate::error::{Error, Result};
 
 pub const DEFAULT_SERVER: &str = "http://127.0.0.1:8792";
@@ -272,7 +272,7 @@ impl Station {
     /// returned for an interruption, lapsed or disconnected.
     #[must_use]
     pub fn lease_lost(&self) -> watch::Receiver<bool> {
-        self.shared.lease_lost.subscribe()
+        self.shared.subscribe_lease_lost()
     }
 
     /// The current or most recent action sequence, as the station pushes it. A slow reader
@@ -310,20 +310,14 @@ impl Station {
     }
 
     async fn request_lease(&self, request: LeaseRequest, take: bool) -> Result<LeaseGuard> {
-        let generation = self.shared.update(|inner| {
-            if !matches!(inner.lease_state, LeaseState::Idle) || !inner.connected {
-                None
-            } else {
-                inner.lease_state = LeaseState::Acquiring;
-                Some(inner.connection_generation)
-            }
-        });
-        let Some(acquisition_generation) = generation else {
+        let Some(acquisition_generation) = self.shared.reserve_lease_acquisition() else {
             return Err(Error::Connection(
                 "this client already holds or is acquiring a lease, or is disconnected".into(),
             ));
         };
-        let _acquisition = LeaseAcquisition(&self.shared);
+        let mut acquisition = LeaseAcquisition {
+            pending: Some(&self.shared),
+        };
         let submission = hebbian_contracts::LeaseAcquireRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             station_instance_id: self.get_station_instance().await?.id,
@@ -359,23 +353,16 @@ impl Station {
             lease_token: grant.lease_token.clone(),
         };
         self.renew_lease_http(&token).await?;
-        let installed = self.shared.update(|inner| {
-            if inner.connected && inner.connection_generation == acquisition_generation {
-                inner.lease_state = LeaseState::Held {
-                    token: grant.lease_token.clone(),
-                };
-                true
-            } else {
-                false
-            }
-        });
-        if !installed {
+        if !self
+            .shared
+            .install_lease(acquisition_generation, grant.lease_token.clone())
+        {
             let _ = self.release_lease_http(&token).await;
             return Err(Error::Connection(
                 "the station connection was lost while acquiring the lease".into(),
             ));
         }
-        self.shared.lease_lost.send_replace(false);
+        acquisition.pending = None;
         let renewal = self.start_lease_renewal(grant.lease_token.clone(), grant.lease_seconds);
         Ok(LeaseGuard {
             station: self.clone(),
@@ -396,15 +383,9 @@ impl Station {
             let interval = Duration::from_secs_f64((lease_seconds / 3.0).max(0.1));
             loop {
                 tokio::time::sleep(interval).await;
-                let current = station
-                    .shared
-                    .read(|inner| inner.lease_state.token() == Some(&token));
-                if !current {
+                let Some(observable) = station.shared.observes_lease(&token) else {
                     break;
-                }
-                let observable = station
-                    .shared
-                    .read(|inner| inner.connected && inner.state.is_some());
+                };
                 let renewed = if observable {
                     matches!(
                         tokio::time::timeout(
@@ -420,12 +401,7 @@ impl Station {
                     false
                 };
                 if !renewed {
-                    let lost = station
-                        .shared
-                        .update(|inner| inner.lease_state.clear_if_held_by(&token));
-                    if lost {
-                        station.shared.lease_lost.send_replace(true);
-                    }
+                    station.shared.lose_lease_if_held_by(&token);
                     break;
                 }
             }
@@ -469,9 +445,7 @@ impl Station {
         options: CommandOptions,
         expected_lease: Option<&str>,
     ) -> Result<Vec<ArmRecord>> {
-        let lease_token = self
-            .shared
-            .read(|inner| inner.lease_state.token().map(str::to_owned));
+        let lease_token = self.shared.lease_token();
         if expected_lease.is_some_and(|expected| lease_token.as_deref() != Some(expected)) {
             return Err(Error::Refused {
                 reason: RejectionReason::LeaseHeldElsewhere,
@@ -1159,9 +1133,7 @@ impl LeaseGuard {
     pub async fn lost(&self) {
         self.station
             .shared
-            .wait_for(|inner| {
-                (inner.lease_state.token() != Some(self.lease_token.as_str())).then_some(())
-            })
+            .wait_for_lease_loss(&self.lease_token)
             .await;
     }
 
@@ -1250,7 +1222,7 @@ impl LeaseGuard {
     fn clear_local_lease(&self) -> bool {
         self.station
             .shared
-            .update(|inner| inner.lease_state.clear_if_held_by(&self.lease_token))
+            .release_lease_if_held_by(&self.lease_token)
     }
 }
 
@@ -1303,15 +1275,15 @@ impl Drop for PendingHttpCommand {
 }
 
 /// Release the local acquisition reservation when its future ends.
-struct LeaseAcquisition<'a>(&'a Shared);
+struct LeaseAcquisition<'a> {
+    pending: Option<&'a Shared>,
+}
 
 impl Drop for LeaseAcquisition<'_> {
     fn drop(&mut self) {
-        self.0.update(|inner| {
-            if matches!(inner.lease_state, LeaseState::Acquiring) {
-                inner.lease_state = LeaseState::Idle;
-            }
-        });
+        if let Some(shared) = self.pending {
+            shared.finish_lease_acquisition();
+        }
     }
 }
 

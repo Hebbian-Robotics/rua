@@ -1,16 +1,19 @@
-use super::motion_admission::{MotionScope, MoveDecision, MoveDisposition};
+use super::motion_admission::{
+    AdmittedPlan, MotionScope, MoveDecision, MoveDisposition, gripper_target,
+};
 use super::state::{ArmCore, new_identifier};
 use super::types::{
     CommandState, GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Job, Now,
     PowerState, ReachGoal, Rejection, ShortOfTarget, ShutdownState, StreamGoal, rejection,
 };
+use crate::corner_path::ValidatedPlan;
 use crate::motion_values::JointSpeed;
 use crate::planning::orientation::{from_xyzw, orientation_summary, pose_orientation_quaternion};
 use hebbian_contracts::JawAngle;
 use hebbian_contracts::{
     Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandPhase, CommandPose,
     CommandRecord, ControlAction, CornerPlan, GripperResult, KnownCommandOutcome, LoggedEvent,
-    NotStartedOutcome, PoseOrientation, RecordedCommand, RejectionReason,
+    NotStartedOutcome, PoseOrientation, RecordedCommand, RejectionReason, Segment,
 };
 
 pub(super) const RETAINED_RECORDS: usize = 200;
@@ -574,12 +577,64 @@ impl ArmCore {
         self.records[&id].clone()
     }
 
-    pub(super) fn replaces_settling_motion(&self) -> bool {
-        matches!(
-            self.command_state,
-            CommandState::Executing { settling: true, .. }
-        ) && !self.shutdown_requested()
+    pub(crate) fn shutdown_return_plan(
+        &self,
+        home_target: Vec<f64>,
+    ) -> anyhow::Result<AdmittedPlan> {
+        anyhow::ensure!(
+            self.shutdown == ShutdownState::ReturningToRest,
+            "The arm is not returning to rest for shutdown"
+        );
+        let poses = self.poses().ok_or_else(|| anyhow::anyhow!("Not holding"))?;
+        let plan = CornerPlan {
+            segments: vec![Segment {
+                pass_through: None,
+                label: "return_to_rest".into(),
+                corners: vec![poses.hold.clone(), home_target],
+                minimum_duration_seconds: None,
+                destination_position: None,
+                destination_quaternion: None,
+            }],
+            peak_speed: self.limits.default_joint_speed,
+        };
+        let plan = ValidatedPlan::new(plan, self.limits.joint_bounds.lower().len())?;
+        AdmittedPlan::new(plan, &self.limits, poses.hold.clone())
+    }
+
+    pub(crate) fn prepare_move(
+        &self,
+        plan: CornerPlan,
+        speed: JointSpeed,
+        scope: MotionScope,
+    ) -> Result<MoveDecision, Rejection> {
+        let disposition = if let CommandState::Executing {
+            command_id,
+            settling: true,
+        } = &self.command_state
+            && matches!(scope, MotionScope::Individual)
+            && !self.shutdown_requested()
             && !self.mode().refuses_everything()
+        {
+            MoveDisposition::ReplaceSettling {
+                command_id: command_id.clone(),
+            }
+        } else {
+            if let Some(refused) = self.mode_rejection() {
+                return Err(refused);
+            }
+            MoveDisposition::Queue
+        };
+        let poses = self
+            .poses()
+            .ok_or_else(|| rejection(RejectionReason::NotEnabled, "Not holding"))?;
+        let start = match disposition {
+            MoveDisposition::Queue => &poses.hold,
+            MoveDisposition::ReplaceSettling { .. } => self
+                .observation
+                .as_ref()
+                .map_or(&poses.hold, |observed| &observed.positions),
+        };
+        MoveDecision::prepare(plan, speed, scope, &self.limits, start, disposition)
     }
 
     pub(crate) fn submit_move(
@@ -591,8 +646,7 @@ impl ArmCore {
         group: Option<GroupMembership>,
         now: Now,
     ) -> Result<CommandRecord, Rejection> {
-        let decision = MoveDecision::prepare(
-            self,
+        let decision = self.prepare_move(
             plan,
             joint_speed,
             if group.is_some() {
@@ -827,42 +881,18 @@ impl ArmCore {
         Ok(record)
     }
 
-    fn check_gripper(&self, angle: JawAngle) -> Result<JawAngle, Rejection> {
+    pub(crate) fn check_gripper_target(
+        &self,
+        angle: JawAngle,
+        requested_speed: Option<JointSpeed>,
+    ) -> Result<GripperTarget, Rejection> {
         if self.shutdown_requested() {
             return Err(Self::shutting_down());
         }
         if self.mode().refuses_everything() {
             return Err(self.faulted_rejection());
         }
-        let Some((minimum, maximum)) = self.limits.gripper else {
-            return Err(rejection(
-                RejectionReason::InvalidTarget,
-                "This arm has no gripper",
-            ));
-        };
-        if self.poses().is_none() {
-            return Err(rejection(
-                RejectionReason::NotEnabled,
-                "The arm is disabled; send enable, then repeat the command",
-            ));
-        }
-        JawAngle::try_from(angle.radians().clamp(minimum, maximum))
-            .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))
-    }
-
-    pub(crate) fn check_gripper_target(
-        &self,
-        angle: JawAngle,
-        requested_speed: Option<JointSpeed>,
-    ) -> Result<GripperTarget, Rejection> {
-        let angle = self.check_gripper(angle)?;
-        let speed = JointSpeed::for_request(
-            requested_speed,
-            self.limits.default_joint_speed,
-            self.limits.max_joint_speed,
-        )
-        .map_err(|invalid| rejection(RejectionReason::InvalidTarget, invalid.to_string()))?;
-        Ok(GripperTarget { angle, speed })
+        gripper_target(&self.limits, angle, requested_speed, self.poses().is_some())
     }
 
     pub(super) fn submit_gripper(

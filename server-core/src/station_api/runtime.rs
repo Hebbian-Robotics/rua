@@ -566,7 +566,7 @@ pub struct ExecutionProgress {
 }
 
 pub struct ActiveExecution {
-    pub progress: ExecutionProgress,
+    progress: ExecutionProgress,
     cancellation: watch::Sender<bool>,
     owner: String,
 }
@@ -601,34 +601,21 @@ impl ExecutionRegistry {
 
     #[must_use]
     pub fn owner_has_running_on_arms(&self, token: &str, arms: &[&str]) -> bool {
-        self.sequences.iter().any(|active| {
-            active.owner == token
-                && active.is_running()
-                && active
-                    .progress
-                    .subscribe()
-                    .borrow()
-                    .arms
-                    .iter()
-                    .any(|arm| arms.contains(&arm.as_str()))
-        })
+        self.sequences
+            .iter()
+            .any(|active| active.owner == token && active.is_running_on(arms))
     }
 
     pub(super) fn install(
         &mut self,
         action_sequence: ActiveExecution,
     ) -> Result<(), ExecutionRefusal> {
-        let arms = action_sequence.progress.subscribe().borrow().arms.clone();
-        if self.sequences.iter().any(|active| {
-            active.is_running()
-                && active
-                    .progress
-                    .subscribe()
-                    .borrow()
-                    .arms
-                    .iter()
-                    .any(|arm| arms.contains(arm))
-        }) {
+        let arms = action_sequence.arms();
+        if self
+            .sequences
+            .iter()
+            .any(|active| active.is_running_on(&arms))
+        {
             return Err(ExecutionRefusal::ArmBusy);
         }
         while self.sequences.len() >= 100 {
@@ -647,23 +634,20 @@ impl ExecutionRegistry {
 
     #[must_use]
     pub fn lookup(&self, id: &str) -> Option<ActionSequenceRecord> {
-        self.sequences.iter().find_map(|active| {
-            let record = active.progress.updates.borrow();
-            (record.id == id).then(|| record.clone())
-        })
+        self.sequences
+            .iter()
+            .find_map(|active| active.record_for_id(id))
     }
 
     #[must_use]
     pub fn current(&self) -> Option<watch::Receiver<ActionSequenceRecord>> {
-        self.sequences
-            .back()
-            .map(|active| active.progress.subscribe())
+        self.sequences.back().map(ActiveExecution::subscribe)
     }
 
     pub fn cancel(&self, id: &str) -> bool {
         self.sequences
             .iter()
-            .find(|active| active.progress.updates.borrow().id == id)
+            .find(|active| active.has_id(id))
             .is_some_and(ActiveExecution::cancel)
     }
 }
@@ -671,9 +655,37 @@ impl ExecutionRegistry {
 impl ActiveExecution {
     fn is_running(&self) -> bool {
         matches!(
-            self.progress.subscribe().borrow().phase,
+            self.progress.updates.borrow().phase,
             ActionSequencePhase::Running { .. }
         )
+    }
+
+    fn is_running_on(&self, arms: &[impl AsRef<str>]) -> bool {
+        let record = self.progress.updates.borrow();
+        matches!(record.phase, ActionSequencePhase::Running { .. })
+            && arms.iter().any(|arm| {
+                record
+                    .arms
+                    .iter()
+                    .any(|active_arm| active_arm == arm.as_ref())
+            })
+    }
+
+    fn arms(&self) -> Vec<String> {
+        self.progress.updates.borrow().arms.clone()
+    }
+
+    fn record_for_id(&self, id: &str) -> Option<ActionSequenceRecord> {
+        let record = self.progress.updates.borrow();
+        (record.id == id).then(|| record.clone())
+    }
+
+    fn has_id(&self, id: &str) -> bool {
+        self.progress.updates.borrow().id == id
+    }
+
+    fn subscribe(&self) -> watch::Receiver<ActionSequenceRecord> {
+        self.progress.subscribe()
     }
 
     #[must_use]

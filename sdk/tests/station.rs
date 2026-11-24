@@ -171,6 +171,7 @@ async fn the_lease_is_exclusive_revoked_and_returned() -> TestResult {
     let station = TestStation::start().await?;
     let first = station.connect().await?;
     let second = station.connect().await?;
+    let mut lease_lost = first.lease_lost();
 
     let guard = within(first.acquire_lease(agent("first"))).await??;
     assert_eq!(guard.status().label, "first");
@@ -189,9 +190,11 @@ async fn the_lease_is_exclusive_revoked_and_returned() -> TestResult {
     // The operator override takes control and tells the previous holder.
     within(second.revoke_lease()).await??;
     within(guard.lost()).await?;
+    within(lease_lost.wait_for(|lost| *lost)).await??;
 
     // An awaited return permits an immediate claim by another connection.
     let new_guard = within(first.acquire_lease(agent("again"))).await??;
+    assert!(!*lease_lost.borrow());
     within(guard.lost()).await?;
     let stale_tools = RobotTools::new(&guard, ARM).with_operations(
         &[hebbian_rua::contracts::RobotToolOperation::SetGripper]
