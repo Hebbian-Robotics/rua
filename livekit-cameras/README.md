@@ -43,6 +43,6 @@ limitations are documented in the [native publisher guide](https://github.com/He
 | Child process shutdown | [Process group ownership](../station/src/child_process_group.rs) |
 | Service behavior | [Media supervision](../station/src/media.rs), [recording sessions](../station/src/recording.rs) |
 | Snapshot routes, camera names and expiry | [Snapshots](../livekit-cameras/src/snapshots.rs) |
-| Station telemetry, MCAP topic mapping and resume | [Station stream adapter](../livekit-cameras/src/station.rs) |
+| Station telemetry, MCAP topic mapping and resume | [Station stream adapter](src/recorder/station_telemetry.rs) |
 | Video channels and archive layout | [Recorder output](../livekit-cameras/src/recorder/video_output.rs), [archive](../livekit-cameras/src/recorder/archive.rs) |
 | Presentation and playback | [Recording library](../recordings/src/library.rs) |
