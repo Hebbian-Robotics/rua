@@ -4523,7 +4523,7 @@ export const apiSchemas = z.object({
             })
             .strict()
             .describe(
-              "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+              "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. Grouped moves check modeled clearance among participating arms.",
             ),
           expected_revisions: z
             .record(z.string(), z.number().int().gte(0))
@@ -10980,7 +10980,7 @@ export const apiSchemas = z.object({
         })
         .strict()
         .describe(
-          "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+          "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. Grouped moves check modeled clearance among participating arms.",
         ),
       expected_revisions: z
         .record(z.string(), z.number().int().gte(0))
@@ -11705,7 +11705,7 @@ export const apiSchemas = z.object({
     })
     .strict()
     .describe(
-      "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+      "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. Grouped moves check modeled clearance among participating arms.",
     ),
   NamedApproach: z
     .union([

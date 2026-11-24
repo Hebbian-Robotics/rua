@@ -389,6 +389,16 @@ pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
         "max_joint_speed_degrees_per_second",
         180.0 / std::f64::consts::PI,
     ),
+    (
+        "max_joint_acceleration",
+        "max_joint_acceleration_degrees_per_second_squared",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "max_joint_jerk",
+        "max_joint_jerk_degrees_per_second_cubed",
+        180.0 / std::f64::consts::PI,
+    ),
 ];
 
 /// A numeric tool argument whose model units differ from the station contract.
@@ -400,7 +410,7 @@ pub struct ModelInputUnit {
 }
 
 /// Unit conversions shared by the model tool schema and all SDK adapters.
-pub const MODEL_INPUT_UNITS: [ModelInputUnit; 3] = [
+pub const MODEL_INPUT_UNITS: [ModelInputUnit; 5] = [
     ModelInputUnit {
         model_field: "position_mm",
         station_field: "position",
@@ -414,6 +424,16 @@ pub const MODEL_INPUT_UNITS: [ModelInputUnit; 3] = [
     ModelInputUnit {
         model_field: "max_joint_speed_degrees_per_second",
         station_field: "max_joint_speed",
+        scale_to_station: std::f64::consts::PI / 180.0,
+    },
+    ModelInputUnit {
+        model_field: "max_joint_acceleration_degrees_per_second_squared",
+        station_field: "max_joint_acceleration",
+        scale_to_station: std::f64::consts::PI / 180.0,
+    },
+    ModelInputUnit {
+        model_field: "max_joint_jerk_degrees_per_second_cubed",
+        station_field: "max_joint_jerk",
         scale_to_station: std::f64::consts::PI / 180.0,
     },
 ];
@@ -484,15 +504,22 @@ fn adapt(value: &mut Value) {
                 if let Some(Value::Object(properties)) = object.get_mut("properties")
                     && let Some(mut property) = properties.remove(station_field)
                 {
-                    if station_field == "max_joint_speed"
+                    let description = match station_field {
+                        "max_joint_speed" => Some(
+                            "Peak speed in degrees per second; clamped to the profile maximum.",
+                        ),
+                        "max_joint_acceleration" => Some(
+                            "Joint acceleration cap in degrees per second squared; defaults to the arm profile.",
+                        ),
+                        "max_joint_jerk" => Some(
+                            "Joint jerk cap in degrees per second cubed; defaults to the arm profile.",
+                        ),
+                        _ => None,
+                    };
+                    if let Some(description) = description
                         && let Ok(schema) = <&mut Schema>::try_from(&mut property)
                     {
-                        schema.insert(
-                            "description".into(),
-                            json!(
-                                "Peak speed in degrees per second; clamped to the profile maximum."
-                            ),
-                        );
+                        schema.insert("description".into(), json!(description));
                     }
                     properties.insert(model_field.into(), property);
                     if let Some(Value::Array(required)) = object.get_mut("required") {
@@ -629,7 +656,7 @@ pub fn robot_tool_context() -> Value {
         "surface_guard": "The configured surface height is a nominal or measured table plane. Leeway permits modeled geometry below that plane; it does not lower the table. The guard checks the lowest moving geometry, not just the tool frame, and permits recovery upward from below its limit.",
         "gripper": "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
         "outcomes": "A completed move with goal_status limited finished at an adjusted target; action sequences stop on pose or path limits. A stopped_short outcome means the arm settled outside tolerance and stopped closing on its target; achieved joint errors describe the remaining error. A refusal means the command was not accepted. Joint targets beyond limits are refused.",
-        "limitations": "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified."
+        "limitations": "Model guards can check self-collision and a horizontal surface. Grouped moves also check modeled clearance among participating arms. These checks do not detect workspace objects or establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified."
     })
 }
 

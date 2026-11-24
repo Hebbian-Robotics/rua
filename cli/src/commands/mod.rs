@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 use hebbian_rua::DEFAULT_SERVER;
 use hebbian_rua::contracts::{Approach, NamedApproach, PoseOrientation, PreviewPose};
 
@@ -19,7 +19,7 @@ fn default_station_url() -> String {
 /// help cannot drift from the contract.
 macro_rules! action_sequence_request_example {
     () => {
-        r#"{"steps": [{"arms": {"arm": {"goal": {"kind": "joints", "joints": [0.0, -0.5, 0.5, 0.0, 0.0]}, "gripper_opening": 1.0}}}, {"arms": {"arm": {"gripper_opening": 0.0}}}]}"#
+        r#"{"steps": [{"arms": {"arm": {"goal": {"joints_degrees": [0, -30, 30, 0, 0]}, "gripper_opening": 1.0}}}, {"arms": {"arm": {"gripper_opening": 0.0}}}]}"#
     };
 }
 
@@ -28,8 +28,10 @@ const ABOUT: &str = "Drive a Hebbian robot-use station from bash.
 Commands print one JSON value on stdout and exit. The phone-invite command prints its URL
 as plain text unless you pass --raw.
 
-Input units: joint angles in radians, positions in metres in the robot's world frame (x forward,
-z up), speeds in rad/s (the station clamps them), grippers 0 (closed) to 1 (open), jaw yaw in degrees.
+Motion flags name their units. Use millimetres for world positions (+X forward, +Y left,
++Z up) and degrees for joint angles and jaw yaw. Gripper opening is 0 (closed) to 1 (open).
+Motion JSON uses the SDK's model fields (position_mm, joints_degrees,
+max_joint_speed_degrees_per_second). Use --input-si for native station JSON.
 Output is the same concise model view the SDKs give their tools: positions in millimetres
 (`position_mm`), joint angles in degrees (`joints_degrees`), rounded, null fields omitted, and
 history and diagnostics left out (checkpoints, trace metadata, render geometry, a sequence's full
@@ -106,47 +108,36 @@ pub enum Command {
     ///
     /// Example: hebbian-rua rehome arm
     Rehome { arm: String },
-    /// Move to joint angles in radians, one per joint in the state's `joint_names` order.
+    /// Move to joint angles in the state's joint_names order.
     ///
-    /// Example: hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
+    /// Example: hebbian-rua move-joints arm --joints-degrees 17,-23,34,6,0 --speed-degrees-per-second 30
     MoveJoints {
         arm: String,
-        /// Comma-separated radians.
-        #[arg(
-            long,
-            value_delimiter = ',',
-            required = true,
-            allow_hyphen_values = true
-        )]
-        joints: Vec<f64>,
-        /// Requested peak joint speed in rad/s; the station clamps it.
-        #[arg(long)]
-        speed: Option<f64>,
+        #[command(flatten)]
+        joints: JointArgs,
         #[command(flatten)]
         trajectory: TrajectoryArgs,
     },
-    /// Move the tool to a position in metres. Without an orientation option the tool keeps the
-    /// orientation it has now.
+    /// Move the tool to a position in the world frame. Without an orientation option the tool
+    /// keeps the orientation it has now.
     ///
-    /// Example: hebbian-rua move-pose arm --position 0.2,0.0,0.1 --approach down --jaw-yaw-degrees 0
+    /// Example: hebbian-rua move-pose arm --position-mm 200,0,100 --approach down --jaw-yaw-degrees 0
+    #[command(group(ArgGroup::new("position").required(true).args(["position_mm", "position_m"])))]
     MovePose {
         arm: String,
         #[command(flatten)]
         pose: PoseArgs,
-        /// Requested peak joint speed in rad/s; the station clamps it.
-        #[arg(long)]
-        speed: Option<f64>,
         #[command(flatten)]
         trajectory: TrajectoryArgs,
     },
     /// Move several arms together: they start and arrive together. Every target is planned first;
     /// one rejection means no arm moves, and if one arm stops the others stop too. Takes a JSON
-    /// MoveArmsCommand from a file, or `-` for stdin.
+    /// motion request in SDK model units from a file, or `-` for stdin.
     ///
-    /// Example: echo '{"goals":{"left":{"kind":"pose","position":[0.2,0.15,0.08],"orientation":{"kind":"quaternion","quaternion":[0,0,0,1]}}},"max_joint_speed":0.5}' | hebbian-rua move-arms -
+    /// Example: echo '{"goals":{"left":{"position_mm":[200,150,80],"orientation":{"quaternion":[0,0,0,1]}}},"max_joint_speed_degrees_per_second":30}' | hebbian-rua move-arms -
     MoveArms {
-        /// A JSON file, or `-` for stdin.
-        input: PathBuf,
+        #[command(flatten)]
+        input: MotionFileArgs,
     },
     /// Open or close the gripper: 0 closed, 1 fully open. It stops on an object and keeps
     /// squeezing at the profile's force cap; the outcome says whether it arrived or stopped short.
@@ -160,26 +151,24 @@ pub enum Command {
     /// Where an arm would take the tool toward a pose; nothing moves. Without an orientation
     /// option the solver chooses the orientation.
     ///
-    /// Example: hebbian-rua preview-pose arm --position 0.2,0.0,0.1 --approach forward --jaw-yaw-degrees 90
+    /// Example: hebbian-rua preview-pose arm --position-mm 200,0,100 --approach forward --jaw-yaw-degrees 90
+    #[command(group(ArgGroup::new("position").required(true).args(["position_mm", "position_m"])))]
     PreviewPose {
         arm: String,
         #[command(flatten)]
         pose: PoseArgs,
-        /// Requested peak joint speed in rad/s.
-        #[arg(long)]
-        speed: Option<f64>,
         #[command(flatten)]
         trajectory: TrajectoryArgs,
     },
     /// Where an arm would take the tool toward each of several independent poses; nothing
-    /// moves. Takes a JSON array of {"label"?, "position": [x, y, z], "orientation"?} from a
+    /// moves. Takes a JSON array of {"label"?, "position_mm": [x, y, z], "orientation"?} from a
     /// file or `-`, and prints one projection or refusal per pose in the same order.
     ///
-    /// Example: echo '[{"position":[0.2,0.0,0.1],"orientation":{"kind":"grasp","approach":[0,0,-1],"jaw_yaw_degrees":90}}]' | hebbian-rua preview-poses arm -
+    /// Example: echo '[{"position_mm":[200,0,100],"orientation":{"approach":[0,0,-1],"jaw_yaw_degrees":90}}]' | hebbian-rua preview-poses arm -
     PreviewPoses {
         arm: String,
-        /// A JSON file, or `-` for stdin.
-        input: PathBuf,
+        #[command(flatten)]
+        input: MotionFileArgs,
     },
     /// Run, cancel or read an ordered action sequence across one or more arms.
     #[command(subcommand)]
@@ -215,12 +204,26 @@ pub enum Command {
     Traces(TracesCommand),
 }
 
+/// A motion request in model units or an explicitly selected native station payload.
+#[derive(Debug, Args)]
+pub struct MotionFileArgs {
+    /// A JSON file, or `-` for stdin.
+    pub path: PathBuf,
+    /// Interpret a native station payload in metres, radians and their derivatives.
+    #[arg(long)]
+    pub input_si: bool,
+}
+
 /// A target pose. Orientation is one of `--quaternion` or `--approach` with `--jaw-yaw-degrees`.
 #[derive(Debug, Args)]
+#[group(skip)]
 pub struct PoseArgs {
+    /// Tool position in millimetres.
+    #[arg(long, value_parser = parse_vector::<3>, allow_hyphen_values = true, value_name = "X,Y,Z")]
+    position_mm: Option<[f64; 3]>,
     /// Tool position in metres.
-    #[arg(long, value_parser = parse_vector::<3>, allow_hyphen_values = true, required = true, value_name = "X,Y,Z")]
-    position: [f64; 3],
+    #[arg(long, value_parser = parse_vector::<3>, allow_hyphen_values = true, value_name = "X,Y,Z")]
+    position_m: Option<[f64; 3]>,
     /// Tool orientation as a quaternion.
     #[arg(long, value_parser = parse_vector::<4>, allow_hyphen_values = true, value_name = "X,Y,Z,W", conflicts_with = "approach")]
     quaternion: Option<[f64; 4]>,
@@ -232,19 +235,85 @@ pub struct PoseArgs {
     jaw_yaw_degrees: Option<f64>,
 }
 
-#[derive(Debug, Args, Default)]
+/// Joint angle inputs normalized to the station's radians.
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct JointArgs {
+    /// Comma-separated degrees in the state's joint_names order.
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+    joints_degrees: Option<Vec<f64>>,
+    /// Comma-separated radians in the state's joint_names order.
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+    joints_radians: Option<Vec<f64>>,
+}
+
+impl JointArgs {
+    pub fn into_radians(self) -> Vec<f64> {
+        self.joints_radians.unwrap_or_else(|| {
+            self.joints_degrees
+                .into_iter()
+                .flatten()
+                .map(f64::to_radians)
+                .collect()
+        })
+    }
+}
+
+/// Explicit joint-rate units, converted to radians at the CLI boundary.
+#[derive(Debug, Args)]
+#[group(skip)]
 pub struct TrajectoryArgs {
-    /// Per-move joint acceleration cap in rad/s².
+    /// Peak joint speed in degrees per second; the station clamps it.
+    #[arg(long, conflicts_with = "speed_radians_per_second")]
+    speed_degrees_per_second: Option<f64>,
+    /// Peak joint speed in radians per second; the station clamps it.
     #[arg(long)]
-    pub acceleration: Option<f64>,
-    /// Per-move joint jerk cap in rad/s³.
+    speed_radians_per_second: Option<f64>,
+    /// Joint acceleration cap in degrees per second squared.
+    #[arg(long, conflicts_with = "acceleration_radians_per_second_squared")]
+    acceleration_degrees_per_second_squared: Option<f64>,
+    /// Joint acceleration cap in radians per second squared.
     #[arg(long)]
-    pub jerk: Option<f64>,
+    acceleration_radians_per_second_squared: Option<f64>,
+    /// Joint jerk cap in degrees per second cubed.
+    #[arg(long, conflicts_with = "jerk_radians_per_second_cubed")]
+    jerk_degrees_per_second_cubed: Option<f64>,
+    /// Joint jerk cap in radians per second cubed.
+    #[arg(long)]
+    jerk_radians_per_second_cubed: Option<f64>,
+}
+
+impl TrajectoryArgs {
+    pub fn speed_radians(&self) -> Option<f64> {
+        self.speed_radians_per_second
+            .or_else(|| self.speed_degrees_per_second.map(f64::to_radians))
+    }
+
+    pub fn acceleration_radians(&self) -> Option<f64> {
+        self.acceleration_radians_per_second_squared.or_else(|| {
+            self.acceleration_degrees_per_second_squared
+                .map(f64::to_radians)
+        })
+    }
+
+    pub fn jerk_radians(&self) -> Option<f64> {
+        self.jerk_radians_per_second_cubed
+            .or_else(|| self.jerk_degrees_per_second_cubed.map(f64::to_radians))
+    }
 }
 
 impl PoseArgs {
-    pub fn position(&self) -> [f64; 3] {
-        self.position
+    #[expect(
+        clippy::expect_used,
+        reason = "the pose subcommands require exactly one position"
+    )]
+    pub fn position_metres(&self) -> [f64; 3] {
+        self.position_m
+            .or_else(|| {
+                self.position_mm
+                    .map(|position| position.map(|value| value / 1000.0))
+            })
+            .expect("clap requires a position")
     }
 
     pub fn orientation(&self) -> Option<PoseOrientation> {
@@ -259,7 +328,7 @@ impl PoseArgs {
 
     pub fn preview(&self) -> PreviewPose {
         PreviewPose {
-            position: self.position,
+            position: self.position_metres(),
             orientation: self.orientation(),
             max_joint_speed: None,
             max_joint_acceleration: None,
@@ -303,7 +372,7 @@ fn parse_approach(text: &str) -> Result<Approach, String> {
 }
 #[derive(Debug, Subcommand)]
 pub enum ActionSequenceCommand {
-    /// Run a JSON ActionSequenceRequest from a file or `-` for stdin and wait for it to
+    /// Run an action sequence in SDK model units from a file or `-` for stdin and wait for it to
     /// end; exits 1 unless it completed. Acquires the lease for the run: it dies with the socket.
     ///
     /// Example: hebbian-rua action-sequence run steps.json
@@ -311,13 +380,13 @@ pub enum ActionSequenceCommand {
         "A request (steps run in order; arms within a step start together and settle before \
          the next step; goal and gripper targets on an arm start together):\n",
         action_sequence_request_example!(),
-        "\nA pose goal is {\"kind\": \"pose\", \"position\": [x, y, z], \"orientation\": ...}, \
-         where orientation is {\"kind\": \"quaternion\", \"quaternion\": [x, y, z, w]} or \
-         {\"kind\": \"grasp\", \"approach\": [x, y, z], \"jaw_yaw_degrees\": d}."
+        "\nA pose goal is {\"position_mm\": [x, y, z], \"orientation\": ...}, \
+         where orientation is {\"quaternion\": [x, y, z, w]} or \
+         {\"approach\": [x, y, z], \"jaw_yaw_degrees\": d}."
     ))]
     Run {
-        /// A JSON file, or `-` for stdin.
-        input: PathBuf,
+        #[command(flatten)]
+        input: MotionFileArgs,
     },
     /// Cancel a running action sequence by id and print its final record.
     ///
@@ -401,9 +470,13 @@ mod tests {
 
     #[test]
     fn the_action_sequence_example_in_the_help_is_a_valid_request() {
-        let request: hebbian_rua::contracts::ActionSequenceRequest =
-            serde_json::from_str(action_sequence_request_example!())
-                .expect("the help example parses");
+        let request: hebbian_rua::contracts::ActionSequenceRequest = serde_json::from_value(
+            hebbian_rua::normalize_robot_tool_arguments(
+                serde_json::from_str(action_sequence_request_example!()).expect("valid JSON"),
+            )
+            .expect("valid model units"),
+        )
+        .expect("the help example parses");
         assert_eq!(request.steps.len(), 2);
     }
 
@@ -419,7 +492,7 @@ mod tests {
         let cli = parse(&[
             "move-pose",
             "left",
-            "--position",
+            "--position-m",
             "0.2,-0.15,0.08",
             "--quaternion",
             "0,0,0,1",
@@ -428,7 +501,7 @@ mod tests {
         let Command::MovePose { pose, .. } = cli.command else {
             panic!("wrong command");
         };
-        assert_eq!(pose.position(), [0.2, -0.15, 0.08]);
+        assert_eq!(pose.position_metres(), [0.2, -0.15, 0.08]);
         assert_eq!(
             pose.orientation(),
             Some(PoseOrientation::Quaternion {
@@ -443,7 +516,7 @@ mod tests {
             parse(&[
                 "preview-pose",
                 "a",
-                "--position",
+                "--position-m",
                 "0,0,0",
                 "--approach",
                 "down"
@@ -454,7 +527,7 @@ mod tests {
             parse(&[
                 "preview-pose",
                 "a",
-                "--position",
+                "--position-m",
                 "0,0,0",
                 "--approach",
                 "down",
@@ -468,7 +541,7 @@ mod tests {
         let cli = parse(&[
             "preview-pose",
             "a",
-            "--position",
+            "--position-m",
             "0,0,0",
             "--approach",
             "0,-1,0",
@@ -489,8 +562,71 @@ mod tests {
     }
 
     #[test]
-    fn positions_need_three_numbers() {
-        assert!(parse(&["move-pose", "a", "--position", "1,2"]).is_err());
+    fn motion_flags_require_explicit_and_unambiguous_units() {
+        for arguments in [
+            &["move-pose", "arm", "--position", "0.2,0,0.1"][..],
+            &["move-pose", "arm", "--position-mm", "200,0"],
+            &[
+                "move-pose",
+                "arm",
+                "--position-mm",
+                "200,0,100",
+                "--position-m",
+                "0.2,0,0.1",
+            ],
+            &["move-joints", "arm", "--joints", "0,0,0"],
+            &[
+                "move-joints",
+                "arm",
+                "--joints-degrees",
+                "0,0,0",
+                "--joints-radians",
+                "0,0,0",
+            ],
+            &[
+                "preview-pose",
+                "arm",
+                "--position-mm",
+                "200,0,100",
+                "--speed-degrees-per-second",
+                "30",
+                "--speed-radians-per-second",
+                "0.5",
+            ],
+        ] {
+            assert!(parse(arguments).is_err(), "{arguments:?}");
+        }
+    }
+
+    #[test]
+    fn a_millimetre_preview_converts_position_and_joint_caps() {
+        let cli = parse(&[
+            "preview-pose",
+            "arm",
+            "--position-mm",
+            "200,-150,80",
+            "--speed-degrees-per-second",
+            "30",
+            "--acceleration-degrees-per-second-squared",
+            "90",
+            "--jerk-degrees-per-second-cubed",
+            "180",
+        ])
+        .expect("the model-facing flags parse");
+        let Command::PreviewPose {
+            pose, trajectory, ..
+        } = cli.command
+        else {
+            panic!("wrong command");
+        };
+        assert_eq!(pose.preview().position, [0.2, -0.15, 0.08]);
+        let speed = trajectory.speed_radians().expect("requested speed");
+        assert!((speed - std::f64::consts::FRAC_PI_6).abs() < 1e-12);
+        assert_eq!(
+            trajectory.acceleration_radians(),
+            Some(std::f64::consts::FRAC_PI_2)
+        );
+        assert_eq!(trajectory.jerk_radians(), Some(std::f64::consts::PI));
     }
 
     #[test]
@@ -516,17 +652,20 @@ mod tests {
         let cli = parse(&[
             "move-joints",
             "a",
-            "--joints",
+            "--joints-radians",
             "0.1,-0.2,0.3",
-            "--speed",
+            "--speed-radians-per-second",
             "0.5",
         ])
         .expect("parses");
-        let Command::MoveJoints { joints, speed, .. } = cli.command else {
+        let Command::MoveJoints {
+            joints, trajectory, ..
+        } = cli.command
+        else {
             panic!("wrong command");
         };
-        assert_eq!(joints, [0.1, -0.2, 0.3]);
-        assert_eq!(speed, Some(0.5));
+        assert_eq!(joints.into_radians(), [0.1, -0.2, 0.3]);
+        assert_eq!(trajectory.speed_radians(), Some(0.5));
         assert!(parse(&["gripper", "a", "0.5"]).is_ok());
     }
 

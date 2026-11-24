@@ -265,22 +265,19 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
         call: RobotToolCall,
         options: CommandOptions,
     ) -> crate::Result<RobotToolResult> {
-        let mut arguments = call.arguments.clone();
-        let operation =
-            match convert_model_arguments_to_station_units(&mut arguments).and_then(|()| {
-                normalize_arguments(&mut arguments)?;
-                self.parse_operation(&call.name, arguments, &options)
-            }) {
-                Ok(operation) => operation,
-                Err(detail) => {
-                    return Ok(RobotToolResult {
-                        sequence_images: None,
-                        cameras: std::collections::BTreeMap::new(),
-                        call_id: call.id,
-                        outcome: RobotToolOutcome::InvalidInput(detail),
-                    });
-                }
-            };
+        let operation = match normalize_robot_tool_arguments(call.arguments.clone())
+            .and_then(|arguments| self.parse_operation(&call.name, arguments, &options))
+        {
+            Ok(operation) => operation,
+            Err(detail) => {
+                return Ok(RobotToolResult {
+                    sequence_images: None,
+                    cameras: std::collections::BTreeMap::new(),
+                    call_id: call.id,
+                    outcome: RobotToolOutcome::InvalidInput(detail),
+                });
+            }
+        };
         let station = self.lease.station();
         let answer = match operation {
             ToolOperation::PosePreviews { poses } => ToolOperationAnswer::PosePreviews {
@@ -757,6 +754,17 @@ fn classify_motion_outcome(
     } else {
         RobotToolOutcome::Returned(value)
     }
+}
+
+/// Convert explicit robot tool units and inferred variant tags into station JSON.
+///
+/// # Errors
+/// Returns an error for unlabeled station units, invalid numeric conversions,
+/// or a pose goal missing its orientation.
+pub fn normalize_robot_tool_arguments(mut arguments: Value) -> std::result::Result<Value, String> {
+    convert_model_arguments_to_station_units(&mut arguments)?;
+    normalize_arguments(&mut arguments)?;
+    Ok(arguments)
 }
 
 // Model-facing units are converted before station variants are parsed.

@@ -7,16 +7,17 @@ output for the phone invite URL.
 
 The `hebbian-rua` Python package provides the command alongside `rua`. Run it
 from the agent project that serves the station, so the CLI and station come from
-the same locked version:
+the same locked version. The motion flags below describe the CLI in this
+checkout. For a published wheel, see `--help` or the README at its release tag.
 
 ```sh
 uv add hebbian-rua
 uv run hebbian-rua --help     # units, argument shapes and an example per command
 uv run hebbian-rua state
 uv run hebbian-rua enable arm
-uv run hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
-uv run hebbian-rua move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
-uv run hebbian-rua preview-pose arm --position 0.2,0,0.1
+uv run hebbian-rua move-joints arm --joints-degrees 17,-23,34,6,0 --speed-degrees-per-second 30
+uv run hebbian-rua move-pose arm --position-mm 200,0,100 --approach down --jaw-yaw-degrees 0
+uv run hebbian-rua preview-pose arm --position-mm 200,0,100
 ```
 
 Without a project, pin the station’s version: `uvx hebbian-rua==<station version> state`.
@@ -32,11 +33,23 @@ camera requests. Set `--media-server` or `HEBBIAN_MEDIA_SERVER` to use the
 companion directly, typically at `http://127.0.0.1:8781`. Set
 `HEBBIAN_STATION_URL` to change the default station URL. The older `HEBBIAN_SERVER`
 name is a fallback when `HEBBIAN_STATION_URL` is unset.
-Input units: radians, metres, rad/s, gripper 0 closed to 1 open, jaw yaw in degrees.
-Output is the concise model view shared with the SDKs (see
-[model output](../docs/model-output.md)): millimetres (`position_mm`), degrees (`joints_degrees`),
-rounded, nulls omitted, and history and diagnostics left out. `state` also keeps the robot
-`description` and the lease holder. `--raw` prints the station's full SI records.
+Use `--position-mm` for world positions and `--joints-degrees` for joint
+angles. Speed, acceleration, and jerk flags spell out their degree or radian
+units. For native station input, choose `--position-m` and `--joints-radians`.
+The former unitless flags (`--position`, `--joints`, `--speed`, `--acceleration`,
+and `--jerk`) must be migrated before using this CLI.
+
+The CLI emits the concise model view with millimetres and degrees. Use
+`--raw` for full station output in native units. Gripper opening runs from
+0 (closed) to 1 (open), and jaw yaw is in degrees in both formats.
+
+For `move-arms`, `preview-poses`, and `action-sequence run`, use the SDK model
+fields `position_mm`, `joints_degrees`, and
+`max_joint_speed_degrees_per_second`. The optional caps are
+`max_joint_acceleration_degrees_per_second_squared` and
+`max_joint_jerk_degrees_per_second_cubed`. For native station JSON, pass
+`--input-si` to that command. See
+[Model output](../docs/model-output.md) for more on the shared model format.
 
 ## Commands
 

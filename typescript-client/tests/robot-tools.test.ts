@@ -47,6 +47,44 @@ test("tool input units match the station contract", () => {
   });
 });
 
+test("pose previews convert degree-based joint caps to station units", () => {
+  const parsed = parseRobotToolCall(
+    {
+      id: "preview-caps",
+      name: "preview_pose",
+      arguments: {
+        poses: [
+          {
+            pose: {
+              position_mm: [200, 0, 100],
+              max_joint_acceleration_degrees_per_second_squared: 90,
+              max_joint_jerk_degrees_per_second_cubed: 180,
+            },
+          },
+        ],
+      },
+    },
+    {
+      arm: "follower",
+      sequenceScope: { kind: "single" },
+      sequenceActions: new Set(),
+      availableToolNames: new Map([["preview_pose", "preview_pose"]]),
+    },
+  );
+  expect(parsed).toMatchObject({
+    kind: "preview",
+    poses: [
+      {
+        pose: {
+          position: [0.2, 0, 0.1],
+          max_joint_acceleration: Math.PI / 2,
+          max_joint_jerk: Math.PI,
+        },
+      },
+    ],
+  });
+});
+
 test("model tools return invalid inputs as errors to the model", async () => {
   const results = await robot.execute([
     { id: "1", name: "action_sequence", arguments: { steps: [] } },
