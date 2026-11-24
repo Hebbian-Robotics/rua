@@ -38,12 +38,16 @@ See [viewer controls](so101-manual-control.md#controls) for details and
 
 ## 3. Run your first agent
 
-1. In **Run a task**, open **Agent settings** and choose your provider. If you
-   set up cameras, confirm their live feeds and select the views to share.
+1. In **Run a task**, choose your provider and model. If you set up cameras,
+   confirm their live feeds and select the views to share under **Run options**.
 2. With the arm enabled and holding, enter “Describe what you can observe. Keep
    the arm and gripper still.” Select **Start task** and check the reply. The
    agent can move the arm, so supervise the run and keep **Stop run** and the
    physical power cutoff accessible.
+
+Use **Attach image** to send one JPEG, PNG, or WebP reference with the prompt.
+The viewer shows a thumbnail before the run and saves the filename in the run
+record. Select **Remove image** to clear the attachment.
 
 ## Next steps
 

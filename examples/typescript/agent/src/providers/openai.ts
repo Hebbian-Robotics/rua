@@ -16,6 +16,7 @@ import {
   type ModelRefusal,
   type ModelTurn,
   type Observation,
+  observationImages,
   PROVIDER_MAX_RETRIES,
   PROVIDER_TIMEOUT_MILLISECONDS,
   parsedJsonArguments,
@@ -76,9 +77,9 @@ export function openaiTurn(response: Response): ModelTurn | ModelRefusal {
 
 function observationMessage(observation: Observation): ResponseInputItem {
   const content: ResponseInputContent[] = [
-    ...Object.entries(observation.cameras).flatMap(
-      ([name, jpeg]): ResponseInputContent[] => [
-        { type: "input_text", text: `Camera: ${name}` },
+    ...observationImages(observation).flatMap(
+      ({ label, jpeg }): ResponseInputContent[] => [
+        { type: "input_text", text: label },
         {
           type: "input_image",
           image_url: `data:image/jpeg;base64,${encodedJpeg(jpeg)}`,

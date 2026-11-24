@@ -9,6 +9,7 @@ import {
   type ModelRefusal,
   type ModelTurn,
   type Observation,
+  observationImages,
   PROVIDER_MAX_RETRIES,
   PROVIDER_TIMEOUT_MILLISECONDS,
   type TokenUsage,
@@ -70,8 +71,8 @@ function observationInput(observation: Observation) {
   return {
     type: "user_input" as const,
     content: [
-      ...Object.entries(observation.cameras).flatMap(([name, jpeg]) => [
-        { type: "text", text: `Camera: ${name}` } as const,
+      ...observationImages(observation).flatMap(({ label, jpeg }) => [
+        { type: "text", text: label } as const,
         {
           type: "image",
           mime_type: "image/jpeg",

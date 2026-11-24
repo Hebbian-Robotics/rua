@@ -211,6 +211,9 @@ function RunRequestDetails({ run }: { run: Run }) {
   return (
     <article aria-label="Run prompt and settings" className="run-overview">
       <p className="run-prompt">{request.task}</p>
+      {request.attachmentFilename && (
+        <p>Attached image: {request.attachmentFilename}</p>
+      )}
       <details className="run-settings">
         <summary>
           Run settings{" "}

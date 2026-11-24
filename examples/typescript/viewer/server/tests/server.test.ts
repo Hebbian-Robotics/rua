@@ -1,7 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScriptedStation } from "../../../agent/tests/station-harness.js";
-import { runSchema } from "../../shared/run-api.js";
+import {
+  MAX_PROMPT_IMAGE_BASE64_LENGTH,
+  runSchema,
+} from "../../shared/run-api.js";
 import { allowedViewerOrigins } from "../src/origins.js";
 import { RunManager } from "../src/run-manager.js";
 import { createApp } from "../src/server.js";
@@ -157,6 +160,24 @@ test("bad bodies and unknown runs are refused with a detail", async () => {
   const missing = await server.request("/api/runs/ghost");
   expect(missing.status).toBe(404);
   expect(await missing.json()).toEqual({ detail: "No run ghost" });
+});
+
+test("invalid image content and oversized run uploads are rejected before a run starts", async () => {
+  const server = app();
+  const invalid = await server.request("/api/runs", {
+    ...post,
+    body: JSON.stringify({
+      ...JSON.parse(body),
+      promptImage: { filename: "reference.jpg", jpegBase64: "aGVsbG8=" },
+    }),
+  });
+  expect(invalid.status).toBe(400);
+  const oversized = await server.request("/api/runs", {
+    ...post,
+    body: " ".repeat(MAX_PROMPT_IMAGE_BASE64_LENGTH + 128 * 1024),
+  });
+  expect(oversized.status).toBe(413);
+  expect(await (await server.request("/api/runs/current")).json()).toBeNull();
 });
 
 test("CORS allows the viewer origin only", async () => {

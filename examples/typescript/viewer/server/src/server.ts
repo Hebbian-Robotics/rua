@@ -1,11 +1,13 @@
 import { StationHttpError } from "hebbian-rua";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import type { ZodType } from "zod";
 import { PROVIDERS } from "../../../agent/src/providers/types.js";
 import {
+  MAX_PROMPT_IMAGE_BASE64_LENGTH,
   type Provider,
   RUN_STREAM_HEARTBEAT_EVENT,
   type RunEvent,
@@ -73,16 +75,24 @@ export function createApp({
       "Content-Type": "application/x-ndjson; charset=utf-8",
     });
   });
-  app.post("/api/runs", async (context) => {
-    if (manualOnly)
-      return context.json(
-        { detail: "The viewer is running in manual-only mode." },
-        403,
-      );
-    const body = await readJson(context.req.json(), runRequestSchema);
-    if (!body.success) return context.json({ detail: body.detail }, 400);
-    return context.json(manager.start(body.data), 201);
-  });
+  app.post(
+    "/api/runs",
+    bodyLimit({
+      maxSize: MAX_PROMPT_IMAGE_BASE64_LENGTH + 64 * 1024,
+      onError: (context) =>
+        context.json({ detail: "Run request is too large." }, 413),
+    }),
+    async (context) => {
+      if (manualOnly)
+        return context.json(
+          { detail: "The viewer is running in manual-only mode." },
+          403,
+        );
+      const body = await readJson(context.req.json(), runRequestSchema);
+      if (!body.success) return context.json({ detail: body.detail }, 400);
+      return context.json(manager.start(body.data), 201);
+    },
+  );
   app.post("/api/runs/:id/stop", (context) =>
     context.json(manager.stop(context.req.param("id"))),
   );
