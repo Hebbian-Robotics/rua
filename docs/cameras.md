@@ -81,7 +81,7 @@ also watch the feed under **Workspace**.
 
 ## Add a phone
 
-With LiveKit configured, run `hebbian-rua phone-invite overhead` on the
+With LiveKit configured, run `uv run hebbian-rua phone-invite overhead` on the
 station host and open the printed URL on your phone. You can also use the
 HTTP request below and open the response’s `url`. On the camera page, allow camera access
 and select **Start streaming**. Keep the invite URL private. The station accepts
@@ -112,8 +112,8 @@ name returned by the camera list for snapshot, observation and lease requests.
 With the station running, list available camera names and save a JPEG:
 
 ```sh
-hebbian-rua camera list
-hebbian-rua camera snapshot wrist --out wrist.jpg
+uv run hebbian-rua camera list
+uv run hebbian-rua camera snapshot wrist --out wrist.jpg
 ```
 
 Use the [hosted room viewer](#watch-a-usb-camera) for live playback.

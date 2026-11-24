@@ -7,8 +7,10 @@ description: Operate and inspect a Hebbian robot-use station with the hebbian-ru
 
 Use `hebbian-rua` to talk to an existing station. This client is separate
 from `rua serve`, which starts the station. Both come with the `hebbian-rua`
-Python package (`uv tool install hebbian-rua`); from a RUA source checkout,
-install the CLI with `cargo install --locked --path cli`.
+Python package. In the project that runs the station, call it as
+`uv run hebbian-rua`; without a project, use `uvx hebbian-rua==<station version>`
+so the CLI matches the station. From a RUA source checkout, use
+`cargo run -p hebbian-rua-cli --`.
 
 Start with `hebbian-rua --help` and `hebbian-rua state`. Use
 `<command> --help` for argument shapes and JSON examples. Discover arm names,

@@ -5,18 +5,24 @@ Coding agents can chain these commands in the shell. Each invocation opens a
 connection and runs one command. Commands print JSON to stdout, with plain-text
 output for the phone invite URL.
 
-The `hebbian-rua` Python wheel installs the command alongside `rua`. From a source
-checkout, `cargo install --locked --path cli` installs it instead.
+The `hebbian-rua` Python package provides the command alongside `rua`. Run it
+from the agent project that serves the station, so the CLI and station come from
+the same locked version:
 
 ```sh
-uv tool install hebbian-rua   # installs `rua` and `hebbian-rua`
-hebbian-rua --help            # units, argument shapes and an example per command
-hebbian-rua state
-hebbian-rua enable arm
-hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
-hebbian-rua move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
-hebbian-rua preview-pose arm --position 0.2,0,0.1
+uv add hebbian-rua
+uv run hebbian-rua --help     # units, argument shapes and an example per command
+uv run hebbian-rua state
+uv run hebbian-rua enable arm
+uv run hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
+uv run hebbian-rua move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
+uv run hebbian-rua preview-pose arm --position 0.2,0,0.1
 ```
+
+Without a project, pin the station’s version: `uvx hebbian-rua==<station version> state`.
+From a source checkout, `cargo run -p hebbian-rua-cli -- state` builds and runs
+the current source, and `cargo install --locked --path cli` installs it. The
+examples below omit the `uv run` prefix.
 
 These examples use `arm`, the name assigned by native SO-101 setup. Run
 `hebbian-rua state` to discover the names served by a custom profile.
