@@ -7,7 +7,7 @@ mod video_output;
 use archive::RecordingArchive;
 use clap::Parser;
 pub use error::RecorderError;
-use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, unix_nanoseconds};
+use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, RecordingWarning, unix_nanoseconds};
 use livekit_camera_recorder::{VideoOutput, hardware_encoder_available, record_room};
 use serde_json::json;
 use std::{
@@ -39,7 +39,7 @@ pub struct Arguments {
 /// # Errors
 /// Returns credential, room, file, encoding, or MCAP errors. A single camera's
 /// failure is logged to `/station/recording_errors` without stopping the others.
-pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
+pub async fn record(arguments: Arguments) -> Result<Option<RecordingWarning>, RecorderError> {
     let archive = RecordingArchive::create(&arguments.directory)?;
     let interruption_marker = arguments.directory.join(CONTROLLER_INTERRUPTION_MARKER);
     archive.metadata(&arguments.room)?;
@@ -111,21 +111,15 @@ pub async fn record(arguments: Arguments) -> Result<(), RecorderError> {
     // INVARIANT: Written last, so a reader sees how the recording ended; a file without it was killed.
     let status_result = archive.json("/recording/status", &status, unix_nanoseconds());
     let finish_result = archive.finish();
+    finish_result?;
+    status_result?;
     if station_exited {
         // WHY: Distinct from a requested stop, so the exit status says it ended early.
-        finish_result?;
-        status_result?;
         return Err(RecorderError::StationExited);
-    }
-    if controller_interrupted {
-        finish_result?;
-        status_result?;
-        return Err(RecorderError::ControllerInterrupted);
     }
     result?;
     state_result?;
-    status_result?;
-    finish_result
+    Ok(controller_interrupted.then_some(RecordingWarning::ControllerInterrupted))
 }
 
 fn recording_verdict(

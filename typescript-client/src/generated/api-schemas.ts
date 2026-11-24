@@ -14945,7 +14945,13 @@ export const apiSchemas = z.object({
       z.object({ state: z.literal("idle") }),
       z.object({ name: z.string(), state: z.literal("recording") }),
       z.object({ name: z.string(), state: z.literal("stopping") }),
-      z.object({ name: z.string(), state: z.literal("finished") }),
+      z.object({
+        name: z.string(),
+        state: z.literal("finished"),
+        warning: z
+          .union([z.literal("controller_interrupted"), z.null()])
+          .optional(),
+      }),
       z.object({
         detail: z.string(),
         name: z.string(),
@@ -14955,6 +14961,7 @@ export const apiSchemas = z.object({
     .describe(
       "Where the station's recorder is. Recording starts and stops only on request,\nindependent of power and the lease.",
     ),
+  RecordingWarning: z.literal("controller_interrupted"),
   Recordings: z.object({
     active: z.union([z.string(), z.null()]).optional(),
     recordings: z.array(

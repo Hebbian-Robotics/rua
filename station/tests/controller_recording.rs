@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, RecordingStatus};
+use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, RecordingStatus, RecordingWarning};
 use hebbian_rua_server::recording::{RecordingConfiguration, RecordingManager};
 use station_access::Credentials;
 
@@ -61,7 +61,7 @@ async fn a_failed_launch_releases_the_session_for_retry() -> Result<(), Box<dyn 
     manager.stop_recording();
     tokio::time::timeout(Duration::from_secs(5), manager.wait_until_inactive()).await?;
     assert!(
-        matches!(manager.recording_status(), RecordingStatus::Finished { name } if name == retry)
+        matches!(manager.recording_status(), RecordingStatus::Finished { name, warning: None } if name == retry)
     );
     Ok(())
 }
@@ -92,9 +92,13 @@ async fn recording_started_offline_stays_incomplete_after_controller_recovers()
     .await?;
     manager.stop_recording();
     tokio::time::timeout(Duration::from_secs(5), manager.wait_until_inactive()).await?;
-    assert!(
-        matches!(manager.recording_status(), RecordingStatus::Failed { detail, .. } if detail.contains("controller"))
-    );
+    assert!(matches!(
+        manager.recording_status(),
+        RecordingStatus::Finished {
+            warning: Some(RecordingWarning::ControllerInterrupted),
+            ..
+        }
+    ));
     std::fs::remove_file(&ready)?;
     let active_name = manager.start_recording()?;
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -120,9 +124,13 @@ async fn recording_started_offline_stays_incomplete_after_controller_recovers()
             .exists()
     );
     tokio::time::timeout(Duration::from_secs(5), manager.wait_until_inactive()).await?;
-    assert!(
-        matches!(manager.recording_status(), RecordingStatus::Failed { detail, .. } if detail.contains("controller"))
-    );
+    assert!(matches!(
+        manager.recording_status(),
+        RecordingStatus::Finished {
+            warning: Some(RecordingWarning::ControllerInterrupted),
+            ..
+        }
+    ));
     Ok(())
 }
 
@@ -195,7 +203,7 @@ async fn exercise_recorder_cleanup(
     tokio::time::timeout(deadline, manager.wait_until_inactive()).await?;
     match shutdown {
         RecorderShutdown::Requested => assert!(
-            matches!(manager.recording_status(), RecordingStatus::Finished { name: finished } if name == finished)
+            matches!(manager.recording_status(), RecordingStatus::Finished { name: finished, warning: None } if name == finished)
         ),
         RecorderShutdown::Unexpected => assert!(
             matches!(manager.recording_status(), RecordingStatus::Failed { name: failed, detail } if name == failed && detail.contains("exited unexpectedly"))

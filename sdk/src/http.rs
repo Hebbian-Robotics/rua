@@ -1,7 +1,7 @@
 //! The station's HTTP routes: the generated per-route methods (`generated/http_routes.rs`)
 //! and the few that read more than a body.
 
-use hebbian_contracts::{MediaStatusReport, RecordingStatus};
+use hebbian_contracts::MediaStatusReport;
 use reqwest::{Method, Response, Url};
 use serde::Serialize;
 
@@ -126,18 +126,6 @@ impl Station {
             .await
             .ok()?;
         status.cameras.get(name)?.snapshot_problem()
-    }
-
-    /// Start recording, or join the recording already running (as across a
-    /// handover), and return its name.
-    ///
-    /// # Errors
-    /// As [`Station::start_recording`].
-    pub async fn ensure_recording(&self) -> Result<String> {
-        match self.recording_status().await? {
-            RecordingStatus::Recording { name } => Ok(name),
-            _ => self.start_recording().await,
-        }
     }
 
     /// A trace file's bytes exactly as served: gzip-compressed.

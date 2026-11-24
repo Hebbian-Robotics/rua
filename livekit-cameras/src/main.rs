@@ -27,9 +27,10 @@ enum MediaCommand {
 
 use config::ServeArguments;
 use error::PublisherError;
+use hebbian_contracts::{RECORDER_CONTROLLER_INTERRUPTED_EXIT_CODE, RecordingWarning};
 use livekit_camera_publisher::capture;
 use station_access::Credentials;
-use std::{io, sync::Arc};
+use std::{io, process::ExitCode, sync::Arc};
 use tokio_util::sync::CancellationToken;
 
 async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
@@ -95,7 +96,7 @@ async fn serve(arguments: ServeArguments) -> Result<(), PublisherError> {
     Ok(())
 }
 
-fn main() -> std::process::ExitCode {
+fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -109,36 +110,44 @@ fn main() -> std::process::ExitCode {
         .nth(1)
         .is_some_and(|argument| argument == "__capture")
     {
-        capture::run_capture_process().map_err(PublisherError::from)
+        capture::run_capture_process()
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(PublisherError::from)
     } else {
         run_with_runtime()
     };
     match result {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(exit_code) => exit_code,
         Err(error) => {
             eprintln!("hebbian-rua-media: {error}");
-            std::process::ExitCode::FAILURE
+            ExitCode::FAILURE
         }
     }
 }
 
-fn run_with_runtime() -> Result<(), PublisherError> {
+fn run_with_runtime() -> Result<ExitCode, PublisherError> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(run())
 }
 
-async fn run() -> Result<(), PublisherError> {
+async fn run() -> Result<ExitCode, PublisherError> {
     match MediaArguments::parse().command {
-        MediaCommand::CameraDevices => list_camera_devices(),
-        MediaCommand::ProbeLivekit => probe_livekit().await,
-        MediaCommand::Serve(arguments) => serve(arguments).await,
+        MediaCommand::CameraDevices => list_camera_devices()?,
+        MediaCommand::ProbeLivekit => probe_livekit().await?,
+        MediaCommand::Serve(arguments) => serve(arguments).await?,
         MediaCommand::Record(arguments) => {
-            livekit_cameras::recorder::record(arguments).await?;
-            Ok(())
+            match livekit_cameras::recorder::record(arguments).await? {
+                None => {}
+                Some(RecordingWarning::ControllerInterrupted) => {
+                    tracing::warn!("Recording finalized with a gap in arm telemetry");
+                    return Ok(ExitCode::from(RECORDER_CONTROLLER_INTERRUPTED_EXIT_CODE));
+                }
+            }
         }
     }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn list_camera_devices() -> Result<(), PublisherError> {

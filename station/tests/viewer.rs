@@ -347,8 +347,16 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
     assert!(refusal["detail"].is_string());
 
     // WHY: The room announcement goes to an address that never answers, off the request path.
-    let (status, recording) = post_json(address, "/recording/start", &json!({}));
+    let (status, recording) = std::thread::scope(|scope| {
+        let ensure = || post_json(address, "/recording/ensure", &json!({}));
+        let other_caller = scope.spawn(ensure);
+        let response = ensure();
+        assert_eq!(other_caller.join().unwrap(), response);
+        response
+    });
     assert_eq!(status, 200, "{recording}");
+    assert!(recording.is_string());
+    assert_eq!(post_json(address, "/recording/start", &json!({})).0, 409);
 
     let (status, state) = get(address, "/state");
     assert_eq!(status, 200);

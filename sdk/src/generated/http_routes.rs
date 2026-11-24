@@ -371,6 +371,23 @@ impl Station {
             .await?)
     }
 
+    /// Start or join a recording and return its name. Refuse while a recording is stopping.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn ensure_recording(&self) -> Result<String> {
+        Ok(self
+            .request(
+                Method::POST,
+                &self.server,
+                &["recording", "ensure"],
+                None::<&()>,
+            )
+            .await?
+            .json()
+            .await?)
+    }
+
     /// Start recording and return the recording's name.
     ///
     /// # Errors

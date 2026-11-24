@@ -228,6 +228,17 @@ export function createStationApi(
         ),
       );
     },
+    /** Start or join a recording and return its name. Refuse while a recording is stopping. */
+    async ensureRecording() {
+      return z
+        .string()
+        .parse(
+          await stationRequest(
+            new URL(`/recording/ensure`, stationUrl),
+            jsonRequestInit("POST", undefined, signal),
+          ),
+        );
+    },
     /** Start recording and return the recording's name. */
     async startRecording() {
       return z

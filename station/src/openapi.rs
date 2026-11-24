@@ -415,6 +415,15 @@ pub fn routes() -> Vec<Route> {
             true,
         ),
         route(
+            "ensure_recording",
+            "post",
+            "/recording/ensure",
+            "Start or join a recording and return its name. Refuse while a recording is stopping.",
+            None,
+            Reply::Json(schema_of::<String>),
+            true,
+        ),
+        route(
             "recording_status",
             "get",
             "/recording/status",

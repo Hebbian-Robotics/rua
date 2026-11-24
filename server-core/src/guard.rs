@@ -174,7 +174,8 @@ fn kill_controller(controller_pid: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn temporary_bus_open_error(error: &anyhow::Error) -> bool {
+#[must_use]
+pub fn serial_bus_may_be_busy(error: &anyhow::Error) -> bool {
     let retryable_io_kind = |kind| {
         matches!(
             kind,
@@ -200,7 +201,7 @@ fn take_over_bus<A>(open_arm: &mut impl FnMut() -> anyhow::Result<A>) -> anyhow:
     let deadline = Instant::now() + BUS_TAKEOVER_GRACE;
     loop {
         match open_arm() {
-            Err(error) if temporary_bus_open_error(&error) => {
+            Err(error) if serial_bus_may_be_busy(&error) => {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
                     return Err(error);

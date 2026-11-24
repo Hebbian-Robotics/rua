@@ -84,9 +84,11 @@ also watch the feed under **Workspace**.
 With LiveKit configured, run `uv run hebbian-rua phone-invite overhead` on the
 station host and open the printed URL on your phone. You can also use the
 HTTP request below and open the response’s `url`. On the camera page, allow camera access
-and select **Start streaming**. Keep the invite URL private. The station accepts
-invite requests over loopback. Run the viewer backend on the station host and
-connect it to the station over loopback. In **Workspace**, open **Camera setup**.
+and select **Start streaming**. Check the feed under **Workspace** in the laptop
+viewer to confirm its orientation and framing. Keep the invite URL private. The
+station accepts invite requests over loopback. Run the viewer backend on the
+station host and connect it to the station over loopback. In **Workspace**, open
+**Camera setup**.
 Under **Remote camera**, enter a camera location and select
 **Create invite**. On your phone, open the invite link or scan its QR code.
 To connect manually, open **Manual LiveKit connection** in the viewer, then
@@ -99,7 +101,8 @@ curl --fail http://127.0.0.1:8792/media/phone-invites \
   --json '{"label":"overhead"}'
 ```
 
-The feed uses the name `phone_overhead` for that label. See the
+The feed name is `phone_<label>`. An invite labeled `overhead` creates the
+`phone_overhead` feed, and an invite labeled `table` creates `phone_table`. See the
 [browser camera guide](https://github.com/Hebbian-Robotics/livekit-cameras#browser-camera)
 for phone controls and custom hosting.
 

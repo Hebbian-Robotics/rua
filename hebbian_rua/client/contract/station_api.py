@@ -1163,15 +1163,6 @@ class RecordingStatus3(BaseModel):
     state: Literal["stopping"] = "stopping"
 
 
-class RecordingStatus4(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    name: str
-    state: Literal["finished"] = "finished"
-
-
 class RecordingStatus5(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1182,28 +1173,8 @@ class RecordingStatus5(BaseModel):
     state: Literal["failed"] = "failed"
 
 
-class RecordingStatus(
-    RootModel[
-        RecordingStatus1
-        | RecordingStatus2
-        | RecordingStatus3
-        | RecordingStatus4
-        | RecordingStatus5
-    ]
-):
-    model_config = ConfigDict(
-        frozen=True,
-    )
-    root: Annotated[
-        RecordingStatus1
-        | RecordingStatus2
-        | RecordingStatus3
-        | RecordingStatus4
-        | RecordingStatus5,
-        Field(
-            description="Where the station's recorder is. Recording starts and stops only on request,\nindependent of power and the lease."
-        ),
-    ]
+class RecordingWarning(StrEnum):
+    controller_interrupted = "controller_interrupted"
 
 
 class Recordings(BaseModel):
@@ -1859,6 +1830,40 @@ class ProjectedPoseOutcome(BaseModel):
         bool,
         Field(
             description="The solver or controller met the target without a path constraint."
+        ),
+    ]
+
+
+class RecordingStatus4(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    name: str
+    state: Literal["finished"] = "finished"
+    warning: RecordingWarning | None = None
+
+
+class RecordingStatus(
+    RootModel[
+        RecordingStatus1
+        | RecordingStatus2
+        | RecordingStatus3
+        | RecordingStatus4
+        | RecordingStatus5
+    ]
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[
+        RecordingStatus1
+        | RecordingStatus2
+        | RecordingStatus3
+        | RecordingStatus4
+        | RecordingStatus5,
+        Field(
+            description="Where the station's recorder is. Recording starts and stops only on request,\nindependent of power and the lease."
         ),
     ]
 

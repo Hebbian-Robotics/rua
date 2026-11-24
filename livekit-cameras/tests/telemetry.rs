@@ -151,12 +151,15 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
         .args(["-TERM", &child.id().ok_or("recorder exited")?.to_string()])
         .status()?;
     assert!(status.success());
-    assert!(
-        !tokio::time::timeout(Duration::from_secs(10), child.wait())
-            .await??
-            .success()
+    let exit = tokio::time::timeout(Duration::from_secs(10), child.wait()).await??;
+    assert_eq!(
+        exit.code(),
+        Some(i32::from(
+            hebbian_contracts::RECORDER_CONTROLLER_INTERRUPTED_EXIT_CODE
+        ))
     );
     let data = fs::read(directory.path().join("recording/recording.mcap"))?;
+    assert!(mcap::Summary::read(&data)?.is_some());
     let messages = mcap::MessageStream::new(&data)?.collect::<Result<Vec<_>, _>>()?;
     let controller_events = messages
         .iter()
