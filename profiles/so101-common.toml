@@ -46,7 +46,7 @@ settle_timeout_seconds = 2
 
 [trajectory]
 acceleration_limit = 5.0
-jerk_limit = 20.0
+jerk_limit = 80.0
 
 [motion]
 # Conservative starting values from the manual-control setup.

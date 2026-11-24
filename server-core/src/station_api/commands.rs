@@ -333,7 +333,7 @@ fn prepare_waypoint_crossings(
             latest_sample(link)?.gripper_angle,
             initial_jaw_goal,
         )
-        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, format!("{error:#}")))?;
     Ok(())
 }
 

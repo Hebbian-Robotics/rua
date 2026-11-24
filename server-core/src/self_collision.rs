@@ -33,7 +33,22 @@ impl SelfCollisionGuard {
         goal: &[f64],
         gripper_angle: Option<f64>,
     ) -> anyhow::Result<Option<String>> {
-        Ok(self.safe_prefix(start, goal, gripper_angle)?.refusal())
+        let mut workspace = CollisionWorkspace::default();
+        let mut candidate = self.robot.driven_values(start, gripper_angle);
+        let fractions = std::iter::once(0.0).chain(path_sample_fractions(start, goal));
+        for fraction in fractions {
+            interpolate_path_sample(start, goal, fraction, &mut candidate[..start.len()]);
+            if let Some(reason) = self
+                .model
+                .collision_with_workspace(&candidate, &mut workspace)?
+            {
+                return Ok(Some(reason));
+            }
+            if start == goal {
+                break;
+            }
+        }
+        Ok(None)
     }
 
     pub(crate) fn safe_prefix(
@@ -42,43 +57,44 @@ impl SelfCollisionGuard {
         goal: &[f64],
         gripper_angle: Option<f64>,
     ) -> anyhow::Result<PathCheck> {
-        let mut workspace = CollisionWorkspace::default();
-        let mut candidate = self.robot.driven_values(start, gripper_angle);
-        if let Some(reason) = self
-            .model
-            .collision_with_workspace(&candidate, &mut workspace)?
-        {
+        if let Some(reason) = self.collision(start, gripper_angle)? {
             return Ok(PathCheck::StartRefused { reason });
         }
         if start == goal {
             return Ok(PathCheck::Clear);
         }
-        let joint_count = start.len().min(goal.len());
-        if joint_count != start.len() {
-            candidate = self
-                .robot
-                .driven_values(&start[..joint_count], gripper_angle);
-        }
-        let mut last_safe_fraction = None;
-        for fraction in path_sample_fractions(start, goal) {
-            interpolate_path_sample(start, goal, fraction, &mut candidate[..joint_count]);
-            if let Some(reason) = self
-                .model
-                .collision_with_workspace(&candidate, &mut workspace)?
-            {
-                let last_safe = match last_safe_fraction {
-                    Some(fraction) => {
-                        candidate.truncate(joint_count);
-                        interpolate_path_sample(start, goal, fraction, &mut candidate);
-                        candidate
-                    }
-                    None => start.to_vec(),
-                };
-                return Ok(PathCheck::StopsAt { last_safe, reason });
+        anyhow::ensure!(start.len() == goal.len(), "Mismatched joint dimensions");
+        let joint_speeds: Vec<_> = start
+            .iter()
+            .zip(goal)
+            .map(|(start, goal)| (goal - start).abs())
+            .collect();
+        let Some((fraction, reason)) =
+            self.swept_prefix(&joint_speeds, gripper_angle, |fraction, candidate| {
+                interpolate_path_sample(start, goal, fraction, candidate);
+            })?
+        else {
+            return Ok(PathCheck::Clear);
+        };
+        let mut last_safe = start.to_vec();
+        interpolate_path_sample(start, goal, fraction, &mut last_safe);
+        Ok(PathCheck::StopsAt { last_safe, reason })
+    }
+
+    pub(crate) fn swept_prefix(
+        &self,
+        arm_speeds: &[f64],
+        gripper_angle: Option<f64>,
+        mut sample: impl FnMut(f64, &mut [f64]),
+    ) -> anyhow::Result<Option<(f64, String)>> {
+        let mut speeds = self.robot.driven_values(arm_speeds, gripper_angle);
+        let fixed_jaw = speeds.get_mut(arm_speeds.len()).map(std::mem::take);
+        self.model.swept_prefix(&speeds, |fraction, joints| {
+            sample(fraction, &mut joints[..arm_speeds.len()]);
+            if let Some(angle) = fixed_jaw {
+                joints[arm_speeds.len()] = angle;
             }
-            last_safe_fraction = Some(fraction);
-        }
-        Ok(PathCheck::Clear)
+        })
     }
 }
 
@@ -132,12 +148,48 @@ mod tests {
     </robot>"#;
 
     fn guard(name: &str, tolerance: f64) -> SelfCollisionGuard {
+        guard_from_urdf(name, tolerance, CUBES_URDF)
+    }
+
+    fn guard_from_urdf(name: &str, tolerance: f64, urdf: &str) -> SelfCollisionGuard {
         let path: PathBuf =
             std::env::temp_dir().join(format!("{name}-{}.urdf", std::process::id()));
-        std::fs::write(&path, CUBES_URDF).unwrap();
+        std::fs::write(&path, urdf).unwrap();
         let robot = Robot::load(&path, &["pivot".to_owned(), "far_pivot".to_owned()]).unwrap();
         let _ = std::fs::remove_file(path);
         SelfCollisionGuard::new(Arc::new(robot), tolerance, &[]).unwrap()
+    }
+
+    #[test]
+    fn swept_prefix_stops_for_a_collision_between_clear_samples() {
+        let guard = guard_from_urdf(
+            "sweep-between-samples",
+            0.0,
+            r#"<robot name="narrow">
+            <link name="base"><collision><origin xyz="1.0005 0.0005 0"/><geometry><box size="0.01 0.002 0.01"/></geometry></collision></link>
+            <link name="arm"/>
+            <link name="tip"><collision><origin xyz="1 0 0"/><geometry><box size="0.01 0.002 0.01"/></geometry></collision></link>
+            <joint name="pivot" type="continuous"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint>
+            <joint name="far_pivot" type="continuous"><parent link="arm"/><child link="tip"/><axis xyz="0 0 1"/></joint>
+            </robot>"#,
+        );
+        let start = [-0.009, 0.0];
+        let goal = [0.009, 0.0];
+        assert!(guard.collision(&start, None).unwrap().is_none());
+        assert!(guard.collision(&goal, None).unwrap().is_none());
+        assert!(guard.collision(&[0.0, 0.0], None).unwrap().is_some());
+        let PathCheck::StopsAt { last_safe, reason } =
+            guard.safe_prefix(&start, &goal, None).unwrap()
+        else {
+            panic!("Expected the sweep to stop between the start and goal");
+        };
+        assert!(start[0] < last_safe[0] && last_safe[0] < 0.0);
+        assert!(guard.collision(&last_safe, None).unwrap().is_none());
+        assert!(reason.contains("base") && reason.contains("tip"));
+        assert_eq!(
+            guard.safe_prefix(&goal, &[0.02, 0.0], None).unwrap(),
+            PathCheck::Clear
+        );
     }
 
     const QUARTER_TURN_DOWN: f64 = -std::f64::consts::FRAC_PI_2;

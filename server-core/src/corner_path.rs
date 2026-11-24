@@ -16,7 +16,7 @@ pub(crate) const MIN_TRACKING_SPEED_FRACTION: f64 = 0.3;
 
 // CONSTRAINT: Validation only calculates trajectories. Online sections replace this initial
 // constructor period with the actual cycle interval before updating.
-const INITIAL_PERIOD_SECONDS: f64 = 0.01;
+pub(crate) const INITIAL_PERIOD_SECONDS: f64 = 0.01;
 
 pub(crate) fn plan_initial_corner(plan: &CornerPlan) -> anyhow::Result<&[f64]> {
     plan.segments
@@ -117,7 +117,10 @@ impl ValidatedPlan {
                 || max_joint_deviation(self.initial_corner(), &initial) <= CONTINUITY_RADIANS,
             "Continuous path start changed after planning"
         );
-        self.0.segments[0].corners[0] = initial;
+        // SAFETY: Preserve the exact input to the station's checked waypoint solver.
+        if !self.0.is_continuous() {
+            self.0.segments[0].corners[0] = initial;
+        }
         Ok(())
     }
 }
@@ -365,6 +368,7 @@ struct CornerPathTracker {
     segment_index: usize,
     trajectories: Vec<SmoothTrajectory>,
     continuous_path: Option<crate::continuous_path::ContinuousPath>,
+    waypoint_feedback_lag_seconds: f64,
     section_elapsed: f64,
     corner_index: usize,
     section: Option<OnlineSection>,
@@ -373,24 +377,31 @@ struct CornerPathTracker {
 }
 
 impl CornerPathTracker {
-    fn new(plan: ValidatedPlan, limits: MotionLimits) -> anyhow::Result<Self> {
-        let trajectories = plan
-            .segments
-            .iter()
-            .map(|segment| {
-                SmoothTrajectory::new(
-                    &segment.corners,
-                    plan.peak_speed,
-                    limits.acceleration_limit,
-                    limits.jerk_limit,
-                    segment.minimum_duration_seconds,
-                )
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+    fn new(
+        plan: ValidatedPlan,
+        limits: MotionLimits,
+        waypoint_feedback_lag_seconds: f64,
+    ) -> anyhow::Result<Self> {
         let continuous_path = plan
             .is_continuous()
             .then(|| crate::continuous_path::ContinuousPath::new(&plan, &limits))
             .transpose()?;
+        let trajectories = if continuous_path.is_some() {
+            Vec::new()
+        } else {
+            plan.segments
+                .iter()
+                .map(|segment| {
+                    SmoothTrajectory::new(
+                        &segment.corners,
+                        plan.peak_speed,
+                        limits.acceleration_limit,
+                        limits.jerk_limit,
+                        segment.minimum_duration_seconds,
+                    )
+                })
+                .collect::<anyhow::Result<_>>()?
+        };
         let reference = Reference::at_rest(plan.initial_corner(), None);
         Ok(Self {
             plan,
@@ -400,6 +411,7 @@ impl CornerPathTracker {
             segment_index: 0,
             trajectories,
             continuous_path,
+            waypoint_feedback_lag_seconds,
             section_elapsed: 0.0,
             corner_index: 1,
             section: None,
@@ -418,47 +430,8 @@ impl CornerPathTracker {
         interval: f64,
         speed_fraction: f64,
     ) -> anyhow::Result<()> {
-        if let Some(path) = &self.continuous_path {
-            // SAFETY: A changing velocity cap needs a new time parameterization. Stop a
-            // continuous move when tracking calls for slowing down.
-            ensure!(
-                speed_fraction >= 1.0,
-                "Continuous motion exceeded its tracking margin"
-            );
-            let duration = path.section_seconds();
-            ensure!(
-                interval.is_finite() && interval > 0.0 && interval < duration,
-                "Controller interval exceeds the continuous section duration"
-            );
-            self.section_elapsed += interval;
-            if self.section_elapsed >= duration {
-                let segment = &self.plan.segments[self.segment_index];
-                if self.segment_index + 1 == self.plan.segments.len() {
-                    self.reference.set_at_rest(&segment.corners[1], None);
-                    self.stage = Stage::Settling;
-                    return Ok(());
-                }
-                ensure!(
-                    max_joint_deviation(measured, &segment.corners[1])
-                        <= self.limits.settled_error_radians,
-                    "Arm missed pass-through waypoint {}",
-                    self.segment_index
-                );
-                self.checkpoints.push(Checkpoint {
-                    label: segment.label.clone(),
-                    measured_joints: measured.to_vec(),
-                    destination_position: segment.destination_position,
-                    destination_quaternion: segment.destination_quaternion,
-                });
-                self.segment_index += 1;
-                self.section_elapsed -= duration;
-            }
-            path.sample(
-                self.segment_index,
-                self.section_elapsed / duration,
-                &mut self.reference,
-            );
-            return Ok(());
+        if self.continuous_path.is_some() {
+            return self.advance_continuous(measured, interval, speed_fraction);
         }
         let trajectory = &self.trajectories[self.segment_index];
         let corners = &trajectory.waypoints;
@@ -514,18 +487,101 @@ impl CornerPathTracker {
         Ok(())
     }
 
-    fn settled(&mut self, measured: &[f64], stalled_short: bool) -> anyhow::Result<()> {
+    fn advance_continuous(
+        &mut self,
+        measured: &[f64],
+        interval: f64,
+        speed_fraction: f64,
+    ) -> anyhow::Result<()> {
+        // SAFETY: A changing velocity cap needs a new time parameterization.
         ensure!(
-            self.stage == Stage::Settling,
-            "Only a settling tracker can settle"
+            speed_fraction >= 1.0,
+            "Continuous motion exceeded its tracking margin"
         );
-        let segment = &self.plan.segments[self.segment_index];
+        let path = self
+            .continuous_path
+            .as_ref()
+            .context("Missing continuous path")?;
+        let (section_start, section_end) = path.section_bounds(self.segment_index);
+        let duration = section_end - section_start;
+        ensure!(
+            interval.is_finite() && interval > 0.0 && interval < duration,
+            "Controller interval exceeds the continuous section duration"
+        );
+        let trajectory_seconds = section_start + self.section_elapsed + interval;
+        let crossing = trajectory_seconds >= section_end;
+        if crossing && self.segment_index + 1 < self.plan.segments.len() {
+            let (_, next_end) = path.section_bounds(self.segment_index + 1);
+            ensure!(
+                trajectory_seconds < next_end,
+                "Controller interval crosses more than one continuous section boundary"
+            );
+        }
+
+        // SAFETY: Feedback can arrive after the reference crosses. Keep the position
+        // tolerance and confirm each waypoint before crossing another boundary.
+        let unconfirmed = self.checkpoints.len();
+        let had_pending_crossing = unconfirmed < self.segment_index;
+        if had_pending_crossing {
+            ensure!(
+                self.section_elapsed <= self.waypoint_feedback_lag_seconds
+                    && (self.confirm_waypoint(unconfirmed, measured) || !crossing),
+                "Arm missed pass-through waypoint {unconfirmed}"
+            );
+        }
+
+        self.section_elapsed += interval;
+        if crossing {
+            let index = self.segment_index;
+            if index + 1 == self.plan.segments.len() {
+                self.reference
+                    .set_at_rest(&self.plan.segments[index].corners[1], None);
+                self.stage = Stage::Settling;
+                return Ok(());
+            }
+            // INVARIANT: At most one checkpoint per write, including its jaw command.
+            if !had_pending_crossing && !self.confirm_waypoint(index, measured) {
+                ensure!(
+                    self.waypoint_feedback_lag_seconds > 0.0,
+                    "Arm missed pass-through waypoint {index}"
+                );
+            }
+            self.segment_index += 1;
+            self.section_elapsed -= duration;
+        }
+        self.continuous_path
+            .as_mut()
+            .context("Missing continuous path")?
+            .sample(trajectory_seconds, &mut self.reference);
+        Ok(())
+    }
+
+    fn confirm_waypoint(&mut self, index: usize, measured: &[f64]) -> bool {
+        if max_joint_deviation(measured, &self.plan.segments[index].corners[1])
+            > self.limits.settled_error_radians
+        {
+            return false;
+        }
+        self.record_checkpoint(index, measured);
+        true
+    }
+
+    fn record_checkpoint(&mut self, index: usize, measured: &[f64]) {
+        let segment = &self.plan.segments[index];
         self.checkpoints.push(Checkpoint {
             label: segment.label.clone(),
             measured_joints: measured.to_vec(),
             destination_position: segment.destination_position,
             destination_quaternion: segment.destination_quaternion,
         });
+    }
+
+    fn settled(&mut self, measured: &[f64], stalled_short: bool) -> anyhow::Result<()> {
+        ensure!(
+            self.stage == Stage::Settling,
+            "Only a settling tracker can settle"
+        );
+        self.record_checkpoint(self.segment_index, measured);
         self.segment_index += 1;
         if stalled_short || self.segment_index == self.plan.segments.len() {
             self.end = Some(if stalled_short {
@@ -557,15 +613,16 @@ impl MotionSupervisor {
         limits: &MotionLimits,
         joint_count: usize,
     ) -> anyhow::Result<Self> {
-        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits)
+        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits, 0.0)
     }
 
     pub(crate) fn from_validated(
         plan: ValidatedPlan,
         limits: &MotionLimits,
+        waypoint_feedback_lag_seconds: f64,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            tracker: CornerPathTracker::new(plan, limits.clone())?,
+            tracker: CornerPathTracker::new(plan, limits.clone(), waypoint_feedback_lag_seconds)?,
             limits: limits.clone(),
             settled_seconds: 0.0,
             settling_seconds: 0.0,
@@ -690,5 +747,81 @@ impl MotionSupervisor {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+
+    use super::*;
+    use crate::config::{ControllerConfig, TEST_CONFIG};
+
+    fn waypoint_move() -> MotionSupervisor {
+        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
+        let waypoint = Segment {
+            label: "waypoint".into(),
+            corners: vec![vec![0.0], vec![0.3]],
+            pass_through: Some(hebbian_contracts::PassThrough {
+                gripper_angle: None,
+            }),
+            minimum_duration_seconds: None,
+            final_gripper_angle: None,
+            destination_position: None,
+            destination_quaternion: None,
+        };
+        let goal = Segment {
+            label: "goal".into(),
+            corners: vec![vec![0.3], vec![0.6]],
+            pass_through: None,
+            ..waypoint.clone()
+        };
+        let plan = ValidatedPlan::new(
+            CornerPlan {
+                segments: vec![waypoint, goal],
+                peak_speed: 0.6,
+            },
+            1,
+        )
+        .unwrap();
+        MotionSupervisor::from_validated(plan, &config.motion, 0.1).unwrap()
+    }
+
+    #[test]
+    fn pass_through_checkpoint_waits_for_measured_crossing() {
+        let mut motion = waypoint_move();
+        let mut feedback_history = VecDeque::from([[0.0]; 7]);
+        let mut reference_crossed_before_feedback = false;
+        for _ in 0..200 {
+            let measured = feedback_history.pop_front().unwrap();
+            let reference = motion.step(&measured, 0.01).unwrap();
+            feedback_history.push_back([reference.positions[0]]);
+            if reference.positions[0] >= 0.3 && motion.new_checkpoints(0).is_empty() {
+                reference_crossed_before_feedback = true;
+            }
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(reference_crossed_before_feedback);
+        assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
+        let [waypoint, goal] = motion.new_checkpoints(0) else {
+            panic!("Expected one measured waypoint and the final goal");
+        };
+        assert_eq!(waypoint.label, "waypoint");
+        assert!((waypoint.measured_joints[0] - 0.3).abs() <= 0.02);
+        assert_eq!(goal.label, "goal");
+    }
+
+    #[test]
+    fn pass_through_trips_when_feedback_never_reaches_tolerance() {
+        let mut motion = waypoint_move();
+        let failure = (0..200).find_map(|_| motion.step(&[0.0], 0.01).err());
+        assert!(matches!(
+            failure,
+            Some(Trip::Trajectory(detail)) if detail == "Arm missed pass-through waypoint 0"
+        ));
+        assert_eq!(motion.new_checkpoints(0), []);
+        assert!(motion.reference().positions[0] < 0.6);
     }
 }
