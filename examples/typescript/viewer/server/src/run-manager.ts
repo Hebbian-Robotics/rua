@@ -13,6 +13,7 @@ import {
   unsupportedReasoningEffort,
 } from "../../../agent/src/index.js";
 import type {
+  Lesson,
   ParsedRunRequest,
   Run,
   RunEvent,
@@ -22,6 +23,7 @@ import type {
 import { runLifecycle } from "./run-lifecycle.js";
 
 export const OUTPUT_LINE_LIMIT = 200;
+const LESSON_LIMIT = 10;
 
 export interface RunStore {
   loadAll(): Promise<Run[]>;
@@ -142,6 +144,41 @@ export class RunManager {
     return this.entry(id).run;
   }
 
+  // Feedback belongs to a finished run: it describes what happened, for the next run.
+  setFeedback(id: string, text: string): Run {
+    const entry = this.entry(id);
+    if (entry.run.phase.state !== "ended")
+      throw new RunConflictError("Add feedback after the run ends");
+    const { feedback: _previous, ...rest } = entry.run;
+    entry.run =
+      text === ""
+        ? rest
+        : { ...rest, feedback: { text, savedAt: this.options.now() } };
+    this.persist(entry.run);
+    return entry.run;
+  }
+
+  // Feedback from earlier runs of exactly this task, newest first.
+  lessons(task: string): Lesson[] {
+    const wanted = task.trim();
+    return this.history()
+      .flatMap((run) =>
+        run.feedback !== undefined &&
+        run.phase.state === "ended" &&
+        run.request.task.trim() === wanted
+          ? [
+              {
+                runId: run.id,
+                outcome: run.phase.outcome.kind,
+                text: run.feedback.text,
+                savedAt: run.feedback.savedAt,
+              },
+            ]
+          : [],
+      )
+      .slice(0, LESSON_LIMIT);
+  }
+
   async output(id: string): Promise<string> {
     this.entry(id);
     await this.writes;
@@ -235,6 +272,7 @@ export class RunManager {
           runId: entry.run.id,
           arm: request.arm,
           task: request.task,
+          lessons: request.lessons,
           ...(request.promptImage
             ? {
                 referenceImageJpeg: Buffer.from(

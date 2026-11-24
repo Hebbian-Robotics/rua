@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   AGENT_TOOLS,
   finishInputSchema,
+  lessonsSection,
   TaskMemory,
   updateNotesInputSchema,
   updatePlanInputSchema,
@@ -69,4 +70,16 @@ test("the loop's tools describe themselves with plain JSON schemas", () => {
     expect(tool.parametersSchema["type"]).toBe("object");
     expect(tool.parametersSchema).not.toHaveProperty("$schema");
   }
+});
+
+test("lessons are listed one per line and blank lessons are dropped", () => {
+  expect(lessonsSection([])).toEqual([]);
+  expect(lessonsSection(["  ", "\n"])).toEqual([]);
+  expect(
+    lessonsSection(["approach from above", "open wider\nbefore descending"]),
+  ).toEqual([
+    "Lessons from earlier runs of this task (operator feedback; trust the current images if they disagree):",
+    "- approach from above",
+    "- open wider before descending",
+  ]);
 });

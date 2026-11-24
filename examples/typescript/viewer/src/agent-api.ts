@@ -3,6 +3,7 @@ import {
   currentRunSchema,
   errorBodySchema,
   healthSchema,
+  lessonsSchema,
   modelProvidersSchema,
   type Run,
   type RunRequest,
@@ -53,4 +54,16 @@ export const agentApi = {
     }),
   stopRun: (baseUrl: string, id: string): Promise<Run> =>
     agentJson(baseUrl, `/api/runs/${id}/stop`, runSchema, { method: "POST" }),
+  saveFeedback: (baseUrl: string, id: string, text: string): Promise<Run> =>
+    agentJson(baseUrl, `/api/runs/${id}/feedback`, runSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
+  lessons: (baseUrl: string, task: string) =>
+    agentJson(
+      baseUrl,
+      `/api/lessons?task=${encodeURIComponent(task)}`,
+      lessonsSchema,
+    ),
 };

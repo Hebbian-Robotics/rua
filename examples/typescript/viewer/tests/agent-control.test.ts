@@ -46,6 +46,10 @@ const stationState: StationState = {
 const agent: ComponentProps<typeof AgentControl>["agent"] = {
   run: null,
   setRun: () => {},
+  loadLessons: async () => [],
+  saveFeedback: async () => {
+    throw new Error("No run to save feedback for");
+  },
   status: "reachable",
   providers: [
     {
@@ -67,12 +71,15 @@ const agent: ComponentProps<typeof AgentControl>["agent"] = {
 
 function AgentControlWithPreferences({
   onStartRun,
-}: Pick<ComponentProps<typeof AgentControl>, "onStartRun">) {
+  agentState = agent,
+}: Pick<ComponentProps<typeof AgentControl>, "onStartRun"> & {
+  agentState?: typeof agent;
+}) {
   const { preferences, updatePreferences } = useViewerPreferences();
   return createElement(AgentControl, {
     stationState,
     cameraNames: [],
-    agent,
+    agent: agentState,
     startingRun: false,
     onStartRun,
     runError: "",
@@ -108,7 +115,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function mountAgentControl(requests: RunRequest[]) {
+async function mountAgentControl(
+  requests: RunRequest[],
+  agentState: typeof agent = agent,
+) {
   await act(async () => {
     root?.unmount();
     root = createRoot(view);
@@ -117,6 +127,7 @@ async function mountAgentControl(requests: RunRequest[]) {
         onStartRun: async (request) => {
           requests.push(request);
         },
+        agentState,
       }),
     );
   });
@@ -194,6 +205,7 @@ test("a custom model is saved, restored on reload, and submitted by ID", async (
     {
       arm: "follower",
       task: "Inspect the work area",
+      lessons: [],
       cameras: [],
       optionalCameras: [],
       settings: {
@@ -239,6 +251,50 @@ test("changing providers clears a custom model and requires a fresh selection", 
         provider: "gemini",
         model: "gemini-4-hydrogen",
       }),
+    }),
+  ]);
+});
+
+test("lessons for the typed task are offered, can be switched off and edited, and are submitted", async () => {
+  const requests: RunRequest[] = [];
+  const asked: string[] = [];
+  await mountAgentControl(requests, {
+    ...agent,
+    loadLessons: async (task) => {
+      asked.push(task);
+      return [
+        {
+          runId: "r1",
+          outcome: "stopped",
+          text: "approach from above",
+          savedAt: 1,
+        },
+        { runId: "r2", outcome: "completed", text: "open wider", savedAt: 2 },
+      ];
+    },
+  });
+  await enterText(
+    requireControl<HTMLTextAreaElement>("#agent-task"),
+    " pick up the tube ",
+  );
+  await selectOption(providerSelect(), "OpenAI");
+  await selectOption(modelSelect(), "GPT-6 Sol");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+  expect(asked.at(-1)).toBe("pick up the tube");
+  expect(view.textContent).toContain("Lessons from earlier runs (2 of 2 on)");
+  await act(async () =>
+    requireControl<HTMLInputElement>("#agent-lesson-r1-on").click(),
+  );
+  await enterText(
+    requireControl<HTMLTextAreaElement>("#agent-lesson-r2-text"),
+    "open the gripper wider",
+  );
+  expect(view.textContent).toContain("Lessons from earlier runs (1 of 2 on)");
+  await act(async () => startButton().click());
+  expect(requests).toEqual([
+    expect.objectContaining({
+      task: "pick up the tube",
+      lessons: ["open the gripper wider"],
     }),
   ]);
 });

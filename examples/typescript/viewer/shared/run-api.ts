@@ -31,10 +31,17 @@ export const motionLimitsSchema = z.object({
 });
 export type MotionLimits = z.output<typeof motionLimitsSchema>;
 
+const MAX_LESSONS = 20;
+export const MAX_FEEDBACK_LENGTH = 2000;
+
+const lessonSchema = z.string().trim().min(1).max(MAX_FEEDBACK_LENGTH);
+
 export const runRequestSchema = z.object({
   motionLimits: motionLimitsSchema.optional(),
   arm: z.string().min(1),
   task: z.string().min(1),
+  // Operator feedback from earlier runs that this run starts with. Runs saved before lessons read as none.
+  lessons: z.array(lessonSchema).max(MAX_LESSONS).default([]),
   cameras: z.array(z.string().min(1)).default([]),
   optionalCameras: z.array(z.string().min(1)).default([]),
   promptImage: promptImageSchema.optional(),
@@ -88,6 +95,8 @@ export const runSchema = z.object({
   request: storedRunRequestSchema,
   phase: runPhaseSchema,
   output: z.array(z.string()),
+  // The operator's advice for the next run, written after this one ended.
+  feedback: z.object({ text: z.string(), savedAt: z.number() }).optional(),
   persistenceError: z.string().optional(),
   usage: z
     .object({
@@ -104,6 +113,27 @@ export type Run = z.infer<typeof runSchema>;
 export type RunPhase = z.infer<typeof runPhaseSchema>;
 
 export const currentRunSchema = runSchema.nullable();
+
+// An empty text clears the run's feedback.
+export const feedbackRequestSchema = z.object({
+  text: z.string().trim().max(MAX_FEEDBACK_LENGTH),
+});
+
+export const lessonsSchema = z.array(
+  z.object({
+    runId: z.string(),
+    outcome: z.enum([
+      "completed",
+      "incomplete",
+      "stopped",
+      "interrupted",
+      "failed",
+    ]),
+    text: z.string(),
+    savedAt: z.number(),
+  }),
+);
+export type Lesson = z.infer<typeof lessonsSchema>[number];
 export const modelProvidersSchema = z.array(
   z.object({
     provider: providerSchema,

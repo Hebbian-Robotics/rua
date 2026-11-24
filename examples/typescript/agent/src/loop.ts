@@ -31,7 +31,12 @@ import {
   type ReasoningEffort,
   type TokenUsage,
 } from "./providers/types.js";
-import { AGENT_TOOLS, systemPrompt, TaskMemory } from "./tools.js";
+import {
+  AGENT_TOOLS,
+  lessonsSection,
+  systemPrompt,
+  TaskMemory,
+} from "./tools.js";
 import { KIND_ATTRIBUTE, markSpanError, withStationTrace } from "./tracing.js";
 import { estimateModelCost, RunUsage, type UsageSnapshot } from "./usage.js";
 
@@ -40,6 +45,8 @@ const MAXIMUM_LEASE_LABEL_CHARACTERS = 200;
 export interface LoopConfig {
   arm?: string;
   task: string;
+  // Operator feedback from earlier runs, added to the first observation.
+  lessons?: readonly string[];
   referenceImageJpeg?: Uint8Array;
 
   runId?: string;
@@ -210,6 +217,7 @@ export async function drive(
         "gen_ai.request.model": config.model,
         "hebbian.arm": config.arm,
         "hebbian.task": config.task,
+        "hebbian.lesson_count": config.lessons?.length ?? 0,
       },
       async (runSpan, withSpan, tracerProvider) => {
         const environment: RunEnvironment = {
@@ -291,7 +299,11 @@ async function runLoop(
   });
   const first = await observe(
     environment,
-    `Task: ${config.task}\nThe station's robot profile supplies the default and maximum joint speeds.`,
+    [
+      `Task: ${config.task}`,
+      "The station's robot profile supplies the default and maximum joint speeds.",
+      ...lessonsSection(config.lessons ?? []),
+    ].join("\n"),
   );
   const firstObservation: Observation = config.referenceImageJpeg
     ? { ...first.observation, referenceImageJpeg: config.referenceImageJpeg }

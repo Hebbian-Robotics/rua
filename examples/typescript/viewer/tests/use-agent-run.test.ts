@@ -15,6 +15,7 @@ const run: Run = {
   request: {
     arm: "follower",
     task: "stack the cups",
+    lessons: [],
     cameras: [],
     optionalCameras: [],
     settings: {

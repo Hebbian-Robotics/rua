@@ -9,6 +9,7 @@ import {
   type Run,
   type RunEvent,
   runRequestSchema,
+  runSchema,
 } from "../../shared/run-api.js";
 import {
   OUTPUT_LINE_LIMIT,
@@ -354,4 +355,102 @@ test("history lists newest first and current prefers the active run", async () =
   expect(runs.history().map((run) => run.id)).toEqual([second.id, first.id]);
   expect(runs.current()?.id).toBe(second.id);
   await untilEnded(runs, second.id);
+});
+
+test("feedback on an ended run becomes a lesson that reaches the next run of the same task", async () => {
+  conversations.push(
+    new ScriptedConversation([turn(["finish", { reason: "missed" }])]),
+  );
+  const firstTexts: (string | undefined)[] = [];
+  const runs = manager({
+    openConversation: (firstObservation) => {
+      firstTexts.push(firstObservation.text);
+      const conversation = conversations.shift();
+      if (conversation === undefined) throw new Error("No scripted model");
+      return conversation;
+    },
+  });
+  const first = await untilEnded(runs, runs.start(request).id);
+  const withFeedback = runs.setFeedback(
+    first.id,
+    "open the gripper wider before descending",
+  );
+  expect(withFeedback.feedback).toEqual({
+    text: "open the gripper wider before descending",
+    savedAt: expect.any(Number),
+  });
+  await runs.output(first.id); // waits for queued writes
+  expect(store.saved.get(first.id)?.feedback?.text).toBe(
+    "open the gripper wider before descending",
+  );
+  expect(runs.lessons("  stack ")).toEqual([
+    {
+      runId: first.id,
+      outcome: "completed",
+      text: "open the gripper wider before descending",
+      savedAt: withFeedback.feedback?.savedAt,
+    },
+  ]);
+  expect(runs.lessons("stack the cups")).toEqual([]);
+
+  conversations.push(
+    new ScriptedConversation([turn(["finish", { reason: "done" }])]),
+  );
+  const second = runs.start(
+    runRequestSchema.parse({
+      ...request,
+      lessons: ["open the gripper wider before descending"],
+    }),
+  );
+  await untilEnded(runs, second.id);
+  expect(firstTexts[0]).not.toContain("Lessons from earlier runs");
+  expect(firstTexts[1]).toContain(
+    "Lessons from earlier runs of this task (operator feedback; trust the current images if they disagree):\n- open the gripper wider before descending",
+  );
+  expect(store.saved.get(second.id)?.request.lessons).toEqual([
+    "open the gripper wider before descending",
+  ]);
+});
+
+test("feedback waits for the run to end, and empty feedback clears it", async () => {
+  conversations.push(
+    new ScriptedConversation([
+      () => {
+        expect(() => runs.setFeedback("run-1", "too early")).toThrow(
+          RunConflictError,
+        );
+        return turn(["finish", { reason: "done" }]);
+      },
+    ]),
+  );
+  const runs = manager();
+  const ended = await untilEnded(runs, runs.start(request).id);
+  runs.setFeedback(ended.id, "approach from above");
+  const cleared = runs.setFeedback(ended.id, "");
+  expect(cleared.feedback).toBeUndefined();
+  expect(runs.lessons("stack")).toEqual([]);
+});
+
+test("saved runs without lessons or feedback still load", () => {
+  const legacy = {
+    id: "old",
+    createdAt: 1,
+    request: {
+      arm: "follower",
+      task: "stack",
+      cameras: [],
+      optionalCameras: [],
+      settings: { provider: "openai", model: "gpt-6.2-astra" },
+    },
+    phase: {
+      state: "ended",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "completed" },
+    },
+    output: [],
+  };
+  const parsed = runSchema.parse(legacy);
+  expect(parsed.request.lessons).toEqual([]);
+  expect(parsed.feedback).toBeUndefined();
 });

@@ -7,6 +7,7 @@ import { streamSSE } from "hono/streaming";
 import type { ZodType } from "zod";
 import { PROVIDERS } from "../../../agent/src/providers/types.js";
 import {
+  feedbackRequestSchema,
   MAX_PROMPT_IMAGE_BASE64_LENGTH,
   type Provider,
   RUN_STREAM_HEARTBEAT_EVENT,
@@ -96,6 +97,18 @@ export function createApp({
       return context.json(manager.start(body.data), 201);
     },
   );
+  app.post("/api/runs/:id/feedback", async (context) => {
+    const body = await readJson(context.req.json(), feedbackRequestSchema);
+    if (!body.success) return context.json({ detail: body.detail }, 400);
+    return context.json(
+      manager.setFeedback(context.req.param("id"), body.data.text),
+    );
+  });
+  app.get("/api/lessons", (context) => {
+    const task = context.req.query("task")?.trim();
+    if (!task) return context.json({ detail: "Pass a task" }, 400);
+    return context.json(manager.lessons(task));
+  });
   app.post("/api/runs/:id/stop", (context) =>
     context.json(manager.stop(context.req.param("id"))),
   );

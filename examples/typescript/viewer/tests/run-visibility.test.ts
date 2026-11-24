@@ -23,6 +23,7 @@ test("clearing dismisses every part of a run and its later updates while admitti
     request: {
       arm: "arm",
       task: "Pick up the block",
+      lessons: [],
       cameras: [],
       optionalCameras: [],
       settings: {
