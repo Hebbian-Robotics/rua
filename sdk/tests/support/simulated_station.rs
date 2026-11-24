@@ -140,12 +140,31 @@ impl SimulatedStation {
             }
         });
         let url = format!("http://{}", server.local_address());
-        Ok(Self {
+        let station = Self {
             server: Some(server),
             shutdown,
             loop_thread: Some(loop_thread),
             url,
+        };
+        station.wait_until_ready().await?;
+        Ok(station)
+    }
+
+    async fn wait_until_ready(&self) -> Result<(), Error> {
+        // WHY: The listener can accept connections before the station publishes its first snapshot.
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match self.connect().await {
+                    Ok(_) => return Ok(()),
+                    Err(Error::Connection(_)) => {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
         })
+        .await
+        .map_err(|_| Error::Timeout("the simulated station's first snapshot"))?
     }
 
     /// A connection to a station whose arms have reported their first sample; a

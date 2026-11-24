@@ -58,7 +58,7 @@ enum StreamControl {
 }
 
 #[derive(Default)]
-pub(crate) enum LeaseState {
+enum LeaseState {
     #[default]
     Idle,
     Acquiring,
@@ -68,14 +68,14 @@ pub(crate) enum LeaseState {
 }
 
 impl LeaseState {
-    pub(crate) fn token(&self) -> Option<&str> {
+    fn token(&self) -> Option<&str> {
         match self {
             Self::Held { token } => Some(token),
             Self::Idle | Self::Acquiring => None,
         }
     }
 
-    pub(crate) fn clear_if_held_by(&mut self, token: &str) -> bool {
+    fn clear_if_held_by(&mut self, token: &str) -> bool {
         if self.token() == Some(token) {
             *self = Self::Idle;
             true
@@ -109,7 +109,8 @@ pub(crate) struct Inner {
     pub(crate) action_sequence_revision: u64,
     records: HashMap<hebbian_contracts::CommandId, ArmRecord>,
     record_order: VecDeque<hebbian_contracts::CommandId>,
-    pub(crate) lease_state: LeaseState,
+    lease_state: LeaseState,
+    lease_loss_status: bool,
     resume_after: BTreeMap<String, u64>,
     run_after: Option<u64>,
 }
@@ -189,7 +190,7 @@ pub(crate) struct Shared {
     changed: watch::Sender<u64>,
     run_updates: broadcast::Sender<RunUpdate>,
     pub(crate) action_sequence_updates: watch::Sender<Option<ActionSequenceRecord>>,
-    pub(crate) lease_lost: watch::Sender<bool>,
+    lease_lost: watch::Sender<bool>,
 }
 
 impl Shared {
@@ -210,6 +211,86 @@ impl Shared {
 
     pub(crate) fn subscribe_run(&self) -> broadcast::Receiver<RunUpdate> {
         self.run_updates.subscribe()
+    }
+
+    pub(crate) fn subscribe_lease_lost(&self) -> watch::Receiver<bool> {
+        self.lease_lost.subscribe()
+    }
+
+    pub(crate) fn reserve_lease_acquisition(&self) -> Option<u64> {
+        self.update(|inner| {
+            if !inner.connected || !matches!(inner.lease_state, LeaseState::Idle) {
+                return None;
+            }
+            inner.lease_state = LeaseState::Acquiring;
+            Some(inner.connection_generation)
+        })
+    }
+
+    pub(crate) fn finish_lease_acquisition(&self) {
+        self.update(|inner| {
+            if matches!(inner.lease_state, LeaseState::Acquiring) {
+                inner.lease_state = LeaseState::Idle;
+            }
+        });
+    }
+
+    pub(crate) fn install_lease(&self, generation: u64, token: String) -> bool {
+        let installed = self.update(|inner| {
+            if !inner.connected
+                || inner.connection_generation != generation
+                || !matches!(inner.lease_state, LeaseState::Acquiring)
+            {
+                return false;
+            }
+            inner.lease_state = LeaseState::Held { token };
+            inner.lease_loss_status = false;
+            true
+        });
+        if installed {
+            self.publish_lease_loss_status();
+        }
+        installed
+    }
+
+    pub(crate) fn lose_lease_if_held_by(&self, token: &str) {
+        let lost = self.update(|inner| {
+            let lost = inner.lease_state.clear_if_held_by(token);
+            inner.lease_loss_status |= lost;
+            lost
+        });
+        if lost {
+            self.publish_lease_loss_status();
+        }
+    }
+
+    fn publish_lease_loss_status(&self) {
+        // INVARIANT: Acquire the watch lock with no station lock held. Sample the
+        // latest state once publications are serialized so a late publisher cannot
+        // overwrite a newer transition with its own snapshot.
+        self.lease_lost.send_modify(|published| {
+            *published = self.read(|inner| inner.lease_loss_status);
+        });
+    }
+
+    pub(crate) fn release_lease_if_held_by(&self, token: &str) -> bool {
+        self.update(|inner| inner.lease_state.clear_if_held_by(token))
+    }
+
+    pub(crate) fn lease_token(&self) -> Option<String> {
+        self.read(|inner| inner.lease_state.token().map(str::to_owned))
+    }
+
+    pub(crate) fn observes_lease(&self, token: &str) -> Option<bool> {
+        self.read(|inner| {
+            (inner.lease_state.token() == Some(token))
+                .then_some(inner.connected && inner.state.is_some())
+        })
+    }
+
+    pub(crate) async fn wait_for_lease_loss(&self, token: &str) {
+        self.wait_for(|inner| (inner.lease_state.token() != Some(token)).then_some(()))
+            .await;
     }
 
     /// Change the shared state and wake everything waiting on it.
@@ -249,7 +330,7 @@ impl Shared {
         let mut backoff = hebbian_contracts::Backoff::new(RECONNECT_DELAY_CAP);
         loop {
             let ended = self.serve().await;
-            let was_connected = self.update(|inner| {
+            let (was_connected, lease_lost) = self.update(|inner| {
                 let was_connected = inner.connected;
                 if was_connected {
                     inner.connection_generation = inner.connection_generation.wrapping_add(1);
@@ -262,11 +343,13 @@ impl Shared {
                 if let Err(error) = &ended {
                     inner.last_error = Some(error.clone());
                 }
-                if inner.lease_state.lose() {
-                    self.lease_lost.send_replace(true);
-                }
-                was_connected
+                let lease_lost = inner.lease_state.lose();
+                inner.lease_loss_status |= lease_lost;
+                (was_connected, lease_lost)
             });
+            if lease_lost {
+                self.publish_lease_loss_status();
+            }
             if was_connected {
                 backoff.reset();
             } else {
@@ -419,8 +502,9 @@ impl Shared {
             ServerMessage::LeaseLost { .. } => {
                 self.update(|inner| {
                     inner.lease_state.lose();
+                    inner.lease_loss_status = true;
                 });
-                self.lease_lost.send_replace(true);
+                self.publish_lease_loss_status();
             }
             ServerMessage::RunEvent {
                 seq,
@@ -480,5 +564,44 @@ impl Shared {
         if fresh {
             let _ = self.run_updates.send(update);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Shared;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn lease_loss_is_visible_while_a_subscriber_holds_the_previous_notification()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let shared = Shared::new(String::new(), None);
+        shared.update(|inner| inner.connected = true);
+        let generation = shared
+            .reserve_lease_acquisition()
+            .ok_or("reservation refused")?;
+        let token = "held";
+        assert!(shared.install_lease(generation, token.into()));
+        let notifications = shared.subscribe_lease_lost();
+        let notification = notifications.borrow();
+        let runtime = tokio::runtime::Handle::current();
+        let (loss_observed, observed) = std::sync::mpsc::channel();
+        let observed_while_borrowed = std::thread::scope(|threads| {
+            threads.spawn(|| shared.lose_lease_if_held_by(token));
+            let shared = &shared;
+            threads.spawn(move || {
+                runtime.block_on(shared.wait_for_lease_loss(token));
+                let _ = loss_observed.send(());
+            });
+            let observed_while_borrowed = observed.recv_timeout(Duration::from_secs(2));
+            drop(notification);
+            observed_while_borrowed
+        });
+        assert!(
+            observed_while_borrowed.is_ok(),
+            "lease state was blocked by a notification reader"
+        );
+        assert!(*notifications.borrow());
+        Ok(())
     }
 }

@@ -85,8 +85,18 @@ pub(crate) enum ProgramSubmissionRequest {
     Compiled(hebbian_contracts::RunCompiledProgramRequest),
 }
 
+#[derive(Clone)]
+pub(crate) enum ProgramSubmissionError {
+    Unavailable(&'static str),
+    MissingCompilation,
+    IncompatibleCompilation,
+    ExecutionRefused(super::runtime::ExecutionRefusal),
+    CompilationRejected(hebbian_contracts::CompilationDiagnostic),
+    Internal(String),
+}
+
 pub(crate) type ProgramSubmissions =
-    RequestRegistry<ProgramSubmissionRequest, String, super::program_http::ProgramSubmissionError>;
+    RequestRegistry<ProgramSubmissionRequest, String, ProgramSubmissionError>;
 
 struct SubmissionHistory<T, Id = Uuid> {
     retained: HashMap<Id, T>,

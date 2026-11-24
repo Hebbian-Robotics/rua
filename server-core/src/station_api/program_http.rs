@@ -14,20 +14,11 @@ use super::programs::{
     ArtifactLookup, COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramCompilation,
 };
 use super::submissions::{
-    ProgramSubmissionRequest, RequestReservation, SubmissionCompletion, wait_for_outcome,
+    ProgramSubmissionError, ProgramSubmissionRequest, RequestReservation, SubmissionCompletion,
+    wait_for_outcome,
 };
 
 type HttpFailure = (StatusCode, String);
-
-#[derive(Clone)]
-pub(crate) enum ProgramSubmissionError {
-    Unavailable(&'static str),
-    MissingCompilation,
-    IncompatibleCompilation,
-    ExecutionRefused(super::runtime::ExecutionRefusal),
-    CompilationRejected(hebbian_contracts::CompilationDiagnostic),
-    Internal(String),
-}
 
 impl From<ProgramSubmissionError> for HttpFailure {
     fn from(error: ProgramSubmissionError) -> Self {

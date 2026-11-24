@@ -303,7 +303,7 @@ fn prepare_arm_action(
                     pose_limited,
                 } => AdmittedMovement::Trajectory {
                     label,
-                    decision: MoveDecision::prepare(core, plan, joint_speed, motion_scope)?,
+                    decision: core.prepare_move(plan, joint_speed, motion_scope)?,
                     short: ShortOfTarget {
                         path_limited,
                         pose_limited,
