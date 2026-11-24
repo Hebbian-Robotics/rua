@@ -133,6 +133,8 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-check-station
         if: needs.changes.outputs.rust == 'true'
+        with:
+          install-python-sdk: 'false'
       - name: Attach the Cargo tools cache volume
         if: needs.changes.outputs.rust == 'true'
         uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
@@ -146,7 +148,7 @@ jobs:
         run: |
           cargo install cargo-deny --version 0.20.2 --locked
           printf '%s\n' "${CARGO_INSTALL_ROOT}/bin" >> "$GITHUB_PATH"
-      - run: uv run rua-dev check-architecture
+      - run: uv run --no-sync rua-dev check-architecture
         if: needs.changes.outputs.rust == 'true'
       - run: cargo fmt --all -- --check
         if: needs.changes.outputs.rust == 'true'
@@ -157,7 +159,7 @@ jobs:
       - run: cargo test --locked --workspace --all-features
         if: needs.changes.outputs.rust == 'true'
       - if: needs.changes.outputs.rust == 'true' && runner.os == 'macOS'
-        run: uv run --locked rua-dev contracts --check --targets python rust
+        run: uv run --no-sync rua-dev contracts --check --targets python rust
 
   typescript:
     needs: changes
