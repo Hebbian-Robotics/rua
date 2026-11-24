@@ -140,7 +140,7 @@ profiles inherit a 0.5-second timeout by default.
 
 ## Controls
 
-From a terminal, `hebbian-rua state`, `enable <arm>` and `stop <arm>` (see [cli/README.md](../cli/README.md)) read and command the same arms; while the viewer holds the lease, motion commands exit 4 with the holder in the error.
+From a terminal, `uv run hebbian-rua state`, `enable <arm>` and `stop <arm>` (see [cli/README.md](../cli/README.md)) read and command the same arms; while the viewer holds the lease, motion commands exit 4 with the holder in the error.
 
 Choose **Manual** while the arm is disabled, then select and enable the arm.
 Enabling acquires the manual lease. If another client holds control, it must
