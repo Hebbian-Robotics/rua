@@ -54,7 +54,7 @@ impl StationArm {
                 ..
             }) => (
                 ControllerRequest::Submit {
-                    command,
+                    command: *command,
                     trace_context,
                 },
                 PendingStationAnswer(PendingStationAnswerKind::Submit(reply)),

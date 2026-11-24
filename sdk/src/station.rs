@@ -53,6 +53,10 @@ impl Default for ConnectOptions {
 pub struct CommandOptions {
     /// The operation identity to use for retries, status, and cancellation.
     pub operation_id: Option<uuid::Uuid>,
+    /// Optional joint acceleration cap for planned arm moves, in rad/s².
+    pub max_joint_acceleration: Option<f64>,
+    /// Optional joint jerk cap for planned arm moves, in rad/s³.
+    pub max_joint_jerk: Option<f64>,
     /// The caller's trace context; the command's record carries it.
     pub trace_context: Option<TraceContext>,
     /// Per arm, the revision the caller last read (`ArmState::revision`); the

@@ -49,7 +49,7 @@ pub(crate) enum SingleArmRequest {
         reply: Sender<Result<(), Rejection>>,
     },
     Submit {
-        command: Command,
+        command: Box<Command>,
         trace_context: Option<TraceContext>,
         now: Now,
         reply: CommandReply<Result<CommandRecord, Rejection>>,
@@ -137,7 +137,7 @@ impl ArmHandle {
     ) -> Result<Receiver<Result<CommandRecord, Rejection>>, Rejection> {
         let (reply, answer) = channel();
         self.enqueue(ArmRequest::Single(SingleArmRequest::Submit {
-            command,
+            command: Box::new(command),
             trace_context,
             now: Now::current(),
             reply: CommandReply::Blocking(reply),
@@ -152,7 +152,7 @@ impl ArmHandle {
     ) -> Result<tokio::sync::oneshot::Receiver<Result<CommandRecord, Rejection>>, Rejection> {
         let (reply, answer) = tokio::sync::oneshot::channel();
         self.enqueue(ArmRequest::Single(SingleArmRequest::Submit {
-            command,
+            command: Box::new(command),
             trace_context,
             now: Now::current(),
             reply: CommandReply::Async(reply),
@@ -219,7 +219,7 @@ impl SingleArmRequest {
                 reply,
             } => {
                 arm.set_trace_context(trace_context);
-                let answer = arm.submit(command, now);
+                let answer = arm.submit(*command, now);
                 arm.set_trace_context(None);
                 reply.send(answer);
             }
@@ -574,6 +574,10 @@ mod tests {
                 jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
                 default_joint_speed: 1.0,
                 max_joint_speed: 2.0,
+                trajectory_limits: hebbian_contracts::TrajectoryLimits {
+                    acceleration_limit: 20.0,
+                    jerk_limit: 200.0,
+                },
             },
             |_| {},
         )
@@ -599,6 +603,7 @@ mod tests {
                     destination_quaternion: None,
                 }],
                 peak_speed: 1.0,
+                trajectory_limits: None,
             },
             joint_speed: hebbian_contracts::JointSpeed::new(1.0).unwrap(),
             path_limited: None,
@@ -875,6 +880,10 @@ mod tests {
                 jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
                 default_joint_speed: 1.0,
                 max_joint_speed: 2.0,
+                trajectory_limits: hebbian_contracts::TrajectoryLimits {
+                    acceleration_limit: 20.0,
+                    jerk_limit: 200.0,
+                },
             },
             |_| {},
         );

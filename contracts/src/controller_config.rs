@@ -65,6 +65,16 @@ pub struct MotionLimits {
     pub settle_timeout_seconds: f64,
 }
 
+impl MotionLimits {
+    #[must_use]
+    pub fn trajectory_limits(&self) -> crate::TrajectoryLimits {
+        crate::TrajectoryLimits {
+            acceleration_limit: self.acceleration_limit,
+            jerk_limit: self.jerk_limit,
+        }
+    }
+}
+
 /// How the guard process watches the arm if the controller stops: the timings of
 /// the profile's `guard` section.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

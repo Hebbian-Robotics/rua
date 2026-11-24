@@ -145,6 +145,40 @@ export const apiSchemas = z.object({
           gripper_opening: z
             .union([z.number().gte(0).lte(1), z.null()])
             .default(null),
+          max_joint_acceleration: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+            ])
+            .describe(
+              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            )
+            .optional(),
+          max_joint_jerk: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+            ])
+            .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
+            .optional(),
           max_joint_speed: z
             .union([
               z
@@ -572,6 +606,42 @@ export const apiSchemas = z.object({
                         gripper_opening: z
                           .union([z.number().gte(0).lte(1), z.null()])
                           .default(null),
+                        max_joint_acceleration: z
+                          .union([
+                            z
+                              .number()
+                              .gt(0)
+                              .describe(
+                                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                              ),
+                          ])
+                          .describe(
+                            "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                          )
+                          .optional(),
+                        max_joint_jerk: z
+                          .union([
+                            z
+                              .number()
+                              .gt(0)
+                              .describe(
+                                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                              ),
+                          ])
+                          .describe(
+                            "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                          )
+                          .optional(),
                         max_joint_speed: z
                           .union([
                             z
@@ -752,6 +822,21 @@ export const apiSchemas = z.object({
                               z.array(z.number()).min(4).max(4),
                               z.null(),
                             ]),
+                            effective_motion_limits: z
+                              .union([
+                                z
+                                  .object({
+                                    max_joint_acceleration: z.number(),
+                                    max_joint_jerk: z.number(),
+                                    max_joint_speed: z.number(),
+                                  })
+                                  .strict(),
+                                z.null(),
+                              ])
+                              .describe(
+                                "The effective trajectory caps at admission.",
+                              )
+                              .optional(),
                             group_id: z.union([z.string(), z.null()]),
                             joint_speed: z.number(),
                             kind: z.literal("move"),
@@ -1234,6 +1319,42 @@ export const apiSchemas = z.object({
                       gripper_opening: z
                         .union([z.number().gte(0).lte(1), z.null()])
                         .default(null),
+                      max_joint_acceleration: z
+                        .union([
+                          z
+                            .number()
+                            .gt(0)
+                            .describe(
+                              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                            ),
+                        ])
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        )
+                        .optional(),
+                      max_joint_jerk: z
+                        .union([
+                          z
+                            .number()
+                            .gt(0)
+                            .describe(
+                              "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                            ),
+                        ])
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        )
+                        .optional(),
                       max_joint_speed: z
                         .union([
                           z
@@ -1463,6 +1584,42 @@ export const apiSchemas = z.object({
                           gripper_opening: z
                             .union([z.number().gte(0).lte(1), z.null()])
                             .default(null),
+                          max_joint_acceleration: z
+                            .union([
+                              z
+                                .number()
+                                .gt(0)
+                                .describe(
+                                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                ),
+                            ])
+                            .describe(
+                              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                            )
+                            .optional(),
+                          max_joint_jerk: z
+                            .union([
+                              z
+                                .number()
+                                .gt(0)
+                                .describe(
+                                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                ),
+                            ])
+                            .describe(
+                              "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                            )
+                            .optional(),
                           max_joint_speed: z
                             .union([
                               z
@@ -1685,6 +1842,42 @@ export const apiSchemas = z.object({
                 gripper_opening: z
                   .union([z.number().gte(0).lte(1), z.null()])
                   .default(null),
+                max_joint_acceleration: z
+                  .union([
+                    z
+                      .number()
+                      .gt(0)
+                      .describe(
+                        "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                      ),
+                  ])
+                  .describe(
+                    "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                  )
+                  .optional(),
+                max_joint_jerk: z
+                  .union([
+                    z
+                      .number()
+                      .gt(0)
+                      .describe(
+                        "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                      ),
+                  ])
+                  .describe(
+                    "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                  )
+                  .optional(),
                 max_joint_speed: z
                   .union([
                     z
@@ -1944,6 +2137,19 @@ export const apiSchemas = z.object({
                     .optional(),
                   destination_quaternion: z
                     .union([z.array(z.number()).min(4).max(4), z.null()])
+                    .optional(),
+                  effective_motion_limits: z
+                    .union([
+                      z
+                        .object({
+                          max_joint_acceleration: z.number(),
+                          max_joint_jerk: z.number(),
+                          max_joint_speed: z.number(),
+                        })
+                        .strict(),
+                      z.null(),
+                    ])
+                    .describe("The effective trajectory caps at admission.")
                     .optional(),
                   group_id: z.union([z.string(), z.null()]).optional(),
                   joint_speed: z.number(),
@@ -2370,6 +2576,19 @@ export const apiSchemas = z.object({
                         .optional(),
                       destination_quaternion: z
                         .union([z.array(z.number()).min(4).max(4), z.null()])
+                        .optional(),
+                      effective_motion_limits: z
+                        .union([
+                          z
+                            .object({
+                              max_joint_acceleration: z.number(),
+                              max_joint_jerk: z.number(),
+                              max_joint_speed: z.number(),
+                            })
+                            .strict(),
+                          z.null(),
+                        ])
+                        .describe("The effective trajectory caps at admission.")
                         .optional(),
                       group_id: z.union([z.string(), z.null()]).optional(),
                       joint_speed: z.number(),
@@ -2892,6 +3111,19 @@ export const apiSchemas = z.object({
                         .optional(),
                       destination_quaternion: z
                         .union([z.array(z.number()).min(4).max(4), z.null()])
+                        .optional(),
+                      effective_motion_limits: z
+                        .union([
+                          z
+                            .object({
+                              max_joint_acceleration: z.number(),
+                              max_joint_jerk: z.number(),
+                              max_joint_speed: z.number(),
+                            })
+                            .strict(),
+                          z.null(),
+                        ])
+                        .describe("The effective trajectory caps at admission.")
                         .optional(),
                       group_id: z.union([z.string(), z.null()]).optional(),
                       joint_speed: z.number(),
@@ -3585,6 +3817,42 @@ export const apiSchemas = z.object({
                               gripper_opening: z
                                 .union([z.number().gte(0).lte(1), z.null()])
                                 .default(null),
+                              max_joint_acceleration: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gt(0)
+                                    .describe(
+                                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                )
+                                .optional(),
+                              max_joint_jerk: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gt(0)
+                                    .describe(
+                                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                )
+                                .optional(),
                               max_joint_speed: z
                                 .union([
                                   z
@@ -3929,6 +4197,42 @@ export const apiSchemas = z.object({
                 .object({
                   joints: z.array(z.number()),
                   kind: z.literal("move_to_joints"),
+                  max_joint_acceleration: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    )
+                    .optional(),
+                  max_joint_jerk: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    )
+                    .optional(),
                   max_joint_speed: z
                     .union([
                       z
@@ -3955,6 +4259,42 @@ export const apiSchemas = z.object({
               z
                 .object({
                   kind: z.literal("move_to_pose"),
+                  max_joint_acceleration: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    )
+                    .optional(),
+                  max_joint_jerk: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    )
+                    .optional(),
                   max_joint_speed: z
                     .union([z.number().gt(0), z.null()])
                     .default(null),
@@ -4220,6 +4560,52 @@ export const apiSchemas = z.object({
           kind: z.literal("preview"),
           pose: z
             .object({
+              max_joint_acceleration: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    ),
+                  z
+                    .null()
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    ),
+                ])
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                )
+                .optional(),
+              max_joint_jerk: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    ),
+                  z
+                    .null()
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    ),
+                ])
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                )
+                .optional(),
+              max_joint_speed: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe("Requested peak joint speed in rad/s."),
+                  z.null().describe("Requested peak joint speed in rad/s."),
+                ])
+                .describe("Requested peak joint speed in rad/s.")
+                .optional(),
               orientation: z
                 .union([
                   z
@@ -4397,6 +4783,21 @@ export const apiSchemas = z.object({
                               z.array(z.number()).min(4).max(4),
                               z.null(),
                             ])
+                            .optional(),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
                             .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
@@ -5124,6 +5525,19 @@ export const apiSchemas = z.object({
                 z.array(z.number()).min(4).max(4),
                 z.null(),
               ]),
+              effective_motion_limits: z
+                .union([
+                  z
+                    .object({
+                      max_joint_acceleration: z.number(),
+                      max_joint_jerk: z.number(),
+                      max_joint_speed: z.number(),
+                    })
+                    .strict(),
+                  z.null(),
+                ])
+                .describe("The effective trajectory caps at admission.")
+                .optional(),
               group_id: z.union([z.string(), z.null()]),
               joint_speed: z.number(),
               kind: z.literal("move"),
@@ -5527,6 +5941,42 @@ export const apiSchemas = z.object({
             .object({
               joints: z.array(z.number()),
               kind: z.literal("move_to_joints"),
+              max_joint_acceleration: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    ),
+                  z
+                    .null()
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    ),
+                ])
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                )
+                .optional(),
+              max_joint_jerk: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    ),
+                  z
+                    .null()
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    ),
+                ])
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                )
+                .optional(),
               max_joint_speed: z
                 .union([
                   z
@@ -5553,6 +6003,42 @@ export const apiSchemas = z.object({
           z
             .object({
               kind: z.literal("move_to_pose"),
+              max_joint_acceleration: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    ),
+                  z
+                    .null()
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    ),
+                ])
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                )
+                .optional(),
+              max_joint_jerk: z
+                .union([
+                  z
+                    .number()
+                    .gt(0)
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    ),
+                  z
+                    .null()
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    ),
+                ])
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                )
+                .optional(),
               max_joint_speed: z
                 .union([z.number().gt(0), z.null()])
                 .default(null),
@@ -5775,6 +6261,42 @@ export const apiSchemas = z.object({
                         .union([z.number().gte(0).lte(1), z.null()])
                         .optional(),
                       kind: z.literal("move"),
+                      max_joint_acceleration: z
+                        .union([
+                          z
+                            .number()
+                            .gt(0)
+                            .describe(
+                              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                            ),
+                        ])
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        )
+                        .optional(),
+                      max_joint_jerk: z
+                        .union([
+                          z
+                            .number()
+                            .gt(0)
+                            .describe(
+                              "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                            ),
+                        ])
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        )
+                        .optional(),
                       max_joint_speed: z
                         .union([z.number().gt(0), z.null()])
                         .optional(),
@@ -5991,6 +6513,42 @@ export const apiSchemas = z.object({
                           gripper_opening: z
                             .union([z.number().gte(0).lte(1), z.null()])
                             .default(null),
+                          max_joint_acceleration: z
+                            .union([
+                              z
+                                .number()
+                                .gt(0)
+                                .describe(
+                                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                ),
+                            ])
+                            .describe(
+                              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                            )
+                            .optional(),
+                          max_joint_jerk: z
+                            .union([
+                              z
+                                .number()
+                                .gt(0)
+                                .describe(
+                                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                ),
+                            ])
+                            .describe(
+                              "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                            )
+                            .optional(),
                           max_joint_speed: z
                             .union([
                               z
@@ -6244,6 +6802,42 @@ export const apiSchemas = z.object({
                               .union([z.number().gte(0).lte(1), z.null()])
                               .optional(),
                             kind: z.literal("move"),
+                            max_joint_acceleration: z
+                              .union([
+                                z
+                                  .number()
+                                  .gt(0)
+                                  .describe(
+                                    "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                  ),
+                                z
+                                  .null()
+                                  .describe(
+                                    "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                  ),
+                              ])
+                              .describe(
+                                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                              )
+                              .optional(),
+                            max_joint_jerk: z
+                              .union([
+                                z
+                                  .number()
+                                  .gt(0)
+                                  .describe(
+                                    "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                  ),
+                                z
+                                  .null()
+                                  .describe(
+                                    "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                  ),
+                              ])
+                              .describe(
+                                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                              )
+                              .optional(),
                             max_joint_speed: z
                               .union([z.number().gt(0), z.null()])
                               .optional(),
@@ -6479,6 +7073,42 @@ export const apiSchemas = z.object({
                                 gripper_opening: z
                                   .union([z.number().gte(0).lte(1), z.null()])
                                   .default(null),
+                                max_joint_acceleration: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .gt(0)
+                                      .describe(
+                                        "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                  )
+                                  .optional(),
+                                max_joint_jerk: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .gt(0)
+                                      .describe(
+                                        "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                  )
+                                  .optional(),
                                 max_joint_speed: z
                                   .union([
                                     z
@@ -6734,6 +7364,40 @@ export const apiSchemas = z.object({
           .union([z.number().gte(0).lte(1), z.null()])
           .optional(),
         kind: z.literal("move"),
+        max_joint_acceleration: z
+          .union([
+            z
+              .number()
+              .gt(0)
+              .describe(
+                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+              ),
+            z
+              .null()
+              .describe(
+                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+              ),
+          ])
+          .describe(
+            "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+          )
+          .optional(),
+        max_joint_jerk: z
+          .union([
+            z
+              .number()
+              .gt(0)
+              .describe(
+                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+              ),
+            z
+              .null()
+              .describe(
+                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+              ),
+          ])
+          .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
+          .optional(),
         max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
         waypoints: z
           .array(
@@ -6921,6 +7585,42 @@ export const apiSchemas = z.object({
               .union([z.number().gte(0).lte(1), z.null()])
               .optional(),
             kind: z.literal("move"),
+            max_joint_acceleration: z
+              .union([
+                z
+                  .number()
+                  .gt(0)
+                  .describe(
+                    "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                  ),
+                z
+                  .null()
+                  .describe(
+                    "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                  ),
+              ])
+              .describe(
+                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+              )
+              .optional(),
+            max_joint_jerk: z
+              .union([
+                z
+                  .number()
+                  .gt(0)
+                  .describe(
+                    "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                  ),
+                z
+                  .null()
+                  .describe(
+                    "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                  ),
+              ])
+              .describe(
+                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+              )
+              .optional(),
             max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
             waypoints: z
               .array(
@@ -7085,6 +7785,42 @@ export const apiSchemas = z.object({
                     .union([z.number().gte(0).lte(1), z.null()])
                     .optional(),
                   kind: z.literal("move"),
+                  max_joint_acceleration: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    )
+                    .optional(),
+                  max_joint_jerk: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    )
+                    .optional(),
                   max_joint_speed: z
                     .union([z.number().gt(0), z.null()])
                     .optional(),
@@ -7236,6 +7972,13 @@ export const apiSchemas = z.object({
       reports: z.array(z.string()),
     }),
   ]),
+  EffectiveMotionLimits: z
+    .object({
+      max_joint_acceleration: z.number(),
+      max_joint_jerk: z.number(),
+      max_joint_speed: z.number(),
+    })
+    .strict(),
   Event: z
     .union([
       z
@@ -7512,6 +8255,21 @@ export const apiSchemas = z.object({
                               z.array(z.number()).min(4).max(4),
                               z.null(),
                             ])
+                            .optional(),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
                             .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
@@ -8160,6 +8918,19 @@ export const apiSchemas = z.object({
                     .optional(),
                   destination_quaternion: z
                     .union([z.array(z.number()).min(4).max(4), z.null()])
+                    .optional(),
+                  effective_motion_limits: z
+                    .union([
+                      z
+                        .object({
+                          max_joint_acceleration: z.number(),
+                          max_joint_jerk: z.number(),
+                          max_joint_speed: z.number(),
+                        })
+                        .strict(),
+                      z.null(),
+                    ])
+                    .describe("The effective trajectory caps at admission.")
                     .optional(),
                   group_id: z.union([z.string(), z.null()]).optional(),
                   joint_speed: z.number(),
@@ -8947,6 +9718,21 @@ export const apiSchemas = z.object({
                                   z.null(),
                                 ])
                                 .optional(),
+                              effective_motion_limits: z
+                                .union([
+                                  z
+                                    .object({
+                                      max_joint_acceleration: z.number(),
+                                      max_joint_jerk: z.number(),
+                                      max_joint_speed: z.number(),
+                                    })
+                                    .strict(),
+                                  z.null(),
+                                ])
+                                .describe(
+                                  "The effective trajectory caps at admission.",
+                                )
+                                .optional(),
                               group_id: z
                                 .union([z.string(), z.null()])
                                 .optional(),
@@ -9607,6 +10393,19 @@ export const apiSchemas = z.object({
                         .optional(),
                       destination_quaternion: z
                         .union([z.array(z.number()).min(4).max(4), z.null()])
+                        .optional(),
+                      effective_motion_limits: z
+                        .union([
+                          z
+                            .object({
+                              max_joint_acceleration: z.number(),
+                              max_joint_jerk: z.number(),
+                              max_joint_speed: z.number(),
+                            })
+                            .strict(),
+                          z.null(),
+                        ])
+                        .describe("The effective trajectory caps at admission.")
                         .optional(),
                       group_id: z.union([z.string(), z.null()]).optional(),
                       joint_speed: z.number(),
@@ -10997,6 +11796,21 @@ export const apiSchemas = z.object({
                                     z.null(),
                                   ])
                                   .optional(),
+                                effective_motion_limits: z
+                                  .union([
+                                    z
+                                      .object({
+                                        max_joint_acceleration: z.number(),
+                                        max_joint_jerk: z.number(),
+                                        max_joint_speed: z.number(),
+                                      })
+                                      .strict(),
+                                    z.null(),
+                                  ])
+                                  .describe(
+                                    "The effective trajectory caps at admission.",
+                                  )
+                                  .optional(),
                                 group_id: z
                                   .union([z.string(), z.null()])
                                   .optional(),
@@ -11576,6 +12390,21 @@ export const apiSchemas = z.object({
                                     z.array(z.number()).min(4).max(4),
                                     z.null(),
                                   ])
+                                  .optional(),
+                                effective_motion_limits: z
+                                  .union([
+                                    z
+                                      .object({
+                                        max_joint_acceleration: z.number(),
+                                        max_joint_jerk: z.number(),
+                                        max_joint_speed: z.number(),
+                                      })
+                                      .strict(),
+                                    z.null(),
+                                  ])
+                                  .describe(
+                                    "The effective trajectory caps at admission.",
+                                  )
                                   .optional(),
                                 group_id: z
                                   .union([z.string(), z.null()])
@@ -12393,6 +13222,21 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -12841,6 +13685,21 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -13288,6 +14147,21 @@ export const apiSchemas = z.object({
                               z.array(z.number()).min(4).max(4),
                               z.null(),
                             ])
+                            .optional(),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
                             .optional(),
                           group_id: z.union([z.string(), z.null()]).optional(),
                           joint_speed: z.number(),
@@ -13923,6 +14797,52 @@ export const apiSchemas = z.object({
                 .default(null),
               pose: z
                 .object({
+                  max_joint_acceleration: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                    )
+                    .optional(),
+                  max_joint_jerk: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                        ),
+                    ])
+                    .describe(
+                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                    )
+                    .optional(),
+                  max_joint_speed: z
+                    .union([
+                      z
+                        .number()
+                        .gt(0)
+                        .describe("Requested peak joint speed in rad/s."),
+                      z.null().describe("Requested peak joint speed in rad/s."),
+                    ])
+                    .describe("Requested peak joint speed in rad/s.")
+                    .optional(),
                   orientation: z
                     .union([
                       z
@@ -13988,6 +14908,21 @@ export const apiSchemas = z.object({
                 projection: z
                   .object({
                     calculation_milliseconds: z.number().gte(0),
+                    effective_motion_limits: z
+                      .union([
+                        z
+                          .object({
+                            max_joint_acceleration: z.number(),
+                            max_joint_jerk: z.number(),
+                            max_joint_speed: z.number(),
+                          })
+                          .strict(),
+                        z.null(),
+                      ])
+                      .describe(
+                        "The planned IK move limits used by this preview.",
+                      )
+                      .optional(),
                     jaw_yaw_ranges: z
                       .array(
                         z
@@ -14156,6 +15091,47 @@ export const apiSchemas = z.object({
         .default(null),
       pose: z
         .object({
+          max_joint_acceleration: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+            ])
+            .describe(
+              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            )
+            .optional(),
+          max_joint_jerk: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+            ])
+            .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
+            .optional(),
+          max_joint_speed: z
+            .union([
+              z.number().gt(0).describe("Requested peak joint speed in rad/s."),
+              z.null().describe("Requested peak joint speed in rad/s."),
+            ])
+            .describe("Requested peak joint speed in rad/s.")
+            .optional(),
           orientation: z
             .union([
               z
@@ -14208,6 +15184,19 @@ export const apiSchemas = z.object({
           projection: z
             .object({
               calculation_milliseconds: z.number().gte(0),
+              effective_motion_limits: z
+                .union([
+                  z
+                    .object({
+                      max_joint_acceleration: z.number(),
+                      max_joint_jerk: z.number(),
+                      max_joint_speed: z.number(),
+                    })
+                    .strict(),
+                  z.null(),
+                ])
+                .describe("The planned IK move limits used by this preview.")
+                .optional(),
               jaw_yaw_ranges: z
                 .array(
                   z
@@ -14352,6 +15341,19 @@ export const apiSchemas = z.object({
   PoseProjection: z
     .object({
       calculation_milliseconds: z.number().gte(0),
+      effective_motion_limits: z
+        .union([
+          z
+            .object({
+              max_joint_acceleration: z.number(),
+              max_joint_jerk: z.number(),
+              max_joint_speed: z.number(),
+            })
+            .strict(),
+          z.null(),
+        ])
+        .describe("The planned IK move limits used by this preview.")
+        .optional(),
       jaw_yaw_ranges: z
         .array(
           z
@@ -14471,6 +15473,19 @@ export const apiSchemas = z.object({
         projection: z
           .object({
             calculation_milliseconds: z.number().gte(0),
+            effective_motion_limits: z
+              .union([
+                z
+                  .object({
+                    max_joint_acceleration: z.number(),
+                    max_joint_jerk: z.number(),
+                    max_joint_speed: z.number(),
+                  })
+                  .strict(),
+                z.null(),
+              ])
+              .describe("The planned IK move limits used by this preview.")
+              .optional(),
             jaw_yaw_ranges: z
               .array(
                 z
@@ -14611,6 +15626,43 @@ export const apiSchemas = z.object({
     .describe("How a preview was answered."),
   PreviewPose: z
     .object({
+      max_joint_acceleration: z
+        .union([
+          z
+            .number()
+            .gt(0)
+            .describe(
+              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            ),
+          z
+            .null()
+            .describe(
+              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            ),
+        ])
+        .describe(
+          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+        )
+        .optional(),
+      max_joint_jerk: z
+        .union([
+          z
+            .number()
+            .gt(0)
+            .describe("Joint jerk cap in rad/s³; defaults to the arm profile."),
+          z
+            .null()
+            .describe("Joint jerk cap in rad/s³; defaults to the arm profile."),
+        ])
+        .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
+        .optional(),
+      max_joint_speed: z
+        .union([
+          z.number().gt(0).describe("Requested peak joint speed in rad/s."),
+          z.null().describe("Requested peak joint speed in rad/s."),
+        ])
+        .describe("Requested peak joint speed in rad/s.")
+        .optional(),
       orientation: z
         .union([
           z
@@ -14780,6 +15832,19 @@ export const apiSchemas = z.object({
             .optional(),
           destination_quaternion: z
             .union([z.array(z.number()).min(4).max(4), z.null()])
+            .optional(),
+          effective_motion_limits: z
+            .union([
+              z
+                .object({
+                  max_joint_acceleration: z.number(),
+                  max_joint_jerk: z.number(),
+                  max_joint_speed: z.number(),
+                })
+                .strict(),
+              z.null(),
+            ])
+            .describe("The effective trajectory caps at admission.")
             .optional(),
           group_id: z.union([z.string(), z.null()]).optional(),
           joint_speed: z.number(),
@@ -15567,6 +16632,22 @@ export const apiSchemas = z.object({
                                         z.array(z.number()).min(4).max(4),
                                         z.null(),
                                       ]),
+                                      effective_motion_limits: z
+                                        .union([
+                                          z
+                                            .object({
+                                              max_joint_acceleration:
+                                                z.number(),
+                                              max_joint_jerk: z.number(),
+                                              max_joint_speed: z.number(),
+                                            })
+                                            .strict(),
+                                          z.null(),
+                                        ])
+                                        .describe(
+                                          "The effective trajectory caps at admission.",
+                                        )
+                                        .optional(),
                                       group_id: z.union([z.string(), z.null()]),
                                       joint_speed: z.number(),
                                       kind: z.literal("move"),
@@ -16240,6 +17321,21 @@ export const apiSchemas = z.object({
                                 z.array(z.number()).min(4).max(4),
                                 z.null(),
                               ]),
+                              effective_motion_limits: z
+                                .union([
+                                  z
+                                    .object({
+                                      max_joint_acceleration: z.number(),
+                                      max_joint_jerk: z.number(),
+                                      max_joint_speed: z.number(),
+                                    })
+                                    .strict(),
+                                  z.null(),
+                                ])
+                                .describe(
+                                  "The effective trajectory caps at admission.",
+                                )
+                                .optional(),
                               group_id: z.union([z.string(), z.null()]),
                               joint_speed: z.number(),
                               kind: z.literal("move"),
@@ -16890,6 +17986,21 @@ export const apiSchemas = z.object({
                                     z.array(z.number()).min(4).max(4),
                                     z.null(),
                                   ]),
+                                  effective_motion_limits: z
+                                    .union([
+                                      z
+                                        .object({
+                                          max_joint_acceleration: z.number(),
+                                          max_joint_jerk: z.number(),
+                                          max_joint_speed: z.number(),
+                                        })
+                                        .strict(),
+                                      z.null(),
+                                    ])
+                                    .describe(
+                                      "The effective trajectory caps at admission.",
+                                    )
+                                    .optional(),
                                   group_id: z.union([z.string(), z.null()]),
                                   joint_speed: z.number(),
                                   kind: z.literal("move"),
@@ -17345,6 +18456,21 @@ export const apiSchemas = z.object({
                 projection: z
                   .object({
                     calculation_milliseconds: z.number().gte(0),
+                    effective_motion_limits: z
+                      .union([
+                        z
+                          .object({
+                            max_joint_acceleration: z.number(),
+                            max_joint_jerk: z.number(),
+                            max_joint_speed: z.number(),
+                          })
+                          .strict(),
+                        z.null(),
+                      ])
+                      .describe(
+                        "The planned IK move limits used by this preview.",
+                      )
+                      .optional(),
                     jaw_yaw_ranges: z
                       .array(
                         z
@@ -17534,6 +18660,21 @@ export const apiSchemas = z.object({
                                     z.array(z.number()).min(4).max(4),
                                     z.null(),
                                   ]),
+                                  effective_motion_limits: z
+                                    .union([
+                                      z
+                                        .object({
+                                          max_joint_acceleration: z.number(),
+                                          max_joint_jerk: z.number(),
+                                          max_joint_speed: z.number(),
+                                        })
+                                        .strict(),
+                                      z.null(),
+                                    ])
+                                    .describe(
+                                      "The effective trajectory caps at admission.",
+                                    )
+                                    .optional(),
                                   group_id: z.union([z.string(), z.null()]),
                                   joint_speed: z.number(),
                                   kind: z.literal("move"),
@@ -18089,6 +19230,21 @@ export const apiSchemas = z.object({
                                     z.array(z.number()).min(4).max(4),
                                     z.null(),
                                   ]),
+                                  effective_motion_limits: z
+                                    .union([
+                                      z
+                                        .object({
+                                          max_joint_acceleration: z.number(),
+                                          max_joint_jerk: z.number(),
+                                          max_joint_speed: z.number(),
+                                        })
+                                        .strict(),
+                                      z.null(),
+                                    ])
+                                    .describe(
+                                      "The effective trajectory caps at admission.",
+                                    )
+                                    .optional(),
                                   group_id: z.union([z.string(), z.null()]),
                                   joint_speed: z.number(),
                                   kind: z.literal("move"),
@@ -18955,6 +20111,42 @@ export const apiSchemas = z.object({
                                   gripper_opening: z
                                     .union([z.number().gte(0).lte(1), z.null()])
                                     .default(null),
+                                  max_joint_acceleration: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gt(0)
+                                        .describe(
+                                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                                    )
+                                    .optional(),
+                                  max_joint_jerk: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gt(0)
+                                        .describe(
+                                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                                    )
+                                    .optional(),
                                   max_joint_speed: z
                                     .union([
                                       z
@@ -19154,6 +20346,22 @@ export const apiSchemas = z.object({
                                         z.array(z.number()).min(4).max(4),
                                         z.null(),
                                       ]),
+                                      effective_motion_limits: z
+                                        .union([
+                                          z
+                                            .object({
+                                              max_joint_acceleration:
+                                                z.number(),
+                                              max_joint_jerk: z.number(),
+                                              max_joint_speed: z.number(),
+                                            })
+                                            .strict(),
+                                          z.null(),
+                                        ])
+                                        .describe(
+                                          "The effective trajectory caps at admission.",
+                                        )
+                                        .optional(),
                                       group_id: z.union([z.string(), z.null()]),
                                       joint_speed: z.number(),
                                       kind: z.literal("move"),
@@ -19821,6 +21029,40 @@ export const apiSchemas = z.object({
         .object({
           joints: z.array(z.number()),
           kind: z.literal("move_to_joints"),
+          max_joint_acceleration: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+            ])
+            .describe(
+              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            )
+            .optional(),
+          max_joint_jerk: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+            ])
+            .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
+            .optional(),
           max_joint_speed: z
             .union([
               z
@@ -19845,6 +21087,40 @@ export const apiSchemas = z.object({
       z
         .object({
           kind: z.literal("move_to_pose"),
+          max_joint_acceleration: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                ),
+            ])
+            .describe(
+              "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            )
+            .optional(),
+          max_joint_jerk: z
+            .union([
+              z
+                .number()
+                .gt(0)
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                ),
+            ])
+            .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
+            .optional(),
           max_joint_speed: z.union([z.number().gt(0), z.null()]).default(null),
           orientation: z
             .union([
@@ -19984,6 +21260,21 @@ export const apiSchemas = z.object({
                             z.array(z.number()).min(4).max(4),
                             z.null(),
                           ]),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]),
                           joint_speed: z.number(),
                           kind: z.literal("move"),
@@ -20502,6 +21793,21 @@ export const apiSchemas = z.object({
                             z.array(z.number()).min(4).max(4),
                             z.null(),
                           ]),
+                          effective_motion_limits: z
+                            .union([
+                              z
+                                .object({
+                                  max_joint_acceleration: z.number(),
+                                  max_joint_jerk: z.number(),
+                                  max_joint_speed: z.number(),
+                                })
+                                .strict(),
+                              z.null(),
+                            ])
+                            .describe(
+                              "The effective trajectory caps at admission.",
+                            )
+                            .optional(),
                           group_id: z.union([z.string(), z.null()]),
                           joint_speed: z.number(),
                           kind: z.literal("move"),

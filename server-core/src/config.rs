@@ -141,6 +141,7 @@ impl ControllerConfig {
             jaw_closing_axis: self.jaw_closing_axis,
             default_joint_speed: self.default_joint_speed,
             max_joint_speed: self.max_joint_speed,
+            trajectory_limits: self.motion.trajectory_limits(),
         }
     }
 

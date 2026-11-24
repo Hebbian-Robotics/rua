@@ -38,6 +38,7 @@ pub struct Limits {
     pub jaw_closing_axis: JawClosingAxis,
     pub default_joint_speed: f64,
     pub max_joint_speed: f64,
+    pub trajectory_limits: hebbian_contracts::TrajectoryLimits,
 }
 
 // CONSTRAINT: Use wall time for records and monotonic time for deadlines; callers supply both.

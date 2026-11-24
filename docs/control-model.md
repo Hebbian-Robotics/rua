@@ -104,6 +104,23 @@ stops renewing the lease, expiry stops the arms. Lease handoff, revocation and
 interlocks can also stop execution. An expected arm revision fences a request
 based on observations from before an interruption.
 
+### Per-move trajectory caps
+
+Single-arm IK moves accept optional `max_joint_speed` (rad/s),
+`max_joint_acceleration` (rad/s²), and `max_joint_jerk` (rad/s³).
+In an action sequence, put these fields on the arm's move alongside `goal`
+and `waypoints`. Omitted caps use the arm profile. The station clamps a speed
+request to the profile ceiling and refuses acceleration or jerk above the
+profile ceiling. Pose previews and completed move records report
+`effective_motion_limits`. The acceleration and jerk overrides apply to planned
+single-arm moves.
+
+Use `--speed`, `--acceleration`, and `--jerk` with the CLI's `move-joints`,
+`move-pose`, or `preview-pose` commands. In the viewer, open **Settings →
+Advanced motion limits**. The browser saves these caps for planned IK moves
+and the agent runs it starts. Manual dragging in Follow mode also uses the
+saved speed cap, or the arm profile default when the field is blank.
+
 ## Coordinated arm clearance
 
 Before admitting a step with two or more arms, the station checks the

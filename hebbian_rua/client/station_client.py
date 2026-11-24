@@ -165,9 +165,20 @@ class Arm(ArmPowerCommands):
         self,
         position: list[float],
         orientation: GraspOrientation | QuaternionOrientation | None = None,
+        *,
+        max_joint_speed: float | None = None,
+        max_joint_acceleration: float | None = None,
+        max_joint_jerk: float | None = None,
     ) -> PoseProjection | PreviewRefused:
         return await self._client.preview_pose(
-            self.name, PreviewPose(position=position, orientation=orientation)
+            self.name,
+            PreviewPose(
+                position=position,
+                orientation=orientation,
+                max_joint_speed=max_joint_speed,
+                max_joint_acceleration=max_joint_acceleration,
+                max_joint_jerk=max_joint_jerk,
+            ),
         )
 
     async def preview_poses(
@@ -225,6 +236,8 @@ class LeasedArm(ArmMotionCommands):
         orientation: GraspOrientation | QuaternionOrientation | None = None,
         *,
         max_joint_speed: float | None = None,
+        max_joint_acceleration: float | None = None,
+        max_joint_jerk: float | None = None,
         expected_revision: int | None = None,
     ) -> CommandResult:
         """As the generated command, but `None` keeps the tool's current orientation."""
@@ -237,6 +250,8 @@ class LeasedArm(ArmMotionCommands):
             position,
             orientation,
             max_joint_speed=max_joint_speed,
+            max_joint_acceleration=max_joint_acceleration,
+            max_joint_jerk=max_joint_jerk,
             expected_revision=expected_revision,
         )
 

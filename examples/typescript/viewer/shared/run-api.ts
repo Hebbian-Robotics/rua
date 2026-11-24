@@ -14,7 +14,15 @@ export const inferenceModeSchema = z.enum(INFERENCE_MODES);
 export const providerSchema = z.enum(["anthropic", "openai", "gemini"]);
 export type Provider = z.infer<typeof providerSchema>;
 
+export const motionLimitsSchema = z.object({
+  max_joint_speed: z.number().positive().optional(),
+  max_joint_acceleration: z.number().positive().optional(),
+  max_joint_jerk: z.number().positive().optional(),
+});
+export type MotionLimits = z.output<typeof motionLimitsSchema>;
+
 export const runRequestSchema = z.object({
+  motionLimits: motionLimitsSchema.optional(),
   arm: z.string().min(1),
   task: z.string().min(1),
   cameras: z.array(z.string().min(1)).default([]),

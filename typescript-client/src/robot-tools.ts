@@ -31,12 +31,14 @@ import {
 } from "./station-errors.js";
 import { DEFAULT_MEDIA_URL } from "./station-http.js";
 import {
+  type ActionSequenceRequest,
   type ArmState,
   type CommandAnswer,
   type CommandRecord,
   commandPlan,
   commandResult,
   commandWasLimited,
+  type PreviewPose,
   type StationState,
 } from "./station-types.js";
 import {
@@ -148,6 +150,56 @@ function armInterlocks(selected: ArmState): ArmState["interlocks"] {
   );
 }
 
+const motionLimitKeys = [
+  "max_joint_speed",
+  "max_joint_acceleration",
+  "max_joint_jerk",
+] as const;
+
+type MotionCaps = Pick<PreviewPose, (typeof motionLimitKeys)[number]>;
+
+function capMotion(request: MotionCaps, limits: MotionCaps): MotionCaps {
+  const capped: MotionCaps = {};
+  for (const key of motionLimitKeys) {
+    const limit = limits[key];
+    const requested = request[key];
+    if (limit != null)
+      capped[key] = requested == null ? limit : Math.min(requested, limit);
+  }
+  return capped;
+}
+
+function capActionSequence(
+  request: ActionSequenceRequest,
+  limits: MotionCaps | undefined,
+): ActionSequenceRequest {
+  if (limits === undefined) return request;
+  return {
+    ...request,
+    steps: request.steps.map((step) => ({
+      ...step,
+      arms: Object.fromEntries(
+        Object.entries(step.arms).map(([arm, action]) => [
+          arm,
+          "goal" in action
+            ? {
+                ...action,
+                ...capMotion(
+                  {
+                    ...action,
+                    max_joint_speed:
+                      action.max_joint_speed ?? action.goal.max_joint_speed,
+                  },
+                  limits,
+                ),
+              }
+            : action,
+        ]),
+      ),
+    })),
+  };
+}
+
 export type RobotToolsOptions = {
   readonly connection: StationConnection;
   readonly lease: Lease;
@@ -156,6 +208,7 @@ export type RobotToolsOptions = {
   readonly cameras?: readonly string[];
   readonly optionalCameras?: readonly string[];
   readonly signal?: AbortSignal;
+  readonly motionLimits?: MotionCaps;
   readonly descriptions?: Readonly<Record<string, string>>;
 } & RobotToolCatalogConfiguration;
 
@@ -470,6 +523,10 @@ function createRobotToolsCore(
                   arm: item.arm,
                   poses: item.poses.map((pose) => ({
                     ...pose,
+                    pose: {
+                      ...pose.pose,
+                      ...capMotion(pose.pose, options.motionLimits ?? {}),
+                    },
                     id: newRequestId(),
                   })),
                 };
@@ -591,7 +648,10 @@ function createRobotToolsCore(
                       }),
                     async () => {
                       sequenceId = await lease.startActionSequence(
-                        message.action_sequence,
+                        capActionSequence(
+                          message.action_sequence,
+                          options.motionLimits,
+                        ),
                       );
                       return connection.waitForActionSequence(
                         sequenceId,

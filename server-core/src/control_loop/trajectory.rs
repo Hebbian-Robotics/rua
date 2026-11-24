@@ -508,6 +508,7 @@ mod tests {
             let mut motion = MotionSupervisor::new(
                 CornerPlan {
                     peak_speed: 2.0,
+                    trajectory_limits: None,
                     segments: vec![Segment {
                         final_gripper_angle: None,
                         pass_through: None,

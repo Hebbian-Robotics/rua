@@ -299,6 +299,7 @@ mod tests {
         let plan = CornerPlan {
             segments,
             peak_speed: 2.5,
+            trajectory_limits: None,
         };
         let mut limits = ControllerConfig::parse(TEST_CONFIG)
             .unwrap()

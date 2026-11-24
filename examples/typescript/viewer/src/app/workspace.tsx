@@ -307,7 +307,17 @@ export function WorkspaceApp({
       stopFollowing();
       await manualLease.returnLease();
       if (beforeAgentStart) await beforeAgentStart();
-      setRun(await agentApi.startRun(agentUrl, request));
+      const controller = stationState?.arms.find(
+        ({ arm }) => arm === request.arm,
+      )?.controller;
+      setRun(
+        await agentApi.startRun(agentUrl, {
+          ...request,
+          ...(controller === "ik"
+            ? { motionLimits: preferences.motionLimits }
+            : {}),
+        }),
+      );
     } catch (error: unknown) {
       setRunError(`Could not start the run: ${errorMessage(error)}`);
     } finally {
@@ -506,6 +516,7 @@ export function WorkspaceApp({
               {manualMode === "enabled" ? (
                 <ManualControl
                   key={armName}
+                  motionLimits={preferences.motionLimits}
                   armName={armName}
                   changingArmPower={changingArmPower}
                   active={controlMode === "manual"}

@@ -379,10 +379,14 @@ struct CornerPathTracker {
 impl CornerPathTracker {
     fn new(
         plan: ValidatedPlan,
-        limits: MotionLimits,
+        mut limits: MotionLimits,
         waypoint_feedback_lag_seconds: f64,
         maximum_step_seconds: f64,
     ) -> anyhow::Result<Self> {
+        if let Some(trajectory_limits) = plan.trajectory_limits {
+            limits.acceleration_limit = trajectory_limits.acceleration_limit;
+            limits.jerk_limit = trajectory_limits.jerk_limit;
+        }
         let continuous_path = plan
             .is_continuous()
             .then(|| {
@@ -771,10 +775,15 @@ impl MotionSupervisor {
 mod tests {
     use std::collections::VecDeque;
 
+    use hebbian_contracts::TrajectoryLimits;
+
     use super::*;
     use crate::config::{ControllerConfig, TEST_CONFIG};
 
-    fn waypoint_move(knots: &[(&str, f64)]) -> MotionSupervisor {
+    fn planned_move(
+        knots: &[(&str, f64)],
+        trajectory_limits: Option<TrajectoryLimits>,
+    ) -> MotionSupervisor {
         let mut input = ControllerConfig::parse(TEST_CONFIG).unwrap().into_input();
         input.frequency_hertz = 50.0;
         input.tracking_following_lag_seconds = 0.1;
@@ -798,6 +807,7 @@ mod tests {
             CornerPlan {
                 segments,
                 peak_speed: 0.6,
+                trajectory_limits,
             },
             1,
         )
@@ -813,14 +823,85 @@ mod tests {
 
     const STANDARD_KNOTS: [(&str, f64); 3] = [("start", 0.0), ("waypoint", 0.3), ("goal", 0.6)];
 
+    fn measure_move_duration(
+        mut motion: MotionSupervisor,
+        limits: TrajectoryLimits,
+        goal: f64,
+    ) -> usize {
+        const INTERVAL_SECONDS: f64 = 0.01;
+        const SAMPLE_TOLERANCE: f64 = 1e-6;
+        let mut measured = motion.reference().positions[0];
+        let mut previous_acceleration = motion.reference().accelerations[0];
+        for sample_count in 1..=1_000 {
+            let reference = motion.step(&[measured], INTERVAL_SECONDS).unwrap();
+            measured = reference.positions[0];
+            let acceleration = reference.accelerations[0];
+            let sampled_jerk = (acceleration - previous_acceleration) / INTERVAL_SECONDS;
+            assert!(
+                acceleration.abs() <= limits.acceleration_limit + SAMPLE_TOLERANCE,
+                "Sample {sample_count} exceeded the acceleration cap: {acceleration}"
+            );
+            assert!(
+                sampled_jerk.abs() <= limits.jerk_limit + SAMPLE_TOLERANCE,
+                "Sample {sample_count} exceeded the jerk cap: {sampled_jerk}"
+            );
+            previous_acceleration = acceleration;
+            if motion.settling_at_end() {
+                assert!((measured - goal).abs() <= SAMPLE_TOLERANCE);
+                return sample_count;
+            }
+        }
+        panic!("The move did not reach its goal");
+    }
+
+    fn assert_motion_caps_slow_the_move(knots: &[(&str, f64)]) {
+        let goal = knots.last().unwrap().1;
+        let profile_limits = ControllerConfig::parse(TEST_CONFIG)
+            .unwrap()
+            .motion
+            .trajectory_limits();
+        let baseline_duration =
+            measure_move_duration(planned_move(knots, None), profile_limits, goal);
+        for limits in [
+            TrajectoryLimits {
+                acceleration_limit: 0.5,
+                ..profile_limits
+            },
+            TrajectoryLimits {
+                jerk_limit: 1.0,
+                ..profile_limits
+            },
+        ] {
+            let capped_duration =
+                measure_move_duration(planned_move(knots, Some(limits)), limits, goal);
+            assert!(
+                capped_duration > baseline_duration,
+                "The move should take longer with {limits:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn straight_move_samples_respect_acceleration_and_jerk_caps() {
+        assert_motion_caps_slow_the_move(&[("start", 0.0), ("goal", 0.6)]);
+    }
+
+    #[test]
+    fn pass_through_move_samples_respect_acceleration_and_jerk_caps() {
+        assert_motion_caps_slow_the_move(&STANDARD_KNOTS);
+    }
+
     #[test]
     fn dense_waypoints_still_report_every_crossing_with_late_control_cycles() {
-        let mut motion = waypoint_move(&[
-            ("start", 0.0),
-            ("first", 0.3),
-            ("second", 0.300_005),
-            ("goal", 0.6),
-        ]);
+        let mut motion = planned_move(
+            &[
+                ("start", 0.0),
+                ("first", 0.3),
+                ("second", 0.300_005),
+                ("goal", 0.6),
+            ],
+            None,
+        );
         let mut measured = [0.0];
         for _ in 0..200 {
             let reference = motion.step(&measured, 0.04).unwrap();
@@ -840,7 +921,7 @@ mod tests {
 
     #[test]
     fn pass_through_checkpoint_waits_for_measured_crossing() {
-        let mut motion = waypoint_move(&STANDARD_KNOTS);
+        let mut motion = planned_move(&STANDARD_KNOTS, None);
         let mut feedback_history = VecDeque::from([[0.0]; 7]);
         let mut reference_crossed_before_feedback = false;
         for _ in 0..200 {
@@ -866,7 +947,7 @@ mod tests {
 
     #[test]
     fn pass_through_trips_when_feedback_never_reaches_tolerance() {
-        let mut motion = waypoint_move(&STANDARD_KNOTS);
+        let mut motion = planned_move(&STANDARD_KNOTS, None);
         let failure = (0..200).find_map(|_| motion.step(&[0.0], 0.01).err());
         assert!(matches!(
             failure,

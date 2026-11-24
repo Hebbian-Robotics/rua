@@ -42,6 +42,11 @@ Use `station.holding_lease(...)` to acquire a lease and send motion through
 | `lease.arm(name).set_gripper(opening)` | 0 closed, 1 open. Stopping short can indicate contact or a blockage; it does not prove a grasp. |
 | `station.arm(name).stop()` | Stop arm and gripper motion and hold with torque enabled. Needs no lease; does not end an agent run. |
 
+For planned single-arm moves, the SDK also accepts `max_joint_acceleration`
+and `max_joint_jerk` as optional keyword arguments. Use the same caps when
+previewing a pose and check `effective_motion_limits` on the preview or move
+record. See [per-move trajectory caps](control-model.md#per-move-trajectory-caps).
+
 Motion commands return a `CommandResult` with an outcome, a detail and,
 when admitted, a command record. Check `result.completed` and
 `result.was_limited` before sending another action. The

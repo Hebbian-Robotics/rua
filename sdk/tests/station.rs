@@ -362,6 +362,9 @@ async fn a_refused_command_does_not_stop_the_holders_motion() -> TestResult {
             .preview_pose(
                 ARM,
                 PreviewPose {
+                    max_joint_speed: None,
+                    max_joint_acceleration: None,
+                    max_joint_jerk: None,
                     position: tool.position,
                     orientation: None,
                 },
@@ -391,6 +394,8 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
         ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                max_joint_acceleration: None,
+                max_joint_jerk: None,
                 waypoints: vec![],
                 goal: ActionSequenceGoal::Joints {
                     joints,
@@ -642,6 +647,9 @@ async fn a_preview_answers_without_moving_the_arm() -> TestResult {
                 id: uuid::Uuid::new_v4().to_string(),
                 label: None,
                 pose: PreviewPose {
+                    max_joint_speed: None,
+                    max_joint_acceleration: None,
+                    max_joint_jerk: None,
                     position: [0.0; 3],
                     orientation: None,
                 },
@@ -656,6 +664,9 @@ async fn a_preview_answers_without_moving_the_arm() -> TestResult {
     within(client.enable(ARM)).await??;
     let before = within(client.state()).await??.arms.remove(0);
     let reachable = PreviewPose {
+        max_joint_speed: None,
+        max_joint_acceleration: None,
+        max_joint_jerk: None,
         position: before
             .tool
             .as_ref()
@@ -676,6 +687,9 @@ async fn a_preview_answers_without_moving_the_arm() -> TestResult {
     within(client.preview_pose(
         ARM,
         PreviewPose {
+            max_joint_speed: None,
+            max_joint_acceleration: None,
+            max_joint_jerk: None,
             position: [50.0, 50.0, 50.0],
             orientation: None,
         },
@@ -683,6 +697,91 @@ async fn a_preview_answers_without_moving_the_arm() -> TestResult {
     .await??;
     let after = within(client.state()).await??.arms.remove(0);
     assert_eq!(after.mode, before.mode);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn per_move_caps_are_resolved_the_same_in_preview_and_execution() -> TestResult {
+    use hebbian_rua::contracts::{EffectiveMotionLimits, RecordedCommand};
+
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("motion limits"))).await??;
+    within(client.enable(ARM)).await??;
+    let state = within(client.state()).await??;
+    let arm = &state.arms[0];
+    let tool = arm.tool.as_ref().ok_or("expected tool feedback")?;
+    let requested = PreviewPose {
+        position: tool.position,
+        orientation: None,
+        max_joint_speed: Some(0.4.try_into()?),
+        max_joint_acceleration: Some(0.7),
+        max_joint_jerk: Some(2.0),
+    };
+    let preview = within(client.preview_pose(ARM, requested.clone())).await??;
+    let expected = EffectiveMotionLimits {
+        max_joint_speed: 0.4,
+        max_joint_acceleration: 0.7,
+        max_joint_jerk: 2.0,
+    };
+    assert_eq!(preview.effective_motion_limits, Some(expected));
+
+    let mut target = arm.measured_joints.clone();
+    target[0] += 0.05;
+    let invalid = client
+        .preview_pose(
+            ARM,
+            PreviewPose {
+                max_joint_jerk: Some(1e6),
+                ..requested
+            },
+        )
+        .await;
+    assert!(matches!(
+        invalid,
+        Err(Error::Refused {
+            reason: RejectionReason::InvalidTarget,
+            ..
+        })
+    ));
+    let rejected = lease
+        .move_to_joints_with(
+            ARM,
+            target.clone(),
+            requested.max_joint_speed,
+            CommandOptions {
+                max_joint_jerk: Some(1e6),
+                ..CommandOptions::default()
+            },
+        )
+        .await;
+    assert!(matches!(
+        rejected,
+        Err(Error::Refused {
+            reason: RejectionReason::InvalidTarget,
+            ..
+        })
+    ));
+
+    let record = within(lease.move_to_joints_with(
+        ARM,
+        target,
+        requested.max_joint_speed,
+        CommandOptions {
+            max_joint_acceleration: requested.max_joint_acceleration,
+            max_joint_jerk: requested.max_joint_jerk,
+            ..CommandOptions::default()
+        },
+    ))
+    .await??;
+    let RecordedCommand::Move {
+        effective_motion_limits,
+        ..
+    } = record.command
+    else {
+        return Err("expected a move record".into());
+    };
+    assert_eq!(effective_motion_limits, Some(expected));
     Ok(())
 }
 
@@ -702,6 +801,9 @@ async fn assert_http_pose_preview_batch(client: &Station, reachable: PreviewPose
                     label: (index == 0).then(|| "approach".into()),
                     pose: if index == 1 {
                         PreviewPose {
+                            max_joint_speed: None,
+                            max_joint_acceleration: None,
+                            max_joint_jerk: None,
                             position: [0.2, 0.0, 0.2],
                             orientation: Some(PoseOrientation::Quaternion {
                                 quaternion: [0.0; 4],
@@ -741,6 +843,9 @@ async fn assert_http_pose_preview_batch(client: &Station, reachable: PreviewPose
         id: candidates[0].to_owned(),
         label: None,
         pose: PreviewPose {
+            max_joint_speed: None,
+            max_joint_acceleration: None,
+            max_joint_jerk: None,
             position: [0.2, 0.0, 0.2],
             orientation: None,
         },
@@ -879,6 +984,8 @@ async fn commands_carry_a_trace_context_and_an_expected_revision() -> TestResult
     let record = within(client.enable_with(
         ARM,
         CommandOptions {
+            max_joint_acceleration: None,
+            max_joint_jerk: None,
             trace_context: Some(trace_context.clone()),
             ..CommandOptions::default()
         },
@@ -887,6 +994,8 @@ async fn commands_carry_a_trace_context_and_an_expected_revision() -> TestResult
     assert_eq!(record.trace_context, Some(trace_context));
 
     let expecting = |revision| CommandOptions {
+        max_joint_acceleration: None,
+        max_joint_jerk: None,
         expected_revisions: BTreeMap::from([(ARM.to_owned(), revision)]),
         ..CommandOptions::default()
     };
@@ -915,6 +1024,8 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                max_joint_acceleration: None,
+                max_joint_jerk: None,
                 waypoints: vec![],
                 goal: ActionSequenceGoal::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
@@ -951,6 +1062,8 @@ async fn taking_the_lease_stops_the_previous_holders_action_sequence() -> TestRe
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                max_joint_acceleration: None,
+                max_joint_jerk: None,
                 waypoints: vec![],
                 goal: ActionSequenceGoal::Joints {
                     joints: vec![1.0, -0.5, 0.5, 0.0, 0.0],
@@ -982,6 +1095,8 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
             ActionSequenceStep::single(
                 ARM,
                 ActionSequenceArmAction::Move {
+                    max_joint_acceleration: None,
+                    max_joint_jerk: None,
                     waypoints: vec![],
                     goal: ActionSequenceGoal::Joints {
                         joints,
@@ -1066,6 +1181,8 @@ async fn assert_model_tool_batches(tools: &RobotTools<&hebbian_rua::LeaseGuard>)
         .execute_calls(
             vec![call("stop", json!({}))],
             CommandOptions {
+                max_joint_acceleration: None,
+                max_joint_jerk: None,
                 trace_context: Some(trace_context.clone()),
                 ..CommandOptions::default()
             },
@@ -1478,6 +1595,8 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
     within(client.enable("left")).await??;
     let action = |pan, gripper_opening| ActionSequenceArmAction::Move {
+        max_joint_acceleration: None,
+        max_joint_jerk: None,
         waypoints: vec![],
         goal: ActionSequenceGoal::Joints {
             joints: vec![pan, -0.5, 0.5, 0.0, 0.0],
@@ -1669,6 +1788,8 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                max_joint_acceleration: None,
+                max_joint_jerk: None,
                 goal: ActionSequenceGoal::Joints {
                     joints: goal.clone(),
                     max_joint_speed: None,

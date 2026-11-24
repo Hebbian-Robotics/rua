@@ -408,6 +408,10 @@ pub enum RecordedCommand {
         destination_position: Option<[f64; 3]>,
         destination_quaternion: Option<[f64; 4]>,
         joint_speed: f64,
+        /// The effective trajectory caps at admission.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("x-omit-when-none" = true))]
+        effective_motion_limits: Option<crate::EffectiveMotionLimits>,
         path_limited: Option<PathLimited>,
         pose_limited: Option<PoseLimited>,
         group_id: Option<String>,

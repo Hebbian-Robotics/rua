@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use hebbian_rua::contracts::{
-    ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, LeaseHolder, MoveArmsCommand,
-    PhoneInviteRequest, PreviewPose,
+    ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, JointSpeed, LeaseHolder,
+    MoveArmsCommand, PhoneInviteRequest, PreviewPose,
 };
 use hebbian_rua::{CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station};
 use serde::de::DeserializeOwned;
@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use commands::{
     ActionSequenceCommand, CameraCommand, Cli, Command, LeaseCommand, RecordCommand, TracesCommand,
+    TrajectoryArgs,
 };
 use output::{Failure, json_value, print_compactable};
 
@@ -68,6 +69,7 @@ async fn execute(cli: Cli) -> Result<Value, Failure> {
             operation_id: None,
             trace_context: None,
             expected_revisions: cli.expected_revision.into_iter().collect(),
+            ..CommandOptions::default()
         },
         take_lease: cli.take_lease,
     };
@@ -114,22 +116,28 @@ async fn dispatch(
         Command::Rehome { arm } => json_value(&with_motion_lease!(station, session, lease, {
             Ok(lease.rehome_with(&arm, options()).await?)
         })?),
-        Command::MoveJoints { arm, joints, speed } => {
-            let speed = speed
-                .map(hebbian_rua::contracts::JointSpeed::new)
-                .transpose()
-                .map_err(|error| Failure::Usage(error.to_string()))?;
+        Command::MoveJoints {
+            arm,
+            joints,
+            speed,
+            trajectory,
+        } => {
+            let move_options = motion_options(session, &trajectory);
+            let speed = requested_speed(speed)?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
-                    .move_to_joints_with(&arm, joints, speed, options())
+                    .move_to_joints_with(&arm, joints, speed, move_options)
                     .await?)
             })?)
         }
-        Command::MovePose { arm, pose, speed } => {
-            let speed = speed
-                .map(hebbian_rua::contracts::JointSpeed::new)
-                .transpose()
-                .map_err(|error| Failure::Usage(error.to_string()))?;
+        Command::MovePose {
+            arm,
+            pose,
+            speed,
+            trajectory,
+        } => {
+            let move_options = motion_options(session, &trajectory);
+            let speed = requested_speed(speed)?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
                     .move_to_pose_keeping_orientation_with(
@@ -137,7 +145,7 @@ async fn dispatch(
                         pose.position(),
                         pose.orientation(),
                         speed,
-                        options(),
+                        move_options,
                     )
                     .await?)
             })?)
@@ -157,8 +165,17 @@ async fn dispatch(
                     .await?)
             })?)
         }
-        Command::PreviewPose { arm, pose } => {
-            json_value(&station.preview_pose(&arm, pose.preview()).await?)
+        Command::PreviewPose {
+            arm,
+            pose,
+            speed,
+            trajectory,
+        } => {
+            let mut preview = pose.preview();
+            preview.max_joint_speed = requested_speed(speed)?;
+            preview.max_joint_acceleration = trajectory.acceleration;
+            preview.max_joint_jerk = trajectory.jerk;
+            json_value(&station.preview_pose(&arm, preview).await?)
         }
         Command::PreviewPoses { arm, input } => {
             let candidates: Vec<PreviewCandidateInput> = read_json(&input)?;
@@ -180,6 +197,21 @@ async fn dispatch(
         }
         Command::Camera(command) => camera(station, command).await,
         Command::Traces(command) => traces(station, command).await,
+    }
+}
+
+fn requested_speed(speed: Option<f64>) -> Result<Option<JointSpeed>, Failure> {
+    speed
+        .map(JointSpeed::new)
+        .transpose()
+        .map_err(|error| Failure::Usage(error.to_string()))
+}
+
+fn motion_options(session: &Session, trajectory: &TrajectoryArgs) -> CommandOptions {
+    CommandOptions {
+        max_joint_acceleration: trajectory.acceleration,
+        max_joint_jerk: trajectory.jerk,
+        ..session.options.clone()
     }
 }
 

@@ -160,6 +160,32 @@ export const robotToolSpecifications = [
                 minimum: 0.0,
                 type: "number",
               },
+              max_joint_acceleration: {
+                anyOf: [
+                  {
+                    type: "number",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                description:
+                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                exclusiveMinimum: 0.0,
+              },
+              max_joint_jerk: {
+                anyOf: [
+                  {
+                    type: "number",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                description:
+                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                exclusiveMinimum: 0.0,
+              },
               max_joint_speed_degrees_per_second: {
                 anyOf: [
                   {
@@ -403,6 +429,46 @@ export const robotToolSpecifications = [
           description:
             "Where the arm's controller would take the tool toward a pose, without moving.",
           properties: {
+            max_joint_acceleration: {
+              anyOf: [
+                {
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              description:
+                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+              exclusiveMinimum: 0.0,
+            },
+            max_joint_jerk: {
+              anyOf: [
+                {
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              description:
+                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+              exclusiveMinimum: 0.0,
+            },
+            max_joint_speed_degrees_per_second: {
+              anyOf: [
+                {
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              description:
+                "Peak speed in degrees per second; clamped to the profile maximum.",
+              exclusiveMinimum: 0.0,
+              title: "JointSpeed",
+            },
             orientation: {
               anyOf: [
                 {

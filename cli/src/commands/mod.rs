@@ -122,6 +122,8 @@ pub enum Command {
         /// Requested peak joint speed in rad/s; the station clamps it.
         #[arg(long)]
         speed: Option<f64>,
+        #[command(flatten)]
+        trajectory: TrajectoryArgs,
     },
     /// Move the tool to a position in metres. Without an orientation option the tool keeps the
     /// orientation it has now.
@@ -134,6 +136,8 @@ pub enum Command {
         /// Requested peak joint speed in rad/s; the station clamps it.
         #[arg(long)]
         speed: Option<f64>,
+        #[command(flatten)]
+        trajectory: TrajectoryArgs,
     },
     /// Move several arms together: they start and arrive together. Every target is planned first;
     /// one rejection means no arm moves, and if one arm stops the others stop too. Takes a JSON
@@ -161,6 +165,11 @@ pub enum Command {
         arm: String,
         #[command(flatten)]
         pose: PoseArgs,
+        /// Requested peak joint speed in rad/s.
+        #[arg(long)]
+        speed: Option<f64>,
+        #[command(flatten)]
+        trajectory: TrajectoryArgs,
     },
     /// Where an arm would take the tool toward each of several independent poses; nothing
     /// moves. Takes a JSON array of {"label"?, "position": [x, y, z], "orientation"?} from a
@@ -213,6 +222,16 @@ pub struct PoseArgs {
     jaw_yaw_degrees: Option<f64>,
 }
 
+#[derive(Debug, Args, Default)]
+pub struct TrajectoryArgs {
+    /// Per-move joint acceleration cap in rad/s².
+    #[arg(long)]
+    pub acceleration: Option<f64>,
+    /// Per-move joint jerk cap in rad/s³.
+    #[arg(long)]
+    pub jerk: Option<f64>,
+}
+
 impl PoseArgs {
     pub fn position(&self) -> [f64; 3] {
         self.position
@@ -232,6 +251,9 @@ impl PoseArgs {
         PreviewPose {
             position: self.position,
             orientation: self.orientation(),
+            max_joint_speed: None,
+            max_joint_acceleration: None,
+            max_joint_jerk: None,
         }
     }
 }
