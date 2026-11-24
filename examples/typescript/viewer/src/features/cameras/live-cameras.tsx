@@ -7,8 +7,10 @@ import {
   RoomEvent,
   Track,
 } from "livekit-client";
+import { TriangleAlertIcon } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { createActor } from "xstate";
+import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { stationJson } from "../../api.js";
 import { errorMessage } from "../../errors.js";
@@ -258,12 +260,22 @@ export const CameraView = memo(function CameraView({
         {feed.kind === "room" ? (
           <video ref={video} autoPlay muted playsInline aria-label={label} />
         ) : (
-          <img
-            src={`/api/media/local-cameras/${encodeURIComponent(feed.name)}/stream`}
-            alt={label}
-            width={640}
-            height={360}
-          />
+          <>
+            <img
+              src={`/api/media/local-cameras/${encodeURIComponent(feed.name)}/stream`}
+              alt={label}
+              width={640}
+              height={360}
+            />
+            <Badge
+              variant="destructive"
+              className="camera-fallback-label"
+              title="Local fallback preview. Prefer LiveKit whenever it is available."
+            >
+              <TriangleAlertIcon aria-hidden="true" />
+              Fallback · LiveKit unavailable
+            </Badge>
+          </>
         )}
         <Button
           variant="outline"

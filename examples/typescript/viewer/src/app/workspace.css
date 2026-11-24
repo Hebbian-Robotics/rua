@@ -160,6 +160,11 @@ details summary {
   height: 100%;
   object-fit: contain;
 }
+.camera-picture .camera-fallback-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
 .camera-picture button {
   position: absolute;
   right: 8px;

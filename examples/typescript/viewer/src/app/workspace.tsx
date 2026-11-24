@@ -1,6 +1,6 @@
 import type { LiveRun, StationState } from "hebbian-rua";
 import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
-import { BotIcon, HandIcon } from "lucide-react";
+import { BotIcon, HandIcon, TriangleAlertIcon } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -390,6 +390,23 @@ export function WorkspaceApp({
                   )}
                 </div>
               </details>
+              {cameras.localCamerasOnly && (
+                <Alert role="status" variant="destructive">
+                  <TriangleAlertIcon aria-hidden="true" />
+                  <p className="m-0">
+                    <strong>Local camera fallback.</strong> The station was
+                    started with{" "}
+                    <code className="whitespace-nowrap">
+                      --local-only-no-remote-cameras
+                    </code>
+                    , which is only for when LiveKit is unavailable. Prefer
+                    LiveKit whenever possible: set <code>LIVEKIT_URL</code>,{" "}
+                    <code>LIVEKIT_API_KEY</code>, and{" "}
+                    <code>LIVEKIT_API_SECRET</code> on the station and restart
+                    it without that flag.
+                  </p>
+                </Alert>
+              )}
               {cameras.feeds.length > 0 && (
                 <div className="camera-grid">
                   {cameras.feeds.map((feed) => (
@@ -462,16 +479,35 @@ export function WorkspaceApp({
                   ))}
                 </div>
               </fieldset>
-              <p
-                id="control-mode-hint"
-                role="status"
-                className="m-0 text-xs text-muted-foreground"
-              >
-                {manualOnly
-                  ? "The viewer is running in manual-only mode."
-                  : (controlModeLocked ??
-                    "Choose a control mode, then enable the arm.")}
-              </p>
+              {manualOnly ? (
+                <Alert
+                  id="control-mode-hint"
+                  role="status"
+                  variant="destructive"
+                >
+                  <TriangleAlertIcon aria-hidden="true" />
+                  <p className="m-0">
+                    <strong>Agent disabled.</strong> The viewer was started with{" "}
+                    <code className="whitespace-nowrap">
+                      --manual-control-only-no-agent
+                    </code>
+                    , which is only for debugging manual control. To use the
+                    agent, set <code>OPENAI_API_KEY</code>,{" "}
+                    <code>ANTHROPIC_API_KEY</code>, or{" "}
+                    <code>GEMINI_API_KEY</code> and restart the viewer without
+                    that flag.
+                  </p>
+                </Alert>
+              ) : (
+                <p
+                  id="control-mode-hint"
+                  role="status"
+                  className="m-0 text-xs text-muted-foreground"
+                >
+                  {controlModeLocked ??
+                    "Choose a control mode, then enable the arm."}
+                </p>
+              )}
             </div>
             <ArmControl
               stationState={connected ? stationState : null}
