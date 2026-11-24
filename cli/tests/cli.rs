@@ -75,15 +75,9 @@ async fn cli(server: &str, arguments: &[&str]) -> Run {
     Run { output }
 }
 
-async fn ready_station() -> Result<TestStation, Box<dyn std::error::Error>> {
-    let station = TestStation::start().await?;
-    station.connect().await?;
-    Ok(station)
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn state_prints_one_json_value() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     let run = cli(&station.url, &["state"]).await;
     assert_eq!(run.code(), Some(0));
     let state = run.stdout_json();
@@ -94,7 +88,7 @@ async fn state_prints_one_json_value() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn output_is_compact_by_default_and_raw_keeps_si_records() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     let compact = cli(&station.url, &["state"]).await.stdout_json();
     let arm = &compact["arms"][0];
     assert!(arm["measured_joints_degrees"].is_array());
@@ -122,7 +116,7 @@ async fn output_is_compact_by_default_and_raw_keeps_si_records() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn enable_then_move_to_joints_completes() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let run = cli(
         &station.url,
@@ -151,7 +145,7 @@ async fn enable_then_move_to_joints_completes() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_refused_command_exits_1_with_the_reason() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     let run = cli(&station.url, &["move-joints", ARM, "--joints", "0,0,0,0,0"]).await;
     assert_eq!(run.code(), Some(1));
     let error = run.stderr_json();
@@ -181,7 +175,7 @@ async fn connecting_to_nothing_exits_3() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn lease_held_elsewhere_exits_4_with_the_holder() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     let holder = station.connect().await?;
     let _guard = holder
         .acquire_lease(LeaseRequest::new(LeaseHolder::Agent, "someone else"))
@@ -206,7 +200,7 @@ async fn lease_held_elsewhere_exits_4_with_the_holder() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn preview_pose_projects_without_moving() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let run = cli(
         &station.url,
@@ -234,7 +228,7 @@ async fn preview_pose_projects_without_moving() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn preview_poses_answers_every_pose_in_order() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let file = std::env::temp_dir().join(format!(
         "hebbian-cli-preview-poses-{}.json",
@@ -276,7 +270,7 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_action_sequence_runs_from_a_file() -> TestResult {
-    let station = ready_station().await?;
+    let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let file = std::env::temp_dir().join(format!(
         "hebbian-cli-action_sequence-{}.json",
