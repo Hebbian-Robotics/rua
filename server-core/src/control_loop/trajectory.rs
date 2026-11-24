@@ -243,7 +243,7 @@ impl Loop<'_> {
                 &self.commanded_velocities,
                 self.config.tracking_following_lag_seconds,
                 self.config.tracking_static_margin_radians,
-                active.supervisor.peak_speed(),
+                active.supervisor.planned_peak_joint_speed(),
             )
         } else {
             1.0
@@ -283,8 +283,9 @@ impl Loop<'_> {
         };
         let waypoint_gripper = gripper_angle
             .map(|angle| {
-                let speed = hebbian_contracts::JointSpeed::new(active.supervisor.peak_speed())
-                    .map_err(|error| Trip::Trajectory(error.to_string()))?;
+                let speed =
+                    hebbian_contracts::JointSpeed::new(active.supervisor.requested_joint_speed())
+                        .map_err(|error| Trip::Trajectory(error.to_string()))?;
                 self.core
                     .check_gripper_target(angle, Some(speed))
                     .map_err(|failure| Trip::Gripper(failure.detail))
