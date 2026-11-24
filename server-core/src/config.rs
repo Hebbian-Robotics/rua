@@ -19,6 +19,7 @@ pub type ControllerConfigInput = hebbian_contracts::ControllerConfigInput<Feetec
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ControlTiming {
     pub period: Duration,
+    pub maximum_step_seconds: f64,
     pub deadline: Duration,
     pub stream_goal_timeout: Duration,
 }
@@ -77,6 +78,7 @@ impl TryFrom<ControllerConfigInput> for ControllerConfig {
                 1.0 / input.frequency_hertz,
                 "Control period (from frequency_hertz)",
             )?,
+            maximum_step_seconds: 2.0 / input.frequency_hertz,
             deadline: positive_clock_duration(
                 input.loop_deadline_seconds,
                 "Control loop deadline",

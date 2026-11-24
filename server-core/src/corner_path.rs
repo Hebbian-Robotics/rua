@@ -381,10 +381,13 @@ impl CornerPathTracker {
         plan: ValidatedPlan,
         limits: MotionLimits,
         waypoint_feedback_lag_seconds: f64,
+        maximum_step_seconds: f64,
     ) -> anyhow::Result<Self> {
         let continuous_path = plan
             .is_continuous()
-            .then(|| crate::continuous_path::ContinuousPath::new(&plan, &limits))
+            .then(|| {
+                crate::continuous_path::ContinuousPath::new(&plan, &limits, maximum_step_seconds)
+            })
             .transpose()?;
         let trajectories = if continuous_path.is_some() {
             Vec::new()
@@ -613,16 +616,22 @@ impl MotionSupervisor {
         limits: &MotionLimits,
         joint_count: usize,
     ) -> anyhow::Result<Self> {
-        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits, 0.0)
+        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits, 0.0, 0.0)
     }
 
     pub(crate) fn from_validated(
         plan: ValidatedPlan,
         limits: &MotionLimits,
         waypoint_feedback_lag_seconds: f64,
+        maximum_step_seconds: f64,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            tracker: CornerPathTracker::new(plan, limits.clone(), waypoint_feedback_lag_seconds)?,
+            tracker: CornerPathTracker::new(
+                plan,
+                limits.clone(),
+                waypoint_feedback_lag_seconds,
+                maximum_step_seconds,
+            )?,
             limits: limits.clone(),
             settled_seconds: 0.0,
             settling_seconds: 0.0,
@@ -757,39 +766,73 @@ mod tests {
     use super::*;
     use crate::config::{ControllerConfig, TEST_CONFIG};
 
-    fn waypoint_move() -> MotionSupervisor {
-        let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
-        let waypoint = Segment {
-            label: "waypoint".into(),
-            corners: vec![vec![0.0], vec![0.3]],
-            pass_through: Some(hebbian_contracts::PassThrough {
-                gripper_angle: None,
-            }),
-            minimum_duration_seconds: None,
-            final_gripper_angle: None,
-            destination_position: None,
-            destination_quaternion: None,
-        };
-        let goal = Segment {
-            label: "goal".into(),
-            corners: vec![vec![0.3], vec![0.6]],
-            pass_through: None,
-            ..waypoint.clone()
-        };
+    fn waypoint_move(knots: &[(&str, f64)]) -> MotionSupervisor {
+        let mut input = ControllerConfig::parse(TEST_CONFIG).unwrap().into_input();
+        input.frequency_hertz = 50.0;
+        input.tracking_following_lag_seconds = 0.1;
+        let config = ControllerConfig::try_from(input).unwrap();
+        let segments = knots
+            .windows(2)
+            .enumerate()
+            .map(|(index, pair)| Segment {
+                label: pair[1].0.to_owned(),
+                corners: vec![vec![pair[0].1], vec![pair[1].1]],
+                pass_through: (index + 2 < knots.len()).then_some(hebbian_contracts::PassThrough {
+                    gripper_angle: None,
+                }),
+                minimum_duration_seconds: None,
+                final_gripper_angle: None,
+                destination_position: None,
+                destination_quaternion: None,
+            })
+            .collect();
         let plan = ValidatedPlan::new(
             CornerPlan {
-                segments: vec![waypoint, goal],
+                segments,
                 peak_speed: 0.6,
             },
             1,
         )
         .unwrap();
-        MotionSupervisor::from_validated(plan, &config.motion, 0.1).unwrap()
+        MotionSupervisor::from_validated(
+            plan,
+            &config.motion,
+            config.tracking_following_lag_seconds,
+            config.control_timing.maximum_step_seconds,
+        )
+        .unwrap()
+    }
+
+    const STANDARD_KNOTS: [(&str, f64); 3] = [("start", 0.0), ("waypoint", 0.3), ("goal", 0.6)];
+
+    #[test]
+    fn dense_waypoints_still_report_every_crossing_with_late_control_cycles() {
+        let mut motion = waypoint_move(&[
+            ("start", 0.0),
+            ("first", 0.3),
+            ("second", 0.300_005),
+            ("goal", 0.6),
+        ]);
+        let mut measured = [0.0];
+        for _ in 0..200 {
+            let reference = motion.step(&measured, 0.04).unwrap();
+            measured[0] = reference.positions[0];
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
+        let labels: Vec<&str> = motion
+            .new_checkpoints(0)
+            .iter()
+            .map(|point| point.label.as_str())
+            .collect();
+        assert_eq!(labels, ["first", "second", "goal"]);
     }
 
     #[test]
     fn pass_through_checkpoint_waits_for_measured_crossing() {
-        let mut motion = waypoint_move();
+        let mut motion = waypoint_move(&STANDARD_KNOTS);
         let mut feedback_history = VecDeque::from([[0.0]; 7]);
         let mut reference_crossed_before_feedback = false;
         for _ in 0..200 {
@@ -815,7 +858,7 @@ mod tests {
 
     #[test]
     fn pass_through_trips_when_feedback_never_reaches_tolerance() {
-        let mut motion = waypoint_move();
+        let mut motion = waypoint_move(&STANDARD_KNOTS);
         let failure = (0..200).find_map(|_| motion.step(&[0.0], 0.01).err());
         assert!(matches!(
             failure,

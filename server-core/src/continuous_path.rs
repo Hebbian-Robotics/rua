@@ -18,7 +18,11 @@ pub(crate) struct ContinuousPath {
 }
 
 impl ContinuousPath {
-    pub(crate) fn new(plan: &CornerPlan, limits: &MotionLimits) -> Result<Self> {
+    pub(crate) fn new(
+        plan: &CornerPlan,
+        limits: &MotionLimits,
+        maximum_step_seconds: f64,
+    ) -> Result<Self> {
         ensure!(
             plan.is_continuous() && plan.segments.len() >= 2,
             "A continuous move needs one boundary per intermediate waypoint"
@@ -40,6 +44,13 @@ impl ContinuousPath {
         input.max_velocity.fill(plan.peak_speed);
         input.max_acceleration.fill(limits.acceleration_limit);
         input.max_jerk.fill(limits.jerk_limit);
+        if maximum_step_seconds > 0.0 {
+            // SAFETY: Leave a nanosecond for rounding cumulative section times.
+            // Every section must last longer than a capped motor step.
+            let minimum_section_seconds = maximum_step_seconds + 1e-9;
+            input.per_section_minimum_duration =
+                Some(vec![minimum_section_seconds; plan.segments.len()]);
+        }
 
         let mut generator =
             Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
@@ -55,14 +66,16 @@ impl ContinuousPath {
 
         let section_ends = trajectory.get_intermediate_durations();
         ensure!(
-            section_ends.len() == plan.segments.len()
-                && section_ends
-                    .iter()
-                    .copied()
-                    .zip(std::iter::once(0.0).chain(section_ends.iter().copied()))
-                    .all(|(end, start)| end.is_finite() && end > start),
-            "Invalid continuous section durations"
+            section_ends.len() == plan.segments.len(),
+            "Ruckig did not produce a section for every waypoint and goal"
         );
+        let section_starts = std::iter::once(0.0).chain(section_ends.iter().copied());
+        for (index, (&end, start)) in section_ends.iter().zip(section_starts).enumerate() {
+            ensure!(
+                end.is_finite() && end - start > maximum_step_seconds,
+                "Continuous section {index} is too short for the control rate"
+            );
+        }
         for (index, end) in section_ends[..intermediate.len()]
             .iter()
             .copied()

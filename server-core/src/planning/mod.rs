@@ -182,11 +182,15 @@ impl Planner {
     pub(crate) fn check_continuous_path(
         &self,
         plan: &CornerPlan,
-        limits: &crate::config::MotionLimits,
+        config: &ControllerConfig,
         measured_jaw: Option<f64>,
         initial_jaw_goal: Option<f64>,
     ) -> anyhow::Result<()> {
-        let mut path = crate::continuous_path::ContinuousPath::new(plan, limits)?;
+        let mut path = crate::continuous_path::ContinuousPath::new(
+            plan,
+            &config.motion,
+            config.control_timing.maximum_step_seconds,
+        )?;
         path.check_joint_bounds(&plan.segments[0].corners[0], &self.lower, &self.upper)?;
         let mut reference =
             crate::reference_filter::Reference::at_rest(&plan.segments[0].corners[0], None);

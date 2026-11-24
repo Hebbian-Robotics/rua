@@ -591,7 +591,7 @@ fn a_waypoint_move_can_keep_two_almost_touching_links_still() {
         gripper_angle: None,
     });
     planner
-        .check_continuous_path(&motion.plan, &config.motion, None, None)
+        .check_continuous_path(&motion.plan, &config, None, None)
         .unwrap();
 }
 

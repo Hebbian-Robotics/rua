@@ -35,8 +35,10 @@ filter again would change the checked path. [Tracking regressions](../server-cor
 exercise bounds, path geometry and stuck-arm behavior.
 
 A continuous move uses Ruckig to compute section durations and share velocity
-and acceleration across section boundaries. The planner checks the generated
-joint path for joint limits and collisions, including motion between waypoints.
+and acceleration across section boundaries. Each section lasts longer than the
+controller's largest integration step so a delayed cycle cannot skip a crossing.
+The planner checks joint limits and collisions along the generated path,
+including motion between waypoints.
 The controller confirms each crossing from measured feedback within the
 configured following lag and before the next section ends. It starts any
 waypoint jaw command after confirmation and a successful arm setpoint write.
