@@ -196,7 +196,7 @@ pub struct RunCompiledProgramRequest {
 
 /// Move several arms together: every target is planned before any arm moves,
 /// one refusal refuses all, and when one arm ends without completing the others
-/// stop and hold. No collision checking between the arms.
+/// stop and hold. Grouped moves check modeled clearance among participating arms.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveArmsCommand {

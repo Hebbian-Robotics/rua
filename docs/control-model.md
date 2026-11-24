@@ -115,8 +115,10 @@ profile ceiling. Pose previews and completed move records report
 `effective_motion_limits`. The acceleration and jerk overrides apply to planned
 single-arm moves.
 
-Use `--speed`, `--acceleration`, and `--jerk` with the CLI's `move-joints`,
-`move-pose`, or `preview-pose` commands. In the viewer, open **Settings →
+Use `--speed-degrees-per-second`, `--acceleration-degrees-per-second-squared`,
+and `--jerk-degrees-per-second-cubed` with the CLI's `move-joints`, `move-pose`,
+or `preview-pose` commands. The CLI also accepts the corresponding flags
+named in radians. In the viewer, open **Settings →
 Advanced motion limits**. The browser saves these caps for planned IK moves
 and the agent runs it starts. Manual dragging in Follow mode also uses the
 saved speed cap, or the arm profile default when the field is blank.

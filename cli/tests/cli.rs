@@ -120,7 +120,7 @@ async fn enable_then_move_to_joints_completes() -> TestResult {
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let run = cli(
         &station.url,
-        &["move-joints", ARM, "--joints", "0.2,-0.5,0.5,0.0,0.0"],
+        &["move-joints", ARM, "--joints-degrees", "10,-30,30,0,0"],
     )
     .await;
     assert_eq!(
@@ -131,6 +131,11 @@ async fn enable_then_move_to_joints_completes() -> TestResult {
     );
     let moved = run.stdout_json();
     assert_eq!(moved["completion"]["outcome"], "completed");
+    let state = cli(&station.url, &["--raw", "state"]).await.stdout_json();
+    let measured = state["arms"][0]["measured_joints"][0]
+        .as_f64()
+        .expect("state reports the measured joint angle");
+    assert!((measured.to_degrees() - 10.0).abs() < 1.0);
     assert!(moved.get("trace_context").is_none() && moved.get("accepted_unix_nano").is_none());
     let run = cli(&station.url, &["rehome", ARM]).await;
     assert_eq!(
@@ -146,7 +151,11 @@ async fn enable_then_move_to_joints_completes() -> TestResult {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_refused_command_exits_1_with_the_reason() -> TestResult {
     let station = TestStation::start().await?;
-    let run = cli(&station.url, &["move-joints", ARM, "--joints", "0,0,0,0,0"]).await;
+    let run = cli(
+        &station.url,
+        &["move-joints", ARM, "--joints-radians", "0,0,0,0,0"],
+    )
+    .await;
     assert_eq!(run.code(), Some(1));
     let error = run.stderr_json();
     assert_eq!(error["error"]["kind"], "refused");
@@ -158,9 +167,12 @@ async fn a_refused_command_exits_1_with_the_reason() -> TestResult {
     );
     assert_eq!(run.output.stdout.len(), 0);
     assert_eq!(
-        cli(&station.url, &["move-joints", ARM, "--joints", "0,0,0,0,0"])
-            .await
-            .code(),
+        cli(
+            &station.url,
+            &["move-joints", ARM, "--joints-radians", "0,0,0,0,0"]
+        )
+        .await
+        .code(),
         Some(1)
     );
     Ok(())
@@ -187,7 +199,11 @@ async fn lease_held_elsewhere_exits_4_with_the_holder() -> TestResult {
     assert_eq!(error["error"]["holder"]["label"], "someone else");
     let state = cli(&station.url, &["state"]).await.stdout_json();
     assert_eq!(state["lease"]["label"], "someone else");
-    let moved = cli(&station.url, &["move-joints", ARM, "--joints", "0,0,0,0,0"]).await;
+    let moved = cli(
+        &station.url,
+        &["move-joints", ARM, "--joints-radians", "0,0,0,0,0"],
+    )
+    .await;
     assert_eq!(moved.code(), Some(4));
 
     assert_eq!(
@@ -207,8 +223,8 @@ async fn preview_pose_projects_without_moving() -> TestResult {
         &[
             "preview-pose",
             ARM,
-            "--position",
-            "0.2,0.0,0.1",
+            "--position-mm",
+            "200,0,100",
             "--approach",
             "down",
             "--jaw-yaw-degrees",
@@ -237,8 +253,8 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
     std::fs::write(
         &file,
         serde_json::json!([
-            {"label": "near", "position": [0.2, 0.0, 0.1], "orientation": {"kind": "grasp", "approach": [0.0, 0.0, -1.0], "jaw_yaw_degrees": 90.0}},
-            {"label": "far", "position": [3.0, 3.0, 3.0]}
+            {"label": "near", "position_mm": [200, 0, 100], "orientation": {"approach": [0, 0, -1], "jaw_yaw_degrees": 90}},
+            {"label": "far", "position_mm": [3000, 3000, 3000]}
         ])
         .to_string(),
     )?;
@@ -264,6 +280,18 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
         labels,
         [serde_json::json!("near"), serde_json::json!("far")]
     );
+    std::fs::write(&file, r#"[{"label":"native","position":[0.2,0.0,0.1]}]"#)?;
+    let path = file.to_string_lossy();
+    let rejected = cli(&station.url, &["preview-poses", ARM, &path]).await;
+    assert_eq!(rejected.code(), Some(2));
+    assert!(
+        rejected.stderr_json()["error"]["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("use explicit model units for position"))
+    );
+    let native = cli(&station.url, &["preview-poses", ARM, "--input-si", &path]).await;
+    assert_eq!(native.code(), Some(0));
+    assert_eq!(native.stdout_json()[0]["label"], "native");
     std::fs::remove_file(file)?;
     Ok(())
 }
@@ -276,10 +304,11 @@ async fn a_action_sequence_runs_from_a_file() -> TestResult {
         "hebbian-cli-action_sequence-{}.json",
         std::process::id()
     ));
-    let step = |joints: [f64; 5]| serde_json::json!({"arms": {ARM: {"goal": {"kind": "joints", "joints": joints}}}});
+    let step =
+        |joints: [f64; 5]| serde_json::json!({"arms": {ARM: {"goal": {"joints_degrees": joints}}}});
     std::fs::write(
         &file,
-        serde_json::json!({"steps": [step([0.2, -0.5, 0.5, 0.0, 0.0]), step([-0.2, -0.5, 0.5, 0.0, 0.0])]})
+        serde_json::json!({"steps": [step([10.0, -30.0, 30.0, 0.0, 0.0]), step([-10.0, -30.0, 30.0, 0.0, 0.0])]})
             .to_string(),
     )?;
     let run = cli(

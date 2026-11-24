@@ -28,7 +28,10 @@ pub use http::CameraJpeg;
 pub use response_format::{
     ConciseOptions, concise_output, concise_response, concise_response_with, model_response,
 };
-pub use robot_tools::{RobotContext, RobotToolCall, RobotToolOutcome, RobotToolResult, RobotTools};
+pub use robot_tools::{
+    RobotContext, RobotToolCall, RobotToolOutcome, RobotToolResult, RobotTools,
+    normalize_robot_tool_arguments,
+};
 pub use sequence_images::{SequenceImage, SequenceImageBoundary, SequenceImageHistory};
 pub use station::{
     CommandOptions, ConnectOptions, DEFAULT_MEDIA_SERVER, DEFAULT_SERVER, LeaseGuard, LeaseRequest,

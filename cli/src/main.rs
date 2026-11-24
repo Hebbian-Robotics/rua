@@ -14,8 +14,8 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use commands::{
-    ActionSequenceCommand, CameraCommand, Cli, Command, LeaseCommand, RecordCommand, TracesCommand,
-    TrajectoryArgs,
+    ActionSequenceCommand, CameraCommand, Cli, Command, LeaseCommand, MotionFileArgs,
+    RecordCommand, TracesCommand, TrajectoryArgs,
 };
 use output::{Failure, json_value, print_compactable};
 
@@ -119,30 +119,28 @@ async fn dispatch(
         Command::MoveJoints {
             arm,
             joints,
-            speed,
             trajectory,
         } => {
             let move_options = motion_options(session, &trajectory);
-            let speed = requested_speed(speed)?;
+            let speed = requested_speed(trajectory.speed_radians())?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
-                    .move_to_joints_with(&arm, joints, speed, move_options)
+                    .move_to_joints_with(&arm, joints.into_radians(), speed, move_options)
                     .await?)
             })?)
         }
         Command::MovePose {
             arm,
             pose,
-            speed,
             trajectory,
         } => {
             let move_options = motion_options(session, &trajectory);
-            let speed = requested_speed(speed)?;
+            let speed = requested_speed(trajectory.speed_radians())?;
             json_value(&with_motion_lease!(station, session, lease, {
                 Ok(lease
                     .move_to_pose_keeping_orientation_with(
                         &arm,
-                        pose.position(),
+                        pose.position_metres(),
                         pose.orientation(),
                         speed,
                         move_options,
@@ -168,13 +166,12 @@ async fn dispatch(
         Command::PreviewPose {
             arm,
             pose,
-            speed,
             trajectory,
         } => {
             let mut preview = pose.preview();
-            preview.max_joint_speed = requested_speed(speed)?;
-            preview.max_joint_acceleration = trajectory.acceleration;
-            preview.max_joint_jerk = trajectory.jerk;
+            preview.max_joint_speed = requested_speed(trajectory.speed_radians())?;
+            preview.max_joint_acceleration = trajectory.acceleration_radians();
+            preview.max_joint_jerk = trajectory.jerk_radians();
             json_value(&station.preview_pose(&arm, preview).await?)
         }
         Command::PreviewPoses { arm, input } => {
@@ -209,8 +206,8 @@ fn requested_speed(speed: Option<f64>) -> Result<Option<JointSpeed>, Failure> {
 
 fn motion_options(session: &Session, trajectory: &TrajectoryArgs) -> CommandOptions {
     CommandOptions {
-        max_joint_acceleration: trajectory.acceleration,
-        max_joint_jerk: trajectory.jerk,
+        max_joint_acceleration: trajectory.acceleration_radians(),
+        max_joint_jerk: trajectory.jerk_radians(),
         ..session.options.clone()
     }
 }
@@ -326,13 +323,21 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     std::fs::write(path, bytes).map_err(|error| Failure::Io(format!("{}: {error}", path.display())))
 }
 
-fn read_json<T: DeserializeOwned>(input: &Path) -> Result<T, Failure> {
+fn read_json<T: DeserializeOwned>(request: &MotionFileArgs) -> Result<T, Failure> {
+    let input = request.path.as_path();
     let text = if input == Path::new("-") {
         std::io::read_to_string(std::io::stdin())
     } else {
         std::fs::read_to_string(input)
     }
     .map_err(|error| Failure::Io(format!("{}: {error}", input.display())))?;
-    serde_json::from_str(&text)
-        .map_err(|error| Failure::Usage(format!("{}: {error}", input.display())))
+    let usage =
+        |error: &dyn std::fmt::Display| Failure::Usage(format!("{}: {error}", input.display()));
+    let arguments = serde_json::from_str(&text).map_err(|error| usage(&error))?;
+    let arguments = if request.input_si {
+        arguments
+    } else {
+        hebbian_rua::normalize_robot_tool_arguments(arguments).map_err(|error| usage(&error))?
+    };
+    serde_json::from_value(arguments).map_err(|error| usage(&error))
 }

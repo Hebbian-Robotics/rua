@@ -11,6 +11,11 @@ A `limited` result can mean the arm reached an endpoint adjusted by the planner.
 Model views use millimetres and degrees. Direct station calls and full payloads
 use metres and radians. See the
 [tool input units](../schemas/robot-tool-input-units.json) for argument conversion.
+Motion JSON in the [CLI](../cli/README.md) uses the same unit fields. The
+CLI exposes state and camera snapshots as separate commands. The example
+agent loops can attach observations to tool results and retain sequence
+images across calls.
+
 
 ## Images during action sequences
 

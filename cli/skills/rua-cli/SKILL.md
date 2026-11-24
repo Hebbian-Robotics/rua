@@ -47,9 +47,15 @@ Pose targets are in the station world frame. In the standard SO-101 layout,
 base pose can differ from the world origin and orientation. Image directions
 depend on the camera pose.
 
-CLI position inputs are metres, and joint angles are radians in the state's
-`joint_names` order. Joint speed, acceleration, and
-jerk caps use rad/s, rad/s², and rad/s³ respectively. Gripper opening is
+Use `--position-mm` and `--joints-degrees` to match the concise output.
+Joint arrays follow the state's `joint_names` order. The CLI also accepts
+`--position-m` and `--joints-radians`. Joint speed, acceleration, and jerk
+flags spell out their units. Motion JSON uses the SDK model fields
+`position_mm`, `joints_degrees`, and `max_joint_speed_degrees_per_second`.
+JSON acceleration and jerk caps use
+`max_joint_acceleration_degrees_per_second_squared` and
+`max_joint_jerk_degrees_per_second_cubed`. Use `--input-si` for native station
+JSON. Gripper opening is
 0 closed to 1 open. Quaternions use x,y,z,w; jaw yaw uses degrees. Without an
 orientation, `move-pose` preserves the current orientation, whereas
 `preview-pose` lets the solver choose one. Supply the same explicit orientation

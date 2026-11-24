@@ -167,7 +167,7 @@
                 "minimum": 0.0,
                 "type": "number"
               },
-              "max_joint_acceleration": {
+              "max_joint_acceleration_degrees_per_second_squared": {
                 "anyOf": [
                   {
                     "type": "number"
@@ -176,10 +176,10 @@
                     "type": "null"
                   }
                 ],
-                "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                "description": "Joint acceleration cap in degrees per second squared; defaults to the arm profile.",
                 "exclusiveMinimum": 0.0
               },
-              "max_joint_jerk": {
+              "max_joint_jerk_degrees_per_second_cubed": {
                 "anyOf": [
                   {
                     "type": "number"
@@ -188,7 +188,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                "description": "Joint jerk cap in degrees per second cubed; defaults to the arm profile.",
                 "exclusiveMinimum": 0.0
               },
               "max_joint_speed_degrees_per_second": {
@@ -442,7 +442,7 @@
           "additionalProperties": false,
           "description": "Where the arm's controller would take the tool toward a pose, without moving.",
           "properties": {
-            "max_joint_acceleration": {
+            "max_joint_acceleration_degrees_per_second_squared": {
               "anyOf": [
                 {
                   "type": "number"
@@ -451,10 +451,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+              "description": "Joint acceleration cap in degrees per second squared; defaults to the arm profile.",
               "exclusiveMinimum": 0.0
             },
-            "max_joint_jerk": {
+            "max_joint_jerk_degrees_per_second_cubed": {
               "anyOf": [
                 {
                   "type": "number"
@@ -463,7 +463,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+              "description": "Joint jerk cap in degrees per second cubed; defaults to the arm profile.",
               "exclusiveMinimum": 0.0
             },
             "max_joint_speed_degrees_per_second": {
@@ -643,7 +643,7 @@
         }
       },
       "additionalProperties": false,
-      "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+      "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. Grouped moves check modeled clearance among participating arms.",
       "properties": {
         "goals": {
           "additionalProperties": {

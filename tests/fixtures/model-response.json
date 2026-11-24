@@ -62,6 +62,21 @@
     }
   },
   {
+    "name": "effective joint caps use degrees in model output",
+    "input": {
+      "effective_motion_limits": {
+        "max_joint_acceleration": 1.5707963267948966,
+        "max_joint_jerk": 3.141592653589793
+      }
+    },
+    "expected": {
+      "effective_motion_limits": {
+        "max_joint_acceleration_degrees_per_second_squared": 90.0,
+        "max_joint_jerk_degrees_per_second_cubed": 180.0
+      }
+    }
+  },
+  {
     "name": "sequence records expose joint speed in model units",
     "input": {
       "steps": [
