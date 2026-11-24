@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-rua"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -1338,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-rua-cli"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "clap",
@@ -1352,7 +1352,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-rua-contracts"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "backon",
  "schemars",
@@ -1362,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-rua-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-rua-python"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "hebbian-rua",
  "pyo3",
@@ -1408,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "hebbian-rua-server"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -2140,7 +2140,7 @@ dependencies = [
 
 [[package]]
 name = "livekit-cameras"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "cameras",

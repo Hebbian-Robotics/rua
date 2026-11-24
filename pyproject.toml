@@ -2,7 +2,7 @@
 name = "hebbian-rua"
 description = "Build robot-use agents with your own model and loop"
 readme = "README.md"
-version = "0.1.5"
+version = "0.1.6"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = [

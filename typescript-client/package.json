@@ -1,6 +1,6 @@
 {
   "name": "hebbian-rua",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "TypeScript client for a Hebbian robot-use station.",
   "repository": {
     "type": "git",
