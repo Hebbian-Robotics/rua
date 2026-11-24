@@ -35,7 +35,7 @@ function memoryStore(
 const request = runRequestSchema.parse({
   arm: "follower",
   task: "stack",
-  settings: { provider: "openai" },
+  settings: { provider: "openai", model: "gpt-6.2-astra" },
 });
 let station: ScriptedStation;
 let store: ReturnType<typeof memoryStore>;

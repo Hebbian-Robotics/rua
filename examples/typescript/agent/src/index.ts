@@ -1,7 +1,6 @@
 export type { LoopConfig } from "./loop.js";
 export {
   DEFAULT_INFERENCE_MODE,
-  DEFAULT_MODELS,
   DEFAULT_REASONING_EFFORT,
   INFERENCE_MODES,
   type InferenceMode,

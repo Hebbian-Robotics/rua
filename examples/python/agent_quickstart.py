@@ -39,12 +39,6 @@ The provider stores conversation history. The loop executes the robot tools.
 
 type Provider = Literal["openai", "anthropic", "gemini"]
 
-PROVIDER_PRIORITY: tuple[Provider, ...] = ("openai", "gemini", "anthropic")
-DEFAULT_MODELS: Mapping[Provider, str] = {
-    "openai": "gpt-6.2-astra",
-    "gemini": "gemini-4-neon",
-    "anthropic": "claude-fable-5-2",
-}
 DEFAULT_MAX_TURNS = 20
 command_line = App(help=CLI_HELP, version_flags=())
 
@@ -482,22 +476,6 @@ async def run_task(
                 await run_gemini(robot, task, model, instructions, max_turns)
 
 
-def resolve_model(
-    provider: Provider, explicit_model: str | None, environment: Mapping[str, str]
-) -> str:
-    model_variable = f"{provider.upper()}_MODEL"
-    if explicit_model is not None:
-        if not explicit_model.strip():
-            raise ValueError("Pass a nonempty model ID with --model")
-        return explicit_model
-    environment_model = environment.get(model_variable)
-    return (
-        environment_model
-        if environment_model and environment_model.strip()
-        else DEFAULT_MODELS[provider]
-    )
-
-
 def configured_api_key(
     provider: Provider, environment: Mapping[str, str]
 ) -> str | None:
@@ -512,38 +490,13 @@ def configured_api_key(
     )
 
 
-def resolve_provider(
-    explicit_provider: Provider | None, environment: Mapping[str, str]
-) -> Provider:
-    if explicit_provider is not None:
-        return explicit_provider
-    return next(
-        (
-            provider
-            for provider in PROVIDER_PRIORITY
-            if configured_api_key(provider, environment)
-        ),
-        PROVIDER_PRIORITY[0],
-    )
-
-
 @command_line.default
 async def main(
     task: str,
     /,
     *,
-    provider: Annotated[
-        Provider | None,
-        Parameter(
-            help="Defaults to the first configured key in order OpenAI, Gemini, Anthropic."
-        ),
-    ] = None,
-    model: Annotated[
-        str | None,
-        Parameter(
-            help="Model ID. Overrides OPENAI_MODEL, ANTHROPIC_MODEL or GEMINI_MODEL."
-        ),
-    ] = None,
+    provider: Annotated[Provider, Parameter(help="Model provider.")],
+    model: Annotated[str, Parameter(help="Model ID.")],
     max_turns: Annotated[
         int,
         Parameter(
@@ -565,15 +518,13 @@ async def main(
     ] = None,
 ) -> int | None:
     load_environment()
-    resolved_provider = resolve_provider(provider, os.environ)
-    try:
-        resolved_model = resolve_model(resolved_provider, model, os.environ)
-    except ValueError as error:
-        command_line.error_console.print(str(error), markup=False)
+    model = model.strip()
+    if not model:
+        command_line.error_console.print("Pass a nonempty model ID with --model")
         return 2
-    if configured_api_key(resolved_provider, os.environ) is None:
+    if configured_api_key(provider, os.environ) is None:
         command_line.error_console.print(
-            f"Set {resolved_provider.upper()}_API_KEY before running the agent"
+            f"Set {provider.upper()}_API_KEY before running the agent"
         )
         return 2
 
@@ -583,8 +534,8 @@ async def main(
             tracer_provider.get_tracer("hebbian.agent"),
             "agent run",
             {
-                "gen_ai.provider.name": resolved_provider,
-                "gen_ai.request.model": resolved_model,
+                "gen_ai.provider.name": provider,
+                "gen_ai.request.model": model,
             },
         ) as span,
     ):
@@ -599,8 +550,8 @@ async def main(
                 return 2
             await run_task(
                 station,
-                resolved_provider,
-                resolved_model,
+                provider,
+                model,
                 task,
                 arm_name,
                 list(camera),

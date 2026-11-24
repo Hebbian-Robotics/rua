@@ -21,7 +21,6 @@ import { startConversation } from "./providers/index.js";
 import {
   type ConversationSettings,
   DEFAULT_INFERENCE_MODE,
-  DEFAULT_MODELS,
   type InferenceMode,
   type ModelConversation,
   type ModelRefusal,
@@ -48,7 +47,7 @@ export interface LoopConfig {
   optionalCameras: string[];
   provider: Provider;
 
-  model: string | null;
+  model: string;
   maxModelTurns?: number;
   reasoningEffort: ReasoningEffort;
   // Standard when absent.
@@ -125,7 +124,7 @@ async function awaitModelTurn(
 
 const CANCELLED_RESULT = "Run cancelled; the arm was stopped";
 
-type ResolvedLoopConfig = LoopConfig & { arm: string; model: string };
+type ResolvedLoopConfig = LoopConfig & { arm: string };
 
 export function requirePositiveModelTurnLimit(maxModelTurns: number): number {
   if (!Number.isSafeInteger(maxModelTurns) || maxModelTurns < 1) {
@@ -157,7 +156,6 @@ export async function drive(
   const config: ResolvedLoopConfig = {
     ...requested,
     arm: requested.arm ?? (await resolveSoleArm(connection)),
-    model: requested.model ?? DEFAULT_MODELS[requested.provider],
   };
   const usage = new RunUsage(config.runId);
   const print = options.print ?? ((line: string) => console.log(line));

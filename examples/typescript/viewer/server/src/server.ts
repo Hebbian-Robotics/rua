@@ -4,13 +4,14 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import type { ZodType } from "zod";
-import { DEFAULT_MODELS } from "../../../agent/src/providers/types.js";
+import { PROVIDERS } from "../../../agent/src/providers/types.js";
 import {
   type Provider,
   RUN_STREAM_HEARTBEAT_EVENT,
   type RunEvent,
   runRequestSchema,
 } from "../../shared/run-api.js";
+import { viewerModelCatalog } from "./model-catalog.js";
 import {
   RunConflictError,
   type RunManager,
@@ -52,10 +53,13 @@ export function createApp({
   app.get("/api/health", (context) => context.json({ ok: true, manualOnly }));
   app.get("/api/model-providers", (context) =>
     context.json(
-      (manualOnly ? [] : configuredProviders).map((provider) => ({
-        provider,
-        defaultModel: DEFAULT_MODELS[provider],
-      })),
+      manualOnly
+        ? []
+        : PROVIDERS.map((provider) => ({
+            provider,
+            ...viewerModelCatalog[provider],
+            available: configuredProviders.includes(provider),
+          })),
     ),
   );
   app.get("/api/runs/current", (context) => context.json(manager.current()));

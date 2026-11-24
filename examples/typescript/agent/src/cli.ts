@@ -1,7 +1,7 @@
 #!/usr/bin/env -S pnpm exec tsx --conditions=development
 // Let a model perform a task with the station's arm.
 //
-//   pnpm --filter @hebbian/agent start --provider openai -- "Describe the robot state."
+//   pnpm --filter @hebbian/agent start --provider openai --model gpt-6.2-astra -- "Describe the robot state."
 //
 // A thin wrapper over runAgent for terminal use; the agent server calls runAgent in-process.
 // API keys come from the environment or a .env file in the directory the command was run from.
@@ -25,12 +25,7 @@ import {
   unsupportedInferenceMode,
   unsupportedReasoningEffort,
 } from "./providers/types.js";
-import {
-  apiKeyFromEnvironment,
-  configuredProviders,
-  PROVIDER_PRIORITY,
-  runAgent,
-} from "./run.js";
+import { apiKeyFromEnvironment, runAgent } from "./run.js";
 
 function createCommand(): Command {
   return new Command("hebbian-agent")
@@ -51,15 +46,11 @@ function createCommand(): Command {
       "Comma-separated cameras that may be unavailable.",
     )
     .addOption(
-      new Option(
-        "--provider <name>",
-        "Defaults to the first configured key in order OpenAI, Gemini, Anthropic.",
-      ).choices(PROVIDERS),
+      new Option("--provider <name>", "Model provider.")
+        .choices(PROVIDERS)
+        .makeOptionMandatory(),
     )
-    .option(
-      "--model <id>",
-      "Defaults to the provider's *_MODEL variable or example model.",
-    )
+    .requiredOption("--model <id>", "Model ID.")
     .option("--max-turns <count>", "Maximum number of model turns.", (value) =>
       requirePositiveModelTurnLimit(Number(value)),
     )
@@ -96,8 +87,8 @@ interface CommandOptions {
   mediaServer?: string;
   camera?: string;
   optionalCamera?: string;
-  provider?: Provider;
-  model?: string;
+  provider: Provider;
+  model: string;
   maxTurns?: number;
   reasoningEffort: ReasoningEffort;
   inferenceMode: InferenceMode;
@@ -140,15 +131,9 @@ export function parseCommandLine(
   const optional = cameraNames(values.optionalCamera);
   if (required.some((name) => optional.includes(name)))
     throw new Error("Camera names must be unique");
-  const provider =
-    values.provider ??
-    configuredProviders(environment)[0] ??
-    PROVIDER_PRIORITY[0];
-  const environmentModel = environment[`${provider.toUpperCase()}_MODEL`];
-  const model =
-    values.model ?? (environmentModel?.trim() ? environmentModel : null);
-  if (model !== null && !model.trim())
-    throw new Error("Pass a nonempty model ID with --model");
+  const { provider } = values;
+  const model = values.model.trim();
+  if (!model) throw new Error("Pass a nonempty model ID with --model");
   const { maxTurns: maxModelTurns, reasoningEffort, inferenceMode } = values;
   const settingsProblem =
     unsupportedReasoningEffort(provider, model, reasoningEffort) ??

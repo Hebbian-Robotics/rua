@@ -6,7 +6,6 @@ import {
   type AgentOutcome,
   apiKeyFromEnvironment,
   DEFAULT_INFERENCE_MODE,
-  DEFAULT_MODELS,
   DEFAULT_REASONING_EFFORT,
   type RunAgentOptions,
   runAgent,
@@ -88,8 +87,7 @@ export class RunManager {
   start(request: ParsedRunRequest): Run {
     if (this.activeRun() !== null)
       throw new RunConflictError("A run is already active");
-    const provider = request.settings.provider ?? "anthropic";
-    const model = request.settings.model ?? DEFAULT_MODELS[provider];
+    const { provider, model } = request.settings;
     const reasoningEffort =
       request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
     const inferenceMode =
@@ -113,7 +111,7 @@ export class RunManager {
     this.runs.set(run.id, entry);
     this.persist(entry.run);
     const started = entry.run;
-    entry.finished = this.execute(entry);
+    entry.finished = this.execute(entry, request);
     return started;
   }
 
@@ -223,9 +221,11 @@ export class RunManager {
     this.emit(entry, { type: "output", line });
   }
 
-  private async execute(entry: LiveRun): Promise<void> {
-    const { request } = entry.run;
-    const provider = request.settings.provider ?? "anthropic";
+  private async execute(
+    entry: LiveRun,
+    request: ParsedRunRequest,
+  ): Promise<void> {
+    const { provider, model } = request.settings;
     let outcome: AgentOutcome;
     try {
       outcome = await runAgent(
@@ -236,7 +236,7 @@ export class RunManager {
           cameras: request.cameras,
           optionalCameras: request.optionalCameras,
           provider,
-          model: request.settings.model,
+          model,
           reasoningEffort:
             request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
           inferenceMode:

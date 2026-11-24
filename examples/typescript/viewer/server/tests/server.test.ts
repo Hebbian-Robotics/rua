@@ -41,7 +41,7 @@ function app(manualOnly = false) {
 const body = JSON.stringify({
   arm: "follower",
   task: "t",
-  settings: { provider: "openai" },
+  settings: { provider: "openai", model: "gpt-6.2-astra" },
 });
 const post = {
   method: "POST",
@@ -114,6 +114,13 @@ test("bad bodies and unknown runs are refused with a detail", async () => {
   expect(
     (await server.request("/api/runs", { ...post, body: "nope" })).status,
   ).toBe(400);
+  for (const settings of [{ model: "gpt-6.2-astra" }, { provider: "openai" }]) {
+    const response = await server.request("/api/runs", {
+      ...post,
+      body: JSON.stringify({ arm: "follower", task: "t", settings }),
+    });
+    expect(response.status).toBe(400);
+  }
   const unsupported = await server.request("/api/runs", {
     ...post,
     body: JSON.stringify({
@@ -135,7 +142,11 @@ test("bad bodies and unknown runs are refused with a detail", async () => {
     body: JSON.stringify({
       arm: "follower",
       task: "t",
-      settings: { provider: "anthropic", inferenceMode: "ultrafast" },
+      settings: {
+        provider: "anthropic",
+        model: "claude-fable-5-2",
+        inferenceMode: "ultrafast",
+      },
     }),
   });
   expect(noUltrafast.status).toBe(400);
@@ -160,8 +171,31 @@ test("CORS allows the viewer origin only", async () => {
     headers: { Origin: "http://evil" },
   });
   expect(other.headers.get("access-control-allow-origin")).toBeNull();
-  expect(await (await server.request("/api/model-providers")).json()).toEqual([
-    { provider: "openai", defaultModel: "gpt-6.2-astra" },
+});
+
+test("the provider menu is ordered and includes availability and model choices", async () => {
+  const response = await app().request("/api/model-providers");
+  expect(await response.json()).toMatchObject([
+    {
+      provider: "openai",
+      available: true,
+      models: [{ id: "gpt-6.2-astra" }, { id: "gpt-6-astra" }],
+    },
+    {
+      provider: "gemini",
+      available: false,
+      models: [
+        { id: "gemini-4-neon" },
+        { id: "gemini-4-hydrogen" },
+        { id: "gemini-4-carbon" },
+        { id: "gemini-4-argon" },
+      ],
+    },
+    {
+      provider: "anthropic",
+      available: false,
+      models: [{ id: "claude-fable-5-2" }, { id: "claude-opus-5-5" }],
+    },
   ]);
 });
 

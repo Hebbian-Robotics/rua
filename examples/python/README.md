@@ -38,10 +38,12 @@ to try it. Check the target and clearance before running on hardware.
 
 Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the environment
 or `.env`. [`agent_quickstart.py`](agent_quickstart.py) enables the arm and gives
-the model motion tools. Release any active control lease before starting.
+the model motion tools. Pass both the provider and model ID. Release any active
+control lease before starting.
 
 ```sh
-uv run agent_quickstart.py "Describe the robot state. Keep the arm still."
+uv run agent_quickstart.py --provider openai --model gpt-6.2-astra \
+    "Describe the robot state. Keep the arm still."
 ```
 
 Run `uv run agent_quickstart.py --help` for arm, camera, station, and model
@@ -65,7 +67,8 @@ OTLP HTTP receiver, then run the agent with the trace endpoint:
 
 ```sh
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces \
-  uv run agent_quickstart.py "Describe the robot state. Keep the arm still."
+  uv run agent_quickstart.py --provider openai --model gpt-6.2-astra \
+    "Describe the robot state. Keep the arm still."
 ```
 
 Open [Jaeger](http://127.0.0.1:16686/) and look up the trace ID printed by the
@@ -84,7 +87,8 @@ Set `HEBBIAN_RUA_MODEL_INPUTS_DIR` to save the JPEGs supplied on each model turn
 
 ```sh
 HEBBIAN_RUA_MODEL_INPUTS_DIR=/tmp/rua-model-inputs \
-  uv run agent_quickstart.py --camera wrist "Describe what you see."
+  uv run agent_quickstart.py --provider openai --model gpt-6.2-astra \
+    --camera wrist "Describe what you see."
 ```
 
 The agent prints the run directory. Each turn's `index.json` lists the images

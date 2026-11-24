@@ -7,11 +7,16 @@ import { ClaudeConversation } from "../src/providers/claude.js";
 import { GeminiConversation } from "../src/providers/gemini.js";
 import { OpenAIConversation } from "../src/providers/openai.js";
 import {
-  DEFAULT_MODELS,
   type Observation,
   PROVIDERS,
   type Provider,
 } from "../src/providers/types.js";
+
+const testModelIds = {
+  anthropic: "claude-fable-5-2",
+  openai: "gpt-6.2-astra",
+  gemini: "gemini-4-neon",
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -71,7 +76,7 @@ function modelReply(provider: Provider, turn: number): Response {
             type: "message",
             role: "assistant",
             content: [],
-            model: DEFAULT_MODELS.anthropic,
+            model: testModelIds.anthropic,
             stop_reason: null,
             stop_sequence: null,
             usage: { input_tokens: 1, output_tokens: 0 },
@@ -152,7 +157,7 @@ test.each(PROVIDERS)(
     try {
       const conversation = new Conversation({
         apiKey: "local-test-key",
-        model: DEFAULT_MODELS[provider],
+        model: testModelIds[provider],
         systemPrompt: "Inspect the station",
         firstObservation: observation({ wrist: [1, 2] }),
         tools: [],

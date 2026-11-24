@@ -44,7 +44,10 @@ test("the flags of the manual loop command the viewer shows are understood", () 
 });
 
 test("the inference mode defaults to standard and is refused where the provider or model lacks it", () => {
-  expect(parseRun(["--provider", "openai", "a", "t"]).config).toMatchObject({
+  expect(
+    parseRun(["--provider", "openai", "--model", "gpt-example", "a", "t"])
+      .config,
+  ).toMatchObject({
     inferenceMode: "standard",
   });
   expect(
@@ -63,6 +66,8 @@ test("the inference mode defaults to standard and is refused where the provider 
     parseRun([
       "--provider",
       "anthropic",
+      "--model",
+      "claude-fable-5-2",
       "--inference-mode",
       "ultrafast",
       "a",
@@ -84,14 +89,22 @@ test("the inference mode defaults to standard and is refused where the provider 
 });
 
 test("xhigh reasoning effort is opt-in and refused where the model lacks it", () => {
-  expect(parseRun(["--provider", "openai", "a", "t"]).config).toMatchObject({
+  expect(
+    parseRun(["--provider", "openai", "--model", "gpt-example", "a", "t"])
+      .config,
+  ).toMatchObject({
     reasoningEffort: "high",
   });
-  for (const provider of ["openai", "anthropic"])
+  for (const [provider, model] of [
+    ["openai", "gpt-6-astra"],
+    ["anthropic", "claude-fable-5-2"],
+  ] as const)
     expect(
       parseRun([
         "--provider",
         provider,
+        "--model",
+        model,
         "--reasoning-effort",
         "xhigh",
         "a",
@@ -99,8 +112,16 @@ test("xhigh reasoning effort is opt-in and refused where the model lacks it", ()
       ]).config.reasoningEffort,
     ).toBe("xhigh");
   expect(
-    parseRun(["--provider", "gemini", "--reasoning-effort", "xhigh", "a", "t"])
-      .config.reasoningEffort,
+    parseRun([
+      "--provider",
+      "gemini",
+      "--model",
+      "gemini-4-neon",
+      "--reasoning-effort",
+      "xhigh",
+      "a",
+      "t",
+    ]).config.reasoningEffort,
   ).toBe("xhigh");
   expect(() =>
     parseCommandLine(
@@ -119,63 +140,54 @@ test("xhigh reasoning effort is opt-in and refused where the model lacks it", ()
   ).toThrow("xhigh is not supported by gemini-4-carbon");
 });
 
-test("provider priority and model environment defaults can be overridden", () => {
-  const anthropic = {
-    ANTHROPIC_API_KEY: "test-anthropic",
-    ANTHROPIC_MODEL: "claude-example",
-  };
-  const geminiAndAnthropic = {
-    ...anthropic,
-    GOOGLE_API_KEY: "test-gemini",
-    GEMINI_MODEL: "gemini-example",
-  };
-  const allKeys = {
-    ...geminiAndAnthropic,
-    OPENAI_API_KEY: "test-openai",
+test("provider and model are required even with environment defaults", () => {
+  const environment = {
+    OPENAI_API_KEY: "test-key",
     OPENAI_MODEL: "gpt-example",
   };
-  expect(parseRun(["Wave"], allKeys).config).toMatchObject({
-    provider: "openai",
-    model: "gpt-example",
-  });
-  expect(parseRun(["Wave"], geminiAndAnthropic).config).toMatchObject({
-    provider: "gemini",
-    model: "gemini-example",
-  });
-  expect(parseRun(["Wave"], anthropic).config).toMatchObject({
-    provider: "anthropic",
-    model: "claude-example",
-  });
-  expect(
-    parseRun(
-      [
-        "--provider",
-        "anthropic",
-        "--model",
-        "explicit-model",
-        "--arm",
-        "left",
-        "Wave",
-      ],
-      allKeys,
-    ).config,
-  ).toMatchObject({
-    provider: "anthropic",
-    model: "explicit-model",
-    arm: "left",
-    task: "Wave",
-  });
+  expect(() =>
+    parseRun(["--model", "gpt-example", "Wave"], environment),
+  ).toThrow("--provider");
+  expect(() => parseRun(["--provider", "openai", "Wave"], environment)).toThrow(
+    "--model",
+  );
+  expect(() =>
+    parseRun(["--provider", "openai", "--model", " ", "Wave"], environment),
+  ).toThrow("nonempty model ID");
 });
 
 test("bad input is refused with a message", () => {
   expect(() =>
-    parseCommandLine(["--take-over", "follower", "Wave"], {}),
+    parseCommandLine(
+      [
+        "--provider",
+        "openai",
+        "--model",
+        "gpt-example",
+        "--take-over",
+        "follower",
+        "Wave",
+      ],
+      {},
+    ),
   ).toThrow(/unknown option.*--take-over/i);
-  expect(() => parseCommandLine(["--provider", "openai"], {})).toThrow(
-    "Pass <task> or <arm> <task>",
-  );
   expect(() =>
-    parseCommandLine(["--arm", "left", "right", "Wave"], {}),
+    parseCommandLine(["--provider", "openai", "--model", "gpt-example"], {}),
+  ).toThrow("Pass <task> or <arm> <task>");
+  expect(() =>
+    parseCommandLine(
+      [
+        "--provider",
+        "openai",
+        "--model",
+        "gpt-example",
+        "--arm",
+        "left",
+        "right",
+        "Wave",
+      ],
+      {},
+    ),
   ).toThrow("Choose the arm either with --arm or before the task");
   expect(() =>
     parseCommandLine(["--provider", "mistral", "a", "t"], {}),
@@ -187,7 +199,19 @@ test("bad input is refused with a message", () => {
     ),
   ).toThrow("--reasoning-effort");
   expect(() =>
-    parseCommandLine(["--provider", "openai", "--camera", "a,a", "x", "t"], {}),
+    parseCommandLine(
+      [
+        "--provider",
+        "openai",
+        "--model",
+        "gpt-example",
+        "--camera",
+        "a,a",
+        "x",
+        "t",
+      ],
+      {},
+    ),
   ).toThrow("repeat");
 });
 

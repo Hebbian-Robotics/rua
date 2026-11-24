@@ -18,8 +18,8 @@ const run: Run = {
     cameras: [],
     optionalCameras: [],
     settings: {
-      provider: null,
-      model: null,
+      provider: "openai",
+      model: "gpt-6.2-astra",
       reasoningEffort: null,
       inferenceMode: null,
     },

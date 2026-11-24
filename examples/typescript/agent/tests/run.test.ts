@@ -18,7 +18,7 @@ const loopConfig: LoopConfig = {
   cameras: ["cam"],
   optionalCameras: [],
   provider: "anthropic",
-  model: null,
+  model: "claude-fable-5-2",
   reasoningEffort: "high",
   onInterruption: "wait_for_approval",
   record: false,
@@ -43,7 +43,14 @@ afterEach(() => {
 
 test("a task with no arm name uses the station's sole arm", async () => {
   const commandLine = parseCommandLine(
-    ["--provider", "anthropic", "--", "Touch the block"],
+    [
+      "--provider",
+      "anthropic",
+      "--model",
+      "claude-fable-5-2",
+      "--",
+      "Touch the block",
+    ],
     {},
   );
   if (commandLine === "help") throw new Error("expected a task");

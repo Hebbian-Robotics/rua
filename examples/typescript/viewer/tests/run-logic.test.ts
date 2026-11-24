@@ -23,8 +23,8 @@ function runIn(phase: Run["phase"]): Run {
       cameras: [],
       optionalCameras: [],
       settings: {
-        provider: null,
-        model: null,
+        provider: "openai",
+        model: "gpt-6.2-astra",
         reasoningEffort: null,
         inferenceMode: null,
       },
@@ -43,16 +43,16 @@ function ended(
   return runIn({ state: "ended", startedAt, endedAt, outcome });
 }
 
-const form: RunFormValues = {
+const form = {
   task: "  stack the cups  ",
   arm: "follower",
   cameras: "  chest,wrist_r ",
   optionalCameras: "",
-  provider: "",
-  model: "",
+  provider: "openai",
+  model: "gpt-6.2-astra",
   reasoningEffort: "high",
   inferenceMode: "standard",
-};
+} satisfies RunFormValues;
 const arms = ["follower", "other"];
 
 test("a described task on a known arm may start, with a trimmed request", () => {
@@ -62,11 +62,15 @@ test("a described task on a known arm may start, with a trimmed request", () => 
   expect(decision.request).toMatchObject({
     task: "stack the cups",
     cameras: ["chest", "wrist_r"],
-    settings: { provider: null, reasoningEffort: "high" },
+    settings: {
+      provider: "openai",
+      model: "gpt-6.2-astra",
+      reasoningEffort: "high",
+    },
   });
 });
 
-test("only a live run, a pending start, a blank task or an unknown arm blocks Start", () => {
+test("run state, a blank task, an unknown arm or a missing model choice blocks Start", () => {
   expect(
     decideStart(
       form,
@@ -95,6 +99,16 @@ test("only a live run, a pending start, a blank task or an unknown arm blocks St
   expect(
     decideStart({ ...form, arm: "ghost" }, null, arms, false),
   ).toMatchObject({ kind: "blocked", reason: "Choose an arm." });
+  expect(
+    decideStart({ ...form, provider: "", model: "" }, null, arms, false),
+  ).toEqual({
+    kind: "blocked",
+    reason: "Choose a model provider.",
+  });
+  expect(decideStart({ ...form, model: "" }, null, arms, false)).toEqual({
+    kind: "blocked",
+    reason: "Choose a model.",
+  });
   expect(decideStart(form, null, [], false)).toMatchObject({
     kind: "blocked",
     reason: expect.stringContaining("arms"),
@@ -175,7 +189,7 @@ test("an inference mode starts only where the provider and model serve it", () =
   });
   expect(
     decideStart(
-      { ...ultrafast, provider: "anthropic", model: "" },
+      { ...ultrafast, provider: "anthropic", model: "claude-fable-5-2" },
       null,
       arms,
       false,
@@ -186,7 +200,12 @@ test("an inference mode starts only where the provider and model serve it", () =
   });
   const fast = { ...form, inferenceMode: "fast" } as const;
   expect(
-    decideStart({ ...fast, provider: "anthropic" }, null, arms, false).kind,
+    decideStart(
+      { ...fast, provider: "anthropic", model: "claude-fable-5-2" },
+      null,
+      arms,
+      false,
+    ).kind,
   ).toBe("allowed");
   expect(
     decideStart(
@@ -197,7 +216,12 @@ test("an inference mode starts only where the provider and model serve it", () =
     ).kind,
   ).toBe("blocked");
   expect(
-    decideStart({ ...fast, provider: "gemini" }, null, arms, false).kind,
+    decideStart(
+      { ...fast, provider: "gemini", model: "gemini-4-argon" },
+      null,
+      arms,
+      false,
+    ).kind,
   ).toBe("allowed");
 });
 
@@ -208,7 +232,7 @@ test("the manual loop command quotes the task and carries the choices", () => {
     provider: "openai",
   });
   expect(manualLoopCommand(request, "http://station:8792")).toBe(
-    "pnpm --filter @hebbian/agent start --server http://station:8792 --camera chest,wrist_r --provider openai --reasoning-effort high -- follower 'it'\\''s a cup'",
+    "pnpm --filter @hebbian/agent start --server http://station:8792 --camera chest,wrist_r --provider openai --model gpt-6.2-astra --reasoning-effort high -- follower 'it'\\''s a cup'",
   );
   expect(
     manualLoopCommand(
