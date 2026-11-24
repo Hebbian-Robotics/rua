@@ -41,7 +41,17 @@ export function apiKeyFromEnvironment(
   return apiKey;
 }
 
-export function configuredApiKey(
+export const PROVIDER_PRIORITY = ["openai", "gemini", "anthropic"] as const;
+
+export function configuredProviders(
+  environment: NodeJS.ProcessEnv,
+): Provider[] {
+  return PROVIDER_PRIORITY.filter(
+    (provider) => configuredApiKey(provider, environment) !== undefined,
+  );
+}
+
+function configuredApiKey(
   provider: Provider,
   environment: NodeJS.ProcessEnv,
 ): string | undefined {
