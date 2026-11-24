@@ -117,7 +117,8 @@ export function SettingsPage({
           >
             <p id="motion-limits-help">
               Applies to planned IK moves from the viewer and its agent runs.
-              Leave a field blank to use the arm profile.
+              The speed cap also applies when dragging in Follow mode. Leave a
+              field blank to use the arm profile.
             </p>
             <fieldset className="grid gap-2">
               <legend className="sr-only">Per-move caps</legend>

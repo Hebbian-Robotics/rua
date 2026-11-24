@@ -118,7 +118,8 @@ single-arm moves.
 Use `--speed`, `--acceleration`, and `--jerk` with the CLI's `move-joints`,
 `move-pose`, or `preview-pose` commands. In the viewer, open **Settings →
 Advanced motion limits**. The browser saves these caps for planned IK moves
-and the agent runs it starts.
+and the agent runs it starts. Manual dragging in Follow mode also uses the
+saved speed cap, or the arm profile default when the field is blank.
 
 ## Coordinated arm clearance
 

@@ -163,7 +163,6 @@ export function ManualControl({
   const latestOrientation = useRef<Orientation | null>(orientation);
   const latestProjection = useRef(projection);
   const latestOpening = useRef(opening);
-  const latestSpeed = useRef(0);
   const requestedLimits = arm?.controller === "ik" ? motionLimits : undefined;
   const latestMotionLimits = useRef(requestedLimits);
   const follow = useRef<Follow | null>(null);
@@ -184,17 +183,12 @@ export function ManualControl({
   latestProjection.current = projection;
   latestOpening.current = opening;
   latestMotionLimits.current = requestedLimits;
-  latestSpeed.current = Math.min(
-    stationState?.max_joint_speed ?? 0,
-    requestedLimits?.max_joint_speed ??
-      (stationState?.max_joint_speed ?? 0) * 0.65,
-  );
 
   useEffect(() => {
     const liveFollow = createLivePoseFollow(
       () => latestArm.current,
       setFollowStatus,
-      () => latestSpeed.current,
+      () => latestMotionLimits.current?.max_joint_speed,
       () => setFollowEnabled(false),
     );
     const liveGripper = createLiveGripper(() => latestArm.current, setMessage);
