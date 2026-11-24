@@ -1,5 +1,6 @@
 import { GoogleGenAI, type Interactions } from "@google/genai";
 import type { RobotToolResult } from "hebbian-rua";
+import { PendingModelImages } from "../model-inputs.js";
 import { GeminiInteractionError } from "./errors.js";
 import {
   type ConversationSettings,
@@ -97,6 +98,7 @@ function functionResultInput(result: RobotToolResult) {
 }
 
 export class GeminiConversation implements ModelConversation {
+  private readonly modelInputs = new PendingModelImages();
   private readonly client: GoogleGenAI;
   private readonly settings: ConversationSettings;
   private readonly tools;
@@ -120,10 +122,12 @@ export class GeminiConversation implements ModelConversation {
       description: tool.description,
       parameters: tool.parametersSchema,
     }));
+    this.modelInputs.add(settings.firstObservation.cameras);
     this.pendingInput = [observationInput(settings.firstObservation)];
   }
 
   async nextTurn(signal?: AbortSignal): Promise<ModelTurn | ModelRefusal> {
+    await this.modelInputs.save();
     const response: GeminiInteraction = await this.client.interactions.create(
       {
         model: this.settings.model,
@@ -161,15 +165,19 @@ export class GeminiConversation implements ModelConversation {
     this.pendingInput.push(...results.map(functionResultInput));
     for (const result of results) {
       if (result.cameras && Object.keys(result.cameras).length > 0)
-        this.addObservation({
-          text: `Images requested by tool call ${result.call.id}.\n${result.text}`,
-          cameras: result.cameras,
-        });
+        this.addObservation(
+          {
+            text: `Images requested by tool call ${result.call.id}.\n${result.text}`,
+            cameras: result.cameras,
+          },
+          result.call.id,
+        );
     }
     if (observation) this.addObservation(observation);
   }
 
-  addObservation(observation: Observation): void {
+  addObservation(observation: Observation, toolCallId?: string): void {
+    this.modelInputs.add(observation.cameras, toolCallId);
     this.pendingInput.push(observationInput(observation));
   }
 }

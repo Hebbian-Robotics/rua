@@ -35,3 +35,11 @@ The Anthropic SDK adds metadata-only request spans under Claude model turns.
 [`src/loop.ts`](src/loop.ts) exports `runAgent`. See
 [Write your own loop](../../../docs/write-your-own-loop.md) for SDK patterns or
 [Model output](../../../docs/model-output.md) to customize what the model sees.
+
+
+## Save the images sent to the model
+
+Set `HEBBIAN_RUA_MODEL_INPUTS_DIR=/tmp/rua-model-inputs` when launching the CLI
+or viewer backend. The agent saves JPEGs and an `index.json` for each model
+turn with images. The model-turn span links to the index through
+`hebbian.model_inputs.path`. See the [file layout and retention notes](../../python/README.md#save-the-images-sent-to-the-model).

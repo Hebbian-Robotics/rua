@@ -7,6 +7,7 @@ import type {
   ResponseInputContent,
   ResponseInputItem,
 } from "openai/resources/responses/responses";
+import { PendingModelImages } from "../model-inputs.js";
 import { OpenAIResponseError } from "./errors.js";
 import {
   type ConversationSettings,
@@ -93,6 +94,7 @@ function observationMessage(observation: Observation): ResponseInputItem {
 // CONSTRAINT: Responses history is chained by response ID; dropping old observation images
 // would require resending the history.
 export class OpenAIConversation implements ModelConversation {
+  private readonly modelInputs = new PendingModelImages();
   private readonly client: OpenAI;
   private readonly settings: ConversationSettings;
   private readonly tools: FunctionTool[];
@@ -119,10 +121,12 @@ export class OpenAIConversation implements ModelConversation {
       // Strict mode needs every property required; the loop validates.
       strict: false,
     }));
+    this.modelInputs.add(settings.firstObservation.cameras);
     this.pendingInput = [observationMessage(settings.firstObservation)];
   }
 
   async nextTurn(signal?: AbortSignal): Promise<ModelTurn | ModelRefusal> {
+    await this.modelInputs.save();
     const response = await this.client.responses.create(
       {
         model: this.settings.model,
@@ -156,15 +160,19 @@ export class OpenAIConversation implements ModelConversation {
       });
     for (const result of results) {
       if (result.cameras && Object.keys(result.cameras).length > 0)
-        this.addObservation({
-          text: `Images requested by tool call ${result.call.id}.\n${result.text}`,
-          cameras: result.cameras,
-        });
+        this.addObservation(
+          {
+            text: `Images requested by tool call ${result.call.id}.\n${result.text}`,
+            cameras: result.cameras,
+          },
+          result.call.id,
+        );
     }
     if (observation) this.addObservation(observation);
   }
 
-  addObservation(observation: Observation): void {
+  addObservation(observation: Observation, toolCallId?: string): void {
+    this.modelInputs.add(observation.cameras, toolCallId);
     this.pendingInput.push(observationMessage(observation));
   }
 }

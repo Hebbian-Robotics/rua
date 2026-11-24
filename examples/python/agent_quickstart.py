@@ -1,8 +1,11 @@
+import asyncio
 import json
 import os
 import sys
+from base64 import b64decode
 from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
+from pathlib import Path
 from typing import Annotated, Literal, TypedDict, cast
 from uuid import uuid4
 
@@ -88,6 +91,100 @@ def agent_span(
             raise
 
 
+PRIVATE_FILE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+
+
+def request_images(
+    messages: Sequence[object],
+) -> Generator[tuple[str | None, str | None, bytes]]:
+    for message in messages:
+        if not isinstance(message, dict) or not isinstance(
+            message.get("content"), list
+        ):
+            continue
+        camera = tool_call_id = None
+        for part in message["content"]:
+            if not isinstance(part, dict):
+                continue
+            kind = part.get("type")
+            text = part.get("text")
+            if kind in ("text", "input_text") and isinstance(text, str):
+                if text.startswith("Camera: "):
+                    camera = text.removeprefix("Camera: ")
+                elif text.startswith("Images requested by tool call "):
+                    tool_call_id = (
+                        text.partition("\n")[0]
+                        .removeprefix("Images requested by tool call ")
+                        .removesuffix(".")
+                    )
+                continue
+            encoded = part.get("image_url") if kind == "input_image" else None
+            if isinstance(encoded, str):
+                prefix = "data:image/jpeg;base64,"
+                if not encoded.startswith(prefix):
+                    continue
+                encoded = encoded.removeprefix(prefix)
+            elif kind == "image":
+                if isinstance(source := part.get("source"), dict):
+                    if source.get("media_type") == "image/jpeg":
+                        encoded = source.get("data")
+                elif part.get("mime_type") == "image/jpeg":
+                    encoded = part.get("data")
+            if isinstance(encoded, str):
+                yield camera, tool_call_id, b64decode(encoded, validate=True)
+                camera = None
+
+
+class ModelInputCapture:
+    def __init__(self, directory: str) -> None:
+        span_context = trace.get_current_span().get_span_context()
+        run_id = (
+            f"{span_context.trace_id:032x}" if span_context.is_valid else uuid4().hex
+        )
+        self.directory = Path(directory).absolute() / run_id
+        self.announced = False
+
+    async def save(
+        self, messages: Sequence[object], turn: int, span: trace.Span
+    ) -> None:
+        try:
+            manifest = await asyncio.to_thread(self._write, messages, turn)
+        except (OSError, ValueError) as error:
+            print(f"Could not save model input images: {error}", file=sys.stderr)
+            return
+        if manifest is None:
+            return
+        span.set_attribute("hebbian.model_inputs.path", str(manifest))
+        if not self.announced:
+            self.announced = True
+            print(f"Model input images: {self.directory}", file=sys.stderr)
+
+    def _write(self, messages: Sequence[object], turn: int) -> Path | None:
+        images = list(request_images(messages))
+        if not images:
+            return None
+        directory = self.directory / f"turn-{turn:04d}"
+        self.directory.parent.mkdir(parents=True, exist_ok=True)
+        self.directory.mkdir(mode=0o700, exist_ok=True)
+        directory.mkdir(mode=0o700)
+        entries: list[dict[str, str | None]] = []
+        for image_index, (camera, tool_call_id, jpeg) in enumerate(images, start=1):
+            filename = f"{image_index}.jpg"
+            with os.fdopen(
+                os.open(directory / filename, PRIVATE_FILE_FLAGS, 0o600), "wb"
+            ) as image:
+                image.write(jpeg)
+            entries.append(
+                {"file": filename, "camera": camera, "tool_call_id": tool_call_id}
+            )
+        manifest = directory / "index.json"
+        with os.fdopen(
+            os.open(manifest, PRIVATE_FILE_FLAGS, 0o600), "w", encoding="utf-8"
+        ) as index:
+            json.dump({"turn": turn, "images": entries}, index, indent=2)
+        return manifest
+
+
 class FinishArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str
@@ -95,6 +192,7 @@ class FinishArguments(BaseModel):
 
 class AgentRobotTools(RobotTools):
     finish_reason: str | None = None
+    model_inputs: ModelInputCapture | None = None
     tracer_provider: trace.TracerProvider = trace.NoOpTracerProvider()
 
     @property
@@ -191,7 +289,11 @@ async def run_openai(
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            with agent_span(robot.tracer, "model turn", {"hebbian.turn": turn_number}):
+            with agent_span(
+                robot.tracer, "model turn", {"hebbian.turn": turn_number}
+            ) as span:
+                if robot.model_inputs is not None:
+                    await robot.model_inputs.save(pending_input, turn_number, span)
                 response = await client.responses.create(
                     model=model,
                     instructions=instructions,
@@ -243,12 +345,19 @@ async def run_anthropic(
             cache_control={"type": "ephemeral"},
         )
         revisions: Mapping[str, int] | None = None
-        for _ in range(max_turns):
+        for turn_number in range(1, max_turns + 1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            response = await thread.send(*pending_input)
+            if robot.model_inputs is None:
+                response = await thread.send(*pending_input)
+            else:
+                with agent_span(
+                    robot.tracer, "model turn", {"hebbian.turn": turn_number}
+                ) as span:
+                    await robot.model_inputs.save(pending_input, turn_number, span)
+                    response = await thread.send(*pending_input)
             turn = await robot_tools.execute(response, expected_revisions=revisions)
             pending_input = turn.messages
             revisions = turn.observed_revisions
@@ -290,7 +399,11 @@ async def run_gemini(
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            with agent_span(robot.tracer, "model turn", {"hebbian.turn": turn_number}):
+            with agent_span(
+                robot.tracer, "model turn", {"hebbian.turn": turn_number}
+            ) as span:
+                if robot.model_inputs is not None:
+                    await robot.model_inputs.save(pending_input, turn_number, span)
                 response = await client.interactions.create(
                     model=cast(ModelParam, model),
                     stream=False,
@@ -337,6 +450,8 @@ async def run_task(
             filter_sequence_actions(lambda action: action != "joints")
         )
         robot.tracer_provider = tracer_provider
+        if directory := os.environ.get("HEBBIAN_RUA_MODEL_INPUTS_DIR"):
+            robot.model_inputs = ModelInputCapture(directory)
         instructions = (
             "Operate the single configured SO-101 using Cartesian targets and "
             "gripper actions. In the base frame, +X is forward from the arm, "
