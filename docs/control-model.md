@@ -87,10 +87,10 @@ pan angles than the waypoint. Model joint angles are in degrees.
 }
 ```
 
-The station resolves Cartesian poses to joints and checks the interpolated
-path before execution. Continuous moves currently support one IK-controlled
-arm per step. If every joint must stop or reverse at a waypoint, use two
-steps so the arm can settle there. A direct move needs only `goal`.
+The station resolves Cartesian poses to joints and checks the generated
+joint-space trajectory before execution. Continuous moves currently support
+one IK-controlled arm per step. If the solver needs to stop at a waypoint,
+use two steps so the arm can settle there. A direct move needs only `goal`.
 
 Use separate goal steps for a sequence of stops. The station prepares each
 step from current feedback, so an earlier step can complete before a later

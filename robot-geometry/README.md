@@ -10,10 +10,11 @@ joint limits and an explicit seed recovery tolerance. `solve` returns either a
 solved pose or a failure reason with the best bounded pose found. Malformed
 requests are reported separately as `IkRefusal`.
 
-`SelfCollisionModel` queries one full driven-joint pose using convex hulls. It
-excludes shapes on the same or neighboring joints and uses a caller-supplied
-penetration allowance. These are discrete geometry queries, not continuous
-collision detection or a complete safety system.
+`SelfCollisionModel` uses Parry to query convex hulls. It excludes shapes on
+the same or neighboring joints and uses a caller-supplied penetration
+allowance. For a sweep, the caller supplies the joint path and upper bounds
+on joint speed. The model bounds how far each pair can move, subdivides
+intervals where needed, and reports where it can no longer verify clearance.
 
 RUA keeps configuration adaptation, path sampling, table recovery, command
 admission and motion supervision in `server-core`. Solver request/outcome types

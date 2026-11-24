@@ -181,8 +181,12 @@ pub(super) struct GroupReference {
 
 impl Loop<'_> {
     pub(super) fn start_motion(&mut self, plan: AdmittedPlan) -> anyhow::Result<()> {
-        let supervisor =
-            MotionSupervisor::from_validated(plan.into_validated(), &self.config.motion)?;
+        let supervisor = MotionSupervisor::from_validated(
+            plan.into_validated(),
+            &self.config.motion,
+            self.config.tracking_following_lag_seconds,
+            self.config.control_timing.maximum_step_seconds,
+        )?;
         self.hold_at = None;
         self.activity = Activity::Motion(Box::new(ActiveMotion {
             supervisor,

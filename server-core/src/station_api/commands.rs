@@ -329,11 +329,11 @@ fn prepare_waypoint_crossings(
     planner_or_refuse(link.planner())?
         .check_continuous_path(
             plan,
-            &link.config().motion,
+            link.config(),
             latest_sample(link)?.gripper_angle,
             initial_jaw_goal,
         )
-        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, format!("{error:#}")))?;
     Ok(())
 }
 

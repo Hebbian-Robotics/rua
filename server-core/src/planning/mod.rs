@@ -182,16 +182,20 @@ impl Planner {
     pub(crate) fn check_continuous_path(
         &self,
         plan: &CornerPlan,
-        limits: &crate::config::MotionLimits,
+        config: &ControllerConfig,
         measured_jaw: Option<f64>,
         initial_jaw_goal: Option<f64>,
     ) -> anyhow::Result<()> {
-        let path = crate::continuous_path::ContinuousPath::new(plan, limits)?;
+        let mut path = crate::continuous_path::ContinuousPath::new(
+            plan,
+            &config.motion,
+            config.control_timing.maximum_step_seconds,
+        )?;
+        path.check_joint_bounds(&plan.segments[0].corners[0], &self.lower, &self.upper)?;
         let mut reference =
             crate::reference_filter::Reference::at_rest(&plan.segments[0].corners[0], None);
-        let mut previous = reference.positions.clone();
         let mut jaw_range = measured_jaw.map(|angle| (angle, angle));
-        for (index, segment) in plan.segments.iter().enumerate() {
+        for index in 0..plan.segments.len() {
             let jaw_command = if index == 0 {
                 initial_jaw_goal
             } else {
@@ -207,29 +211,62 @@ impl Planner {
                 *minimum = minimum.min(angle);
                 *maximum = maximum.max(angle);
             }
-            // WHY: The largest first difference of a degree-five Bernstein curve is
-            // at most five times the section displacement, bounding sample spacing.
-            let extent =
-                5.0 * crate::limits::max_joint_deviation(&segment.corners[0], &segment.corners[1]);
+            let joint_travel_bounds = path.section_joint_travel_bounds(index);
+            let mut check = |jaw| {
+                self.check_continuous_section(
+                    &mut path,
+                    &mut reference,
+                    index,
+                    plan.peak_speed,
+                    &joint_travel_bounds,
+                    jaw,
+                )
+                .with_context(|| format!("Continuous section {index}"))
+            };
+            check(jaw_range.map(|range| range.0))?;
+            if let Some((minimum, maximum)) = jaw_range
+                && maximum > minimum
+            {
+                for jaw_fraction in crate::robot::path_sample_fractions(&[minimum], &[maximum]) {
+                    check(Some(minimum + jaw_fraction * (maximum - minimum)))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_continuous_section(
+        &self,
+        path: &mut crate::continuous_path::ContinuousPath,
+        reference: &mut crate::reference_filter::Reference,
+        index: usize,
+        peak_speed: f64,
+        joint_travel_bounds: &[f64],
+        jaw: Option<f64>,
+    ) -> anyhow::Result<()> {
+        // SAFETY: Speed times duration bounds joint travel even when the solver
+        // temporarily reverses a joint between waypoints.
+        let (start, end) = path.section_bounds(index);
+        let extent = peak_speed * (end - start);
+        if let Some(collision) = &self.self_collision
+            && let Some((_, reason)) =
+                collision.swept_prefix(joint_travel_bounds, jaw, |fraction, joints| {
+                    path.sample(start + fraction * (end - start), reference);
+                    joints.copy_from_slice(&reference.positions);
+                })?
+        {
+            anyhow::bail!("{reason}");
+        }
+        if let Some(surface) = &self.surface {
+            path.sample(start, reference);
+            let mut previous = reference.positions.clone();
             for fraction in crate::robot::path_sample_fractions(&[0.0], &[extent]) {
-                path.sample(index, fraction, &mut reference);
-                let check = |jaw| -> anyhow::Result<()> {
-                    if let Some(reason) = self
-                        .path_check(&previous, &reference.positions, jaw)?
-                        .refusal()
-                    {
-                        anyhow::bail!("Continuous section {index}: {reason}");
-                    }
-                    Ok(())
-                };
-                check(jaw_range.map(|range| range.0))?;
-                if let Some((minimum, maximum)) = jaw_range
-                    && maximum > minimum
+                path.sample(start + fraction * (end - start), reference);
+                if let Some(reason) = surface
+                    .safe_prefix(&previous, &reference.positions, jaw)?
+                    .refusal()
                 {
-                    for jaw_fraction in crate::robot::path_sample_fractions(&[minimum], &[maximum])
-                    {
-                        check(Some(minimum + jaw_fraction * (maximum - minimum)))?;
-                    }
+                    anyhow::bail!("{reason}");
                 }
                 previous.clone_from(&reference.positions);
             }

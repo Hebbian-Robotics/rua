@@ -541,6 +541,60 @@ fn so101_self_collision() -> Planner {
     so101_planner(&json!({"self_collision": {"penetration_tolerance_meters": 0.01}}))
 }
 
+#[test]
+fn a_waypoint_move_can_keep_two_almost_touching_links_still() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("stationary-links.urdf");
+    std::fs::write(
+        &path,
+        r#"<robot name="stationary-links">
+        <link name="base"><collision><geometry><box size="0.01 0.01 0.01"/></geometry></collision></link>
+        <link name="arm"/>
+        <link name="tip"><collision><origin xyz="0 0.0100001 0"/><geometry><box size="0.01 0.01 0.01"/></geometry></collision></link>
+        <link name="tool"/>
+        <joint name="pivot" type="continuous"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint>
+        <joint name="wrist" type="continuous"><parent link="arm"/><child link="tip"/><axis xyz="0 0 1"/></joint>
+        <joint name="draw" type="continuous"><parent link="tip"/><child link="tool"/><axis xyz="0 0 1"/></joint>
+        </robot>"#,
+    )
+    .unwrap();
+    let config = config(
+        &path,
+        &["pivot", "wrist", "draw"],
+        "tool",
+        &json!({
+            "joint_count": 3,
+            "lower_limits": [-2.0, -2.0, -2.0],
+            "upper_limits": [2.0, 2.0, 2.0],
+            "joint_effort_limits": [10.0, 10.0, 10.0],
+            "self_collision": {"penetration_tolerance_meters": 0.0},
+        }),
+    );
+    let planner = Planner::for_arm(&config).unwrap().unwrap();
+    let mut motion = planner
+        .plan(
+            &[0.0; 3],
+            &[
+                Waypoint::Joints {
+                    joints: vec![0.0, 0.0, 0.4],
+                },
+                Waypoint::Joints {
+                    joints: vec![0.0, 0.0, 0.8],
+                },
+            ],
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(motion.path_limited, None);
+    motion.plan.segments[0].pass_through = Some(hebbian_contracts::PassThrough {
+        gripper_angle: None,
+    });
+    planner
+        .check_continuous_path(&motion.plan, &config, None, None)
+        .unwrap();
+}
+
 fn plan_to(planner: &Planner, start: &[f64], goal: &[f64]) -> Result<PlannedMotion, Rejection> {
     planner.plan(
         start,

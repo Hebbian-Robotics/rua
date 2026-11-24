@@ -28,8 +28,10 @@ outside a coordinated step. See [coordinated arm clearance](control-model.md#coo
 ### Self-contact
 
 The [self-collision guard](../server-core/src/self_collision.rs) checks modeled
-links. A preview can stop at the last clear sample or refuse a path from a
-colliding start. Check the model and calibration before changing
+links. For a planned single-arm path, Parry queries and bounds on link travel
+check clearance between samples. Waypoint checks use each joint's generated
+speed in each section. A preview can stop at the last confirmed clear point
+or refuse a path from a colliding start. Check the model and calibration before changing
 [profile settings](../server-core/src/profile/mod.rs) for overlap and excluded
 link pairs.
 

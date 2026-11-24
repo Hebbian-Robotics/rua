@@ -183,6 +183,22 @@ impl Robot {
         poses
     }
 
+    pub(crate) fn joint_reach(&self, mut link: usize, mut radius: f64) -> Vec<Option<f64>> {
+        let mut reach = vec![None; self.slot_count];
+        // SAFETY: Downstream translations and the hull radius bound a point's
+        // distance from each ancestor joint axis in every configuration.
+        for node in self.nodes.iter().rev() {
+            if node.child == link {
+                if let Some(slot) = node.slot {
+                    reach[slot] = Some(radius);
+                }
+                radius += node.origin.translation.vector.norm();
+                link = node.parent;
+            }
+        }
+        reach
+    }
+
     pub fn serial_chain(
         &self,
         tool_link: &str,

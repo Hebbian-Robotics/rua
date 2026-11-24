@@ -34,7 +34,6 @@ const WRITE_PERMIT: PlantWritePermit = PlantWritePermit { _private: () };
 const BUS_FAILURE_GRACE_SECONDS: f64 = 0.5;
 // SAFETY: A cycle longer than this many periods is fed to the generators as this
 // many, so a late cycle does not become a jump.
-const LONGEST_STEP_PERIODS: f64 = 2.0;
 
 pub(super) enum BusRecovery {
     Disabled,
@@ -581,7 +580,7 @@ impl<P: Plant> Runner<'_, P> {
         deadline_missed: Option<String>,
     ) -> CycleReading {
         let cycle_began = self.started.elapsed().as_secs_f64();
-        let longest_step = LONGEST_STEP_PERIODS / self.config.frequency_hertz;
+        let longest_step = self.config.control_timing.maximum_step_seconds;
         if cycle.as_secs_f64() > longest_step {
             self.report.overruns += 1;
         }

@@ -24,7 +24,7 @@ independently of it.
 | Input | Final reference owner |
 | --- | --- |
 | Planned joint-space sections | [Trajectory execution](../server-core/src/control_loop/trajectory.rs) and [scalar path generator](../server-core/src/corner_path.rs) |
-| Single-arm pass-through waypoints | [Continuous joint-space interpolant](../server-core/src/continuous_path.rs) |
+| Single-arm pass-through waypoints | [Local Ruckig waypoint solver](../server-core/src/continuous_path.rs) |
 | Changing joint destinations and normal braking | [Reference filter](../server-core/src/reference_filter.rs) |
 | Learned pose goals | [Learned reach and stream handling](../server-core/src/control_loop/learned.rs) |
 
@@ -34,10 +34,15 @@ acceleration between updates. Sending those setpoints through the destination
 filter again would change the checked path. [Tracking regressions](../server-core/tests/tracking.rs)
 exercise bounds, path geometry and stuck-arm behavior.
 
-A continuous move shares velocity and acceleration across adjacent sections.
-The planner checks the interpolated joint path. The controller checks tracking
-at each crossing and starts any waypoint jaw command after the arm setpoint
-write succeeds. It waits for the final jaw command before completing the move.
+A continuous move uses Ruckig to compute section durations and share velocity
+and acceleration across section boundaries. Each section lasts longer than the
+controller's largest integration step so a delayed cycle cannot skip a crossing.
+The planner checks joint limits and collisions along the generated path,
+including motion between waypoints.
+The controller confirms each crossing from measured feedback within the
+configured following lag and before the next section ends. It starts any
+waypoint jaw command after confirmation and a successful arm setpoint write.
+It waits for the final jaw command before completing the move.
 
 Grouped trajectories share a progress gate and use feedback from the same cycle.
 The [group implementation](../server-core/src/control_loop/group.rs) handles member
