@@ -165,7 +165,7 @@ fn calculate_waypoints(
     input.per_section_min_velocity = Some(minimum);
     input.per_section_max_velocity = Some(maximum);
 
-    // The controller regenerates the station's checked plan at move admission.
+    // WHY: Use the initial solution to bound solve time when the controller regenerates the checked plan.
     let mut generator =
         Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
     generator.waypoint_refinement_sweeps = 0;
@@ -182,7 +182,7 @@ fn waypoint_velocity_limits(
     plan: &CornerPlan,
     limits: &MotionLimits,
 ) -> (Vec<DataArrayOrVec<f64, 0>>, Vec<DataArrayOrVec<f64, 0>>) {
-    // Set per-joint speed limits from waypoint spacing. A joint with a short
+    // WHY: A joint with a short
     // displacement should not accelerate to the same speed as the leading joint.
     let section_deltas: Vec<Vec<f64>> = plan
         .segments
@@ -200,7 +200,7 @@ fn waypoint_velocity_limits(
         .flatten()
         .map(|delta| delta.abs())
         .fold(0.0_f64, f64::max);
-    // Use a shared time scale so neighboring sections have compatible crossing
+    // WHY: A shared time scale gives neighboring sections compatible crossing
     // speeds. Leave headroom for Ruckig to synchronize joints and brake at turns.
     let spacing = largest_displacement.max(f64::MIN_POSITIVE);
     let acceleration_speed = (limits.acceleration_limit * spacing).sqrt();
@@ -278,7 +278,6 @@ mod tests {
 
     #[test]
     fn circular_waypoints_do_not_reverse_inside_a_section() {
-        // Measured entry state and joint waypoints from the failed 60 mm SO-101 circle.
         let knots: Vec<Vec<f64>> =
             serde_json::from_str(include_str!("../tests/support/so101_circle_waypoints.json"))
                 .unwrap();
