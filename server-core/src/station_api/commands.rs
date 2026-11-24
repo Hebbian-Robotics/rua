@@ -402,11 +402,18 @@ pub(super) fn prepare_compiled_action(
         CompiledArmAction::Move {
             waypoints,
             goal,
+            at_seconds,
             gripper_opening,
             max_joint_speed,
             max_joint_acceleration,
             max_joint_jerk,
         } => {
+            if at_seconds.is_some() && link.has_policy() {
+                return Err(rejection(
+                    RejectionReason::InvalidTarget,
+                    "Timing requires a planned move",
+                ));
+            }
             let movement = if waypoints.is_empty() {
                 match goal {
                     CompiledGoal::Joints { joints } => {
@@ -450,6 +457,19 @@ pub(super) fn prepare_compiled_action(
                 *max_joint_acceleration,
                 *max_joint_jerk,
             )?;
+            if let (Some(goal_seconds), PreparedMovement::Trajectory { plan, .. }) =
+                (at_seconds, &mut movement)
+            {
+                let mut previous_seconds = 0.0;
+                let arrival_times = waypoints
+                    .iter()
+                    .filter_map(|waypoint| waypoint.at_seconds)
+                    .chain(std::iter::once(*goal_seconds));
+                for (segment, arrival_seconds) in plan.segments.iter_mut().zip(arrival_times) {
+                    segment.minimum_duration_seconds = Some(arrival_seconds - previous_seconds);
+                    previous_seconds = arrival_seconds;
+                }
+            }
             if !waypoints.is_empty() {
                 prepare_waypoint_crossings(link, arm, &mut movement, waypoints, *gripper_opening)?;
             }

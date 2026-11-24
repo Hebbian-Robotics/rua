@@ -32,6 +32,19 @@ export const robotToolSpecifications = [
             description:
               "An arm action must name a goal or gripper opening. When both are present they start together.",
             properties: {
+              at_seconds: {
+                anyOf: [
+                  {
+                    type: "number",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                description:
+                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                minimum: 0.0,
+              },
               goal: {
                 oneOf: [
                   {
@@ -305,6 +318,19 @@ export const robotToolSpecifications = [
                           type: "object",
                         },
                       ],
+                    },
+                    at_seconds: {
+                      anyOf: [
+                        {
+                          type: "number",
+                        },
+                        {
+                          type: "null",
+                        },
+                      ],
+                      description:
+                        "Earliest reference crossing in seconds from the start of this move.",
+                      minimum: 0.0,
                     },
                     gripper_opening: {
                       anyOf: [
@@ -752,7 +778,7 @@ export const robotToolContext = {
   limitations:
     "Model guards can check self-collision and a horizontal surface. Grouped moves also check modeled clearance among participating arms. These checks do not detect workspace objects or establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
   motion:
-    "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
+    "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. For one planned arm per step, optional at_seconds sets an earliest reference arrival from the start of that step. Time every waypoint and the goal in strictly increasing order. Motion limits can make each section take longer, and the next step starts after settling. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
   orientation:
     "Approach points from palm toward fingertips: down (world -Z), forward (world +X), or a world vector. Jaw yaw describes the closing axis about minus approach; for down, 0 degrees closes along world X and 90 along world Y. Zero uses projected world +X, switching to +Y when the absolute normalized approach X exceeds 0.95. Quaternions are [x, y, z, w]. Pose moves require orientation; preview can choose it.",
   outcomes:

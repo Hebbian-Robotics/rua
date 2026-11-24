@@ -33,6 +33,18 @@
             ],
             "description": "An arm action must name a goal or gripper opening. When both are present they start together.",
             "properties": {
+              "at_seconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                "minimum": 0.0
+              },
               "goal": {
                 "oneOf": [
                   {
@@ -312,6 +324,18 @@
                           "type": "object"
                         }
                       ]
+                    },
+                    "at_seconds": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Earliest reference crossing in seconds from the start of this move.",
+                      "minimum": 0.0
                     },
                     "gripper_opening": {
                       "anyOf": [

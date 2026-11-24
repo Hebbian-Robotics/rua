@@ -43,8 +43,7 @@ pub fn validate_plan(plan: &CornerPlan, joint_count: usize) -> anyhow::Result<()
                 || plan
                     .segments
                     .iter()
-                    .all(|segment| segment.corners.len() == 2
-                        && segment.minimum_duration_seconds.is_none())),
+                    .all(|segment| segment.corners.len() == 2)),
         "Invalid continuous path boundaries"
     );
     ensure!(
@@ -79,8 +78,22 @@ pub fn validate_plan(plan: &CornerPlan, joint_count: usize) -> anyhow::Result<()
                 .is_none_or(|duration| duration.is_finite() && duration >= 0.0),
             "A minimum duration must be finite and not negative"
         );
+        if !plan.is_continuous() {
+            validate_straight_section_travel(segment, &segment.corners[0])?;
+        }
         previous = &segment.corners[segment.corners.len() - 1];
     }
+    Ok(())
+}
+
+fn validate_straight_section_travel(segment: &Segment, start: &[f64]) -> anyhow::Result<()> {
+    ensure!(
+        !segment
+            .minimum_duration_seconds
+            .is_some_and(|seconds| seconds > 0.0)
+            || max_joint_deviation(start, &segment.corners[1]) > SAME_CORNER_RADIANS,
+        "A positive minimum duration needs joint travel"
+    );
     Ok(())
 }
 
@@ -119,6 +132,7 @@ impl ValidatedPlan {
         );
         // SAFETY: Preserve the exact input to the station's checked waypoint solver.
         if !self.0.is_continuous() {
+            validate_straight_section_travel(&self.0.segments[0], &initial)?;
             self.0.segments[0].corners[0] = initial;
         }
         Ok(())

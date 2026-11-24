@@ -30,6 +30,10 @@ pub enum ActionSequenceGoal {
 #[serde(deny_unknown_fields)]
 pub struct ActionSequenceWaypoint {
     pub at: CompiledGoal,
+    /// Earliest reference crossing in seconds from the start of this move.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("minimum" = 0.0, "x-omit-when-none" = true))]
+    pub at_seconds: Option<f64>,
     /// Start moving the gripper when passing this waypoint.
     #[schemars(extend("x-omit-when-none" = true))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,6 +50,11 @@ pub enum ActionSequenceArmAction {
         /// Pass through these intermediate configurations before settling at the goal.
         #[serde(default)]
         waypoints: Vec<ActionSequenceWaypoint>,
+        /// Earliest reference arrival in seconds from the start of this move.
+        /// For one planned arm per step. Time every waypoint and the goal in increasing order.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("minimum" = 0.0, "x-omit-when-none" = true))]
+        at_seconds: Option<f64>,
         #[serde(default)]
         #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
@@ -148,6 +157,9 @@ pub enum CompiledArmAction {
         /// Pass through these intermediate configurations before settling at the goal.
         #[serde(default)]
         waypoints: Vec<ActionSequenceWaypoint>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("minimum" = 0.0, "x-omit-when-none" = true))]
+        at_seconds: Option<f64>,
         gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<JointSpeed>,
         /// Joint acceleration cap in rad/s²; defaults to the arm profile.

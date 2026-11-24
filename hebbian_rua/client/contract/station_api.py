@@ -2470,6 +2470,13 @@ class ActionSequenceWaypoint(BaseModel):
         frozen=True,
     )
     at: CompiledGoal1 | CompiledGoal2
+    at_seconds: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Earliest reference crossing in seconds from the start of this move.",
+            ge=0.0,
+        ),
+    ] = None
     gripper_opening: Annotated[
         StrictFloat | None,
         Field(
@@ -2624,6 +2631,7 @@ class CompiledArmAction1(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    at_seconds: Annotated[StrictFloat | None, Field(ge=0.0)] = None
     goal: CompiledGoal1 | CompiledGoal2
     gripper_opening: Annotated[
         StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
@@ -2819,6 +2827,13 @@ class ActionSequenceMove(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    at_seconds: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+            ge=0.0,
+        ),
+    ] = None
     goal: Annotated[
         ActionSequenceJointsMovement | ActionSequencePoseMovement,
         Field(

@@ -87,6 +87,24 @@ export const apiSchemas = z.object({
     .union([
       z
         .object({
+          at_seconds: z
+            .union([
+              z
+                .number()
+                .gte(0)
+                .describe(
+                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                ),
+            ])
+            .describe(
+              "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+            )
+            .optional(),
           goal: z
             .union([
               z
@@ -247,6 +265,24 @@ export const apiSchemas = z.object({
                       })
                       .strict(),
                   ]),
+                  at_seconds: z
+                    .union([
+                      z
+                        .number()
+                        .gte(0)
+                        .describe(
+                          "Earliest reference crossing in seconds from the start of this move.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Earliest reference crossing in seconds from the start of this move.",
+                        ),
+                    ])
+                    .describe(
+                      "Earliest reference crossing in seconds from the start of this move.",
+                    )
+                    .optional(),
                   gripper_opening: z
                     .union([
                       z
@@ -535,6 +571,24 @@ export const apiSchemas = z.object({
                   .union([
                     z
                       .object({
+                        at_seconds: z
+                          .union([
+                            z
+                              .number()
+                              .gte(0)
+                              .describe(
+                                "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                              ),
+                          ])
+                          .describe(
+                            "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                          )
+                          .optional(),
                         goal: z
                           .union([
                             z
@@ -727,6 +781,24 @@ export const apiSchemas = z.object({
                                     })
                                     .strict(),
                                 ]),
+                                at_seconds: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .gte(0)
+                                      .describe(
+                                        "Earliest reference crossing in seconds from the start of this move.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Earliest reference crossing in seconds from the start of this move.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "Earliest reference crossing in seconds from the start of this move.",
+                                  )
+                                  .optional(),
                                 gripper_opening: z
                                   .union([
                                     z
@@ -1248,6 +1320,24 @@ export const apiSchemas = z.object({
                 .union([
                   z
                     .object({
+                      at_seconds: z
+                        .union([
+                          z
+                            .number()
+                            .gte(0)
+                            .describe(
+                              "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                            ),
+                        ])
+                        .describe(
+                          "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                        )
+                        .optional(),
                       goal: z
                         .union([
                           z
@@ -1437,6 +1527,24 @@ export const apiSchemas = z.object({
                                   })
                                   .strict(),
                               ]),
+                              at_seconds: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gte(0)
+                                    .describe(
+                                      "Earliest reference crossing in seconds from the start of this move.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Earliest reference crossing in seconds from the start of this move.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Earliest reference crossing in seconds from the start of this move.",
+                                )
+                                .optional(),
                               gripper_opening: z
                                 .union([
                                   z
@@ -1513,6 +1621,24 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          at_seconds: z
+                            .union([
+                              z
+                                .number()
+                                .gte(0)
+                                .describe(
+                                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                ),
+                            ])
+                            .describe(
+                              "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                            )
+                            .optional(),
                           goal: z
                             .union([
                               z
@@ -1709,6 +1835,24 @@ export const apiSchemas = z.object({
                                       })
                                       .strict(),
                                   ]),
+                                  at_seconds: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gte(0)
+                                        .describe(
+                                          "Earliest reference crossing in seconds from the start of this move.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Earliest reference crossing in seconds from the start of this move.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Earliest reference crossing in seconds from the start of this move.",
+                                    )
+                                    .optional(),
                                   gripper_opening: z
                                     .union([
                                       z
@@ -1782,6 +1926,24 @@ export const apiSchemas = z.object({
           .union([
             z
               .object({
+                at_seconds: z
+                  .union([
+                    z
+                      .number()
+                      .gte(0)
+                      .describe(
+                        "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                      ),
+                  ])
+                  .describe(
+                    "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                  )
+                  .optional(),
                 goal: z
                   .union([
                     z
@@ -1957,6 +2119,24 @@ export const apiSchemas = z.object({
                             })
                             .strict(),
                         ]),
+                        at_seconds: z
+                          .union([
+                            z
+                              .number()
+                              .gte(0)
+                              .describe(
+                                "Earliest reference crossing in seconds from the start of this move.",
+                              ),
+                            z
+                              .null()
+                              .describe(
+                                "Earliest reference crossing in seconds from the start of this move.",
+                              ),
+                          ])
+                          .describe(
+                            "Earliest reference crossing in seconds from the start of this move.",
+                          )
+                          .optional(),
                         gripper_opening: z
                           .union([
                             z
@@ -2054,6 +2234,24 @@ export const apiSchemas = z.object({
           })
           .strict(),
       ]),
+      at_seconds: z
+        .union([
+          z
+            .number()
+            .gte(0)
+            .describe(
+              "Earliest reference crossing in seconds from the start of this move.",
+            ),
+          z
+            .null()
+            .describe(
+              "Earliest reference crossing in seconds from the start of this move.",
+            ),
+        ])
+        .describe(
+          "Earliest reference crossing in seconds from the start of this move.",
+        )
+        .optional(),
       gripper_opening: z
         .union([
           z
@@ -3740,6 +3938,24 @@ export const apiSchemas = z.object({
                         .union([
                           z
                             .object({
+                              at_seconds: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gte(0)
+                                    .describe(
+                                      "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                )
+                                .optional(),
                               goal: z
                                 .union([
                                   z
@@ -3946,6 +4162,24 @@ export const apiSchemas = z.object({
                                           })
                                           .strict(),
                                       ]),
+                                      at_seconds: z
+                                        .union([
+                                          z
+                                            .number()
+                                            .gte(0)
+                                            .describe(
+                                              "Earliest reference crossing in seconds from the start of this move.",
+                                            ),
+                                          z
+                                            .null()
+                                            .describe(
+                                              "Earliest reference crossing in seconds from the start of this move.",
+                                            ),
+                                        ])
+                                        .describe(
+                                          "Earliest reference crossing in seconds from the start of this move.",
+                                        )
+                                        .optional(),
                                       gripper_opening: z
                                         .union([
                                           z
@@ -6199,6 +6433,9 @@ export const apiSchemas = z.object({
                 action: z.union([
                   z
                     .object({
+                      at_seconds: z
+                        .union([z.number().gte(0), z.null()])
+                        .optional(),
                       goal: z.union([
                         z
                           .object({
@@ -6365,6 +6602,24 @@ export const apiSchemas = z.object({
                                   })
                                   .strict(),
                               ]),
+                              at_seconds: z
+                                .union([
+                                  z
+                                    .number()
+                                    .gte(0)
+                                    .describe(
+                                      "Earliest reference crossing in seconds from the start of this move.",
+                                    ),
+                                  z
+                                    .null()
+                                    .describe(
+                                      "Earliest reference crossing in seconds from the start of this move.",
+                                    ),
+                                ])
+                                .describe(
+                                  "Earliest reference crossing in seconds from the start of this move.",
+                                )
+                                .optional(),
                               gripper_opening: z
                                 .union([
                                   z
@@ -6442,6 +6697,24 @@ export const apiSchemas = z.object({
                     .union([
                       z
                         .object({
+                          at_seconds: z
+                            .union([
+                              z
+                                .number()
+                                .gte(0)
+                                .describe(
+                                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                ),
+                            ])
+                            .describe(
+                              "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                            )
+                            .optional(),
                           goal: z
                             .union([
                               z
@@ -6638,6 +6911,24 @@ export const apiSchemas = z.object({
                                       })
                                       .strict(),
                                   ]),
+                                  at_seconds: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gte(0)
+                                        .describe(
+                                          "Earliest reference crossing in seconds from the start of this move.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Earliest reference crossing in seconds from the start of this move.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Earliest reference crossing in seconds from the start of this move.",
+                                    )
+                                    .optional(),
                                   gripper_opening: z
                                     .union([
                                       z
@@ -6740,6 +7031,9 @@ export const apiSchemas = z.object({
                       action: z.union([
                         z
                           .object({
+                            at_seconds: z
+                              .union([z.number().gte(0), z.null()])
+                              .optional(),
                             goal: z.union([
                               z
                                 .object({
@@ -6913,6 +7207,24 @@ export const apiSchemas = z.object({
                                         })
                                         .strict(),
                                     ]),
+                                    at_seconds: z
+                                      .union([
+                                        z
+                                          .number()
+                                          .gte(0)
+                                          .describe(
+                                            "Earliest reference crossing in seconds from the start of this move.",
+                                          ),
+                                        z
+                                          .null()
+                                          .describe(
+                                            "Earliest reference crossing in seconds from the start of this move.",
+                                          ),
+                                      ])
+                                      .describe(
+                                        "Earliest reference crossing in seconds from the start of this move.",
+                                      )
+                                      .optional(),
                                     gripper_opening: z
                                       .union([
                                         z
@@ -6992,6 +7304,24 @@ export const apiSchemas = z.object({
                           .union([
                             z
                               .object({
+                                at_seconds: z
+                                  .union([
+                                    z
+                                      .number()
+                                      .gte(0)
+                                      .describe(
+                                        "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                      ),
+                                    z
+                                      .null()
+                                      .describe(
+                                        "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                      ),
+                                  ])
+                                  .describe(
+                                    "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                  )
+                                  .optional(),
                                 goal: z
                                   .union([
                                     z
@@ -7203,6 +7533,24 @@ export const apiSchemas = z.object({
                                             })
                                             .strict(),
                                         ]),
+                                        at_seconds: z
+                                          .union([
+                                            z
+                                              .number()
+                                              .gte(0)
+                                              .describe(
+                                                "Earliest reference crossing in seconds from the start of this move.",
+                                              ),
+                                            z
+                                              .null()
+                                              .describe(
+                                                "Earliest reference crossing in seconds from the start of this move.",
+                                              ),
+                                          ])
+                                          .describe(
+                                            "Earliest reference crossing in seconds from the start of this move.",
+                                          )
+                                          .optional(),
                                         gripper_opening: z
                                           .union([
                                             z
@@ -7318,6 +7666,7 @@ export const apiSchemas = z.object({
   CompiledArmAction: z.union([
     z
       .object({
+        at_seconds: z.union([z.number().gte(0), z.null()]).optional(),
         goal: z.union([
           z
             .object({ joints: z.array(z.number()), kind: z.literal("joints") })
@@ -7450,6 +7799,24 @@ export const apiSchemas = z.object({
                     })
                     .strict(),
                 ]),
+                at_seconds: z
+                  .union([
+                    z
+                      .number()
+                      .gte(0)
+                      .describe(
+                        "Earliest reference crossing in seconds from the start of this move.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Earliest reference crossing in seconds from the start of this move.",
+                      ),
+                  ])
+                  .describe(
+                    "Earliest reference crossing in seconds from the start of this move.",
+                  )
+                  .optional(),
                 gripper_opening: z
                   .union([
                     z
@@ -7536,6 +7903,7 @@ export const apiSchemas = z.object({
       action: z.union([
         z
           .object({
+            at_seconds: z.union([z.number().gte(0), z.null()]).optional(),
             goal: z.union([
               z
                 .object({
@@ -7679,6 +8047,24 @@ export const apiSchemas = z.object({
                         })
                         .strict(),
                     ]),
+                    at_seconds: z
+                      .union([
+                        z
+                          .number()
+                          .gte(0)
+                          .describe(
+                            "Earliest reference crossing in seconds from the start of this move.",
+                          ),
+                        z
+                          .null()
+                          .describe(
+                            "Earliest reference crossing in seconds from the start of this move.",
+                          ),
+                      ])
+                      .describe(
+                        "Earliest reference crossing in seconds from the start of this move.",
+                      )
+                      .optional(),
                     gripper_opening: z
                       .union([
                         z
@@ -7734,6 +8120,7 @@ export const apiSchemas = z.object({
             action: z.union([
               z
                 .object({
+                  at_seconds: z.union([z.number().gte(0), z.null()]).optional(),
                   goal: z.union([
                     z
                       .object({
@@ -7886,6 +8273,24 @@ export const apiSchemas = z.object({
                               })
                               .strict(),
                           ]),
+                          at_seconds: z
+                            .union([
+                              z
+                                .number()
+                                .gte(0)
+                                .describe(
+                                  "Earliest reference crossing in seconds from the start of this move.",
+                                ),
+                              z
+                                .null()
+                                .describe(
+                                  "Earliest reference crossing in seconds from the start of this move.",
+                                ),
+                            ])
+                            .describe(
+                              "Earliest reference crossing in seconds from the start of this move.",
+                            )
+                            .optional(),
                           gripper_opening: z
                             .union([
                               z
@@ -20030,6 +20435,24 @@ export const apiSchemas = z.object({
                             .union([
                               z
                                 .object({
+                                  at_seconds: z
+                                    .union([
+                                      z
+                                        .number()
+                                        .gte(0)
+                                        .describe(
+                                          "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                        ),
+                                      z
+                                        .null()
+                                        .describe(
+                                          "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                        ),
+                                    ])
+                                    .describe(
+                                      "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                                    )
+                                    .optional(),
                                   goal: z
                                     .union([
                                       z
@@ -20245,6 +20668,24 @@ export const apiSchemas = z.object({
                                               })
                                               .strict(),
                                           ]),
+                                          at_seconds: z
+                                            .union([
+                                              z
+                                                .number()
+                                                .gte(0)
+                                                .describe(
+                                                  "Earliest reference crossing in seconds from the start of this move.",
+                                                ),
+                                              z
+                                                .null()
+                                                .describe(
+                                                  "Earliest reference crossing in seconds from the start of this move.",
+                                                ),
+                                            ])
+                                            .describe(
+                                              "Earliest reference crossing in seconds from the start of this move.",
+                                            )
+                                            .optional(),
                                           gripper_opening: z
                                             .union([
                                               z
