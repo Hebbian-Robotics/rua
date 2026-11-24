@@ -177,9 +177,10 @@ impl ArmCore {
         }
     }
 
-    pub fn enabled(&mut self, initial: &[f64], now: Now) {
+    pub fn enabled(&mut self, initial: &[f64], gripper_angle: Option<f64>, now: Now) {
         self.set_power(PowerState::Holding(Poses {
             rest: initial.to_vec(),
+            rest_gripper_angle: gripper_angle,
             hold: initial.to_vec(),
         }));
         self.end_active(CommandOutcome::Completed, None, now);

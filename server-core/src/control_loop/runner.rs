@@ -407,7 +407,9 @@ impl<P: Plant> Runner<'_, P> {
                         *feedback = observation.feedback;
                         self.state
                             .power_up(&feedback.positions, feedback.gripper_angle);
-                        self.state.arm().enabled(&feedback.positions, now);
+                        self.state
+                            .arm()
+                            .enabled(&feedback.positions, feedback.gripper_angle, now);
                         let tool_pose = self
                             .state
                             .tool
@@ -949,6 +951,7 @@ impl<P: Plant> Runner<'_, P> {
             &mut sample.rest_pose,
             core.poses().map(|poses| &poses.rest[..]),
         );
+        sample.rest_gripper_angle = core.poses().and_then(|poses| poses.rest_gripper_angle);
         sample.positions.clone_from(&feedback.positions);
         assign_numbers(
             &mut sample.commanded_positions,

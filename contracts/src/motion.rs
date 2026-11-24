@@ -288,6 +288,9 @@ pub struct PassThrough {
 /// One straight run between corners, with where it is meant to end.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct Segment {
+    /// Jaw target to apply after the joints settle at the final corner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_gripper_angle: Option<JawAngle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pass_through: Option<PassThrough>,
     pub label: String,

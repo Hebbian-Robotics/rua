@@ -144,7 +144,9 @@ impl<P: Plant> Runner<'_, P> {
             EnableDecision::ObserveAgain => self.startup_hold = Some(hold),
             EnableDecision::Confirmed => {
                 self.state.power_up(&fresh.positions, fresh.gripper_angle);
-                self.state.arm().enabled(&fresh.positions, now);
+                self.state
+                    .arm()
+                    .enabled(&fresh.positions, fresh.gripper_angle, now);
             }
         }
         *feedback = fresh;

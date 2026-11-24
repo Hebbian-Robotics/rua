@@ -36,7 +36,11 @@ try {
   assert.ok(context.jointNames.length > 0);
   assert.ok(context.description);
   const state = await connection.state();
-  const position = state.arms.find((arm) => arm.arm === "arm")?.tool?.position;
+  const enabled = state.arms.find((arm) => arm.arm === "arm");
+  assert.ok(enabled);
+  const savedOpening = enabled.gripper_opening;
+  assert.ok(savedOpening !== null);
+  const position = enabled.tool?.position;
   assert.ok(position);
   const httpPreviews = await connection.previewPoses({
     arm: "arm",
@@ -166,7 +170,8 @@ try {
   );
   assert.ok(beforeRehome);
   const openingBeforeRehome = beforeRehome.gripper_opening;
-  assert.ok(openingBeforeRehome !== null && openingBeforeRehome > 0.02);
+  assert.ok(openingBeforeRehome !== null);
+  assert.ok(Math.abs(openingBeforeRehome - savedOpening) > 0.02);
   displacedJoints.forEach((joint, index) => {
     assert.ok(
       Math.abs((beforeRehome.measured_joints[index] ?? Infinity) - joint) <
@@ -184,12 +189,11 @@ try {
       (joint, index) => Math.abs(joint - (homeJoints[index] ?? 0)) < 0.02,
     ),
   );
-  assert.ok(
-    Math.abs(
-      ((await connection.state()).arms.find((arm) => arm.arm === "arm")
-        ?.gripper_opening ?? 0) - openingBeforeRehome,
-    ) < 0.02,
-  );
+  const rehomedOpening = (await connection.state()).arms.find(
+    (arm) => arm.arm === "arm",
+  )?.gripper_opening;
+  assert.ok(rehomedOpening != null);
+  assert.ok(Math.abs(rehomedOpening - savedOpening) < 0.02);
   const [refused] = await robot.execute([
     {
       id: "unknown-arm",

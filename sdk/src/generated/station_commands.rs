@@ -101,7 +101,7 @@ impl Station {
 }
 
 impl LeaseGuard {
-    /// Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+    /// Return to the joint pose and gripper opening saved when the arm was enabled.
     ///
     /// # Errors
     /// As [`Station::run`].
@@ -109,7 +109,7 @@ impl LeaseGuard {
         self.rehome_with(arm, CommandOptions::default()).await
     }
 
-    /// Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+    /// Return to the joint pose and gripper opening saved when the arm was enabled.
     ///
     /// # Errors
     /// As [`Station::run_with`].

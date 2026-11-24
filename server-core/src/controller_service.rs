@@ -14,8 +14,8 @@ use crate::control_link::Link;
 use crate::control_link::LinkHandle;
 use crate::controller_bridge::StationSession;
 use crate::controller_transport::{
-    ControllerAnswer, ControllerInstanceId, ControllerMessage, ControllerRequestId,
-    ControllerTransport,
+    ControllerAnswer, ControllerEvent, ControllerInstanceId, ControllerMessage,
+    ControllerRequestId, ControllerTransport,
 };
 use crate::lease::Lease;
 
@@ -127,8 +127,11 @@ fn read_controller_messages(
 fn publish_controller_event(
     links: &BTreeMap<String, Arc<Link>>,
     feedback_times: &mut BTreeMap<String, Option<Instant>>,
-    arm: String,
-    event: Event,
+    ControllerEvent {
+        arm,
+        event,
+        rest_gripper_angle,
+    }: ControllerEvent,
 ) -> io::Result<()> {
     let link = links.get(&arm).ok_or_else(|| {
         io::Error::new(
@@ -136,11 +139,12 @@ fn publish_controller_event(
             "Controller reported an unknown arm",
         )
     })?;
-    if let Event::State(sample) = event {
+    if let Event::State(mut sample) = *event {
+        sample.rest_gripper_angle = rest_gripper_angle;
         feedback_times.insert(arm, Some(Instant::now()));
         link.publish_sample(sample);
     } else {
-        let logged = hebbian_contracts::LoggedEvent::from_event(event).ok_or_else(|| {
+        let logged = hebbian_contracts::LoggedEvent::from_event(*event).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Controller sent an invalid event",
@@ -240,8 +244,8 @@ pub fn serve_station_connection(
                         ));
                     }
                 }
-                Ok(Ok(ControllerMessage::Event { arm, event })) => {
-                    publish_controller_event(links, &mut feedback_times, arm, *event)?;
+                Ok(Ok(ControllerMessage::Event(event))) => {
+                    publish_controller_event(links, &mut feedback_times, event)?;
                 }
                 Ok(Ok(ControllerMessage::Request { .. } | ControllerMessage::Shutdown)) => {
                     return Err(io::Error::new(
@@ -289,16 +293,15 @@ fn forward_events(
             if !matches!(frame.event, Event::State(_)) && !frame.event.is_logged() {
                 continue;
             }
-            let message = ControllerMessage::Event {
-                arm: arm.clone(),
-                event: Box::new(frame.event),
-            };
+            let message = ControllerMessage::Event(ControllerEvent::new(arm.clone(), frame.event));
             match messages.try_send(message) {
                 Ok(()) => {}
                 // INVARIANT: Samples may be skipped, but losing a logged outcome would make
                 // the station's command history unreliable.
-                Err(TrySendError::Full(ControllerMessage::Event { event, .. }))
-                    if matches!(*event, Event::State(_)) => {}
+                Err(TrySendError::Full(ControllerMessage::Event(ControllerEvent {
+                    event,
+                    ..
+                }))) if matches!(*event, Event::State(_)) => {}
                 Err(_) => {
                     close_connection(&socket, &stopped);
                     return;
@@ -328,8 +331,10 @@ fn write_controller_messages(
             continue;
         }
         match message {
-            ControllerMessage::Event { arm, event } => match *event {
-                Event::State(sample) => {
+            ControllerMessage::Event(ControllerEvent {
+                ref arm, ref event, ..
+            }) => match **event {
+                Event::State(ref sample) => {
                     if sample.mode != hebbian_contracts::ArmMode::Disabled
                         || sample.fault.is_some()
                         || sample.positions.is_empty()
@@ -342,33 +347,21 @@ fn write_controller_messages(
                             "Arm {arm} did not start disabled with healthy feedback"
                         )));
                     }
-                    awaiting.remove(&arm);
-                    first_samples.insert(
-                        arm.clone(),
-                        (
-                            Instant::now(),
-                            ControllerMessage::Event {
-                                arm,
-                                event: Box::new(Event::State(sample)),
-                            },
-                        ),
-                    );
+                    awaiting.remove(arm);
+                    first_samples.insert(arm.clone(), (Instant::now(), message));
                 }
-                event @ (Event::Snapshot { .. }
+                Event::Snapshot { .. }
                 | Event::Resync { .. }
                 | Event::Record(_)
                 | Event::Mode { .. }
                 | Event::Rejected { .. }
                 | Event::Tripped { .. }
                 | Event::ControllerUnavailable { .. }
-                | Event::ControllerAvailable) => {
+                | Event::ControllerAvailable => {
                     if startup_events.len() >= OUTBOUND_CAPACITY {
                         return Err(io::Error::other("Too many controller startup events"));
                     }
-                    startup_events.push(ControllerMessage::Event {
-                        arm,
-                        event: Box::new(event),
-                    });
+                    startup_events.push(message);
                 }
             },
             ControllerMessage::Ready
@@ -640,6 +633,30 @@ mod tests {
         Arc::try_unwrap(link).ok().unwrap().close();
     }
 
+    fn assert_saved_jaw_feedback_reaches_station(controller_link: &Link, station_link: &Link) {
+        let mut holding_sample = hebbian_contracts::Sample::blank();
+        holding_sample.mode = hebbian_contracts::ArmMode::Holding;
+        holding_sample.positions = vec![0.0, 0.0];
+        holding_sample.hold_pose = Some(holding_sample.positions.clone());
+        holding_sample.rest_pose = holding_sample.hold_pose.clone();
+        holding_sample.rest_gripper_angle = Some(0.4);
+        controller_link.publish_sample(holding_sample);
+
+        let station_handle = station_link.handle();
+        let feedback_deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let sample = station_handle
+                .wait_for_sample(Duration::from_millis(10))
+                .unwrap();
+            if sample.mode == hebbian_contracts::ArmMode::Holding {
+                assert_eq!(sample.rest_gripper_angle, Some(0.4));
+                break;
+            }
+            assert!(Instant::now() < feedback_deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     #[test]
     fn station_and_controller_exchange_a_command_and_fence_requests_on_unavailable() {
         let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
@@ -715,6 +732,8 @@ mod tests {
             panic!("command was not accepted")
         };
         let command_id = record.command_id.clone();
+
+        assert_saved_jaw_feedback_reaches_station(&controller_link, &station_link);
         disconnect_socket.shutdown(Shutdown::Both).unwrap();
         assert!(station.join().unwrap().is_err());
         assert!(controller.join().unwrap().is_err());

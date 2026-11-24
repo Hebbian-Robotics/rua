@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use hebbian_contracts::{ArmMode, Command as ArmCommand, Event};
 use hebbian_robot_use_core::controller_transport::{
-    ControllerAnswer, ControllerMessage, ControllerRequest, ControllerRequestId,
+    ControllerAnswer, ControllerEvent, ControllerMessage, ControllerRequest, ControllerRequestId,
     ControllerTransport,
 };
 use hebbian_robot_use_server::controller_process::{
@@ -93,7 +93,7 @@ fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
         .unwrap();
     let mut station = ControllerTransport::new(socket, child.0.instance());
     loop {
-        if matches!(station.receive().unwrap(), ControllerMessage::Event { event, .. } if matches!(*event, Event::State(ref sample) if sample.mode == ArmMode::Disabled))
+        if matches!(station.receive().unwrap(), ControllerMessage::Event(ControllerEvent { event, .. }) if matches!(*event, Event::State(ref sample) if sample.mode == ArmMode::Disabled))
         {
             break;
         }
@@ -117,7 +117,7 @@ fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
                 request_id: ControllerRequestId(0),
                 answer: ControllerAnswer::Submitted(_),
             } => accepted = true,
-            ControllerMessage::Event { event, .. } if matches!(*event, Event::State(ref sample) if sample.mode == ArmMode::Holding) =>
+            ControllerMessage::Event(ControllerEvent { event, .. }) if matches!(*event, Event::State(ref sample) if sample.mode == ArmMode::Holding) =>
             {
                 enabled = true;
             }

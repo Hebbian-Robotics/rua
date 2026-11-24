@@ -94,7 +94,7 @@ class ArmMotionCommands:
         raise NotImplementedError
 
     async def rehome(self, *, expected_revision: int | None = None) -> "CommandResult":
-        """Return to the pose saved when the arm was enabled, at up to 2 rad/s."""
+        """Return to the joint pose and gripper opening saved when the arm was enabled."""
         return await self._run_command(
             RehomeCommand(), expected_revision=expected_revision
         )

@@ -451,6 +451,7 @@ fn segment(
     destination_quaternion: Option<[f64; 4]>,
 ) -> Segment {
     Segment {
+        final_gripper_angle: None,
         pass_through: None,
         label,
         corners: vec![from, to],

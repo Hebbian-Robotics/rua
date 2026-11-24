@@ -652,7 +652,7 @@
     }
   },
   {
-    "description": "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
+    "description": "Return this arm to the joint pose and gripper opening recorded when it was enabled.",
     "name": "rehome",
     "operation": "rehome",
     "parameters": {

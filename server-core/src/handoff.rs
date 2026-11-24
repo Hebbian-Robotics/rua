@@ -581,7 +581,7 @@ mod tests {
 
     fn holding_core() -> ArmCore {
         let mut core = core();
-        core.enabled(&[0.0, 0.0], Now::current());
+        core.enabled(&[0.0, 0.0], None, Now::current());
         core
     }
 
@@ -590,6 +590,7 @@ mod tests {
             arm: arm.to_owned(),
             plan: CornerPlan {
                 segments: vec![Segment {
+                    final_gripper_angle: None,
                     pass_through: None,
                     label: "go".into(),
                     corners: vec![vec![0.0, 0.0], target.to_vec()],
@@ -885,7 +886,7 @@ mod tests {
         let now = Now::current();
         let joints = so101_joints(direction * start);
         arm.observe(now, &joints, None, None);
-        arm.enabled(&joints, now);
+        arm.enabled(&joints, None, now);
         arm
     }
 

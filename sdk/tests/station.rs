@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant, PlantWritePermit};
@@ -36,7 +36,7 @@ use support::simulated_station::{ARM, REST, SimulatedStation};
 /// The simulated plant with something between the jaws: closing stops at `blocked_at`.
 struct ObstructedJawPlant {
     inner: NoPhysicsStandIn,
-    blocked_at: Option<f64>,
+    blocked_at: Arc<Mutex<Option<f64>>>,
 }
 
 impl Plant for ObstructedJawPlant {
@@ -61,6 +61,8 @@ impl Plant for ObstructedJawPlant {
         self.inner.command_gripper(
             permit,
             self.blocked_at
+                .lock()
+                .unwrap()
                 .map_or(angle, |blocked_at| angle.max(blocked_at)),
         )
     }
@@ -83,6 +85,7 @@ struct TestStation {
     runtime: SimulatedStation,
     /// The HTTP requests the stub lease and recording routes received.
     requests: StubRequests,
+    jaw_obstruction: Arc<Mutex<Option<f64>>>,
 }
 
 impl TestStation {
@@ -101,28 +104,35 @@ impl TestStation {
         arm_names: &[&str],
         blocked_at: Option<f64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::start_with_media(arm_names, blocked_at, None).await
+        let initial_jaw_angle = if blocked_at.is_some() { 1.0 } else { 0.0 };
+        Self::start_with_media(arm_names, initial_jaw_angle, blocked_at, None).await
     }
 
     async fn start_with_media(
         arm_names: &[&str],
+        initial_jaw_angle: f64,
         blocked_at: Option<f64>,
         media_address: Option<std::net::SocketAddr>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let requests = StubRequests::default();
+        let jaw_obstruction = Arc::new(Mutex::new(blocked_at));
+        let plant_obstruction = Arc::clone(&jaw_obstruction);
         let runtime = SimulatedStation::start(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles"),
             arm_names,
             move || ObstructedJawPlant {
-                inner: NoPhysicsStandIn::at(REST.to_vec(), 0.02)
-                    .with_gripper(if blocked_at.is_some() { 1.0 } else { 0.0 }),
-                blocked_at,
+                inner: NoPhysicsStandIn::at(REST.to_vec(), 0.02).with_gripper(initial_jaw_angle),
+                blocked_at: Arc::clone(&plant_obstruction),
             },
             stub_station_routes(requests.clone()),
             media_address,
         )
         .await?;
-        Ok(Self { runtime, requests })
+        Ok(Self {
+            runtime,
+            requests,
+            jaw_obstruction,
+        })
     }
 }
 impl std::ops::Deref for TestStation {
@@ -1229,10 +1239,16 @@ async fn assert_specialized_model_tools(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn model_tools_execute_against_the_simulated_station() -> TestResult {
-    let station = TestStation::start().await?;
+    let station = TestStation::start_with_jaw_blocked_at(Some(0.2)).await?;
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("model tools"))).await??;
     within(client.enable(ARM)).await??;
+    let saved_opening = within(client.state())
+        .await??
+        .arms
+        .remove(0)
+        .gripper_opening
+        .ok_or("missing saved gripper opening")?;
     let tools = RobotTools::new(&lease, ARM)
         .with_operations(
             &hebbian_rua::contracts::robot_tool_catalog()
@@ -1273,7 +1289,7 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     let opening_before_rehome = before_rehome
         .gripper_opening
         .ok_or("missing gripper opening")?;
-    assert!(opening_before_rehome > 0.02);
+    assert!((opening_before_rehome - saved_opening).abs() > 0.02);
     assert!(
         before_rehome
             .measured_joints
@@ -1298,7 +1314,7 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
     let arm = within(client.state()).await??.arms.remove(0);
     assert!(
         arm.gripper_opening
-            .is_some_and(|opening| (opening - opening_before_rehome).abs() < 0.02)
+            .is_some_and(|opening| (opening - saved_opening).abs() < 0.02)
     );
     assert!(
         arm.measured_joints
@@ -1318,6 +1334,57 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
         return Err("sequence did not return".into());
     };
     assert_eq!(sequence["phase"]["state"], "completed");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rehome_reports_failure_when_the_saved_gripper_opening_is_blocked() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("rehome"))).await??;
+    within(client.enable(ARM)).await??;
+    within(lease.set_gripper(ARM, 0.5.try_into()?, None)).await??;
+    *station.jaw_obstruction.lock().unwrap() = Some(0.3);
+
+    let error = within(lease.rehome(ARM))
+        .await?
+        .expect_err("the saved jaw opening is blocked");
+    assert!(matches!(
+        error,
+        Error::Incomplete { outcome: CommandOutcome::Failed, detail: Some(detail), record }
+            if detail.contains("Saved gripper opening was not reached")
+                && matches!(record.phase, hebbian_contracts::CommandPhase::Finished { .. })
+    ));
+
+    let arm = within(client.state()).await??.arms.remove(0);
+    assert_eq!(arm.mode, hebbian_contracts::ArmMode::Holding);
+    assert!(arm.gripper_opening.is_some_and(|opening| opening > 0.02));
+    lease.return_lease().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rehome_reports_failure_when_the_saved_gripper_opening_is_clamped() -> TestResult {
+    let station = TestStation::start_with_media(&[ARM], -0.1, None, None).await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("rehome clamped jaw"))).await??;
+    within(client.enable(ARM)).await??;
+    within(lease.set_gripper(ARM, 0.5.try_into()?, None)).await??;
+
+    let error = within(lease.rehome(ARM))
+        .await?
+        .expect_err("the saved opening is outside the calibrated range");
+    assert!(matches!(
+        error,
+        Error::Incomplete { outcome: CommandOutcome::Failed, detail: Some(detail), .. }
+            if detail.contains("Saved gripper opening was not reached")
+    ));
+    let arm = within(client.state()).await??.arms.remove(0);
+    assert_eq!(arm.mode, hebbian_contracts::ArmMode::Holding);
+    assert!(
+        arm.gripper_opening
+            .is_some_and(|opening| opening.abs() < 0.02)
+    );
     Ok(())
 }
 
@@ -1511,7 +1578,7 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let media_address = listener.local_addr()?;
     let media_server = format!("http://{media_address}");
-    let station = TestStation::start_with_media(&[ARM], None, Some(media_address)).await?;
+    let station = TestStation::start_with_media(&[ARM], 0.0, None, Some(media_address)).await?;
     let media_task = tokio::spawn(async move { axum::serve(listener, media).await });
     let (client, _) = Station::connect_with(ConnectOptions {
         server: station.url.clone(),

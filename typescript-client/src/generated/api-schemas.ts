@@ -3923,7 +3923,7 @@ export const apiSchemas = z.object({
                 .object({ kind: z.literal("rehome") })
                 .strict()
                 .describe(
-                  "Return to the pose saved when the arm was enabled, at up to 2 rad/s.",
+                  "Return to the joint pose and gripper opening saved when the arm was enabled.",
                 ),
               z
                 .object({
@@ -5521,7 +5521,7 @@ export const apiSchemas = z.object({
             .object({ kind: z.literal("rehome") })
             .strict()
             .describe(
-              "Return to the pose saved when the arm was enabled, at up to 2 rad/s.",
+              "Return to the joint pose and gripper opening saved when the arm was enabled.",
             ),
           z
             .object({
@@ -19808,7 +19808,7 @@ export const apiSchemas = z.object({
         .object({ kind: z.literal("rehome") })
         .strict()
         .describe(
-          "Return to the pose saved when the arm was enabled, at up to 2 rad/s.",
+          "Return to the joint pose and gripper opening saved when the arm was enabled.",
         ),
       z
         .object({

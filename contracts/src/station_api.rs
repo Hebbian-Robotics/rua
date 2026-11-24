@@ -39,7 +39,7 @@ pub enum StationCommand {
     /// Acknowledge a fault; the arm is already disabled.
     #[schemars(title = "ClearFaultCommand")]
     ClearFault,
-    /// Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+    /// Return to the joint pose and gripper opening saved when the arm was enabled.
     #[schemars(title = "RehomeCommand")]
     Rehome,
     /// Move to joint angles, one per joint in the state's order.

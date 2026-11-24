@@ -588,6 +588,7 @@ impl ArmCore {
         let poses = self.poses().ok_or_else(|| anyhow::anyhow!("Not holding"))?;
         let plan = CornerPlan {
             segments: vec![Segment {
+                final_gripper_angle: None,
                 pass_through: None,
                 label: "return_to_rest".into(),
                 corners: vec![poses.hold.clone(), home_target],
@@ -913,6 +914,7 @@ impl ArmCore {
         let motion_id = self
             .active_command_id()
             .map(hebbian_contracts::CommandId::from);
+        self.motion_advanced |= motion_id.is_some();
         if let Some(command) = self.gripper_command.as_mut()
             && motion_id.is_some()
             && command.stream_id == motion_id

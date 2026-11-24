@@ -53,10 +53,30 @@ pub enum ControllerMessage {
         request_id: ControllerRequestId,
         answer: ControllerAnswer,
     },
-    Event {
-        arm: String,
-        event: Box<Event>,
-    },
+    Event(ControllerEvent),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ControllerEvent {
+    pub(crate) arm: String,
+    pub event: Box<Event>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) rest_gripper_angle: Option<f64>,
+}
+
+impl ControllerEvent {
+    pub(crate) fn new(arm: String, event: Event) -> Self {
+        let rest_gripper_angle = if let Event::State(sample) = &event {
+            sample.rest_gripper_angle
+        } else {
+            None
+        };
+        Self {
+            arm,
+            event: Box::new(event),
+            rest_gripper_angle,
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
