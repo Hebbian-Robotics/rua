@@ -7,11 +7,8 @@ import { createRecordingClient } from "hebbian-rua";
 import type { Context } from "hono";
 import { csrf } from "hono/csrf";
 import { proxy } from "hono/proxy";
-import {
-  API_KEY_VARIABLES,
-  PROVIDERS,
-} from "../../../agent/src/providers/types.js";
-import { configuredApiKey } from "../../../agent/src/run.js";
+import { API_KEY_VARIABLES } from "../../../agent/src/providers/types.js";
+import { configuredProviders } from "../../../agent/src/run.js";
 import { manualSessions } from "./manual-sessions.js";
 import { allowedViewerOrigins } from "./origins.js";
 import { RunManager } from "./run-manager.js";
@@ -30,10 +27,8 @@ const { values } = parseArgs({
 });
 const manualOnly = values["manual-only"];
 const environment = process.env;
-const configuredProviders = PROVIDERS.filter(
-  (provider) => configuredApiKey(provider, environment) !== undefined,
-);
-if (!manualOnly && configuredProviders.length === 0) {
+const availableProviders = configuredProviders(environment);
+if (!manualOnly && availableProviders.length === 0) {
   console.error(
     `Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env to start the viewer. For manual control only, run pnpm start:viewer --manual-only.`,
   );
@@ -62,7 +57,7 @@ const app = createApp({
   manager,
   allowedOrigins,
   manualOnly,
-  configuredProviders,
+  configuredProviders: availableProviders,
 });
 const recording = createRecordingClient(stationUrl);
 app.get("/api/recording/status", async (context) =>

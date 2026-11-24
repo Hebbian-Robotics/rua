@@ -21,7 +21,9 @@ VIEWER_COMMAND = [
 
 
 @contextmanager
-def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
+def viewer_backend(
+    station_url: str, run_directory: Path, *, manual_only: bool = True
+) -> Generator[str]:
     environment = {
         **os.environ,
         "HEBBIAN_STATION_URL": station_url,
@@ -29,8 +31,9 @@ def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
         "AGENT_PORT": "0",
         "AGENT_RUNS_DIR": str(run_directory),
     }
+    arguments = [*VIEWER_COMMAND, "--manual-only"] if manual_only else VIEWER_COMMAND
     with subprocess.Popen(
-        [*VIEWER_COMMAND, "--manual-only"],
+        arguments,
         env=environment,
         cwd=REPOSITORY_ROOT,
         stdout=subprocess.PIPE,
@@ -46,6 +49,24 @@ def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
         finally:
             process.terminate()
             process.wait(timeout=10)
+
+
+@pytest.mark.server
+@pytest.mark.typescript
+def test_viewer_lists_configured_providers_in_automatic_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
+    with viewer_backend("http://127.0.0.1:1", tmp_path, manual_only=False) as viewer:
+        response = httpx2.get(f"{viewer}/api/model-providers", timeout=10)
+        response.raise_for_status()
+        assert [entry["provider"] for entry in response.json()] == [
+            "openai",
+            "gemini",
+            "anthropic",
+        ]
 
 
 def ready_session(lines: Iterator[str]) -> str:

@@ -21,9 +21,12 @@ import {
   type ReasoningEffort,
   unsupportedReasoningEffort,
 } from "./providers/types.js";
-import { apiKeyFromEnvironment, configuredApiKey, runAgent } from "./run.js";
-
-const PROVIDER_PRIORITY = ["openai", "gemini", "anthropic"] as const;
+import {
+  apiKeyFromEnvironment,
+  configuredProviders,
+  PROVIDER_PRIORITY,
+  runAgent,
+} from "./run.js";
 
 function createCommand(): Command {
   return new Command("hebbian-agent")
@@ -126,9 +129,7 @@ export function parseCommandLine(
     throw new Error("Camera names must be unique");
   const provider =
     values.provider ??
-    PROVIDER_PRIORITY.find(
-      (candidate) => configuredApiKey(candidate, environment) !== undefined,
-    ) ??
+    configuredProviders(environment)[0] ??
     PROVIDER_PRIORITY[0];
   const environmentModel = environment[`${provider.toUpperCase()}_MODEL`];
   const model =
