@@ -86,6 +86,7 @@ impl ActiveGroup {
         let target = joined(|segment| &segment.corners[1]);
         let plan = CornerPlan {
             segments: vec![Segment {
+                final_gripper_angle: None,
                 pass_through: None,
                 label: GROUP_SEGMENT_LABEL.into(),
                 corners: vec![initial, target],

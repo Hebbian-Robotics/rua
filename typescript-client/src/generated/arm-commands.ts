@@ -46,7 +46,7 @@ export function armMotionCommands<Result>(
 ) {
   return {
     /**
-     * Return to the pose saved when the arm was enabled, at up to 2 rad/s.
+     * Return to the joint pose and gripper opening saved when the arm was enabled.
      */
     rehome(expectedRevision?: number): Result {
       return send({ kind: "rehome" }, expectedRevision);

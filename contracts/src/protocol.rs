@@ -34,6 +34,9 @@ pub struct Sample {
     pub hold_pose: Option<Vec<f64>>,
     /// Where the arm rested unpowered when it was enabled; shutdown returns there.
     pub rest_pose: Option<Vec<f64>>,
+    /// Measured jaw angle saved for rehome planning inside the station.
+    #[serde(skip)]
+    pub rest_gripper_angle: Option<f64>,
     pub positions: Vec<f64>,
     /// Joint setpoint successfully sent this cycle, if any.
     pub commanded_positions: Option<Vec<f64>>,
@@ -66,6 +69,7 @@ impl Sample {
             segment: None,
             hold_pose: None,
             rest_pose: None,
+            rest_gripper_angle: None,
             positions: Vec::new(),
             commanded_positions: None,
             velocities: Vec::new(),

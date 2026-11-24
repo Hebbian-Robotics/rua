@@ -370,7 +370,10 @@ fn powered_runner<'a>(
 ) -> Runner<'a, ScriptedPlant> {
     let mut runner = runner(plant, config, link);
     runner.state.power_up(&[0.0, 0.0], None);
-    runner.state.arm().enabled(&[0.0, 0.0], Now::current());
+    runner
+        .state
+        .arm()
+        .enabled(&[0.0, 0.0], None, Now::current());
     runner
 }
 
@@ -634,7 +637,7 @@ fn shutdown_releases_instead_of_returning_to_rest_outside_joint_limits() {
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
     let now = Now::current();
-    runner.state.arm().enabled(&[2.05, 0.0], now);
+    runner.state.arm().enabled(&[2.05, 0.0], None, now);
     runner.state.arm().set_hold(&[0.0, 0.0]);
     runner.state.arm().submit(Command::Shutdown, now).unwrap();
 
@@ -654,7 +657,7 @@ fn shutdown_can_return_to_a_home_pose_just_outside_joint_limits() {
     let link = test_link(&config);
     let mut runner = powered_runner(&mut plant, &config, &link);
     let now = Now::current();
-    runner.state.arm().enabled(&[2.02, 0.0], now);
+    runner.state.arm().enabled(&[2.02, 0.0], None, now);
     runner.state.arm().set_hold(&[0.0, 0.0]);
     runner.state.arm().submit(Command::Shutdown, now).unwrap();
 
@@ -808,6 +811,7 @@ fn start_short_move(
     let plan = hebbian_contracts::CornerPlan {
         peak_speed: 0.5,
         segments: vec![hebbian_contracts::Segment {
+            final_gripper_angle: None,
             pass_through: None,
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.01, 0.0]],
@@ -1076,6 +1080,7 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
     let motion = || CornerPlan {
         peak_speed: 0.5,
         segments: vec![Segment {
+            final_gripper_angle: None,
             pass_through: None,
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.2, 0.0]],
@@ -1163,7 +1168,7 @@ fn missing_required_gripper_feedback_skips_all_motor_writes() {
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
     runner.state.power_up(&[0.0, 0.0], Some(0.0));
-    runner.state.core.enabled(&[0.0, 0.0], Now::current());
+    runner.state.core.enabled(&[0.0, 0.0], None, Now::current());
     assert!(matches!(
         runner.begin_cycle(Duration::from_millis(10), None),
         Begun::Done(_, _)
@@ -1183,7 +1188,7 @@ fn a_missing_gripper_controller_fails_its_command_and_holds_without_reconnecting
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
     runner.state.power_up(&[0.0, 0.0], Some(0.0));
-    runner.state.core.enabled(&[0.0, 0.0], Now::current());
+    runner.state.core.enabled(&[0.0, 0.0], None, Now::current());
     let record = runner
         .state
         .core
@@ -1227,7 +1232,7 @@ fn a_feedback_trip_blocks_the_pending_jaw_write_in_the_same_cycle() {
     let link = test_link(&config);
     let mut runner = runner(&mut plant, &config, &link);
     runner.state.power_up(&[0.0, 0.0], Some(0.0));
-    runner.state.core.enabled(&[0.0, 0.0], Now::current());
+    runner.state.core.enabled(&[0.0, 0.0], None, Now::current());
     let gripper = runner
         .state
         .core

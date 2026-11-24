@@ -28,6 +28,7 @@ fn config() -> ControllerConfig {
 fn plan() -> CornerPlan {
     CornerPlan {
         segments: vec![Segment {
+            final_gripper_angle: None,
             pass_through: None,
             label: "target".into(),
             corners: vec![vec![0.0, 0.0], vec![0.6, -0.3]],

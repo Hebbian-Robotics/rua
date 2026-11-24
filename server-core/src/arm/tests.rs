@@ -54,6 +54,7 @@ fn at(seconds: f64) -> Now {
 fn plan(from: [f64; 2], to: [f64; 2]) -> CornerPlan {
     CornerPlan {
         segments: vec![Segment {
+            final_gripper_angle: None,
             pass_through: None,
             label: "go".into(),
             corners: vec![from.to_vec(), to.to_vec()],
@@ -89,7 +90,7 @@ fn enabled_core() -> (ArmCore, Arc<Mutex<Vec<Event>>>) {
     let job = core.next_job().unwrap();
     assert_eq!(job.command_id(), &record.command_id);
     observe(&mut core, 1.0, None);
-    core.enabled(&[0.0, 0.0], at(1.0));
+    core.enabled(&[0.0, 0.0], None, at(1.0));
     (core, events)
 }
 
@@ -787,7 +788,7 @@ proptest::proptest! {
                     _ => {
                         if let Some(job) = core.next_job() {
                             match job {
-                                Job::Enable { .. } => core.enabled(&[0.0, 0.0], now),
+                                Job::Enable { .. } => core.enabled(&[0.0, 0.0], None, now),
                                 Job::Release { .. } => core.released(&[], now),
                                 Job::Move { .. } | Job::Reach { .. } | Job::Stream { .. } => core.begin_moving(),
                                 Job::ApproveRecovery { .. } => core.failed("not awaiting approval", now),

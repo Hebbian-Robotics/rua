@@ -596,7 +596,7 @@ impl RobotToolCapability {
             ),
             Self::Rehome => (
                 "rehome",
-                "Return this arm to the joint pose recorded when it was enabled. The gripper keeps its current target.",
+                "Return this arm to the joint pose and gripper opening recorded when it was enabled.",
                 model_arguments::<StopArguments>(),
             ),
             Self::Stop => (

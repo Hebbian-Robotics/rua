@@ -111,6 +111,15 @@ impl MoveDecision {
                 "A grouped move needs one straight section",
             ));
         }
+        if let Some(angle) = plan.final_segment().final_gripper_angle {
+            if matches!(scope, MotionScope::Grouped) || plan.is_continuous() {
+                return Err(rejection(
+                    RejectionReason::InvalidTarget,
+                    "A final gripper target needs an individual move with stops",
+                ));
+            }
+            gripper_target(limits, angle, Some(speed), true)?;
+        }
         for angle in plan
             .segments
             .iter()

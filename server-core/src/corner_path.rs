@@ -46,6 +46,12 @@ pub fn validate_plan(plan: &CornerPlan, joint_count: usize) -> anyhow::Result<()
                         && segment.minimum_duration_seconds.is_none())),
         "Invalid continuous path boundaries"
     );
+    ensure!(
+        plan.segments[..plan.segments.len() - 1]
+            .iter()
+            .all(|segment| segment.final_gripper_angle.is_none()),
+        "A final gripper target belongs on the last segment"
+    );
     let mut previous = plan_initial_corner(plan)?;
     for segment in &plan.segments {
         ensure!(
@@ -565,6 +571,10 @@ impl MotionSupervisor {
     #[must_use]
     pub(crate) fn final_pose(&self) -> &[f64] {
         self.tracker.plan.final_corner()
+    }
+
+    pub(crate) fn final_gripper_angle(&self) -> Option<hebbian_contracts::JawAngle> {
+        self.tracker.plan.final_segment().final_gripper_angle
     }
 
     pub(crate) fn waypoint_gripper(

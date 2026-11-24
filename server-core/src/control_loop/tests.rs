@@ -186,7 +186,7 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
     .ok()
     .unwrap();
     runner.state.power_up(&initial, Some(0.0));
-    runner.state.core.enabled(&initial, Now::current());
+    runner.state.core.enabled(&initial, None, Now::current());
     let movement = runner
         .state
         .core

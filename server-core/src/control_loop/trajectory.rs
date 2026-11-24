@@ -4,7 +4,7 @@ use crate::corner_path::MotionSupervisor;
 use crate::limits::{Trip, max_joint_deviation};
 use crate::plant::Feedback;
 use crate::reference_filter::Reference;
-use hebbian_contracts::{Checkpoint, CommandOutcome};
+use hebbian_contracts::{Checkpoint, CommandOutcome, CommandPhase, GripperResult};
 
 // WHY: Start easing off before the tracking guard trips. Ruckig applies the new
 // cap from the current reference state, keeping its acceleration and jerk limits.
@@ -48,6 +48,48 @@ pub(super) struct ActiveMotion {
     pub(super) supervisor: MotionSupervisor,
     pub(super) checkpoints_sent: usize,
     waypoint_gripper_command: Option<hebbian_contracts::CommandId>,
+}
+
+enum WaypointGripperStatus {
+    Waiting,
+    Complete,
+    HomeFailed(String),
+}
+
+impl ActiveMotion {
+    fn waypoint_gripper_status(
+        &mut self,
+        core: &crate::arm::ArmCore,
+    ) -> Result<WaypointGripperStatus, Trip> {
+        let Some(command_id) = &self.waypoint_gripper_command else {
+            return Ok(WaypointGripperStatus::Complete);
+        };
+        let record = core
+            .record(command_id)
+            .ok_or_else(|| Trip::Gripper("Lost the waypoint jaw command record".into()))?;
+        let Some(outcome) = record.outcome() else {
+            return Ok(WaypointGripperStatus::Waiting);
+        };
+        if self.supervisor.final_gripper_angle().is_some()
+            && (outcome != CommandOutcome::Completed
+                || matches!(&record.phase, CommandPhase::Finished { completion, .. }
+                    if matches!(completion.gripper, Some(GripperResult::StoppedShort { .. }))))
+        {
+            let detail = record
+                .detail()
+                .unwrap_or("The jaw did not complete its move");
+            return Ok(WaypointGripperStatus::HomeFailed(format!(
+                "Saved gripper opening was not reached: {detail}"
+            )));
+        }
+        if outcome != CommandOutcome::Completed {
+            return Err(Trip::Trajectory(format!(
+                "Waypoint gripper command ended with {outcome:?}"
+            )));
+        }
+        self.waypoint_gripper_command = None;
+        Ok(WaypointGripperStatus::Complete)
+    }
 }
 
 // INVARIANT: This arm's part of a grouped motion. The group's one trajectory is stepped
@@ -205,39 +247,39 @@ impl Loop<'_> {
             .new_checkpoints(active.checkpoints_sent)
             .to_vec();
         let mut status = MotionStatus::of(&active.supervisor);
-        if let Some(command_id) = &active.waypoint_gripper_command {
-            match self
-                .core
-                .record(command_id)
-                .ok_or_else(|| Trip::Gripper("Lost the waypoint jaw command record".into()))?
-                .outcome()
-            {
-                Some(CommandOutcome::Completed) => active.waypoint_gripper_command = None,
-                Some(outcome) => {
-                    return Err(Trip::Trajectory(format!(
-                        "Waypoint gripper command ended with {outcome:?}"
-                    )));
-                }
-                None if status == MotionStatus::Reached => status = MotionStatus::Running,
-                None => {}
+        match active.waypoint_gripper_status(&self.core)? {
+            WaypointGripperStatus::Waiting if status == MotionStatus::Reached => {
+                status = MotionStatus::Running;
             }
+            WaypointGripperStatus::HomeFailed(detail) => {
+                return Ok(self.prepare_measured_hold(
+                    CommandOutcome::Failed,
+                    Some(detail),
+                    feedback,
+                ));
+            }
+            WaypointGripperStatus::Waiting | WaypointGripperStatus::Complete => {}
         }
         self.core.set_segment(active.supervisor.segment_label());
-        let waypoint_gripper = if new.is_empty() {
+        let gripper_angle = if new.is_empty() {
             None
+        } else if status == MotionStatus::Reached {
+            active.supervisor.final_gripper_angle()
         } else {
-            active
-                .supervisor
-                .waypoint_gripper(active.checkpoints_sent)
-                .map(|angle| {
-                    let speed = hebbian_contracts::JointSpeed::new(active.supervisor.peak_speed())
-                        .map_err(|e| Trip::Trajectory(e.to_string()))?;
-                    self.core
-                        .check_gripper_target(angle, Some(speed))
-                        .map_err(|failure| Trip::Gripper(failure.detail))
-                })
-                .transpose()?
+            active.supervisor.waypoint_gripper(active.checkpoints_sent)
         };
+        let waypoint_gripper = gripper_angle
+            .map(|angle| {
+                let speed = hebbian_contracts::JointSpeed::new(active.supervisor.peak_speed())
+                    .map_err(|error| Trip::Trajectory(error.to_string()))?;
+                self.core
+                    .check_gripper_target(angle, Some(speed))
+                    .map_err(|failure| Trip::Gripper(failure.detail))
+            })
+            .transpose()?;
+        if status == MotionStatus::Reached && waypoint_gripper.is_some() {
+            status = MotionStatus::Running;
+        }
         let progress = MotionProgress {
             checkpoints: new,
             status,
@@ -247,8 +289,11 @@ impl Loop<'_> {
                 active.supervisor.final_pose().to_vec()
             },
         };
-        self.core
-            .set_settling(settling_at_end && active.waypoint_gripper_command.is_none());
+        self.core.set_settling(
+            settling_at_end
+                && active.waypoint_gripper_command.is_none()
+                && waypoint_gripper.is_none(),
+        );
         let mut effects = self.prepare_motion_effects(feedback, progress);
         effects.waypoint_gripper = waypoint_gripper;
         Ok(effects)
@@ -433,6 +478,7 @@ mod tests {
                 CornerPlan {
                     peak_speed: 2.0,
                     segments: vec![Segment {
+                        final_gripper_angle: None,
                         pass_through: None,
                         label: "sweep".into(),
                         corners: vec![vec![0.0, 0.0], vec![1.8, 0.5]],

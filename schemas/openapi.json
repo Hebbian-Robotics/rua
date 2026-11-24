@@ -5302,7 +5302,7 @@
           },
           {
             "additionalProperties": false,
-            "description": "Return to the pose saved when the arm was enabled, at up to 2 rad/s.",
+            "description": "Return to the joint pose and gripper opening saved when the arm was enabled.",
             "properties": {
               "kind": {
                 "const": "rehome",

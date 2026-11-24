@@ -142,7 +142,7 @@ fn plan_station_movement(
     uses_policy: bool,
     sample: &Sample,
 ) -> Result<PreparedMovement, Rejection> {
-    let (label, waypoints, max_joint_speed) = match movement {
+    let (label, waypoints, max_joint_speed, final_gripper_angle) = match movement {
         StationMovement::Pose {
             position,
             orientation,
@@ -166,12 +166,13 @@ fn plan_station_movement(
                 orientation,
             }],
             max_joint_speed,
+            None,
         ),
         StationMovement::Trajectory {
             label,
             waypoints,
             max_joint_speed,
-        } => (label, waypoints, max_joint_speed),
+        } => (label, waypoints, max_joint_speed, None),
         StationMovement::Rehome => {
             let rest_pose = sample.rest_pose.as_deref().ok_or_else(|| {
                 rejection(
@@ -187,13 +188,30 @@ fn plan_station_movement(
             })?;
             let speed = JointSpeed::new(config.max_joint_speed.min(2.0))
                 .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
-            ("rehome", vec![Waypoint::Joints { joints }], Some(speed))
+            let gripper_angle = sample
+                .rest_gripper_angle
+                .filter(|_| config.gripper.is_some())
+                .map(hebbian_contracts::JawAngle::try_from)
+                .transpose()
+                .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+            (
+                "rehome",
+                vec![Waypoint::Joints { joints }],
+                Some(speed),
+                gripper_angle,
+            )
         }
     };
     let planner = planner_or_refuse(planner)?;
     let holding = HoldingFeedback::try_from(sample)?;
-    plan_trajectory(planner, holding, &waypoints, max_joint_speed)
-        .and_then(|motion| prepare_trajectory(label, motion))
+    let mut motion = plan_trajectory(planner, holding, &waypoints, max_joint_speed)?;
+    if motion.path_limited.is_none()
+        && motion.pose_limited.is_none()
+        && let Some(final_segment) = motion.plan.segments.last_mut()
+    {
+        final_segment.final_gripper_angle = final_gripper_angle;
+    }
+    prepare_trajectory(label, motion)
 }
 
 fn prepare_movement(
