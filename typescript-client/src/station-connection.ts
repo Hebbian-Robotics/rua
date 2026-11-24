@@ -229,8 +229,10 @@ export interface StationConnection {
     import("./generated/api-schemas.js").ApiSchemas["CompilationArtifact"]
   >;
   getActionSequence(action_sequenceId: string): Promise<ActionSequenceRecord>;
+  /** Wait for a terminal result. Aborting or timing out ends the wait; cancel the sequence to stop motion. */
   waitForActionSequence(
     action_sequenceId: string,
+    options?: { signal?: AbortSignal; timeoutMilliseconds?: number },
   ): Promise<ActionSequenceRecord>;
   cancelActionSequence(action_sequenceId: string): Promise<void>;
   onActionSequence(
@@ -1413,7 +1415,9 @@ export function createStationConnection(
       stationApi(signal).captureObservationHttp(selection),
     getOperation: (operationId) => stationApi().getOperation(operationId),
     getActionSequence,
-    async waitForActionSequence(actionSequenceId) {
+    async waitForActionSequence(actionSequenceId, options = {}) {
+      const { signal, timeoutMilliseconds } = options;
+      const lookup = new AbortController();
       let result: ActionSequenceRecord | undefined;
       let failure: Error | undefined;
       const listener = (current: ActionSequenceRecord | null) => {
@@ -1423,7 +1427,8 @@ export function createStationConnection(
         ) {
           result = current;
         } else if (current && current.id !== actionSequenceId) {
-          void getActionSequence(actionSequenceId)
+          void stationApi(lookup.signal)
+            .getActionSequence(actionSequenceId)
             .then((previous) => {
               if (previous.phase.state !== "running") result = previous;
               notify();
@@ -1437,12 +1442,29 @@ export function createStationConnection(
       action_sequenceListeners.add(listener);
       try {
         if (latestActionSequence !== undefined) listener(latestActionSequence);
-        return await waitFor(() => {
-          if (failure !== undefined) throw failure;
-          return result;
-        });
+        return await waitFor(
+          () => {
+            if (failure !== undefined) throw failure;
+            return result;
+          },
+          {
+            ...(signal === undefined ? {} : { signal }),
+            ...(timeoutMilliseconds === undefined
+              ? {}
+              : {
+                  timeout: {
+                    milliseconds: timeoutMilliseconds,
+                    error: () =>
+                      new StationTimeoutError(
+                        `Timed out waiting for action sequence ${actionSequenceId}`,
+                      ),
+                  },
+                }),
+          },
+        );
       } finally {
         action_sequenceListeners.delete(listener);
+        lookup.abort();
       }
     },
     async cancelActionSequence(action_sequenceId) {

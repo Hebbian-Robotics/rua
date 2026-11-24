@@ -214,6 +214,18 @@ fn an_arm_that_converges_within_the_settle_timeout_settles_normally() {
 }
 
 #[test]
+fn entering_tolerance_at_the_deadline_does_not_extend_settling() {
+    let timeout = config().motion.settle_timeout_seconds;
+    let (seconds, motion) =
+        settle_with_error(|elapsed| if elapsed < timeout - 0.10 { 0.06 } else { 0.03 });
+    assert!(motion.done() && motion.stopped_short());
+    assert!(
+        (timeout - 0.04..=timeout + 0.04).contains(&seconds),
+        "waited {seconds} s for a {timeout} s settle timeout"
+    );
+}
+
+#[test]
 fn variable_cycle_intervals_preserve_motion_limits_and_minimum_duration() {
     let configuration = config();
     for minimum_duration in [None, Some(3.0)] {

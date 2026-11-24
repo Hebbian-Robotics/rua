@@ -42,7 +42,7 @@ one record per resource, so each has its own outcome.
 | Outcome | Meaning |
 | --- | --- |
 | `completed` | The planned motion finished. A limited plan can finish at an adjusted target. |
-| `stopped_short` | The arm settled outside the target tolerance. Inspect the achieved pose and remaining errors. |
+| `stopped_short` | The arm did not stay within the target tolerance for the required dwell before the settle deadline. Inspect the achieved pose and remaining errors. |
 | `stopped` or `superseded` | A stop ended the command, or a new move replaced it while settling. |
 | `tripped` or `timed_out` | A protective check or deadline ended the motion. Inspect state before retrying. |
 | `faulted`, `interrupted` or `failed` | A fault, lost feedback or execution failure ended the command. Inspect the record and recover before continuing. |
@@ -51,6 +51,13 @@ A gripper that stops short may have contacted something. Use camera and state
 feedback to assess the grasp. `stop` brakes motion and holds with torque
 enabled. `disable` removes torque. A stop ends an affected action sequence
 while the application still owns its agent loop.
+
+Planned IK motion allows time for the trajectory and tracking speed reductions
+before settling starts. If a trajectory section exceeds its deadline, the
+controller brakes to a hold and reports `timed_out`. The bundled SO-101 profile
+allows two seconds for settling once the reference stops. When that deadline
+expires before the dwell completes, the arm holds at the measured pose and
+reports `stopped_short`.
 
 ## Action sequences
 
