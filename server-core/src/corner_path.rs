@@ -493,24 +493,22 @@ impl CornerPathTracker {
                     self.plan.peak_speed * speed_fraction,
                 )?
         };
-        if finished {
+        self.section_elapsed += interval;
+        // WHY: Retiming can restart the generator's clock. Bound the total time
+        // spent on this section, even if a late cycle samples the endpoint.
+        let deadline = trajectory.section_durations[self.corner_index - 1]
+            / MIN_TRACKING_SPEED_FRACTION
+            + self.limits.settle_timeout_seconds;
+        if self.section_elapsed >= deadline {
+            self.end = Some(MotionEnd::TrajectoryTimedOut);
+            self.stage = Stage::Done;
+        } else if finished {
             if self.corner_index + 1 < corners.len() {
                 self.corner_index += 1;
                 self.section = None;
                 self.section_elapsed = 0.0;
             } else {
                 self.stage = Stage::Settling;
-            }
-        } else {
-            self.section_elapsed += interval;
-            // WHY: Retiming can restart the generator's clock. Bound the total time
-            // spent on this section, allowing for the slowest tracking speed cap.
-            let deadline = trajectory.section_durations[self.corner_index - 1]
-                / MIN_TRACKING_SPEED_FRACTION
-                + self.limits.settle_timeout_seconds;
-            if self.section_elapsed >= deadline {
-                self.end = Some(MotionEnd::TrajectoryTimedOut);
-                self.stage = Stage::Done;
             }
         }
         Ok(())

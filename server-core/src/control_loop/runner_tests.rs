@@ -872,6 +872,44 @@ fn a_stalled_move_reports_stopped_short_and_holds_at_feedback() {
 }
 
 #[test]
+fn an_expired_trajectory_brakes_to_a_hold_before_sending_the_target() {
+    use hebbian_contracts::CommandOutcome;
+
+    let mut input = config("expired-trajectory-hold").into_input();
+    input.frequency_hertz = 4.0;
+    input.loop_deadline_seconds = 0.5;
+    input.motion.settle_dwell_seconds = 0.02;
+    input.motion.settle_timeout_seconds = 0.05;
+    let config = ControllerConfig::try_from(input).unwrap();
+    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
+    let command_id = start_short_move(&mut runner, None);
+    run_motion_cycle(&mut runner);
+    run_motion_cycle(&mut runner);
+    assert_eq!(runner.state.core.mode(), ArmMode::Moving);
+    assert!(runner.state.next_command[0] > 0.0);
+
+    // WHY: The delayed cycle exceeds the move's budget while staying within the loop deadline.
+    let Begun::Pending(delayed_cycle) = runner.begin_cycle(Duration::from_millis(490), None) else {
+        panic!("expected a powered control cycle");
+    };
+    runner.finish_cycle(delayed_cycle, None);
+
+    let record = runner.state.core.record(&command_id).unwrap();
+    assert_eq!(record.outcome(), Some(CommandOutcome::TimedOut));
+    assert_eq!(runner.state.core.mode(), ArmMode::Holding);
+    assert!((0.0..0.005).contains(&runner.state.next_command[0]));
+    for _ in 0..50 {
+        run_motion_cycle(&mut runner);
+        assert!((0.0..0.005).contains(&runner.state.next_command[0]));
+    }
+    let held_position = runner.state.next_command[0];
+    run_motion_cycle(&mut runner);
+    assert!((runner.state.next_command[0] - held_position).abs() < 1e-6);
+}
+
+#[test]
 fn the_completion_and_checkpoint_wait_for_the_confirming_plant_write() {
     use hebbian_contracts::CommandOutcome;
 
