@@ -184,7 +184,7 @@ async fn dispatch(
 }
 
 async fn motion_lease(station: &Station, session: &Session) -> Result<LeaseGuard, Failure> {
-    let request = LeaseRequest::new(LeaseHolder::Agent, "hebbian-robot-use");
+    let request = LeaseRequest::new(LeaseHolder::Agent, "hebbian-rua");
     Ok(if session.take_lease {
         station.take_lease(request).await?
     } else {

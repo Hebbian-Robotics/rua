@@ -13,10 +13,10 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use hebbian_contracts::{Command, CommandRecord, Event, Frame};
-use hebbian_robot_use_core::control_link::LinkHandle;
-use hebbian_robot_use_core::control_loop::{ArmSetup, run_arms};
-use hebbian_robot_use_core::controller_transport::{ControllerAnswer, ControllerRequest};
-use hebbian_robot_use_core::plant::Plant;
+use hebbian_rua_core::control_link::LinkHandle;
+use hebbian_rua_core::control_loop::{ArmSetup, run_arms};
+use hebbian_rua_core::controller_transport::{ControllerAnswer, ControllerRequest};
+use hebbian_rua_core::plant::Plant;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::error::TryRecvError;
 

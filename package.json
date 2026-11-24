@@ -1,5 +1,5 @@
 {
-  "name": "hebbian-robot-use-viewer",
+  "name": "hebbian-rua-viewer",
   "version": "0.1.0",
   "private": true,
   "description": "Browser viewer for the Hebbian control station: live 3D arm state, cameras, recordings and manual control",

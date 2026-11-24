@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from zipfile import ZipFile, ZipInfo
 
@@ -8,14 +9,27 @@ from packaging.utils import parse_wheel_filename
 from wheel.wheelfile import WheelFile
 
 
+@dataclass(frozen=True)
+class NativeComponentWheels:
+    server: Path
+    media: Path
+    cli: Path
+
+    def by_distribution(self) -> tuple[tuple[Path, str], ...]:
+        return (
+            (self.server, "hebbian-rua-server"),
+            (self.media, "hebbian-rua-media"),
+            (self.cli, "hebbian-rua-cli"),
+        )
+
+
 def bundle_platforms(
-    sdk_wheel: Path, server_wheel: Path, media_wheel: Path, version: str
+    sdk_wheel: Path, native_wheels: NativeComponentWheels, version: str
 ) -> set[str]:
     native_platforms: set[str] | None = None
     for artifact, expected_name in (
         (sdk_wheel, "hebbian-rua"),
-        (server_wheel, "hebbian-robot-use-server"),
-        (media_wheel, "hebbian-robot-use-media"),
+        *native_wheels.by_distribution(),
     ):
         artifact_name, artifact_version, _, tags = parse_wheel_filename(artifact.name)
         if artifact_name != expected_name:
@@ -27,15 +41,14 @@ def bundle_platforms(
             platforms if native_platforms is None else native_platforms & platforms
         )
     if not native_platforms:
-        raise ValueError("Server and media wheels need matching native platform tags")
+        raise ValueError("Native component wheels need matching platform tags")
     return native_platforms
 
 
 def assemble_bundle(
     repository: Path,
     sdk_wheel: Path,
-    server_wheel: Path,
-    media_wheel: Path,
+    native_wheels: NativeComponentWheels,
     output: Path,
 ) -> Path:
     source_manifest = tomllib.loads((repository / "pyproject.toml").read_text())
@@ -43,7 +56,7 @@ def assemble_bundle(
     if project["name"] != "hebbian-rua":
         raise ValueError("The root package must be hebbian-rua")
     version = project["version"]
-    native_platforms = bundle_platforms(sdk_wheel, server_wheel, media_wheel, version)
+    native_platforms = bundle_platforms(sdk_wheel, native_wheels, version)
     platform_tag = ".".join(sorted(native_platforms))
     public_profiles = {
         profile.relative_to(repository).as_posix()
@@ -67,7 +80,8 @@ def assemble_bundle(
         included: set[str] = set()
         staged_wheel = staging / destination.name
         with WheelFile(staged_wheel, "w") as bundle:
-            for artifact in (sdk_wheel, server_wheel, media_wheel):
+            native_artifacts = [path for path, _ in native_wheels.by_distribution()]
+            for artifact in (sdk_wheel, *native_artifacts):
                 with ZipFile(artifact) as source:
                     for entry in source.infolist():
                         if entry.is_dir() or entry.filename.endswith("/RECORD"):
@@ -78,7 +92,7 @@ def assemble_bundle(
                         target = entry.filename
                         if parts[0].endswith(".data"):
                             target = f"{distribution}.data/" + "/".join(parts[1:])
-                            asset = target.split("/data/share/hebbian-robot-use/", 1)
+                            asset = target.split("/data/share/hebbian-rua/", 1)
                             if len(asset) == 2 and not include_bundle_asset(
                                 asset[1], public_profiles, robot_assets
                             ):
@@ -101,7 +115,7 @@ def assemble_bundle(
                             )
                             content = ("\n".join(metadata) + "\n").encode()
                         if target.endswith(
-                            "/data/share/hebbian-robot-use/THIRD_PARTY_NOTICES.md"
+                            "/data/share/hebbian-rua/THIRD_PARTY_NOTICES.md"
                         ):
                             content = (
                                 repository / "THIRD_PARTY_NOTICES.md"
@@ -160,7 +174,10 @@ def build_rua_bundle(repository: Path, *, source_directory: Path | None = None) 
         return assemble_bundle(
             source_directory or repository,
             built_wheel(directory, "hebbian_rua", version),
-            built_wheel(directory, "hebbian_robot_use_server", version),
-            built_wheel(directory, "hebbian_robot_use_media", version),
+            NativeComponentWheels(
+                server=built_wheel(directory, "hebbian_rua_server", version),
+                media=built_wheel(directory, "hebbian_rua_media", version),
+                cli=built_wheel(directory, "hebbian_rua_cli", version),
+            ),
             repository / "dist",
         )

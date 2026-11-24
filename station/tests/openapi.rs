@@ -13,9 +13,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_server::openapi::routes;
-use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
+use hebbian_rua_core::station_api::HttpServer;
+use hebbian_rua_server::openapi::routes;
+use hebbian_rua_server::web::{self, CameraForwarding, WebSettings};
 
 fn probe(address: SocketAddr, path: &str) -> (u16, Option<String>) {
     let mut stream = TcpStream::connect(address).unwrap();
@@ -61,13 +61,13 @@ fn the_openapi_document_matches_the_routers() {
         enable_recording: false,
         media_address: None,
         camera_forwarding: CameraForwarding::Enabled,
-        media_executable: scratch.join("hebbian-robot-use-media"),
+        media_executable: scratch.join("hebbian-rua-media"),
         room: None,
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
         manual_control: false,
-        media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
+        media_status: hebbian_rua_server::media_status::MediaStatus::default(),
     };
-    let live_run = Arc::new(hebbian_robot_use_server::run_telemetry::LiveRunStore::default());
+    let live_run = Arc::new(hebbian_rua_server::run_telemetry::LiveRunStore::default());
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
@@ -76,9 +76,9 @@ fn the_openapi_document_matches_the_routers() {
         |runtime, bound| {
             let (routes, _manager) = web::mount(runtime, bound, settings, || true);
             Ok(routes
-                .merge(hebbian_robot_use_server::run_telemetry::routes(live_run))
-                .merge(hebbian_robot_use_server::controller_supervisor::router(
-                    hebbian_robot_use_server::controller_supervisor::ControllerSupervisor::unmanaged(),
+                .merge(hebbian_rua_server::run_telemetry::routes(live_run))
+                .merge(hebbian_rua_server::controller_supervisor::router(
+                    hebbian_rua_server::controller_supervisor::ControllerSupervisor::unmanaged(),
                 )))
         },
     )

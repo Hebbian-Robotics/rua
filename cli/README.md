@@ -1,22 +1,31 @@
-# hebbian-robot-use-cli
+# hebbian-rua-cli
 
-The `hebbian-robot-use` command line for a station, built on the `hebbian-rua` Rust SDK.
+The `hebbian-rua` command line for a station, built on the `hebbian-rua` Rust SDK.
 Coding agents can chain these commands in the shell. Each invocation opens a
 connection and runs one command. Commands print JSON to stdout, with plain-text
 output for the phone invite URL.
 
+The `hebbian-rua` Python package provides the command alongside `rua`. Run it
+from the agent project that serves the station, so the CLI and station come from
+the same locked version:
+
 ```sh
-cargo install --locked --path cli            # installs `hebbian-robot-use`
-hebbian-robot-use --help            # units, argument shapes and an example per command
-hebbian-robot-use state
-hebbian-robot-use enable arm
-hebbian-robot-use move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
-hebbian-robot-use move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
-hebbian-robot-use preview-pose arm --position 0.2,0,0.1
+uv add hebbian-rua
+uv run hebbian-rua --help     # units, argument shapes and an example per command
+uv run hebbian-rua state
+uv run hebbian-rua enable arm
+uv run hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
+uv run hebbian-rua move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
+uv run hebbian-rua preview-pose arm --position 0.2,0,0.1
 ```
 
+Without a project, pin the station’s version: `uvx hebbian-rua==<station version> state`.
+From a source checkout, `cargo run -p hebbian-rua-cli -- state` builds and runs
+the current source, and `cargo install --locked --path cli` installs it. The
+examples below omit the `uv run` prefix.
+
 These examples use `arm`, the name assigned by native SO-101 setup. Run
-`hebbian-robot-use state` to discover the names served by a custom profile.
+`hebbian-rua state` to discover the names served by a custom profile.
 
 `--server` (default `http://127.0.0.1:8792`) is the station URL, including for
 camera requests. Set `--media-server` or `HEBBIAN_MEDIA_SERVER` to use the
@@ -73,5 +82,5 @@ are refused with exit 4; `stop` is always accepted. Motion is refused while an a
 and [the control model](../docs/control-model.md)).
 
 ```sh
-cargo test -p hebbian-robot-use-cli   # the real binary against an in-process controller on the simulated SO-101
+cargo test -p hebbian-rua-cli   # the real binary against an in-process controller on the simulated SO-101
 ```

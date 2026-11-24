@@ -65,7 +65,7 @@ def generate_contracts(targets: frozenset[SdkTarget], *, check: bool = False) ->
             + ", ".join(sorted(unavailable_targets))
         )
     prepare_robot_assets(Path.cwd())
-    server_binary = os.environ.get("HEBBIAN_ROBOT_USE_SERVER")
+    server_binary = os.environ.get("HEBBIAN_RUA_SERVER")
     if server_binary is None:
         server_binary = str(build_server())
     for schema_argument, destination in (

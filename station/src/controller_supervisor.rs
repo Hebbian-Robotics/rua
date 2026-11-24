@@ -11,10 +11,10 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::controller_bridge::StationSession;
-use hebbian_robot_use_core::controller_service::{ReadyController, serve_station_connection};
-use hebbian_robot_use_core::lease::Lease;
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::controller_bridge::StationSession;
+use hebbian_rua_core::controller_service::{ReadyController, serve_station_connection};
+use hebbian_rua_core::lease::Lease;
 
 use hebbian_contracts::{ControllerStatus, ReconnectRequest};
 

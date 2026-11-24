@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use hebbian_contracts::{CONTROLLER_INTERRUPTION_MARKER, RecordingStatus};
-use hebbian_robot_use_server::recording::{RecordingConfiguration, RecordingManager};
+use hebbian_rua_server::recording::{RecordingConfiguration, RecordingManager};
 use station_access::Credentials;
 
 fn recorder_fixture(name: &str) -> std::path::PathBuf {

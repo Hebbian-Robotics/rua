@@ -20,7 +20,7 @@ uv sync --project examples/python --locked
 Start the station from the repository root:
 
 ```sh
-uv run cargo run --locked -p hebbian-robot-use-server -- serve \
+uv run cargo run --locked -p hebbian-rua-server -- serve \
   --profile "$PWD/examples/mujoco_sim/profiles/single.toml" \
   --work-directory /tmp/hebbian-station
 ```
@@ -39,7 +39,7 @@ station command.
 ## 2. Run hello_robot
 
 Wait for populated `measured_joints` in [station state](http://127.0.0.1:8792/state)
-or run `cargo run --locked -p hebbian-robot-use-cli -- state`. Then run the
+or run `cargo run --locked -p hebbian-rua-cli -- state`. Then run the
 [Python example](../examples/python/hello_robot.py) in a third terminal:
 
 ```sh
@@ -71,7 +71,7 @@ onnx = "/absolute/path/to/policy.onnx"
 EOF
 
 ORT_DYLIB_PATH=/absolute/path/to/libonnxruntime.so \
-  uv run cargo run --locked -p hebbian-robot-use-server -- serve \
+  uv run cargo run --locked -p hebbian-rua-server -- serve \
   --profile "$policy_directory/policy.toml" \
   --profile-directory "$PWD/profiles" \
   --work-directory /tmp/hebbian-station
@@ -89,8 +89,8 @@ station. For headless rendering on Linux, install OSMesa (`libosmesa6` on
 Ubuntu) or set `MUJOCO_GL` to a backend supported by your system.
 
 ```sh
-cargo run --locked -p hebbian-robot-use-cli -- camera list
-cargo run --locked -p hebbian-robot-use-cli -- camera snapshot sim_overview --out overview.jpg
+cargo run --locked -p hebbian-rua-cli -- camera list
+cargo run --locked -p hebbian-rua-cli -- camera snapshot sim_overview --out overview.jpg
 ```
 
 Use `sim_wrist` for a single-arm wrist view or `sim_left_wrist` and

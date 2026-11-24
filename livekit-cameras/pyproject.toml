@@ -1,5 +1,5 @@
 [project]
-name = "hebbian-robot-use-media"
+name = "hebbian-rua-media"
 description = "Camera, streaming and recording service for Hebbian Robot Use"
 requires-python = ">=3.12"
 authors = [{ name = "Hebbian Robotics" }]

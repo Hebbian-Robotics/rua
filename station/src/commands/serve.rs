@@ -23,7 +23,7 @@ pub(crate) struct ServeArguments {
     /// Serve the station HTTP API and event stream on this address.
     #[arg(long, default_value = "127.0.0.1:8792")]
     pub(crate) http_address: String,
-    /// Serve camera snapshots and recordings (`hebbian-robot-use-media serve`) on this address.
+    /// Serve camera snapshots and recordings (`hebbian-rua-media serve`) on this address.
     #[arg(long, default_value = "127.0.0.1:8781")]
     pub(crate) media_address: SocketAddr,
     /// `name=device`, repeated: a USB camera besides the profile's, a video

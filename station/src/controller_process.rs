@@ -7,7 +7,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, ensure};
-use hebbian_robot_use_core::controller_transport::ControllerInstanceId;
+use hebbian_rua_core::controller_transport::ControllerInstanceId;
 use uuid::Uuid;
 
 const REMEMBERED_REPORTS: usize = 128;

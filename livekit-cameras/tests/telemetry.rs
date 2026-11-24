@@ -1,10 +1,10 @@
-use hebbian_robot_use_core::{
+use hebbian_rua_core::{
     config::ControllerConfig,
     control_link::Link,
     lease::{LEASE, Lease},
     station_api::HttpServer,
 };
-use hebbian_robot_use_server::run_telemetry::LiveRunStore;
+use hebbian_rua_server::run_telemetry::LiveRunStore;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use std::{fs, process::Command};
@@ -54,7 +54,7 @@ async fn recorder_marks_controller_loss_even_if_telemetry_was_not_received()
 -> Result<(), Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
     let recording = directory.path().join("recording");
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-media"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-rua-media"))
         .args(["record", "--room", "test", "--directory"])
         .arg(&recording)
         .args(["--station-url", "http://127.0.0.1:1"])
@@ -111,7 +111,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
     link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
     let server = start_station("127.0.0.1:0".into()).await?;
     server.attach_arms(BTreeMap::from([("left".into(), link.handle())]));
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-media"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-rua-media"))
         .args(["record", "--room", "test", "--directory"])
         .arg(directory.path().join("recording"))
         .args([
@@ -211,8 +211,8 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let loop_shutdown_requested = Arc::clone(&shutdown_requested);
     let loop_thread = std::thread::spawn(move || {
-        let mut plant = hebbian_robot_use_core::plant::NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
-        hebbian_robot_use_core::control_loop::run(
+        let mut plant = hebbian_rua_core::plant::NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
+        hebbian_rua_core::control_loop::run(
             &mut plant,
             &link,
             &config,
@@ -221,7 +221,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         );
         link.close();
     });
-    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-media");
+    let executable = env!("CARGO_BIN_EXE_hebbian-rua-media");
     let recording = directory.path().join("recording");
     let mut child = tokio::process::Command::new(executable)
         .args(["record", "--room", "test", "--directory"])
@@ -428,7 +428,7 @@ async fn recorder_finalizes_as_incomplete_when_its_station_is_killed()
     use tokio::io::{AsyncBufReadExt, BufReader};
     let directory = tempfile::tempdir()?;
     let recording = directory.path().join("recording");
-    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-media");
+    let executable = env!("CARGO_BIN_EXE_hebbian-rua-media");
     // WHY: The shell gives the recorder a station PID that the test can kill directly.
     let script = format!(
         "\"{executable}\" record --room test --directory \"{}\" \
@@ -500,7 +500,7 @@ async fn combined_media_service_lists_its_cameras_and_exits_with_its_station()
             "-c",
             r#""$1" serve --address "$2" --room test --camera wrist=missing-device --station-pid "$$" & echo $!; wait"#,
             "media-station",
-            env!("CARGO_BIN_EXE_hebbian-robot-use-media"),
+            env!("CARGO_BIN_EXE_hebbian-rua-media"),
             &address,
         ])
         .env("LIVEKIT_URL", format!("ws://{}", unavailable_room.local_addr()?))

@@ -42,7 +42,7 @@ def stage_server_assets(
     repository_directory: Path, staging_directory: Path, target: str
 ) -> None:
     robot_assets = prepare_robot_assets(repository_directory)
-    asset_directory = staging_directory / "data/share/hebbian-robot-use"
+    asset_directory = staging_directory / "data/share/hebbian-rua"
     for directory in ("profiles", "robots"):
         (asset_directory / directory).mkdir(parents=True, exist_ok=True)
     for asset in tracked_assets(repository_directory):
@@ -70,7 +70,7 @@ def stage_server_assets(
     )
     collect_rust_licenses(
         repository_directory,
-        "hebbian-robot-use-server",
+        "hebbian-rua-server",
         asset_directory / "licenses/rust",
         target,
     )
@@ -94,9 +94,10 @@ def build_component_wheels(repository: Path, output_directory: Path) -> None:
         fresh_staging_directory(
             repository / "livekit-cameras/wheel-data"
         ) as media_staging,
+        fresh_staging_directory(repository / "cli/wheel-data") as cli_staging,
     ):
         stage_server_assets(repository, server_staging, target)
-        media_assets = media_staging / "data/share/hebbian-robot-use-media"
+        media_assets = media_staging / "data/share/hebbian-rua-media"
         media_assets.mkdir(parents=True, exist_ok=True)
         shutil.copy2(repository / "LICENSE", media_assets / "LICENSE")
         shutil.copy2(
@@ -109,6 +110,12 @@ def build_component_wheels(repository: Path, output_directory: Path) -> None:
         )
         collect_rust_licenses(
             repository, "livekit-cameras", media_assets / "licenses/rust", target
+        )
+        cli_assets = cli_staging / "data/share/hebbian-rua-cli"
+        cli_assets.mkdir(parents=True)
+        shutil.copy2(repository / "LICENSE", cli_assets / "LICENSE")
+        collect_rust_licenses(
+            repository, "hebbian-rua-cli", cli_assets / "licenses/rust", target
         )
 
         build_arguments = [
@@ -124,11 +131,12 @@ def build_component_wheels(repository: Path, output_directory: Path) -> None:
             "--out",
             str(output_directory),
         ]
-        subprocess.run(
-            [*build_arguments, "--manifest-path", "station/Cargo.toml"],
-            cwd=repository,
-            check=True,
-        )
+        for manifest_path in ("station/Cargo.toml", "cli/Cargo.toml"):
+            subprocess.run(
+                [*build_arguments, "--manifest-path", manifest_path],
+                cwd=repository,
+                check=True,
+            )
         media_environment = os.environ | {
             "CXX": os.environ.get(
                 "CXX", "clang++" if platform.system() == "Darwin" else "clang++-21"

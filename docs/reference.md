@@ -7,11 +7,11 @@ Use [simulation](simulation.md) to test without hardware. The
 ## Station server
 
 The station serves state, commands, events, camera access and recordings.
-`hebbian-robot-use` is a [separate client CLI](../cli/README.md). The
+`hebbian-rua` is a [separate client CLI](../cli/README.md). The
 [selected profile](install-from-source.md#start-the-station) supplies the arms,
 model, hardware mapping and limits. Use a separate work directory for each
 running station. See [serve options](../station/src/commands/mod.rs) or run
-`uv run cargo run -p hebbian-robot-use-server -- serve --help` for flags
+`uv run cargo run -p hebbian-rua-server -- serve --help` for flags
 and defaults.
 
 The station supervises the controller and the media companion. A media

@@ -8,7 +8,7 @@ use hebbian_contracts::{
     KnownRunEvent, LiveRun, MAX_RUN_REPLAY_RECORDS, RunEvent, RunMemory, RunUsage, ServerMessage,
     TraceSpan, UnixNanos,
 };
-use hebbian_robot_use_core::station_api::{RunTelemetry, RunUpdates};
+use hebbian_rua_core::station_api::{RunTelemetry, RunUpdates};
 
 const KEPT_SPANS: usize = 1000;
 

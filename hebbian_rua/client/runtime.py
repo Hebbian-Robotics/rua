@@ -18,9 +18,9 @@ def runtime_directory() -> Path:
     """
     runtime_root = os.environ.get("XDG_RUNTIME_DIR")
     if runtime_root:
-        directory = Path(runtime_root) / "hebbian-robot-use"
+        directory = Path(runtime_root) / "hebbian-rua"
     else:
-        directory = Path(tempfile.gettempdir()) / f"hebbian-robot-use-{os.getuid()}"
+        directory = Path(tempfile.gettempdir()) / f"hebbian-rua-{os.getuid()}"
     directory.mkdir(mode=PRIVATE_DIRECTORY_MODE, parents=True, exist_ok=True)
     status = directory.stat()
     if status.st_uid != os.getuid():

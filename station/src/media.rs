@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use hebbian_contracts::Backoff;
 use hebbian_contracts::MediaState;
-use hebbian_robot_use_server::child_process_group::{ChildProcessGroup, ProcessExit};
-use hebbian_robot_use_server::media_status::MediaStatus;
+use hebbian_rua_server::child_process_group::{ChildProcessGroup, ProcessExit};
+use hebbian_rua_server::media_status::MediaStatus;
 use nix::sys::signal::Signal;
 use station_access::CameraConfiguration;
 use tokio::{process::Command, runtime::Handle, sync::oneshot, task::JoinHandle};
@@ -21,7 +21,7 @@ const STOP_GRACE: Duration = Duration::from_secs(10);
 
 pub(crate) const SIMULATOR_CAMERA_SOCKET: &str = "scene.camera.sock";
 
-const PROGRAM: &str = "hebbian-robot-use-media";
+const PROGRAM: &str = "hebbian-rua-media";
 
 pub(crate) fn find_media(explicit: Option<PathBuf>) -> PathBuf {
     if let Some(path) = explicit {
@@ -250,7 +250,7 @@ mod tests {
     async fn a_program_that_exits_is_restarted_and_reported() {
         let directory = tempfile::tempdir().unwrap();
         let launches = directory.path().join("launches");
-        let program = directory.path().join("hebbian-robot-use-media");
+        let program = directory.path().join("hebbian-rua-media");
         std::fs::write(
             &program,
             format!(
@@ -286,7 +286,7 @@ mod tests {
         let status = MediaStatus::default();
         let supervisor = MediaSupervisor::spawn(
             &Handle::current(),
-            PathBuf::from("/no/such/hebbian-robot-use-media"),
+            PathBuf::from("/no/such/hebbian-rua-media"),
             Vec::new(),
             status.clone(),
         );

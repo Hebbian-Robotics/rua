@@ -21,7 +21,7 @@ def check_python_static() -> None:
 
 
 def prepare_server() -> None:
-    os.environ["HEBBIAN_ROBOT_USE_SERVER"] = str(build_server())
+    os.environ["HEBBIAN_RUA_SERVER"] = str(build_server())
 
 
 def check_rust_architecture() -> None:
@@ -33,9 +33,9 @@ def check_rust_architecture() -> None:
             "--lib",
             "--all-features",
             "-p",
-            "hebbian-robot-use-core",
+            "hebbian-rua-core",
             "-p",
-            "hebbian-robot-use-server",
+            "hebbian-rua-server",
             "--",
             "-A",
             "clippy::disallowed_methods",

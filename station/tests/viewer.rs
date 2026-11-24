@@ -13,15 +13,15 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::control_loop::run;
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::control_loop::run;
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::plant::{
     Feedback, NoPhysicsStandIn, Plant, PlantWritePermit, RecoveryObservation,
 };
-use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
+use hebbian_rua_core::station_api::HttpServer;
+use hebbian_rua_server::web::{self, CameraForwarding, WebSettings};
 use serde_json::{Value, json};
 
 const CONFIG: &str = include_str!("../../server-core/tests/support/two_joint_config.json");
@@ -153,7 +153,7 @@ fn scratch_directory(name: &str) -> PathBuf {
 }
 
 fn media_executable(directory: &Path) -> PathBuf {
-    let path = directory.join("hebbian-robot-use-media");
+    let path = directory.join("hebbian-rua-media");
     std::fs::write(&path, "#!/bin/sh\nexec sleep 30\n").unwrap();
     std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     path
@@ -236,13 +236,13 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
 
     let mut config = ControllerConfig::parse(CONFIG).unwrap().into_input();
     config.trace_directory = std::env::temp_dir()
-        .join("hebbian-robot-use-server-test-traces")
+        .join("hebbian-rua-server-test-traces")
         .to_string_lossy()
         .into_owned();
     let config = ControllerConfig::try_from(config).unwrap();
     let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
     let scratch = scratch_directory("station");
-    let media_status = hebbian_robot_use_server::media_status::MediaStatus::default();
+    let media_status = hebbian_rua_server::media_status::MediaStatus::default();
     let settings = WebSettings {
         local_cameras_only: false,
         recordings_directory: scratch.join("recordings"),
@@ -256,8 +256,7 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
         media_status: media_status.clone(),
     };
     let mut mounted = None;
-    let live_run =
-        std::sync::Arc::new(hebbian_robot_use_server::run_telemetry::LiveRunStore::default());
+    let live_run = std::sync::Arc::new(hebbian_rua_server::run_telemetry::LiveRunStore::default());
     let server = HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
@@ -266,7 +265,7 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
         |runtime, bound| {
             let (routes, opened) = web::mount(runtime, bound, settings, || true);
             mounted = Some(opened);
-            Ok(routes.merge(hebbian_robot_use_server::run_telemetry::routes(live_run)))
+            Ok(routes.merge(hebbian_rua_server::run_telemetry::routes(live_run)))
         },
     )
     .unwrap();

@@ -105,10 +105,10 @@
   },
   {
     "name": "libwebrtc",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "repository": "https://github.com/livekit/rust-sdks",
-    "commit": "c0de3bc4c1c129b1e5a420f80bbffa0b4595396c",
-    "directory": "sources/livekit-c0de3bc4c1c1",
+    "commit": "2811b4be194b091868ed83cca0603842179fed36",
+    "directory": "sources/livekit-2811b4be194b",
     "files": [
       "LICENSE",
       "NOTICE"
@@ -455,10 +455,10 @@
   },
   {
     "name": "rsruckig",
-    "version": "3.0.1",
+    "version": "3.1.2",
     "repository": "https://github.com/petrikosk/rsruckig",
-    "commit": "36559078b64542bd750ad710fce59f017834e25a",
-    "directory": "sources/rsruckig-36559078b645",
+    "commit": "32a78feacfa714861f55e8db3ee56b2f933bdd68",
+    "directory": "sources/rsruckig-32a78feacfa7",
     "files": [
       "LICENSE.txt"
     ]

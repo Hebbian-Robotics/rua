@@ -69,7 +69,7 @@ before a release; the inventory includes build and other dependency features and
 does not establish which native system libraries are present.
 
 The media wheel includes the notices supplied with the linked WebRTC archive
-under `share/hebbian-robot-use-media/licenses/webrtc/`. FFmpeg and other native
+under `share/hebbian-rua-media/licenses/webrtc/`. FFmpeg and other native
 libraries have their own licenses and must be reviewed for each distribution.
 
 List them with `uv run pip-licenses` (or `uvx pip-licenses --python .venv/bin/python`),

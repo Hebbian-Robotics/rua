@@ -1,7 +1,7 @@
 # Release RUA
 
 A release ties the Python distribution and both SDKs to one version and one
-source commit. The Python wheels include the station and media companion.
+source commit. The Python wheels include the station, media companion and `hebbian-rua` CLI.
 
 | Registry | Package | Purpose |
 | --- | --- | --- |

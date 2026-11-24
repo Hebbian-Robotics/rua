@@ -319,7 +319,7 @@ pub fn default_profile_directory() -> anyhow::Result<PathBuf> {
         return Ok(PathBuf::from(directory));
     }
     if let Some(directory) = std::env::var_os("HEBBIAN_RUA_INSTALL_DATA")
-        .map(|directory| PathBuf::from(directory).join("share/hebbian-robot-use/profiles"))
+        .map(|directory| PathBuf::from(directory).join("share/hebbian-rua/profiles"))
         .filter(|directory| directory.is_dir())
     {
         return Ok(directory);
@@ -338,7 +338,7 @@ pub fn default_profile_directory() -> anyhow::Result<PathBuf> {
         .flat_map(|start| start.ancestors())
         .flat_map(|ancestor| {
             [
-                ancestor.join("share/hebbian-robot-use/profiles"),
+                ancestor.join("share/hebbian-rua/profiles"),
                 ancestor.join("profiles"),
             ]
         })

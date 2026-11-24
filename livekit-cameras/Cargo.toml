@@ -5,12 +5,12 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 publish = false
-default-run = "hebbian-robot-use-media"
+default-run = "hebbian-rua-media"
 
 autobins = false
 
 [[bin]]
-name = "hebbian-robot-use-media"
+name = "hebbian-rua-media"
 path = "src/main.rs"
 
 [dependencies]
@@ -46,9 +46,9 @@ nusb = "0.2.9"
 [dev-dependencies]
 futures-util = { version = "0.3", default-features = false }
 prost = "0.14"
-hebbian-robot-use-core = { path = "../server-core" }
+hebbian-rua-core = { path = "../server-core" }
 # The run telemetry buffer lives in the station; the recorder test needs a real one.
-hebbian-robot-use-server = { path = "../station" }
+hebbian-rua-server = { path = "../station" }
 tempfile = "3"
 
 [lints]

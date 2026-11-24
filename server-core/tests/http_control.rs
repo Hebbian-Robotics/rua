@@ -13,13 +13,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::control_loop::ArmSetup;
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Plant, PlantWritePermit};
-use hebbian_robot_use_core::station_api::DiscardTelemetry;
-use hebbian_robot_use_core::station_api::HttpServer;
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::control_loop::ArmSetup;
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::plant::{Feedback, NoPhysicsStandIn, Plant, PlantWritePermit};
+use hebbian_rua_core::station_api::DiscardTelemetry;
+use hebbian_rua_core::station_api::HttpServer;
 use serde_json::{Value, json};
 
 mod support;

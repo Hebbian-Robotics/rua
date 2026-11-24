@@ -1,6 +1,6 @@
 //! The client-level API: the commands clients and models send and the state
 //! they read, over HTTP and its event stream. These types are the only
-//! definition; `hebbian-robot-use-server schema --openapi` carries them, and the Python
+//! definition; `hebbian-rua-server schema --openapi` carries them, and the Python
 //! client's and the viewer's types are generated from that.
 //!
 //! Units are SI (metres, radians, seconds); poses are in the station's world

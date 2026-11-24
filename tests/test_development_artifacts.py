@@ -5,7 +5,7 @@ from zipfile import ZipFile
 
 import pytest
 import tomli_w
-from rua_dev.bundle import assemble_bundle
+from rua_dev.bundle import NativeComponentWheels, assemble_bundle
 from rua_dev.generated import check_generated_files
 
 
@@ -65,18 +65,17 @@ def test_native_bundle_requires_one_unambiguous_build_artifact(
 
     for architecture in ["x86_64", "aarch64"][:matching_wheels]:
         (
-            tmp_path
-            / f"hebbian_robot_use_server-0.1.0-py3-none-linux_{architecture}.whl"
+            tmp_path / f"hebbian_rua_server-0.1.0-py3-none-linux_{architecture}.whl"
         ).touch()
-    (tmp_path / "hebbian_robot_use_server-0.0.9-py3-none-linux_x86_64.whl").touch()
-    (tmp_path / "hebbian_robot_use_media-0.1.0-py3-none-linux_x86_64.whl").touch()
+    (tmp_path / "hebbian_rua_server-0.0.9-py3-none-linux_x86_64.whl").touch()
+    (tmp_path / "hebbian_rua_media-0.1.0-py3-none-linux_x86_64.whl").touch()
     if matching_wheels == 1:
-        assert built_wheel(tmp_path, "hebbian_robot_use_server", "0.1.0").name == (
-            "hebbian_robot_use_server-0.1.0-py3-none-linux_x86_64.whl"
+        assert built_wheel(tmp_path, "hebbian_rua_server", "0.1.0").name == (
+            "hebbian_rua_server-0.1.0-py3-none-linux_x86_64.whl"
         )
     else:
-        with pytest.raises(ValueError, match="Expected one hebbian_robot_use_server"):
-            built_wheel(tmp_path, "hebbian_robot_use_server", "0.1.0")
+        with pytest.raises(ValueError, match="Expected one hebbian_rua_server"):
+            built_wheel(tmp_path, "hebbian_rua_server", "0.1.0")
 
 
 def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> None:
@@ -112,22 +111,30 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
     (repository / "profiles").mkdir()
     for filename in ("README.md", "LICENSE"):
         (repository / filename).write_text("Release fixture\n")
-    server_wheel = tmp_path / "hebbian_robot_use_server-0.1.0-py3-none-linux_x86_64.whl"
-    media_wheel = tmp_path / "hebbian_robot_use_media-0.1.0-py3-none-linux_x86_64.whl"
+    server_wheel = tmp_path / "hebbian_rua_server-0.1.0-py3-none-linux_x86_64.whl"
+    media_wheel = tmp_path / "hebbian_rua_media-0.1.0-py3-none-linux_x86_64.whl"
+    cli_wheel = tmp_path / "hebbian_rua_cli-0.1.0-py3-none-linux_x86_64.whl"
+    native_wheels = NativeComponentWheels(
+        server=server_wheel, media=media_wheel, cli=cli_wheel
+    )
     with ZipFile(server_wheel, "w") as archive:
         archive.writestr(
-            "hebbian_robot_use_server-0.1.0.data/scripts/hebbian-robot-use-server",
+            "hebbian_rua_server-0.1.0.data/scripts/hebbian-rua-server",
             b"server executable",
         )
         for filename, content in model_assets.items():
             archive.writestr(
-                f"hebbian_robot_use_server-0.1.0.data/data/share/hebbian-robot-use/robots/so101/{filename}",
+                f"hebbian_rua_server-0.1.0.data/data/share/hebbian-rua/robots/so101/{filename}",
                 content,
             )
     with ZipFile(media_wheel, "w") as archive:
         archive.writestr(
-            "hebbian_robot_use_media-0.1.0.data/scripts/hebbian-robot-use-media",
+            "hebbian_rua_media-0.1.0.data/scripts/hebbian-rua-media",
             b"media executable",
+        )
+    with ZipFile(cli_wheel, "w") as archive:
+        archive.writestr(
+            "hebbian_rua_cli-0.1.0.data/scripts/hebbian-rua", b"cli executable"
         )
     output_directory = tmp_path / "dist"
     sdk_wheel = tmp_path / "hebbian_rua-0.1.0-cp312-abi3-linux_x86_64.whl"
@@ -135,18 +142,18 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
         archive.writestr(
             "hebbian_rua-0.1.0.dist-info/WHEEL", "Tag: cp312-abi3-linux_x86_64\n"
         )
-    release = assemble_bundle(
-        repository, sdk_wheel, server_wheel, media_wheel, output_directory
-    )
+    release = assemble_bundle(repository, sdk_wheel, native_wheels, output_directory)
     previous_release = release.read_bytes()
     with ZipFile(release) as archive:
         assert (
-            archive.read("hebbian_rua-0.1.0.data/scripts/hebbian-robot-use-media")
+            archive.read("hebbian_rua-0.1.0.data/scripts/hebbian-rua-media")
             == b"media executable"
         )
-        model_prefix = (
-            "hebbian_rua-0.1.0.data/data/share/hebbian-robot-use/robots/so101/"
+        assert (
+            archive.read("hebbian_rua-0.1.0.data/scripts/hebbian-rua")
+            == b"cli executable"
         )
+        model_prefix = "hebbian_rua-0.1.0.data/data/share/hebbian-rua/robots/so101/"
         assert archive.read(model_prefix + "robot.urdf") == b"stock robot geometry"
         assert (
             archive.read(model_prefix + "soft-gripper-camera/finger.stl")
@@ -154,12 +161,10 @@ def test_failed_bundle_assembly_preserves_previous_release(tmp_path: Path) -> No
         )
     with ZipFile(media_wheel, "w") as archive:
         archive.writestr(
-            "hebbian_robot_use_media-0.1.0.data/scripts/hebbian-robot-use-server",
+            "hebbian_rua_media-0.1.0.data/scripts/hebbian-rua-server",
             b"conflicting executable",
         )
     with pytest.raises(ValueError, match="Conflicting bundled wheel file"):
-        assemble_bundle(
-            repository, sdk_wheel, server_wheel, media_wheel, output_directory
-        )
+        assemble_bundle(repository, sdk_wheel, native_wheels, output_directory)
     assert release.read_bytes() == previous_release
     assert list(output_directory.iterdir()) == [release]

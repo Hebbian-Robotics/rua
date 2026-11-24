@@ -12,8 +12,8 @@ use std::path::PathBuf;
 
 use std::sync::Arc;
 
-use hebbian_robot_use_core::station_api::DiscardTelemetry;
-use hebbian_robot_use_core::station_api::HttpServer;
+use hebbian_rua_core::station_api::DiscardTelemetry;
+use hebbian_rua_core::station_api::HttpServer;
 
 fn scratch_directory(label: &str) -> PathBuf {
     let directory =

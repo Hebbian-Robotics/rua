@@ -10,9 +10,9 @@ use std::path::Path;
 use std::process::Output;
 use std::time::Duration;
 
-use hebbian_robot_use_core::plant::NoPhysicsStandIn;
 use hebbian_rua::LeaseRequest;
 use hebbian_rua::contracts::LeaseHolder;
+use hebbian_rua_core::plant::NoPhysicsStandIn;
 use serde_json::Value;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -63,7 +63,7 @@ impl Run {
 async fn cli(server: &str, arguments: &[&str]) -> Run {
     let output = tokio::time::timeout(
         Duration::from_secs(60),
-        tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use"))
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_hebbian-rua"))
             .args(["--server", server])
             .args(arguments)
             .stdin(std::process::Stdio::null())

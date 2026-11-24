@@ -5,16 +5,16 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::control_loop::{ArmSetup, run_arms};
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::Plant;
-use hebbian_robot_use_core::profile::{JointLimitSource, controller_config, load_robot_profile};
-use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_server::media_status::MediaStatus;
-use hebbian_robot_use_server::run_telemetry::LiveRunStore;
-use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
 use hebbian_rua::{Error, Station};
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::control_loop::{ArmSetup, run_arms};
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::plant::Plant;
+use hebbian_rua_core::profile::{JointLimitSource, controller_config, load_robot_profile};
+use hebbian_rua_core::station_api::HttpServer;
+use hebbian_rua_server::media_status::MediaStatus;
+use hebbian_rua_server::run_telemetry::LiveRunStore;
+use hebbian_rua_server::web::{self, CameraForwarding, WebSettings};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -57,7 +57,7 @@ impl SimulatedStation {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let directory = std::env::temp_dir().join(format!(
-            "hebbian-robot-use-simulated-station-{}-{}",
+            "hebbian-rua-simulated-station-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -82,7 +82,7 @@ impl SimulatedStation {
                         yaw_radians: 0.0,
                     });
                 }
-                let config = hebbian_robot_use_core::config::ControllerConfig::try_from(config)?;
+                let config = hebbian_rua_core::config::ControllerConfig::try_from(config)?;
                 let link = Link::new(&config, Arc::clone(&shared_lease))?;
                 Ok(((*name).to_owned(), config, link))
             })

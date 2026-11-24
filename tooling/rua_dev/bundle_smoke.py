@@ -125,6 +125,19 @@ async def check_client(address: str) -> None:
         raise RuntimeError("No simulator feedback reached the Python client")
 
 
+def check_station_cli(station_cli: str, address: str) -> None:
+    result = subprocess.run(
+        [station_cli, "--server", address, "state"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    arm_names = [arm["arm"] for arm in json.loads(result.stdout)["arms"]]
+    if arm_names != ["arm"]:
+        raise RuntimeError(f"Installed CLI did not report the arm: {result.stdout}")
+    print("Installed CLI read station state")
+
+
 def main() -> None:
     own_distributions = sorted(
         distribution.metadata["Name"]
@@ -137,12 +150,13 @@ def main() -> None:
         if importlib.util.find_spec(unwanted) is not None:
             raise RuntimeError(f"Unexpected runtime dependency: {unwanted}")
     command = shutil.which("rua")
-    media = shutil.which("hebbian-robot-use-media")
-    if command is None or media is None:
+    media = shutil.which("hebbian-rua-media")
+    station_cli = shutil.which("hebbian-rua")
+    if command is None or media is None or station_cli is None:
         raise RuntimeError("The installed wheel is missing its commands")
-    subprocess.run([command, "--help"], check=True, stdout=subprocess.DEVNULL)
-    subprocess.run([media, "--help"], check=True, stdout=subprocess.DEVNULL)
-    shared_assets = Path(sysconfig.get_path("data")) / "share/hebbian-robot-use"
+    for executable in (command, media, station_cli):
+        subprocess.run([executable, "--help"], check=True, stdout=subprocess.DEVNULL)
+    shared_assets = Path(sysconfig.get_path("data")) / "share/hebbian-rua"
     asset_pin = tomllib.loads((shared_assets / "robots/so101-assets.toml").read_text())
     model_directory = shared_assets / "robots/so101"
     installed_files = {
@@ -205,6 +219,7 @@ def main() -> None:
                 )
                 peer.start()
                 asyncio.run(check_client(f"http://127.0.0.1:{port}"))
+                check_station_cli(station_cli, f"http://127.0.0.1:{port}")
             except Exception:
                 log.flush()
                 log.seek(0)
@@ -222,7 +237,7 @@ def main() -> None:
                 if peer is not None:
                     peer.join(timeout=2)
     print(
-        "Single-wheel install, SDK, server, media and external simulator connection passed"
+        "Single-wheel install, SDK, CLI, server, media and external simulator connection passed"
     )
 
 

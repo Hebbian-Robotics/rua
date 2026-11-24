@@ -16,7 +16,7 @@ For station integration tests, install JavaScript dependencies with
 `pnpm install --frozen-lockfile`, then run `uv run pytest -m server`. Keep these
 tests serial so simulated stations can meet control-loop deadlines. Pytest
 builds the station on demand. To use an existing binary, set
-`HEBBIAN_ROBOT_USE_SERVER` to its absolute path.
+`HEBBIAN_RUA_SERVER` to its absolute path.
 
 ## Generated contracts and SDKs
 
@@ -65,7 +65,7 @@ With the pinned robot assets installed, run the planner benchmark:
 
 ```sh
 RUA_REACH_SWEEP_OUTPUT=/tmp/rua-reach.jsonl \
-  cargo test -p hebbian-robot-use-core --lib reachability_sweep -- --ignored
+  cargo test -p hebbian-rua-core --lib reachability_sweep -- --ignored
 ```
 
 Use the same fixtures and seeds when comparing revisions. The

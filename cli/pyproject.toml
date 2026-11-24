@@ -1,0 +1,16 @@
+[project]
+name = "hebbian-rua-cli"
+description = "The prebuilt hebbian-rua command-line client for a Hebbian robot-use station"
+requires-python = ">=3.12"
+authors = [{ name = "Hebbian Robotics" }]
+license = "MIT"
+dynamic = ["version"]
+
+# Maturin installs the binary on PATH; the release bundles it into hebbian-rua.
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "bin"
+data = "wheel-data"
