@@ -11,9 +11,9 @@ def build_server() -> Path:
             "--locked",
             "--quiet",
             "--package",
-            "hebbian-robot-use-server",
+            "hebbian-rua-server",
             "--bin",
-            "hebbian-robot-use-server",
+            "hebbian-rua-server",
         ],
         check=True,
     )
@@ -24,4 +24,4 @@ def build_server() -> Path:
         check=True,
     )
     target_directory = Path(json.loads(metadata.stdout)["target_directory"])
-    return target_directory / "debug/hebbian-robot-use-server"
+    return target_directory / "debug/hebbian-rua-server"

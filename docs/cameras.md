@@ -39,7 +39,7 @@ device path or a persistent symlink can also be used. Pass `--camera wrist=none`
 to turn off an automatic camera.
 
 From a source checkout with the media companion built, use
-`cargo run -p hebbian-robot-use-server -- camera-devices`. With the arm disabled,
+`cargo run -p hebbian-rua-server -- camera-devices`. With the arm disabled,
 briefly cover the wrist lens and confirm that the `wrist` feed darkens.
 
 ### Registered arm camera selectors
@@ -81,7 +81,7 @@ also watch the feed under **Workspace**.
 
 ## Add a phone
 
-With LiveKit configured, run `hebbian-robot-use phone-invite overhead` on the
+With LiveKit configured, run `hebbian-rua phone-invite overhead` on the
 station host and open the printed URL on your phone. You can also use the
 HTTP request below and open the response’s `url`. On the camera page, allow camera access
 and select **Start streaming**. Keep the invite URL private. The station accepts
@@ -112,8 +112,8 @@ name returned by the camera list for snapshot, observation and lease requests.
 With the station running, list available camera names and save a JPEG:
 
 ```sh
-hebbian-robot-use camera list
-hebbian-robot-use camera snapshot wrist --out wrist.jpg
+hebbian-rua camera list
+hebbian-rua camera snapshot wrist --out wrist.jpg
 ```
 
 Use the [hosted room viewer](#watch-a-usb-camera) for live playback.

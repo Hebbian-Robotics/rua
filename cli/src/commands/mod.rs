@@ -50,7 +50,7 @@ Exit codes: 0 completed, 1 refused or not completed (stopped, faulted, limited..
 Failures print {\"error\": {\"kind\", \"detail\", ...}} as JSON on stderr.";
 
 #[derive(Debug, Parser)]
-#[command(name = "hebbian-robot-use", version, about = ABOUT)]
+#[command(name = "hebbian-rua", version, about = ABOUT)]
 pub struct Cli {
     /// The station's HTTP server.
     #[arg(long, global = true, env = "HEBBIAN_STATION_URL", default_value_t = default_station_url(), value_name = "URL")]
@@ -79,36 +79,36 @@ pub struct Cli {
 pub enum Command {
     /// Print one state snapshot: arms, measured joints, tool pose, faults, interlocks, lease holder.
     ///
-    /// Example: hebbian-robot-use state
+    /// Example: hebbian-rua state
     State,
     /// Preflight, then enable the arm holding its current pose.
     ///
-    /// Example: hebbian-robot-use enable arm
+    /// Example: hebbian-rua enable arm
     Enable { arm: String },
     /// Approve recovery after inspecting and supporting the arm, once it has faulted or been
     /// disabled and the station is waiting for approval (`recovery_issue` in state).
     ///
-    /// Example: hebbian-robot-use approve-recovery arm
+    /// Example: hebbian-rua approve-recovery arm
     ApproveRecovery { arm: String },
     /// Turn torque off where the arm is; an unsupported arm falls.
     ///
-    /// Example: hebbian-robot-use disable arm
+    /// Example: hebbian-rua disable arm
     Disable { arm: String },
     /// Stop the active motion and hold. Always accepted, whoever holds the lease.
     ///
-    /// Example: hebbian-robot-use stop arm
+    /// Example: hebbian-rua stop arm
     Stop { arm: String },
     /// Acknowledge a fault after inspecting the arm.
     ///
-    /// Example: hebbian-robot-use clear-fault arm
+    /// Example: hebbian-rua clear-fault arm
     ClearFault { arm: String },
     /// Return to the pose the arm was enabled at.
     ///
-    /// Example: hebbian-robot-use rehome arm
+    /// Example: hebbian-rua rehome arm
     Rehome { arm: String },
     /// Move to joint angles in radians, one per joint in the state's `joint_names` order.
     ///
-    /// Example: hebbian-robot-use move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
+    /// Example: hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
     MoveJoints {
         arm: String,
         /// Comma-separated radians.
@@ -126,7 +126,7 @@ pub enum Command {
     /// Move the tool to a position in metres. Without an orientation option the tool keeps the
     /// orientation it has now.
     ///
-    /// Example: hebbian-robot-use move-pose arm --position 0.2,0.0,0.1 --approach down --jaw-yaw-degrees 0
+    /// Example: hebbian-rua move-pose arm --position 0.2,0.0,0.1 --approach down --jaw-yaw-degrees 0
     MovePose {
         arm: String,
         #[command(flatten)]
@@ -139,7 +139,7 @@ pub enum Command {
     /// one rejection means no arm moves, and if one arm stops the others stop too. Takes a JSON
     /// MoveArmsCommand from a file, or `-` for stdin.
     ///
-    /// Example: echo '{"goals":{"left":{"kind":"pose","position":[0.2,0.15,0.08],"orientation":{"kind":"quaternion","quaternion":[0,0,0,1]}}},"max_joint_speed":0.5}' | hebbian-robot-use move-arms -
+    /// Example: echo '{"goals":{"left":{"kind":"pose","position":[0.2,0.15,0.08],"orientation":{"kind":"quaternion","quaternion":[0,0,0,1]}}},"max_joint_speed":0.5}' | hebbian-rua move-arms -
     MoveArms {
         /// A JSON file, or `-` for stdin.
         input: PathBuf,
@@ -147,7 +147,7 @@ pub enum Command {
     /// Open or close the gripper: 0 closed, 1 fully open. It stops on an object and keeps
     /// squeezing at the profile's force cap; the outcome says whether it arrived or stopped short.
     ///
-    /// Example: hebbian-robot-use gripper arm 0.5
+    /// Example: hebbian-rua gripper arm 0.5
     Gripper {
         arm: String,
         /// 0 closed to 1 open.
@@ -156,7 +156,7 @@ pub enum Command {
     /// Where an arm would take the tool toward a pose; nothing moves. Without an orientation
     /// option the solver chooses the orientation.
     ///
-    /// Example: hebbian-robot-use preview-pose arm --position 0.2,0.0,0.1 --approach forward --jaw-yaw-degrees 90
+    /// Example: hebbian-rua preview-pose arm --position 0.2,0.0,0.1 --approach forward --jaw-yaw-degrees 90
     PreviewPose {
         arm: String,
         #[command(flatten)]
@@ -166,7 +166,7 @@ pub enum Command {
     /// moves. Takes a JSON array of {"label"?, "position": [x, y, z], "orientation"?} from a
     /// file or `-`, and prints one projection or refusal per pose in the same order.
     ///
-    /// Example: echo '[{"position":[0.2,0.0,0.1],"orientation":{"kind":"grasp","approach":[0,0,-1],"jaw_yaw_degrees":90}}]' | hebbian-robot-use preview-poses arm -
+    /// Example: echo '[{"position":[0.2,0.0,0.1],"orientation":{"kind":"grasp","approach":[0,0,-1],"jaw_yaw_degrees":90}}]' | hebbian-rua preview-poses arm -
     PreviewPoses {
         arm: String,
         /// A JSON file, or `-` for stdin.
@@ -183,7 +183,7 @@ pub enum Command {
     Record(RecordCommand),
     /// Print an invite URL that streams a phone as camera `phone_<label>`.
     ///
-    /// Example: hebbian-robot-use phone-invite table_left
+    /// Example: hebbian-rua phone-invite table_left
     PhoneInvite {
         /// Where the phone is placed: lowercase letters, digits and underscores.
         label: String,
@@ -274,7 +274,7 @@ pub enum ActionSequenceCommand {
     /// Run a JSON ActionSequenceRequest from a file or `-` for stdin and wait for it to
     /// end; exits 1 unless it completed. Acquires the lease for the run: it dies with the socket.
     ///
-    /// Example: hebbian-robot-use action-sequence run steps.json
+    /// Example: hebbian-rua action-sequence run steps.json
     #[command(after_long_help = concat!(
         "A request (steps run in order; arms within a step start together and settle before \
          the next step; goal and gripper targets on an arm start together):\n",
@@ -289,11 +289,11 @@ pub enum ActionSequenceCommand {
     },
     /// Cancel a running action sequence by id and print its final record.
     ///
-    /// Example: hebbian-robot-use action-sequence cancel seq-1
+    /// Example: hebbian-rua action-sequence cancel seq-1
     Cancel { id: String },
     /// Print an action sequence's record by id.
     ///
-    /// Example: hebbian-robot-use action-sequence get seq-1
+    /// Example: hebbian-rua action-sequence get seq-1
     Get { id: String },
 }
 
@@ -301,12 +301,12 @@ pub enum ActionSequenceCommand {
 pub enum LeaseCommand {
     /// Print who holds the lease now, or null.
     ///
-    /// Example: hebbian-robot-use lease status
+    /// Example: hebbian-rua lease status
     Status,
     /// The operator's override: end whoever holds the lease. A running loop's commands are then
     /// refused.
     ///
-    /// Example: hebbian-robot-use lease revoke
+    /// Example: hebbian-rua lease revoke
     Revoke,
 }
 
@@ -314,15 +314,15 @@ pub enum LeaseCommand {
 pub enum RecordCommand {
     /// Start recording until `record stop`; prints the recording's name.
     ///
-    /// Example: hebbian-robot-use record start
+    /// Example: hebbian-rua record start
     Start,
     /// Stop recording.
     ///
-    /// Example: hebbian-robot-use record stop
+    /// Example: hebbian-rua record stop
     Stop,
     /// Print the recording status.
     ///
-    /// Example: hebbian-robot-use record status
+    /// Example: hebbian-rua record status
     Status,
 }
 
@@ -330,11 +330,11 @@ pub enum RecordCommand {
 pub enum CameraCommand {
     /// List the cameras the media service knows, as a JSON array of {name, available}.
     ///
-    /// Example: hebbian-robot-use camera list
+    /// Example: hebbian-rua camera list
     List,
     /// Save the newest JPEG frame of a camera to a file and print its path.
     ///
-    /// Example: hebbian-robot-use camera snapshot wrist --out wrist.jpg
+    /// Example: hebbian-rua camera snapshot wrist --out wrist.jpg
     Snapshot {
         name: String,
         #[arg(long)]
@@ -346,12 +346,12 @@ pub enum CameraCommand {
 pub enum TracesCommand {
     /// List the trace files, newest first.
     ///
-    /// Example: hebbian-robot-use traces list
+    /// Example: hebbian-rua traces list
     List,
     /// Download traces into a directory exactly as served, still gzip-compressed (`gunzip` them);
     /// every trace unless names are given. Prints the paths written.
     ///
-    /// Example: hebbian-robot-use traces pull --output traces
+    /// Example: hebbian-rua traces pull --output traces
     Pull {
         names: Vec<String>,
         #[arg(long, default_value = "traces")]
@@ -364,7 +364,7 @@ mod tests {
     use super::*;
 
     fn parse(arguments: &[&str]) -> Result<Cli, clap::Error> {
-        Cli::try_parse_from(std::iter::once("hebbian-robot-use").chain(arguments.iter().copied()))
+        Cli::try_parse_from(std::iter::once("hebbian-rua").chain(arguments.iter().copied()))
     }
 
     #[test]

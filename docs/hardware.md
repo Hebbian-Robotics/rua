@@ -76,7 +76,7 @@ and keep a physical power cutoff accessible.
 4. From a source checkout, start the current station code:
 
    ```sh
-   uv run cargo run -p hebbian-robot-use-server -- serve --profile "$HOME/.config/rua/so101.toml"
+   uv run cargo run -p hebbian-rua-server -- serve --profile "$HOME/.config/rua/so101.toml"
    ```
 
    With an installed wheel, use `uv run rua serve` with the same profile argument.

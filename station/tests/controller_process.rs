@@ -12,13 +12,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hebbian_contracts::{ArmMode, Command as ArmCommand, Event};
-use hebbian_robot_use_core::controller_transport::{
+use hebbian_rua_core::controller_transport::{
     ControllerAnswer, ControllerEvent, ControllerMessage, ControllerRequest, ControllerRequestId,
     ControllerTransport,
 };
-use hebbian_robot_use_server::controller_process::{
-    ControllerLaunch, ControllerProcess, PlantSelection,
-};
+use hebbian_rua_server::controller_process::{ControllerLaunch, ControllerProcess, PlantSelection};
 
 struct ControllerChild(ControllerProcess);
 
@@ -32,7 +30,7 @@ impl Drop for ControllerChild {
 }
 
 fn write_simulated_config(root: &Path, directory: &Path) -> PathBuf {
-    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
+    let executable = env!("CARGO_BIN_EXE_hebbian-rua-server");
     let config_output = Command::new(executable)
         .current_dir(root)
         .args([
@@ -61,7 +59,7 @@ fn write_simulated_config(root: &Path, directory: &Path) -> PathBuf {
 
 #[test]
 fn simulated_controller_runs_in_a_child_and_exits_when_station_disconnects() {
-    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
+    let executable = env!("CARGO_BIN_EXE_hebbian-rua-server");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let temporary = tempfile::tempdir().unwrap();
     let config_path = write_simulated_config(root, temporary.path());
@@ -151,7 +149,7 @@ async fn controller_exits_when_station_dies_during_the_simulator_handshake()
 -> Result<(), Box<dyn std::error::Error>> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
-    let executable = env!("CARGO_BIN_EXE_hebbian-robot-use-server");
+    let executable = env!("CARGO_BIN_EXE_hebbian-rua-server");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let temporary = tempfile::tempdir()?;
     let config_path = write_simulated_config(root, temporary.path());

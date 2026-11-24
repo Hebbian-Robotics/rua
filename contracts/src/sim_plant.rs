@@ -1,4 +1,4 @@
-//! The messages of the simulator socket. `hebbian-robot-use-server schema --sim-plant` writes
+//! The messages of the simulator socket. `hebbian-rua-server schema --sim-plant` writes
 //! their JSON Schema, and the Python models in `hebbian_rua.simulator` are generated from it.
 
 use schemars::JsonSchema;

@@ -1,15 +1,16 @@
 ---
 name: rua-cli
-description: Operate and inspect a Hebbian robot-use station with the hebbian-robot-use CLI, including arm motion, cameras, recordings and diagnostic traces. Use for terminal-based robot tasks.
+description: Operate and inspect a Hebbian robot-use station with the hebbian-rua CLI, including arm motion, cameras, recordings and diagnostic traces. Use for terminal-based robot tasks.
 ---
 
 # RUA CLI
 
-Use `hebbian-robot-use` to talk to an existing station. This client is separate
-from `rua serve`, which starts the station. From a RUA source checkout, install
-it with `cargo install --locked --path cli`.
+Use `hebbian-rua` to talk to an existing station. This client is separate
+from `rua serve`, which starts the station. Both come with the `hebbian-rua`
+Python package (`uv tool install hebbian-rua`); from a RUA source checkout,
+install the CLI with `cargo install --locked --path cli`.
 
-Start with `hebbian-robot-use --help` and `hebbian-robot-use state`. Use
+Start with `hebbian-rua --help` and `hebbian-rua state`. Use
 `<command> --help` for argument shapes and JSON examples. Discover arm names,
 joint order, faults, interlocks and the lease holder from state.
 

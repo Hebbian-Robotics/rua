@@ -12,19 +12,19 @@ use std::time::Duration;
 
 use anyhow::{Context, ensure};
 use hdrhistogram::Histogram;
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::control_link::{Link, LinkHandle};
-use hebbian_robot_use_core::control_loop::{ArmSetup, Report, run_arms};
-use hebbian_robot_use_core::guard::GuardedPlant;
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{NoPhysicsStandIn, Plant};
-use hebbian_robot_use_core::sim_plant::SocketPlant;
-use hebbian_robot_use_core::so101::driver::BusTiming;
-use hebbian_robot_use_core::station_api::{self, HttpServer};
-use hebbian_robot_use_server::controller_process::{ControllerLaunch, PlantSelection};
-use hebbian_robot_use_server::controller_supervisor;
-use hebbian_robot_use_server::run_telemetry::{self, LiveRunStore};
-use hebbian_robot_use_server::web::{self, WebSettings};
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::control_link::{Link, LinkHandle};
+use hebbian_rua_core::control_loop::{ArmSetup, Report, run_arms};
+use hebbian_rua_core::guard::GuardedPlant;
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::plant::{NoPhysicsStandIn, Plant};
+use hebbian_rua_core::sim_plant::SocketPlant;
+use hebbian_rua_core::so101::driver::BusTiming;
+use hebbian_rua_core::station_api::{self, HttpServer};
+use hebbian_rua_server::controller_process::{ControllerLaunch, PlantSelection};
+use hebbian_rua_server::controller_supervisor;
+use hebbian_rua_server::run_telemetry::{self, LiveRunStore};
+use hebbian_rua_server::web::{self, WebSettings};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use crate::tools::{feetech_servos, load_config};
@@ -99,7 +99,7 @@ fn shutdown_flag() -> anyhow::Result<Arc<AtomicBool>> {
 pub(crate) const DEFAULT_STAND_IN_LAG_SECONDS: f64 = 0.05;
 
 pub(crate) struct ConfiguredArm {
-    pub name: hebbian_robot_use_core::profile::ArmName,
+    pub name: hebbian_rua_core::profile::ArmName,
     pub config: ControllerConfig,
     pub config_path: PathBuf,
 }
@@ -170,9 +170,7 @@ fn hardware_setups(
     Vec<
         ArmSetup<
             GuardedPlant<
-                hebbian_robot_use_core::so101::driver::Servos<
-                    hebbian_robot_use_core::so101::driver::SerialBus,
-                >,
+                hebbian_rua_core::so101::driver::Servos<hebbian_rua_core::so101::driver::SerialBus>,
             >,
         >,
     >,
@@ -216,7 +214,7 @@ fn no_physics_setups(
 
 fn validate_arms(arms: &[ConfiguredArm]) -> anyhow::Result<()> {
     ensure!(!arms.is_empty(), "At least one arm is required");
-    hebbian_robot_use_core::profile::validate_arm_names(arms.iter().map(|arm| arm.name.as_str()))
+    hebbian_rua_core::profile::validate_arm_names(arms.iter().map(|arm| arm.name.as_str()))
 }
 
 pub(crate) fn run_supervised(
@@ -242,9 +240,9 @@ pub(crate) fn run_supervised(
         links.insert(arm.name.as_str().to_owned(), link);
         controller_arms.push((arm.name.as_str().to_owned(), arm.config_path.clone()));
     }
-    let session = hebbian_robot_use_core::controller_bridge::StationSession::new(handoffs);
+    let session = hebbian_rua_core::controller_bridge::StationSession::new(handoffs);
     let launch = ControllerLaunch {
-        executable: hebbian_robot_use_core::running_executable_for_child()?,
+        executable: hebbian_rua_core::running_executable_for_child()?,
         arms: controller_arms,
         work_directory: directory.to_path_buf(),
         plant,
@@ -342,11 +340,9 @@ fn run_connected<P: Plant>(
     let service_shutting_down = Arc::clone(&shutting_down);
     let service_shutdown_requested = Arc::clone(shutdown_requested);
     let service = std::thread::spawn(move || {
-        let result = hebbian_robot_use_core::controller_service::serve_controller(
+        let result = hebbian_rua_core::controller_service::serve_controller(
             socket,
-            hebbian_robot_use_core::controller_transport::ControllerInstanceId(
-                *instance.as_bytes(),
-            ),
+            hebbian_rua_core::controller_transport::ControllerInstanceId(*instance.as_bytes()),
             &arms,
             &service_shutdown_requested,
         );

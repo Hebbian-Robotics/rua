@@ -172,7 +172,7 @@ fn standalone_viewer_serves_the_bundle_and_api_then_stops_on_sigterm() {
     fs::create_dir(&viewer_directory).unwrap();
     fs::write(viewer_directory.join("recording.html"), "recordings viewer").unwrap();
     let mut viewer = RunningViewer(
-        std::process::Command::new(env!("CARGO_BIN_EXE_hebbian-robot-use-recordings"))
+        std::process::Command::new(env!("CARGO_BIN_EXE_hebbian-rua-recordings"))
             .arg("--directory")
             .arg(root.path())
             .args(["--address", "127.0.0.1:0", "--viewer-directory"])

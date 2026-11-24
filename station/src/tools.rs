@@ -8,12 +8,12 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::kinematics::pose_from_xyzw;
-use hebbian_robot_use_core::profile;
-use hebbian_robot_use_core::robot::Robot;
-use hebbian_robot_use_core::so101::driver::{SerialBus, Servos};
-use hebbian_robot_use_core::so101::policy::{self, Policy};
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::kinematics::pose_from_xyzw;
+use hebbian_rua_core::profile;
+use hebbian_rua_core::robot::Robot;
+use hebbian_rua_core::so101::driver::{SerialBus, Servos};
+use hebbian_rua_core::so101::policy::{self, Policy};
 use serde::Deserialize;
 
 use crate::run::bus_timing_json;
@@ -220,7 +220,7 @@ pub(crate) fn run_guard(config_path: &Path, controller_pid: u32) -> anyhow::Resu
         .clone()
         .context("The guard needs a config with a feetech section")?;
     let outcome =
-        hebbian_robot_use_core::guard::guard(&config, controller_pid, std::io::stdin(), || {
+        hebbian_rua_core::guard::guard(&config, controller_pid, std::io::stdin(), || {
             Servos::open(feetech.clone())
         })?;
     let _ = writeln!(
@@ -239,8 +239,8 @@ pub(crate) enum SchemaKind {
 
 pub(crate) fn print_schema(kind: SchemaKind) {
     let schema = match kind {
-        SchemaKind::SimPlant => hebbian_robot_use_core::sim_plant::schema_json(),
-        SchemaKind::OpenApi => hebbian_robot_use_server::openapi::openapi_json(),
+        SchemaKind::SimPlant => hebbian_rua_core::sim_plant::schema_json(),
+        SchemaKind::OpenApi => hebbian_rua_server::openapi::openapi_json(),
     };
     print!("{schema}");
 }

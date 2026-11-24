@@ -16,9 +16,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use hebbian_robot_use_core::config::{ControllerConfig, GuardConfig};
-use hebbian_robot_use_core::guard::{GuardedArm, guard};
-use hebbian_robot_use_core::plant::Feedback;
+use hebbian_rua_core::config::{ControllerConfig, GuardConfig};
+use hebbian_rua_core::guard::{GuardedArm, guard};
+use hebbian_rua_core::plant::Feedback;
 
 const ROLE_VARIABLE: &str = "HEBBIAN_GUARD_PROCESS_TEST_ROLE";
 const DIRECTORY_VARIABLE: &str = "HEBBIAN_GUARD_PROCESS_TEST_DIRECTORY";

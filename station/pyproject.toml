@@ -1,5 +1,5 @@
 [project]
-name = "hebbian-robot-use-server"
+name = "hebbian-rua-server"
 description = "The prebuilt Hebbian robot-use station and its supervised motor controller"
 requires-python = ">=3.12"
 authors = [{ name = "Hebbian Robotics" }]

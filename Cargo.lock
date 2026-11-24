@@ -1318,21 +1318,50 @@ dependencies = [
 ]
 
 [[package]]
-name = "hebbian-robot-use-cli"
+name = "hebbian-rua"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "futures-util",
+ "hebbian-rua-contracts",
+ "hebbian-rua-core",
+ "hebbian-rua-server",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "hebbian-rua-cli"
 version = "0.1.5"
 dependencies = [
  "axum",
  "clap",
- "hebbian-robot-use-core",
- "hebbian-robot-use-server",
  "hebbian-rua",
+ "hebbian-rua-core",
+ "hebbian-rua-server",
  "serde",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "hebbian-robot-use-core"
+name = "hebbian-rua-contracts"
+version = "0.1.5"
+dependencies = [
+ "backon",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hebbian-rua-core"
 version = "0.1.5"
 dependencies = [
  "anyhow",
@@ -1366,7 +1395,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "hebbian-robot-use-server"
+name = "hebbian-rua-python"
+version = "0.1.5"
+dependencies = [
+ "hebbian-rua",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pythonize",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "hebbian-rua-server"
 version = "0.1.5"
 dependencies = [
  "anyhow",
@@ -1375,8 +1416,8 @@ dependencies = [
  "clap",
  "dotenvy",
  "hdrhistogram",
- "hebbian-robot-use-core",
  "hebbian-rua-contracts",
+ "hebbian-rua-core",
  "nix 0.31.4",
  "recordings",
  "reqwest 0.12.28",
@@ -1391,47 +1432,6 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "which 8.0.6",
-]
-
-[[package]]
-name = "hebbian-rua"
-version = "0.1.5"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "futures-util",
- "hebbian-robot-use-core",
- "hebbian-robot-use-server",
- "hebbian-rua-contracts",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "hebbian-rua-contracts"
-version = "0.1.5"
-dependencies = [
- "backon",
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "hebbian-rua-python"
-version = "0.1.5"
-dependencies = [
- "hebbian-rua",
- "pyo3",
- "pyo3-async-runtimes",
- "pythonize",
- "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2147,9 +2147,9 @@ dependencies = [
  "clap",
  "futures-util",
  "hebbian-mcap",
- "hebbian-robot-use-core",
- "hebbian-robot-use-server",
  "hebbian-rua-contracts",
+ "hebbian-rua-core",
+ "hebbian-rua-server",
  "livekit",
  "livekit-camera-frames",
  "livekit-camera-publisher",

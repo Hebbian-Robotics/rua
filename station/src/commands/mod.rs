@@ -146,7 +146,7 @@ pub(crate) struct WebArguments {
     /// Use local camera snapshots only. Phone invites require `LiveKit`.
     #[arg(long, conflicts_with = "enable_recording")]
     local_cameras_only: bool,
-    /// Where `hebbian-robot-use-media` writes recordings, one directory per recording.
+    /// Where `hebbian-rua-media` writes recordings, one directory per recording.
     #[arg(
         long,
         env = "HEBBIAN_RECORDINGS_DIRECTORY",
@@ -156,7 +156,7 @@ pub(crate) struct WebArguments {
     /// Enable recording; requires `LiveKit` and `FFmpeg` (see docs/recording.md).
     #[arg(long, env = "HEBBIAN_ENABLE_RECORDING", default_value_t = false)]
     enable_recording: bool,
-    /// The installed `hebbian-robot-use-media`, which records the cameras.
+    /// The installed `hebbian-rua-media`, which records the cameras.
     /// Default: beside this executable, else on `PATH`, else `target/debug`.
     #[arg(long, env = "HEBBIAN_MEDIA")]
     media_executable: Option<PathBuf>,
@@ -170,7 +170,7 @@ pub(crate) struct WebArguments {
     #[arg(
         long,
         env = "HEBBIAN_PHONE_PAGE_URL",
-        default_value = hebbian_robot_use_server::web::DEFAULT_PHONE_PAGE_URL
+        default_value = hebbian_rua_server::web::DEFAULT_PHONE_PAGE_URL
     )]
     phone_page_url: String,
     /// Show the viewer's manual pose controls (a single SO-101 arm).
@@ -179,8 +179,8 @@ pub(crate) struct WebArguments {
 }
 
 impl WebArguments {
-    pub(crate) fn settings(self) -> hebbian_robot_use_server::web::WebSettings {
-        use hebbian_robot_use_server::web::{CameraForwarding, WebSettings};
+    pub(crate) fn settings(self) -> hebbian_rua_server::web::WebSettings {
+        use hebbian_rua_server::web::{CameraForwarding, WebSettings};
 
         WebSettings {
             local_cameras_only: self.local_cameras_only,
@@ -196,7 +196,7 @@ impl WebArguments {
             room: self.room,
             phone_page_url: self.phone_page_url,
             manual_control: self.manual_control,
-            media_status: hebbian_robot_use_server::media_status::MediaStatus::default(),
+            media_status: hebbian_rua_server::media_status::MediaStatus::default(),
         }
     }
 }

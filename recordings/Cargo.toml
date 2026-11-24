@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 publish = false
-default-run = "hebbian-robot-use-recordings"
+default-run = "hebbian-rua-recordings"
 
 [[bin]]
-name = "hebbian-robot-use-recordings"
+name = "hebbian-rua-recordings"
 path = "src/main.rs"
 
 [dependencies]

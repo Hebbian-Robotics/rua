@@ -26,13 +26,13 @@ List connected USB adapters and their registry matches without opening any
 serial device:
 
 ```sh
-uv run cargo run -p hebbian-robot-use-server -- so101-discover
+uv run cargo run -p hebbian-rua-server -- so101-discover
 ```
 
 For a previously calibrated arm whose servo settings already match its profile:
 
 ```sh
-uv run cargo run -p hebbian-robot-use-server -- serve --manual-control
+uv run cargo run -p hebbian-rua-server -- serve --manual-control
 ```
 
 The station selects the only registered USB adapter, uses its current
@@ -140,7 +140,7 @@ profiles inherit a 0.5-second timeout by default.
 
 ## Controls
 
-From a terminal, `hebbian-robot-use state`, `enable <arm>` and `stop <arm>` (see [cli/README.md](../cli/README.md)) read and command the same arms; while the viewer holds the lease, motion commands exit 4 with the holder in the error.
+From a terminal, `hebbian-rua state`, `enable <arm>` and `stop <arm>` (see [cli/README.md](../cli/README.md)) read and command the same arms; while the viewer holds the lease, motion commands exit 4 with the holder in the error.
 
 Choose **Manual** while the arm is disabled, then select and enable the arm.
 Enabling acquires the manual lease. If another client holds control, it must

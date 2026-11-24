@@ -14,7 +14,7 @@ Measure on the deployed host under representative load.
 
 The station, controller and media process write timestamped diagnostics to
 stderr. Set `RUST_LOG` when starting the station to choose levels by module.
-For example, `RUST_LOG=warn,hebbian_robot_use_core::guard=debug` shows guard
+For example, `RUST_LOG=warn,hebbian_rua_core::guard=debug` shows guard
 startup details alongside warnings and errors. The station's child processes
 inherit the filter. Guard reports and the bound HTTP address are emitted
 independently of it.
@@ -82,8 +82,8 @@ operating hardware.
 ## The cycle trace
 
 The [trace writer](../server-core/src/trace.rs) defines the JSONL fields, queue
-capacity and drop accounting. Use `hebbian-robot-use traces list` to find traces
-and `hebbian-robot-use traces pull` to download gzip-compressed files.
+capacity and drop accounting. Use `hebbian-rua traces list` to find traces
+and `hebbian-rua traces pull` to download gzip-compressed files.
 
 Each row contains feedback from the start of the cycle and the command computed
 from that feedback. Measure command-to-motion delay from one row's `writeTime`

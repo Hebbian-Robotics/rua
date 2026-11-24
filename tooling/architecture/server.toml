@@ -8,5 +8,5 @@ deny = [
     "livekit-cameras",
     "cameras",
     { crate = "hebbian-rua", reason = "Server implementations must not depend on client SDKs." },
-    "hebbian-robot-use-cli",
+    "hebbian-rua-cli",
 ]

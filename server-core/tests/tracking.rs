@@ -7,8 +7,8 @@
 )]
 
 use hebbian_contracts::{CornerPlan, Segment};
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::corner_path::{MotionSupervisor, Stage};
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::corner_path::{MotionSupervisor, Stage};
 
 fn config() -> ControllerConfig {
     ControllerConfig::parse(

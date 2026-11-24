@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 def main() -> None:
-    executable_name = "hebbian-robot-use-server"
+    executable_name = "hebbian-rua-server"
     installed_executable = Path(sysconfig.get_path("scripts")) / executable_name
-    override = os.environ.get("HEBBIAN_ROBOT_USE_SERVER")
+    override = os.environ.get("HEBBIAN_RUA_SERVER")
     if override:
         candidates = [Path(override)]
     else:

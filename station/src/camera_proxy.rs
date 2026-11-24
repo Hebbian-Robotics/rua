@@ -309,7 +309,7 @@ async fn observe(
             "Station state is not ready".to_owned(),
         )
     };
-    let mut state = hebbian_robot_use_core::station_api::station_state(links)
+    let mut state = hebbian_rua_core::station_api::station_state(links)
         .await
         .ok_or_else(state_unavailable)?;
     state

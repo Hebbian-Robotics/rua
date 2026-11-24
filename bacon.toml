@@ -9,7 +9,7 @@ command = [
     "build",
     "--locked",
     "-p",
-    "hebbian-robot-use-server",
+    "hebbian-rua-server",
     "-p",
     "livekit-cameras",
 ]

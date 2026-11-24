@@ -19,7 +19,7 @@ from hebbian_rua.client.contract.station_api import (
 
 # The station's HTTP API, event stream and traces.
 DEFAULT_SERVER = "http://127.0.0.1:8792"
-# The media service (`hebbian-robot-use-server serve --media-address`): camera snapshots.
+# The media service (`hebbian-rua-server serve --media-address`): camera snapshots.
 DEFAULT_MEDIA_SERVER = "http://127.0.0.1:8781"
 CAMERA_TIMEOUT_SECONDS = 30
 RUNS_TIMEOUT_SECONDS = 30

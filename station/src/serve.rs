@@ -3,10 +3,10 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, ensure};
-use hebbian_robot_use_core::config::{ControllerConfig, SimPlantConfig};
-use hebbian_robot_use_core::profile::{self, Driver, JointLimitSource};
-use hebbian_robot_use_server::controller_process::PlantSelection;
-use hebbian_robot_use_server::web::WebSettings;
+use hebbian_rua_core::config::{ControllerConfig, SimPlantConfig};
+use hebbian_rua_core::profile::{self, Driver, JointLimitSource};
+use hebbian_rua_server::controller_process::PlantSelection;
+use hebbian_rua_server::web::WebSettings;
 use station_access::new_room_name;
 
 use crate::media::{MediaPlan, SIMULATOR_CAMERA_SOCKET};

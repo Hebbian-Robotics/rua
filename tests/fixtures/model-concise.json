@@ -181,7 +181,7 @@
       ],
       "lease": {
         "holder": "agent",
-        "label": "hebbian-robot-use"
+        "label": "hebbian-rua"
       }
     },
     "concise": {
@@ -476,7 +476,7 @@
       ],
       "lease": {
         "holder": "agent",
-        "label": "hebbian-robot-use"
+        "label": "hebbian-rua"
       }
     },
     "concise": {
@@ -493,7 +493,7 @@
       "description": "SO-101 arm. World +X forward, +Z up.",
       "lease": {
         "holder": "agent",
-        "label": "hebbian-robot-use"
+        "label": "hebbian-rua"
       },
       "arms": [
         {
@@ -553,7 +553,7 @@
       "description": "SO-101 arm. World +X forward, +Z up.",
       "lease": {
         "holder": "agent",
-        "label": "hebbian-robot-use"
+        "label": "hebbian-rua"
       },
       "arms": [
         {

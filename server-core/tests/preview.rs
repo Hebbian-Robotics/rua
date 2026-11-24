@@ -16,12 +16,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::arm::ReachGoal;
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::preview::{Preview, PreviewOutcome, PreviewRequest};
-use hebbian_robot_use_core::robot::Robot;
+use hebbian_rua_core::arm::ReachGoal;
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::preview::{Preview, PreviewOutcome, PreviewRequest};
+use hebbian_rua_core::robot::Robot;
 use serde_json::{Value, json};
 
 mod support;
@@ -81,7 +81,7 @@ fn config_accepting_target_lead(assets: &Path, max_target_lead_radians: f64) -> 
             "max_target_lead_radians": max_target_lead_radians,
             "position_tolerance_meters": 0.02, "orientation_tolerance_radians": 0.1,
         },
-        "trace_directory": std::env::temp_dir().join("hebbian-robot-use-server-preview-traces"),
+        "trace_directory": std::env::temp_dir().join("hebbian-rua-server-preview-traces"),
         "motion": {
             "acceleration_limit": 5.0, "jerk_limit": 20.0,
             "settled_error_radians": 0.04, "settle_dwell_seconds": 0.3,
@@ -384,8 +384,8 @@ fn orientation_ignored_study() {
 
 #[test]
 fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation() {
-    use hebbian_robot_use_core::control_loop::run;
-    use hebbian_robot_use_core::plant::NoPhysicsStandIn;
+    use hebbian_rua_core::control_loop::run;
+    use hebbian_rua_core::plant::NoPhysicsStandIn;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     let Some(assets) = assets() else {

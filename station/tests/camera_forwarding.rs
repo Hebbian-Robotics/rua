@@ -11,13 +11,13 @@ use std::time::Duration;
 
 use axum::routing::get;
 use hebbian_contracts::{CameraListing, CommandAnswer, MediaState, StationInstance};
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::NoPhysicsStandIn;
-use hebbian_robot_use_core::station_api::HttpServer;
-use hebbian_robot_use_server::media_status::MediaStatus;
-use hebbian_robot_use_server::web::{self, CameraForwarding, WebSettings};
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::plant::NoPhysicsStandIn;
+use hebbian_rua_core::station_api::HttpServer;
+use hebbian_rua_server::media_status::MediaStatus;
+use hebbian_rua_server::web::{self, CameraForwarding, WebSettings};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 use tokio::sync::Semaphore;
@@ -28,7 +28,7 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
     HttpServer::start(
         "127.0.0.1:0",
         Vec::new(),
-        Arc::new(hebbian_robot_use_server::run_telemetry::LiveRunStore::default()),
+        Arc::new(hebbian_rua_server::run_telemetry::LiveRunStore::default()),
         Arc::default(),
         |runtime, address| {
             let (router, _) = web::mount(
@@ -71,7 +71,7 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let controller_shutdown = shutdown.clone();
     let controller = std::thread::spawn(move || {
-        hebbian_robot_use_core::control_loop::run(
+        hebbian_rua_core::control_loop::run(
             &mut NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
             &link,
             &config,
@@ -300,13 +300,13 @@ fn camera_devices_skips_non_executable_media_companion_on_path()
 
     let directory = tempfile::tempdir()?;
     let station = directory.path().join("station");
-    fs::copy(env!("CARGO_BIN_EXE_hebbian-robot-use-server"), &station)?;
+    fs::copy(env!("CARGO_BIN_EXE_hebbian-rua-server"), &station)?;
 
     let blocked = directory.path().join("blocked");
     let working = directory.path().join("working");
     fs::create_dir(&blocked)?;
     fs::create_dir(&working)?;
-    let program = "hebbian-robot-use-media";
+    let program = "hebbian-rua-media";
     fs::write(blocked.join(program), b"not executable")?;
     let companion = working.join(program);
     fs::write(&companion, b"#!/bin/sh\nprintf '%s\\n' \"$1\"\n")?;

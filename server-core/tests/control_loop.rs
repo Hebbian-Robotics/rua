@@ -13,18 +13,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use hebbian_robot_use_core::config::ControllerConfig;
-use hebbian_robot_use_core::control_link::Link;
-use hebbian_robot_use_core::control_loop::{ArmSetup, run, run_arms};
-use hebbian_robot_use_core::lease::{LEASE, Lease};
-use hebbian_robot_use_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant, PlantWritePermit};
+use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::control_link::Link;
+use hebbian_rua_core::control_loop::{ArmSetup, run, run_arms};
+use hebbian_rua_core::lease::{LEASE, Lease};
+use hebbian_rua_core::plant::{Feedback, NoPhysicsStandIn, Pacing, Plant, PlantWritePermit};
 use serde_json::{Value, json};
 
 mod support;
 use hebbian_contracts::{
     ArmMode, ArmMove, Command, CommandOutcome, CommandRecord, CornerPlan, Event, Sample, Segment,
 };
-use hebbian_robot_use_core::controller_transport::{ControllerAnswer, ControllerRequest};
+use hebbian_rua_core::controller_transport::{ControllerAnswer, ControllerRequest};
 use support::{LinkClient, RunningArms};
 
 const CONFIG: &str = include_str!("support/two_joint_config.json");
@@ -36,7 +36,7 @@ fn control() -> Arc<Lease> {
 fn test_config() -> ControllerConfig {
     let mut config = ControllerConfig::parse(CONFIG).unwrap().into_input();
     config.trace_directory = std::env::temp_dir()
-        .join("hebbian-robot-use-server-test-traces")
+        .join("hebbian-rua-server-test-traces")
         .to_string_lossy()
         .into_owned();
     ControllerConfig::try_from(config).unwrap()
@@ -362,10 +362,7 @@ fn move_arms(client: &LinkClient, targets: [[f64; 2]; 2]) -> Vec<CommandRecord> 
             pose_limited: None,
         })
         .map(|part| {
-            hebbian_robot_use_core::action_step::PreparedArmAction::from_group_move(
-                "move_arms",
-                part,
-            )
+            hebbian_rua_core::action_step::PreparedArmAction::from_group_move("move_arms", part)
         })
         .collect();
     match client.submit(ControllerRequest::ActionStep {
@@ -506,7 +503,7 @@ fn fake_simulator(
 
 fn sim_config(reply_timeout_seconds: f64) -> ControllerConfig {
     let mut config = test_config().into_input();
-    config.sim_plant = Some(hebbian_robot_use_core::config::SimPlantConfig {
+    config.sim_plant = Some(hebbian_rua_core::config::SimPlantConfig {
         connect_timeout_seconds: 5.0,
         reply_timeout_seconds,
         real_time: true,
@@ -517,8 +514,8 @@ fn sim_config(reply_timeout_seconds: f64) -> ControllerConfig {
 fn sim_setups(
     directory: &Path,
     reply_timeout_seconds: f64,
-) -> Vec<ArmSetup<hebbian_robot_use_core::sim_plant::SocketPlant>> {
-    use hebbian_robot_use_core::sim_plant::{SimTimeouts, SocketPlant};
+) -> Vec<ArmSetup<hebbian_rua_core::sim_plant::SocketPlant>> {
+    use hebbian_rua_core::sim_plant::{SimTimeouts, SocketPlant};
     let control = control();
     let listeners: Vec<_> = ["left", "right"]
         .into_iter()

@@ -32,7 +32,7 @@ time. Submission age measures host receipt to WebRTC submission, not the complet
 camera-to-display delay. A running station must restart to use changed variables;
 follow the [hardware restart precautions](../docs/hardware.md) for a physical arm.
 
-When invoking `hebbian-robot-use-media serve` directly, the equivalent flags are
+When invoking `hebbian-rua-media serve` directly, the equivalent flags are
 `--video-codec h264 --camera-diagnostics`. The implementation and measurement
 limitations are documented in the [native publisher guide](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/native/publisher/README.md#codec-selection-and-diagnostics).
 

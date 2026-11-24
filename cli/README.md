@@ -1,22 +1,25 @@
-# hebbian-robot-use-cli
+# hebbian-rua-cli
 
-The `hebbian-robot-use` command line for a station, built on the `hebbian-rua` Rust SDK.
+The `hebbian-rua` command line for a station, built on the `hebbian-rua` Rust SDK.
 Coding agents can chain these commands in the shell. Each invocation opens a
 connection and runs one command. Commands print JSON to stdout, with plain-text
 output for the phone invite URL.
 
+The `hebbian-rua` Python wheel installs the command alongside `rua`. From a source
+checkout, `cargo install --locked --path cli` installs it instead.
+
 ```sh
-cargo install --locked --path cli            # installs `hebbian-robot-use`
-hebbian-robot-use --help            # units, argument shapes and an example per command
-hebbian-robot-use state
-hebbian-robot-use enable arm
-hebbian-robot-use move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
-hebbian-robot-use move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
-hebbian-robot-use preview-pose arm --position 0.2,0,0.1
+uv tool install hebbian-rua   # installs `rua` and `hebbian-rua`
+hebbian-rua --help            # units, argument shapes and an example per command
+hebbian-rua state
+hebbian-rua enable arm
+hebbian-rua move-joints arm --joints 0.3,-0.4,0.6,0.1,0.0 --speed 0.5
+hebbian-rua move-pose arm --position 0.2,0,0.1 --approach down --jaw-yaw-degrees 0
+hebbian-rua preview-pose arm --position 0.2,0,0.1
 ```
 
 These examples use `arm`, the name assigned by native SO-101 setup. Run
-`hebbian-robot-use state` to discover the names served by a custom profile.
+`hebbian-rua state` to discover the names served by a custom profile.
 
 `--server` (default `http://127.0.0.1:8792`) is the station URL, including for
 camera requests. Set `--media-server` or `HEBBIAN_MEDIA_SERVER` to use the
@@ -73,5 +76,5 @@ are refused with exit 4; `stop` is always accepted. Motion is refused while an a
 and [the control model](../docs/control-model.md)).
 
 ```sh
-cargo test -p hebbian-robot-use-cli   # the real binary against an in-process controller on the simulated SO-101
+cargo test -p hebbian-rua-cli   # the real binary against an in-process controller on the simulated SO-101
 ```

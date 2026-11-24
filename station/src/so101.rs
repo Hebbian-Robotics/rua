@@ -1,12 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail, ensure};
-use hebbian_robot_use_core::profile::{RobotProfile, load_robot_profile};
-use hebbian_robot_use_core::so101::calibration::{
-    calibrated_joint_limits, lerobot_calibration_root,
-};
-use hebbian_robot_use_core::so101::discovery::{self, ControllerSerial};
-use hebbian_robot_use_core::so101::registry::{CalibrationInstallation, install_calibration};
+use hebbian_rua_core::profile::{RobotProfile, load_robot_profile};
+use hebbian_rua_core::so101::calibration::{calibrated_joint_limits, lerobot_calibration_root};
+use hebbian_rua_core::so101::discovery::{self, ControllerSerial};
+use hebbian_rua_core::so101::registry::{CalibrationInstallation, install_calibration};
 
 use crate::commands::SelectionArguments;
 
@@ -154,7 +152,7 @@ pub(crate) fn print_discovered(config_directory: Option<&Path>) -> anyhow::Resul
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use hebbian_robot_use_core::profile::load_robot_profile_with_fragments;
+    use hebbian_rua_core::profile::load_robot_profile_with_fragments;
 
     use crate::commands::SelectionArguments;
 

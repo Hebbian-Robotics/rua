@@ -9,7 +9,7 @@ use livekit_cameras::error;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "hebbian-robot-use-media")]
+#[command(name = "hebbian-rua-media")]
 struct MediaArguments {
     #[command(subcommand)]
     command: MediaCommand,
@@ -116,7 +116,7 @@ fn main() -> std::process::ExitCode {
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("hebbian-robot-use-media: {error}");
+            eprintln!("hebbian-rua-media: {error}");
             std::process::ExitCode::FAILURE
         }
     }

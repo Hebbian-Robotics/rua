@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 tracing_subscriber::EnvFilter::new(
-                    "warn,hebbian_robot_use_server=info,hebbian_robot_use_core=info",
+                    "warn,hebbian_rua_server=info,hebbian_rua_core=info",
                 )
             }),
         )
