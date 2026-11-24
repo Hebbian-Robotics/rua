@@ -76,7 +76,7 @@ test("viewer startup requires a model-provider key by default", () => {
   );
   expect(result.status, result.stderr).toBe(1);
   expect(result.stderr).toContain("OPENAI_API_KEY");
-  expect(result.stderr).toContain("--manual-only");
+  expect(result.stderr).toContain("--manual-control-only-no-agent");
 });
 
 test("manual-only mode refuses agent runs even with a configured provider", async () => {

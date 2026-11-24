@@ -30,6 +30,7 @@ pub(crate) struct CameraProxy {
 
 enum CameraRequest<'a> {
     List,
+    LocalList,
     Snapshot(&'a hebbian_contracts::SnapshotName),
 }
 
@@ -96,10 +97,14 @@ impl CameraProxy {
 
     async fn fetch(&self, request: CameraRequest<'_>) -> anyhow::Result<ForwardingOutcome> {
         let mut url = self.camera_list_url.clone();
-        if let CameraRequest::Snapshot(name) = request {
-            url.path_segments_mut()
-                .map_err(|()| anyhow::anyhow!("Media companion URL cannot hold a path"))?
-                .push(name.as_str());
+        match request {
+            CameraRequest::Snapshot(name) => {
+                url.path_segments_mut()
+                    .map_err(|()| anyhow::anyhow!("Media companion URL cannot hold a path"))?
+                    .push(name.as_str());
+            }
+            CameraRequest::LocalList => url.set_path("/media/local-cameras"),
+            CameraRequest::List => {}
         }
 
         let mut upstream = self.client.get(url).send().await?;
@@ -158,11 +163,16 @@ pub(crate) fn router(proxy: Option<Arc<CameraProxy>>) -> Router {
     Router::new()
         .route("/cameras", get(list_cameras))
         .route("/cameras/{name}", get(snapshot))
+        .route("/media/local-cameras", get(list_local_cameras))
         .with_state(proxy)
 }
 
 async fn list_cameras(State(proxy): State<Option<Arc<CameraProxy>>>) -> Response {
     forward(proxy.as_deref(), CameraRequest::List).await
+}
+
+async fn list_local_cameras(State(proxy): State<Option<Arc<CameraProxy>>>) -> Response {
+    forward(proxy.as_deref(), CameraRequest::LocalList).await
 }
 
 async fn snapshot(

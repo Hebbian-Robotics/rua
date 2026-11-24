@@ -80,7 +80,7 @@ fn credentials(access: &Access) -> Result<&Credentials, Refusal> {
         Cameras::On(credentials) => Ok(credentials),
         Cameras::LocalOnly => Err(Refusal(
             StatusCode::CONFLICT,
-            "Local cameras only. Phone invites require LiveKit.".to_owned(),
+            "Local cameras only. Remote cameras require LiveKit.".to_owned(),
         )),
         Cameras::Off(reason) => Err(Refusal(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -113,7 +113,13 @@ async fn create_phone_invite(
     }
     let invite: PhoneInvite = credentials(&access)?
         .phone_invite(&access.room, &request.label, &access.phone_page_url)
-        .map_err(|error| Refusal(StatusCode::BAD_REQUEST, error.to_string()))?;
+        .map_err(|error| {
+            let status = match error {
+                station_access::AccessError::PhoneCannotReachServer(_) => StatusCode::CONFLICT,
+                _ => StatusCode::BAD_REQUEST,
+            };
+            Refusal(status, error.to_string())
+        })?;
     Ok((
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
         Json(invite),

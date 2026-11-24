@@ -1,2 +1,6 @@
-extends = ["so101-sim", "so101-soft-gripper-camera-assembly", "so101-policy-settings"]
+extends = [
+    "so101-sim-only-no-real-arm",
+    "so101-soft-gripper-camera-assembly",
+    "so101-policy-settings",
+]
 name = "mujoco-policy"

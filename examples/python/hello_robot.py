@@ -16,7 +16,13 @@ from hebbian_rua.client.station_client import (
     WorldPositionMeters,
 )
 
-command_line = App(help="Preview and move an SO-101 arm.", version_flags=())
+command_line = App(
+    help=(
+        "Preview and move an SO-101 arm. Use a real arm whenever available. "
+        "Reserve simulation for testing without hardware."
+    ),
+    version_flags=(),
+)
 
 
 @command_line.default

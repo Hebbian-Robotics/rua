@@ -33,7 +33,14 @@ from hebbian_rua.client.station_client import commands_parented_to
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
-Set a provider API key, then start a station and run the agent.
+Set a model-provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY or GEMINI_API_KEY).
+Connect to a station with a real arm whenever available. Reserve simulation
+for testing without hardware.
+Select station cameras with --camera wrist --camera overhead. Configure LiveKit
+on the station to watch in Room viewer at https://hebbian-robotics.github.io/livekit-cameras/.
+If LiveKit Cloud is unavailable, run a local LiveKit server or restart the
+station with --local-only-no-remote-cameras, then open the RUA example viewer.
+
 The provider stores conversation history. The loop executes the robot tools.
 """
 
@@ -508,7 +515,10 @@ async def main(
     ] = None,
     camera: Annotated[
         tuple[str, ...],
-        Parameter(help="Camera name. Repeat for multiple cameras.", negative=False),
+        Parameter(
+            help="Station camera name. Repeat for multiple cameras, such as --camera wrist --camera overhead.",
+            negative=False,
+        ),
     ] = (),
     server: Annotated[
         str | None, Parameter(help="Station URL. Overrides HEBBIAN_STATION_URL.")

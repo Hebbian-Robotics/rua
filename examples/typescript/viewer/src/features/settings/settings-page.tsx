@@ -201,7 +201,7 @@ export function SettingsPage({
           {status === "unreachable"
             ? connectionError
             : status === "disabled"
-              ? "Disabled in manual-only mode"
+              ? "Disabled: the viewer was started with --manual-control-only-no-agent"
               : status}
         </p>
       </Card>

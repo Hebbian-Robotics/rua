@@ -1,7 +1,9 @@
 # Python examples
 
-Start a station with [your arm connected](../../docs/getting-started.md).
-For testing without hardware, use a [simulated station](../../docs/simulation.md).
+Start a station with [a real arm connected](../../docs/getting-started.md)
+whenever available. Reserve [simulation](../../docs/simulation.md) for testing
+without hardware. The examples connect to the station at `HEBBIAN_STATION_URL`
+or the local default.
 The example environment installs the published Python SDK. From the repository root:
 
 ```sh
@@ -31,19 +33,21 @@ PYTHON
 ## Preview and move
 
 [`hello_robot.py`](hello_robot.py) enables the arm, previews a target, moves,
-and opens the gripper. Use the [simulation quickstart](../../docs/simulation.md#2-run-hello_robot)
-to try it. Check the target and clearance before running on hardware.
+and opens the gripper. Check the target and clearance before running on hardware.
+If hardware is unavailable, use the [simulation quickstart](../../docs/simulation.md#2-run-hello_robot).
 
 ## Run an agent
 
 Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the environment
-or `.env`. [`agent_quickstart.py`](agent_quickstart.py) enables the arm and gives
-the model motion tools. Pass both the provider and model ID. Release any active
-control lease before starting.
+or `.env`. Configure LiveKit on the station for the normal camera workflow.
+[`agent_quickstart.py`](agent_quickstart.py) enables the arm and gives the model
+motion tools. Pass both the provider and model ID. Release any active control
+lease before starting.
 
 ```sh
 uv run agent_quickstart.py --provider openai --model gpt-6.2-astra \
-    "Describe the robot state. Keep the arm still."
+    --camera wrist --camera overhead \
+    "Describe what you see. Keep the arm still."
 ```
 
 Run `uv run agent_quickstart.py --help` for arm, camera, station, and model
@@ -57,8 +61,18 @@ the conversation to restore an expired or interrupted thread.
 
 ## Watch live cameras
 
-To watch live cameras alongside the Python agent, use the
-[LiveKit room viewer or LiveKit Meet](../../docs/cameras.md#watch-a-usb-camera).
+Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
+named cameras to the station. Repeat `--camera NAME` for each camera the agent
+should see, using the names from `hebbian-rua camera list`. On the station host,
+get the room URL and token with `curl --fail http://127.0.0.1:8792/media/access-token`,
+then enter them in the [hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/)
+to watch while the agent runs.
+
+If LiveKit Cloud is unavailable, run a local LiveKit server or restart
+`rua serve` with `--local-only-no-remote-cameras`, then use the normal
+TypeScript viewer to watch while the Python agent runs. Run the agent with the
+same camera names. The agent still requires a model-provider key.
+[Options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable)
 
 ## Inspect a run in Jaeger
 

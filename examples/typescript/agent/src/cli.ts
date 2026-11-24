@@ -29,6 +29,9 @@ import { apiKeyFromEnvironment, runAgent } from "./run.js";
 
 function createCommand(): Command {
   return new Command("hebbian-agent")
+    .description(
+      "Connect to a station with a real arm whenever available. Reserve simulation for testing without hardware.",
+    )
     .usage("[options] [--] [<arm>] <task>")
     .allowExcessArguments()
     .option("--arm <name>", "Arm name. Defaults to the station's sole arm.")

@@ -85,7 +85,10 @@ export function createApp({
     async (context) => {
       if (manualOnly)
         return context.json(
-          { detail: "The viewer is running in manual-only mode." },
+          {
+            detail:
+              "Agent runs are disabled: the viewer was started with --manual-control-only-no-agent.",
+          },
           403,
         );
       const body = await readJson(context.req.json(), runRequestSchema);

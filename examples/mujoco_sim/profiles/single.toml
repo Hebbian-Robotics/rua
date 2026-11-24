@@ -1,2 +1,2 @@
-extends = ["so101-sim", "so101-soft-gripper-camera-assembly"]
+extends = ["so101-sim-only-no-real-arm", "so101-soft-gripper-camera-assembly"]
 name = "so101-mujoco"

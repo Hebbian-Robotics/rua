@@ -7,14 +7,19 @@ import {
   RoomEvent,
   Track,
 } from "livekit-client";
+import { TriangleAlertIcon } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { createActor } from "xstate";
+import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { stationJson } from "../../api.js";
 import { errorMessage } from "../../errors.js";
 import { createCameraConnectionMachine } from "./camera-connection-machine.js";
 
-export type CameraFeed = { name: string; track: RemoteTrack };
+type CameraFeed = { name: string } & (
+  | { kind: "room"; track: RemoteTrack }
+  | { kind: "local" }
+);
 export type CameraRoomState = {
   status: string;
   localCamerasOnly: boolean;
@@ -35,7 +40,9 @@ function connectionMessage(
 ): string {
   switch (connection) {
     case "local":
-      return "Local cameras only. Snapshots are available from the station.";
+      return hasFeeds
+        ? "Showing local cameras. Remote cameras are disabled."
+        : "Local cameras only. Waiting for a connected camera.";
     case "connecting":
       return "Connecting to LiveKit…";
     case "connected":
@@ -74,7 +81,7 @@ export function useCameraRoom(): CameraRoomState {
               Number(second.startsWith("phone_")) ||
             first.localeCompare(second),
         )
-        .map(([name, track]) => ({ name, track }));
+        .map(([name, track]) => ({ name, kind: "room" as const, track }));
       setState((previous) => ({
         ...previous,
         feeds: orderedFeeds,
@@ -191,10 +198,29 @@ export function useCameraRoom(): CameraRoomState {
     };
   }, []);
   const { connection, ...roomState } = state;
+  const localCamerasOnly = connection === "local";
+  const localCameras = useQuery({
+    queryKey: ["local-cameras"],
+    queryFn: async ({ signal }) =>
+      apiSchemas.shape.CameraListing.array().parse(
+        await stationJson("/api/media/local-cameras", { signal }),
+      ),
+    enabled: localCamerasOnly,
+    refetchInterval: 2000,
+  });
+  const feeds: CameraFeed[] = localCamerasOnly
+    ? (localCameras.data ?? [])
+        .filter(({ available }) => available)
+        .map(({ name }) => ({ name, kind: "local" }))
+    : roomState.feeds;
   return {
     ...roomState,
-    localCamerasOnly: connection === "local",
-    status: connectionMessage(connection, state.feeds.length > 0),
+    feeds,
+    localCamerasOnly,
+    status:
+      localCamerasOnly && localCameras.isError
+        ? "Local camera service unavailable."
+        : connectionMessage(connection, feeds.length > 0),
   };
 }
 
@@ -202,6 +228,61 @@ function cameraTitle(name: string): string {
   return name.startsWith("phone_")
     ? `Phone · ${name.slice(6).replaceAll("_", " ")}`
     : name.replaceAll("_", " ");
+}
+
+const LOCAL_FRAME_INTERVAL_MILLISECONDS = 125;
+const LOCAL_FRAME_RETRY_MILLISECONDS = 1000;
+
+function waitOrAbort(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
+// WHY: Short snapshot requests leave browser connections free for controls, and a failed
+// fetch simply retries, so a preview recovers on its own after the camera comes back.
+function useLatestLocalCameraFrame(
+  cameraName: string | undefined,
+): string | undefined {
+  const [frameUrl, setFrameUrl] = useState<string>();
+  useEffect(() => {
+    if (cameraName === undefined) return;
+    const stopped = new AbortController();
+    let shownFrameUrl: string | undefined;
+    void (async () => {
+      while (!stopped.signal.aborted) {
+        let delay = LOCAL_FRAME_INTERVAL_MILLISECONDS;
+        try {
+          const response = await fetch(
+            `/api/cameras/${encodeURIComponent(cameraName)}`,
+            { cache: "no-store", signal: stopped.signal },
+          );
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const nextFrameUrl = URL.createObjectURL(await response.blob());
+          if (shownFrameUrl) URL.revokeObjectURL(shownFrameUrl);
+          shownFrameUrl = nextFrameUrl;
+          setFrameUrl(nextFrameUrl);
+        } catch {
+          delay = LOCAL_FRAME_RETRY_MILLISECONDS;
+        }
+        await waitOrAbort(delay, stopped.signal);
+      }
+    })();
+    return () => {
+      stopped.abort();
+      if (shownFrameUrl) URL.revokeObjectURL(shownFrameUrl);
+      setFrameUrl(undefined);
+    };
+  }, [cameraName]);
+  return frameUrl;
 }
 
 export const CameraView = memo(function CameraView({
@@ -213,14 +294,19 @@ export const CameraView = memo(function CameraView({
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const container = useRef<HTMLElement>(null);
+  const track = feed.kind === "room" ? feed.track : undefined;
+  const localFrameUrl = useLatestLocalCameraFrame(
+    feed.kind === "local" ? feed.name : undefined,
+  );
   useEffect(() => {
     const element = video.current;
-    if (!element) return;
-    feed.track.attach(element);
+    if (!element || !track) return;
+    track.attach(element);
     return () => {
-      feed.track.detach(element);
+      track.detach(element);
     };
-  }, [feed.track]);
+  }, [track]);
+  const label = `${cameraTitle(feed.name)} camera feed`;
   return (
     <article className="camera-view" ref={container}>
       {showLabel && (
@@ -229,13 +315,23 @@ export const CameraView = memo(function CameraView({
         </header>
       )}
       <div className="camera-picture">
-        <video
-          ref={video}
-          autoPlay
-          muted
-          playsInline
-          aria-label={`${cameraTitle(feed.name)} camera feed`}
-        />
+        {feed.kind === "room" ? (
+          <video ref={video} autoPlay muted playsInline aria-label={label} />
+        ) : (
+          <>
+            {localFrameUrl && (
+              <img src={localFrameUrl} alt={label} width={640} height={360} />
+            )}
+            <Badge
+              variant="destructive"
+              className="camera-fallback-label"
+              title="Local fallback preview. Prefer LiveKit whenever it is available."
+            >
+              <TriangleAlertIcon aria-hidden="true" />
+              Fallback · LiveKit unavailable
+            </Badge>
+          </>
+        )}
         <Button
           variant="outline"
           onClick={() => {
@@ -249,3 +345,5 @@ export const CameraView = memo(function CameraView({
     </article>
   );
 });
+
+import { useQuery } from "@tanstack/react-query";

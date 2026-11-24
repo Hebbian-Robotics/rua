@@ -7028,6 +7028,48 @@
         "x-server": "station"
       }
     },
+    "/media/local-cameras": {
+      "get": {
+        "operationId": "list_local_preview_cameras",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CameraListing"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "List USB cameras available for local preview in local-only mode. Fetch frames from `/cameras/{name}`.",
+        "x-direct-media": true,
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
     "/media/phone-invites": {
       "post": {
         "operationId": "phone_invite",
@@ -7071,7 +7113,7 @@
             "description": "An error: {\"detail\": ...}"
           }
         },
-        "summary": "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.",
+        "summary": "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. Returns 409 when `LIVEKIT_URL` is not a `wss://` address a phone can reach.",
         "x-sdk": true,
         "x-server": "station"
       }

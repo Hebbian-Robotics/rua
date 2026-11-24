@@ -8,9 +8,10 @@ and Gemini.
 
 ## Run the agent
 
-Start a station with [your arm connected](../../../docs/getting-started.md).
-For testing without hardware, use [MuJoCo](../../../docs/simulation.md). Use the
-Node.js version in the repository's `.nvmrc` and the pnpm version in `package.json`.
+Start a station with [a real arm connected](../../../docs/getting-started.md)
+whenever available. Reserve [MuJoCo simulation](../../../docs/simulation.md) for
+testing without hardware. Use the Node.js version in the repository's `.nvmrc`
+and the pnpm version in `package.json`.
 
 Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the environment
 or `.env`. [Enable the arm in the viewer](../../../docs/getting-started.md#2-verify-manual-control),

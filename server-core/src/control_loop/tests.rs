@@ -247,7 +247,8 @@ fn combined_motion_config() -> ControllerConfig {
         .parent()
         .unwrap();
     let mut profile =
-        crate::profile::load_robot_profile(&root.join("profiles"), "so101-sim").unwrap();
+        crate::profile::load_robot_profile(&root.join("profiles"), "so101-sim-only-no-real-arm")
+            .unwrap();
     profile.urdf = root.join("robots/so101/robot.urdf");
     let mut config = crate::profile::controller_config_input(
         &profile,

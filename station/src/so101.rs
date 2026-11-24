@@ -223,7 +223,7 @@ mod tests {
         let registry = Registry::with_arm("mirrored", "soft-gripper-camera");
         let profile = load_robot_profile_with_fragments(
             &profiles(),
-            "so101-sim",
+            "so101-sim-only-no-real-arm",
             &["so101-soft-gripper-camera-assembly"],
         )
         .unwrap();
@@ -243,7 +243,7 @@ mod tests {
         let registry = Registry::with_arm("stock", "stock");
         let profile = load_robot_profile_with_fragments(
             &profiles(),
-            "so101-sim",
+            "so101-sim-only-no-real-arm",
             &["so101-soft-gripper-camera-assembly"],
         )
         .unwrap();

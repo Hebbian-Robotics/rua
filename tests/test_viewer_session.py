@@ -31,7 +31,11 @@ def viewer_backend(
         "AGENT_PORT": "0",
         "AGENT_RUNS_DIR": str(run_directory),
     }
-    arguments = [*VIEWER_COMMAND, "--manual-only"] if manual_only else VIEWER_COMMAND
+    arguments = (
+        [*VIEWER_COMMAND, "--manual-control-only-no-agent"]
+        if manual_only
+        else VIEWER_COMMAND
+    )
     with subprocess.Popen(
         arguments,
         env=environment,

@@ -123,7 +123,8 @@ impl std::fmt::Display for Interlock {
             ),
             Self::RequiredCameraUnavailable { camera } => write!(
                 formatter,
-                "Required camera {camera} is unavailable. Motion resumes when it gives a fresh frame"
+                "Required camera {camera} is unavailable. Motion resumes when it gives a fresh frame. \
+                 If LiveKit is down, restart the station with --local-only-no-remote-cameras"
             ),
         }
     }

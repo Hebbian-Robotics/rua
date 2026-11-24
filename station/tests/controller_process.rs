@@ -36,7 +36,7 @@ fn write_simulated_config(root: &Path, directory: &Path) -> PathBuf {
         .args([
             "config",
             "--profile",
-            "so101-sim",
+            "so101-sim-only-no-real-arm",
             "--arm",
             "arm",
             "--urdf-limits",

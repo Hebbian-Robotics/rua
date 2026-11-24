@@ -1,8 +1,8 @@
 # Examples
 
 Start with the [browser viewer quickstart](../docs/getting-started.md) to set up
-your arm and see a robot-use agent in action. Use [MuJoCo](../docs/simulation.md)
-to test without hardware.
+your arm and see a robot-use agent in action. Use a real arm whenever available.
+Reserve [MuJoCo simulation](../docs/simulation.md) for testing without hardware.
 
 | Example | What to try |
 | --- | --- |

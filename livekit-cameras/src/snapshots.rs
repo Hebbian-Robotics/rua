@@ -13,7 +13,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use hebbian_contracts::{CameraStatus, MediaState, MediaStatusReport, unix_nanoseconds};
+use hebbian_contracts::{
+    CameraListing, CameraStatus, MediaState, MediaStatusReport, unix_nanoseconds,
+};
 use livekit::webrtc::video_frame::VideoRotation;
 use livekit_camera_frames::{CameraFrame, CameraFrames, LatestFrame, TrackIdentity, camera_frame};
 use livekit_camera_publisher::capture::CapturedI420Frame;
@@ -113,8 +115,19 @@ impl Snapshots {
             .route("/cameras", get(list))
             .route("/media/status", get(camera_status))
             .route("/cameras/{name}", get(snapshot))
+            .route("/media/local-cameras", get(local_cameras))
             .with_state(self)
     }
+
+    fn local_frame(&self, track_id: &str) -> Option<CameraFrame> {
+        match self.frames.latest(track_id) {
+            LatestFrame::Available(frame) if frame_is_fresh(frame.received_at, Instant::now()) => {
+                Some(frame)
+            }
+            _ => None,
+        }
+    }
+
     fn latest(&self, name: &str) -> Option<CameraFrame> {
         self.frames
             .tracks()
@@ -250,6 +263,22 @@ async fn snapshot(State(state): State<Snapshots>, Path(name): Path<String>) -> R
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
+
+async fn local_cameras(State(state): State<Snapshots>) -> Json<Vec<CameraListing>> {
+    let mut cameras: Vec<_> = state
+        .frames
+        .tracks()
+        .into_iter()
+        .filter(|track| track.track_sid.starts_with("local:"))
+        .map(|track| CameraListing {
+            name: track.participant,
+            available: state.local_frame(&track.track_sid).is_some(),
+        })
+        .collect();
+    cameras.sort_by(|first, second| first.name.cmp(&second.name));
+    Json(cameras)
+}
+
 fn image_response(jpeg: Vec<u8>, timestamp: u128) -> Response {
     (
         [
@@ -267,6 +296,54 @@ fn image_response(jpeg: Vec<u8>, timestamp: u128) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn local_previews_list_only_usb_feeds_and_poll_the_latest_capture()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let snapshots = Snapshots::default();
+        snapshots.register_local_frames("wrist");
+        snapshots.frames.register(TrackIdentity {
+            participant: "phone_overhead".into(),
+            track_sid: "remote".into(),
+        });
+        let frame = |jpeg| CameraFrame {
+            jpeg: Arc::from(jpeg),
+            width: 1,
+            height: 1,
+            captured_at_unix_ns: unix_nanoseconds().into(),
+            received_at: Instant::now(),
+        };
+        snapshots.frames.insert("local:wrist", frame(*b"first"));
+        snapshots.frames.insert("remote", frame(*b"phone"));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let router = snapshots.clone().router();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let base = format!("http://{address}");
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()?;
+        let local_list: serde_json::Value = client
+            .get(format!("{base}/media/local-cameras"))
+            .send()
+            .await?
+            .json()
+            .await?;
+        assert_eq!(
+            local_list,
+            serde_json::json!([{"name":"wrist","available":true}])
+        );
+        snapshots.frames.insert("local:wrist", frame(*b"later"));
+        let still_image = client
+            .get(format!("{base}/cameras/wrist"))
+            .send()
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(still_image.as_ref(), b"later");
+        server.abort();
+        Ok(())
+    }
 
     #[tokio::test]
     async fn an_expected_camera_that_never_publishes_is_listed_unavailable()
