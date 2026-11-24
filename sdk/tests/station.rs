@@ -104,11 +104,13 @@ impl TestStation {
         arm_names: &[&str],
         blocked_at: Option<f64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::start_with_media(arm_names, blocked_at, None).await
+        let initial_jaw_angle = if blocked_at.is_some() { 1.0 } else { 0.0 };
+        Self::start_with_media(arm_names, initial_jaw_angle, blocked_at, None).await
     }
 
     async fn start_with_media(
         arm_names: &[&str],
+        initial_jaw_angle: f64,
         blocked_at: Option<f64>,
         media_address: Option<std::net::SocketAddr>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -119,8 +121,7 @@ impl TestStation {
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles"),
             arm_names,
             move || ObstructedJawPlant {
-                inner: NoPhysicsStandIn::at(REST.to_vec(), 0.02)
-                    .with_gripper(if blocked_at.is_some() { 1.0 } else { 0.0 }),
+                inner: NoPhysicsStandIn::at(REST.to_vec(), 0.02).with_gripper(initial_jaw_angle),
                 blocked_at: Arc::clone(&plant_obstruction),
             },
             stub_station_routes(requests.clone()),
@@ -1363,6 +1364,31 @@ async fn rehome_reports_failure_when_the_saved_gripper_opening_is_blocked() -> T
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rehome_reports_failure_when_the_saved_gripper_opening_is_clamped() -> TestResult {
+    let station = TestStation::start_with_media(&[ARM], -0.1, None, None).await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("rehome clamped jaw"))).await??;
+    within(client.enable(ARM)).await??;
+    within(lease.set_gripper(ARM, 0.5.try_into()?, None)).await??;
+
+    let error = within(lease.rehome(ARM))
+        .await?
+        .expect_err("the saved opening is outside the calibrated range");
+    assert!(matches!(
+        error,
+        Error::Incomplete { outcome: CommandOutcome::Failed, detail: Some(detail), .. }
+            if detail.contains("Saved gripper opening was not reached")
+    ));
+    let arm = within(client.state()).await??.arms.remove(0);
+    assert_eq!(arm.mode, hebbian_contracts::ArmMode::Holding);
+    assert!(
+        arm.gripper_opening
+            .is_some_and(|opening| opening.abs() < 0.02)
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_gripper_command_reports_whether_the_jaw_arrived_or_stopped_short() -> TestResult {
     const BLOCKED_AT_RADIANS: f64 = 0.3;
     let station = TestStation::start_with_jaw_blocked_at(Some(BLOCKED_AT_RADIANS)).await?;
@@ -1552,7 +1578,7 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let media_address = listener.local_addr()?;
     let media_server = format!("http://{media_address}");
-    let station = TestStation::start_with_media(&[ARM], None, Some(media_address)).await?;
+    let station = TestStation::start_with_media(&[ARM], 0.0, None, Some(media_address)).await?;
     let media_task = tokio::spawn(async move { axum::serve(listener, media).await });
     let (client, _) = Station::connect_with(ConnectOptions {
         server: station.url.clone(),

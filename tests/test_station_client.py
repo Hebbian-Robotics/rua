@@ -49,12 +49,17 @@ def test_model_can_return_to_the_enable_time_pose(server_binary: Path) -> None:
                 StationClient(station.server) as client,
                 client.holding_lease("rest tool test") as lease,
             ):
-                original = (await client.arm(ARM).state()).rest_pose
+                enabled = await client.arm(ARM).state()
+                original = enabled.rest_pose
                 assert original is not None
+                assert enabled.gripper_opening is not None
                 displaced = list(original)
                 displaced[0] += 0.15
                 assert (await lease.arm(ARM).move_to_joints(displaced)).completed
                 assert (await lease.arm(ARM).set_gripper(1.0)).completed
+                opened = (await client.arm(ARM).state()).gripper_opening
+                assert opened == pytest.approx(1.0, abs=0.02)
+                assert opened != pytest.approx(enabled.gripper_opening, abs=0.02)
                 tools = RobotTools(
                     client,
                     lease,
@@ -81,12 +86,11 @@ def test_model_can_return_to_the_enable_time_pose(server_binary: Path) -> None:
                 assert outcome.data["phase"]["achieved"]["joints"] == pytest.approx(
                     original, abs=0.02
                 )
-                assert (await client.arm(ARM).state()).gripper_opening == pytest.approx(
-                    1.0, abs=0.02
+                rehomed = await client.arm(ARM).state()
+                assert rehomed.gripper_opening == pytest.approx(
+                    enabled.gripper_opening, abs=0.02
                 )
-                assert (await client.arm(ARM).state()).measured_joints == pytest.approx(
-                    original, abs=0.02
-                )
+                assert rehomed.measured_joints == pytest.approx(original, abs=0.02)
 
         asyncio.run(asyncio.wait_for(exercise(), timeout=30))
 

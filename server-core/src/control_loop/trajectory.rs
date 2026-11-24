@@ -60,6 +60,7 @@ impl ActiveMotion {
     fn waypoint_gripper_status(
         &mut self,
         core: &crate::arm::ArmCore,
+        gripper_limits: Option<&crate::config::GripperLimits>,
     ) -> Result<WaypointGripperStatus, Trip> {
         let Some(command_id) = &self.waypoint_gripper_command else {
             return Ok(WaypointGripperStatus::Complete);
@@ -70,19 +71,25 @@ impl ActiveMotion {
         let Some(outcome) = record.outcome() else {
             return Ok(WaypointGripperStatus::Waiting);
         };
-        if self.supervisor.final_gripper_angle().is_some()
-            && (outcome != CommandOutcome::Completed
-                || matches!(&record.phase, CommandPhase::Finished { completion, .. }
-                    if matches!(completion.gripper, Some(GripperResult::StoppedShort { .. }))))
-        {
-            let detail = record
-                .detail()
-                .unwrap_or("The jaw did not complete its move");
-            return Ok(WaypointGripperStatus::HomeFailed(format!(
-                "Saved gripper opening was not reached: {detail}"
-            )));
-        }
-        if outcome != CommandOutcome::Completed {
+        if let Some(saved_angle) = self.supervisor.final_gripper_angle() {
+            let reached_saved_angle = matches!(
+                &record.phase,
+                CommandPhase::Finished { completion, .. }
+                    if matches!(completion.gripper, Some(GripperResult::Reached { measured_angle_radians })
+                        if gripper_limits.is_some_and(|limits|
+                            (measured_angle_radians - saved_angle.radians()).abs()
+                                <= limits.position_tolerance_radians))
+            );
+            if outcome != CommandOutcome::Completed || !reached_saved_angle {
+                let detail = record
+                    .detail()
+                    .unwrap_or("The jaw did not complete its move");
+                return Ok(WaypointGripperStatus::HomeFailed(format!(
+                    "Saved gripper opening was not reached (target {:.3} rad): {detail}",
+                    saved_angle.radians()
+                )));
+            }
+        } else if outcome != CommandOutcome::Completed {
             return Err(Trip::Trajectory(format!(
                 "Waypoint gripper command ended with {outcome:?}"
             )));
@@ -247,7 +254,7 @@ impl Loop<'_> {
             .new_checkpoints(active.checkpoints_sent)
             .to_vec();
         let mut status = MotionStatus::of(&active.supervisor);
-        match active.waypoint_gripper_status(&self.core)? {
+        match active.waypoint_gripper_status(&self.core, self.config.gripper.as_ref())? {
             WaypointGripperStatus::Waiting if status == MotionStatus::Reached => {
                 status = MotionStatus::Running;
             }
