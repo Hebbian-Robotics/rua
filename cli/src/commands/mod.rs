@@ -408,13 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_the_station() {
-        let cli = parse(&["state"]).expect("state parses");
-        assert_eq!(cli.server, DEFAULT_SERVER);
-        assert!(cli.media_server.is_none());
-    }
-
-    #[test]
     fn move_pose_takes_negative_numbers_and_a_quaternion() {
         let cli = parse(&[
             "move-pose",

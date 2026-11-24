@@ -27,7 +27,8 @@ uv run cargo run --locked -p hebbian-rua-server -- serve \
   --work-directory /tmp/hebbian-station
 ```
 
-When the station prints `Plant sockets`, start MuJoCo in a second terminal:
+When the station logs `Simulator plant sockets are ready`, start MuJoCo in a
+second terminal:
 
 ```sh
 uv run --project examples/mujoco_sim --locked python examples/mujoco_sim/run.py \

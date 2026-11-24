@@ -12,16 +12,15 @@ import {
   unsupportedInferenceMode,
   unsupportedReasoningEffort,
 } from "../../../agent/src/index.js";
-import type {
-  ParsedRunRequest,
-  Run,
-  RunEvent,
-  RunPhase,
+import {
+  type ParsedRunRequest,
+  RUN_OUTPUT_LINE_LIMIT,
+  type Run,
+  type RunEvent,
+  type RunPhase,
 } from "../../shared/run-api.js";
 
 import { runLifecycle } from "./run-lifecycle.js";
-
-export const OUTPUT_LINE_LIMIT = 200;
 
 export interface RunStore {
   loadAll(): Promise<Run[]>;
@@ -215,7 +214,8 @@ export class RunManager {
 
   private appendLine(entry: LiveRun, line: string): void {
     entry.run.output.push(line);
-    if (entry.run.output.length > OUTPUT_LINE_LIMIT) entry.run.output.shift();
+    if (entry.run.output.length > RUN_OUTPUT_LINE_LIMIT)
+      entry.run.output.shift();
     const timestamp = this.options.now();
     this.enqueueWrite(entry.run.id, "output", () =>
       this.options.store.appendOutput(entry.run.id, line, timestamp),

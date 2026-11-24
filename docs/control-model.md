@@ -168,7 +168,8 @@ while an arm is disabled; execution still requires enablement, a current lease
 and live admission checks. `inspect_compilation(compilation_id)` retrieves a retained
 artifact; an unknown or expired artifact returns HTTP 404. The station retains
 up to 128 compilations in memory, preserving those used by active executions.
-Compilation IDs are scoped to the running station.
+Compilation IDs are scoped to the running station. Explicit compilation writes
+a `compilation.json` inspection file in the station's artifact workspace.
 
 A completed or stopped execution includes its `compilation_id`, requested steps
 and actual command records. Starting the compiled program again creates a new

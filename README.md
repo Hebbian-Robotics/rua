@@ -101,9 +101,6 @@ observations and execution.
 See the [documentation index](docs/README.md) for the guides, or
 [architecture](docs/architecture.md) for component boundaries.
 
-See [SO-101 setup](docs/so101-calibration.md) for hardware and
-[LiveKit Cameras](docs/cameras.md#watch-a-usb-camera) to watch live video in your browser.
-
 ## Python package
 
 The `hebbian-rua` wheel includes the Python SDK, model adapters, station, media
