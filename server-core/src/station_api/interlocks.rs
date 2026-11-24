@@ -54,7 +54,7 @@ fn apply_sample(link: &LinkHandle, sample: hebbian_contracts::Sample) {
                 });
             }
         }
-        ArmMode::Holding | ArmMode::Disabled | ArmMode::Faulted => {
+        ArmMode::Holding | ArmMode::Disabled | ArmMode::Faulted | ArmMode::Reconnected => {
             link.clear_interlocks(|interlock| {
                 matches!(
                     interlock,
@@ -62,7 +62,7 @@ fn apply_sample(link: &LinkHandle, sample: hebbian_contracts::Sample) {
                 )
             });
         }
-        ArmMode::Moving | ArmMode::Reconnected => {}
+        ArmMode::Moving => {}
     }
 }
 
@@ -78,7 +78,7 @@ mod tests {
     use crate::lease::{LEASE, Lease};
 
     #[tokio::test]
-    async fn reconnection_replaces_an_obsolete_recovery_approval_interlock() {
+    async fn reconnection_reconciles_recovery_interlocks() {
         let config =
             ControllerConfig::parse(include_str!("../../tests/support/two_joint_config.json"))
                 .unwrap();
@@ -105,9 +105,15 @@ mod tests {
 
         sample.recovery_issue = None;
         sample.cycle = 1;
-        link.publish_sample(sample);
+        link.publish_sample(sample.clone());
         update(&handle, &admission).await.unwrap();
         assert_eq!(handle.interlocks().0, vec![Interlock::ArmDisconnected]);
+
+        sample.mode = ArmMode::Reconnected;
+        sample.cycle = 2;
+        link.publish_sample(sample);
+        update(&handle, &admission).await.unwrap();
+        assert_eq!(handle.interlocks().0, [] as [Interlock; 0]);
         link.close();
     }
 }
