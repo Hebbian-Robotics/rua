@@ -141,6 +141,54 @@ impl JsonSchema for JawAngle {
     }
 }
 
+/// A normalized gripper target, from closed (0) to open (1).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct GripperOpening(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidGripperOpening;
+
+impl std::fmt::Display for InvalidGripperOpening {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("A gripper opening must be a finite number from 0 (closed) to 1 (open)")
+    }
+}
+
+impl std::error::Error for InvalidGripperOpening {}
+
+impl TryFrom<f64> for GripperOpening {
+    type Error = InvalidGripperOpening;
+
+    fn try_from(opening: f64) -> Result<Self, Self::Error> {
+        if (0.0..=1.0).contains(&opening) {
+            Ok(Self(opening))
+        } else {
+            Err(InvalidGripperOpening)
+        }
+    }
+}
+
+impl From<GripperOpening> for f64 {
+    fn from(opening: GripperOpening) -> Self {
+        opening.0
+    }
+}
+
+impl JsonSchema for GripperOpening {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "GripperOpening".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"title": "GripperOpening", "type": "number", "minimum": 0.0, "maximum": 1.0})
+    }
+}
+
 /// Why a command was not accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -400,4 +448,27 @@ pub struct PoseProjection {
     pub jaw_yaw_ranges: Vec<JawYawRange>,
     #[schemars(range(min = 0.0))]
     pub calculation_milliseconds: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GripperOpening;
+
+    #[test]
+    fn an_opening_accepts_the_closed_and_open_endpoints_as_wire_numbers() {
+        for wire_value in ["0.0", "0.5", "1.0"] {
+            let opening: GripperOpening = serde_json::from_str(wire_value).unwrap();
+            assert_eq!(serde_json::to_string(&opening).unwrap(), wire_value);
+        }
+    }
+
+    #[test]
+    fn an_opening_rejects_values_outside_the_unit_interval() {
+        for opening in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
+            assert!(GripperOpening::try_from(opening).is_err());
+        }
+        for wire_value in ["-0.1", "1.1"] {
+            assert!(serde_json::from_str::<GripperOpening>(wire_value).is_err());
+        }
+    }
 }
