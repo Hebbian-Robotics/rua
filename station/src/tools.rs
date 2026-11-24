@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use hebbian_rua_core::config::ControllerConfig;
+use hebbian_rua_core::guard::serial_bus_may_be_busy;
 use hebbian_rua_core::kinematics::pose_from_xyzw;
 use hebbian_rua_core::profile;
 use hebbian_rua_core::robot::Robot;
@@ -87,7 +88,15 @@ fn print_register_table(ids: &[u8], registers: &[(String, Result<Vec<i64>, Strin
 
 pub(crate) fn check_arm(config_path: &Path) -> anyhow::Result<()> {
     let config = load_config(config_path)?;
-    let mut servos = feetech_servos(&config)?;
+    let mut servos = feetech_servos(&config).map_err(|error| {
+        if serial_bus_may_be_busy(&error) {
+            error.context(
+                "A running station (rua serve) or another process may be holding the serial port",
+            )
+        } else {
+            error
+        }
+    })?;
     servos.preflight()?;
     let feedback = servos.read_feedback()?;
     let registers = servos.dump_registers(SERVO_TUNING_REGISTERS);

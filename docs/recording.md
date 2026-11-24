@@ -76,9 +76,14 @@ Configure [LiveKit cameras](cameras.md), then add `--enable-recording` to the
 station start command or set `HEBBIAN_ENABLE_RECORDING=true`.
 
 Call `await station.ensure_recording()` with the Python SDK to start or join
-a recording. Finish it with `await lease.stop_recording()` while holding the
-lease. In the optional viewer, use **Record**, **Record when control starts**
-or **Stop recording**.
+a recording. The TypeScript equivalent is `createRecordingClient(url).ensure()`.
+Both calls require a station that supports `POST /recording/ensure`.
+Concurrent callers receive the same recording name. If a recording is stopping,
+wait for it to finish before retrying.
+
+Finish a recording with `await lease.stop_recording()` while holding the lease.
+In the optional viewer, use **Record**, **Record when control starts** or
+**Stop recording**.
 
 Recording continues across lease handover. The TypeScript reference agent can
 stop recording on normal completion. Cancelling its run leaves recording
@@ -90,8 +95,13 @@ requests have a timeout; failures are logged and do not prevent shutdown.
 If the motor controller stops, recording continues while the station remains
 available. The recording includes controller availability events and ends with
 an incomplete status because arm telemetry has a gap, even if the controller
-later reconnects. A recorder whose supervising station exits finalizes as
-incomplete when possible. The viewer reports an unsuccessful finalization.
+later reconnects. When the archive finalizes successfully, the station reports
+`finished` with the `controller_interrupted` warning, and the viewer reports
+that the recording was saved with a telemetry gap. A `.controller-interrupted`
+file means the station observed a controller interruption. Use it to flag the
+telemetry gap in clip tooling and use the MCAP's `/recording/status` channel to
+read the archive's outcome. A recorder whose supervising station exits finalizes
+as incomplete when possible.
 Recording requests are rejected when recording is disabled. Previously saved
 recordings remain available for playback. The viewer reports recorder failures;
 camera streaming runs separately.

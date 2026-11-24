@@ -23,6 +23,9 @@ TYPESCRIPT_MODELS_PATH = Path("typescript-client/src/generated/api-schemas.ts")
 VIEWER_MEDIA_STATUS_PATH = Path(
     "examples/typescript/viewer/shared/media-status-schema.ts"
 )
+VIEWER_RECORDING_STATUS_PATH = Path(
+    "examples/typescript/viewer/shared/recording-status-schema.ts"
+)
 SCHEMA_PATHS = (
     SIM_SCHEMA_PATH,
     OPENAPI_PATH,
@@ -39,6 +42,7 @@ SDK_PATHS = {
     SdkTarget.TYPESCRIPT: (
         TYPESCRIPT_MODELS_PATH,
         VIEWER_MEDIA_STATUS_PATH,
+        VIEWER_RECORDING_STATUS_PATH,
         catalog.TYPESCRIPT_PATH,
         commands.TYPESCRIPT_PATH,
         routes.TYPESCRIPT_PATH,
@@ -212,6 +216,13 @@ def generate_typescript_models() -> None:
         "mediaStatusSchema",
         "MediaStatus",
         component="MediaStatusReport",
+    )
+    generate_typescript_schema(
+        OPENAPI_PATH,
+        VIEWER_RECORDING_STATUS_PATH,
+        "recordingStatusSchema",
+        "RecordingStatus",
+        component="RecordingStatus",
     )
     subprocess.run(
         [

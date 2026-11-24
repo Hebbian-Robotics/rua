@@ -1,5 +1,30 @@
 use super::*;
+use std::os::unix::process::ExitStatusExt as _;
 use tokio::sync::mpsc;
+
+#[test]
+fn only_a_confirmed_finalization_can_report_a_controller_warning() {
+    let requested_exit = |code| {
+        Ok(ProcessExit::Requested(std::process::ExitStatus::from_raw(
+            code << 8,
+        )))
+    };
+    assert!(matches!(
+        finalized_recording(
+            "take".into(),
+            false,
+            requested_exit(i32::from(RECORDER_CONTROLLER_INTERRUPTED_EXIT_CODE)),
+        ),
+        RecordingState::Finished {
+            warning: Some(RecordingWarning::ControllerInterrupted),
+            ..
+        }
+    ));
+    assert!(matches!(
+        finalized_recording("take".into(), true, requested_exit(1)),
+        RecordingState::Failed { .. }
+    ));
+}
 
 #[tokio::test]
 async fn shutdown_waits_for_the_final_room_announcement() -> Result<(), Box<dyn std::error::Error>>

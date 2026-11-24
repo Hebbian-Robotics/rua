@@ -60,9 +60,6 @@ const app = createApp({
   configuredProviders: availableProviders,
 });
 const recording = createRecordingClient(stationUrl);
-app.get("/api/recording/status", async (context) =>
-  context.json(await recording.status()),
-);
 const protectRecordingWrite = csrf({
   origin: (origin, context) =>
     origin === new URL(context.req.url).origin ||
@@ -85,6 +82,7 @@ app.get("/api/media/status", forwardStationApi);
 app.get("/api/media/access-token", forwardStationApi);
 app.post("/api/media/phone-invites", forwardStationApi);
 app.get("/api/recording/enabled", forwardStationApi);
+app.get("/api/recording/status", forwardStationApi);
 app.get("/api/recordings", forwardStationApi);
 app.on(["GET", "HEAD", "DELETE"], "/api/recordings/*", forwardStationApi);
 app.use(

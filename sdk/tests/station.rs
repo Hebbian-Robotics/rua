@@ -821,17 +821,9 @@ fn stub_station_routes(requests: StubRequests) -> axum::Router {
         let body = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
         let (method, path) = (parts.method.to_string(), parts.uri.path().to_owned());
         let mut log = requests.lock().expect("the stub log lock");
-        let started = log
-            .iter()
-            .any(|(_, seen, _)| seen.ends_with("/recording/start"));
         let reply = match (method.as_str(), path.as_str()) {
-            ("POST", path) if path.ends_with("/recording/start") => "rec-1".into(),
-            ("GET", path) if path.ends_with("/recording/status") && started => {
-                serde_json::json!({"state": "recording", "name": "rec-1"})
-            }
-            ("GET", path) if path.ends_with("/recording/status") => {
-                serde_json::json!({"state": "idle"})
-            }
+            ("POST", "/recording/ensure") => "rec-1".into(),
+            ("GET", "/recording/status") => serde_json::json!({"state": "idle"}),
             ("GET", "/media/status") => {
                 serde_json::json!({
                     "service": {"state": "running"},

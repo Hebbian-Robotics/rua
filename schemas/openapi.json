@@ -4481,6 +4481,16 @@
               "state": {
                 "const": "finished",
                 "type": "string"
+              },
+              "warning": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordingWarning"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -4510,6 +4520,12 @@
             "type": "object"
           }
         ]
+      },
+      "RecordingWarning": {
+        "enum": [
+          "controller_interrupted"
+        ],
+        "type": "string"
       },
       "Recordings": {
         "properties": {
@@ -7294,6 +7310,44 @@
         },
         "summary": "Whether the station can record.",
         "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/recording/ensure": {
+      "post": {
+        "operationId": "ensure_recording",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Start or join a recording and return its name. Refuse while a recording is stopping.",
+        "x-sdk": true,
         "x-server": "station"
       }
     },

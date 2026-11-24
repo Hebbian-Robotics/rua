@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiSchemas } from "hebbian-rua";
 import { CircleIcon } from "lucide-react";
 import { useRef } from "react";
 import { z } from "zod";
@@ -7,6 +6,10 @@ import { Alert } from "@/components/ui/alert.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
+import {
+  recordingStatusSchema,
+  type RecordingStatus as StationRecordingStatus,
+} from "../../../shared/recording-status-schema.js";
 import { stationJson } from "../../api.js";
 import { errorMessage } from "../../errors.js";
 import type { Run } from "../../run-logic.js";
@@ -24,10 +27,8 @@ export function useControlRecording(recordWithControl: boolean) {
     }).data ?? false;
   const status = useQuery({
     queryKey: recordingStatusKey,
-    queryFn: async () =>
-      apiSchemas.shape.RecordingStatus.parse(
-        await stationJson("/api/recording/status"),
-      ),
+    queryFn: async (): Promise<StationRecordingStatus> =>
+      recordingStatusSchema.parse(await stationJson("/api/recording/status")),
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
     retry: false,
@@ -89,6 +90,9 @@ export function useControlRecording(recordWithControl: boolean) {
     stopping: status.data?.state === "stopping",
     pending: change.isPending,
     error,
+    controllerInterrupted:
+      status.data?.state === "finished" &&
+      status.data.warning === "controller_interrupted",
     changeRecording,
     startWithControl,
   };
@@ -114,10 +118,16 @@ export function RecordingControls({
     <section className="grid gap-2" aria-labelledby="recording-heading">
       <h3 id="recording-heading">Recording</h3>
       <div className="empty:hidden" role="status">
-        {error && (
+        {error ? (
           <Alert role="presentation" variant="destructive">
             {error}
           </Alert>
+        ) : (
+          recording.controllerInterrupted && (
+            <Alert role="presentation">
+              Recording saved with a gap in arm telemetry.
+            </Alert>
+          )
         )}
       </div>
       <label className="setting-switch" htmlFor="record-with-control">
