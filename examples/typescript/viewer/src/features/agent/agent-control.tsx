@@ -8,8 +8,12 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select.js";
 import { Textarea } from "@/components/ui/textarea.js";
-import { DEFAULT_REASONING_EFFORT } from "../../../../agent/src/providers/types.js";
 import {
+  DEFAULT_INFERENCE_MODE,
+  DEFAULT_REASONING_EFFORT,
+} from "../../../../agent/src/providers/types.js";
+import {
+  inferenceModeSchema,
   type Provider,
   providerSchema,
   reasoningEffortSchema,
@@ -18,6 +22,7 @@ import { describeHolder, manualControlView } from "../../control-logic.js";
 import { manualLease } from "../../manual-lease.js";
 import {
   decideStart,
+  inferenceModeOptions,
   isRunActive,
   type RunRequest,
   runStatusLine,
@@ -59,6 +64,9 @@ export function AgentControl({
   );
   const [model, setModel] = useState("");
   const [reasoning, setReasoning] = useState(DEFAULT_REASONING_EFFORT);
+  const [preferredInferenceMode, setPreferredInferenceMode] = useState(
+    DEFAULT_INFERENCE_MODE,
+  );
   const [cameras, setCameras] = useState<
     Record<string, z.infer<typeof cameraModeSchema>>
   >({});
@@ -67,6 +75,13 @@ export function AgentControl({
     ? providers?.find((entry) => entry.provider === preferredProvider)
     : providers?.[0];
   const unavailableProvider = preferredProvider && !currentProvider;
+  const inferenceModes = inferenceModeOptions(currentProvider?.provider);
+  // A mode the current provider lacks, such as ultrafast after leaving OpenAI, falls back to standard.
+  const inferenceMode = inferenceModes.some(
+    ({ value }) => value === preferredInferenceMode,
+  )
+    ? preferredInferenceMode
+    : DEFAULT_INFERENCE_MODE;
   const armNames = stationState?.arms.map((arm) => arm.arm) ?? [];
   const selectedArmState = stationState?.arms.find(
     (arm) => arm.arm === armName,
@@ -83,6 +98,7 @@ export function AgentControl({
     provider: currentProvider?.provider ?? "",
     model,
     reasoningEffort: reasoning,
+    inferenceMode,
   };
   const decision = decideStart(form, run, armNames, startingRun);
   const active = isRunActive(run);
@@ -194,25 +210,45 @@ export function AgentControl({
                 />
               </label>
             </div>
-            <label htmlFor="agent-reasoning">
-              Reasoning effort
-              <NativeSelect
-                id="agent-reasoning"
-                value={reasoning}
-                onChange={(event) =>
-                  setReasoning(
-                    reasoningEffortSchema.parse(event.currentTarget.value),
-                  )
-                }
-              >
-                <NativeSelectOption value="low">Low</NativeSelectOption>
-                <NativeSelectOption value="medium">Medium</NativeSelectOption>
-                <NativeSelectOption value="high">High</NativeSelectOption>
-                <NativeSelectOption value="xhigh">
-                  Extra high
-                </NativeSelectOption>
-              </NativeSelect>
-            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label htmlFor="agent-reasoning">
+                Reasoning effort
+                <NativeSelect
+                  id="agent-reasoning"
+                  value={reasoning}
+                  onChange={(event) =>
+                    setReasoning(
+                      reasoningEffortSchema.parse(event.currentTarget.value),
+                    )
+                  }
+                >
+                  <NativeSelectOption value="low">Low</NativeSelectOption>
+                  <NativeSelectOption value="medium">Medium</NativeSelectOption>
+                  <NativeSelectOption value="high">High</NativeSelectOption>
+                  <NativeSelectOption value="xhigh">
+                    Extra high
+                  </NativeSelectOption>
+                </NativeSelect>
+              </label>
+              <label htmlFor="agent-inference-mode">
+                Inference mode
+                <NativeSelect
+                  id="agent-inference-mode"
+                  value={inferenceMode}
+                  onChange={(event) =>
+                    setPreferredInferenceMode(
+                      inferenceModeSchema.parse(event.currentTarget.value),
+                    )
+                  }
+                >
+                  {inferenceModes.map(({ value, label }) => (
+                    <NativeSelectOption key={value} value={value}>
+                      {label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </label>
+            </div>
             <fieldset className="grid gap-2">
               <legend className="font-medium">Cameras for the agent</legend>
               {cameraNames.length === 0 && (

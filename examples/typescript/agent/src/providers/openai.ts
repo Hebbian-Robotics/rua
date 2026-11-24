@@ -141,6 +141,11 @@ export class OpenAIConversation implements ModelConversation {
         store: true,
         prompt_cache_key: this.promptCacheKey,
         reasoning: { effort: this.settings.reasoningEffort, summary: "auto" },
+        // Standard omits the field, leaving the project's default tier.
+        ...(this.settings.inferenceMode === "fast" ||
+        this.settings.inferenceMode === "ultrafast"
+          ? { service_tier: this.settings.inferenceMode }
+          : {}),
       },
       { signal },
     );

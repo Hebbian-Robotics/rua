@@ -156,6 +156,7 @@ test("explicit model settings are preserved in the run record", async () => {
       provider: "openai",
       model: "custom-model",
       reasoningEffort: "low",
+      inferenceMode: "fast",
     },
   });
   const started = runs.start(explicitRequest);

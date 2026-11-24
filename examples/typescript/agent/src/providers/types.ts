@@ -42,6 +42,55 @@ export function unsupportedReasoningEffort(
   return `Reasoning effort xhigh is not supported by ${resolved}; use high, or a Gemini model that supports it (${GEMINI_XHIGH_MODELS.join(", ")})`;
 }
 
+// Faster, pricier serving of the same model. OpenAI has fast and ultrafast
+// (service_tier); Anthropic has fast (speed); Gemini's nearest is its Priority
+// tier (service_tier: "priority"), offered here as fast.
+export const INFERENCE_MODES = ["standard", "fast", "ultrafast"] as const;
+export type InferenceMode = (typeof INFERENCE_MODES)[number];
+export const DEFAULT_INFERENCE_MODE: InferenceMode = "standard";
+
+export const PROVIDER_INFERENCE_MODES: Record<
+  Provider,
+  readonly InferenceMode[]
+> = {
+  openai: ["standard", "fast", "ultrafast"],
+  anthropic: ["standard", "fast"],
+  gemini: ["standard", "fast"],
+};
+
+// CONSTRAINT: Only these models serve these modes
+// (https://developers.openai.com/api/docs/guides/ultrafast-mode and Anthropic's
+// fast mode docs). OpenAI fast and Gemini Priority cover their current models.
+const INFERENCE_MODE_MODELS: Partial<
+  Record<`${Provider}:${InferenceMode}`, string[]>
+> = {
+  "openai:ultrafast": [
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+  ],
+  "anthropic:fast": [
+    "claude-fable-5-2",
+    "claude-mythos-5-2",
+    "claude-opus-5-5",
+  ],
+};
+
+// WHY: Rejected before the run starts, rather than failing on the first model turn.
+export function unsupportedInferenceMode(
+  provider: Provider,
+  model: string | null,
+  mode: InferenceMode,
+): string | null {
+  if (!PROVIDER_INFERENCE_MODES[provider].includes(mode))
+    return `Inference mode ${mode} is not offered by ${provider}`;
+  const models = INFERENCE_MODE_MODELS[`${provider}:${mode}`];
+  const resolved = model ?? DEFAULT_MODELS[provider];
+  if (models === undefined || models.includes(resolved)) return null;
+  return `Inference mode ${mode} is not supported by ${resolved}; use standard, or a model that supports it (${models.join(", ")})`;
+}
+
 // Anthropic requires an explicit output limit; the other providers do not.
 export const ANTHROPIC_MAX_OUTPUT_TOKENS = 128_000;
 // Every SDK retries rate limits, overloads and dropped connections with backoff;
@@ -102,6 +151,8 @@ export interface ConversationSettings {
   tools: ToolSpec[];
   firstObservation: Observation;
   reasoningEffort: ReasoningEffort;
+  // Standard when absent.
+  inferenceMode?: InferenceMode;
 
   apiKey?: string;
 }

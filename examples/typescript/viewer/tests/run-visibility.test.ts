@@ -25,7 +25,12 @@ test("clearing dismisses every part of a run and its later updates while admitti
       task: "Pick up the block",
       cameras: [],
       optionalCameras: [],
-      settings: { provider: null, model: null, reasoningEffort: null },
+      settings: {
+        provider: null,
+        model: null,
+        reasoningEffort: null,
+        inferenceMode: null,
+      },
     },
     phase: { state: "running", startedAt: 1 },
     output: [],

@@ -14,11 +14,15 @@ import { DEFAULT_STATION_URL, type OnInterruption } from "hebbian-rua";
 import { type LoopConfig, requirePositiveModelTurnLimit } from "./loop.js";
 import { cameraNames } from "./observation.js";
 import {
+  DEFAULT_INFERENCE_MODE,
   DEFAULT_REASONING_EFFORT,
+  INFERENCE_MODES,
+  type InferenceMode,
   PROVIDERS,
   type Provider,
   REASONING_EFFORTS,
   type ReasoningEffort,
+  unsupportedInferenceMode,
   unsupportedReasoningEffort,
 } from "./providers/types.js";
 import {
@@ -69,6 +73,14 @@ function createCommand(): Command {
     )
     .addOption(
       new Option(
+        "--inference-mode <mode>",
+        "Faster, pricier serving: fast on every provider (Gemini's Priority tier), ultrafast on OpenAI only.",
+      )
+        .choices(INFERENCE_MODES)
+        .default(DEFAULT_INFERENCE_MODE),
+    )
+    .addOption(
+      new Option(
         "--on-interruption <action>",
         "What to do when the arm needs recovery.",
       )
@@ -88,6 +100,7 @@ interface CommandOptions {
   model?: string;
   maxTurns?: number;
   reasoningEffort: ReasoningEffort;
+  inferenceMode: InferenceMode;
   onInterruption: OnInterruption;
   record?: boolean;
 }
@@ -136,13 +149,11 @@ export function parseCommandLine(
     values.model ?? (environmentModel?.trim() ? environmentModel : null);
   if (model !== null && !model.trim())
     throw new Error("Pass a nonempty model ID with --model");
-  const { maxTurns: maxModelTurns, reasoningEffort } = values;
-  const effortProblem = unsupportedReasoningEffort(
-    provider,
-    model,
-    reasoningEffort,
-  );
-  if (effortProblem !== null) throw new Error(effortProblem);
+  const { maxTurns: maxModelTurns, reasoningEffort, inferenceMode } = values;
+  const settingsProblem =
+    unsupportedReasoningEffort(provider, model, reasoningEffort) ??
+    unsupportedInferenceMode(provider, model, inferenceMode);
+  if (settingsProblem !== null) throw new Error(settingsProblem);
   const server =
     values.server ?? environment["HEBBIAN_STATION_URL"] ?? DEFAULT_STATION_URL;
   return {
@@ -158,6 +169,7 @@ export function parseCommandLine(
       model,
       ...(maxModelTurns === undefined ? {} : { maxModelTurns }),
       reasoningEffort,
+      inferenceMode,
       onInterruption: values.onInterruption,
       record: values.record ?? false,
     },

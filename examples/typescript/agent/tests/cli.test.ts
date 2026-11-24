@@ -43,6 +43,46 @@ test("the flags of the manual loop command the viewer shows are understood", () 
   });
 });
 
+test("the inference mode defaults to standard and is refused where the provider or model lacks it", () => {
+  expect(parseRun(["--provider", "openai", "a", "t"]).config).toMatchObject({
+    inferenceMode: "standard",
+  });
+  expect(
+    parseRun([
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-6-astra",
+      "--inference-mode",
+      "ultrafast",
+      "a",
+      "t",
+    ]).config.inferenceMode,
+  ).toBe("ultrafast");
+  expect(() =>
+    parseRun([
+      "--provider",
+      "anthropic",
+      "--inference-mode",
+      "ultrafast",
+      "a",
+      "t",
+    ]),
+  ).toThrow("not offered by anthropic");
+  expect(() =>
+    parseRun([
+      "--provider",
+      "anthropic",
+      "--model",
+      "claude-sonnet-5-5",
+      "--inference-mode",
+      "fast",
+      "a",
+      "t",
+    ]),
+  ).toThrow("fast is not supported by claude-sonnet-5-5");
+});
+
 test("xhigh reasoning effort is opt-in and refused where the model lacks it", () => {
   expect(parseRun(["--provider", "openai", "a", "t"]).config).toMatchObject({
     reasoningEffort: "high",

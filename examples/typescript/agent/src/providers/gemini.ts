@@ -145,6 +145,10 @@ export class GeminiConversation implements ModelConversation {
           thinking_level: this.settings.reasoningEffort,
           thinking_summaries: "auto",
         },
+        // Gemini's Priority tier is its fast mode; over its limits a request runs at standard.
+        ...(this.settings.inferenceMode === "fast"
+          ? { service_tier: "priority" }
+          : {}),
       },
       signal === undefined
         ? undefined

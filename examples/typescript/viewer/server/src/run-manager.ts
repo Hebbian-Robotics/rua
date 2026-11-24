@@ -5,10 +5,12 @@ import { type ActorRefFrom, createActor } from "xstate";
 import {
   type AgentOutcome,
   apiKeyFromEnvironment,
+  DEFAULT_INFERENCE_MODE,
   DEFAULT_MODELS,
   DEFAULT_REASONING_EFFORT,
   type RunAgentOptions,
   runAgent,
+  unsupportedInferenceMode,
   unsupportedReasoningEffort,
 } from "../../../agent/src/index.js";
 import type {
@@ -90,19 +92,19 @@ export class RunManager {
     const model = request.settings.model ?? DEFAULT_MODELS[provider];
     const reasoningEffort =
       request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
-    const effortProblem = unsupportedReasoningEffort(
-      provider,
-      model,
-      reasoningEffort,
-    );
-    if (effortProblem !== null) throw new RunSettingsError(effortProblem);
+    const inferenceMode =
+      request.settings.inferenceMode ?? DEFAULT_INFERENCE_MODE;
+    const settingsProblem =
+      unsupportedReasoningEffort(provider, model, reasoningEffort) ??
+      unsupportedInferenceMode(provider, model, inferenceMode);
+    if (settingsProblem !== null) throw new RunSettingsError(settingsProblem);
     const now = this.options.now();
     const run: Run = {
       id: this.options.newId(),
       createdAt: now,
       request: {
         ...request,
-        settings: { provider, model, reasoningEffort },
+        settings: { provider, model, reasoningEffort, inferenceMode },
       },
       phase: { state: "running", startedAt: now },
       output: [],
@@ -237,6 +239,8 @@ export class RunManager {
           model: request.settings.model,
           reasoningEffort:
             request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+          inferenceMode:
+            request.settings.inferenceMode ?? DEFAULT_INFERENCE_MODE,
           onInterruption: "wait_for_approval",
           record: false,
           stationUrl: this.options.stationUrl,

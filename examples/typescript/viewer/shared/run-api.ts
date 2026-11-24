@@ -2,11 +2,15 @@
 // Times are Unix milliseconds.
 
 import { z } from "zod";
-import { REASONING_EFFORTS } from "../../agent/src/providers/types.js";
+import {
+  INFERENCE_MODES,
+  REASONING_EFFORTS,
+} from "../../agent/src/providers/types.js";
 
 export const RUN_STREAM_HEARTBEAT_EVENT = "heartbeat";
 
 export const reasoningEffortSchema = z.enum(REASONING_EFFORTS);
+export const inferenceModeSchema = z.enum(INFERENCE_MODES);
 export const providerSchema = z.enum(["anthropic", "openai", "gemini"]);
 export type Provider = z.infer<typeof providerSchema>;
 
@@ -19,6 +23,8 @@ export const runRequestSchema = z.object({
     provider: providerSchema.nullable().default(null),
     model: z.string().min(1).nullable().default(null),
     reasoningEffort: reasoningEffortSchema.nullable().default(null),
+    // Runs saved before inference modes read as standard.
+    inferenceMode: inferenceModeSchema.nullable().default(null),
   }),
 });
 export type RunRequest = z.input<typeof runRequestSchema>;

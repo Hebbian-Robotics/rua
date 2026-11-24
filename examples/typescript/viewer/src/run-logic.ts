@@ -3,7 +3,11 @@
 
 import { match } from "ts-pattern";
 import {
+  type InferenceMode,
+  PROVIDER_INFERENCE_MODES,
+  type Provider,
   type ReasoningEffort,
+  unsupportedInferenceMode,
   unsupportedReasoningEffort,
 } from "../../agent/src/providers/types.js";
 import {
@@ -45,6 +49,29 @@ export interface RunFormValues {
   provider: string;
   model: string;
   reasoningEffort: ReasoningEffort;
+  inferenceMode: InferenceMode;
+}
+
+const INFERENCE_MODE_LABELS: Record<InferenceMode, string> = {
+  standard: "Standard",
+  fast: "Fast",
+  ultrafast: "Ultrafast",
+};
+
+// The modes a provider offers, named as that provider names them.
+export function inferenceModeOptions(
+  provider: Provider | undefined,
+): { value: InferenceMode; label: string }[] {
+  const modes: readonly InferenceMode[] = provider
+    ? PROVIDER_INFERENCE_MODES[provider]
+    : ["standard"];
+  return modes.map((value) => ({
+    value,
+    label:
+      provider === "gemini" && value === "fast"
+        ? "Priority"
+        : INFERENCE_MODE_LABELS[value],
+  }));
 }
 
 export type StartDecision =
@@ -75,15 +102,17 @@ export function decideStart(
     };
   const request = buildRunRequest(form);
   const { provider, model } = request.settings;
-  const effortProblem =
+  const settingsProblem =
     provider == null
       ? null
-      : unsupportedReasoningEffort(
+      : (unsupportedReasoningEffort(
           provider,
           model ?? null,
           form.reasoningEffort,
-        );
-  if (effortProblem !== null) return { kind: "blocked", reason: effortProblem };
+        ) ??
+        unsupportedInferenceMode(provider, model ?? null, form.inferenceMode));
+  if (settingsProblem !== null)
+    return { kind: "blocked", reason: settingsProblem };
   return { kind: "allowed", request };
 }
 
@@ -104,6 +133,7 @@ export function buildRunRequest(form: RunFormValues): RunRequest {
       provider: providerSchema.safeParse(form.provider).data ?? null,
       model: form.model.trim() || null,
       reasoningEffort: form.reasoningEffort,
+      inferenceMode: form.inferenceMode,
     },
   };
 }
@@ -139,6 +169,10 @@ export function manualLoopCommand(
     ["--provider", settings.provider],
     ["--model", settings.model],
     ["--reasoning-effort", settings.reasoningEffort],
+    [
+      "--inference-mode",
+      settings.inferenceMode === "standard" ? null : settings.inferenceMode,
+    ],
   ];
   return [
     "pnpm",

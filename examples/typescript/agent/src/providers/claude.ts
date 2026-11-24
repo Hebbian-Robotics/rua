@@ -100,6 +100,7 @@ export class ClaudeConversation implements ModelConversation {
       })),
       output_config: { effort: settings.reasoningEffort },
       thinking: { type: "adaptive", display: "summarized" },
+      ...(settings.inferenceMode === "fast" ? { speed: "fast" as const } : {}),
       // Let the API advance the cache breakpoint as the thread grows.
       cache_control: { type: "ephemeral" },
       // If the API cannot thread a request, send each turn's full history instead.

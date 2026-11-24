@@ -17,7 +17,12 @@ const run: Run = {
     task: "stack the cups",
     cameras: [],
     optionalCameras: [],
-    settings: { provider: null, model: null, reasoningEffort: null },
+    settings: {
+      provider: null,
+      model: null,
+      reasoningEffort: null,
+      inferenceMode: null,
+    },
   },
   phase: { state: "running", startedAt: 1000 },
   output: [],

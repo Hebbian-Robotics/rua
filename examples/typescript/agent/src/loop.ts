@@ -20,7 +20,9 @@ import { isProviderError } from "./providers/errors.js";
 import { startConversation } from "./providers/index.js";
 import {
   type ConversationSettings,
+  DEFAULT_INFERENCE_MODE,
   DEFAULT_MODELS,
+  type InferenceMode,
   type ModelConversation,
   type ModelRefusal,
   type ModelTurn,
@@ -49,6 +51,8 @@ export interface LoopConfig {
   model: string | null;
   maxModelTurns?: number;
   reasoningEffort: ReasoningEffort;
+  // Standard when absent.
+  inferenceMode?: InferenceMode;
 
   onInterruption: OnInterruption;
 
@@ -299,6 +303,7 @@ async function runLoop(
     ],
     firstObservation: first.observation,
     reasoningEffort: config.reasoningEffort,
+    inferenceMode: config.inferenceMode ?? DEFAULT_INFERENCE_MODE,
     ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
   };
   const conversation =

@@ -228,6 +228,7 @@ function RunRequestDetails({ run }: { run: Run }) {
               "Reasoning effort",
               request.settings.reasoningEffort ?? "Server default",
             ],
+            ["Inference mode", request.settings.inferenceMode ?? "standard"],
             ["Arm", request.arm],
             ["Required cameras", request.cameras.join(", ") || "None"],
             ["Optional cameras", request.optionalCameras.join(", ") || "None"],

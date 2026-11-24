@@ -130,6 +130,18 @@ test("bad bodies and unknown runs are refused with a detail", async () => {
   expect(await unsupported.json()).toEqual({
     detail: expect.stringContaining("gemini-4-carbon"),
   });
+  const noUltrafast = await server.request("/api/runs", {
+    ...post,
+    body: JSON.stringify({
+      arm: "follower",
+      task: "t",
+      settings: { provider: "anthropic", inferenceMode: "ultrafast" },
+    }),
+  });
+  expect(noUltrafast.status).toBe(400);
+  expect(await noUltrafast.json()).toEqual({
+    detail: expect.stringContaining("not offered by anthropic"),
+  });
   expect(await (await server.request("/api/runs/current")).json()).toBeNull();
   const missing = await server.request("/api/runs/ghost");
   expect(missing.status).toBe(404);

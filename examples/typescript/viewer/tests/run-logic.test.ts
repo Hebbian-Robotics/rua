@@ -3,6 +3,7 @@ import {
   buildRunRequest,
   decideStart,
   formatElapsed,
+  inferenceModeOptions,
   manualLoopCommand,
   type Run,
   type RunFormValues,
@@ -25,6 +26,7 @@ function runIn(phase: Run["phase"]): Run {
         provider: null,
         model: null,
         reasoningEffort: null,
+        inferenceMode: null,
       },
     },
     phase,
@@ -49,6 +51,7 @@ const form: RunFormValues = {
   provider: "",
   model: "",
   reasoningEffort: "high",
+  inferenceMode: "standard",
 };
 const arms = ["follower", "other"];
 
@@ -139,8 +142,63 @@ test("model choices and blank cameras reach the request", () => {
     provider: "openai",
     model: "custom",
     reasoningEffort: "high",
+    inferenceMode: "standard",
   });
   expect(buildRunRequest({ ...form, cameras: "   " }).cameras).toEqual([]);
+});
+
+test("each provider offers its own inference modes, Gemini's fast named Priority", () => {
+  const labels = (provider?: "openai" | "anthropic" | "gemini") =>
+    inferenceModeOptions(provider).map(({ label }) => label);
+  expect(labels("openai")).toEqual(["Standard", "Fast", "Ultrafast"]);
+  expect(labels("anthropic")).toEqual(["Standard", "Fast"]);
+  expect(labels("gemini")).toEqual(["Standard", "Priority"]);
+  expect(labels()).toEqual(["Standard"]);
+});
+
+test("an inference mode starts only where the provider and model serve it", () => {
+  const ultrafast = {
+    ...form,
+    provider: "openai",
+    model: "gpt-6-astra",
+    inferenceMode: "ultrafast",
+  } as const;
+  expect(decideStart(ultrafast, null, arms, false)).toMatchObject({
+    kind: "allowed",
+    request: { settings: { inferenceMode: "ultrafast" } },
+  });
+  expect(
+    decideStart({ ...ultrafast, model: "gpt-5.6" }, null, arms, false),
+  ).toMatchObject({
+    kind: "blocked",
+    reason: expect.stringContaining("gpt-5.6"),
+  });
+  expect(
+    decideStart(
+      { ...ultrafast, provider: "anthropic", model: "" },
+      null,
+      arms,
+      false,
+    ),
+  ).toMatchObject({
+    kind: "blocked",
+    reason: expect.stringContaining("not offered by anthropic"),
+  });
+  const fast = { ...form, inferenceMode: "fast" } as const;
+  expect(
+    decideStart({ ...fast, provider: "anthropic" }, null, arms, false).kind,
+  ).toBe("allowed");
+  expect(
+    decideStart(
+      { ...fast, provider: "anthropic", model: "claude-sonnet-5-5" },
+      null,
+      arms,
+      false,
+    ).kind,
+  ).toBe("blocked");
+  expect(
+    decideStart({ ...fast, provider: "gemini" }, null, arms, false).kind,
+  ).toBe("allowed");
 });
 
 test("the manual loop command quotes the task and carries the choices", () => {
@@ -152,6 +210,16 @@ test("the manual loop command quotes the task and carries the choices", () => {
   expect(manualLoopCommand(request, "http://station:8792")).toBe(
     "pnpm --filter @hebbian/agent start --server http://station:8792 --camera chest,wrist_r --provider openai --reasoning-effort high -- follower 'it'\\''s a cup'",
   );
+  expect(
+    manualLoopCommand(
+      buildRunRequest({
+        ...form,
+        provider: "openai",
+        inferenceMode: "ultrafast",
+      }),
+      "http://station:8792",
+    ),
+  ).toContain("--reasoning-effort high --inference-mode ultrafast --");
 });
 
 test("the status line shows elapsed time against now, or the run's own duration once ended", () => {
