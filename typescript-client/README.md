@@ -65,6 +65,10 @@ reached its planned targets; a stopped result explains why it ended. A dropped
 connection stops the action sequence by default. See the
 [control model](../docs/control-model.md) for lease and interruption behavior.
 
+Pass `signal` or `timeoutMilliseconds` to `waitForActionSequence` to bound the
+client's wait. To stop a running sequence, call `cancelActionSequence` with its
+ID and wait for a terminal result before submitting another move.
+
 ## Compile before running
 
 Ordinary sequences compile automatically. Advanced callers can inspect first:

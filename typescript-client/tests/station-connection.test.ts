@@ -155,6 +155,25 @@ test("a handshake timeout backs off even when a listener asks to reconnect", asy
   }
 });
 
+test("an action-sequence wait can expire or be aborted", async () => {
+  const connection = createStationConnection("http://127.0.0.1:1", "agent");
+  const cancellation = new AbortController();
+  try {
+    const cancelled = expect(
+      connection.waitForActionSequence("sequence", {
+        signal: cancellation.signal,
+      }),
+    ).rejects.toThrow("Run canceled");
+    cancellation.abort(new Error("Run canceled"));
+    await cancelled;
+    await expect(
+      connection.waitForActionSequence("sequence", { timeoutMilliseconds: 5 }),
+    ).rejects.toThrow("Timed out waiting for action sequence sequence");
+  } finally {
+    connection.close();
+  }
+});
+
 test.each(["before", "after"] as const)(
   "action-sequence waits started %s closing reject instead of hanging",
   async (timing) => {

@@ -12,6 +12,7 @@ use hebbian_contracts::{Checkpoint, CornerPlan, Segment};
 
 const SAME_CORNER_RADIANS: f64 = 1e-12;
 pub(crate) const CONTINUITY_RADIANS: f64 = 1e-8;
+pub(crate) const MIN_TRACKING_SPEED_FRACTION: f64 = 0.3;
 
 // CONSTRAINT: Validation only calculates trajectories. Online sections replace this initial
 // constructor period with the actual cycle interval before updating.
@@ -131,6 +132,7 @@ impl std::ops::Deref for ValidatedPlan {
 
 struct SmoothTrajectory {
     waypoints: Vec<Vec<f64>>,
+    section_durations: Vec<f64>,
 }
 
 impl SmoothTrajectory {
@@ -170,6 +172,7 @@ impl SmoothTrajectory {
             Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
         // WHY: Each section is computed once here so a plan Ruckig cannot follow is
         // refused before it starts.
+        let mut section_durations = Vec::with_capacity(waypoints.len() - 1);
         for pair in waypoints.windows(2) {
             let mut input = InputParameter::<0>::new(Some(joint_count));
             for (joint, (start, end)) in pair[0].iter().zip(&pair[1]).enumerate() {
@@ -193,8 +196,12 @@ impl SmoothTrajectory {
                 section_duration.is_finite() && section_duration >= 0.0,
                 "Invalid Ruckig trajectory duration"
             );
+            section_durations.push(section_duration);
         }
-        Ok(Self { waypoints })
+        Ok(Self {
+            waypoints,
+            section_durations,
+        })
     }
 }
 
@@ -204,6 +211,13 @@ pub enum Stage {
     Settling,
     Moving,
     Done,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MotionEnd {
+    Reached,
+    StoppedShort,
+    TrajectoryTimedOut,
 }
 
 // WHY: One persistent scalar generator owns a collision-checked straight section.
@@ -288,22 +302,26 @@ impl OnlineSection {
         interval: f64,
         reference: &mut Reference,
         speed_limit: f64,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         let timed = self.input.minimum_duration.is_some();
         if !timed {
             self.input.max_velocity[0] = speed_limit;
         }
-        self.step(interval, reference)?;
+        let finished = self.step(interval, reference)?;
         // SAFETY: Replanning a timed section would reset its duration. Trip
         // before sending a sample above the lag-adjusted speed cap.
         ensure!(
             !timed || self.output.new_velocity[0].abs() <= speed_limit + 1e-9,
             "Tracking lag requires slowing down a timed trajectory"
         );
-        Ok(())
+        Ok(finished)
     }
 
-    pub(crate) fn step(&mut self, interval: f64, reference: &mut Reference) -> anyhow::Result<()> {
+    pub(crate) fn step(
+        &mut self,
+        interval: f64,
+        reference: &mut Reference,
+    ) -> anyhow::Result<bool> {
         // CONSTRAINT: The section owns a fixed endpoint and duration. Feed back Ruckig's
         // emitted state so it can keep sampling the same trajectory.
         ensure!(
@@ -311,12 +329,17 @@ impl OnlineSection {
             "A section interval must be positive and finite"
         );
         self.generator.delta_time = interval;
-        match self.generator.update(&self.input, &mut self.output) {
-            Ok(RuckigResult::Working | RuckigResult::Finished) => {}
+        let finished = match self.generator.update(&self.input, &mut self.output) {
+            Ok(RuckigResult::Working) => false,
+            Ok(RuckigResult::Finished) => true,
             Ok(other) => bail!("Online trajectory failed: {other:?}"),
             Err(error) => bail!("Online trajectory failed: {error}"),
-        }
+        };
         self.output.pass_to_input(&mut self.input);
+        if finished {
+            reference.set_at_rest(&self.target, None);
+            return Ok(true);
+        }
         reference.positions.resize(self.start.len(), 0.0);
         reference.velocities.resize(self.start.len(), 0.0);
         reference.accelerations.resize(self.start.len(), 0.0);
@@ -330,7 +353,7 @@ impl OnlineSection {
                 self.output.new_acceleration[0] / self.distance * displacement;
         }
         reference.speed_limit = None;
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -346,7 +369,7 @@ struct CornerPathTracker {
     corner_index: usize,
     section: Option<OnlineSection>,
     checkpoints: Vec<Checkpoint>,
-    stopped_short: bool,
+    end: Option<MotionEnd>,
 }
 
 impl CornerPathTracker {
@@ -381,7 +404,7 @@ impl CornerPathTracker {
             corner_index: 1,
             section: None,
             checkpoints: Vec::new(),
-            stopped_short: false,
+            end: None,
         })
     }
 
@@ -437,17 +460,20 @@ impl CornerPathTracker {
             );
             return Ok(());
         }
-        let corners = &self.trajectories[self.segment_index].waypoints;
+        let trajectory = &self.trajectories[self.segment_index];
+        let corners = &trajectory.waypoints;
         if corners.len() <= 1 {
             self.reference.set_at_rest(&corners[0], None);
             self.stage = Stage::Settling;
             return Ok(());
         }
         let target = &corners[self.corner_index];
-        if max_joint_deviation(&self.reference.positions, target) <= SAME_CORNER_RADIANS
+        let finished = if max_joint_deviation(&self.reference.positions, target)
+            <= SAME_CORNER_RADIANS
             && self.section.is_none()
         {
             self.reference.set_at_rest(target, None);
+            true
         } else {
             if self.section.is_none() {
                 self.section = Some(OnlineSection::new(
@@ -458,22 +484,33 @@ impl CornerPathTracker {
                     self.plan.segments[self.segment_index].minimum_duration_seconds,
                 )?);
             }
-            if let Some(section) = &mut self.section {
-                section.step_with_speed_limit(
+            self.section
+                .as_mut()
+                .context("Missing the active trajectory section")?
+                .step_with_speed_limit(
                     interval,
                     &mut self.reference,
                     self.plan.peak_speed * speed_fraction,
-                )?;
-            }
-        }
-        if max_joint_deviation(&self.reference.positions, target) <= SAME_CORNER_RADIANS
-            && self.reference.velocities.iter().all(|v| v.abs() < 1e-8)
-        {
+                )?
+        };
+        if finished {
             if self.corner_index + 1 < corners.len() {
                 self.corner_index += 1;
                 self.section = None;
+                self.section_elapsed = 0.0;
             } else {
                 self.stage = Stage::Settling;
+            }
+        } else {
+            self.section_elapsed += interval;
+            // WHY: Retiming can restart the generator's clock. Bound the total time
+            // spent on this section, allowing for the slowest tracking speed cap.
+            let deadline = trajectory.section_durations[self.corner_index - 1]
+                / MIN_TRACKING_SPEED_FRACTION
+                + self.limits.settle_timeout_seconds;
+            if self.section_elapsed >= deadline {
+                self.end = Some(MotionEnd::TrajectoryTimedOut);
+                self.stage = Stage::Done;
             }
         }
         Ok(())
@@ -492,14 +529,19 @@ impl CornerPathTracker {
             destination_quaternion: segment.destination_quaternion,
         });
         self.segment_index += 1;
-        if self.segment_index == self.plan.segments.len() {
-            self.stopped_short = stalled_short;
+        if stalled_short || self.segment_index == self.plan.segments.len() {
+            self.end = Some(if stalled_short {
+                MotionEnd::StoppedShort
+            } else {
+                MotionEnd::Reached
+            });
             self.stage = Stage::Done;
             return Ok(());
         }
         self.stage = Stage::Moving;
         self.corner_index = 1;
         self.section = None;
+        self.section_elapsed = 0.0;
         Ok(())
     }
 }
@@ -534,12 +576,16 @@ impl MotionSupervisor {
 
     #[must_use]
     pub fn done(&self) -> bool {
-        self.tracker.stage == Stage::Done
+        self.end().is_some()
     }
 
     #[must_use]
     pub fn stopped_short(&self) -> bool {
-        self.tracker.stopped_short
+        self.end() == Some(MotionEnd::StoppedShort)
+    }
+
+    pub(crate) fn end(&self) -> Option<MotionEnd> {
+        self.tracker.end
     }
 
     #[must_use]
@@ -626,15 +672,12 @@ impl MotionSupervisor {
             } else {
                 0.0
             };
-            // WHY: An arm that stops short (servo deadband, a load) carries on from
-            // where it is once the settle timeout passes outside the tolerance;
-            // the checkpoint records the measured joints.
+            // WHY: Briefly entering tolerance at the deadline cannot extend settling.
             self.settling_seconds += interval;
-            let stalled = self.settling_seconds >= self.limits.settle_timeout_seconds
-                && endpoint_error > self.limits.settled_error_radians;
-            if self.settled_seconds >= self.limits.settle_dwell_seconds || stalled {
+            let settled = self.settled_seconds >= self.limits.settle_dwell_seconds;
+            if settled || self.settling_seconds >= self.limits.settle_timeout_seconds {
                 self.tracker
-                    .settled(measured, stalled)
+                    .settled(measured, !settled)
                     .map_err(|e| Self::internal(&e))?;
                 self.restart_stage();
             }

@@ -1,6 +1,6 @@
 use super::activity::{Activity, Loop};
 use crate::arm::{AdmittedPlan, GroupMembership, Now};
-use crate::corner_path::MotionSupervisor;
+use crate::corner_path::{MIN_TRACKING_SPEED_FRACTION, MotionEnd, MotionSupervisor};
 use crate::limits::{Trip, max_joint_deviation};
 use crate::plant::Feedback;
 use crate::reference_filter::Reference;
@@ -36,7 +36,8 @@ fn tracking_speed_fraction(
         if excess_lag > 0.0 {
             // WHY: Leave room for the guard allowance to shrink while braking.
             let speed_with_margin = 0.55 * static_margin / excess_lag;
-            fraction = fraction.min((speed_with_margin / requested_speed).clamp(0.3, 1.0));
+            fraction = fraction
+                .min((speed_with_margin / requested_speed).clamp(MIN_TRACKING_SPEED_FRACTION, 1.0));
         }
     }
     // WHY: Avoid replanning on tiny fluctuations in the velocity estimate.
@@ -112,14 +113,16 @@ pub(super) enum MotionStatus {
     Running,
     Reached,
     StoppedShort,
+    TrajectoryTimedOut,
 }
 
 impl MotionStatus {
     pub(super) fn of(supervisor: &MotionSupervisor) -> Self {
-        match (supervisor.done(), supervisor.stopped_short()) {
-            (false, _) => Self::Running,
-            (true, false) => Self::Reached,
-            (true, true) => Self::StoppedShort,
+        match supervisor.end() {
+            None => Self::Running,
+            Some(MotionEnd::Reached) => Self::Reached,
+            Some(MotionEnd::StoppedShort) => Self::StoppedShort,
+            Some(MotionEnd::TrajectoryTimedOut) => Self::TrajectoryTimedOut,
         }
     }
 }
@@ -268,12 +271,11 @@ impl Loop<'_> {
             WaypointGripperStatus::Waiting | WaypointGripperStatus::Complete => {}
         }
         self.core.set_segment(active.supervisor.segment_label());
-        let gripper_angle = if new.is_empty() {
-            None
-        } else if status == MotionStatus::Reached {
-            active.supervisor.final_gripper_angle()
-        } else {
-            active.supervisor.waypoint_gripper(active.checkpoints_sent)
+        let gripper_angle = match status {
+            _ if new.is_empty() => None,
+            MotionStatus::Reached => active.supervisor.final_gripper_angle(),
+            MotionStatus::Running => active.supervisor.waypoint_gripper(active.checkpoints_sent),
+            MotionStatus::StoppedShort | MotionStatus::TrajectoryTimedOut => None,
         };
         let waypoint_gripper = gripper_angle
             .map(|angle| {
@@ -311,6 +313,15 @@ impl Loop<'_> {
         checkpoints: Vec<Checkpoint>,
         detail: String,
     ) -> MotionEffects {
+        self.prepare_braking_hold(checkpoints, CommandOutcome::Stopped, detail)
+    }
+
+    fn prepare_braking_hold(
+        &mut self,
+        checkpoints: Vec<Checkpoint>,
+        outcome: CommandOutcome,
+        detail: String,
+    ) -> MotionEffects {
         let hold = self
             .hold_at
             .get_or_insert_with(|| self.filter.stopping_position());
@@ -319,7 +330,7 @@ impl Loop<'_> {
             waypoint_gripper: None,
             checkpoints,
             completion: Some(MotionCompletion {
-                outcome: CommandOutcome::Stopped,
+                outcome,
                 detail: Some(detail),
                 hold: hold.clone(),
             }),
@@ -336,7 +347,7 @@ impl Loop<'_> {
             status,
             final_pose,
         } = progress;
-        let (outcome, detail) = match status {
+        let (outcome, detail, hold) = match status {
             MotionStatus::Running => {
                 return MotionEffects {
                     waypoint_gripper: None,
@@ -344,21 +355,28 @@ impl Loop<'_> {
                     completion: None,
                 };
             }
-            // WHY: The last rest point may have stalled short; the outcome says so and
-            // the record carries each joint's error.
+            MotionStatus::TrajectoryTimedOut => {
+                let error = max_joint_deviation(&feedback.positions, &final_pose);
+                return self.prepare_braking_hold(
+                    checkpoints,
+                    CommandOutcome::TimedOut,
+                    format!("Trajectory did not finish before its deadline; remaining joint error {error:.4} rad"),
+                );
+            }
             MotionStatus::StoppedShort => {
                 let errors: Vec<String> = feedback
                     .positions
                     .iter()
-                    .zip(&self.reference.positions)
+                    .zip(&final_pose)
                     .map(|(measured, target)| format!("{:.3}", (measured - target).abs()))
                     .collect();
                 (
                     CommandOutcome::StoppedShort,
                     format!(
-                        "Stopped short; final joint errors (rad): [{}]",
+                        "Settling deadline expired; remaining joint errors (rad): [{}]",
                         errors.join(", ")
                     ),
+                    feedback.positions.clone(),
                 )
             }
             MotionStatus::Reached => {
@@ -367,17 +385,18 @@ impl Loop<'_> {
                 (
                     CommandOutcome::Completed,
                     format!("Final joint error {final_error:.4} rad"),
+                    final_pose,
                 )
             }
         };
-        self.reference.set_at_rest(&final_pose, None);
+        self.reference.set_at_rest(&hold, None);
         MotionEffects {
             waypoint_gripper: None,
             checkpoints,
             completion: Some(MotionCompletion {
                 outcome,
                 detail: Some(detail),
-                hold: final_pose,
+                hold,
             }),
         }
     }
@@ -536,7 +555,7 @@ mod tests {
                 }
                 plant.step(next, interval);
                 if motion.done() {
-                    return Ok((!motion.stopped_short(), peak_speed, cycle));
+                    return Ok((motion.end() == Some(MotionEnd::Reached), peak_speed, cycle));
                 }
             }
             Ok((false, peak_speed, 300))

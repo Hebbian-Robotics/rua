@@ -39,8 +39,8 @@ static_margin_radians = 0.1
 settled_error_radians = 0.05
 # A move is done once the arm has stayed within the tolerance for the dwell, about
 # 1.4x the following lag; shorter finishes sooner but risks calling an arm settled
-# while it is still overshooting. An arm still outside the tolerance this long after
-# the reference stops ends the move stopped_short. Measure on each arm.
+# while it is still overshooting. The move ends stopped_short if the full dwell
+# has not elapsed within the timeout after the reference stops. Measure on each arm.
 settle_dwell_seconds = 0.15
 settle_timeout_seconds = 2
 

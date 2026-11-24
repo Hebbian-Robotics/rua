@@ -843,6 +843,35 @@ fn run_motion_cycle(runner: &mut Runner<'_, ScriptedPlant>) {
 }
 
 #[test]
+fn a_stalled_move_reports_stopped_short_and_holds_at_feedback() {
+    use hebbian_contracts::CommandOutcome;
+
+    let mut input = config("stalled-motion-hold").into_input();
+    input.motion.settled_error_radians = 0.005;
+    input.motion.settle_timeout_seconds = 0.2;
+    let config = ControllerConfig::try_from(input).unwrap();
+    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &Calls::default());
+    let link = test_link(&config);
+    let mut runner = powered_runner(&mut plant, &config, &link);
+    let command_id = start_short_move(&mut runner, None);
+
+    for _ in 0..100 {
+        run_motion_cycle(&mut runner);
+    }
+
+    let record = runner.state.core.record(&command_id).unwrap();
+    assert_eq!(record.outcome(), Some(CommandOutcome::StoppedShort));
+    assert_eq!(runner.state.core.mode(), ArmMode::Holding);
+    assert!(
+        runner
+            .state
+            .next_command
+            .iter()
+            .all(|joint| joint.abs() < 1e-6)
+    );
+}
+
+#[test]
 fn the_completion_and_checkpoint_wait_for_the_confirming_plant_write() {
     use hebbian_contracts::CommandOutcome;
 

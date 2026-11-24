@@ -593,7 +593,10 @@ function createRobotToolsCore(
                       sequenceId = await lease.startActionSequence(
                         message.action_sequence,
                       );
-                      return connection.waitForActionSequence(sequenceId);
+                      return connection.waitForActionSequence(
+                        sequenceId,
+                        waitOptions,
+                      );
                     },
                   );
                   const outcomes = sequence.steps
