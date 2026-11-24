@@ -108,7 +108,7 @@ if you pass a camera name:
 
 ```sh
 uv run --project examples/python --locked python examples/python/agent_quickstart.py \
-  "Wave hello" --camera sim_overview
+  --provider openai --model gpt-6.2-astra "Wave hello" --camera sim_overview
 ```
 
 Omit `--camera` for a state-only run. See the

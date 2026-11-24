@@ -12,7 +12,6 @@ import {
 } from "../../agent/src/providers/types.js";
 import {
   isRunActive,
-  providerSchema,
   type Run,
   type RunRequest,
   runRequestSchema,
@@ -46,7 +45,7 @@ export interface RunFormValues {
   arm: string;
   cameras: string;
   optionalCameras: string;
-  provider: string;
+  provider: Provider | "";
   model: string;
   reasoningEffort: ReasoningEffort;
   inferenceMode: InferenceMode;
@@ -100,17 +99,14 @@ export function decideStart(
           ? "Waiting for the station's arms."
           : "Choose an arm.",
     };
-  const request = buildRunRequest(form);
+  if (!form.provider)
+    return { kind: "blocked", reason: "Choose a model provider." };
+  if (!form.model.trim()) return { kind: "blocked", reason: "Choose a model." };
+  const request = buildRunRequest({ ...form, provider: form.provider });
   const { provider, model } = request.settings;
   const settingsProblem =
-    provider == null
-      ? null
-      : (unsupportedReasoningEffort(
-          provider,
-          model ?? null,
-          form.reasoningEffort,
-        ) ??
-        unsupportedInferenceMode(provider, model ?? null, form.inferenceMode));
+    unsupportedReasoningEffort(provider, model, form.reasoningEffort) ??
+    unsupportedInferenceMode(provider, model, form.inferenceMode);
   if (settingsProblem !== null)
     return { kind: "blocked", reason: settingsProblem };
   return { kind: "allowed", request };
@@ -123,15 +119,17 @@ function splitNames(names: string): string[] {
     .filter((name) => name !== "");
 }
 
-export function buildRunRequest(form: RunFormValues): RunRequest {
+export function buildRunRequest(
+  form: RunFormValues & { provider: Provider },
+): RunRequest {
   return {
     arm: form.arm,
     task: form.task.trim(),
     cameras: splitNames(form.cameras),
     optionalCameras: splitNames(form.optionalCameras),
     settings: {
-      provider: providerSchema.safeParse(form.provider).data ?? null,
-      model: form.model.trim() || null,
+      provider: form.provider,
+      model: form.model.trim(),
       reasoningEffort: form.reasoningEffort,
       inferenceMode: form.inferenceMode,
     },
@@ -156,8 +154,6 @@ export function manualLoopCommand(
 ): string {
   const { arm, task, cameras, optionalCameras, settings } =
     runRequestSchema.parse(request);
-  if (settings.provider === null)
-    throw new Error("Select a provider to generate an agent command");
   const cameraFlags: [string, string | null][] = [
     ["--camera", cameras.length > 0 ? cameras.join(",") : null],
     [

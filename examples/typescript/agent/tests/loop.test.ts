@@ -18,7 +18,7 @@ const config: LoopConfig = {
   cameras: ["cam"],
   optionalCameras: [],
   provider: "anthropic",
-  model: null,
+  model: "claude-fable-5-2",
   reasoningEffort: "high",
   onInterruption: "wait_for_approval",
   record: false,

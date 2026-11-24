@@ -505,6 +505,10 @@ export function WorkspaceApp({
                   onStartRun={startRun}
                   runError={runError}
                   armName={armName}
+                  modelSelection={preferences.agentModelSelection}
+                  onModelSelectionChange={(agentModelSelection) =>
+                    updatePreferences({ ...preferences, agentModelSelection })
+                  }
                   onStopRun={stopRun}
                   stoppingRun={stoppingRun}
                   stationState={connected ? stationState : null}

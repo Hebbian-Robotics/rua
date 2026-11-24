@@ -8,38 +8,30 @@ import type {
   RobotToolResult,
 } from "hebbian-rua";
 
-export const PROVIDERS = ["anthropic", "openai", "gemini"] as const;
+export const PROVIDERS = ["openai", "gemini", "anthropic"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
 
-export const DEFAULT_MODELS: Record<Provider, string> = {
-  anthropic: "claude-fable-5-2",
-  openai: "gpt-6.2-astra",
-  gemini: "gemini-4-neon",
-};
-
 // CONSTRAINT: Gemini's thinking_level accepts xhigh only on these models
-// (https://ai.google.dev/gemini-api/docs/thinking); the OpenAI and Anthropic
-// default models accept it.
+// (https://ai.google.dev/gemini-api/docs/thinking).
 const GEMINI_XHIGH_MODELS = ["gemini-4-neon", "gemini-4-hydrogen"];
 
 // WHY: Rejected before the run starts, rather than failing on the first model turn.
 export function unsupportedReasoningEffort(
   provider: Provider,
-  model: string | null,
+  model: string,
   effort: ReasoningEffort,
 ): string | null {
-  const resolved = model ?? DEFAULT_MODELS[provider];
   if (
     provider !== "gemini" ||
     effort !== "xhigh" ||
-    GEMINI_XHIGH_MODELS.includes(resolved)
+    GEMINI_XHIGH_MODELS.includes(model)
   )
     return null;
-  return `Reasoning effort xhigh is not supported by ${resolved}; use high, or a Gemini model that supports it (${GEMINI_XHIGH_MODELS.join(", ")})`;
+  return `Reasoning effort xhigh is not supported by ${model}; use high, or a Gemini model that supports it (${GEMINI_XHIGH_MODELS.join(", ")})`;
 }
 
 // Faster, pricier serving of the same model. OpenAI has fast and ultrafast
@@ -80,15 +72,14 @@ const INFERENCE_MODE_MODELS: Partial<
 // WHY: Rejected before the run starts, rather than failing on the first model turn.
 export function unsupportedInferenceMode(
   provider: Provider,
-  model: string | null,
+  model: string,
   mode: InferenceMode,
 ): string | null {
   if (!PROVIDER_INFERENCE_MODES[provider].includes(mode))
     return `Inference mode ${mode} is not offered by ${provider}`;
   const models = INFERENCE_MODE_MODELS[`${provider}:${mode}`];
-  const resolved = model ?? DEFAULT_MODELS[provider];
-  if (models === undefined || models.includes(resolved)) return null;
-  return `Inference mode ${mode} is not supported by ${resolved}; use standard, or a model that supports it (${models.join(", ")})`;
+  if (models === undefined || models.includes(model)) return null;
+  return `Inference mode ${mode} is not supported by ${model}; use standard, or a model that supports it (${models.join(", ")})`;
 }
 
 // Anthropic requires an explicit output limit; the other providers do not.

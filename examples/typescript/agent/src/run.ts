@@ -3,7 +3,11 @@
 
 import { createStationConnection } from "hebbian-rua";
 import { type DriveOptions, drive, type LoopConfig } from "./loop.js";
-import { API_KEY_VARIABLES, type Provider } from "./providers/types.js";
+import {
+  API_KEY_VARIABLES,
+  PROVIDERS,
+  type Provider,
+} from "./providers/types.js";
 import type { UsageSnapshot } from "./usage.js";
 
 export interface AgentConfig extends LoopConfig {
@@ -41,12 +45,10 @@ export function apiKeyFromEnvironment(
   return apiKey;
 }
 
-export const PROVIDER_PRIORITY = ["openai", "gemini", "anthropic"] as const;
-
 export function configuredProviders(
   environment: NodeJS.ProcessEnv,
 ): Provider[] {
-  return PROVIDER_PRIORITY.filter(
+  return PROVIDERS.filter(
     (provider) => configuredApiKey(provider, environment) !== undefined,
   );
 }
@@ -66,6 +68,16 @@ export async function runAgent(
   options: RunAgentOptions = {},
 ): Promise<AgentOutcome> {
   const { stationUrl, mediaUrl, apiKey, ...loopConfig } = config;
+  if (
+    !PROVIDERS.includes(config.provider) ||
+    typeof config.model !== "string" ||
+    !config.model.trim()
+  ) {
+    const cause = new Error(
+      "Pass a supported provider and a nonempty model ID",
+    );
+    return { kind: "failed", reason: cause.message, cause };
+  }
   const connection = createStationConnection(stationUrl, "agent");
   connection.start();
   try {

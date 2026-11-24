@@ -18,7 +18,8 @@ then try a state-only task from the repository root.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm --filter @hebbian/agent start --max-turns 3 -- "Describe the robot state. Keep the arm still."
+pnpm --filter @hebbian/agent start --provider openai --model gpt-6.2-astra \
+  --max-turns 3 -- "Describe the robot state. Keep the arm still."
 ```
 
 Run `pnpm --filter @hebbian/agent start --help` for arm, station, provider,

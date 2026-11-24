@@ -24,6 +24,7 @@ test("viewer preferences follow the system theme and hide commanded joints by de
     showTargetJoints: true,
     showCommandedJoints: false,
     showCameraLabels: true,
+    agentModelSelection: null,
     recordWithControl: false,
   });
 });
@@ -34,6 +35,10 @@ test("saved preferences are shared and invalid or missing values get safe defaul
     ...readViewerPreferences(preferencesStorage),
     showTargetJoints: false,
     showCommandedJoints: true,
+    agentModelSelection: {
+      provider: "gemini" as const,
+      model: "gemini-4-hydrogen",
+    },
     recordWithControl: true,
     theme: "light" as const,
     motionLimits: {
@@ -52,6 +57,7 @@ test("saved preferences are shared and invalid or missing values get safe defaul
     theme: "system",
     showTargetJoints: true,
     showCommandedJoints: false,
+    agentModelSelection: null,
     recordWithControl: false,
   });
 });

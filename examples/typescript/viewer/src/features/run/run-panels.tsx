@@ -217,13 +217,13 @@ function RunRequestDetails({ run }: { run: Run }) {
           <span>
             {request.settings.model ??
               request.settings.provider ??
-              "Server defaults"}
+              "Unrecorded"}
           </span>
         </summary>
         <dl className="run-settings-list">
           {[
-            ["Provider", request.settings.provider ?? "Server default"],
-            ["Model", request.settings.model ?? "Server default"],
+            ["Provider", request.settings.provider ?? "Unrecorded"],
+            ["Model", request.settings.model ?? "Unrecorded"],
             [
               "Reasoning effort",
               request.settings.reasoningEffort ?? "Server default",

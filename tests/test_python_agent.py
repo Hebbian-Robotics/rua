@@ -1,17 +1,16 @@
 import asyncio
 import json
+import subprocess
+import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
 
 from examples.python.agent_quickstart import (
-    DEFAULT_MODELS,
     AgentRobotTools,
     ModelInputCapture,
     Provider,
-    resolve_model,
-    resolve_provider,
     run_anthropic,
     run_gemini,
     run_openai,
@@ -22,34 +21,24 @@ from tests.fixture_station_http import scripted_http_station
 
 
 @pytest.mark.parametrize(
-    ("provider", "model_variable", "default_model"),
+    ("arguments", "required_flag"),
     [
-        ("openai", "OPENAI_MODEL", "gpt-6.2-astra"),
-        ("anthropic", "ANTHROPIC_MODEL", "claude-fable-5-2"),
-        ("gemini", "GEMINI_MODEL", "gemini-4-neon"),
+        (["--model", "gpt-6.2-astra"], "--provider"),
+        (["--provider", "openai"], "--model"),
     ],
 )
-def test_agent_uses_the_selected_providers_model_unless_overridden(
-    provider: Provider, model_variable: str, default_model: str
+def test_agent_cli_requires_provider_and_model(
+    arguments: list[str], required_flag: str
 ) -> None:
-    environment = {
-        "OPENAI_MODEL": "gpt-example",
-        "ANTHROPIC_MODEL": "claude-example",
-        "GEMINI_MODEL": "gemini-example",
-    }
-    assert resolve_model(provider, None, environment) == environment[model_variable]
-    assert resolve_model(provider, "explicit-model", environment) == "explicit-model"
-    assert resolve_model(provider, None, {}) == default_model
-
-
-def test_agent_provider_priority_and_override() -> None:
-    anthropic_key = {"ANTHROPIC_API_KEY": "test-anthropic"}
-    gemini_and_anthropic_keys = {"GOOGLE_API_KEY": "test-gemini", **anthropic_key}
-    all_keys = {"OPENAI_API_KEY": "test-openai", **gemini_and_anthropic_keys}
-    assert resolve_provider(None, all_keys) == "openai"
-    assert resolve_provider(None, gemini_and_anthropic_keys) == "gemini"
-    assert resolve_provider(None, anthropic_key) == "anthropic"
-    assert resolve_provider("anthropic", all_keys) == "anthropic"
+    script = Path(__file__).resolve().parents[1] / "examples/python/agent_quickstart.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "Describe the station", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert required_flag in result.stderr
 
 
 @pytest.mark.server
@@ -199,6 +188,12 @@ def test_python_agent_continues_with_new_tool_results_and_observations(
             return ModelContent("initial station state", {"table": b"initial frame"})
         return ModelContent("fresh station state", {"table": b"fresh frame"})
 
+    model_id = {
+        "openai": "gpt-6.2-astra",
+        "gemini": "gemini-4-neon",
+        "anthropic": "claude-fable-5-2",
+    }[provider]
+
     async def exercise() -> None:
         async with (
             asyncio.timeout(10),
@@ -219,9 +214,7 @@ def test_python_agent_continues_with_new_tool_results_and_observations(
                     client, lease, "follower"
                 ).with_output_formatter(format_observation)
                 robot.model_inputs = ModelInputCapture(str(tmp_path))
-                await run_agent(
-                    robot, "initial task", DEFAULT_MODELS[provider], "instructions", 2
-                )
+                await run_agent(robot, "initial task", model_id, "instructions", 2)
 
     asyncio.run(exercise())
 
