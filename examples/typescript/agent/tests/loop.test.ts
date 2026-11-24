@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { createStationConnection } from "hebbian-rua";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { drive, type LoopConfig } from "../src/loop.js";
@@ -62,6 +65,9 @@ async function runLoop(
 
 test("Claude request telemetry is parented to the model turn without model content", async () => {
   vi.stubEnv("ANTHROPIC_BASE_URL", "http://claude.test");
+  const modelInputs = await mkdtemp(join(tmpdir(), "rua-model-inputs-test-"));
+  vi.stubEnv("HEBBIAN_RUA_MODEL_INPUTS_DIR", modelInputs);
+  let submittedRequest: string | undefined;
   const stationFetch = globalThis.fetch;
   const modelEvents = [
     {
@@ -109,6 +115,7 @@ test("Claude request telemetry is parented to the model turn without model conte
       const url =
         input instanceof Request ? new URL(input.url) : new URL(input);
       if (url.host !== "claude.test") return stationFetch(input, init);
+      if (typeof init?.body === "string") submittedRequest = init.body;
       return Promise.resolve(
         new Response(
           modelEvents
@@ -140,6 +147,20 @@ test("Claude request telemetry is parented to the model turn without model conte
     const requestSpans = spans.filter(
       (span) => span.parent_span_id === modelSpan?.span_id,
     );
+    const manifest = modelSpan?.attributes["hebbian.model_inputs.path"];
+    expect(typeof manifest).toBe("string");
+    if (typeof manifest !== "string")
+      throw new Error("Missing model input index");
+    expect(manifest).toBe(
+      join(modelInputs, modelSpan?.trace_id ?? "", "turn-0001", "index.json"),
+    );
+    expect(JSON.parse(await readFile(manifest, "utf8"))).toEqual({
+      turn: 1,
+      images: [{ file: "1.jpg", camera: "cam" }],
+    });
+    const jpeg = await readFile(join(dirname(manifest), "1.jpg"));
+    expect(jpeg).toEqual(Buffer.from([1, 2, 3]));
+    expect(submittedRequest).toContain(jpeg.toString("base64"));
     expect(requestSpans).toHaveLength(1);
     expect(requestSpans[0]).toMatchObject({ trace_id: modelSpan?.trace_id });
     expect(JSON.stringify(requestSpans)).not.toMatch(
@@ -147,6 +168,7 @@ test("Claude request telemetry is parented to the model turn without model conte
     );
   } finally {
     connection.close();
+    await rm(modelInputs, { recursive: true, force: true });
   }
 });
 

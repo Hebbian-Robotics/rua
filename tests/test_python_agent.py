@@ -8,6 +8,7 @@ import pytest
 from examples.python.agent_quickstart import (
     DEFAULT_MODELS,
     AgentRobotTools,
+    ModelInputCapture,
     Provider,
     resolve_model,
     resolve_provider,
@@ -167,6 +168,7 @@ def test_python_agent_continues_with_new_tool_results_and_observations(
     run_agent: Callable[[AgentRobotTools, str, str, str, int], Awaitable[None]],
     base_url_variable: str,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     requests: list[str] = []
 
@@ -216,6 +218,7 @@ def test_python_agent_continues_with_new_tool_results_and_observations(
                 robot = AgentRobotTools(
                     client, lease, "follower"
                 ).with_output_formatter(format_observation)
+                robot.model_inputs = ModelInputCapture(str(tmp_path))
                 await run_agent(
                     robot, "initial task", DEFAULT_MODELS[provider], "instructions", 2
                 )
@@ -229,6 +232,19 @@ def test_python_agent_continues_with_new_tool_results_and_observations(
     assert "initial station state" not in second
     assert "aW5pdGlhbCBmcmFtZQ==" not in second
     assert "ZnJlc2ggZnJhbWU=" in second
+
+    [run_images] = tmp_path.iterdir()
+    [initial, follow_up_images] = sorted(run_images.iterdir())
+    assert (initial / "1.jpg").read_bytes() == b"initial frame"
+    assert (follow_up_images / "1.jpg").read_bytes() == b"fresh frame"
+    assert json.loads((initial / "index.json").read_text()) == {
+        "turn": 1,
+        "images": [{"file": "1.jpg", "camera": "table", "tool_call_id": None}],
+    }
+    assert json.loads((follow_up_images / "index.json").read_text()) == {
+        "turn": 2,
+        "images": [{"file": "1.jpg", "camera": "table", "tool_call_id": "observe-1"}],
+    }
     follow_up = json.loads(second)
     match provider:
         case "openai":

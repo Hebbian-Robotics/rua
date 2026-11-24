@@ -4,6 +4,7 @@ import type {
   BetaMessage,
 } from "@anthropic-ai/sdk/resources/beta/messages";
 import type { RobotToolResult } from "hebbian-rua";
+import { PendingModelImages } from "../model-inputs.js";
 import {
   ANTHROPIC_MAX_OUTPUT_TOKENS,
   type ConversationSettings,
@@ -70,6 +71,7 @@ function observationBlocks(observation: Observation): BetaContentBlockParam[] {
 }
 
 export class ClaudeConversation implements ModelConversation {
+  private readonly modelInputs = new PendingModelImages();
   private readonly thread;
 
   constructor(settings: ConversationSettings, client?: Anthropic) {
@@ -109,6 +111,7 @@ export class ClaudeConversation implements ModelConversation {
   }
 
   async nextTurn(signal?: AbortSignal): Promise<ModelTurn | ModelRefusal> {
+    await this.modelInputs.save();
     // Streamed: a high-effort turn with a large max_tokens can outlast a buffered
     // request's timeout. Aborting the signal ends the stream.
     const stream = this.thread.stream(undefined, undefined, { signal });
@@ -116,6 +119,9 @@ export class ClaudeConversation implements ModelConversation {
   }
 
   addToolResults(results: RobotToolResult[], observation?: Observation): void {
+    for (const result of results)
+      if (result.cameras) this.modelInputs.add(result.cameras, result.call.id);
+    if (observation) this.modelInputs.add(observation.cameras);
     this.thread.append({
       role: "user",
       content: [
@@ -141,6 +147,7 @@ export class ClaudeConversation implements ModelConversation {
   }
 
   addObservation(observation: Observation): void {
+    this.modelInputs.add(observation.cameras);
     this.thread.append({
       role: "user",
       content: observationBlocks(observation),

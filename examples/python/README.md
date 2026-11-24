@@ -76,3 +76,21 @@ tool names, and error status. Prompts, images, and tool arguments stay out of
 the spans.
 
 Claude request spans come from the Anthropic SDK in metadata-only mode.
+
+
+## Save the images sent to the model
+
+Set `HEBBIAN_RUA_MODEL_INPUTS_DIR` to save the JPEGs supplied on each model turn:
+
+```sh
+HEBBIAN_RUA_MODEL_INPUTS_DIR=/tmp/rua-model-inputs \
+  uv run agent_quickstart.py --camera wrist "Describe what you see."
+```
+
+The agent prints the run directory. Each turn's `index.json` lists the images
+in request order with their camera labels and any tool call IDs. With tracing
+enabled, the `hebbian.model_inputs.path` span attribute points to that index on
+the machine running the agent. Capture covers newly submitted images, including
+images returned by tools. Earlier images held by the provider are in their
+original turn folders. Choose a persistent path to keep the files beyond
+temporary-directory cleanup.
