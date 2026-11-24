@@ -110,6 +110,7 @@ pub(crate) struct Inner {
     records: HashMap<hebbian_contracts::CommandId, ArmRecord>,
     record_order: VecDeque<hebbian_contracts::CommandId>,
     lease_state: LeaseState,
+    lease_loss_status: bool,
     resume_after: BTreeMap<String, u64>,
     run_after: Option<u64>,
 }
@@ -235,7 +236,7 @@ impl Shared {
     }
 
     pub(crate) fn install_lease(&self, generation: u64, token: String) -> bool {
-        self.update(|inner| {
+        let installed = self.update(|inner| {
             if !inner.connected
                 || inner.connection_generation != generation
                 || !matches!(inner.lease_state, LeaseState::Acquiring)
@@ -243,17 +244,32 @@ impl Shared {
                 return false;
             }
             inner.lease_state = LeaseState::Held { token };
-            // INVARIANT: Publish loss and acquisition while holding the same state lock.
-            self.lease_lost.send_replace(false);
+            inner.lease_loss_status = false;
             true
-        })
+        });
+        if installed {
+            self.publish_lease_loss_status();
+        }
+        installed
     }
 
     pub(crate) fn lose_lease_if_held_by(&self, token: &str) {
-        self.update(|inner| {
-            if inner.lease_state.clear_if_held_by(token) {
-                self.lease_lost.send_replace(true);
-            }
+        let lost = self.update(|inner| {
+            let lost = inner.lease_state.clear_if_held_by(token);
+            inner.lease_loss_status |= lost;
+            lost
+        });
+        if lost {
+            self.publish_lease_loss_status();
+        }
+    }
+
+    fn publish_lease_loss_status(&self) {
+        // INVARIANT: Acquire the watch lock with no station lock held. Sample the
+        // latest state once publications are serialized so a late publisher cannot
+        // overwrite a newer transition with its own snapshot.
+        self.lease_lost.send_modify(|published| {
+            *published = self.read(|inner| inner.lease_loss_status);
         });
     }
 
@@ -314,7 +330,7 @@ impl Shared {
         let mut backoff = hebbian_contracts::Backoff::new(RECONNECT_DELAY_CAP);
         loop {
             let ended = self.serve().await;
-            let was_connected = self.update(|inner| {
+            let (was_connected, lease_lost) = self.update(|inner| {
                 let was_connected = inner.connected;
                 if was_connected {
                     inner.connection_generation = inner.connection_generation.wrapping_add(1);
@@ -327,11 +343,13 @@ impl Shared {
                 if let Err(error) = &ended {
                     inner.last_error = Some(error.clone());
                 }
-                if inner.lease_state.lose() {
-                    self.lease_lost.send_replace(true);
-                }
-                was_connected
+                let lease_lost = inner.lease_state.lose();
+                inner.lease_loss_status |= lease_lost;
+                (was_connected, lease_lost)
             });
+            if lease_lost {
+                self.publish_lease_loss_status();
+            }
             if was_connected {
                 backoff.reset();
             } else {
@@ -484,8 +502,9 @@ impl Shared {
             ServerMessage::LeaseLost { .. } => {
                 self.update(|inner| {
                     inner.lease_state.lose();
-                    self.lease_lost.send_replace(true);
+                    inner.lease_loss_status = true;
                 });
+                self.publish_lease_loss_status();
             }
             ServerMessage::RunEvent {
                 seq,
@@ -545,5 +564,44 @@ impl Shared {
         if fresh {
             let _ = self.run_updates.send(update);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Shared;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn lease_loss_is_visible_while_a_subscriber_holds_the_previous_notification()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let shared = Shared::new(String::new(), None);
+        shared.update(|inner| inner.connected = true);
+        let generation = shared
+            .reserve_lease_acquisition()
+            .ok_or("reservation refused")?;
+        let token = "held";
+        assert!(shared.install_lease(generation, token.into()));
+        let notifications = shared.subscribe_lease_lost();
+        let notification = notifications.borrow();
+        let runtime = tokio::runtime::Handle::current();
+        let (loss_observed, observed) = std::sync::mpsc::channel();
+        let observed_while_borrowed = std::thread::scope(|threads| {
+            threads.spawn(|| shared.lose_lease_if_held_by(token));
+            let shared = &shared;
+            threads.spawn(move || {
+                runtime.block_on(shared.wait_for_lease_loss(token));
+                let _ = loss_observed.send(());
+            });
+            let observed_while_borrowed = observed.recv_timeout(Duration::from_secs(2));
+            drop(notification);
+            observed_while_borrowed
+        });
+        assert!(
+            observed_while_borrowed.is_ok(),
+            "lease state was blocked by a notification reader"
+        );
+        assert!(*notifications.borrow());
+        Ok(())
     }
 }
