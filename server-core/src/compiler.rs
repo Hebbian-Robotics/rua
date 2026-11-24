@@ -10,6 +10,8 @@ use hebbian_contracts::{
     ActionSequenceArmAction, ActionSequenceGoal, ActionSequenceRequest, GripperOpening, JointSpeed,
 };
 
+use crate::motion_values::is_valid_trajectory_limit;
+
 pub(crate) fn requested_joints(action: &CompiledArmAction) -> Option<&[f64]> {
     match action {
         CompiledArmAction::Move {
@@ -262,6 +264,12 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
                 ),
             };
             let max_joint_speed = speed(max_joint_speed.or(movement_speed))?;
+            if !max_joint_acceleration.is_none_or(is_valid_trajectory_limit) {
+                return Err("A joint acceleration must be positive and finite");
+            }
+            if !max_joint_jerk.is_none_or(is_valid_trajectory_limit) {
+                return Err("A joint jerk must be positive and finite");
+            }
             Ok(CompiledArmAction::Move {
                 waypoints,
                 goal,
@@ -394,6 +402,57 @@ mod tests {
             diagnostic.to_string(),
             "Step 2, arm right: A gripper opening must be finite and between 0 and 1"
         );
+    }
+
+    #[test]
+    fn invalid_motion_caps_in_a_later_step_reject_the_whole_sequence() {
+        let move_action = |max_joint_acceleration, max_joint_jerk| ActionSequenceArmAction::Move {
+            waypoints: vec![],
+            goal: ActionSequenceGoal::Joints {
+                joints: vec![0.1],
+                max_joint_speed: None,
+            },
+            gripper_opening: None,
+            max_joint_speed: None,
+            max_joint_acceleration,
+            max_joint_jerk,
+        };
+        let step = |acceleration, jerk| {
+            hebbian_contracts::ActionSequenceStep::single("arm", move_action(acceleration, jerk))
+        };
+        let targets = BTreeMap::from([(
+            "arm".into(),
+            CompilationTarget {
+                configuration_identity: "fixture".into(),
+                joint_count: 1,
+                jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
+                supports_joints: true,
+                supports_pose: true,
+                has_gripper: false,
+            },
+        )]);
+        let mut request = ActionSequenceRequest {
+            steps: vec![step(None, None), step(Some(2.0), Some(10.0))],
+            expected_revisions: BTreeMap::new(),
+        };
+        let mut compiler = RobotUseCompiler::default();
+        assert!(compiler.compile(&request, &targets).is_ok());
+
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            for (acceleration, jerk, quantity) in [
+                (Some(invalid), None, "acceleration"),
+                (None, Some(invalid), "jerk"),
+            ] {
+                request.steps[1] = step(acceleration, jerk);
+                let diagnostic = compiler.compile(&request, &targets).unwrap_err();
+                assert_eq!(diagnostic.step, Some(1));
+                assert_eq!(diagnostic.arm.as_deref(), Some("arm"));
+                assert_eq!(
+                    diagnostic.detail,
+                    format!("A joint {quantity} must be positive and finite")
+                );
+            }
+        }
     }
 
     #[test]

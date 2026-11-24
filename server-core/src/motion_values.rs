@@ -38,6 +38,10 @@ impl GroupId {
     }
 }
 
+pub(crate) fn is_valid_trajectory_limit(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
 pub(crate) fn resolve_trajectory_limits(
     limits: hebbian_contracts::TrajectoryLimits,
     acceleration: Option<f64>,
@@ -46,7 +50,7 @@ pub(crate) fn resolve_trajectory_limits(
     let resolve = |requested: Option<f64>, ceiling: f64, name: &str| {
         let value = requested.unwrap_or(ceiling);
         anyhow::ensure!(
-            value.is_finite() && value > 0.0 && value <= ceiling,
+            is_valid_trajectory_limit(value) && value <= ceiling,
             "Requested {name} must be positive and at or below the arm profile ceiling of {ceiling}"
         );
         Ok(value)
