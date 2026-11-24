@@ -1,4 +1,4 @@
 # Socket plant using the hardware arm's control tolerances and force budget.
 extends = "so101-common"
-name = "so101-sim"
+name = "so101-sim-only-no-real-arm"
 driver = "simulator"

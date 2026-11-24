@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
@@ -39,6 +40,41 @@ def test_agent_cli_requires_provider_and_model(
     )
     assert result.returncode != 0
     assert required_flag in result.stderr
+
+
+def test_agent_cli_requires_provider_key_before_connecting(tmp_path: Path) -> None:
+    quickstart = (
+        Path(__file__).resolve().parents[1] / "examples/python/agent_quickstart.py"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(quickstart),
+            "Describe the robot state.",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-6.2-astra",
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "OPENAI_API_KEY": "",
+            "ANTHROPIC_API_KEY": "",
+            "GEMINI_API_KEY": "",
+            "GOOGLE_API_KEY": "",
+            "LIVEKIT_URL": "",
+            "LIVEKIT_API_KEY": "",
+            "LIVEKIT_API_SECRET": "",
+            "HEBBIAN_STATION_URL": "http://127.0.0.1:1",
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 2, result.stderr
+    assert "Set OPENAI_API_KEY" in result.stderr
 
 
 @pytest.mark.server

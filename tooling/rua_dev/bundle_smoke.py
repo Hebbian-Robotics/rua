@@ -190,7 +190,7 @@ def main() -> None:
                     command,
                     "serve",
                     "--profile",
-                    "so101-sim",
+                    "so101-sim-only-no-real-arm",
                     "--work-directory",
                     temporary,
                     "--http-address",

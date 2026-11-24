@@ -6,8 +6,9 @@ environment or the repository’s `.env`. Run `pnpm build` and
 `pnpm start:viewer`, then open <http://127.0.0.1:8793/viewer/>. Set
 `HEBBIAN_STATION_URL` to connect to a station other than the local default. Follow the
 [viewer build instructions](../../../docs/install-from-source.md#optional-viewer)
-and start a station with [your arm connected](../../../docs/getting-started.md).
-Use [MuJoCo](../../../docs/simulation.md) to test the viewer without hardware.
+and start a station with [a real arm connected](../../../docs/getting-started.md)
+whenever available. Reserve [MuJoCo simulation](../../../docs/simulation.md) for
+testing without hardware.
 The viewer uses the published TypeScript SDK from the lockfile.
 Each browser tab opens a session on the viewer backend. The backend connects
 to the station through the TypeScript SDK, streams state to the tab, and
@@ -23,12 +24,17 @@ operation and [the agent example](../agent/README.md) for model setup. Open
 [the camera guide](../../../docs/cameras.md) for connection details and
 [the recording guide](../../../docs/recording.md) for capture and playback.
 
-## Start without an agent
+Use LiveKit for normal operation. During an outage, restart the station with
+`rua serve --local-only-no-remote-cameras` and reload the viewer to see the
+local USB feeds in **Workspace**. [Local camera setup](../../../docs/cameras.md#preview-local-cameras-during-an-outage)
 
-For manual-control testing without a model-provider key, run
-`pnpm start:viewer --manual-only`. Start the station with `--manual-control`
-to enable manual pose controls. The viewer opens in **Manual** and disables
-**Agent** for the session.
+## Debug manual controls
+
+Use `pnpm start:viewer --manual-control-only-no-agent` only when you need to
+debug manual controls. This bypasses the viewer's model-provider key check,
+opens **Manual**, and disables **Agent** for the session. Start the station
+with `--manual-control` to enable manual pose controls. Camera previews follow
+the station's camera mode.
 
 ## Develop the viewer
 

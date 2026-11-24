@@ -23,14 +23,34 @@ try {
 }
 
 const { values } = parseArgs({
-  options: { "manual-only": { type: "boolean", default: false } },
+  options: {
+    help: { type: "boolean", short: "h" },
+    "manual-control-only-no-agent": { type: "boolean" },
+    "manual-only": { type: "boolean" },
+  },
 });
-const manualOnly = values["manual-only"];
+const manualControlOption = "--manual-control-only-no-agent";
+const manualControlHelp =
+  "Disables the agent. Use only when you need to debug manual controls.";
+if (values.help) {
+  console.log(`Usage: pnpm start:viewer [${manualControlOption}]
+
+  ${manualControlOption}  ${manualControlHelp}
+
+Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env for agent runs.
+Connect to a station with a real arm whenever available. Reserve simulation for testing without hardware.
+Configure LiveKit on the station for live camera previews.`);
+  process.exit(0);
+}
+const manualOnly =
+  values["manual-control-only-no-agent"] === true ||
+  values["manual-only"] === true;
 const environment = process.env;
 const availableProviders = configuredProviders(environment);
 if (!manualOnly && availableProviders.length === 0) {
   console.error(
-    `Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env to start the viewer. For manual control only, run pnpm start:viewer --manual-only.`,
+    `Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env to start the viewer.\n` +
+      `pnpm start:viewer ${manualControlOption}: ${manualControlHelp}`,
   );
   process.exit(1);
 }
@@ -38,6 +58,7 @@ const port = Number(environment["AGENT_PORT"] ?? 8793);
 const host = environment["AGENT_HOST"] ?? "127.0.0.1";
 const stationUrl =
   environment["HEBBIAN_STATION_URL"] ?? "http://127.0.0.1:8792";
+const mediaUrl = environment["HEBBIAN_MEDIA_SERVER"] ?? stationUrl;
 const allowedOrigins = allowedViewerOrigins(
   `http://${host}:${port}`,
   environment["AGENT_ALLOWED_ORIGINS"],
@@ -45,7 +66,7 @@ const allowedOrigins = allowedViewerOrigins(
 
 const manager = new RunManager({
   stationUrl,
-  mediaUrl: environment["HEBBIAN_MEDIA_SERVER"] ?? stationUrl,
+  mediaUrl,
   environment,
   now: Date.now,
   store: fileRunStore(environment["AGENT_RUNS_DIR"] ?? ".agent-runs"),
@@ -79,6 +100,8 @@ app.get("/api/control/capabilities", forwardStationApi);
 app.get("/api/controller", forwardStationApi);
 app.post("/api/controller/reconnect", forwardStationApi);
 app.get("/api/media/status", forwardStationApi);
+app.get("/api/media/local-cameras", forwardMediaApi);
+app.get("/api/media/local-cameras/:name/stream", forwardMediaApi);
 app.get("/api/media/access-token", forwardStationApi);
 app.post("/api/media/phone-invites", forwardStationApi);
 app.get("/api/recording/enabled", forwardStationApi);
@@ -101,12 +124,18 @@ function forwardStationApi(context: Context): Promise<Response> {
   return forwardStationRequest(context, path);
 }
 
+function forwardMediaApi(context: Context): Promise<Response> {
+  const path = new URL(context.req.url).pathname.slice("/api".length);
+  return forwardStationRequest(context, path, mediaUrl);
+}
+
 async function forwardStationRequest(
   context: Context,
   path: string,
+  upstreamUrl = stationUrl,
 ): Promise<Response> {
   const incoming = new URL(context.req.url);
-  const target = new URL(stationUrl);
+  const target = new URL(upstreamUrl);
   target.pathname = path;
   target.search = incoming.search;
   const headers = new Headers();

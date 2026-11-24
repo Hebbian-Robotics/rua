@@ -16,7 +16,7 @@ fn an_external_profile_inherits_bundled_defaults_and_resolves_its_own_assets() {
     let path = directory.join("my-arm.toml");
     std::fs::write(
         &path,
-        r#"extends = "so101-sim"
+        r#"extends = "so101-sim-only-no-real-arm"
 name = "my-arm"
 urdf = "custom.urdf"
 allowed_collision_pairs = [["first_link", "second_link"]]
@@ -40,7 +40,11 @@ fn profile_arm_names_must_be_unique_socket_names() {
         (r#"["arm/other"]"#, "Invalid arm name"),
     ] {
         let path = scratch_directory().join("invalid-arms.toml");
-        std::fs::write(&path, format!("extends = \"so101-sim\"\narms = {arms}\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("extends = \"so101-sim-only-no-real-arm\"\narms = {arms}\n"),
+        )
+        .unwrap();
         let error = load_robot_profile(&bundled_profiles(), path.to_str().unwrap()).unwrap_err();
         assert!(format!("{error:#}").contains(expected_error));
     }
@@ -134,7 +138,7 @@ fn bundled_profiles_offer_only_hardware_and_simulator_presets() {
     runnable.sort();
     assert_eq!(
         runnable,
-        ["so101", "so101-sim"],
+        ["so101", "so101-sim-only-no-real-arm"],
         "Put scenario combinations in their owning example or local configuration"
     );
 }
@@ -154,7 +158,7 @@ fn an_extending_profile_replaces_values_inside_merged_tables() {
 fn the_policy_controller_runs_at_its_own_rate_and_speed() {
     let profile = load_robot_profile_with_fragments(
         &bundled_profiles(),
-        "so101-sim",
+        "so101-sim-only-no-real-arm",
         &[
             "so101-soft-gripper-camera-assembly",
             "so101-policy-settings",
@@ -255,7 +259,7 @@ fn malformed_profiles_are_refused() {
 
 #[test]
 fn an_external_simulator_needs_no_engine_or_hardware_settings() {
-    let profile = load_robot_profile(&bundled_profiles(), "so101-sim").unwrap();
+    let profile = load_robot_profile(&bundled_profiles(), "so101-sim-only-no-real-arm").unwrap();
     assert!(matches!(profile.driver, Driver::Simulator));
     assert!(profile.feetech().is_none());
     assert!(
@@ -275,7 +279,7 @@ fn simulator_config_uses_resolved_rest_pose_effort_units_and_gripper_force() {
     let profile_path = directory.join("custom.toml");
     std::fs::write(
         &profile_path,
-        r#"extends = "so101-sim"
+        r#"extends = "so101-sim-only-no-real-arm"
 [rest_reference]
 joint_positions_radians = [0.0, -0.8, 1.0, 0.5, 0.0]
 [effort]
@@ -334,12 +338,12 @@ fn invalid_inheritance_and_base_poses_are_rejected() {
         ("extends = [1]".to_owned(), "extends names a non-string"),
         (format!("extends = {profile_name:?}"), "inheritance limit"),
         (
-            "extends = \"so101-sim\"\n[base_poses.nobody]\nposition_meters = [0, 0, 0]\n"
+            "extends = \"so101-sim-only-no-real-arm\"\n[base_poses.nobody]\nposition_meters = [0, 0, 0]\n"
                 .to_owned(),
             "unknown arm",
         ),
         (
-            "extends = \"so101-sim\"\n[base_poses.arm]\nposition_meters = [0, 0, nan]\n".to_owned(),
+            "extends = \"so101-sim-only-no-real-arm\"\n[base_poses.arm]\nposition_meters = [0, 0, nan]\n".to_owned(),
             "finite coordinates and yaw",
         ),
     ] {

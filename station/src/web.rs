@@ -80,7 +80,7 @@ fn credentials(access: &Access) -> Result<&Credentials, Refusal> {
         Cameras::On(credentials) => Ok(credentials),
         Cameras::LocalOnly => Err(Refusal(
             StatusCode::CONFLICT,
-            "Local cameras only. Phone invites require LiveKit.".to_owned(),
+            "Local cameras only. Remote cameras require LiveKit.".to_owned(),
         )),
         Cameras::Off(reason) => Err(Refusal(
             StatusCode::SERVICE_UNAVAILABLE,

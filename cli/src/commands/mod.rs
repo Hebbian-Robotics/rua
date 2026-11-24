@@ -198,6 +198,15 @@ pub enum Command {
         label: String,
     },
     /// List the cameras, or save a JPEG frame.
+    ///
+    /// For live video, set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET in the
+    /// station's environment or .env. Run `rua camera-devices` and start the station with
+    /// `rua serve --camera wrist=2 --camera overhead=4`, using your device selectors.
+    /// Open Room viewer at https://hebbian-robotics.github.io/livekit-cameras/ and enter
+    /// the server_url and token from `curl --fail http://127.0.0.1:8792/media/access-token`.
+    ///
+    /// During a LiveKit outage, restart the station with `--local-only-no-remote-cameras`
+    /// and open the RUA example viewer for local USB feeds.
     #[command(subcommand)]
     Camera(CameraCommand),
     /// The controller's per-cycle traces.

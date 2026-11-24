@@ -3,18 +3,21 @@
 RUA controls a robot model. You choose, install and run the physics engine.
 No simulator, scene or renderer is included in `hebbian-rua`.
 
+Use [a real arm](getting-started.md) whenever available. Reserve a simulator
+profile for testing without hardware.
+
 Start the station with the bundled socket profile, or a profile for your robot:
 
 ```sh
-uv run rua serve --profile so101-sim --work-directory /tmp/rua-station
+uv run rua serve --profile so101-sim-only-no-real-arm --work-directory /tmp/rua-station
 ```
 
 Then start your simulator integration before the station's connection timeout,
 30 seconds by default (`--simulator-connect-seconds`).
 For the bundled SO-101 profile it connects to `/tmp/rua-station/arm.plant.sock`.
-The `so101-sim` preset and the hardware profile share the SO-101 control
-defaults in [`so101-common.toml`](../profiles/so101-common.toml). The simulator
-adapter supplies plant feedback and uses its own physics and transport settings.
+The `so101-sim-only-no-real-arm` preset and the hardware profile share the
+SO-101 control defaults in [`so101-common.toml`](../profiles/so101-common.toml).
+The simulator adapter supplies plant feedback and uses its own physics and transport settings.
 Each arm has its own Unix-domain stream socket, named `<arm>.plant.sock`.
 Arm names in profiles must be unique and use ASCII letters, digits,
 underscores or hyphens.
@@ -22,7 +25,7 @@ Use a separate work directory for each running station. The socket transport
 runs on Unix-like systems. On Windows, run both processes inside WSL2.
 
 For two simulated arms, create a local profile with
-`extends = ["so101-sim", "so101-bimanual-layout"]` and give it a `name`.
+`extends = ["so101-sim-only-no-real-arm", "so101-bimanual-layout"]` and give it a `name`.
 Override the base poses to match your scene.
 
 ## Adapter contract

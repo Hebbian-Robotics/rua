@@ -143,7 +143,7 @@ keep RUA integration instructions in this repository.
 ## Robot profiles
 
 `profiles/` ships two runnable SO-101 starting points, `so101` for hardware and
-`so101-sim` for the simulator socket. Use incomplete TOML fragments for settings
-shared across scenarios. Keep runnable combinations in the owning examples
-and keep per-station calibration and ports in local profiles. The controller's
-profile test checks the two bundled entry points.
+`so101-sim-only-no-real-arm` for the simulator socket. Use incomplete TOML
+fragments for settings shared across scenarios. Keep runnable combinations in
+the owning examples and keep per-station calibration and ports in local profiles.
+The controller's profile test checks the two bundled entry points.

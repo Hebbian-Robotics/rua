@@ -14,7 +14,10 @@ import { stationJson } from "../../api.js";
 import { errorMessage } from "../../errors.js";
 import { createCameraConnectionMachine } from "./camera-connection-machine.js";
 
-export type CameraFeed = { name: string; track: RemoteTrack };
+type CameraFeed = { name: string } & (
+  | { kind: "room"; track: RemoteTrack }
+  | { kind: "local" }
+);
 export type CameraRoomState = {
   status: string;
   localCamerasOnly: boolean;
@@ -35,7 +38,9 @@ function connectionMessage(
 ): string {
   switch (connection) {
     case "local":
-      return "Local cameras only. Snapshots are available from the station.";
+      return hasFeeds
+        ? "Showing local cameras. Remote cameras are disabled."
+        : "Local cameras only. Waiting for a connected camera.";
     case "connecting":
       return "Connecting to LiveKit…";
     case "connected":
@@ -74,7 +79,7 @@ export function useCameraRoom(): CameraRoomState {
               Number(second.startsWith("phone_")) ||
             first.localeCompare(second),
         )
-        .map(([name, track]) => ({ name, track }));
+        .map(([name, track]) => ({ name, kind: "room" as const, track }));
       setState((previous) => ({
         ...previous,
         feeds: orderedFeeds,
@@ -191,10 +196,29 @@ export function useCameraRoom(): CameraRoomState {
     };
   }, []);
   const { connection, ...roomState } = state;
+  const localCamerasOnly = connection === "local";
+  const localCameras = useQuery({
+    queryKey: ["local-cameras"],
+    queryFn: async ({ signal }) =>
+      apiSchemas.shape.CameraListing.array().parse(
+        await stationJson("/api/media/local-cameras", { signal }),
+      ),
+    enabled: localCamerasOnly,
+    refetchInterval: 2000,
+  });
+  const feeds: CameraFeed[] = localCamerasOnly
+    ? (localCameras.data ?? [])
+        .filter(({ available }) => available)
+        .map(({ name }) => ({ name, kind: "local" }))
+    : roomState.feeds;
   return {
     ...roomState,
-    localCamerasOnly: connection === "local",
-    status: connectionMessage(connection, state.feeds.length > 0),
+    feeds,
+    localCamerasOnly,
+    status:
+      localCamerasOnly && localCameras.isError
+        ? "Local camera service unavailable."
+        : connectionMessage(connection, feeds.length > 0),
   };
 }
 
@@ -213,14 +237,16 @@ export const CameraView = memo(function CameraView({
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const container = useRef<HTMLElement>(null);
+  const track = feed.kind === "room" ? feed.track : undefined;
   useEffect(() => {
     const element = video.current;
-    if (!element) return;
-    feed.track.attach(element);
+    if (!element || !track) return;
+    track.attach(element);
     return () => {
-      feed.track.detach(element);
+      track.detach(element);
     };
-  }, [feed.track]);
+  }, [track]);
+  const label = `${cameraTitle(feed.name)} camera feed`;
   return (
     <article className="camera-view" ref={container}>
       {showLabel && (
@@ -229,13 +255,16 @@ export const CameraView = memo(function CameraView({
         </header>
       )}
       <div className="camera-picture">
-        <video
-          ref={video}
-          autoPlay
-          muted
-          playsInline
-          aria-label={`${cameraTitle(feed.name)} camera feed`}
-        />
+        {feed.kind === "room" ? (
+          <video ref={video} autoPlay muted playsInline aria-label={label} />
+        ) : (
+          <img
+            src={`/api/media/local-cameras/${encodeURIComponent(feed.name)}/stream`}
+            alt={label}
+            width={640}
+            height={360}
+          />
+        )}
         <Button
           variant="outline"
           onClick={() => {
@@ -249,3 +278,5 @@ export const CameraView = memo(function CameraView({
     </article>
   );
 });
+
+import { useQuery } from "@tanstack/react-query";

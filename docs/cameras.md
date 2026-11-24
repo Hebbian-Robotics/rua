@@ -18,7 +18,7 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
    LIVEKIT_API_SECRET=your-api-secret
    ```
 
-3. Connect the wrist camera and start the station. For a registered arm whose
+3. Connect the cameras and start the station. For a registered arm whose
    config includes a wrist-camera selector, RUA finds the capture device by
    USB vendor, product and serial. It waits if the camera is disconnected
    or if several physical devices match. A replug can be picked up while
@@ -30,13 +30,19 @@ its connection separately, so a room outage leaves healthy capture running.
 
 Use `rua status --camera wrist` to see if a wrist snapshot is available.
 The CLI and viewer distinguish a disconnected camera, multiple USB matches,
-stalled capture, and a healthy capture waiting for LiveKit. If you bring your
-own camera or several match the selector, run `rua camera-devices` on the
-station laptop. Each result includes
-a `name` and a `device` value. Pass the chosen device to the station, for
-example `--camera wrist=2`. Repeat the flag for each extra camera. On Linux, a
-device path or a persistent symlink can also be used. Pass `--camera wrist=none`
-to turn off an automatic camera.
+stalled capture, and a healthy capture waiting for LiveKit. To add cameras or
+override an automatic selection, run these commands on the station host.
+
+```sh
+rua camera-devices
+rua serve --camera wrist=2 --camera overhead=4
+```
+
+Replace `2` and `4` with the `device` values returned for your cameras. Repeat
+`--camera NAME=DEVICE` with a distinct name for each device. On Linux, you can
+also use a device path or persistent symlink. Pass `--camera wrist=none` to
+turn off an automatic camera. The station publishes each configured USB camera
+to the same LiveKit room.
 
 From a source checkout with the media companion built, use
 `cargo run -p hebbian-rua-server -- camera-devices`. With the arm disabled,
@@ -69,8 +75,8 @@ precedence over these files.
 2. Open the [hosted LiveKit Cameras page](https://hebbian-robotics.github.io/livekit-cameras/)
    and select **Room viewer**.
 3. Paste the response’s `server_url` and `token` into the URL and token fields,
-   then connect. The browser connects directly to LiveKit. Keep the room
-   token private and leave the LiveKit API key and secret on the station.
+   then connect. The browser can preview the room's camera tracks while the
+   CLI and agents request JPEGs by camera name. Keep the room token private.
 
 Alternatively, paste the same URL and token into the **Custom** tab in
 [LiveKit Meet](https://meet.livekit.io/?tab=custom).
@@ -121,11 +127,25 @@ uv run hebbian-rua camera snapshot wrist --out wrist.jpg
 
 Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
-## Local snapshots
+## Preview local cameras during an outage
 
-For local cameras such as a built-in webcam or a USB camera, add `--local-cameras-only` to the station’s `serve` command.
-Phone invites and room streaming require LiveKit. The media companion captures frames directly. The CLI
-and SDKs still use the station URL for discovery and snapshots.
+Use LiveKit for normal operation. If the station loses its connection to
+LiveKit, restart it with `rua serve --local-only-no-remote-cameras` and keep
+your existing `--camera NAME=DEVICE` arguments. Open or reload the
+[example viewer](http://127.0.0.1:8793/viewer/) to see the local feeds under
+**Cameras**. You can watch while a CLI command or Python agent controls the arm.
+Normal viewer startup requires a model-provider key. Watching cameras uses no
+control lease.
+[Example viewer setup](../examples/typescript/viewer/README.md)
+
+Phone camera invites, remote feeds, and video recording are disabled in this mode.
+Remove `--enable-recording` or unset `HEBBIAN_ENABLE_RECORDING` before restarting
+if you enabled recording.
+
+The station streams JPEGs from the same USB capture used for model snapshots.
+Custom clients can list feeds at `GET /media/local-cameras` and read a multipart
+JPEG stream at `GET /media/local-cameras/NAME/stream`. The CLI and SDK can
+continue to fetch individual JPEGs. Simulator views are available as snapshots.
 
 ```sh
 curl --fail http://127.0.0.1:8792/cameras
@@ -133,12 +153,11 @@ curl --fail http://127.0.0.1:8792/cameras/wrist --output wrist.jpg
 ```
 
 The station limits concurrent forwarded camera requests and returns `503` when
-the limit is reached or `504` when the media companion times out. LiveKit
-continues to carry live video.
+the limit is reached or `504` when the media companion times out.
 
 For direct access, use the companion URL, `http://127.0.0.1:8781` by default.
-Set the SDK's media URL override or pass `--media-server` to the CLI. To serve
-snapshots exclusively from the companion, start the station with
+Set the SDK or viewer's `HEBBIAN_MEDIA_SERVER` override or pass `--media-server`
+to the CLI. To serve previews and snapshots exclusively from the companion, start the station with
 `--disable-camera-forwarding`. Use `--media-address` to choose which address
 the companion listens on. The media URL override also lets a new SDK fetch
 snapshots from an older station's companion.

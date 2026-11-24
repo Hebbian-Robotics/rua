@@ -7028,6 +7028,98 @@
         "x-server": "station"
       }
     },
+    "/media/local-cameras": {
+      "get": {
+        "operationId": "list_local_preview_cameras",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CameraListing"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "List USB cameras available for local preview in local-only mode.",
+        "x-direct-media": true,
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
+    "/media/local-cameras/{name}/stream": {
+      "get": {
+        "operationId": "stream_local_camera",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "multipart/x-mixed-replace": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Stream successive JPEGs from a local USB camera in local-only mode.",
+        "x-direct-media": true,
+        "x-sdk": false,
+        "x-server": "station"
+      }
+    },
     "/media/phone-invites": {
       "post": {
         "operationId": "phone_invite",

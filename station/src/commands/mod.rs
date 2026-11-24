@@ -143,8 +143,16 @@ pub(crate) enum Command {
 #[derive(clap::Args)]
 #[expect(clippy::struct_excessive_bools, reason = "Independent CLI switches")]
 pub(crate) struct WebArguments {
-    /// Use local camera snapshots only. Phone invites require `LiveKit`.
-    #[arg(long, conflicts_with = "enable_recording")]
+    /// Stream and capture snapshots from local cameras only. Disables remote cameras.
+    ///
+    /// Use this fallback during a network or `LiveKit` outage. Open the RUA example
+    /// viewer to watch local USB cameras. For remote cameras, configure
+    /// `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in the environment or `.env`.
+    #[arg(
+        long = "local-only-no-remote-cameras",
+        aliases = ["local-cameras-only", "local-cameras-only-no-stream-preview"],
+        conflicts_with = "enable_recording"
+    )]
     local_cameras_only: bool,
     /// Where `hebbian-rua-media` writes recordings, one directory per recording.
     #[arg(

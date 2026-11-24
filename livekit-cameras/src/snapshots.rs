@@ -8,12 +8,15 @@ use std::{
 use crate::error::PublisherError;
 use axum::{
     Json, Router,
+    body::{Body, Bytes},
     extract::{Path, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
-use hebbian_contracts::{CameraStatus, MediaState, MediaStatusReport, unix_nanoseconds};
+use hebbian_contracts::{
+    CameraListing, CameraStatus, MediaState, MediaStatusReport, unix_nanoseconds,
+};
 use livekit::webrtc::video_frame::VideoRotation;
 use livekit_camera_frames::{CameraFrame, CameraFrames, LatestFrame, TrackIdentity, camera_frame};
 use livekit_camera_publisher::capture::CapturedI420Frame;
@@ -27,6 +30,8 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_SIMULATOR_HEADER_BYTES: u64 = 16 * 1024;
 const MAX_SIMULATOR_FRAME_BYTES: usize = 8 * 1024 * 1024;
+const PREVIEW_FRAME_INTERVAL: Duration = Duration::from_millis(125);
+const PREVIEW_BOUNDARY: &str = "rua-camera-frame";
 
 #[derive(Clone, Default)]
 pub struct Snapshots {
@@ -113,8 +118,20 @@ impl Snapshots {
             .route("/cameras", get(list))
             .route("/media/status", get(camera_status))
             .route("/cameras/{name}", get(snapshot))
+            .route("/media/local-cameras", get(local_cameras))
+            .route("/media/local-cameras/{name}/stream", get(local_stream))
             .with_state(self)
     }
+
+    fn local_frame(&self, track_id: &str) -> Option<CameraFrame> {
+        match self.frames.latest(track_id) {
+            LatestFrame::Available(frame) if frame_is_fresh(frame.received_at, Instant::now()) => {
+                Some(frame)
+            }
+            _ => None,
+        }
+    }
+
     fn latest(&self, name: &str) -> Option<CameraFrame> {
         self.frames
             .tracks()
@@ -250,6 +267,69 @@ async fn snapshot(State(state): State<Snapshots>, Path(name): Path<String>) -> R
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
+
+async fn local_cameras(State(state): State<Snapshots>) -> Json<Vec<CameraListing>> {
+    let mut cameras: Vec<_> = state
+        .frames
+        .tracks()
+        .into_iter()
+        .filter(|track| track.track_sid.starts_with("local:"))
+        .map(|track| CameraListing {
+            name: track.participant,
+            available: state.local_frame(&track.track_sid).is_some(),
+        })
+        .collect();
+    cameras.sort_by(|first, second| first.name.cmp(&second.name));
+    Json(cameras)
+}
+
+async fn local_stream(State(state): State<Snapshots>, Path(name): Path<String>) -> Response {
+    if cameras::validate_camera_name(&name).is_err() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let track_id = format!("local:{name}");
+    if state.local_frame(&track_id).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let mut ticks = tokio::time::interval(PREVIEW_FRAME_INTERVAL);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // WHY: Sampling the cache lets slow readers skip frames without slowing capture.
+    let frames = futures_util::stream::unfold(
+        (state, track_id, ticks, None),
+        |(state, track_id, mut ticks, previous)| async move {
+            loop {
+                ticks.tick().await;
+                let frame = state.local_frame(&track_id)?;
+                if previous == Some(frame.received_at) {
+                    continue;
+                }
+                let mut part = format!(
+                    "--{PREVIEW_BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                    frame.jpeg.len(),
+                )
+                .into_bytes();
+                part.extend_from_slice(&frame.jpeg);
+                part.extend_from_slice(b"\r\n");
+                return Some((
+                    Ok::<_, std::convert::Infallible>(Bytes::from(part)),
+                    (state, track_id, ticks, Some(frame.received_at)),
+                ));
+            }
+        },
+    );
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                format!("multipart/x-mixed-replace; boundary={PREVIEW_BOUNDARY}"),
+            ),
+            (header::CACHE_CONTROL, "no-store".to_owned()),
+        ],
+        Body::from_stream(frames),
+    )
+        .into_response()
+}
+
 fn image_response(jpeg: Vec<u8>, timestamp: u128) -> Response {
     (
         [
@@ -267,6 +347,76 @@ fn image_response(jpeg: Vec<u8>, timestamp: u128) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn two_local_previews_share_capture_with_snapshots()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let snapshots = Snapshots::default();
+        snapshots.register_local_frames("wrist");
+        snapshots.frames.register(TrackIdentity {
+            participant: "phone_overhead".into(),
+            track_sid: "remote".into(),
+        });
+        let frame = |jpeg| CameraFrame {
+            jpeg: Arc::from(jpeg),
+            width: 1,
+            height: 1,
+            captured_at_unix_ns: unix_nanoseconds().into(),
+            received_at: Instant::now(),
+        };
+        snapshots.frames.insert("local:wrist", frame(*b"first"));
+        snapshots.frames.insert("remote", frame(*b"phone"));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let router = snapshots.clone().router();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let base = format!("http://{address}");
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()?;
+        let local_list: serde_json::Value = client
+            .get(format!("{base}/media/local-cameras"))
+            .send()
+            .await?
+            .json()
+            .await?;
+        assert_eq!(
+            local_list,
+            serde_json::json!([{"name":"wrist","available":true}])
+        );
+        let url = format!("{base}/media/local-cameras/wrist/stream");
+        let (mut first_viewer, mut second_viewer) =
+            tokio::try_join!(client.get(&url).send(), client.get(&url).send(),)?;
+        assert_eq!(
+            first_viewer.headers()[header::CONTENT_TYPE],
+            "multipart/x-mixed-replace; boundary=rua-camera-frame"
+        );
+        for viewer in [&mut first_viewer, &mut second_viewer] {
+            let part = viewer
+                .chunk()
+                .await?
+                .ok_or("stream ended before first frame")?;
+            assert!(part.ends_with(b"\r\n\r\nfirst\r\n"));
+        }
+
+        snapshots.frames.insert("local:wrist", frame(*b"later"));
+        let still_image = client
+            .get(format!("{base}/cameras/wrist"))
+            .send()
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(still_image.as_ref(), b"later");
+        for viewer in [&mut first_viewer, &mut second_viewer] {
+            let part = viewer
+                .chunk()
+                .await?
+                .ok_or("stream ended before second frame")?;
+            assert!(part.ends_with(b"\r\n\r\nlater\r\n"));
+        }
+        server.abort();
+        Ok(())
+    }
 
     #[tokio::test]
     async fn an_expected_camera_that_never_publishes_is_listed_unavailable()

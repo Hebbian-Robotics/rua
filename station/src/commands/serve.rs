@@ -4,6 +4,9 @@ use std::path::PathBuf;
 #[derive(clap::Args)]
 pub(crate) struct ServeArguments {
     /// Bundled profile name, absolute local profile path, or auto for a registered SO-101.
+    ///
+    /// Use a real arm whenever available. Use `--profile so101-sim-only-no-real-arm`
+    /// for testing with a simulator when hardware is unavailable.
     #[arg(long, default_value = "auto")]
     pub(crate) profile: String,
     #[command(flatten)]
@@ -15,9 +18,10 @@ pub(crate) struct ServeArguments {
     /// profiles above the server binary or the working directory.
     #[arg(long)]
     pub(crate) profile_directory: Option<PathBuf>,
-    /// Drive a stand-in with no physics instead of the profile's hardware or simulator: joints ease
-    /// toward their commands with no contacts, table, gravity or loads. For exercising the station,
-    /// not for judging motion.
+    /// Use a stand-in with no physics for station and API debugging only.
+    ///
+    /// Use a real arm whenever available. The stand-in eases joints toward their commands and
+    /// ignores contacts, the table, gravity and loads.
     #[arg(long)]
     pub(crate) no_physics_stand_in: bool,
     /// Serve the station HTTP API and event stream on this address.
@@ -26,8 +30,10 @@ pub(crate) struct ServeArguments {
     /// Serve camera snapshots and recordings (`hebbian-rua-media serve`) on this address.
     #[arg(long, default_value = "127.0.0.1:8781")]
     pub(crate) media_address: SocketAddr,
-    /// `name=device`, repeated: a USB camera besides the profile's, a video
-    /// device path or an index; `name=none` drops a profile camera.
+    /// Add or override a USB camera as `name=device`. Repeat for multiple cameras.
+    ///
+    /// Run `rua camera-devices` for device paths or indices. For example, pass
+    /// `--camera wrist=2 --camera overhead=4`. Use `name=none` to drop a profile camera.
     #[arg(long = "camera", value_parser = parse_camera)]
     pub(crate) cameras: Vec<(String, Option<String>)>,
     /// Where the arms' configs and a simulator's plant sockets go, as

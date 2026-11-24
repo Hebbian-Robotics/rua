@@ -52,9 +52,33 @@ camera fails with `camera_unavailable`, naming the cameras known and the station
 `traces list` / `traces pull [names...] --output <dir>` (files are written exactly as
 served, gzip-compressed).
 
-For live video and phone camera invites, follow the
-[LiveKit camera setup](../docs/cameras.md). The hosted page plays the live
-stream. The CLI lists cameras, captures JPEGs, and creates phone invites.
+## Set up live cameras
+
+Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the station's
+environment or `.env`. On the station host, run `rua camera-devices` and repeat
+`--camera NAME=DEVICE` for each camera when starting the station. This command
+uses device indices `2` and `4`.
+
+```sh
+rua serve --camera wrist=2 --camera overhead=4
+```
+
+On the station host, open another terminal to list the cameras and get the
+room's viewer token.
+
+```sh
+hebbian-rua camera list
+curl --fail http://127.0.0.1:8792/media/access-token
+```
+
+Paste the response's `server_url` and `token` into **Room viewer** on the
+[hosted LiveKit Cameras page](https://hebbian-robotics.github.io/livekit-cameras/).
+See the [camera guide](../docs/cameras.md) for device selectors, source setup,
+and phone invites. This setup is also shown in `hebbian-rua camera --help`.
+
+During a LiveKit outage, restart the station with `--local-only-no-remote-cameras`
+and open the normal example viewer to watch local USB feeds while you use the
+CLI. [Local camera setup](../docs/cameras.md#preview-local-cameras-during-an-outage)
 
 ## Exit codes and errors
 
