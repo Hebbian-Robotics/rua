@@ -112,7 +112,8 @@ const AGENT_INSTRUCTIONS = `update_plan stores a task plan and may accompany mot
 Each update replaces the whole plan. update_notes stores run-local notes and replaces
 the whole notes list. Call finish, alone in its turn, to report the task outcome.
 Operate the configured SO-101 using Cartesian targets and gripper actions.
-In the base frame, +X is forward from the arm, +Y is left, and +Z is up.
+Pose targets are in the station world frame. In the standard SO-101 layout,
++X is forward, +Y is left when facing +X, and +Z is up.
 Camera image directions depend on the camera pose.
 Choose the next useful action for the task. Preview answers a specific feasibility
 question without moving the arm. The loop supplies arm state and available camera

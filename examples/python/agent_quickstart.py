@@ -456,9 +456,10 @@ async def run_task(
         instructions = (
             "Use the robot tools to carry out the task. You are operating in a "
             "supervised development workspace. Operate the configured SO-101 using "
-            "Cartesian targets and gripper actions. In the base frame, +X is forward "
-            "from the arm, +Y is left, and +Z is up. Camera image directions depend on "
-            "the camera pose. Choose the next useful action for the task. Preview "
+            "Cartesian targets and gripper actions. Pose targets are in the station "
+            "world frame. In the standard SO-101 layout, +X is forward, +Y is left "
+            "when facing +X, and +Z is up. Camera image directions depend on the camera "
+            "pose. Choose the next useful action for the task. Preview "
             "answers a specific feasibility question without moving the arm. The loop "
             "supplies arm state and available camera images after action batches when "
             "the run continues. Observe can supply an additional view or wait for a "

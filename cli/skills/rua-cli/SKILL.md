@@ -14,7 +14,8 @@ so the CLI matches the station. From a RUA source checkout, use
 
 Choose commands according to the task. `state` reports arm names, joint order,
 measured joints, faults, interlocks, and the lease holder without changing
-torque. Each command’s `--help` shows argument shapes and JSON examples.
+torque. It also includes the configured robot description. Each invocation
+returns its own result. Camera snapshots are available as separate commands. Each command’s `--help` shows argument shapes and JSON examples.
 
 Global options: `--server URL` (default `http://127.0.0.1:8792`, or `HEBBIAN_STATION_URL`),
 `--media-server URL` overrides the camera service (also settable with
@@ -41,17 +42,24 @@ failures use stderr and a nonzero exit code. Motion waits for its outcome.
 
 ## Units and outcomes
 
-Inputs: joint angles are radians in state's `joint_names` order. Positions are metres
-in the robot's world frame (x forward, z up). Joint speed, acceleration, and
+Pose targets are in the station world frame. In the standard SO-101 layout,
++X is forward, +Y is left when facing +X, and +Z is up. An arm's configured
+base pose can differ from the world origin and orientation. Image directions
+depend on the camera pose.
+
+CLI position inputs are metres, and joint angles are radians in the state's
+`joint_names` order. Joint speed, acceleration, and
 jerk caps use rad/s, rad/s², and rad/s³ respectively. Gripper opening is
 0 closed to 1 open. Quaternions use x,y,z,w; jaw yaw uses degrees. Without an
 orientation, `move-pose` preserves the current orientation, whereas
 `preview-pose` lets the solver choose one. Supply the same explicit orientation
 when comparing a preview with a move.
 
-A pose preview answers a feasibility question without moving the arm.
-A limited move can end at an adjusted target. When present,
-`pose_limited.advice` describes the shortfall and a reachable alternative.
+A pose preview checks feasibility without moving the arm. It cannot establish
+clearance from objects in the workspace. A limited move can end at an adjusted
+target. When present, `pose_limited.advice` describes the shortfall and a reachable
+alternative. A `stopped_short` move settled outside tolerance. Its completion
+detail describes the remaining error and may leave the cause unknown.
 
 On a gripper close, `completion.gripper.kind` tells you how the jaw stopped.
 `stopped_short` indicates contact or a blockage, and `reached` indicates the
