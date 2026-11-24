@@ -1,6 +1,7 @@
 import {
   type Attributes,
   type Context,
+  context,
   defaultTextMapSetter,
   type HrTime,
   ROOT_CONTEXT,
@@ -9,6 +10,7 @@ import {
   type Tracer,
   trace,
 } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import {
   type ReadableSpan,
@@ -23,6 +25,9 @@ import type {
 import { StationConnectionError } from "hebbian-rua";
 
 export const KIND_ATTRIBUTE = "hebbian.kind";
+
+const asyncContext = new AsyncLocalStorageContextManager().enable();
+if (!context.setGlobalContextManager(asyncContext)) asyncContext.disable();
 
 export type WireSpan = Required<
   Extract<ClientMessage, { kind: "run_spans" }>["spans"][number]
@@ -102,7 +107,12 @@ function spanRunner(tracer: Tracer, parent: Context) {
   ): Promise<Result> {
     const span = tracer.startSpan(name, { attributes }, parent);
     try {
-      return await work(span);
+      return await context.with(
+        trace.setSpan(parent, span),
+        work,
+        undefined,
+        span,
+      );
     } catch (error) {
       markSpanError(
         span,
@@ -121,7 +131,11 @@ export async function withStationTrace<Result>(
   connection: StationConnection,
   name: string,
   attributes: Attributes,
-  work: (runSpan: Span, withChildSpan: SpanRunner) => Promise<Result>,
+  work: (
+    runSpan: Span,
+    withChildSpan: SpanRunner,
+    tracerProvider: TracerProvider,
+  ) => Promise<Result>,
 ): Promise<Result> {
   const provider = new TracerProvider({
     spanProcessors: [stationSpanProcessor(connection)],
@@ -130,7 +144,11 @@ export async function withStationTrace<Result>(
   const withRootSpan = spanRunner(tracer, ROOT_CONTEXT);
   try {
     return await withRootSpan(name, attributes, (runSpan) =>
-      work(runSpan, spanRunner(tracer, trace.setSpan(ROOT_CONTEXT, runSpan))),
+      work(
+        runSpan,
+        spanRunner(tracer, trace.setSpan(ROOT_CONTEXT, runSpan)),
+        provider,
+      ),
     );
   } finally {
     await provider.shutdown();

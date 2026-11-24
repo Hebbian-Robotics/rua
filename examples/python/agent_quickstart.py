@@ -47,12 +47,12 @@ command_line = App(help=CLI_HELP, version_flags=())
 
 
 @contextmanager
-def agent_tracer() -> Generator[trace.Tracer]:
+def agent_tracer_provider() -> Generator[trace.TracerProvider]:
     if not (
         os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
         or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
     ):
-        yield trace.NoOpTracer()
+        yield trace.NoOpTracerProvider()
         return
 
     provider = TracerProvider(
@@ -66,7 +66,7 @@ def agent_tracer() -> Generator[trace.Tracer]:
     )
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     try:
-        yield provider.get_tracer("hebbian.agent")
+        yield provider
     finally:
         provider.shutdown()
 
@@ -95,7 +95,11 @@ class FinishArguments(BaseModel):
 
 class AgentRobotTools(RobotTools):
     finish_reason: str | None = None
-    tracer: trace.Tracer = trace.NoOpTracer()
+    tracer_provider: trace.TracerProvider = trace.NoOpTracerProvider()
+
+    @property
+    def tracer(self) -> trace.Tracer:
+        return self.tracer_provider.get_tracer("hebbian.agent")
 
     @property
     def tools(self) -> list[RobotToolSpec]:
@@ -223,7 +227,13 @@ async def run_anthropic(
 
     robot_tools = AnthropicThreadRobotTools(robot)
     pending_input: list[BetaMessageParam] = []
-    async with AsyncAnthropic() as client:
+    async with AsyncAnthropic(
+        open_telemetry={
+            "tracer_provider": robot.tracer_provider,
+            "propagation": False,
+            "traces": {"content_mode": "metadata_only"},
+        }
+    ) as client:
         thread = client.beta.messages.thread(
             model=model,
             max_tokens=4096,
@@ -233,13 +243,12 @@ async def run_anthropic(
             cache_control={"type": "ephemeral"},
         )
         revisions: Mapping[str, int] | None = None
-        for turn_number in range(1, max_turns + 1):
+        for _ in range(max_turns):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            with agent_span(robot.tracer, "model turn", {"hebbian.turn": turn_number}):
-                response = await thread.send(*pending_input)
+            response = await thread.send(*pending_input)
             turn = await robot_tools.execute(response, expected_revisions=revisions)
             pending_input = turn.messages
             revisions = turn.observed_revisions
@@ -321,13 +330,13 @@ async def run_task(
     cameras: list[str],
     max_turns: int = DEFAULT_MAX_TURNS,
     *,
-    tracer: trace.Tracer,
+    tracer_provider: trace.TracerProvider,
 ) -> None:
     async with station.holding_lease(task, required_cameras=cameras) as lease:
         robot = AgentRobotTools(station, lease, arm_name, cameras).map_tools(
             filter_sequence_actions(lambda action: action != "joints")
         )
-        robot.tracer = tracer
+        robot.tracer_provider = tracer_provider
         instructions = (
             "Operate the single configured SO-101 using Cartesian targets and "
             "gripper actions. In the base frame, +X is forward from the arm, "
@@ -454,9 +463,9 @@ async def main(
         return 2
 
     with (
-        agent_tracer() as tracer,
+        agent_tracer_provider() as tracer_provider,
         agent_span(
-            tracer,
+            tracer_provider.get_tracer("hebbian.agent"),
             "agent run",
             {
                 "gen_ai.provider.name": resolved_provider,
@@ -481,7 +490,7 @@ async def main(
                 arm_name,
                 list(camera),
                 max_turns,
-                tracer=tracer,
+                tracer_provider=tracer_provider,
             )
     return None
 

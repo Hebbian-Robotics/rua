@@ -39,8 +39,8 @@ fn concise_response<'py>(
     Ok(pythonize(value.py(), &response)?)
 }
 
-#[pymodule]
-fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pymodule(name = "_native")]
+fn native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("HttpError", module.py().get_type::<station::HttpError>())?;
     module.add(
         "CommandRefused",

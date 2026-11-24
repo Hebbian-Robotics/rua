@@ -74,3 +74,5 @@ tool spans appear as they are exported, so refresh during a longer run. The
 top-level run span appears when the run ends. Traces include timing, model and
 tool names, and error status. Prompts, images, and tool arguments stay out of
 the spans.
+
+Claude request spans come from the Anthropic SDK in metadata-only mode.

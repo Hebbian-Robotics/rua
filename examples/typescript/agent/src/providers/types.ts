@@ -1,3 +1,4 @@
+import type { TracerProvider } from "@opentelemetry/api";
 // What the loop and the three providers share: the conversation interface and
 // the provider-neutral turn, usage and observation shapes.
 
@@ -95,6 +96,7 @@ export interface ModelConversation {
 }
 
 export interface ConversationSettings {
+  tracerProvider?: TracerProvider;
   model: string;
   systemPrompt: string;
   tools: ToolSpec[];

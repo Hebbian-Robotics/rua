@@ -28,6 +28,8 @@ The example uses OpenTelemetry for model and tool spans. It sends span updates
 to the station as work starts and finishes. The viewer shows them live, and
 station recording saves them for playback.
 
+The Anthropic SDK adds metadata-only request spans under Claude model turns.
+
 ## Use the loop in your own code
 
 [`src/loop.ts`](src/loop.ts) exports `runAgent`. See

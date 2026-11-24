@@ -20,7 +20,7 @@ livekit-camera-frames = { git = "https://github.com/Hebbian-Robotics/livekit-cam
 livekit-camera-recorder = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "2d018e4074b2c4d4bb806c5ee40b1b216815ed1c" }
 cameras = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "2d018e4074b2c4d4bb806c5ee40b1b216815ed1c" }
 livekit-camera-publisher = { git = "https://github.com/Hebbian-Robotics/livekit-cameras", rev = "2d018e4074b2c4d4bb806c5ee40b1b216815ed1c" }
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.9", features = ["derive"] }
 livekit = { version = "=0.11.0", features = ["rustls-tls-native-roots"] }
 station-access = { path = "../station-access" }
 # Keep the SDK's signaling dependency on the matching release.

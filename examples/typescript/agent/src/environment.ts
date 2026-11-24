@@ -1,5 +1,6 @@
 // What a running loop shares between its modules.
 
+import type { TracerProvider } from "@opentelemetry/api";
 import type { createRobotTools, Lease, StationConnection } from "hebbian-rua";
 import { StationConnectionError } from "hebbian-rua";
 import type { TaskMemory } from "./tools.js";
@@ -13,6 +14,7 @@ export interface RunEnvironment {
 
   lease: Lease;
   withSpan: SpanRunner;
+  tracerProvider: TracerProvider;
   memory: TaskMemory;
   arm: string;
 
