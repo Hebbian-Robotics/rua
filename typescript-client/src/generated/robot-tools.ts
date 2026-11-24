@@ -160,7 +160,7 @@ export const robotToolSpecifications = [
                 minimum: 0.0,
                 type: "number",
               },
-              max_joint_acceleration: {
+              max_joint_acceleration_degrees_per_second_squared: {
                 anyOf: [
                   {
                     type: "number",
@@ -170,10 +170,10 @@ export const robotToolSpecifications = [
                   },
                 ],
                 description:
-                  "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                  "Joint acceleration cap in degrees per second squared; defaults to the arm profile.",
                 exclusiveMinimum: 0.0,
               },
-              max_joint_jerk: {
+              max_joint_jerk_degrees_per_second_cubed: {
                 anyOf: [
                   {
                     type: "number",
@@ -183,7 +183,7 @@ export const robotToolSpecifications = [
                   },
                 ],
                 description:
-                  "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                  "Joint jerk cap in degrees per second cubed; defaults to the arm profile.",
                 exclusiveMinimum: 0.0,
               },
               max_joint_speed_degrees_per_second: {
@@ -429,7 +429,7 @@ export const robotToolSpecifications = [
           description:
             "Where the arm's controller would take the tool toward a pose, without moving.",
           properties: {
-            max_joint_acceleration: {
+            max_joint_acceleration_degrees_per_second_squared: {
               anyOf: [
                 {
                   type: "number",
@@ -439,10 +439,10 @@ export const robotToolSpecifications = [
                 },
               ],
               description:
-                "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                "Joint acceleration cap in degrees per second squared; defaults to the arm profile.",
               exclusiveMinimum: 0.0,
             },
-            max_joint_jerk: {
+            max_joint_jerk_degrees_per_second_cubed: {
               anyOf: [
                 {
                   type: "number",
@@ -452,7 +452,7 @@ export const robotToolSpecifications = [
                 },
               ],
               description:
-                "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                "Joint jerk cap in degrees per second cubed; defaults to the arm profile.",
               exclusiveMinimum: 0.0,
             },
             max_joint_speed_degrees_per_second: {
@@ -624,7 +624,7 @@ export const robotToolSpecifications = [
       },
       additionalProperties: false,
       description:
-        "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+        "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. Grouped moves check modeled clearance among participating arms.",
       properties: {
         goals: {
           additionalProperties: {
@@ -750,7 +750,7 @@ export const robotToolContext = {
   gripper:
     "Gripper opening is continuous from 0 (closed) to 1 (fully open); 0.5 is half open. Contact is estimated from a stopped-short gripper and does not prove a secure grasp. The step speed applies to the arm and gripper and overrides the speed in the goal.",
   limitations:
-    "Model guards can check self-collision and a horizontal surface, but do not detect workspace objects or other arms and do not establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
+    "Model guards can check self-collision and a horizontal surface. Grouped moves also check modeled clearance among participating arms. These checks do not detect workspace objects or establish physical clearance. The solver's projected pose is not necessarily the globally closest pose. Camera frames are not hardware-synchronized; retrieval timestamps are not exposure timestamps. Camera extrinsics, table plane and tool-to-fingertip offsets may be unverified.",
   motion:
     "A move passes through optional waypoints in order and settles at its goal. A waypoint gripper_opening starts at that waypoint. A pose goal is solved to joints; the arm follows a joint-space path, not necessarily a straight Cartesian line. Use separate approach, descend and lift steps when clearance requires them. Tool position is the configured tool-frame origin, not the lowest point of the fingers or camera.",
   orientation:
@@ -775,6 +775,16 @@ export const robotToolInputUnits = [
     model_field: "max_joint_speed_degrees_per_second",
     scale_to_station: 0.017453292519943295,
     station_field: "max_joint_speed",
+  },
+  {
+    model_field: "max_joint_acceleration_degrees_per_second_squared",
+    scale_to_station: 0.017453292519943295,
+    station_field: "max_joint_acceleration",
+  },
+  {
+    model_field: "max_joint_jerk_degrees_per_second_cubed",
+    scale_to_station: 0.017453292519943295,
+    station_field: "max_joint_jerk",
   },
 ] as const;
 export const modelOutputUnits = [
@@ -810,6 +820,16 @@ export const modelOutputUnits = [
   ["target_angle_radians", "target_angle_degrees", 57.29577951308232],
   ["joint_speed", "joint_speed_degrees_per_second", 57.29577951308232],
   ["max_joint_speed", "max_joint_speed_degrees_per_second", 57.29577951308232],
+  [
+    "max_joint_acceleration",
+    "max_joint_acceleration_degrees_per_second_squared",
+    57.29577951308232,
+  ],
+  [
+    "max_joint_jerk",
+    "max_joint_jerk_degrees_per_second_cubed",
+    57.29577951308232,
+  ],
 ] as const;
 export const modelOutcomes = {
   commands: {

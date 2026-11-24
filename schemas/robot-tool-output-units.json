@@ -118,5 +118,15 @@
     "max_joint_speed",
     "max_joint_speed_degrees_per_second",
     57.29577951308232
+  ],
+  [
+    "max_joint_acceleration",
+    "max_joint_acceleration_degrees_per_second_squared",
+    57.29577951308232
+  ],
+  [
+    "max_joint_jerk",
+    "max_joint_jerk_degrees_per_second_cubed",
+    57.29577951308232
   ]
 ]

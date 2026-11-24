@@ -3360,7 +3360,7 @@
       },
       "MoveArmsCommand": {
         "additionalProperties": false,
-        "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. No collision checking between the arms.",
+        "description": "Move several arms together: every target is planned before any arm moves,\none refusal refuses all, and when one arm ends without completing the others\nstop and hold. Grouped moves check modeled clearance among participating arms.",
         "properties": {
           "goals": {
             "additionalProperties": {
