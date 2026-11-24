@@ -12,6 +12,7 @@ use crate::reference_filter::Reference;
 
 pub(crate) struct ContinuousPath {
     trajectory: Trajectory<0>,
+    pub(crate) peak_joint_speed: f64,
     positions: DataArrayOrVec<f64, 0>,
     velocities: DataArrayOrVec<f64, 0>,
     accelerations: DataArrayOrVec<f64, 0>,
@@ -41,7 +42,6 @@ impl ContinuousPath {
             .iter()
             .map(|segment| DataArrayOrVec::Heap(segment.corners[1].clone()))
             .collect();
-        input.max_velocity.fill(plan.peak_speed);
         input.max_acceleration.fill(limits.acceleration_limit);
         input.max_jerk.fill(limits.jerk_limit);
         if maximum_step_seconds > 0.0 {
@@ -52,17 +52,7 @@ impl ContinuousPath {
                 Some(vec![minimum_section_seconds; plan.segments.len()]);
         }
 
-        let mut generator =
-            Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
-        // WHY: The controller regenerates the station's checked plan during startup of the
-        // move. Use Ruckig's initial solution to keep calculation off the refinement search.
-        generator.waypoint_refinement_sweeps = 0;
-        let mut trajectory = Trajectory::new(Some(joint_count));
-        let result = generator.calculate(&input, &mut trajectory)?;
-        ensure!(
-            matches!(result, RuckigResult::Working | RuckigResult::Finished),
-            "Ruckig waypoint trajectory failed: {result:?}"
-        );
+        let trajectory = calculate_waypoints(plan, limits, input)?;
 
         let section_ends = trajectory.get_intermediate_durations();
         ensure!(
@@ -70,11 +60,15 @@ impl ContinuousPath {
             "Ruckig did not produce a section for every waypoint and goal"
         );
         let section_starts = std::iter::once(0.0).chain(section_ends.iter().copied());
+        let mut peak_joint_speed: f64 = 0.0;
         for (index, (&end, start)) in section_ends.iter().zip(section_starts).enumerate() {
             ensure!(
                 end.is_finite() && end - start > maximum_step_seconds,
                 "Continuous section {index} is too short for the control rate"
             );
+            for profile in trajectory.get_profiles()[index].iter() {
+                peak_joint_speed = peak_joint_speed.max(profile_peak_speed(profile, end - start));
+            }
         }
         for (index, end) in section_ends[..intermediate.len()]
             .iter()
@@ -91,8 +85,13 @@ impl ContinuousPath {
             );
         }
 
+        ensure!(
+            peak_joint_speed.is_finite() && peak_joint_speed > 0.0,
+            "Invalid continuous path speed"
+        );
         Ok(Self {
             trajectory,
+            peak_joint_speed,
             positions: DataArrayOrVec::new(Some(joint_count), 0.0),
             velocities: DataArrayOrVec::new(Some(joint_count), 0.0),
             accelerations: DataArrayOrVec::new(Some(joint_count), 0.0),
@@ -155,6 +154,76 @@ impl ContinuousPath {
     }
 }
 
+fn calculate_waypoints(
+    plan: &CornerPlan,
+    limits: &MotionLimits,
+    mut input: InputParameter<0>,
+) -> Result<Trajectory<0>> {
+    let joint_count = input.degrees_of_freedom;
+    input.max_velocity.fill(plan.peak_speed);
+    let (minimum, maximum) = waypoint_velocity_limits(plan, limits);
+    input.per_section_min_velocity = Some(minimum);
+    input.per_section_max_velocity = Some(maximum);
+
+    // The controller regenerates the station's checked plan at move admission.
+    let mut generator =
+        Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
+    generator.waypoint_refinement_sweeps = 0;
+    let mut trajectory = Trajectory::new(Some(joint_count));
+    let result = generator.calculate(&input, &mut trajectory)?;
+    ensure!(
+        matches!(result, RuckigResult::Working | RuckigResult::Finished),
+        "Ruckig waypoint trajectory failed: {result:?}"
+    );
+    Ok(trajectory)
+}
+
+fn waypoint_velocity_limits(
+    plan: &CornerPlan,
+    limits: &MotionLimits,
+) -> (Vec<DataArrayOrVec<f64, 0>>, Vec<DataArrayOrVec<f64, 0>>) {
+    // Set per-joint speed limits from waypoint spacing. A joint with a short
+    // displacement should not accelerate to the same speed as the leading joint.
+    let section_deltas: Vec<Vec<f64>> = plan
+        .segments
+        .iter()
+        .map(|segment| {
+            segment.corners[0]
+                .iter()
+                .zip(&segment.corners[1])
+                .map(|(start, end)| end - start)
+                .collect()
+        })
+        .collect();
+    let largest_displacement = section_deltas
+        .iter()
+        .flatten()
+        .map(|delta| delta.abs())
+        .fold(0.0_f64, f64::max);
+    // Use a shared time scale so neighboring sections have compatible crossing
+    // speeds. Leave headroom for Ruckig to synchronize joints and brake at turns.
+    let spacing = largest_displacement.max(f64::MIN_POSITIVE);
+    let acceleration_speed = (limits.acceleration_limit * spacing).sqrt();
+    let jerk_speed = (limits.jerk_limit * spacing * spacing).cbrt();
+    let ceiling = plan
+        .peak_speed
+        .min(0.5 * acceleration_speed.min(jerk_speed));
+    let directional_limits = |direction: f64| {
+        section_deltas
+            .iter()
+            .map(|deltas| {
+                DataArrayOrVec::Heap(
+                    deltas
+                        .iter()
+                        .map(|delta| direction * ceiling * (direction * delta).max(0.0) / spacing)
+                        .collect(),
+                )
+            })
+            .collect()
+    };
+    (directional_limits(-1.0), directional_limits(1.0))
+}
+
 fn profile_peak_speed(profile: &Profile, duration: f64) -> f64 {
     let mut peak: f64 = 0.0;
     for (index, &phase_duration) in profile.brake.t.iter().enumerate() {
@@ -198,4 +267,62 @@ fn phase_peak_speed(duration: f64, velocity: f64, acceleration: f64, jerk: f64) 
         }
     }
     peak
+}
+
+#[cfg(test)]
+mod tests {
+    use hebbian_contracts::{PassThrough, Segment};
+
+    use super::*;
+    use crate::config::{ControllerConfig, TEST_CONFIG};
+
+    #[test]
+    fn circular_waypoints_do_not_reverse_inside_a_section() {
+        // Measured entry state and joint waypoints from the failed 60 mm SO-101 circle.
+        let knots: Vec<Vec<f64>> =
+            serde_json::from_str(include_str!("../tests/support/so101_circle_waypoints.json"))
+                .unwrap();
+        let segments = knots
+            .windows(2)
+            .enumerate()
+            .map(|(index, pair)| Segment {
+                label: format!("waypoint_{index}"),
+                corners: pair.to_vec(),
+                pass_through: (index + 2 < knots.len()).then_some(PassThrough {
+                    gripper_angle: None,
+                }),
+                minimum_duration_seconds: None,
+                final_gripper_angle: None,
+                destination_position: None,
+                destination_quaternion: None,
+            })
+            .collect();
+        let plan = CornerPlan {
+            segments,
+            peak_speed: 2.5,
+        };
+        let mut limits = ControllerConfig::parse(TEST_CONFIG)
+            .unwrap()
+            .into_input()
+            .motion;
+        limits.acceleration_limit = 5.0;
+        limits.jerk_limit = 80.0;
+        let path = ContinuousPath::new(&plan, &limits, 0.04).unwrap();
+        assert!((0.0..0.30).contains(&path.peak_joint_speed));
+        for (section, pair) in knots.windows(2).enumerate() {
+            let (start, end) = path.section_bounds(section);
+            for sample in 0..=100 {
+                let state = path
+                    .trajectory
+                    .state_at(start + (end - start) * f64::from(sample) / 100.0);
+                for (joint, &velocity) in state.velocity.iter().enumerate() {
+                    let delta = pair[1][joint] - pair[0][joint];
+                    assert!(
+                        velocity.abs() < 1e-8 || (delta.abs() > 1e-12 && velocity * delta > 0.0),
+                        "Section {section}, joint {joint}: velocity {velocity} for displacement {delta}"
+                    );
+                }
+            }
+        }
+    }
 }
