@@ -9,6 +9,15 @@ import {
 } from "../../agent/src/providers/types.js";
 
 export const RUN_STREAM_HEARTBEAT_EVENT = "heartbeat";
+export const MAX_PROMPT_IMAGE_BASE64_LENGTH =
+  4 * Math.ceil((2 * 1024 * 1024) / 3);
+
+const attachmentNameSchema = z.string().trim().min(1).max(255);
+const promptImageSchema = z.object({
+  filename: attachmentNameSchema,
+  jpegBase64: z.base64().max(MAX_PROMPT_IMAGE_BASE64_LENGTH).startsWith("/9j/"),
+});
+export type PromptImage = z.infer<typeof promptImageSchema>;
 
 export const reasoningEffortSchema = z.enum(REASONING_EFFORTS);
 export const inferenceModeSchema = z.enum(INFERENCE_MODES);
@@ -28,6 +37,7 @@ export const runRequestSchema = z.object({
   task: z.string().min(1),
   cameras: z.array(z.string().min(1)).default([]),
   optionalCameras: z.array(z.string().min(1)).default([]),
+  promptImage: promptImageSchema.optional(),
   settings: z.object({
     provider: providerSchema,
     model: z.string().trim().min(1),
@@ -39,12 +49,15 @@ export const runRequestSchema = z.object({
 export type RunRequest = z.input<typeof runRequestSchema>;
 export type ParsedRunRequest = z.output<typeof runRequestSchema>;
 
-const storedRunRequestSchema = runRequestSchema.extend({
-  settings: runRequestSchema.shape.settings.extend({
-    provider: providerSchema.nullable().default(null),
-    model: z.string().min(1).nullable().default(null),
-  }),
-});
+const storedRunRequestSchema = runRequestSchema
+  .omit({ promptImage: true })
+  .extend({
+    attachmentFilename: attachmentNameSchema.optional(),
+    settings: runRequestSchema.shape.settings.extend({
+      provider: providerSchema.nullable().default(null),
+      model: z.string().min(1).nullable().default(null),
+    }),
+  });
 
 const runOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("completed") }),

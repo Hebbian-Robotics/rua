@@ -102,7 +102,22 @@ export interface ToolSpec {
   parametersSchema: Record<string, unknown>;
 }
 
-export type Observation = Pick<RobotObservation, "text" | "cameras">;
+export type Observation = Pick<RobotObservation, "text" | "cameras"> & {
+  referenceImageJpeg?: Uint8Array;
+};
+
+export function observationImages(observation: Observation) {
+  const images = Object.entries(observation.cameras).map(([name, jpeg]) => ({
+    label: `Camera: ${name}`,
+    jpeg,
+  }));
+  if (observation.referenceImageJpeg)
+    images.push({
+      label: "User-provided reference image",
+      jpeg: observation.referenceImageJpeg,
+    });
+  return images;
+}
 
 export interface TokenUsage {
   model: string;

@@ -1,5 +1,6 @@
 import type { StationState } from "hebbian-rua";
-import { useState } from "react";
+import { ImagePlus } from "lucide-react";
+import { useRef, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
@@ -14,10 +15,12 @@ import {
 } from "../../../../agent/src/providers/types.js";
 import {
   inferenceModeSchema,
+  type PromptImage,
   providerSchema,
   reasoningEffortSchema,
 } from "../../../shared/run-api.js";
 import { describeHolder, manualControlView } from "../../control-logic.js";
+import { errorMessage } from "../../errors.js";
 import { manualLease } from "../../manual-lease.js";
 import {
   decideStart,
@@ -28,6 +31,11 @@ import {
   runStatusLine,
 } from "../../run-logic.js";
 import type { AgentModelSelection } from "../settings/preferences.js";
+import {
+  JPEG_DATA_URL_PREFIX,
+  PROMPT_IMAGE_TYPES,
+  preparePromptImage,
+} from "./prompt-image.js";
 import type { useAgentRun } from "./use-agent-run.js";
 
 const cameraModeSchema = z.enum(["required", "optional", "off"]);
@@ -66,6 +74,10 @@ export function AgentControl({
     }
   });
   const [reasoning, setReasoning] = useState(DEFAULT_REASONING_EFFORT);
+  const promptImagePicker = useRef<HTMLInputElement>(null);
+  const [promptImage, setPromptImage] = useState<PromptImage | null>(null);
+  const [preparingPromptImage, setPreparingPromptImage] = useState(false);
+  const [promptImageError, setPromptImageError] = useState("");
   const [preferredInferenceMode, setPreferredInferenceMode] = useState(
     DEFAULT_INFERENCE_MODE,
   );
@@ -118,6 +130,17 @@ export function AgentControl({
     manualLease.label,
   );
   const settingsLocked = startingRun || active;
+  async function attachPromptImage(file: File): Promise<void> {
+    setPreparingPromptImage(true);
+    setPromptImageError("");
+    try {
+      setPromptImage(await preparePromptImage(file));
+    } catch (error: unknown) {
+      setPromptImageError(errorMessage(error));
+    } finally {
+      setPreparingPromptImage(false);
+    }
+  }
   let unavailable = "";
   if (!stationState) {
     unavailable = "Connect to the station to start a task.";
@@ -149,8 +172,16 @@ export function AgentControl({
         className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!unavailable && decision.kind === "allowed")
-            void onStartRun(decision.request);
+          if (
+            !preparingPromptImage &&
+            !unavailable &&
+            decision.kind === "allowed"
+          )
+            void onStartRun(
+              promptImage
+                ? { ...decision.request, promptImage }
+                : decision.request,
+            );
         }}
       >
         <label htmlFor="agent-task">
@@ -171,6 +202,53 @@ export function AgentControl({
             placeholder="Describe what the robot should do"
           />
         </label>
+        <div className="grid gap-2">
+          <input
+            ref={promptImagePicker}
+            type="file"
+            accept={PROMPT_IMAGE_TYPES}
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) void attachPromptImage(file);
+            }}
+          />
+          <Button
+            className="w-fit"
+            type="button"
+            variant="outline"
+            disabled={settingsLocked || preparingPromptImage}
+            onClick={() => promptImagePicker.current?.click()}
+          >
+            <ImagePlus aria-hidden="true" />
+            {promptImage ? "Replace image" : "Attach image"}
+          </Button>
+          {promptImage && (
+            <div className="flex min-w-0 items-center gap-2">
+              <img
+                className="h-12 w-12 shrink-0 rounded object-contain"
+                src={JPEG_DATA_URL_PREFIX + promptImage.jpegBase64}
+                alt=""
+              />
+              <span className="min-w-0 break-all">{promptImage.filename}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={settingsLocked || preparingPromptImage}
+                onClick={() => {
+                  setPromptImage(null);
+                  setPromptImageError("");
+                }}
+              >
+                Remove image
+              </Button>
+            </div>
+          )}
+          <p className="empty:hidden" role="status">
+            {preparingPromptImage ? "Preparing image…" : promptImageError}
+          </p>
+        </div>
         <fieldset
           className="grid gap-4 sm:grid-cols-2"
           disabled={settingsLocked}
@@ -353,7 +431,11 @@ export function AgentControl({
           ) : (
             <Button
               type="submit"
-              disabled={!!unavailable || decision.kind === "blocked"}
+              disabled={
+                preparingPromptImage ||
+                !!unavailable ||
+                decision.kind === "blocked"
+              }
             >
               {startingRun ? "Starting task…" : "Start task"}
             </Button>

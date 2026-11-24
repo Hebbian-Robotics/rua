@@ -87,7 +87,8 @@ export class RunManager {
   start(request: ParsedRunRequest): Run {
     if (this.activeRun() !== null)
       throw new RunConflictError("A run is already active");
-    const { provider, model } = request.settings;
+    const { promptImage, ...historyRequest } = request;
+    const { provider, model } = historyRequest.settings;
     const reasoningEffort =
       request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
     const inferenceMode =
@@ -101,7 +102,8 @@ export class RunManager {
       id: this.options.newId(),
       createdAt: now,
       request: {
-        ...request,
+        ...historyRequest,
+        ...(promptImage ? { attachmentFilename: promptImage.filename } : {}),
         settings: { provider, model, reasoningEffort, inferenceMode },
       },
       phase: { state: "running", startedAt: now },
@@ -233,6 +235,14 @@ export class RunManager {
           runId: entry.run.id,
           arm: request.arm,
           task: request.task,
+          ...(request.promptImage
+            ? {
+                referenceImageJpeg: Buffer.from(
+                  request.promptImage.jpegBase64,
+                  "base64",
+                ),
+              }
+            : {}),
           cameras: request.cameras,
           optionalCameras: request.optionalCameras,
           ...(request.motionLimits === undefined

@@ -40,6 +40,7 @@ const MAXIMUM_LEASE_LABEL_CHARACTERS = 200;
 export interface LoopConfig {
   arm?: string;
   task: string;
+  referenceImageJpeg?: Uint8Array;
 
   runId?: string;
 
@@ -292,6 +293,9 @@ async function runLoop(
     environment,
     `Task: ${config.task}\nThe station's robot profile supplies the default and maximum joint speeds.`,
   );
+  const firstObservation: Observation = config.referenceImageJpeg
+    ? { ...first.observation, referenceImageJpeg: config.referenceImageJpeg }
+    : first.observation;
   const settings: ConversationSettings = {
     tracerProvider: environment.tracerProvider,
     model: config.model,
@@ -304,13 +308,13 @@ async function runLoop(
       })),
       ...AGENT_TOOLS,
     ],
-    firstObservation: first.observation,
+    firstObservation,
     reasoningEffort: config.reasoningEffort,
     inferenceMode: config.inferenceMode ?? DEFAULT_INFERENCE_MODE,
     ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
   };
   const conversation =
-    options.openConversation?.(first.observation, settings) ??
+    options.openConversation?.(firstObservation, settings) ??
     startConversation(config.provider, settings);
   let ending: LoopEnding;
   try {

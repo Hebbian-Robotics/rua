@@ -14,6 +14,7 @@ import {
   OUTPUT_LINE_LIMIT,
   RunConflictError,
   RunManager,
+  type RunManagerOptions,
   type RunStore,
 } from "../src/run-manager.js";
 
@@ -44,7 +45,10 @@ let time: number;
 let conversations: ModelConversation[];
 
 function manager(
-  options: { environment?: NodeJS.ProcessEnv; store?: RunStore } = {},
+  options: Pick<
+    Partial<RunManagerOptions>,
+    "environment" | "store" | "openConversation"
+  > = {},
 ) {
   let count = 0;
   return new RunManager({
@@ -54,11 +58,13 @@ function manager(
     now: () => (time += 1),
     store: options.store ?? store,
     newId: () => `run-${++count}`,
-    openConversation: () => {
-      const conversation = conversations.shift();
-      if (conversation === undefined) throw new Error("No scripted model");
-      return conversation;
-    },
+    openConversation:
+      options.openConversation ??
+      (() => {
+        const conversation = conversations.shift();
+        if (conversation === undefined) throw new Error("No scripted model");
+        return conversation;
+      }),
   });
 }
 
@@ -86,6 +92,32 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+test("an attached reference reaches the first model turn and history keeps only its filename", async () => {
+  const imageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  const jpegBase64 = imageBytes.toString("base64");
+  const runs = manager({
+    openConversation: (firstObservation) => {
+      expect(firstObservation.referenceImageJpeg).toEqual(imageBytes);
+      return new ScriptedConversation([turn(["finish", { reason: "seen" }])]);
+    },
+  });
+  const started = runs.start(
+    runRequestSchema.parse({
+      ...request,
+      promptImage: { filename: "reference.png", jpegBase64 },
+    }),
+  );
+  const ended = await untilEnded(runs, started.id);
+  expect(ended.phase).toMatchObject({
+    state: "ended",
+    outcome: { kind: "completed" },
+  });
+  expect(store.saved.get(started.id)?.request).toMatchObject({
+    attachmentFilename: "reference.png",
+  });
+  expect(JSON.stringify(store.saved.get(started.id))).not.toContain(jpegBase64);
 });
 
 test("a completed run is recorded with its output", async () => {

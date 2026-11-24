@@ -13,6 +13,7 @@ import {
   type ModelRefusal,
   type ModelTurn,
   type Observation,
+  observationImages,
   PROVIDER_MAX_RETRIES,
   PROVIDER_TIMEOUT_MILLISECONDS,
   type TokenUsage,
@@ -53,9 +54,9 @@ export function claudeTurn(response: BetaMessage): ModelTurn | ModelRefusal {
 
 function observationBlocks(observation: Observation): BetaContentBlockParam[] {
   return [
-    ...Object.entries(observation.cameras).flatMap(
-      ([name, jpeg]): BetaContentBlockParam[] => [
-        { type: "text", text: `Camera: ${name}` },
+    ...observationImages(observation).flatMap(
+      ({ label, jpeg }): BetaContentBlockParam[] => [
+        { type: "text", text: label },
         {
           type: "image",
           source: {

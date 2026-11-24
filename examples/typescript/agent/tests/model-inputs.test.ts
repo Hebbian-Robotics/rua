@@ -131,7 +131,7 @@ function observationResult(
 }
 
 test.each(PROVIDERS)(
-  "%s archives submitted observation and tool images in request order",
+  "%s sends the reference image and archives camera images in request order",
   async (provider) => {
     const directory = await mkdtemp(join(tmpdir(), "rua-model-turns-"));
     vi.stubEnv("HEBBIAN_RUA_MODEL_INPUTS_DIR", directory);
@@ -159,7 +159,10 @@ test.each(PROVIDERS)(
         apiKey: "local-test-key",
         model: testModelIds[provider],
         systemPrompt: "Inspect the station",
-        firstObservation: observation({ wrist: [1, 2] }),
+        firstObservation: {
+          ...observation({ wrist: [1, 2] }),
+          referenceImageJpeg: Buffer.from([13, 14]),
+        },
         tools: [],
         reasoningEffort: "high",
       });
@@ -204,6 +207,7 @@ test.each(PROVIDERS)(
         const request = requests[index];
         if (!request) throw new Error(`Missing request for model turn ${turn}`);
         const sent = submittedImages(provider, request);
+        if (index === 0) expect(sent.pop()).toEqual(Buffer.from([13, 14]));
         if (images.length === 0) {
           expect(sent).toEqual([]);
           continue;
