@@ -1,10 +1,115 @@
-//! Inspectable robot programs; execution accepts station-owned compilation identifiers.
+//! Robot program source, inspectable compilations, and execution records.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::{ActionSequenceRequest, GripperOpening, JointSpeed, PoseOrientation};
+use crate::{ArmRecord, GripperOpening, JointSpeed, PoseOrientation};
+
+/// The final pose or joint configuration where this move settles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ActionSequenceGoal {
+    #[schemars(title = "ActionSequenceJointsMovement")]
+    Joints {
+        joints: Vec<f64>,
+        #[serde(default)]
+        max_joint_speed: Option<f64>,
+    },
+    #[schemars(title = "ActionSequencePoseMovement")]
+    Pose {
+        position: [f64; 3],
+        orientation: PoseOrientation,
+        #[serde(default)]
+        max_joint_speed: Option<f64>,
+    },
+}
+
+/// An intermediate configuration along one continuous move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionSequenceWaypoint {
+    pub at: CompiledGoal,
+    /// Start moving the gripper when passing this waypoint.
+    #[schemars(extend("x-omit-when-none" = true))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gripper_opening: Option<GripperOpening>,
+}
+
+/// An arm action must name a goal or gripper opening. When both are present they start together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum ActionSequenceArmAction {
+    #[schemars(title = "ActionSequenceMove")]
+    Move {
+        goal: ActionSequenceGoal,
+        /// Pass through these intermediate configurations before settling at the goal.
+        #[serde(default)]
+        waypoints: Vec<ActionSequenceWaypoint>,
+        #[serde(default)]
+        #[schemars(range(min = 0.0, max = 1.0))]
+        gripper_opening: Option<f64>,
+        /// Speed for both resources in rad/s; overrides the goal speed when provided.
+        #[serde(default)]
+        max_joint_speed: Option<f64>,
+    },
+    #[schemars(title = "ActionSequenceGripper")]
+    Gripper {
+        #[schemars(range(min = 0.0, max = 1.0))]
+        gripper_opening: f64,
+        /// Gripper speed in rad/s.
+        #[serde(default)]
+        max_joint_speed: Option<f64>,
+    },
+}
+
+impl ActionSequenceArmAction {
+    #[must_use]
+    pub fn goal(&self) -> Option<&ActionSequenceGoal> {
+        match self {
+            Self::Move { goal, .. } => Some(goal),
+            Self::Gripper { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn gripper_opening(&self) -> Option<f64> {
+        match self {
+            Self::Move {
+                gripper_opening, ..
+            } => *gripper_opening,
+            Self::Gripper {
+                gripper_opening, ..
+            } => Some(*gripper_opening),
+        }
+    }
+}
+
+/// One synchronized step; a single-arm action is a map with one entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionSequenceStep {
+    pub arms: BTreeMap<String, ActionSequenceArmAction>,
+}
+
+impl ActionSequenceStep {
+    #[must_use]
+    pub fn single(arm: impl Into<String>, action: ActionSequenceArmAction) -> Self {
+        Self {
+            arms: BTreeMap::from([(arm.into(), action)]),
+        }
+    }
+}
+
+/// An ordered set of steps to execute under the caller's lease.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActionSequenceRequest {
+    pub steps: Vec<ActionSequenceStep>,
+    /// Revisions fence every participating arm throughout the sequence.
+    #[serde(default)]
+    pub expected_revisions: BTreeMap<String, u64>,
+}
 
 pub type CompiledStep = BTreeMap<String, CompiledOperation>;
 
@@ -34,7 +139,7 @@ pub enum CompiledArmAction {
         goal: CompiledGoal,
         /// Pass through these intermediate configurations before settling at the goal.
         #[serde(default)]
-        waypoints: Vec<crate::ActionSequenceWaypoint>,
+        waypoints: Vec<ActionSequenceWaypoint>,
         gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<JointSpeed>,
     },
@@ -117,20 +222,6 @@ pub struct ProgramContinuation {
     pub next_step: usize,
 }
 
-/// Submit a station-owned compilation under current execution authority.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct RunCompiledProgramRequest {
-    pub request_id: String,
-    pub station_instance_id: String,
-    pub compilation_id: String,
-    pub lease_token: String,
-    #[serde(default)]
-    pub continuation: Option<ProgramContinuation>,
-    #[serde(default)]
-    pub expected_revisions: BTreeMap<String, u64>,
-}
-
 /// The boundary where an execution stopped; uncertain admission may already have acted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "stage", rename_all = "snake_case")]
@@ -173,4 +264,30 @@ impl ExecutionFailure {
             | Self::Runtime { detail, .. } => detail,
         }
     }
+}
+
+/// Progress of an action sequence, including the records of each finished step.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ActionSequencePhase {
+    #[schemars(title = "ActionSequenceRunning")]
+    Running { step: usize },
+    #[schemars(title = "ActionSequenceCompleted")]
+    Completed,
+    #[schemars(title = "ActionSequenceStopped")]
+    Stopped { failure: ExecutionFailure },
+}
+
+/// The station's retained action sequence state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ActionSequenceRecord {
+    pub continuation: Option<ProgramContinuation>,
+    pub id: String,
+    pub compilation_id: String,
+    pub arms: Vec<String>,
+    /// The submitted steps, including those not yet executed.
+    pub requested_steps: Vec<ActionSequenceStep>,
+    pub phase: ActionSequencePhase,
+    /// Command records for steps that have finished or been interrupted.
+    pub steps: Vec<Vec<ArmRecord>>,
 }

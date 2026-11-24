@@ -13,55 +13,11 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ArmRecord, JointSpeed, PoseOrientation, PoseProjection, RejectionReason, Waypoint};
-
-/// A normalized gripper target, from closed (0) to open (1).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f64", into = "f64")]
-pub struct GripperOpening(f64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidGripperOpening;
-
-impl std::fmt::Display for InvalidGripperOpening {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("A gripper opening must be a finite number from 0 (closed) to 1 (open)")
-    }
-}
-
-impl std::error::Error for InvalidGripperOpening {}
-
-impl TryFrom<f64> for GripperOpening {
-    type Error = InvalidGripperOpening;
-
-    fn try_from(opening: f64) -> Result<Self, Self::Error> {
-        if (0.0..=1.0).contains(&opening) {
-            Ok(Self(opening))
-        } else {
-            Err(InvalidGripperOpening)
-        }
-    }
-}
-
-impl From<GripperOpening> for f64 {
-    fn from(opening: GripperOpening) -> Self {
-        opening.0
-    }
-}
-
-impl JsonSchema for GripperOpening {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "GripperOpening".into()
-    }
-
-    fn inline_schema() -> bool {
-        true
-    }
-
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({"title": "GripperOpening", "type": "number", "minimum": 0.0, "maximum": 1.0})
-    }
-}
+use crate::robot_program::{ActionSequenceRequest, ProgramContinuation};
+use crate::{
+    ArmRecord, GripperOpening, JointSpeed, PoseOrientation, PoseProjection, RejectionReason,
+    Waypoint,
+};
 
 /// A command for one arm.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -123,101 +79,6 @@ pub enum StationCommand {
         #[serde(default)]
         max_joint_speed: Option<JointSpeed>,
     },
-}
-
-/// The final pose or joint configuration where this move settles.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ActionSequenceGoal {
-    #[schemars(title = "ActionSequenceJointsMovement")]
-    Joints {
-        joints: Vec<f64>,
-        #[serde(default)]
-        max_joint_speed: Option<f64>,
-    },
-    #[schemars(title = "ActionSequencePoseMovement")]
-    Pose {
-        position: [f64; 3],
-        orientation: PoseOrientation,
-        #[serde(default)]
-        max_joint_speed: Option<f64>,
-    },
-}
-
-/// An intermediate configuration along one continuous move.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ActionSequenceWaypoint {
-    pub at: crate::CompiledGoal,
-    /// Start moving the gripper when passing this waypoint.
-    #[schemars(extend("x-omit-when-none" = true))]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gripper_opening: Option<GripperOpening>,
-}
-
-/// An arm action must name a goal or gripper opening. When both are present they start together.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged, deny_unknown_fields)]
-pub enum ActionSequenceArmAction {
-    #[schemars(title = "ActionSequenceMove")]
-    Move {
-        goal: ActionSequenceGoal,
-        /// Pass through these intermediate configurations before settling at the goal.
-        #[serde(default)]
-        waypoints: Vec<crate::ActionSequenceWaypoint>,
-        #[serde(default)]
-        #[schemars(range(min = 0.0, max = 1.0))]
-        gripper_opening: Option<f64>,
-        /// Speed for both resources in rad/s; overrides the goal speed when provided.
-        #[serde(default)]
-        max_joint_speed: Option<f64>,
-    },
-    #[schemars(title = "ActionSequenceGripper")]
-    Gripper {
-        #[schemars(range(min = 0.0, max = 1.0))]
-        gripper_opening: f64,
-        /// Gripper speed in rad/s.
-        #[serde(default)]
-        max_joint_speed: Option<f64>,
-    },
-}
-
-impl ActionSequenceArmAction {
-    #[must_use]
-    pub fn goal(&self) -> Option<&ActionSequenceGoal> {
-        match self {
-            Self::Move { goal, .. } => Some(goal),
-            Self::Gripper { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn gripper_opening(&self) -> Option<f64> {
-        match self {
-            Self::Move {
-                gripper_opening, ..
-            } => *gripper_opening,
-            Self::Gripper {
-                gripper_opening, ..
-            } => Some(*gripper_opening),
-        }
-    }
-}
-
-/// One synchronized step; a single-arm action is a map with one entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ActionSequenceStep {
-    pub arms: BTreeMap<String, ActionSequenceArmAction>,
-}
-
-impl ActionSequenceStep {
-    #[must_use]
-    pub fn single(arm: impl Into<String>, action: ActionSequenceArmAction) -> Self {
-        Self {
-            arms: BTreeMap::from([(arm.into(), action)]),
-        }
-    }
 }
 
 /// Identifies one station process for retry and event-cursor fencing.
@@ -293,16 +154,6 @@ pub struct StreamGoalUpdateRequest {
     pub expected_revision: Option<u64>,
 }
 
-/// An ordered set of steps to execute under the caller's lease.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ActionSequenceRequest {
-    pub steps: Vec<ActionSequenceStep>,
-    /// Revisions fence every participating arm throughout the sequence.
-    #[serde(default)]
-    pub expected_revisions: BTreeMap<String, u64>,
-}
-
 /// Start an action sequence under an explicit station lease.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -313,30 +164,18 @@ pub struct ActionSequenceStartRequest {
     pub action_sequence: ActionSequenceRequest,
 }
 
-/// Progress of an action sequence, including the records of each finished step.
+/// Submit a station-owned compilation under current execution authority.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum ActionSequencePhase {
-    #[schemars(title = "ActionSequenceRunning")]
-    Running { step: usize },
-    #[schemars(title = "ActionSequenceCompleted")]
-    Completed,
-    #[schemars(title = "ActionSequenceStopped")]
-    Stopped { failure: crate::ExecutionFailure },
-}
-
-/// The station's retained action sequence state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct ActionSequenceRecord {
-    pub continuation: Option<crate::ProgramContinuation>,
-    pub id: String,
+#[serde(deny_unknown_fields)]
+pub struct RunCompiledProgramRequest {
+    pub request_id: String,
+    pub station_instance_id: String,
     pub compilation_id: String,
-    pub arms: Vec<String>,
-    /// The submitted steps, including those not yet executed.
-    pub requested_steps: Vec<ActionSequenceStep>,
-    pub phase: ActionSequencePhase,
-    /// Command records for steps that have finished or been interrupted.
-    pub steps: Vec<Vec<ArmRecord>>,
+    pub lease_token: String,
+    #[serde(default)]
+    pub continuation: Option<ProgramContinuation>,
+    #[serde(default)]
+    pub expected_revisions: BTreeMap<String, u64>,
 }
 
 /// Move several arms together: every target is planned before any arm moves,
@@ -503,24 +342,6 @@ mod motion_value_tests {
             let command =
                 format!(r#"{{"kind":"move_to_joints","joints":[0.0],"max_joint_speed":{speed}}}"#);
             assert!(serde_json::from_str::<StationCommand>(&command).is_err());
-        }
-    }
-
-    #[test]
-    fn an_opening_accepts_the_closed_and_open_endpoints_as_wire_numbers() {
-        for wire_value in ["0.0", "0.5", "1.0"] {
-            let opening: GripperOpening = serde_json::from_str(wire_value).unwrap();
-            assert_eq!(serde_json::to_string(&opening).unwrap(), wire_value);
-        }
-    }
-
-    #[test]
-    fn an_opening_rejects_values_outside_the_unit_interval() {
-        for opening in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
-            assert!(GripperOpening::try_from(opening).is_err());
-        }
-        for wire_value in ["-0.1", "1.1"] {
-            assert!(serde_json::from_str::<GripperOpening>(wire_value).is_err());
         }
     }
 }
