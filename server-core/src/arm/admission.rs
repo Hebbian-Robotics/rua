@@ -597,6 +597,7 @@ impl ArmCore {
                 destination_quaternion: None,
             }],
             peak_speed: self.limits.default_joint_speed,
+            trajectory_limits: None,
         };
         let plan = ValidatedPlan::new(plan, self.limits.joint_bounds.lower().len())?;
         AdmittedPlan::new(plan, &self.limits, poses.hold.clone())
@@ -681,6 +682,13 @@ impl ArmCore {
                 destination_position: target.destination_position,
                 destination_quaternion: target.destination_quaternion,
                 joint_speed: speed.radians_per_second(),
+                effective_motion_limits: group.is_none().then(|| {
+                    hebbian_contracts::EffectiveMotionLimits::new(
+                        speed.radians_per_second(),
+                        plan.trajectory_limits
+                            .unwrap_or(self.limits.trajectory_limits),
+                    )
+                }),
                 path_limited: short.path_limited,
                 pose_limited: short.pose_limited,
                 group_id: group.as_ref().map(|group| group.id.as_str().to_owned()),

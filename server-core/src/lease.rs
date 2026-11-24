@@ -1362,10 +1362,10 @@ mod tests {
             inbox.next(),
             Some(crate::handoff::ArmRequest::Single(
                 crate::handoff::SingleArmRequest::Submit {
-                    command: Command::Stop,
+                    command,
                     ..
                 }
-            ))
+            )) if matches!(*command, Command::Stop)
         ));
         assert!(command(&lease, Some(&token), lapsed).is_err());
         assert!(command(&lease, None, lapsed).is_err());

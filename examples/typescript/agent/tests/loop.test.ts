@@ -407,7 +407,7 @@ test("losing the lease ends the run without stopping the recording", async () =>
   expect(result).toBe(
     "The lease was lost: taken, revoked, returned for an interruption or lapsed",
   );
-  expect(station.requests).toContain("POST /recording/start");
+  expect(station.requests).toContain("POST /recording/ensure");
   expect(station.requests).not.toContain("POST /recording/stop-for-lease");
   expect(station.commands).toHaveLength(0);
 });

@@ -235,6 +235,9 @@ export class RunManager {
           task: request.task,
           cameras: request.cameras,
           optionalCameras: request.optionalCameras,
+          ...(request.motionLimits === undefined
+            ? {}
+            : { motionLimits: request.motionLimits }),
           provider,
           model,
           reasoningEffort:

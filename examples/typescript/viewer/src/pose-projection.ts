@@ -1,4 +1,5 @@
 import type { PoseOrientation, PoseProjection, PreviewPose } from "hebbian-rua";
+import type { MotionLimits } from "../shared/run-api.js";
 import { stationConnection } from "./viewer-connection.js";
 
 export interface ProposedPose {
@@ -19,8 +20,11 @@ export type JawYawRange = PoseProjection["jaw_yaw_ranges"][number];
 export function previewRequest(
   position: number[],
   orientation: Orientation | null,
+  motionLimits?: MotionLimits,
 ): PreviewPose {
-  return orientation ? { position, orientation } : { position };
+  return orientation
+    ? { position, orientation, ...motionLimits }
+    : { position, ...motionLimits };
 }
 
 async function askForProjection(

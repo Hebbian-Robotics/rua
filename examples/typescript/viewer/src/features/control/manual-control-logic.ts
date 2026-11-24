@@ -1,4 +1,6 @@
 import type { ArmState } from "hebbian-rua";
+import type { MotionLimits } from "../../../shared/run-api.js";
+import { previewRequest } from "../../pose-projection.js";
 
 export function armAcceptsManualControl(
   armMode: ArmState["mode"] | null,
@@ -37,6 +39,7 @@ export function previewMatchesSelection({
   projectionArm,
   target,
   orientation,
+  motionLimits,
 }: {
   confirmed: {
     arm: string;
@@ -46,11 +49,10 @@ export function previewMatchesSelection({
   projectionArm: string | null;
   target: number[] | null;
   orientation: import("../../pose-projection.js").Orientation | null;
+  motionLimits?: MotionLimits;
 }): boolean {
   if (!confirmed || !target || confirmed.arm !== arm || projectionArm !== arm)
     return false;
-  const request = orientation
-    ? { position: target, orientation }
-    : { position: target };
+  const request = previewRequest(target, orientation, motionLimits);
   return JSON.stringify(confirmed.requestPose) === JSON.stringify(request);
 }

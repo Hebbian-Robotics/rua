@@ -487,6 +487,16 @@ class ControllerStatus(
     )
 
 
+class EffectiveMotionLimits(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    max_joint_acceleration: StrictFloat
+    max_joint_jerk: StrictFloat
+    max_joint_speed: StrictFloat
+
+
 class State(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1067,6 +1077,10 @@ class RecordedMove(BaseModel):
     destination_quaternion: Annotated[
         list[StrictFloat] | None, Field(max_length=4, min_length=4)
     ] = None
+    effective_motion_limits: Annotated[
+        EffectiveMotionLimits | None,
+        Field(description="The effective trajectory caps at admission."),
+    ] = None
     group_id: str | None = None
     joint_speed: StrictFloat
     kind: Literal["move"] = "move"
@@ -1408,6 +1422,19 @@ class MoveToJointsCommand(BaseModel):
     )
     joints: list[StrictFloat]
     kind: Literal["move_to_joints"] = "move_to_joints"
+    max_joint_acceleration: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            gt=0.0,
+        ),
+    ] = None
+    max_joint_jerk: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint jerk cap in rad/s³; defaults to the arm profile.", gt=0.0
+        ),
+    ] = None
     max_joint_speed: Annotated[
         StrictFloat | None,
         Field(
@@ -1787,6 +1814,27 @@ class PreviewPose(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    max_joint_acceleration: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            gt=0.0,
+        ),
+    ] = None
+    max_joint_jerk: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint jerk cap in rad/s³; defaults to the arm profile.", gt=0.0
+        ),
+    ] = None
+    max_joint_speed: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Requested peak joint speed in rad/s.",
+            gt=0.0,
+            title="JointSpeed",
+        ),
+    ] = None
     orientation: Annotated[
         GraspOrientation | QuaternionOrientation | None,
         Field(description="None leaves the orientation to the solver."),
@@ -1902,6 +1950,19 @@ class MoveToPoseCommand(BaseModel):
         frozen=True,
     )
     kind: Literal["move_to_pose"] = "move_to_pose"
+    max_joint_acceleration: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            gt=0.0,
+        ),
+    ] = None
+    max_joint_jerk: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint jerk cap in rad/s³; defaults to the arm profile.", gt=0.0
+        ),
+    ] = None
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
@@ -2300,6 +2361,10 @@ class PoseProjection(BaseModel):
         frozen=True,
     )
     calculation_milliseconds: Annotated[StrictFloat, Field(ge=0.0)]
+    effective_motion_limits: Annotated[
+        EffectiveMotionLimits | None,
+        Field(description="The planned IK move limits used by this preview."),
+    ] = None
     jaw_yaw_ranges: Annotated[
         list[JawYawRange],
         Field(
@@ -2564,6 +2629,19 @@ class CompiledArmAction1(BaseModel):
         StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
     ] = None
     kind: Literal["move"] = "move"
+    max_joint_acceleration: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            gt=0.0,
+        ),
+    ] = None
+    max_joint_jerk: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint jerk cap in rad/s³; defaults to the arm profile.", gt=0.0
+        ),
+    ] = None
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
@@ -2748,6 +2826,19 @@ class ActionSequenceMove(BaseModel):
         ),
     ]
     gripper_opening: Annotated[StrictFloat | None, Field(ge=0.0, le=1.0)] = None
+    max_joint_acceleration: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            gt=0.0,
+        ),
+    ] = None
+    max_joint_jerk: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Joint jerk cap in rad/s³; defaults to the arm profile.", gt=0.0
+        ),
+    ] = None
     max_joint_speed: Annotated[
         StrictFloat | None,
         Field(

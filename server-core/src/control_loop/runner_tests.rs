@@ -810,6 +810,7 @@ fn start_short_move(
     let now = Now::current();
     let plan = hebbian_contracts::CornerPlan {
         peak_speed: 0.5,
+        trajectory_limits: None,
         segments: vec![hebbian_contracts::Segment {
             final_gripper_angle: None,
             pass_through: None,
@@ -1146,6 +1147,7 @@ fn inconsistent_group_configuration_fails_all_members_instead_of_waiting_forever
     };
     let motion = || CornerPlan {
         peak_speed: 0.5,
+        trajectory_limits: None,
         segments: vec![Segment {
             final_gripper_angle: None,
             pass_through: None,

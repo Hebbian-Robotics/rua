@@ -120,6 +120,8 @@ impl LeaseGuard {
 
     /// Move to joint angles, one per joint in the state's order.
     ///
+    /// `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+    /// `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
     /// `max_joint_speed`: Peak joint speed in rad/s; clamped to the profile's maximum.
     ///
     /// # Errors
@@ -136,6 +138,8 @@ impl LeaseGuard {
 
     /// Move to joint angles, one per joint in the state's order.
     ///
+    /// `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+    /// `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
     /// `max_joint_speed`: Peak joint speed in rad/s; clamped to the profile's maximum.
     ///
     /// # Errors
@@ -151,6 +155,8 @@ impl LeaseGuard {
             arm,
             StationCommand::MoveToJoints {
                 joints,
+                max_joint_acceleration: options.max_joint_acceleration,
+                max_joint_jerk: options.max_joint_jerk,
                 max_joint_speed,
             },
             options,
@@ -159,6 +165,9 @@ impl LeaseGuard {
     }
 
     /// Move the tool to a world position and orientation.
+    ///
+    /// `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+    /// `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
     ///
     /// # Errors
     /// As [`Station::run`].
@@ -181,6 +190,9 @@ impl LeaseGuard {
 
     /// Move the tool to a world position and orientation.
     ///
+    /// `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+    /// `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
+    ///
     /// # Errors
     /// As [`Station::run_with`].
     pub async fn move_to_pose_with(
@@ -196,6 +208,8 @@ impl LeaseGuard {
             StationCommand::MoveToPose {
                 position,
                 orientation,
+                max_joint_acceleration: options.max_joint_acceleration,
+                max_joint_jerk: options.max_joint_jerk,
                 max_joint_speed,
             },
             options,

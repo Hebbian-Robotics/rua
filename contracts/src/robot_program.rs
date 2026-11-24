@@ -52,6 +52,14 @@ pub enum ActionSequenceArmAction {
         /// Speed for both resources in rad/s; overrides the goal speed when provided.
         #[serde(default)]
         max_joint_speed: Option<f64>,
+        /// Joint acceleration cap in rad/s²; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_acceleration: Option<f64>,
+        /// Joint jerk cap in rad/s³; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_jerk: Option<f64>,
     },
     #[schemars(title = "ActionSequenceGripper")]
     Gripper {
@@ -142,6 +150,14 @@ pub enum CompiledArmAction {
         waypoints: Vec<ActionSequenceWaypoint>,
         gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<JointSpeed>,
+        /// Joint acceleration cap in rad/s²; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_acceleration: Option<f64>,
+        /// Joint jerk cap in rad/s³; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_jerk: Option<f64>,
     },
     Gripper {
         opening: GripperOpening,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { providerSchema } from "../../../shared/run-api.js";
+import { motionLimitsSchema, providerSchema } from "../../../shared/run-api.js";
 
 const VIEWER_PREFERENCES_KEY = "hebbian-viewer-preferences";
 
@@ -18,6 +18,7 @@ const preferencesSchema = z.object({
     .nullable()
     .catch(null)
     .default(null),
+  motionLimits: motionLimitsSchema.catch({}).default({}),
   recordWithControl: z.boolean().catch(false).default(false),
 });
 

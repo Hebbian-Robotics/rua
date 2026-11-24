@@ -98,6 +98,7 @@ impl ActiveGroup {
                 .iter()
                 .map(|plan| plan.peak_speed)
                 .fold(f64::INFINITY, f64::min),
+            trajectory_limits: None,
         };
         let joint_count = configs.iter().map(|config| config.joint_count).sum();
         let mut motion_limits = configs[0].motion.clone();

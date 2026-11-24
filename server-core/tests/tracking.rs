@@ -37,6 +37,7 @@ fn plan() -> CornerPlan {
             destination_quaternion: None,
         }],
         peak_speed: 0.6,
+        trajectory_limits: None,
     }
 }
 

@@ -8,6 +8,7 @@ import {
   LeaseLostError,
   type OnInterruption,
   type RobotObservation,
+  type RobotToolsOptions,
   type StationConnection,
   StationConnectionError,
   StationHttpError,
@@ -49,6 +50,7 @@ export interface LoopConfig {
 
   model: string;
   maxModelTurns?: number;
+  motionLimits?: RobotToolsOptions["motionLimits"];
   reasoningEffort: ReasoningEffort;
   // Standard when absent.
   inferenceMode?: InferenceMode;
@@ -176,6 +178,9 @@ export async function drive(
     arm: config.arm,
     cameras: config.cameras,
     optionalCameras: config.optionalCameras,
+    ...(config.motionLimits === undefined
+      ? {}
+      : { motionLimits: config.motionLimits }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   }).mapTools(filterSequenceActions((action) => action !== "joints"));
   let cancellationStop: Promise<void> | undefined;

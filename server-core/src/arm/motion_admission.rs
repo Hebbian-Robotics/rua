@@ -96,6 +96,23 @@ impl MoveDecision {
                 "Joint speed exceeds the arm's maximum",
             ));
         }
+        let mut plan = plan;
+        if let Some(requested) = plan.trajectory_limits {
+            if matches!(scope, MotionScope::Grouped) {
+                return Err(rejection(
+                    RejectionReason::InvalidTarget,
+                    "Per-move acceleration and jerk apply to individual arm moves",
+                ));
+            }
+            plan.trajectory_limits = Some(
+                crate::motion_values::resolve_trajectory_limits(
+                    limits.trajectory_limits,
+                    Some(requested.acceleration_limit),
+                    Some(requested.jerk_limit),
+                )
+                .map_err(invalid)?,
+            );
+        }
         let plan = ValidatedPlan::new(plan, limits.joint_bounds.lower().len()).map_err(invalid)?;
         if plan.peak_speed.to_bits() != speed.radians_per_second().to_bits() {
             return Err(rejection(

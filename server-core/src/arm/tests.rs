@@ -24,6 +24,10 @@ fn limits() -> Limits {
         jaw_closing_axis: JawClosingAxis::X,
         default_joint_speed: 1.0,
         max_joint_speed: 2.0,
+        trajectory_limits: hebbian_contracts::TrajectoryLimits {
+            acceleration_limit: 20.0,
+            jerk_limit: 200.0,
+        },
     }
 }
 
@@ -63,6 +67,7 @@ fn plan(from: [f64; 2], to: [f64; 2]) -> CornerPlan {
             destination_quaternion: None,
         }],
         peak_speed: 1.0,
+        trajectory_limits: None,
     }
 }
 

@@ -311,6 +311,34 @@ pub struct CornerPlan {
     pub segments: Vec<Segment>,
     #[schemars(range(min = 0.0))]
     pub peak_speed: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trajectory_limits: Option<TrajectoryLimits>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TrajectoryLimits {
+    pub acceleration_limit: f64,
+    pub jerk_limit: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EffectiveMotionLimits {
+    pub max_joint_speed: f64,
+    pub max_joint_acceleration: f64,
+    pub max_joint_jerk: f64,
+}
+
+impl EffectiveMotionLimits {
+    #[must_use]
+    pub fn new(speed: f64, limits: TrajectoryLimits) -> Self {
+        Self {
+            max_joint_speed: speed,
+            max_joint_acceleration: limits.acceleration_limit,
+            max_joint_jerk: limits.jerk_limit,
+        }
+    }
 }
 
 impl CornerPlan {
@@ -443,6 +471,10 @@ pub struct RequestedOrientation {
 /// The answer to a projection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct PoseProjection {
+    /// The planned IK move limits used by this preview.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-omit-when-none" = true))]
+    pub effective_motion_limits: Option<EffectiveMotionLimits>,
     pub outcome: ProjectionOutcome,
     /// None for a position-only target the solver chose the orientation for.
     pub requested: Option<RequestedOrientation>,

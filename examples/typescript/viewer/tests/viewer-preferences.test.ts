@@ -19,6 +19,7 @@ function storage(
 test("viewer preferences follow the system theme and hide commanded joints by default", () => {
   expect(readViewerPreferences(storage())).toEqual({
     version: 1,
+    motionLimits: {},
     theme: "system",
     showTargetJoints: true,
     showCommandedJoints: false,
@@ -40,6 +41,11 @@ test("saved preferences are shared and invalid or missing values get safe defaul
     },
     recordWithControl: true,
     theme: "light" as const,
+    motionLimits: {
+      max_joint_speed: 0.55,
+      max_joint_acceleration: 2,
+      max_joint_jerk: 40,
+    },
   };
   writeViewerPreferences(preferencesStorage, preferences);
   expect(readViewerPreferences(preferencesStorage)).toEqual(preferences);

@@ -231,6 +231,42 @@ fn prepare_movement(
     )
 }
 
+fn prepare_movement_with_limits(
+    link: &LinkHandle,
+    movement: StationMovement,
+    acceleration: Option<f64>,
+    jerk: Option<f64>,
+) -> Result<PreparedMovement, Rejection> {
+    let mut prepared = prepare_movement(link, movement)?;
+    if acceleration.is_some() || jerk.is_some() {
+        let PreparedMovement::Trajectory { plan, .. } = &mut prepared else {
+            return Err(rejection(
+                RejectionReason::InvalidTarget,
+                "Per-move acceleration and jerk require an IK move",
+            ));
+        };
+        plan.trajectory_limits = Some(resolve_trajectory_limits(
+            link.config(),
+            acceleration,
+            jerk,
+        )?);
+    }
+    Ok(prepared)
+}
+
+fn resolve_trajectory_limits(
+    config: &ControllerConfig,
+    acceleration: Option<f64>,
+    jerk: Option<f64>,
+) -> Result<hebbian_contracts::TrajectoryLimits, Rejection> {
+    crate::motion_values::resolve_trajectory_limits(
+        config.motion.trajectory_limits(),
+        acceleration,
+        jerk,
+    )
+    .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))
+}
+
 fn prepare_gripper(
     link: &LinkHandle,
     arm: &str,
@@ -258,16 +294,36 @@ pub(crate) fn arm_command(
         StationCommand::MoveToJoints {
             joints,
             max_joint_speed,
-        } => StationMovement::joints(joints, max_joint_speed),
+            max_joint_acceleration,
+            max_joint_jerk,
+        } => {
+            return prepare_movement_with_limits(
+                link,
+                StationMovement::joints(joints, max_joint_speed),
+                max_joint_acceleration,
+                max_joint_jerk,
+            )
+            .map(PreparedMovement::into_command);
+        }
         StationCommand::MoveToPose {
             position,
             orientation,
             max_joint_speed,
-        } => StationMovement::Pose {
-            position,
-            orientation,
-            max_joint_speed,
-        },
+            max_joint_acceleration,
+            max_joint_jerk,
+        } => {
+            return prepare_movement_with_limits(
+                link,
+                StationMovement::Pose {
+                    position,
+                    orientation,
+                    max_joint_speed,
+                },
+                max_joint_acceleration,
+                max_joint_jerk,
+            )
+            .map(PreparedMovement::into_command);
+        }
         StationCommand::StreamJoints {
             joints,
             max_joint_speed,
@@ -348,6 +404,8 @@ pub(super) fn prepare_compiled_action(
             goal,
             gripper_opening,
             max_joint_speed,
+            max_joint_acceleration,
+            max_joint_jerk,
         } => {
             let movement = if waypoints.is_empty() {
                 match goal {
@@ -386,7 +444,12 @@ pub(super) fn prepare_compiled_action(
                     max_joint_speed: *max_joint_speed,
                 }
             };
-            let mut movement = prepare_movement(link, movement)?;
+            let mut movement = prepare_movement_with_limits(
+                link,
+                movement,
+                *max_joint_acceleration,
+                *max_joint_jerk,
+            )?;
             if !waypoints.is_empty() {
                 prepare_waypoint_crossings(link, arm, &mut movement, waypoints, *gripper_opening)?;
             }
@@ -515,13 +578,38 @@ pub fn answer_preview(
             format!("No arm named {arm}"),
         )
     })?;
+    let config = link.config();
+    let effective = if link.has_policy() {
+        if pose.max_joint_acceleration.is_some() || pose.max_joint_jerk.is_some() {
+            return Err(rejection(
+                RejectionReason::InvalidTarget,
+                "Per-move acceleration and jerk require an IK move",
+            ));
+        }
+        None
+    } else {
+        let speed = JointSpeed::for_request(
+            pose.max_joint_speed,
+            config.default_joint_speed,
+            config.max_joint_speed,
+        )
+        .map_err(|error| rejection(RejectionReason::InvalidTarget, error.to_string()))?;
+        let trajectory =
+            resolve_trajectory_limits(config, pose.max_joint_acceleration, pose.max_joint_jerk)?;
+        Some(hebbian_contracts::EffectiveMotionLimits::new(
+            speed.radians_per_second(),
+            trajectory,
+        ))
+    };
     let sample = latest_sample(link)?;
-    link.project(
+    let mut projection = link.project(
         pose.position,
         pose.orientation,
         &sample.positions,
         sample.gripper_angle,
-    )
+    )?;
+    projection.effective_motion_limits = effective;
+    Ok(projection)
 }
 
 pub(crate) fn preview_answer(

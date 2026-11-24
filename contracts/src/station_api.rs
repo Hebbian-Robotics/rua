@@ -49,6 +49,14 @@ pub enum StationCommand {
         /// Peak joint speed in rad/s; clamped to the profile's maximum.
         #[serde(default)]
         max_joint_speed: Option<JointSpeed>,
+        /// Joint acceleration cap in rad/s²; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_acceleration: Option<f64>,
+        /// Joint jerk cap in rad/s³; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_jerk: Option<f64>,
     },
     /// Move the tool to a world position and orientation.
     #[schemars(title = "MoveToPoseCommand")]
@@ -57,6 +65,14 @@ pub enum StationCommand {
         orientation: PoseOrientation,
         #[serde(default)]
         max_joint_speed: Option<JointSpeed>,
+        /// Joint acceleration cap in rad/s²; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_acceleration: Option<f64>,
+        /// Joint jerk cap in rad/s³; defaults to the arm profile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+        max_joint_jerk: Option<f64>,
     },
     /// Start streaming joint destinations while the arm is holding. Send
     /// later goals to the operation's goal endpoint. The stream ends when
@@ -204,6 +220,17 @@ pub struct PreviewPose {
     /// None leaves the orientation to the solver.
     #[serde(default)]
     pub orientation: Option<PoseOrientation>,
+    /// Requested peak joint speed in rad/s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_joint_speed: Option<JointSpeed>,
+    /// Joint acceleration cap in rad/s²; defaults to the arm profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+    pub max_joint_acceleration: Option<f64>,
+    /// Joint jerk cap in rad/s³; defaults to the arm profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("exclusiveMinimum" = 0.0, "x-omit-when-none" = true))]
+    pub max_joint_jerk: Option<f64>,
 }
 
 /// Independent pose candidates for one arm; identifiers are supplied by the caller.

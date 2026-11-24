@@ -1,14 +1,23 @@
 import type { ArmState } from "hebbian-rua";
 import { BotIcon, SunIcon } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
+import { Input } from "@/components/ui/input.js";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select.js";
 import { Switch } from "@/components/ui/switch.js";
+import type { MotionLimits } from "../../../shared/run-api.js";
 import type { useAgentRun } from "../agent/use-agent-run.js";
 import type { ViewerPreferences } from "./preferences.js";
+
+const motionFields = [
+  ["max_joint_speed", "Joint speed (rad/s)"],
+  ["max_joint_acceleration", "Joint acceleration (rad/s²)"],
+  ["max_joint_jerk", "Joint jerk (rad/s³)"],
+] as const;
 
 export function SettingsPage({
   preferences,
@@ -24,6 +33,7 @@ export function SettingsPage({
   section: string | undefined;
 }) {
   const { status, connectionError } = agent;
+  const [motionLimitsSaved, setMotionLimitsSaved] = useState(false);
   useEffect(() => {
     const heading = document.getElementById(
       section === "agent" ? "settings-agent" : "settings-heading",
@@ -73,6 +83,72 @@ export function SettingsPage({
           <p>Connect to a station to see its arm controllers.</p>
         )}
         <p>Controllers are configured in the station profile.</p>
+      </Card>
+      <Card className="my-4 gap-2 p-5">
+        <details>
+          <summary className="cursor-pointer font-medium">
+            Advanced motion limits
+          </summary>
+          <form
+            aria-label="Motion limits"
+            aria-describedby="motion-limits-help"
+            className="mt-3 grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const motionLimits: MotionLimits = {};
+              for (const [name] of motionFields) {
+                const field = form.elements.namedItem(name);
+                if (!(field instanceof HTMLInputElement) || field.value === "")
+                  continue;
+                const value = field.valueAsNumber;
+                if (!Number.isFinite(value) || value <= 0) {
+                  field.setCustomValidity(
+                    "Enter a number greater than zero, or leave this blank.",
+                  );
+                  field.reportValidity();
+                  return;
+                }
+                motionLimits[name] = value;
+              }
+              update({ ...preferences, motionLimits });
+              setMotionLimitsSaved(true);
+            }}
+          >
+            <p id="motion-limits-help">
+              Applies to planned IK moves from the viewer and its agent runs.
+              The speed cap also applies when dragging in Follow mode. Leave a
+              field blank to use the arm profile.
+            </p>
+            <fieldset className="grid gap-2">
+              <legend className="sr-only">Per-move caps</legend>
+              {motionFields.map(([name, label]) => (
+                <label key={name} className="grid gap-1" htmlFor={name}>
+                  {label}
+                  <Input
+                    id={name}
+                    name={name}
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="Arm profile"
+                    defaultValue={preferences.motionLimits[name] ?? ""}
+                    onInput={(event) => {
+                      event.currentTarget.setCustomValidity("");
+                      setMotionLimitsSaved(false);
+                    }}
+                  />
+                </label>
+              ))}
+            </fieldset>
+            <Button type="submit" variant="outline" className="w-fit">
+              Save motion limits
+            </Button>
+            <p role="status">
+              {motionLimitsSaved ? "Motion limits saved." : ""}
+            </p>
+          </form>
+        </details>
       </Card>
       <Card className="my-4 gap-2 p-5">
         <h2>Robot view and camera labels</h2>

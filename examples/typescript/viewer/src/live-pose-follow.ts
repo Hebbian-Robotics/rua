@@ -9,8 +9,6 @@ export type FollowArm = Pick<ArmState, "arm" | "mode"> & {
   sampled_unix_nano?: string | null;
 };
 
-// Hand-tuned for the manual-follow feel; not derived from a standard.
-const defaultJointSpeedRadiansPerSecond = 0.08;
 const STALE_FEEDBACK_SECONDS = 0.5;
 // The station ends a stream that gets no goal for `stream_goal_timeout_seconds`
 // (0.5 s). A held drag has nothing new to say once the arm catches up, so the
@@ -27,7 +25,7 @@ const GOAL_REFUSALS_FOLLOW_SURVIVES: ReadonlySet<string> = new Set([
 export function createLivePoseFollow(
   getArm: () => FollowArm | undefined,
   report: (message: string) => void,
-  getJointSpeed: () => number = () => defaultJointSpeedRadiansPerSecond,
+  getJointSpeed: () => number | undefined = () => undefined,
   onDisarmed: () => void = () => {},
 ) {
   const lifecycle = createActor(

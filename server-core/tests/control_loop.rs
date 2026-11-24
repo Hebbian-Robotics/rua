@@ -338,6 +338,7 @@ fn two_arms() -> TwoArms {
 fn straight_plan(label: &str, start: [f64; 2], target: [f64; 2]) -> CornerPlan {
     CornerPlan {
         peak_speed: 1.0,
+        trajectory_limits: None,
         segments: vec![Segment {
             final_gripper_angle: None,
             pass_through: None,

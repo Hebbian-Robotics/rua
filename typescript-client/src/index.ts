@@ -32,7 +32,7 @@ export type {
   SequenceImageHistory,
   ToolCallWrapper,
 } from "./robot-tool-types.js";
-export { createRobotTools } from "./robot-tools.js";
+export { createRobotTools, type RobotToolsOptions } from "./robot-tools.js";
 export type {
   ArmCommandOptions,
   Lease,
