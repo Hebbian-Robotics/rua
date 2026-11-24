@@ -1,5 +1,7 @@
 # Example viewer
 
+![RUA viewer workspace](viewer-preview.png)
+
 The example Node server hosts the React viewer and agent loop. Set at least
 one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in your
 environment or the repository’s `.env`. Run `pnpm build` and
