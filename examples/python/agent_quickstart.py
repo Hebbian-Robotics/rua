@@ -1,10 +1,18 @@
 import json
 import os
-from collections.abc import Mapping, Sequence
+import sys
+from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
+from contextlib import contextmanager, nullcontext
 from typing import Annotated, Literal, TypedDict, cast
 from uuid import uuid4
 
 from cyclopts import App, Parameter, validators
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import BaseModel, ConfigDict
 
 from hebbian_rua import (
@@ -18,6 +26,7 @@ from hebbian_rua import (
 from hebbian_rua.client.contract.station_api import ArmMode
 from hebbian_rua.client.environment import load_environment
 from hebbian_rua.client.llm.robot_tools import CallWrapper
+from hebbian_rua.client.station_client import commands_parented_to
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
@@ -37,6 +46,48 @@ DEFAULT_MAX_TURNS = 20
 command_line = App(help=CLI_HELP, version_flags=())
 
 
+@contextmanager
+def agent_tracer() -> Generator[trace.Tracer]:
+    if not (
+        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ):
+        yield trace.NoOpTracer()
+        return
+
+    provider = TracerProvider(
+        resource=Resource.create(
+            {
+                "service.name": os.environ.get(
+                    "OTEL_SERVICE_NAME", "hebbian-python-agent"
+                )
+            }
+        )
+    )
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    try:
+        yield provider.get_tracer("hebbian.agent")
+    finally:
+        provider.shutdown()
+
+
+@contextmanager
+def agent_span(
+    tracer: trace.Tracer, name: str, attributes: Mapping[str, str | int]
+) -> Generator[trace.Span]:
+    with tracer.start_as_current_span(
+        name,
+        attributes=attributes,
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            yield span
+        except BaseException:
+            span.set_status(trace.StatusCode.ERROR)
+            raise
+
+
 class FinishArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str
@@ -44,6 +95,7 @@ class FinishArguments(BaseModel):
 
 class AgentRobotTools(RobotTools):
     finish_reason: str | None = None
+    tracer: trace.Tracer = trace.NoOpTracer()
 
     @property
     def tools(self) -> list[RobotToolSpec]:
@@ -56,6 +108,26 @@ class AgentRobotTools(RobotTools):
             ),
         ]
 
+    async def trace_tool_call(
+        self, call: RobotToolCall, execute: Callable[[], Awaitable[RobotToolResult]]
+    ) -> RobotToolResult:
+        with agent_span(
+            self.tracer, f"execute_tool {call.name}", {"gen_ai.tool.name": call.name}
+        ) as span:
+            headers: dict[str, str] = {}
+            TraceContextTextMapPropagator().inject(headers)
+            traceparent = headers.get("traceparent")
+            parent_command = (
+                commands_parented_to(traceparent, headers.get("tracestate"))
+                if traceparent is not None
+                else nullcontext()
+            )
+            with parent_command:
+                result = await execute()
+            if result.is_error:
+                span.set_status(trace.StatusCode.ERROR)
+            return result
+
     async def execute(
         self,
         calls: Sequence[RobotToolCall],
@@ -67,28 +139,32 @@ class AgentRobotTools(RobotTools):
         if not any(call.name == "finish" for call in calls):
             return await super().execute(
                 calls,
-                wrap,
+                wrap or self.trace_tool_call,
                 expected_revision=expected_revision,
                 expected_revisions=expected_revisions,
             )
-        try:
-            if len(calls) != 1:
-                raise ValueError("Call finish alone; this batch was not executed.")
-            arguments = FinishArguments.model_validate(calls[0].arguments)
-        except ValueError as error:
+        with agent_span(
+            self.tracer, "execute_tool finish", {"gen_ai.tool.name": "finish"}
+        ) as span:
+            try:
+                if len(calls) != 1:
+                    raise ValueError("Call finish alone; this batch was not executed.")
+                arguments = FinishArguments.model_validate(calls[0].arguments)
+            except ValueError as error:
+                span.set_status(trace.StatusCode.ERROR)
+                return [
+                    RobotToolResult(call, str(error), is_error=True, data=str(error))
+                    for call in calls
+                ]
+            self.finish_reason = arguments.reason
             return [
-                RobotToolResult(call, str(error), is_error=True, data=str(error))
-                for call in calls
+                RobotToolResult(
+                    calls[0],
+                    arguments.reason,
+                    is_error=False,
+                    data={"finished": True, "reason": arguments.reason},
+                )
             ]
-        self.finish_reason = arguments.reason
-        return [
-            RobotToolResult(
-                calls[0],
-                arguments.reason,
-                is_error=False,
-                data={"finished": True, "reason": arguments.reason},
-            )
-        ]
 
 
 async def run_openai(
@@ -106,20 +182,21 @@ async def run_openai(
     tools = robot_tools.tools
     async with AsyncOpenAI() as client:
         revisions: Mapping[str, int] | None = None
-        for _ in range(max_turns):
+        for turn_number in range(1, max_turns + 1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            response = await client.responses.create(
-                model=model,
-                instructions=instructions,
-                tools=tools,
-                input=pending_input,
-                previous_response_id=previous_response_id,
-                store=True,
-                prompt_cache_key=prompt_cache_key,
-            )
+            with agent_span(robot.tracer, "model turn", {"hebbian.turn": turn_number}):
+                response = await client.responses.create(
+                    model=model,
+                    instructions=instructions,
+                    tools=tools,
+                    input=pending_input,
+                    previous_response_id=previous_response_id,
+                    store=True,
+                    prompt_cache_key=prompt_cache_key,
+                )
             turn = await robot_tools.execute(
                 response, expected_revisions=revisions, include_model_output=False
             )
@@ -156,12 +233,13 @@ async def run_anthropic(
             cache_control={"type": "ephemeral"},
         )
         revisions: Mapping[str, int] | None = None
-        for _ in range(max_turns):
+        for turn_number in range(1, max_turns + 1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            response = await thread.send(*pending_input)
+            with agent_span(robot.tracer, "model turn", {"hebbian.turn": turn_number}):
+                response = await thread.send(*pending_input)
             turn = await robot_tools.execute(response, expected_revisions=revisions)
             pending_input = turn.messages
             revisions = turn.observed_revisions
@@ -198,20 +276,21 @@ async def run_gemini(
     continuation: Continuation = {}
     async with genai.Client().aio as client:
         revisions: Mapping[str, int] | None = None
-        for _ in range(max_turns):
+        for turn_number in range(1, max_turns + 1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
-            response = await client.interactions.create(
-                model=cast(ModelParam, model),
-                stream=False,
-                system_instruction=instructions,
-                tools=tools,
-                store=True,
-                input=pending_input,
-                **continuation,
-            )
+            with agent_span(robot.tracer, "model turn", {"hebbian.turn": turn_number}):
+                response = await client.interactions.create(
+                    model=cast(ModelParam, model),
+                    stream=False,
+                    system_instruction=instructions,
+                    tools=tools,
+                    store=True,
+                    input=pending_input,
+                    **continuation,
+                )
             if not isinstance(response, Interaction) or not response.id:
                 raise ValueError("Expected a stored, non-streaming Gemini interaction")
             turn = await robot_tools.execute(response, expected_revisions=revisions)
@@ -241,11 +320,14 @@ async def run_task(
     arm_name: str,
     cameras: list[str],
     max_turns: int = DEFAULT_MAX_TURNS,
+    *,
+    tracer: trace.Tracer,
 ) -> None:
     async with station.holding_lease(task, required_cameras=cameras) as lease:
         robot = AgentRobotTools(station, lease, arm_name, cameras).map_tools(
             filter_sequence_actions(lambda action: action != "joints")
         )
+        robot.tracer = tracer
         instructions = (
             "Operate the single configured SO-101 using Cartesian targets and "
             "gripper actions. In the base frame, +X is forward from the arm, "
@@ -371,21 +453,36 @@ async def main(
         )
         return 2
 
-    async with StationClient(server, media_server=media_server) as station:
-        try:
-            arm_name = await station.resolve_arm_name(arm)
-        except ValueError as error:
-            command_line.error_console.print(str(error), markup=False)
-            return 2
-        await run_task(
-            station,
-            resolved_provider,
-            resolved_model,
-            task,
-            arm_name,
-            list(camera),
-            max_turns,
-        )
+    with (
+        agent_tracer() as tracer,
+        agent_span(
+            tracer,
+            "agent run",
+            {
+                "gen_ai.provider.name": resolved_provider,
+                "gen_ai.request.model": resolved_model,
+            },
+        ) as span,
+    ):
+        span_context = span.get_span_context()
+        if span_context.is_valid:
+            print(f"Trace ID: {span_context.trace_id:032x}", file=sys.stderr)
+        async with StationClient(server, media_server=media_server) as station:
+            try:
+                arm_name = await station.resolve_arm_name(arm)
+            except ValueError as error:
+                command_line.error_console.print(str(error), markup=False)
+                return 2
+            await run_task(
+                station,
+                resolved_provider,
+                resolved_model,
+                task,
+                arm_name,
+                list(camera),
+                max_turns,
+                tracer=tracer,
+            )
     return None
 
 

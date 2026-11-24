@@ -72,6 +72,9 @@ precedence over these files.
    then connect. The browser connects directly to LiveKit. Keep the room
    token private and leave the LiveKit API key and secret on the station.
 
+Alternatively, paste the same URL and token into the **Custom** tab in
+[LiveKit Meet](https://meet.livekit.io/?tab=custom).
+
 Use the camera label you chose in SDK calls or example flags such as
 `--camera wrist`. If you have the RUA station viewer installed, you can
 also watch the feed under **Workspace**.

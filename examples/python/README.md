@@ -52,3 +52,25 @@ The agent continues each run using OpenAI Responses, Claude Message Threads,
 or Gemini Interactions. Each provider holds the conversation history. Subsequent
 turns send the new tool results and observations. The Claude SDK can replay
 the conversation to restore an expired or interrupted thread.
+
+## Watch live cameras
+
+To watch live cameras alongside the Python agent, use the
+[LiveKit room viewer or LiveKit Meet](../../docs/cameras.md#watch-a-usb-camera).
+
+## Inspect a run in Jaeger
+
+[Start Jaeger](https://www.jaegertracing.io/docs/2.23/getting-started/) with the
+OTLP HTTP receiver, then run the agent with the trace endpoint:
+
+```sh
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces \
+  uv run agent_quickstart.py "Describe the robot state. Keep the arm still."
+```
+
+Open [Jaeger](http://127.0.0.1:16686/) and look up the trace ID printed by the
+agent, or search for the `hebbian-python-agent` service. Completed model and
+tool spans appear as they are exported, so refresh during a longer run. The
+top-level run span appears when the run ends. Traces include timing, model and
+tool names, and error status. Prompts, images, and tool arguments stay out of
+the spans.
