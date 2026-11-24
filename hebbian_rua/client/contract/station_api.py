@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import (
     BaseModel,
@@ -1918,10 +1918,9 @@ class TraceSpan(BaseModel):
     parent_span_id: str | None = None
     span_id: str
     start_time_unix_nano: Annotated[str, Field(pattern="^[0-9]+$")]
-    status: Annotated[SpanStatus, Field(validate_default=True)] = {
-        "code": "STATUS_CODE_UNSET",
-        "message": None,
-    }
+    status: Annotated[SpanStatus, Field(validate_default=True)] = cast(
+        "SpanStatus", {"code": "STATUS_CODE_UNSET", "message": None}
+    )
     trace_id: str
 
 
