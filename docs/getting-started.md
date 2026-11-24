@@ -1,7 +1,7 @@
 # Get started with an SO-101
 
 Use the browser viewer to verify manual control and run your first agent.
-These steps use the published v0.1.5 station and SDKs.
+These steps use the published v0.1.6 station and SDKs.
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).
 
@@ -19,7 +19,7 @@ arms, supervise the first motions, and keep a physical power cutoff accessible.
 Before starting the viewer, [add your LiveKit credentials to the station’s `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
 
 ```sh
-uvx --from hebbian-rua==0.1.5 rua serve --manual-control
+uvx --from hebbian-rua==0.1.6 rua serve --manual-control
 ```
 
 Set at least one model-provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
