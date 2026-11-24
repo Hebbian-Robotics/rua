@@ -1,5 +1,9 @@
 name: Set up the station for checks
 description: Prepare native tools, dependencies, and pinned robot assets
+inputs:
+  install-python-sdk:
+    description: Build and install the Python SDK from the checkout
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -40,6 +44,16 @@ runs:
         cache: |
           rust
           uv
+    - name: Sync the Python environment
+      shell: bash
+      env:
+        INSTALL_PYTHON_SDK: ${{ inputs.install-python-sdk }}
+      run: |
+        sync_arguments=(--locked)
+        if [[ "$INSTALL_PYTHON_SDK" == 'false' ]]; then
+          sync_arguments+=(--no-install-package hebbian-rua)
+        fi
+        uv sync "${sync_arguments[@]}"
     - name: Prepare pinned robot assets
       shell: bash
-      run: uv run rua-dev setup
+      run: uv run --no-sync rua-dev setup
