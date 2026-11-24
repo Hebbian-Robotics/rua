@@ -20,7 +20,11 @@ import {
   type RunPhase,
 } from "../../shared/run-api.js";
 
-import { runLifecycle } from "./run-lifecycle.js";
+import {
+  runLifecycle,
+  type TerminalRunOutcome,
+  terminalRunOutcome,
+} from "./run-lifecycle.js";
 
 export interface RunStore {
   loadAll(): Promise<Run[]>;
@@ -279,25 +283,13 @@ export class RunManager {
       entry.run = { ...entry.run, usage: outcome.usage };
       this.appendLine(entry, outcome.result);
     }
-    if (entry.lifecycle.getSnapshot().matches("interrupting"))
-      this.end(entry, { kind: "interrupted" });
-    else if (
-      entry.lifecycle.getSnapshot().matches("stopping") ||
-      outcome.kind === "stopped"
-    )
-      this.end(entry, { kind: "stopped" });
-    else if (outcome.kind === "completed")
-      this.end(entry, { kind: "completed" }, outcome.result);
-    else if (outcome.kind === "incomplete")
-      this.end(entry, { kind: "incomplete", detail: outcome.result });
-    else this.end(entry, { kind: "failed", detail: outcome.reason });
+    this.end(
+      entry,
+      terminalRunOutcome(entry.lifecycle.getSnapshot().value, outcome),
+    );
   }
 
-  private end(
-    entry: LiveRun,
-    outcome: Extract<RunPhase, { state: "ended" }>["outcome"],
-    response?: string,
-  ): void {
+  private end(entry: LiveRun, terminal: TerminalRunOutcome): void {
     const startedAt =
       entry.run.phase.state === "ended" ? null : entry.run.phase.startedAt;
     entry.lifecycle.send({
@@ -306,8 +298,7 @@ export class RunManager {
         state: "ended",
         startedAt,
         endedAt: this.options.now(),
-        outcome,
-        ...(response === undefined ? {} : { response }),
+        ...terminal,
       },
     });
   }

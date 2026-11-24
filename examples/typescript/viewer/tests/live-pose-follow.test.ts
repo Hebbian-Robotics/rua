@@ -71,10 +71,15 @@ describe("createLivePoseFollow", () => {
         status: "accepted",
         records: [{ record: { command_id: "stream-1" } }],
       });
-      updateStreamGoal.mockImplementation(async () => ({
-        status: "accepted",
-        records: [{ record: {} }],
-      }));
+      let latestUpdate:
+        | { streamId: string; joints: number[]; sentAt: number }
+        | undefined;
+      updateStreamGoal.mockImplementation(
+        async (streamId: string, goal: { joints: number[] }) => {
+          latestUpdate = { streamId, joints: goal.joints, sentAt: Date.now() };
+          return { status: "accepted", records: [{ record: {} }] };
+        },
+      );
       const follow = createLivePoseFollow(
         () => holdingArm,
         () => {},
@@ -84,16 +89,24 @@ describe("createLivePoseFollow", () => {
       follow.setDragging(true);
       follow.setGoal([0, 0, 0, 0, 0]);
       await vi.advanceTimersByTimeAsync(0);
-      expect(streamJoints).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(updateStreamGoal.mock.calls.length).toBeGreaterThanOrEqual(4);
-      const [lastStreamId, lastGoal] = updateStreamGoal.mock.calls.at(-1) ?? [];
-      expect(lastGoal?.joints).toEqual([0, 0, 0, 0, 0]);
-      expect(lastStreamId).toBe(submissions[0]?.operationId);
+      const operation = submissions[0];
+      const startedAt = Date.now();
+      expect(operation?.signal?.aborted).toBe(false);
+      const newestGoal = [0.1, 0, 0, 0, 0];
+      follow.setGoal(newestGoal);
+      for (const elapsed of [400, 800, 1200]) {
+        await vi.advanceTimersByTimeAsync(400);
+        expect(latestUpdate).toMatchObject({
+          streamId: operation?.operationId,
+          joints: newestGoal,
+        });
+        expect(latestUpdate?.sentAt).toBeGreaterThan(startedAt + elapsed - 400);
+      }
       follow.setDragging(false);
-      const callsAtRelease = updateStreamGoal.mock.calls.length;
+      expect(operation?.signal?.aborted).toBe(true);
+      const lastUpdate = latestUpdate;
       await vi.advanceTimersByTimeAsync(1000);
-      expect(updateStreamGoal.mock.calls.length).toBe(callsAtRelease);
+      expect(latestUpdate).toBe(lastUpdate);
     } finally {
       vi.useRealTimers();
     }

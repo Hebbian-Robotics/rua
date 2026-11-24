@@ -49,9 +49,8 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   `LeaseGuard`, which `acquire_lease` and `take_lease` return, has every command that
   moves the arm: `move_to_joints`, `move_to_pose`, `stream_joints`,
   `set_gripper`, plus `run_arms`, `start_action_sequence`, `run_action_sequence`,
-  `move_to_pose_keeping_orientation` and `rehome`. Power and the lease are independent:
-  the lease can be held with the arm disabled, and a move on a disabled arm is refused
-  as `NotEnabled` with the way on. Use `GripperOpening::try_from(0.5)?` for a
+  `move_to_pose_keeping_orientation` and `rehome`. Use
+  `GripperOpening::try_from(0.5)?` for a
   half-open gripper target in a direct command or stream update, and
   `JointSpeed::new(0.5)?` for a speed of 0.5 rad/s.
 - Requests use HTTP; an event-stream task reconnects using the station cursor.
@@ -64,11 +63,11 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   from the holder; `revoke_lease` is the operator's override. `LeaseGuard::lost()`
   resolves after a take, revoke, lapse, disconnect, or a return for an interruption
   (`on_interruption: ReturnLease`); dropping the guard attempts a background release. See
-  [the control model](../docs/control-model.md).
-- The commands return the finished `CommandRecord` or a typed error: `Refused { reason }`
-  (nothing moved), `Incomplete { outcome }` (stopped, tripped, timed out...),
-  `Timeout`, `Connection`. Dropping a `run` future requests a stop in the
-  background; it does not wait for confirmation that the arm has stopped.
+  [control leases](../docs/control-model.md#control-leases).
+- The commands return the finished `CommandRecord` or a typed error such as
+  `Refused { reason }`, `Incomplete { outcome }`, `Timeout`, or `Connection`.
+  See [command outcomes](../docs/control-model.md#command-outcomes). Dropping a
+  `run` future requests a stop in the background and returns before confirmation.
 - `Station::connect_with(ConnectOptions { run_after, .. })` also returns the
   run telemetry stream (`RunUpdate`), resumed after a sequence number.
 - The `_with` variants (`move_to_joints_with`, `enable_with`, `run_arms_with`, ...) take `CommandOptions { trace_context,

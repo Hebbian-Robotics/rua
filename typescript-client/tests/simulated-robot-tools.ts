@@ -38,6 +38,19 @@ try {
   const state = await connection.state();
   const enabled = state.arms.find((arm) => arm.arm === "arm");
   assert.ok(enabled);
+  const [stale] = await robot.execute(
+    [
+      {
+        id: "stale-revision",
+        name: "set_arm_gripper",
+        arguments: { arm: "arm", opening: 0.5 },
+      },
+    ],
+    { arm: enabled.revision + 1 },
+  );
+  assert.equal(stale?.interrupted, true);
+  assert.equal((stale.data as { reason: string }).reason, "stale_revision");
+
   const savedOpening = enabled.gripper_opening;
   assert.ok(savedOpening !== null);
   const position = enabled.tool?.position;
