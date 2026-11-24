@@ -17,7 +17,9 @@ Start with `hebbian-rua --help` and `hebbian-rua state`. Use
 joint order, faults, interlocks and the lease holder from state.
 
 Global options: `--server URL` (default `http://127.0.0.1:8792`, or `HEBBIAN_STATION_URL`),
-`--media-server URL` (default `http://127.0.0.1:8781`, or `HEBBIAN_MEDIA_SERVER`) and `--raw`.
+`--media-server URL` overrides the camera service (also settable with
+`HEBBIAN_MEDIA_SERVER`). Camera calls use the station URL by default. A direct
+media companion typically listens on `http://127.0.0.1:8781`. Use `--raw` for full output.
 Check the station's actual port if a connection fails. `--expected-revision ARM=REV` refuses a
 command as stale if the arm's revision moved on since you read `state`; `--take-lease` takes the
 lease from its holder and needs the user's authorization. Output is the concise
@@ -40,7 +42,8 @@ failures use stderr and a nonzero exit code. Motion waits for its outcome.
 ## Operating rules
 
 Inputs: joint angles are radians in state's `joint_names` order. Positions are metres
-in the robot's world frame (x forward, z up); speed is rad/s. Gripper opening is
+in the robot's world frame (x forward, z up). Joint speed, acceleration, and
+jerk caps use rad/s, rad/s², and rad/s³ respectively. Gripper opening is
 0 closed to 1 open. Quaternions use x,y,z,w; jaw yaw uses degrees. Without an
 orientation, `move-pose` preserves the current orientation, whereas
 `preview-pose` lets the solver choose one. Supply the same explicit orientation
