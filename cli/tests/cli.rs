@@ -158,7 +158,7 @@ async fn a_refused_command_exits_1_with_the_reason() -> TestResult {
             .as_str()
             .is_some_and(|detail| detail.contains("enable"))
     );
-    assert!(run.output.stdout.is_empty());
+    assert_eq!(run.output.stdout.as_slice(), b"");
     Ok(())
 }
 
