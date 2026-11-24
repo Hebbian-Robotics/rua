@@ -8,7 +8,6 @@ use std::{
 use crate::error::PublisherError;
 use axum::{
     Json, Router,
-    body::{Body, Bytes},
     extract::{Path, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
@@ -30,8 +29,6 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_SIMULATOR_HEADER_BYTES: u64 = 16 * 1024;
 const MAX_SIMULATOR_FRAME_BYTES: usize = 8 * 1024 * 1024;
-const PREVIEW_FRAME_INTERVAL: Duration = Duration::from_millis(125);
-const PREVIEW_BOUNDARY: &str = "rua-camera-frame";
 
 #[derive(Clone, Default)]
 pub struct Snapshots {
@@ -119,7 +116,6 @@ impl Snapshots {
             .route("/media/status", get(camera_status))
             .route("/cameras/{name}", get(snapshot))
             .route("/media/local-cameras", get(local_cameras))
-            .route("/media/local-cameras/{name}/stream", get(local_stream))
             .with_state(self)
     }
 
@@ -283,53 +279,6 @@ async fn local_cameras(State(state): State<Snapshots>) -> Json<Vec<CameraListing
     Json(cameras)
 }
 
-async fn local_stream(State(state): State<Snapshots>, Path(name): Path<String>) -> Response {
-    if cameras::validate_camera_name(&name).is_err() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let track_id = format!("local:{name}");
-    if state.local_frame(&track_id).is_none() {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let mut ticks = tokio::time::interval(PREVIEW_FRAME_INTERVAL);
-    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    // WHY: Sampling the cache lets slow readers skip frames without slowing capture.
-    let frames = futures_util::stream::unfold(
-        (state, track_id, ticks, None),
-        |(state, track_id, mut ticks, previous)| async move {
-            loop {
-                ticks.tick().await;
-                let frame = state.local_frame(&track_id)?;
-                if previous == Some(frame.received_at) {
-                    continue;
-                }
-                let mut part = format!(
-                    "--{PREVIEW_BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
-                    frame.jpeg.len(),
-                )
-                .into_bytes();
-                part.extend_from_slice(&frame.jpeg);
-                part.extend_from_slice(b"\r\n");
-                return Some((
-                    Ok::<_, std::convert::Infallible>(Bytes::from(part)),
-                    (state, track_id, ticks, Some(frame.received_at)),
-                ));
-            }
-        },
-    );
-    (
-        [
-            (
-                header::CONTENT_TYPE,
-                format!("multipart/x-mixed-replace; boundary={PREVIEW_BOUNDARY}"),
-            ),
-            (header::CACHE_CONTROL, "no-store".to_owned()),
-        ],
-        Body::from_stream(frames),
-    )
-        .into_response()
-}
-
 fn image_response(jpeg: Vec<u8>, timestamp: u128) -> Response {
     (
         [
@@ -349,7 +298,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn two_local_previews_share_capture_with_snapshots()
+    async fn local_previews_list_only_usb_feeds_and_poll_the_latest_capture()
     -> Result<(), Box<dyn std::error::Error>> {
         let snapshots = Snapshots::default();
         snapshots.register_local_frames("wrist");
@@ -384,21 +333,6 @@ mod tests {
             local_list,
             serde_json::json!([{"name":"wrist","available":true}])
         );
-        let url = format!("{base}/media/local-cameras/wrist/stream");
-        let (mut first_viewer, mut second_viewer) =
-            tokio::try_join!(client.get(&url).send(), client.get(&url).send(),)?;
-        assert_eq!(
-            first_viewer.headers()[header::CONTENT_TYPE],
-            "multipart/x-mixed-replace; boundary=rua-camera-frame"
-        );
-        for viewer in [&mut first_viewer, &mut second_viewer] {
-            let part = viewer
-                .chunk()
-                .await?
-                .ok_or("stream ended before first frame")?;
-            assert!(part.ends_with(b"\r\n\r\nfirst\r\n"));
-        }
-
         snapshots.frames.insert("local:wrist", frame(*b"later"));
         let still_image = client
             .get(format!("{base}/cameras/wrist"))
@@ -407,13 +341,6 @@ mod tests {
             .bytes()
             .await?;
         assert_eq!(still_image.as_ref(), b"later");
-        for viewer in [&mut first_viewer, &mut second_viewer] {
-            let part = viewer
-                .chunk()
-                .await?
-                .ok_or("stream ended before second frame")?;
-            assert!(part.ends_with(b"\r\n\r\nlater\r\n"));
-        }
         server.abort();
         Ok(())
     }

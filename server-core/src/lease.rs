@@ -1099,7 +1099,9 @@ impl Lease {
         {
             return Err(Rejection {
                 reason: RejectionReason::Interlocked,
-                detail: "A camera the lease requires is unavailable. Motion resumes when it gives a fresh frame".to_owned(),
+                detail: "A camera the lease requires is unavailable. Motion resumes when it gives a fresh frame. \
+                         If LiveKit is down, restart the station with --local-only-no-remote-cameras"
+                    .to_owned(),
             });
         }
         if generations.iter().any(|ticket| ticket.check().is_err()) {

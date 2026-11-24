@@ -230,6 +230,61 @@ function cameraTitle(name: string): string {
     : name.replaceAll("_", " ");
 }
 
+const LOCAL_FRAME_INTERVAL_MILLISECONDS = 125;
+const LOCAL_FRAME_RETRY_MILLISECONDS = 1000;
+
+function waitOrAbort(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
+// WHY: Short snapshot requests leave browser connections free for controls, and a failed
+// fetch simply retries, so a preview recovers on its own after the camera comes back.
+function useLatestLocalCameraFrame(
+  cameraName: string | undefined,
+): string | undefined {
+  const [frameUrl, setFrameUrl] = useState<string>();
+  useEffect(() => {
+    if (cameraName === undefined) return;
+    const stopped = new AbortController();
+    let shownFrameUrl: string | undefined;
+    void (async () => {
+      while (!stopped.signal.aborted) {
+        let delay = LOCAL_FRAME_INTERVAL_MILLISECONDS;
+        try {
+          const response = await fetch(
+            `/api/cameras/${encodeURIComponent(cameraName)}`,
+            { cache: "no-store", signal: stopped.signal },
+          );
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const nextFrameUrl = URL.createObjectURL(await response.blob());
+          if (shownFrameUrl) URL.revokeObjectURL(shownFrameUrl);
+          shownFrameUrl = nextFrameUrl;
+          setFrameUrl(nextFrameUrl);
+        } catch {
+          delay = LOCAL_FRAME_RETRY_MILLISECONDS;
+        }
+        await waitOrAbort(delay, stopped.signal);
+      }
+    })();
+    return () => {
+      stopped.abort();
+      if (shownFrameUrl) URL.revokeObjectURL(shownFrameUrl);
+      setFrameUrl(undefined);
+    };
+  }, [cameraName]);
+  return frameUrl;
+}
+
 export const CameraView = memo(function CameraView({
   feed,
   showLabel,
@@ -240,6 +295,9 @@ export const CameraView = memo(function CameraView({
   const video = useRef<HTMLVideoElement>(null);
   const container = useRef<HTMLElement>(null);
   const track = feed.kind === "room" ? feed.track : undefined;
+  const localFrameUrl = useLatestLocalCameraFrame(
+    feed.kind === "local" ? feed.name : undefined,
+  );
   useEffect(() => {
     const element = video.current;
     if (!element || !track) return;
@@ -261,12 +319,9 @@ export const CameraView = memo(function CameraView({
           <video ref={video} autoPlay muted playsInline aria-label={label} />
         ) : (
           <>
-            <img
-              src={`/api/media/local-cameras/${encodeURIComponent(feed.name)}/stream`}
-              alt={label}
-              width={640}
-              height={360}
-            />
+            {localFrameUrl && (
+              <img src={localFrameUrl} alt={label} width={640} height={360} />
+            )}
             <Badge
               variant="destructive"
               className="camera-fallback-label"

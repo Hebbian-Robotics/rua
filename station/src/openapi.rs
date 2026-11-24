@@ -363,21 +363,9 @@ pub fn routes() -> Vec<Route> {
                 "list_local_preview_cameras",
                 "get",
                 "/media/local-cameras",
-                "List USB cameras available for local preview in local-only mode.",
+                "List USB cameras available for local preview in local-only mode. Fetch frames from `/cameras/{name}`.",
                 None,
                 Reply::Json(schema_of::<Vec<CameraListing>>),
-                false,
-            )
-        },
-        Route {
-            direct_media: true,
-            ..route(
-                "stream_local_camera",
-                "get",
-                "/media/local-cameras/{name}/stream",
-                "Stream successive JPEGs from a local USB camera in local-only mode.",
-                None,
-                Reply::File(&["multipart/x-mixed-replace"]),
                 false,
             )
         },

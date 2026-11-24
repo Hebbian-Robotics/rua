@@ -1415,7 +1415,6 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "dotenvy",
- "futures-util",
  "hdrhistogram",
  "hebbian-rua-contracts",
  "hebbian-rua-core",

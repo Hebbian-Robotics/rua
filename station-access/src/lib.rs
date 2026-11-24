@@ -26,7 +26,7 @@ pub enum AccessError {
     PhoneCannotReachServer(#[from] PhoneUnreachableServer),
 }
 
-/// Why a phone could never join the room at `LIVEKIT_URL`, so issuing an invite would only fail on the phone.
+// WHY: Each variant is a reason a phone could never join the room, so an invite would only fail on the phone.
 #[derive(Debug, thiserror::Error)]
 pub enum PhoneUnreachableServer {
     #[error(

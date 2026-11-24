@@ -5,16 +5,13 @@ use std::time::Duration;
 use crate::lease_routes::ServedArms;
 use axum::Json;
 use axum::Router;
-use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::routing::post;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use hebbian_contracts::{
-    ArmMode, CameraName, ObservationAnswer, ObservationFrame, ObservationRequest,
-};
+use hebbian_contracts::{ArmMode, ObservationAnswer, ObservationFrame, ObservationRequest};
 use std::collections::{BTreeMap, BTreeSet};
 use tokio::sync::Semaphore;
 
@@ -167,7 +164,6 @@ pub(crate) fn router(proxy: Option<Arc<CameraProxy>>) -> Router {
         .route("/cameras", get(list_cameras))
         .route("/cameras/{name}", get(snapshot))
         .route("/media/local-cameras", get(list_local_cameras))
-        .route("/media/local-cameras/{name}/stream", get(local_stream))
         .with_state(proxy)
 }
 
@@ -177,51 +173,6 @@ async fn list_cameras(State(proxy): State<Option<Arc<CameraProxy>>>) -> Response
 
 async fn list_local_cameras(State(proxy): State<Option<Arc<CameraProxy>>>) -> Response {
     forward(proxy.as_deref(), CameraRequest::LocalList).await
-}
-
-async fn local_stream(
-    State(proxy): State<Option<Arc<CameraProxy>>>,
-    Path(name): Path<String>,
-) -> Response {
-    let Some(proxy) = proxy else {
-        return ForwardingOutcome::CompanionUnavailable.into_response();
-    };
-    let Ok(name) = CameraName::try_from(name) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    let mut url = proxy.camera_list_url.clone();
-    url.set_path(&format!("/media/local-cameras/{name}/stream"));
-    // WHY: A preview can stay open indefinitely, so it must not hold a snapshot permit.
-    let upstream = match tokio::time::timeout(UPSTREAM_TIMEOUT, proxy.client.get(url).send()).await
-    {
-        Ok(Ok(upstream)) => upstream,
-        Ok(Err(_)) => return ForwardingOutcome::CompanionUnavailable.into_response(),
-        Err(_) => return ForwardingOutcome::TimedOut.into_response(),
-    };
-    if !upstream.status().is_success() {
-        return upstream.status().into_response();
-    }
-    let Some(content_type) = upstream.headers().get(header::CONTENT_TYPE).cloned() else {
-        return StatusCode::BAD_GATEWAY.into_response();
-    };
-    let stream = futures_util::stream::unfold(upstream, |mut upstream| async {
-        upstream
-            .chunk()
-            .await
-            .transpose()
-            .map(|chunk| (chunk, upstream))
-    });
-    (
-        [
-            (header::CONTENT_TYPE, content_type),
-            (
-                header::CACHE_CONTROL,
-                header::HeaderValue::from_static("no-store"),
-            ),
-        ],
-        Body::from_stream(stream),
-    )
-        .into_response()
 }
 
 async fn snapshot(

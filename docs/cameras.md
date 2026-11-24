@@ -132,7 +132,9 @@ Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
 Use LiveKit Cloud for normal operation. If the station cannot reach it, the
 viewer loses live video and agents lose USB and phone camera snapshots, because
-both are read from the LiveKit room. Choose one of these until it returns:
+both are read from the LiveKit room. A lease that requires a camera stops the
+arms within a few seconds and refuses motion until frames return. Choose one of
+these to continue:
 
 | | Local LiveKit server | Local camera fallback |
 | --- | --- | --- |
@@ -183,10 +185,10 @@ Phone camera invites, remote feeds, and video recording are disabled in this mod
 Remove `--enable-recording` or unset `HEBBIAN_ENABLE_RECORDING` before restarting
 if you enabled recording.
 
-The station streams JPEGs from the same USB capture used for model snapshots.
-Custom clients can list feeds at `GET /media/local-cameras` and read a multipart
-JPEG stream at `GET /media/local-cameras/NAME/stream`. The CLI and SDK can
-continue to fetch individual JPEGs. Simulator views are available as snapshots.
+The viewer previews each camera by fetching its latest JPEG snapshot several
+times a second, from the same USB capture used for model snapshots. Custom
+clients can list the local feeds at `GET /media/local-cameras` and fetch frames
+from `GET /cameras/NAME`. Simulator views are available as snapshots.
 
 ```sh
 curl --fail http://127.0.0.1:8792/cameras

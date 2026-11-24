@@ -101,7 +101,7 @@ app.get("/api/controller", forwardStationApi);
 app.post("/api/controller/reconnect", forwardStationApi);
 app.get("/api/media/status", forwardStationApi);
 app.get("/api/media/local-cameras", forwardMediaApi);
-app.get("/api/media/local-cameras/:name/stream", forwardMediaApi);
+app.get("/api/cameras/:name", forwardMediaApi);
 app.get("/api/media/access-token", forwardStationApi);
 app.post("/api/media/phone-invites", forwardStationApi);
 app.get("/api/recording/enabled", forwardStationApi);
