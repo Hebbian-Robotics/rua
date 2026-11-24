@@ -12,14 +12,17 @@ Python package. In the project that runs the station, call it as
 so the CLI matches the station. From a RUA source checkout, use
 `cargo run -p hebbian-rua-cli --`.
 
-Start with `hebbian-rua --help` and `hebbian-rua state`. Use
-`<command> --help` for argument shapes and JSON examples. Discover arm names,
-joint order, faults, interlocks and the lease holder from state.
+Start with `hebbian-rua state` using the invocation above. Confirm that the
+station and arm match the task, measured joints are available, and there are
+no faults, interlocks, or conflicting leases. Discover the arm name and joint
+order from state. For a task that only asks for inspection, use read-only
+commands and leave torque unchanged. Use `<command> --help` for argument
+shapes and JSON examples.
 
 Global options: `--server URL` (default `http://127.0.0.1:8792`, or `HEBBIAN_STATION_URL`),
 `--media-server URL` overrides the camera service (also settable with
 `HEBBIAN_MEDIA_SERVER`). Camera calls use the station URL by default. A direct
-media companion typically listens on `http://127.0.0.1:8781`. Use `--raw` for full output.
+media companion typically listens on `http://127.0.0.1:8781`.
 Check the station's actual port if a connection fails. `--expected-revision ARM=REV` refuses a
 command as stale if the arm's revision moved on since you read `state`; `--take-lease` takes the
 lease from its holder and needs the user's authorization. Output is the concise
@@ -49,10 +52,13 @@ orientation, `move-pose` preserves the current orientation, whereas
 `preview-pose` lets the solver choose one. Supply the same explicit orientation
 when comparing a preview with a move.
 
-A grasp is judged from `completion.gripper`: `{"kind": "stopped_short", ...}` on a close means
-the jaw stopped on something (or was blocked). `{"kind": "reached", ...}` means it arrived.
-A move's `pose_limited.advice` gives a reachable approach.
-Place with the target visible: a held block hides it from the wrist camera.
+For a pose move, preview the same target and orientation first. Check the
+preview and physical clearance before moving. If the move is limited,
+inspect `pose_limited.advice` when present and preview any revised target.
+
+On a gripper close, `completion.gripper.kind` tells you how the jaw stopped.
+`stopped_short` indicates contact or a blockage, and `reached` indicates the
+requested opening. Use a camera view or other observation to verify a grasp.
 
 Motion acquires and releases its own lease per invocation; power is separate.
 Enable an arm before authorized motion. Rehome returns to its enable-time pose.
