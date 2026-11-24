@@ -669,8 +669,16 @@ impl MotionSupervisor {
     }
 
     #[must_use]
-    pub(crate) fn peak_speed(&self) -> f64 {
+    pub(crate) fn requested_joint_speed(&self) -> f64 {
         self.tracker.plan.peak_speed
+    }
+
+    #[must_use]
+    pub(crate) fn planned_peak_joint_speed(&self) -> f64 {
+        self.tracker
+            .continuous_path
+            .as_ref()
+            .map_or(self.tracker.plan.peak_speed, |path| path.peak_joint_speed)
     }
 
     #[must_use]

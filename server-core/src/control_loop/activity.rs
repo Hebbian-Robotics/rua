@@ -106,9 +106,10 @@ impl Loop<'_> {
             .err()
             .map(|failure| {
                 let motion_speed = match &self.activity {
-                    Activity::Motion(active) if self.config.feetech.is_some() => {
-                        Some((active.supervisor.peak_speed(), active.speed_fraction))
-                    }
+                    Activity::Motion(active) if self.config.feetech.is_some() => Some((
+                        active.supervisor.planned_peak_joint_speed(),
+                        active.speed_fraction,
+                    )),
                     Activity::Idle
                     | Activity::Motion(_)
                     | Activity::Group(_)
