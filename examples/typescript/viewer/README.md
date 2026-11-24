@@ -8,6 +8,7 @@ environment or the repository’s `.env`. Run `pnpm build` and
 [viewer build instructions](../../../docs/install-from-source.md#optional-viewer)
 and start a station with [your arm connected](../../../docs/getting-started.md).
 Use [MuJoCo](../../../docs/simulation.md) to test the viewer without hardware.
+The viewer uses the published TypeScript SDK from the lockfile.
 Each browser tab opens a session on the viewer backend. The backend connects
 to the station through the TypeScript SDK, streams state to the tab, and
 releases its manual lease when the session ends. The browser renders the robot
