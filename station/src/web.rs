@@ -113,7 +113,13 @@ async fn create_phone_invite(
     }
     let invite: PhoneInvite = credentials(&access)?
         .phone_invite(&access.room, &request.label, &access.phone_page_url)
-        .map_err(|error| Refusal(StatusCode::BAD_REQUEST, error.to_string()))?;
+        .map_err(|error| {
+            let status = match error {
+                station_access::AccessError::PhoneCannotReachServer(_) => StatusCode::CONFLICT,
+                _ => StatusCode::BAD_REQUEST,
+            };
+            Refusal(status, error.to_string())
+        })?;
     Ok((
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
         Json(invite),

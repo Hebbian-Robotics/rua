@@ -145,9 +145,10 @@ pub(crate) enum Command {
 pub(crate) struct WebArguments {
     /// Stream and capture snapshots from local cameras only. Disables remote cameras.
     ///
-    /// Use this fallback during a network or `LiveKit` outage. Open the RUA example
-    /// viewer to watch local USB cameras. For remote cameras, configure
-    /// `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in the environment or `.env`.
+    /// Use this fallback when `LiveKit` is unavailable and you cannot run a local
+    /// `livekit-server`. Open the RUA example viewer to watch local USB cameras. For
+    /// remote cameras, configure `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
+    /// in the environment or `.env`.
     #[arg(
         long = "local-only-no-remote-cameras",
         aliases = ["local-cameras-only", "local-cameras-only-no-stream-preview"],

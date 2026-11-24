@@ -385,7 +385,7 @@ pub fn routes() -> Vec<Route> {
             "phone_invite",
             "post",
             "/media/phone-invites",
-            "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.",
+            "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. Returns 409 when `LIVEKIT_URL` is not a `wss://` address a phone can reach.",
             Some(schema_of::<PhoneInviteRequest>),
             Reply::Json(schema_of::<PhoneInvite>),
             true,

@@ -38,8 +38,8 @@ Connect to a station with a real arm whenever available. Reserve simulation
 for testing without hardware.
 Select station cameras with --camera wrist --camera overhead. Configure LiveKit
 on the station to watch in Room viewer at https://hebbian-robotics.github.io/livekit-cameras/.
-For a LiveKit outage, restart the station with --local-only-no-remote-cameras
-and open the RUA example viewer to watch local USB feeds.
+If LiveKit Cloud is unavailable, run a local LiveKit server or restart the
+station with --local-only-no-remote-cameras, then open the RUA example viewer.
 
 The provider stores conversation history. The loop executes the robot tools.
 """

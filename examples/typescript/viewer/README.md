@@ -24,9 +24,11 @@ operation and [the agent example](../agent/README.md) for model setup. Open
 [the camera guide](../../../docs/cameras.md) for connection details and
 [the recording guide](../../../docs/recording.md) for capture and playback.
 
-Use LiveKit for normal operation. During an outage, restart the station with
+Use LiveKit for normal operation. If LiveKit Cloud is unavailable, run a
+local LiveKit server, or restart the station with
 `rua serve --local-only-no-remote-cameras` and reload the viewer to see the
-local USB feeds in **Workspace**. [Local camera setup](../../../docs/cameras.md#preview-local-cameras-during-an-outage)
+local USB feeds in **Workspace**.
+[Options when LiveKit Cloud is unavailable](../../../docs/cameras.md#when-livekit-cloud-is-unavailable)
 
 ## Debug manual controls
 

@@ -402,7 +402,8 @@ export function WorkspaceApp({
                     , which is only for when LiveKit is unavailable. Prefer
                     LiveKit whenever possible: set <code>LIVEKIT_URL</code>,{" "}
                     <code>LIVEKIT_API_KEY</code>, and{" "}
-                    <code>LIVEKIT_API_SECRET</code> on the station and restart
+                    <code>LIVEKIT_API_SECRET</code> on the station for LiveKit
+                    Cloud or a local <code>livekit-server</code>, then restart
                     it without that flag.
                   </p>
                 </Alert>

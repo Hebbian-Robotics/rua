@@ -8,9 +8,10 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
 
 1. If you run RUA from source, [build the media companion](#rua-configuration)
    once. The Python wheel includes it.
-2. Create a [LiveKit Cloud project](https://cloud.livekit.io/) and generate a project API key, or use a reachable self-hosted
-   LiveKit server. Put its WebSocket URL and API credentials in the station’s
-   `.env` file.
+2. Create a [LiveKit Cloud project](https://cloud.livekit.io/) and generate a
+   project API key, or use a self-hosted LiveKit server. Phone cameras need a
+   server they can reach over `wss://`. Put its WebSocket URL and API credentials
+   in the station’s `.env` file.
 
    ```dotenv
    LIVEKIT_URL=wss://your-project.livekit.cloud
@@ -127,10 +128,50 @@ uv run hebbian-rua camera snapshot wrist --out wrist.jpg
 
 Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
-## Preview local cameras during an outage
+## When LiveKit Cloud is unavailable
 
-Use LiveKit for normal operation. If the station loses its connection to
-LiveKit, restart it with `rua serve --local-only-no-remote-cameras` and keep
+Use LiveKit Cloud for normal operation. If the station cannot reach it, the
+viewer loses live video and agents lose USB and phone camera snapshots, because
+both are read from the LiveKit room. Choose one of these until it returns:
+
+| | Local LiveKit server | Local camera fallback |
+| --- | --- | --- |
+| Setup | Install and run `livekit-server` | Restart with one flag |
+| Live video in the example viewer | Yes, through LiveKit | Yes, as a JPEG preview |
+| USB camera snapshots for agents and the CLI | Yes | Yes |
+| Phone cameras | No | No |
+| Recording | Not covered here | No |
+
+Prefer the local LiveKit server when you can install it, since the station and
+viewer run their normal LiveKit path.
+
+### Run a local LiveKit server
+
+Install `livekit-server` from the [LiveKit releases](https://github.com/livekit/livekit/releases)
+or with `brew install livekit` on macOS, then start it on the station host:
+
+```sh
+livekit-server --dev
+```
+
+Point the station's `.env` at it and restart the station with your usual
+arguments:
+
+```dotenv
+LIVEKIT_URL=ws://127.0.0.1:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+```
+
+`--dev` listens only on the station host and uses public placeholder keys, so
+do not expose it to a network. Open the example viewer on the station host.
+Phone invites are refused in this setup because the phone camera page can only
+connect to a LiveKit server it reaches over `wss://`. Restore your LiveKit Cloud
+values and restart the station when the service returns.
+
+### Preview local cameras during an outage
+
+Restart the station with `rua serve --local-only-no-remote-cameras` and keep
 your existing `--camera NAME=DEVICE` arguments. Open or reload the
 [example viewer](http://127.0.0.1:8793/viewer/) to see the local feeds under
 **Cameras**. You can watch while a CLI command or Python agent controls the arm.

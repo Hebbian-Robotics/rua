@@ -76,9 +76,10 @@ Paste the response's `server_url` and `token` into **Room viewer** on the
 See the [camera guide](../docs/cameras.md) for device selectors, source setup,
 and phone invites. This setup is also shown in `hebbian-rua camera --help`.
 
-During a LiveKit outage, restart the station with `--local-only-no-remote-cameras`
-and open the normal example viewer to watch local USB feeds while you use the
-CLI. [Local camera setup](../docs/cameras.md#preview-local-cameras-during-an-outage)
+If LiveKit Cloud is unavailable, run a local LiveKit server or restart the
+station with `--local-only-no-remote-cameras`. Both keep USB camera snapshots
+and the example viewer working.
+[Options when LiveKit Cloud is unavailable](../docs/cameras.md#when-livekit-cloud-is-unavailable)
 
 ## Exit codes and errors
 

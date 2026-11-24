@@ -22,6 +22,46 @@ pub enum AccessError {
     Timeout,
     #[error(transparent)]
     Invite(#[from] livekit_camera_invite::InviteError),
+    #[error(transparent)]
+    PhoneCannotReachServer(#[from] PhoneUnreachableServer),
+}
+
+/// Why a phone could never join the room at `LIVEKIT_URL`, so issuing an invite would only fail on the phone.
+#[derive(Debug, thiserror::Error)]
+pub enum PhoneUnreachableServer {
+    #[error(
+        "Phone cameras cannot reach LIVEKIT_URL {0} because it points at this machine. \
+         Use LiveKit Cloud or a LiveKit server the phone can reach over wss://."
+    )]
+    LoopbackHost(String),
+    #[error(
+        "Phone cameras need LIVEKIT_URL to use wss://. Phone browsers block the unencrypted \
+         {0} from the camera page. Use LiveKit Cloud or serve your LiveKit server over TLS."
+    )]
+    UnencryptedConnection(String),
+    #[error("Phone cameras need a valid wss:// LIVEKIT_URL, not {0}.")]
+    InvalidUrl(String),
+}
+
+// WHY: The camera page needs a secure context for camera access, so it can only open wss:// connections.
+fn phone_reachability(server_url: &str) -> Result<(), PhoneUnreachableServer> {
+    let parsed = url::Url::parse(server_url)
+        .map_err(|_| PhoneUnreachableServer::InvalidUrl(server_url.to_owned()))?;
+    let points_at_this_machine = match parsed.host() {
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(address)) => address.is_loopback() || address.is_unspecified(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback() || address.is_unspecified(),
+        None => return Err(PhoneUnreachableServer::InvalidUrl(server_url.to_owned())),
+    };
+    if points_at_this_machine {
+        return Err(PhoneUnreachableServer::LoopbackHost(server_url.to_owned()));
+    }
+    if !matches!(parsed.scheme(), "wss" | "https") {
+        return Err(PhoneUnreachableServer::UnencryptedConnection(
+            server_url.to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 // INVARIANT: Secrets deliberately do not implement `Debug`, `Serialize` or `JsonSchema`.
@@ -193,6 +233,7 @@ impl Credentials {
         label: &str,
         phone_page_url: &str,
     ) -> Result<PhoneInvite, AccessError> {
+        phone_reachability(&self.url)?;
         let camera_name = format!("phone_{label}");
         let access = self.camera_access(room, &camera_name, CameraLifetime::PhoneInvite)?;
         let invite = livekit_camera_invite::camera_invite(

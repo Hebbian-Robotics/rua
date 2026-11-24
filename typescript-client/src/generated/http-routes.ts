@@ -170,7 +170,7 @@ export function createStationApi(
         jsonRequestInit("POST", body, signal),
       );
     },
-    /** Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. */
+    /** Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. Returns 409 when `LIVEKIT_URL` is not a `wss://` address a phone can reach. */
     async phoneInvite(body: ApiSchemas["PhoneInviteRequest"]) {
       return apiSchemas.shape.PhoneInvite.parse(
         await stationRequest(

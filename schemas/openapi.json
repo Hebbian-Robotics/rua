@@ -7163,7 +7163,7 @@
             "description": "An error: {\"detail\": ...}"
           }
         },
-        "summary": "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.",
+        "summary": "Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. Returns 409 when `LIVEKIT_URL` is not a `wss://` address a phone can reach.",
         "x-sdk": true,
         "x-server": "station"
       }

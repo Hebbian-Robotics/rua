@@ -106,6 +106,28 @@ fn credentials_report_all_missing_values_and_distinguish_cameras_off() {
 }
 
 #[test]
+fn invites_are_refused_for_servers_a_phone_cannot_join() -> Result<(), Box<dyn std::error::Error>> {
+    for server_url in [
+        "ws://127.0.0.1:7880",
+        "wss://localhost:7880",
+        "ws://[::1]:7880",
+        "ws://192.168.1.20:7880",
+    ] {
+        let credentials = Credentials::from_values([
+            Some(server_url.into()),
+            Some("key".into()),
+            Some("secret".into()),
+        ])?;
+        let refusal = credentials.phone_invite("station-test", "front", "https://camera.example/");
+        assert!(
+            matches!(refusal, Err(AccessError::PhoneCannotReachServer(_))),
+            "{server_url} should be refused"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn invite_fragment_carries_the_server_url_and_token() -> Result<(), Box<dyn std::error::Error>> {
     let invite = credentials()?.phone_invite(
         "station-test",

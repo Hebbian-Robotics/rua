@@ -272,7 +272,7 @@ impl Station {
         Ok(())
     }
 
-    /// Create an invite from a loopback connection to stream a phone as camera `phone_<label>`.
+    /// Create an invite from a loopback connection to stream a phone as camera `phone_<label>`. Returns 409 when `LIVEKIT_URL` is not a `wss://` address a phone can reach.
     ///
     /// # Errors
     /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
