@@ -379,10 +379,14 @@ struct CornerPathTracker {
 impl CornerPathTracker {
     fn new(
         plan: ValidatedPlan,
-        limits: MotionLimits,
+        mut limits: MotionLimits,
         waypoint_feedback_lag_seconds: f64,
         maximum_step_seconds: f64,
     ) -> anyhow::Result<Self> {
+        if let Some(trajectory_limits) = plan.trajectory_limits {
+            limits.acceleration_limit = trajectory_limits.acceleration_limit;
+            limits.jerk_limit = trajectory_limits.jerk_limit;
+        }
         let continuous_path = plan
             .is_continuous()
             .then(|| {
@@ -798,6 +802,7 @@ mod tests {
             CornerPlan {
                 segments,
                 peak_speed: 0.6,
+                trajectory_limits: None,
             },
             1,
         )

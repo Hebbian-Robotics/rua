@@ -54,6 +54,8 @@ export function armMotionCommands<Result>(
     /**
      * Move to joint angles, one per joint in the state's order.
      *
+     * `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+     * `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
      * `max_joint_speed`: Peak joint speed in rad/s; clamped to the profile's maximum.
      */
     moveToJoints(
@@ -62,18 +64,38 @@ export function armMotionCommands<Result>(
         Extract<StationCommand, { kind: "move_to_joints" }>["max_joint_speed"]
       >,
       expectedRevision?: number,
+      motionLimits?: {
+        maxJointAcceleration?: NonNullable<
+          Extract<
+            StationCommand,
+            { kind: "move_to_joints" }
+          >["max_joint_acceleration"]
+        >;
+        maxJointJerk?: NonNullable<
+          Extract<StationCommand, { kind: "move_to_joints" }>["max_joint_jerk"]
+        >;
+      },
     ): Result {
       return send(
         {
           kind: "move_to_joints",
           joints: joints,
           max_joint_speed: maxJointSpeed ?? null,
+          ...(motionLimits?.maxJointAcceleration == null
+            ? {}
+            : { max_joint_acceleration: motionLimits.maxJointAcceleration }),
+          ...(motionLimits?.maxJointJerk == null
+            ? {}
+            : { max_joint_jerk: motionLimits.maxJointJerk }),
         },
         expectedRevision,
       );
     },
     /**
      * Move the tool to a world position and orientation.
+     *
+     * `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+     * `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
      */
     moveToPose(
       position: Extract<StationCommand, { kind: "move_to_pose" }>["position"],
@@ -85,6 +107,17 @@ export function armMotionCommands<Result>(
         Extract<StationCommand, { kind: "move_to_pose" }>["max_joint_speed"]
       >,
       expectedRevision?: number,
+      motionLimits?: {
+        maxJointAcceleration?: NonNullable<
+          Extract<
+            StationCommand,
+            { kind: "move_to_pose" }
+          >["max_joint_acceleration"]
+        >;
+        maxJointJerk?: NonNullable<
+          Extract<StationCommand, { kind: "move_to_pose" }>["max_joint_jerk"]
+        >;
+      },
     ): Result {
       return send(
         {
@@ -92,6 +125,12 @@ export function armMotionCommands<Result>(
           position: position,
           orientation: orientation,
           max_joint_speed: maxJointSpeed ?? null,
+          ...(motionLimits?.maxJointAcceleration == null
+            ? {}
+            : { max_joint_acceleration: motionLimits.maxJointAcceleration }),
+          ...(motionLimits?.maxJointJerk == null
+            ? {}
+            : { max_joint_jerk: motionLimits.maxJointJerk }),
         },
         expectedRevision,
       );

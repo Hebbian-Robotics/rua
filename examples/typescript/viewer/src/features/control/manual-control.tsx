@@ -22,6 +22,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select.js";
 import { Switch } from "@/components/ui/switch.js";
+import type { MotionLimits } from "../../../shared/run-api.js";
 import {
   type CommandResult,
   commandMessage,
@@ -65,6 +66,7 @@ import {
 type Position = [number, number, number];
 type ManualProps = {
   stationState: StationState | null;
+  motionLimits: MotionLimits;
   armName: string;
   changingArmPower: boolean;
   active: boolean;
@@ -100,6 +102,7 @@ async function requestManualCommand(
 
 export function ManualControl({
   stationState,
+  motionLimits,
   armName,
   changingArmPower,
   active,
@@ -133,7 +136,6 @@ export function ManualControl({
     useState<Orientation | null>(null);
   const [orientation, setOrientation] = useState<Orientation | null>(null);
   const [approach, setApproach] = useState("solver");
-  const [speedPercent, setSpeedPercent] = useState(65);
   const [opening, setOpening] = useState(0);
   const [positionDraft, setPositionDraft] = useState<[string, string, string]>([
     "",
@@ -162,6 +164,8 @@ export function ManualControl({
   const latestProjection = useRef(projection);
   const latestOpening = useRef(opening);
   const latestSpeed = useRef(0);
+  const requestedLimits = arm?.controller === "ik" ? motionLimits : undefined;
+  const latestMotionLimits = useRef(requestedLimits);
   const follow = useRef<Follow | null>(null);
   const gripper = useRef<Gripper | null>(null);
   const projectionActor = useRef<ProjectionController | null>(null);
@@ -179,8 +183,12 @@ export function ManualControl({
   latestOrientation.current = orientation;
   latestProjection.current = projection;
   latestOpening.current = opening;
-  latestSpeed.current =
-    ((stationState?.max_joint_speed ?? 0) * speedPercent) / 100;
+  latestMotionLimits.current = requestedLimits;
+  latestSpeed.current = Math.min(
+    stationState?.max_joint_speed ?? 0,
+    requestedLimits?.max_joint_speed ??
+      (stationState?.max_joint_speed ?? 0) * 0.65,
+  );
 
   useEffect(() => {
     const liveFollow = createLivePoseFollow(
@@ -200,7 +208,11 @@ export function ManualControl({
           ? {
               arm: currentArm.arm,
               position,
-              pose: previewRequest(position, latestOrientation.current),
+              pose: previewRequest(
+                position,
+                latestOrientation.current,
+                latestMotionLimits.current,
+              ),
             }
           : null;
       },
@@ -290,7 +302,7 @@ export function ManualControl({
     setConfirmed(null);
     if (target) projectionActor.current?.targetChanged();
     else projectionActor.current?.clear();
-  }, [target, orientation, armName]);
+  }, [target, orientation, armName, requestedLimits]);
 
   useEffect(() => {
     setPositionDraft(
@@ -463,6 +475,7 @@ export function ManualControl({
           projectionArm: projection?.arm ?? null,
           target,
           orientation,
+          motionLimits: requestedLimits,
         }),
         projectionValidity,
       }) !== null
@@ -471,7 +484,8 @@ export function ManualControl({
     const command = moveCommandForPreview(
       arm.controller,
       confirmed.pose,
-      latestSpeed.current,
+      confirmed.requestPose.max_joint_speed,
+      confirmed.requestPose,
     );
     if (!command) {
       setMessage(
@@ -496,6 +510,7 @@ export function ManualControl({
     projectionArm: projection?.arm ?? null,
     target,
     orientation,
+    motionLimits: requestedLimits,
   });
   const moveBlocked = manualMoveBlockedReason({
     ownershipReason: blockedReason,
@@ -611,26 +626,6 @@ export function ManualControl({
                 Preview coordinates
               </Button>
             </form>
-            <label>
-              Speed {speedPercent}% (
-              {MathUtils.radToDeg(latestSpeed.current).toFixed(0)}°/s)
-              <input
-                type="range"
-                min="5"
-                max="100"
-                step="5"
-                value={speedPercent}
-                disabled={
-                  !arm ||
-                  arm.controller === "policy" ||
-                  !(latestSpeed.current > 0)
-                }
-                onChange={(event) => {
-                  stopFollowing();
-                  setSpeedPercent(Number(event.currentTarget.value));
-                }}
-              />
-            </label>
             <label htmlFor="manual-approach">
               Approach
               <NativeSelect

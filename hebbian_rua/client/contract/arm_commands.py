@@ -103,15 +103,24 @@ class ArmMotionCommands:
         self,
         joints: list[float],
         *,
+        max_joint_acceleration: float | None = None,
+        max_joint_jerk: float | None = None,
         max_joint_speed: float | None = None,
         expected_revision: int | None = None,
     ) -> "CommandResult":
         """Move to joint angles, one per joint in the state's order.
 
+        `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+        `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
         `max_joint_speed`: Peak joint speed in rad/s; clamped to the profile's maximum.
         """
         return await self._run_command(
-            MoveToJointsCommand(joints=joints, max_joint_speed=max_joint_speed),
+            MoveToJointsCommand(
+                joints=joints,
+                max_joint_acceleration=max_joint_acceleration,
+                max_joint_jerk=max_joint_jerk,
+                max_joint_speed=max_joint_speed,
+            ),
             expected_revision=expected_revision,
         )
 
@@ -120,14 +129,22 @@ class ArmMotionCommands:
         position: list[float],
         orientation: GraspOrientation | QuaternionOrientation,
         *,
+        max_joint_acceleration: float | None = None,
+        max_joint_jerk: float | None = None,
         max_joint_speed: float | None = None,
         expected_revision: int | None = None,
     ) -> "CommandResult":
-        """Move the tool to a world position and orientation."""
+        """Move the tool to a world position and orientation.
+
+        `max_joint_acceleration`: Joint acceleration cap in rad/s²; defaults to the arm profile.
+        `max_joint_jerk`: Joint jerk cap in rad/s³; defaults to the arm profile.
+        """
         return await self._run_command(
             MoveToPoseCommand(
                 position=position,
                 orientation=orientation,
+                max_joint_acceleration=max_joint_acceleration,
+                max_joint_jerk=max_joint_jerk,
                 max_joint_speed=max_joint_speed,
             ),
             expected_revision=expected_revision,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { motionLimitsSchema } from "../../../shared/run-api.js";
 
 const VIEWER_PREFERENCES_KEY = "hebbian-viewer-preferences";
 
@@ -8,6 +9,7 @@ const preferencesSchema = z.object({
   showTargetJoints: z.boolean().catch(true).default(true),
   showCommandedJoints: z.boolean().catch(false).default(false),
   showCameraLabels: z.boolean().catch(true).default(true),
+  motionLimits: motionLimitsSchema.catch({}).default({}),
   recordWithControl: z.boolean().catch(false).default(false),
 });
 

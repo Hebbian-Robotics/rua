@@ -223,7 +223,7 @@ export class ScriptedStation {
       return new Response(null, { status: 204 });
     }
     if (path === "/recording/status") return Response.json({ state: "idle" });
-    if (path === "/recording/start") return Response.json("recording-1");
+    if (path === "/recording/ensure") return Response.json("recording-1");
     if (path === "/recording/stop-for-lease") return Response.json({});
     if (path.startsWith("/cameras/"))
       return new Response(new Uint8Array([1, 2, 3]));

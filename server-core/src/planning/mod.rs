@@ -162,6 +162,7 @@ impl Planner {
                 plan: CornerPlan {
                     segments,
                     peak_speed: joint_speed.radians_per_second(),
+                    trajectory_limits: None,
                 },
                 path_limited,
                 pose_limited,
@@ -171,6 +172,7 @@ impl Planner {
             plan: CornerPlan {
                 segments,
                 peak_speed: joint_speed.radians_per_second(),
+                trajectory_limits: None,
             },
             path_limited: None,
             pose_limited: None,
@@ -186,9 +188,14 @@ impl Planner {
         measured_jaw: Option<f64>,
         initial_jaw_goal: Option<f64>,
     ) -> anyhow::Result<()> {
+        let mut limits = config.motion.clone();
+        if let Some(trajectory_limits) = plan.trajectory_limits {
+            limits.acceleration_limit = trajectory_limits.acceleration_limit;
+            limits.jerk_limit = trajectory_limits.jerk_limit;
+        }
         let mut path = crate::continuous_path::ContinuousPath::new(
             plan,
-            &config.motion,
+            &limits,
             config.control_timing.maximum_step_seconds,
         )?;
         path.check_joint_bounds(&plan.segments[0].corners[0], &self.lower, &self.upper)?;

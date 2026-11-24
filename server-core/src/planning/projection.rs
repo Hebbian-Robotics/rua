@@ -90,6 +90,7 @@ impl Planner {
     ) -> PoseProjection {
         let started = Instant::now();
         let finish = |outcome, requested: Option<RequestedOrientation>, ranges| PoseProjection {
+            effective_motion_limits: None,
             outcome,
             requested,
             jaw_yaw_ranges: ranges,
@@ -161,6 +162,7 @@ impl Planner {
     ) -> PoseProjection {
         let started = Instant::now();
         let finish = |outcome, requested, ranges| PoseProjection {
+            effective_motion_limits: None,
             outcome,
             requested,
             jaw_yaw_ranges: ranges,

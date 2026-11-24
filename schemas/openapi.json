@@ -111,6 +111,26 @@
                   "null"
                 ]
               },
+              "max_joint_acceleration": {
+                "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
+              "max_joint_jerk": {
+                "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
               "max_joint_speed": {
                 "default": null,
                 "description": "Speed for both resources in rad/s; overrides the goal speed when provided.",
@@ -1882,6 +1902,26 @@
                 "const": "move",
                 "type": "string"
               },
+              "max_joint_acceleration": {
+                "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
+              "max_joint_jerk": {
+                "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
               "max_joint_speed": {
                 "exclusiveMinimum": 0.0,
                 "title": "JointSpeed",
@@ -2166,6 +2206,29 @@
             "type": "object"
           }
         ]
+      },
+      "EffectiveMotionLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "max_joint_acceleration": {
+            "format": "double",
+            "type": "number"
+          },
+          "max_joint_jerk": {
+            "format": "double",
+            "type": "number"
+          },
+          "max_joint_speed": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_joint_speed",
+          "max_joint_acceleration",
+          "max_joint_jerk"
+        ],
+        "type": "object"
       },
       "Event": {
         "description": "Controller to client.",
@@ -3967,6 +4030,18 @@
             "minimum": 0.0,
             "type": "number"
           },
+          "effective_motion_limits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveMotionLimits"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The planned IK move limits used by this preview.",
+            "x-omit-when-none": true
+          },
           "jaw_yaw_ranges": {
             "description": "The jaw yaws the arm can take at the projected position and approach;\nempty when nothing was projected or the arm has no wrist roll.",
             "items": {
@@ -4043,6 +4118,35 @@
         "additionalProperties": false,
         "description": "Where the arm's controller would take the tool toward a pose, without moving.",
         "properties": {
+          "max_joint_acceleration": {
+            "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+            "exclusiveMinimum": 0.0,
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-omit-when-none": true
+          },
+          "max_joint_jerk": {
+            "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+            "exclusiveMinimum": 0.0,
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-omit-when-none": true
+          },
+          "max_joint_speed": {
+            "description": "Requested peak joint speed in rad/s.",
+            "exclusiveMinimum": 0.0,
+            "title": "JointSpeed",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "orientation": {
             "anyOf": [
               {
@@ -4244,6 +4348,18 @@
                   "array",
                   "null"
                 ]
+              },
+              "effective_motion_limits": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/EffectiveMotionLimits"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The effective trajectory caps at admission.",
+                "x-omit-when-none": true
               },
               "group_id": {
                 "type": [
@@ -5346,6 +5462,26 @@
                 "const": "move_to_joints",
                 "type": "string"
               },
+              "max_joint_acceleration": {
+                "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
+              "max_joint_jerk": {
+                "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
               "max_joint_speed": {
                 "default": null,
                 "description": "Peak joint speed in rad/s; clamped to the profile's maximum.",
@@ -5371,6 +5507,26 @@
               "kind": {
                 "const": "move_to_pose",
                 "type": "string"
+              },
+              "max_joint_acceleration": {
+                "description": "Joint acceleration cap in rad/s²; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
+              "max_joint_jerk": {
+                "description": "Joint jerk cap in rad/s³; defaults to the arm profile.",
+                "exclusiveMinimum": 0.0,
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
               },
               "max_joint_speed": {
                 "default": null,

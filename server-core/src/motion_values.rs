@@ -38,6 +38,29 @@ impl GroupId {
     }
 }
 
+pub(crate) fn resolve_trajectory_limits(
+    limits: hebbian_contracts::TrajectoryLimits,
+    acceleration: Option<f64>,
+    jerk: Option<f64>,
+) -> anyhow::Result<hebbian_contracts::TrajectoryLimits> {
+    let resolve = |requested: Option<f64>, ceiling: f64, name: &str| {
+        let value = requested.unwrap_or(ceiling);
+        anyhow::ensure!(
+            value.is_finite() && value > 0.0 && value <= ceiling,
+            "Requested {name} must be positive and at or below the arm profile ceiling of {ceiling}"
+        );
+        Ok(value)
+    };
+    Ok(hebbian_contracts::TrajectoryLimits {
+        acceleration_limit: resolve(
+            acceleration,
+            limits.acceleration_limit,
+            "joint acceleration",
+        )?,
+        jerk_limit: resolve(jerk, limits.jerk_limit, "joint jerk")?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use hebbian_contracts::{InvalidSpeed, JointSpeed};

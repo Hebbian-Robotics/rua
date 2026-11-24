@@ -24,7 +24,7 @@
     "@opentelemetry/sdk-trace": "2.12.0",
     "@pydantic/genai-prices": "^0.2.3",
     "commander": "15.1.0",
-    "hebbian-rua": "0.1.5",
+    "hebbian-rua": "workspace:*",
     "openai": "7.62.0",
     "zod": "4.6.7"
   },

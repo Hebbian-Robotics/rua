@@ -1,4 +1,4 @@
-import type { ArmState, StationCommand } from "hebbian-rua";
+import type { ArmState, PreviewPose, StationCommand } from "hebbian-rua";
 import { MathUtils } from "three";
 import type { Approach, JawYawRange, ProposedPose } from "./pose-projection.js";
 
@@ -27,20 +27,27 @@ export async function movePreviewedGripper(
 export function moveCommandForPreview(
   controller: ArmState["controller"],
   pose: ProposedPose,
-  maxJointSpeed: number,
+  maxJointSpeed: number | null | undefined,
+  preview?: PreviewPose,
 ): Extract<StationCommand, { kind: "move_to_joints" | "move_to_pose" }> | null {
   if (controller === "ik")
     return {
       kind: "move_to_joints",
       joints: pose.joints,
-      max_joint_speed: maxJointSpeed,
+      ...(maxJointSpeed == null ? {} : { max_joint_speed: maxJointSpeed }),
+      ...(preview?.max_joint_acceleration == null
+        ? {}
+        : { max_joint_acceleration: preview.max_joint_acceleration }),
+      ...(preview?.max_joint_jerk == null
+        ? {}
+        : { max_joint_jerk: preview.max_joint_jerk }),
     };
   if (!pose.requestedQuaternion) return null;
   return {
     kind: "move_to_pose",
     position: pose.requestedPosition,
     orientation: { kind: "quaternion", quaternion: pose.requestedQuaternion },
-    max_joint_speed: maxJointSpeed,
+    ...(maxJointSpeed == null ? {} : { max_joint_speed: maxJointSpeed }),
   };
 }
 

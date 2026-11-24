@@ -241,6 +241,8 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
             goal,
             gripper_opening,
             max_joint_speed,
+            max_joint_acceleration,
+            max_joint_jerk,
         } => {
             let (goal, movement_speed) = match goal {
                 ActionSequenceGoal::Joints {
@@ -265,6 +267,8 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
                 goal,
                 gripper_opening: gripper_opening.map(opening).transpose()?,
                 max_joint_speed,
+                max_joint_acceleration,
+                max_joint_jerk,
             })
         }
         ActionSequenceArmAction::Gripper {
@@ -402,6 +406,8 @@ mod tests {
             },
             gripper_opening: Some(0.5),
             max_joint_speed: gripper_speed,
+            max_joint_acceleration: None,
+            max_joint_jerk: None,
         };
         for (requested, expected) in [(None, 0.7), (Some(0.3), 0.3)] {
             let compiled = compile_arm_action(step(requested)).unwrap();
