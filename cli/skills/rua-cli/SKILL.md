@@ -12,12 +12,15 @@ Python package. In the project that runs the station, call it as
 so the CLI matches the station. From a RUA source checkout, use
 `cargo run -p hebbian-rua-cli --`.
 
-Start with `hebbian-rua --help` and `hebbian-rua state`. Use
-`<command> --help` for argument shapes and JSON examples. Discover arm names,
-joint order, faults, interlocks and the lease holder from state.
+Choose commands according to the task. `state` reports arm names, joint order,
+measured joints, faults, interlocks, and the lease holder without changing
+torque. It also includes the configured robot description. Each invocation
+returns its own result. Camera snapshots are available as separate commands. Each command’s `--help` shows argument shapes and JSON examples.
 
 Global options: `--server URL` (default `http://127.0.0.1:8792`, or `HEBBIAN_STATION_URL`),
-`--media-server URL` (default `http://127.0.0.1:8781`, or `HEBBIAN_MEDIA_SERVER`) and `--raw`.
+`--media-server URL` overrides the camera service (also settable with
+`HEBBIAN_MEDIA_SERVER`). Camera calls use the station URL by default. A direct
+media companion typically listens on `http://127.0.0.1:8781`.
 Check the station's actual port if a connection fails. `--expected-revision ARM=REV` refuses a
 command as stale if the arm's revision moved on since you read `state`; `--take-lease` takes the
 lease from its holder and needs the user's authorization. Output is the concise
@@ -37,27 +40,37 @@ failures use stderr and a nonzero exit code. Motion waits for its outcome.
 - Recording: `record start|status|stop`. It continues until stopped, independently of the motion lease.
 - Diagnostics: `traces pull [names...] --output <directory>` saves gzip-compressed traces.
 
-## Operating rules
+## Units and outcomes
 
-Inputs: joint angles are radians in state's `joint_names` order. Positions are metres
-in the robot's world frame (x forward, z up); speed is rad/s. Gripper opening is
+Pose targets are in the station world frame. In the standard SO-101 layout,
++X is forward, +Y is left when facing +X, and +Z is up. An arm's configured
+base pose can differ from the world origin and orientation. Image directions
+depend on the camera pose.
+
+CLI position inputs are metres, and joint angles are radians in the state's
+`joint_names` order. Joint speed, acceleration, and
+jerk caps use rad/s, rad/s², and rad/s³ respectively. Gripper opening is
 0 closed to 1 open. Quaternions use x,y,z,w; jaw yaw uses degrees. Without an
 orientation, `move-pose` preserves the current orientation, whereas
 `preview-pose` lets the solver choose one. Supply the same explicit orientation
 when comparing a preview with a move.
 
-A grasp is judged from `completion.gripper`: `{"kind": "stopped_short", ...}` on a close means
-the jaw stopped on something (or was blocked). `{"kind": "reached", ...}` means it arrived.
-A move's `pose_limited.advice` gives a reachable approach.
-Place with the target visible: a held block hides it from the wrist camera.
+A pose preview checks feasibility without moving the arm. It cannot establish
+clearance from objects in the workspace. A limited move can end at an adjusted
+target. When present, `pose_limited.advice` describes the shortfall and a reachable
+alternative. A `stopped_short` move settled outside tolerance. Its completion
+detail describes the remaining error and may leave the cause unknown.
+
+On a gripper close, `completion.gripper.kind` tells you how the jaw stopped.
+`stopped_short` indicates contact or a blockage, and `reached` indicates the
+requested opening. Neither confirms a grasp by itself.
 
 Motion acquires and releases its own lease per invocation; power is separate.
-Enable an arm before authorized motion. Rehome returns to its enable-time pose.
-Use `gripper` for a separate jaw command.
+The station refuses motion on a disabled arm. `enable` applies torque and
+holds the current pose. `rehome` returns to the pose saved at enable time.
 `stop` holds position; `disable` removes torque, so support the arm first.
 
-On failure, inspect the error and current state before retrying. Exit codes:
-1 refused/incomplete, 2 usage, 3 connection/timeout, 4 lease held elsewhere.
-After a timeout, inspect state before resending a motion. Respect another
-holder; use `lease revoke` only for a user-authorized takeover. Inspect the cause
-before clearing faults; preserve interlocks and safety limits.
+Exit codes: 1 refused or incomplete, 2 usage, 3 connection error or timeout,
+4 lease held elsewhere. After a timeout, the command’s outcome may be unknown.
+`lease revoke` is an operator override and requires user authorization.
+The station’s interlocks and motion limits apply to CLI commands.

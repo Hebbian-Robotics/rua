@@ -70,15 +70,15 @@ wheels = [
 
 [[package]]
 name = "hebbian-rua"
-version = "0.1.5"
+version = "0.1.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/f7/34dcabc85ae1fb5d97549d81550bf530d6535bd77d37a98d1b81d0c8f6fc/hebbian_rua-0.1.5-cp312-abi3-macosx_14_0_arm64.whl", hash = "sha256:343b31ce1eea0705645bdc38d58f340074722f782d94180172c17f22d1103bfb", size = 27533695, upload-time = "2026-11-24T00:39:06.906Z" },
-    { url = "https://files.pythonhosted.org/packages/56/d1/8a4e3f56ae9ab744b11c8d8e3057936e699d666cc2f8d45cb3e160800cb8/hebbian_rua-0.1.5-cp312-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:a950c38230e141be7d6f15c4e08a4bc7c698cd42a09ac29bcc5da15fdeab99d5", size = 31231574, upload-time = "2026-11-24T00:39:11.473Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/2b/89549a1ead68be7de350bddcf2c4e76084188068cfdf6ddff444d31a4ef4/hebbian_rua-0.1.6-cp312-abi3-macosx_14_0_arm64.whl", hash = "sha256:6165983a00bbefa1e03377c087779e0036d841d011acc4a0fb2354300558ddd2", size = 30150910, upload-time = "2026-11-24T17:29:48.435Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/e0/c02bb29cc6da1bc2f6a8b45dcae66224ae2e2c3ce8c2389419901edfc46b/hebbian_rua-0.1.6-cp312-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:4caa51b77ab593a041e2d8ed60800fb78262a15720fb8495467b500a8722f748", size = 34094117, upload-time = "2026-11-24T17:29:52.09Z" },
 ]
 
 [[package]]
@@ -542,7 +542,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=5.3.2" },
-    { name = "hebbian-rua", specifier = "==0.1.5" },
+    { name = "hebbian-rua", specifier = "==0.1.6" },
     { name = "mujoco", specifier = ">=3.17.0" },
     { name = "numpy", specifier = ">=2" },
     { name = "pillow", specifier = ">=12.3.0" },

@@ -111,20 +111,20 @@ export const AGENT_TOOLS: ToolSpec[] = [
 const AGENT_INSTRUCTIONS = `update_plan stores a task plan and may accompany motion tools in the same turn.
 Each update replaces the whole plan. update_notes stores run-local notes and replaces
 the whole notes list. Call finish, alone in its turn, to report the task outcome.
-Operate the single configured SO-101 arm using Cartesian targets and gripper actions.
-In the base frame, +X is forward from the arm, +Y is left, and +Z is up.
+Operate the configured SO-101 using Cartesian targets and gripper actions.
+Pose targets are in the station world frame. In the standard SO-101 layout,
++X is forward, +Y is left when facing +X, and +Z is up.
 Camera image directions depend on the camera pose.
-Choose the next useful action; compare alternatives only when they change it.
-Use preview to answer a specific feasibility question, not to rediscover documented
-frames, joint signs or guard semantics. Establish the current workspace from images.
-Fresh state and camera images follow each action batch automatically; observe is for
-an additional view or a deliberate wait, not a routine observe(0) after motion.
-After a limited or incomplete action, read its summary before replanning: a limited
-target's pose_limited.advice gives the shortfall, where the arm went and an alternative
-to try; a stopped_short move's completion detail gives how far short it stopped and
-where the tool rests, usually against the table or an object (compare with surface_guard).
-Check the images, then aim the next target where it can be reached; do not repeat it.`;
+Choose the next useful action for the task. Preview answers a specific feasibility
+question without moving the arm. The loop supplies arm state and available camera
+images after action batches when the run continues. Observe can supply an additional
+view or wait for a scene change.
+For a limited move, pose_limited.advice, when present, describes the shortfall,
+where the arm went, and a reachable alternative. A stopped_short move settled
+outside tolerance. Its completion detail describes the remaining error, which
+does not identify the cause on its own. Use the outcome and observations to
+decide whether to revise the target or finish.`;
 
 export function systemPrompt(robotContext: string): string {
-  return `Use the robot tools to carry out the task. You are operating in a supervised development workspace where manipulation mistakes are fine. Robot context: ${robotContext}\n\n${AGENT_INSTRUCTIONS}`;
+  return `Use the robot tools to carry out the task. You are operating in a supervised development workspace. Robot context: ${robotContext}\n\n${AGENT_INSTRUCTIONS}`;
 }

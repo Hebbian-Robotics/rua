@@ -454,19 +454,21 @@ async def run_task(
         if directory := os.environ.get("HEBBIAN_RUA_MODEL_INPUTS_DIR"):
             robot.model_inputs = ModelInputCapture(directory)
         instructions = (
-            "Operate the single configured SO-101 using Cartesian targets and "
-            "gripper actions. In the base frame, +X is forward from the arm, "
-            "+Y is left, and +Z is up. Camera image directions depend on camera "
-            "pose. Choose the next useful action; use preview for a "
-            "specific feasibility question. Fresh observations follow action "
-            "batches automatically. After a limited or incomplete action, read its "
-            "summary before replanning: a limited target's pose_limited.advice "
-            "gives the shortfall, where the arm went and an alternative to try; a "
-            "stopped_short move's completion detail gives how far short it stopped "
-            "and where the tool rests, usually against the table or an object "
-            "(compare with surface_guard). Check the images, then aim the next "
-            "target where it can be reached; do not repeat it. Call finish alone "
-            "to report the task outcome and end the run. "
+            "Use the robot tools to carry out the task. You are operating in a "
+            "supervised development workspace. Operate the configured SO-101 using "
+            "Cartesian targets and gripper actions. Pose targets are in the station "
+            "world frame. In the standard SO-101 layout, +X is forward, +Y is left "
+            "when facing +X, and +Z is up. Camera image directions depend on the camera "
+            "pose. Choose the next useful action for the task. Preview "
+            "answers a specific feasibility question without moving the arm. The loop "
+            "supplies arm state and available camera images after action batches when "
+            "the run continues. Observe can supply an additional view or wait for a "
+            "scene change. For a limited move, pose_limited.advice, when present, "
+            "describes the shortfall, where the arm went, and a reachable alternative. "
+            "A stopped_short move settled outside tolerance. Its completion detail "
+            "describes the remaining error, which does not identify the cause on its "
+            "own. Use the outcome and observations to decide whether to revise the "
+            "target or finish. Call finish alone to report the task outcome. "
             "Robot context: " + json.dumps(await robot.context())
         )
         arm = station.arm(arm_name)
