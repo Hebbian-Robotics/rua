@@ -1,12 +1,12 @@
 //! The command line: its arguments and commands.
 mod serve;
-pub(crate) mod so101;
 pub(crate) use serve::ServeArguments;
-pub(crate) use so101::SelectionArguments;
 
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+
+use crate::so101::SelectionArguments;
 
 #[derive(Parser)]
 #[command(about = "Run an SO-101 station for robot-use clients")]
@@ -39,7 +39,7 @@ pub(crate) enum Command {
         instance: uuid::Uuid,
         #[arg(long)]
         socket_directory: Option<PathBuf>,
-        #[arg(long, default_value_t = crate::run::DEFAULT_STAND_IN_LAG_SECONDS)]
+        #[arg(long, default_value_t = crate::controller_setup::DEFAULT_STAND_IN_LAG_SECONDS)]
         plant_lag_seconds: f64,
         #[arg(long)]
         hardware: bool,
@@ -119,7 +119,7 @@ pub(crate) enum Command {
         #[arg(long)]
         profile: String,
         #[command(flatten)]
-        selection: so101::SelectionArguments,
+        selection: SelectionArguments,
         #[arg(long)]
         arm: String,
         /// Defaults to `$HEBBIAN_PROFILE_DIRECTORY`, else installed or checkout

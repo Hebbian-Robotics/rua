@@ -653,7 +653,7 @@ impl Link {
             outgoing,
             preview,
             planner,
-            reach_settings: config.arm_limits().pose_goals,
+            reach_settings: config.policy.as_ref().map(PoseGoalSettings::from),
             gripper: config.gripper.clone(),
             has_policy: config.policy.is_some(),
             config: Arc::new(config.clone()),

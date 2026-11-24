@@ -5,10 +5,10 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail, ensure};
-use hebbian_contracts::{SimHello, SimPlantConfig, SimPlantContract, SimState, SimStep};
+use hebbian_contracts::{SimHello, SimPlantContract, SimState, SimStep};
 use serde::Deserialize;
 
-use crate::numeric::positive_clock_duration;
+pub use crate::config::SimTimeouts;
 use crate::plant::{Feedback, Pacing, Plant, PlantWritePermit};
 
 pub(crate) const PROTOCOL_VERSION: u32 = 1;
@@ -23,31 +23,6 @@ pub fn schema_json() -> String {
     let mut text = serde_json::to_string_pretty(&schema).expect("a schema serializes");
     text.push('\n');
     text
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct SimTimeouts {
-    pub connect: Duration,
-    pub reply: Duration,
-    pub real_time: bool,
-}
-
-impl TryFrom<&SimPlantConfig> for SimTimeouts {
-    type Error = anyhow::Error;
-
-    fn try_from(config: &SimPlantConfig) -> anyhow::Result<Self> {
-        Ok(Self {
-            connect: positive_clock_duration(
-                config.connect_timeout_seconds,
-                "Simulator connect timeout",
-            )?,
-            reply: positive_clock_duration(
-                config.reply_timeout_seconds,
-                "Simulator reply timeout",
-            )?,
-            real_time: config.real_time,
-        })
-    }
 }
 
 pub struct SocketPlant {

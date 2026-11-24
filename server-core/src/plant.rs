@@ -57,11 +57,11 @@ impl Feedback {
     ) -> anyhow::Result<TrustedFeedback<'_>> {
         let positions = self.measured_positions(config)?;
         anyhow::ensure!(
-            crate::limits::is_finite_joint_vector(&self.velocities, config.joint_count),
+            crate::numeric::is_finite_joint_vector(&self.velocities, config.joint_count),
             "Invalid joint velocity feedback"
         );
         anyhow::ensure!(
-            crate::limits::is_finite_joint_vector(&self.efforts, config.joint_count),
+            crate::numeric::is_finite_joint_vector(&self.efforts, config.joint_count),
             "Invalid joint effort feedback"
         );
         Ok(TrustedFeedback {

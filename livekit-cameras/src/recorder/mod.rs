@@ -1,5 +1,6 @@
-pub(crate) mod archive;
+mod archive;
 mod error;
+mod station_telemetry;
 #[cfg(test)]
 mod tests;
 mod video_output;
@@ -19,6 +20,13 @@ use std::{
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
+
+/// Follow station telemetry independently of `LiveKit` publishing.
+/// # Errors
+/// Returns local telemetry errors; connection loss is retried with resume.
+pub async fn follow_station(url: &str, stopped: CancellationToken) -> Result<(), RecorderError> {
+    station_telemetry::subscribe(url, None, stopped).await
+}
 
 #[derive(Parser)]
 #[command(about = "Record every camera in a LiveKit room, with station telemetry, to one MCAP")]
@@ -78,9 +86,9 @@ pub async fn record(arguments: Arguments) -> Result<Option<RecordingWarning>, Re
     let state_archive = archive.clone();
     let state_stopped = stopped.clone();
     let state_task = tokio::spawn(async move {
-        let result = record_station_state(
+        let result = station_telemetry::subscribe(
             &arguments.station_url,
-            &state_archive,
+            Some(&state_archive),
             state_stopped.clone(),
         )
         .await;
@@ -136,14 +144,6 @@ fn recording_verdict(
     } else {
         json!({"status": "complete"})
     }
-}
-
-async fn record_station_state(
-    station_url: &str,
-    archive: &RecordingArchive,
-    stopped: CancellationToken,
-) -> Result<(), RecorderError> {
-    crate::station::subscribe(station_url, Some(archive), stopped).await
 }
 
 async fn record_cameras(

@@ -1024,8 +1024,8 @@ fn a_stream_reports_stopped_only_after_its_braking_write_succeeds() {
 #[test]
 fn a_group_retries_partial_writes_without_tripping_or_publishing_completion_early() {
     use crate::arm::GroupMembership;
+    use crate::control_loop::activity::MotionStatus;
     use crate::control_loop::group::{confirm_group_writes, form_groups, step_groups};
-    use crate::control_loop::trajectory::MotionStatus;
     use hebbian_contracts::CommandOutcome;
 
     let mut left_input = config("confirm-group-write-left").into_input();

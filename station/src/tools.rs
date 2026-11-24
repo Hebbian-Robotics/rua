@@ -8,35 +8,21 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use hebbian_rua_core::config::ControllerConfig;
 use hebbian_rua_core::guard::serial_bus_may_be_busy;
 use hebbian_rua_core::kinematics::pose_from_xyzw;
 use hebbian_rua_core::profile;
 use hebbian_rua_core::robot::Robot;
-use hebbian_rua_core::so101::driver::{SerialBus, Servos};
+use hebbian_rua_core::so101::driver::Servos;
 use hebbian_rua_core::so101::policy::{self, Policy};
 use serde::Deserialize;
 
-use crate::run::bus_timing_json;
-
-pub(crate) fn load_config(path: &Path) -> anyhow::Result<ControllerConfig> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("Cannot read the config {}", path.display()))?;
-    ControllerConfig::parse(&text).with_context(|| format!("Invalid config {}", path.display()))
-}
+use crate::controller_setup::{feetech_servos, load_config};
+use crate::timing::bus_timing_json;
 
 pub(crate) fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> anyhow::Result<T> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("Cannot read {}", path.display()))?;
     serde_json::from_str(&text).with_context(|| format!("Cannot parse {}", path.display()))
-}
-
-pub(crate) fn feetech_servos(config: &ControllerConfig) -> anyhow::Result<Servos<SerialBus>> {
-    let bus = config
-        .feetech
-        .clone()
-        .context("This command needs a config with a feetech section")?;
-    Servos::open(bus)
 }
 
 const SERVO_TUNING_REGISTERS: &[&str] = &[
@@ -197,7 +183,7 @@ pub(crate) fn check_config(config_path: &Path) -> anyhow::Result<()> {
 
 pub(crate) fn print_profile_config(
     profile_name: &str,
-    selection: &crate::commands::SelectionArguments,
+    selection: &crate::so101::SelectionArguments,
     arm: &str,
     profile_directory: Option<&Path>,
     urdf_limits: bool,

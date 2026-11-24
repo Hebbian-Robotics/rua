@@ -7,7 +7,8 @@ use rsruckig::prelude::{
 };
 
 use crate::config::ControllerConfig;
-use crate::limits::{Trip, is_finite_joint_vector};
+use crate::limits::Trip;
+use crate::numeric::is_finite_joint_vector;
 
 // CONSTRAINT: Ruckig refuses target states beyond its own caps; aim just inside them.
 const INSIDE_CAP: f64 = 0.999;

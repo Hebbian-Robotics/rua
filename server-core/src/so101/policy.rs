@@ -393,19 +393,10 @@ fn policy_float32_features(name: &str, features: &[f64]) -> anyhow::Result<Vec<f
     Ok(input)
 }
 
-pub(crate) fn validate_joint_count(joint_count: usize) -> anyhow::Result<()> {
-    ensure!(
-        joint_count == JOINT_COUNT,
-        "The policy drives {JOINT_COUNT} joints"
-    );
-    Ok(())
-}
-
 // CONSTRAINT: Rate and action scale are part of the trained model, not shared loop policy.
-pub(crate) fn validate_execution(config: &crate::config::ControllerConfig) -> anyhow::Result<()> {
-    validate_joint_count(config.joint_count)?;
+pub(crate) fn validate_control_rate(frequency_hertz: f64) -> anyhow::Result<()> {
     ensure!(
-        (config.frequency_hertz - CONTROL_FREQUENCY_HERTZ).abs() < 1e-9,
+        (frequency_hertz - CONTROL_FREQUENCY_HERTZ).abs() < 1e-9,
         "The selected SO-101 policy requires a {CONTROL_FREQUENCY_HERTZ} Hz control rate"
     );
     Ok(())

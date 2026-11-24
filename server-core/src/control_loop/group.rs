@@ -1,6 +1,7 @@
-use super::activity::Activity;
+use super::activity::{
+    ActiveGroupMember, Activity, GroupReference, GroupWriteAttempt, MotionStatus,
+};
 use super::runner::{GroupWrite, PendingCycle, Runner};
-use super::trajectory::{ActiveGroupMember, GroupReference, GroupWriteAttempt, MotionStatus};
 use crate::arm::{GroupMembership, Now};
 use crate::config::ControllerConfig;
 use crate::corner_path::{MotionSupervisor, ValidatedPlan};

@@ -1,3 +1,10 @@
+#[path = "generated/station_commands.rs"]
+mod commands;
+#[path = "http.rs"]
+mod http;
+
+pub use http::CameraJpeg;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -101,9 +108,9 @@ impl Drop for AbortOnDrop {
 pub struct Station {
     pub(crate) shared: Arc<Shared>,
     reader: Arc<AbortOnDrop>,
-    pub(crate) http: reqwest::Client,
-    pub(crate) server: String,
-    pub(crate) media_server: String,
+    http: reqwest::Client,
+    server: String,
+    media_server: String,
 }
 
 impl Station {
@@ -237,17 +244,12 @@ impl Station {
     /// Current state frame and reconnect generation, captured under one lock.
     #[must_use]
     pub fn observation_cursor(&self) -> (u64, u64) {
-        self.shared
-            .read(|inner| (inner.state_count, inner.connection_generation))
+        self.shared.observation_cursor()
     }
 
     /// Wait until a state frame arrives or the connection drops.
     pub async fn wait_for_observation(&self, cursor: (u64, u64)) {
-        self.shared
-            .wait_for(|inner| {
-                ((inner.state_count, inner.connection_generation) != cursor).then_some(())
-            })
-            .await;
+        self.shared.wait_for_observation(cursor).await;
     }
 
     /// Wait for the next sequence snapshot after a caller's last revision.
@@ -283,7 +285,7 @@ impl Station {
     /// sees the newest value, not every intermediate one.
     #[must_use]
     pub fn action_sequence_updates(&self) -> watch::Receiver<Option<ActionSequenceRecord>> {
-        self.shared.action_sequence_updates.subscribe()
+        self.shared.subscribe_action_sequence()
     }
 
     /// Live run telemetry from now on; use [`Station::connect_with`] to resume.
@@ -423,7 +425,7 @@ impl Station {
             .await?;
         // The cached frame can predate the take and show no holder, so only a frame
         // received after the take's reply counts.
-        let after_take = self.shared.read(|inner| inner.state_count);
+        let (after_take, _) = self.shared.observation_cursor();
         drop(guard);
         tokio::time::timeout(
             REPLY_TIMEOUT,
@@ -647,13 +649,9 @@ impl Station {
     }
 
     async fn unreachable_too_long(&self) {
-        loop {
-            let since = self.shared.wait_for(|inner| inner.disconnected_since).await;
-            tokio::time::sleep_until(since + DISCONNECT_PATIENCE).await;
-            if self.shared.read(|inner| inner.disconnected_since) == Some(since) {
-                return;
-            }
-        }
+        self.shared
+            .wait_for_continuous_disconnect(DISCONNECT_PATIENCE)
+            .await;
     }
 
     /// Where an arm would take the tool toward a pose; nothing moves.

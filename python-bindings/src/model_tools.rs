@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::{lease::NativeLease, station::station_error};
+use crate::{error::station_error, lease::NativeLease};
 use hebbian_rua::{
     LeaseGuard, RobotToolCall, RobotToolOutcome, RobotTools,
     contracts::{

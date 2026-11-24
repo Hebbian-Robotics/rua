@@ -4,7 +4,7 @@ use anyhow::{Context, bail};
 use hebbian_robot_geometry::joint_limits::JointRecoveryLimits;
 use serde::Serialize;
 
-use crate::{numeric::positive_clock_duration, sim_plant::SimTimeouts};
+use crate::numeric::positive_clock_duration;
 
 pub use hebbian_contracts::default_trace_directory;
 pub use hebbian_contracts::{
@@ -15,6 +15,31 @@ pub use hebbian_so101::config::{
     FeetechConfig, FeetechGripper, FeetechMotor, Gains, MotorCalibration,
 };
 pub type ControllerConfigInput = hebbian_contracts::ControllerConfigInput<FeetechConfig>;
+
+#[derive(Debug, Clone, Copy)]
+pub struct SimTimeouts {
+    pub connect: Duration,
+    pub reply: Duration,
+    pub real_time: bool,
+}
+
+impl TryFrom<&SimPlantConfig> for SimTimeouts {
+    type Error = anyhow::Error;
+
+    fn try_from(config: &SimPlantConfig) -> anyhow::Result<Self> {
+        Ok(Self {
+            connect: positive_clock_duration(
+                config.connect_timeout_seconds,
+                "Simulator connect timeout",
+            )?,
+            reply: positive_clock_duration(
+                config.reply_timeout_seconds,
+                "Simulator reply timeout",
+            )?,
+            real_time: config.real_time,
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ControlTiming {
@@ -123,28 +148,6 @@ impl ControllerConfig {
     pub fn into_input(self) -> ControllerConfigInput {
         self.input
     }
-    #[must_use]
-    pub(crate) fn arm_limits(&self) -> crate::arm::Limits {
-        crate::arm::Limits {
-            joint_bounds: self.recovery_limits.clone(),
-            gripper: self
-                .gripper
-                .as_ref()
-                .map(|limits| (limits.minimum_radians(), limits.maximum_radians())),
-            pose_goals: self
-                .policy
-                .as_ref()
-                .map(|policy| crate::arm::PoseGoalSettings {
-                    position_tolerance_meters: policy.position_tolerance_meters,
-                    orientation_tolerance_radians: policy.orientation_tolerance_radians,
-                }),
-            jaw_closing_axis: self.jaw_closing_axis,
-            default_joint_speed: self.default_joint_speed,
-            max_joint_speed: self.max_joint_speed,
-            trajectory_limits: self.motion.trajectory_limits(),
-        }
-    }
-
     pub fn parse(text: &str) -> anyhow::Result<Self> {
         let config: ControllerConfigInput = serde_json::from_str(text)
             .context("The controller config is not valid JSON for its schema")?;
@@ -230,7 +233,11 @@ fn validated_recovery_limits(input: &ControllerConfigInput) -> anyhow::Result<Jo
         }
     }
     if input.policy.is_some() {
-        crate::so101::policy::validate_joint_count(n)?;
+        let expected_joint_count = hebbian_so101::SO101_JOINT_NAMES.len();
+        anyhow::ensure!(
+            n == expected_joint_count,
+            "The policy drives {expected_joint_count} joints"
+        );
     }
     validate_policy_settings(input)?;
     if input.sim_plant.is_some() && input.feetech.is_some() {

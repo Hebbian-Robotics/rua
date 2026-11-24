@@ -51,6 +51,10 @@ impl GenerationTicket {
         Arc::ptr_eq(&self.generation, generation).then_some(self.expected)
     }
 
+    fn refresh_after_stop(&mut self) {
+        self.expected = self.generation.load(Ordering::Acquire);
+    }
+
     fn check(&self) -> Result<(), StaleGeneration> {
         if self.generation.load(Ordering::Acquire) == self.expected {
             Ok(())
@@ -488,7 +492,7 @@ impl Lease {
             return Err(crate::handoff::loop_not_running());
         }
         for ticket in generations {
-            *ticket = GenerationTicket::capture(&ticket.generation);
+            ticket.refresh_after_stop();
         }
         Ok(())
     }
@@ -1112,25 +1116,6 @@ impl Lease {
         }
         permission.map(|_| act())
     }
-}
-
-// CONSTRAINT: Manual control needs no interlock but a required camera's on any arm.
-pub(crate) fn manual_control_ready_without_waiting(
-    links: &[crate::control_link::LinkHandle],
-) -> Result<(), String> {
-    for link in links {
-        if let Some(interlock) = link.interlocks().0.into_iter().find(|interlock| {
-            !matches!(
-                interlock,
-                hebbian_contracts::Interlock::RequiredCameraUnavailable { .. }
-            )
-        }) {
-            return Err(format!(
-                "Manual control is inhibited by an interlock: {interlock:?}"
-            ));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

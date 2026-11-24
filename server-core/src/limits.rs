@@ -44,11 +44,6 @@ impl std::fmt::Display for Trip {
 }
 
 #[must_use]
-pub(crate) fn is_finite_joint_vector(values: &[f64], joint_count: usize) -> bool {
-    values.len() == joint_count && values.iter().all(|value| value.is_finite())
-}
-
-#[must_use]
 pub(crate) fn max_joint_deviation(left: &[f64], right: &[f64]) -> f64 {
     left.iter()
         .zip(right)
@@ -71,7 +66,7 @@ impl TrackingFailure {
     pub(crate) fn into_trip(
         self,
         config: &ControllerConfig,
-        feedback: &crate::plant::Feedback,
+        measured_velocities: &[f64],
         motion_speed: Option<(f64, f64)>,
     ) -> Trip {
         let detail = match self {
@@ -89,8 +84,7 @@ impl TrackingFailure {
                 let mut detail = format!(
                     "Feedback tracking error on joint {joint} ({name}) was {error:.3} rad, past the {allowed:.3} rad allowance; commanded {commanded_velocity:.2} rad/s"
                 );
-                if let Some(measured) = feedback
-                    .velocities
+                if let Some(measured) = measured_velocities
                     .get(joint)
                     .filter(|value| value.is_finite())
                 {
@@ -203,14 +197,9 @@ mod tests {
             &at_rest,
             0.01,
         );
-        let trip = trip.unwrap_err().into_trip(
-            &config,
-            &crate::plant::Feedback {
-                velocities: vec![0.03, 0.0],
-                ..Default::default()
-            },
-            Some((1.2, 0.5)),
-        );
+        let trip = trip
+            .unwrap_err()
+            .into_trip(&config, &[0.03, 0.0], Some((1.2, 0.5)));
         assert!(matches!(
             trip,
             Trip::Tracking {

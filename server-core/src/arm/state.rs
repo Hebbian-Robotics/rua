@@ -4,10 +4,64 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use super::types::{
-    CommandState, GripperCommand, HeldStreamGoal, Limits, Observation, Poses, PowerState,
-    Rejection, ShutdownState, StreamGoal,
+    GripperCommand, GroupMembership, HeldStreamGoal, Limits, Observation, Poses, PowerState,
+    ReachGoal, Rejection, ShutdownState, StreamGoal, rejection,
 };
-use hebbian_contracts::{ArmMode, CommandRecord, LoggedEvent, TraceContext};
+use hebbian_contracts::{ArmMode, CommandRecord, LoggedEvent, RejectionReason, TraceContext};
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Job {
+    Enable {
+        command_id: hebbian_contracts::CommandId,
+    },
+    ApproveRecovery {
+        command_id: hebbian_contracts::CommandId,
+    },
+    Release {
+        command_id: hebbian_contracts::CommandId,
+    },
+    Move {
+        command_id: hebbian_contracts::CommandId,
+        plan: super::AdmittedPlan,
+        group: Option<GroupMembership>,
+    },
+    Reach {
+        command_id: hebbian_contracts::CommandId,
+        goal: ReachGoal,
+    },
+    Stream {
+        command_id: hebbian_contracts::CommandId,
+    },
+}
+
+impl Job {
+    #[must_use]
+    pub(crate) fn command_id(&self) -> &hebbian_contracts::CommandId {
+        match self {
+            Self::Enable { command_id }
+            | Self::ApproveRecovery { command_id }
+            | Self::Release { command_id }
+            | Self::Move { command_id, .. }
+            | Self::Reach { command_id, .. }
+            | Self::Stream { command_id } => command_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum CommandState {
+    Idle,
+    Queued(Job),
+    // INVARIANT: The previous motion has been superseded, but the loop still owns it.
+    // The replacement can be cancelled before the loop lets go.
+    Superseding(Option<Job>),
+    Starting(hebbian_contracts::CommandId),
+    Executing {
+        command_id: hebbian_contracts::CommandId,
+        settling: bool,
+    },
+    Stopping(hebbian_contracts::CommandId),
+}
 
 pub struct ArmCore {
     pub(crate) group_collision: Option<crate::self_collision::GroupCollisionArm>,
@@ -79,6 +133,33 @@ impl ArmCore {
             | PowerState::Moving(_)
             | PowerState::Reconnected => None,
         }
+    }
+
+    pub(super) fn busy(&self) -> bool {
+        self.command_state != CommandState::Idle
+    }
+
+    pub(super) fn faulted_rejection(&self) -> Rejection {
+        if self.mode() == ArmMode::Disconnected {
+            return rejection(
+                RejectionReason::Faulted,
+                format!(
+                    "{}; the bus is disconnected and reopened every second, then enable is accepted",
+                    self.fault().unwrap_or("The bus stopped answering")
+                ),
+            );
+        }
+        rejection(
+            RejectionReason::Faulted,
+            format!(
+                "{}; send clear_fault after inspecting the arm",
+                self.fault().unwrap_or("The arm is faulted")
+            ),
+        )
+    }
+
+    pub(super) fn shutting_down() -> Rejection {
+        rejection(RejectionReason::ArmBusy, "The controller is shutting down")
     }
 
     // SAFETY: A stop record completes at acceptance, before motion or the jaw necessarily reaches its hold target. Handoff must also check physical readiness.

@@ -6,7 +6,19 @@ use hebbian_rua_core::so101::calibration::{calibrated_joint_limits, lerobot_cali
 use hebbian_rua_core::so101::discovery::{self, ControllerSerial};
 use hebbian_rua_core::so101::registry::{CalibrationInstallation, install_calibration};
 
-use crate::commands::SelectionArguments;
+#[derive(clap::Args, Default)]
+pub(crate) struct SelectionArguments {
+    #[arg(
+        long,
+        help = "Local SO-101 config checkout containing arms/<USB-serial>/{setup.toml,calibration.json}. Default: `$HEBBIAN_SO101_CONFIG_DIRECTORY`, else `$XDG_CONFIG_HOME/rua/so101-arm-configs`"
+    )]
+    pub(crate) so101_config_directory: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Select one connected USB adapter when several arms are registered. With a named simulator profile or `--no-physics-stand-in`: the registered arm whose calibrated joint travel the simulated arm takes, so it stops where that arm does"
+    )]
+    pub(crate) so101_serial: Option<String>,
+}
 
 impl SelectionArguments {
     fn directory(&self) -> anyhow::Result<PathBuf> {
@@ -154,7 +166,7 @@ mod tests {
 
     use hebbian_rua_core::profile::load_robot_profile_with_fragments;
 
-    use crate::commands::SelectionArguments;
+    use super::SelectionArguments;
 
     struct Registry(PathBuf);
 

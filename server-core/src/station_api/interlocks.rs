@@ -66,6 +66,23 @@ fn apply_sample(link: &LinkHandle, sample: hebbian_contracts::Sample) {
     }
 }
 
+// CONSTRAINT: Manual control needs no interlock but a required camera's on any arm.
+pub(super) fn manual_control_ready_without_waiting(links: &[LinkHandle]) -> Result<(), String> {
+    for link in links {
+        if let Some(interlock) = link.interlocks().0.into_iter().find(|interlock| {
+            !matches!(
+                interlock,
+                hebbian_contracts::Interlock::RequiredCameraUnavailable { .. }
+            )
+        }) {
+            return Err(format!(
+                "Manual control is inhibited by an interlock: {interlock:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

@@ -1,17 +1,77 @@
-use super::learned::{MotionPlan, PolicyRequest, PolicySession};
+mod learned;
+mod trajectory;
+
 use super::tool_pose::ToolPose;
-use super::trajectory::{ActiveGroupMember, ActiveMotion, GroupReference, MotionOutput};
-use super::{build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot};
 use crate::arm::{ArmCore, Now, StreamGoal};
 use crate::config::ControllerConfig;
 use crate::gripper::GripperController;
 use crate::limits::{Trip, check_effort, validated_tracking_error};
+use crate::motion_guards::{
+    build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot,
+};
 use crate::plant::Feedback;
 use crate::policy::{ActiveReach, PolicyRuntime};
 use crate::reference_filter::{Reference, ReferenceFilter};
 use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
-use hebbian_contracts::CommandOutcome;
+use hebbian_contracts::{Checkpoint, CommandOutcome};
+pub(super) use learned::policy_failure;
+use nalgebra::Isometry3;
+use trajectory::ActiveMotion;
+pub(super) use trajectory::{ActiveGroupMember, GroupReference, MotionStatus};
+
+#[derive(Clone, Copy)]
+pub(super) enum PolicySession {
+    Continue,
+    Reset,
+}
+
+pub(super) struct PolicyRequest {
+    pub(super) session: PolicySession,
+    pub(super) target: Isometry3<f64>,
+}
+
+pub(super) enum MotionPlan {
+    ReferenceReady(MotionOutput),
+    Infer(PolicyRequest),
+}
+
+#[derive(Default)]
+pub(super) struct MotionEffects {
+    waypoint_gripper: Option<crate::arm::GripperTarget>,
+    checkpoints: Vec<Checkpoint>,
+    completion: Option<MotionCompletion>,
+}
+
+pub(super) enum MotionOutput {
+    None,
+    Arm(MotionEffects),
+    Group {
+        effects: MotionEffects,
+        attempt: GroupWriteAttempt,
+    },
+}
+
+impl MotionOutput {
+    pub(super) fn ends_motion(&self) -> bool {
+        match self {
+            Self::None => false,
+            Self::Arm(effects) | Self::Group { effects, .. } => effects.completion.is_some(),
+        }
+    }
+}
+
+struct MotionCompletion {
+    outcome: CommandOutcome,
+    detail: Option<String>,
+    hold: Vec<f64>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum GroupWriteAttempt {
+    First,
+    Retry,
+}
 
 pub(super) struct ActiveStream {
     pub(super) command_id: hebbian_contracts::CommandId,
@@ -116,7 +176,7 @@ impl Loop<'_> {
                     | Activity::Stream(_)
                     | Activity::Reach(_) => None,
                 };
-                failure.into_trip(self.config, feedback, motion_speed)
+                failure.into_trip(self.config, &feedback.velocities, motion_speed)
             })
             .or_else(|| check_effort(self.config, &feedback.efforts).err())
             .or_else(|| feedback.fault.clone().map(Trip::FeedbackFault))
@@ -202,6 +262,76 @@ impl Loop<'_> {
             .get_or_insert_with(|| self.filter.stopping_position());
         self.core.motion_ended(outcome, detail, hold, now);
         self.reference.set_at_rest(hold, None);
+    }
+
+    pub(super) fn prepare_stop_write(
+        &mut self,
+        checkpoints: Vec<Checkpoint>,
+        detail: String,
+    ) -> MotionEffects {
+        self.prepare_braking_hold(checkpoints, CommandOutcome::Stopped, detail)
+    }
+
+    fn prepare_braking_hold(
+        &mut self,
+        checkpoints: Vec<Checkpoint>,
+        outcome: CommandOutcome,
+        detail: String,
+    ) -> MotionEffects {
+        let hold = self
+            .hold_at
+            .get_or_insert_with(|| self.filter.stopping_position());
+        self.reference.set_at_rest(hold, None);
+        MotionEffects {
+            waypoint_gripper: None,
+            checkpoints,
+            completion: Some(MotionCompletion {
+                outcome,
+                detail: Some(detail),
+                hold: hold.clone(),
+            }),
+        }
+    }
+
+    pub(super) fn prepare_measured_hold(
+        &mut self,
+        outcome: CommandOutcome,
+        detail: Option<String>,
+        feedback: &Feedback,
+    ) -> MotionEffects {
+        let hold = feedback.positions.clone();
+        self.filter.reset(&hold);
+        self.reference.set_at_rest(&hold, None);
+        MotionEffects {
+            waypoint_gripper: None,
+            checkpoints: Vec::new(),
+            completion: Some(MotionCompletion {
+                outcome,
+                detail,
+                hold,
+            }),
+        }
+    }
+
+    pub(super) fn commit_motion_effects(&mut self, effects: MotionEffects, now: Now) {
+        if let Activity::Motion(active) = &mut self.activity {
+            if let Some(target) = effects.waypoint_gripper {
+                active.waypoint_gripper_command =
+                    Some(self.core.apply_waypoint_gripper(target, now));
+            }
+            active.checkpoints_sent += effects.checkpoints.len();
+        }
+        for checkpoint in effects.checkpoints {
+            self.core.add_checkpoint(checkpoint);
+        }
+        if let Some(completion) = effects.completion {
+            self.end_activity(
+                completion.outcome,
+                completion.detail,
+                Some(completion.hold),
+                now,
+            );
+        }
     }
 
     fn stream_reference(&mut self, stop: bool, now: Now) -> Result<MotionPlan, Trip> {
@@ -300,7 +430,8 @@ impl Loop<'_> {
             self.self_collision.as_deref(),
             &self.next_command,
             &self.previous_command,
-            feedback,
+            &feedback.positions,
+            feedback.gripper_angle,
         )
     }
 }

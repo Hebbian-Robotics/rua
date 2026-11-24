@@ -10,7 +10,7 @@ pub(crate) struct ServeArguments {
     #[arg(long, default_value = "auto")]
     pub(crate) profile: String,
     #[command(flatten)]
-    pub(crate) selection: super::SelectionArguments,
+    pub(crate) selection: crate::so101::SelectionArguments,
     /// An arm to serve; repeat for several. Default: all of the profile's arms.
     #[arg(long = "arm")]
     pub(crate) arms: Vec<String>,
