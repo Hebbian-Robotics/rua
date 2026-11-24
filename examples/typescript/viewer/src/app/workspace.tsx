@@ -12,7 +12,7 @@ import {
 import { Alert } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
-import { agentApi, resolveAgentUrl } from "../agent-api.js";
+import { agentApi } from "../agent-api.js";
 import { stationJson } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { AgentControl } from "../features/agent/agent-control.js";
@@ -125,6 +125,7 @@ function RecoveryControls({ state }: { state: StationState | null }) {
 }
 
 type WorkspaceAppProps = {
+  manualOnly: boolean;
   viewerPreferences: ReturnType<typeof useViewerPreferences>;
   cameras: CameraRoomState;
   navigationLinks?: readonly ViewerNavigationLink[];
@@ -135,6 +136,7 @@ type WorkspaceAppProps = {
 };
 
 export function WorkspaceApp({
+  manualOnly,
   viewerPreferences,
   cameras,
   navigationLinks,
@@ -146,7 +148,7 @@ export function WorkspaceApp({
   const [route, setRoute] = useState(() => location.hash);
   const [routePage, settingsSection] = route.split("/");
   const page = routePage === "#settings" ? "settings" : "workspace";
-  const [controlMode, setControlMode] = useState<ControlMode>(() => {
+  const [preferredControlMode, setControlMode] = useState<ControlMode>(() => {
     try {
       return sessionStorage.getItem(CONTROL_MODE_KEY) === "manual"
         ? "manual"
@@ -155,6 +157,7 @@ export function WorkspaceApp({
       return "agent";
     }
   });
+  const controlMode = manualOnly ? "manual" : preferredControlMode;
   const [selectedArm, setSelectedArm] = useState("");
   const [telemetryOpen, setTelemetryOpen] = useState(false);
   const [manualMode, setManualMode] = useState<
@@ -178,8 +181,8 @@ export function WorkspaceApp({
   const [changingArmPower, setChangingArmPower] = useState(false);
   const [stoppingRun, setStoppingRun] = useState(false);
   const { preferences, updatePreferences, colorScheme } = viewerPreferences;
-  const agentUrl = resolveAgentUrl(preferences.agentServerUrl);
-  const agent = useAgentRun(agentUrl);
+  const agentUrl = globalThis.location.origin;
+  const agent = useAgentRun(agentUrl, !manualOnly);
   const { run, setRun } = agent;
   const runActive = isRunActive(run);
   const controlModeLocked = controlModeLockReason(
@@ -255,11 +258,11 @@ export function WorkspaceApp({
         active = false;
       };
     }
-    void stationJson("api/control-mode")
+    void stationJson("/api/control/capabilities")
       .then((value) => {
-        const mode = apiSchemas.shape.ViewerControl.parse(value).mode;
-        if (active)
-          setManualMode(mode === "so101_manual" ? "enabled" : "disabled");
+        const { manual_pose_control } =
+          apiSchemas.shape.ControlCapabilities.parse(value);
+        if (active) setManualMode(manual_pose_control ? "enabled" : "disabled");
       })
       .catch(() => {
         if (active) setManualMode("unknown");
@@ -272,6 +275,7 @@ export function WorkspaceApp({
   function selectControlMode(value: unknown): void {
     if (value !== "agent" && value !== "manual") return;
     if (
+      (manualOnly && value === "agent") ||
       value === controlMode ||
       controlModeLockReason(
         stationConnection.isConnected()
@@ -296,7 +300,7 @@ export function WorkspaceApp({
   }
 
   async function startRun(request: RunRequest): Promise<void> {
-    if (startingRun || runActive) return;
+    if (manualOnly || startingRun || runActive) return;
     setStartingRun(true);
     setRunError("");
     try {
@@ -434,6 +438,7 @@ export function WorkspaceApp({
                         name="control-mode"
                         value={value}
                         checked={controlMode === value}
+                        disabled={manualOnly && value === "agent"}
                         onChange={() => selectControlMode(value)}
                       />
                       <span className="control-mode-label">
@@ -452,8 +457,10 @@ export function WorkspaceApp({
                 role="status"
                 className="m-0 text-xs text-muted-foreground"
               >
-                {controlModeLocked ??
-                  "Choose a control mode, then enable the arm."}
+                {manualOnly
+                  ? "The viewer is running in manual-only mode."
+                  : (controlModeLocked ??
+                    "Choose a control mode, then enable the arm.")}
               </p>
             </div>
             <ArmControl
@@ -480,19 +487,21 @@ export function WorkspaceApp({
               onStopFollowing={stopFollowing}
               onPowerTransition={setChangingArmPower}
             />
-            <div hidden={controlMode !== "agent"}>
-              <AgentControl
-                agent={agent}
-                startingRun={startingRun}
-                onStartRun={startRun}
-                runError={runError}
-                armName={armName}
-                onStopRun={stopRun}
-                stoppingRun={stoppingRun}
-                stationState={connected ? stationState : null}
-                cameraNames={cameraNames}
-              />
-            </div>
+            {!manualOnly && (
+              <div hidden={controlMode !== "agent"}>
+                <AgentControl
+                  agent={agent}
+                  startingRun={startingRun}
+                  onStartRun={startRun}
+                  runError={runError}
+                  armName={armName}
+                  onStopRun={stopRun}
+                  stoppingRun={stoppingRun}
+                  stationState={connected ? stationState : null}
+                  cameraNames={cameraNames}
+                />
+              </div>
+            )}
             <div hidden={controlMode !== "manual"}>
               {manualMode === "enabled" ? (
                 <ManualControl
@@ -559,7 +568,6 @@ export function WorkspaceApp({
           update={updatePreferences}
           arms={connected ? (stationState?.arms ?? null) : null}
           agent={agent}
-          agentSettingsLocked={startingRun || runActive}
           section={settingsSection}
         />
       )}

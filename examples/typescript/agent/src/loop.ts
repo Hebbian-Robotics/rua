@@ -203,12 +203,13 @@ export async function drive(
         "hebbian.arm": config.arm,
         "hebbian.task": config.task,
       },
-      async (runSpan, withSpan) => {
+      async (runSpan, withSpan, tracerProvider) => {
         const environment: RunEnvironment = {
           connection,
           robot,
           lease,
           withSpan,
+          tracerProvider,
           memory: new TaskMemory(config.task),
           arm: config.arm,
           cameras: config.cameras,
@@ -285,6 +286,7 @@ async function runLoop(
     `Task: ${config.task}\nThe station's robot profile supplies the default and maximum joint speeds.`,
   );
   const settings: ConversationSettings = {
+    tracerProvider: environment.tracerProvider,
     model: config.model,
     systemPrompt: systemPrompt(JSON.stringify(await robot.context())),
     tools: [

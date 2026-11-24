@@ -614,7 +614,7 @@ pre {
   width: 16px;
   height: 16px;
 }
-.control-mode-picker:disabled .control-mode-label {
+.control-mode-option input:disabled + .control-mode-label {
   cursor: default;
 }
 .control-mode-option input:checked + .control-mode-label {
@@ -626,10 +626,7 @@ pre {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
-.control-mode-picker:disabled
-  .control-mode-option
-  input:not(:checked)
-  + .control-mode-label {
+.control-mode-option input:disabled:not(:checked) + .control-mode-label {
   opacity: 0.65;
 }
 

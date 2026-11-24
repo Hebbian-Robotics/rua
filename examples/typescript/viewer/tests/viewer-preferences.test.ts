@@ -23,7 +23,6 @@ test("viewer preferences follow the system theme and hide commanded joints by de
     showTargetJoints: true,
     showCommandedJoints: false,
     showCameraLabels: true,
-    agentServerUrl: "",
     recordWithControl: false,
   });
 });

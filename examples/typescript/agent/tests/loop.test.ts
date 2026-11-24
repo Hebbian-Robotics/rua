@@ -30,6 +30,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 async function runLoop(
@@ -58,6 +59,96 @@ async function runLoop(
     connection.close();
   }
 }
+
+test("Claude request telemetry is parented to the model turn without model content", async () => {
+  vi.stubEnv("ANTHROPIC_BASE_URL", "http://claude.test");
+  const stationFetch = globalThis.fetch;
+  const modelEvents = [
+    {
+      type: "message_start",
+      message: {
+        id: "msg_1",
+        type: "message",
+        role: "assistant",
+        content: [],
+        model: "claude-sonnet-4-5",
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 0 },
+      },
+    },
+    {
+      type: "content_block_start",
+      index: 0,
+      content_block: {
+        type: "tool_use",
+        id: "call_1",
+        name: "finish",
+        input: {},
+      },
+    },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: {
+        type: "input_json_delta",
+        partial_json: JSON.stringify({ reason: "private result" }),
+      },
+    },
+    { type: "content_block_stop", index: 0 },
+    {
+      type: "message_delta",
+      delta: { stop_reason: "tool_use", stop_sequence: null },
+      usage: { output_tokens: 1 },
+    },
+    { type: "message_stop" },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    (input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        input instanceof Request ? new URL(input.url) : new URL(input);
+      if (url.host !== "claude.test") return stationFetch(input, init);
+      return Promise.resolve(
+        new Response(
+          modelEvents
+            .map(
+              (event) =>
+                `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+            )
+            .join(""),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      );
+    },
+  );
+
+  const connection = createStationConnection("http://station", "agent");
+  connection.start();
+  try {
+    const outcome = await station.run(
+      drive(
+        { ...config, task: "private prompt" },
+        { connection, stationUrl: "http://station", mediaUrl: "http://media" },
+        { apiKey: "local-test-key" },
+      ),
+    );
+    expect(outcome.result).toBe("private result");
+
+    const spans = station.finishedSpans();
+    const modelSpan = spans.find((span) => span.name === "chat anthropic");
+    const requestSpans = spans.filter(
+      (span) => span.parent_span_id === modelSpan?.span_id,
+    );
+    expect(requestSpans).toHaveLength(1);
+    expect(requestSpans[0]).toMatchObject({ trace_id: modelSpan?.trace_id });
+    expect(JSON.stringify(requestSpans)).not.toMatch(
+      /private prompt|private result/,
+    );
+  } finally {
+    connection.close();
+  }
+});
 
 function resultsOf(received: Received | undefined) {
   if (received?.kind !== "results") throw new Error("Expected tool results");
@@ -294,18 +385,14 @@ test("losing the lease ends the run without stopping the recording", async () =>
   expect(result).toBe(
     "The lease was lost: taken, revoked, returned for an interruption or lapsed",
   );
-  expect(station.requests).toContain("POST /viewer/api/recording/start");
-  expect(station.requests).not.toContain(
-    "POST /viewer/api/recording/stop-for-lease",
-  );
+  expect(station.requests).toContain("POST /recording/start");
+  expect(station.requests).not.toContain("POST /recording/stop-for-lease");
   expect(station.commands).toHaveLength(0);
 });
 
 test("a normal finish stops the recording the run started", async () => {
   await runLoop([turn(["finish", { reason: "ok" }])], { record: true });
-  expect(station.requests).toContain(
-    "POST /viewer/api/recording/stop-for-lease",
-  );
+  expect(station.requests).toContain("POST /recording/stop-for-lease");
 });
 
 test("cancelling stops the arm and leaves the recording running", async () => {
@@ -323,9 +410,7 @@ test("cancelling stops the arm and leaves the recording running", async () => {
   expect(result).toBe("Run cancelled; the arm was stopped");
   expect(station.commands).toHaveLength(0);
   expect(station.leaseStops).toContain("follower");
-  expect(station.requests).not.toContain(
-    "POST /viewer/api/recording/stop-for-lease",
-  );
+  expect(station.requests).not.toContain("POST /recording/stop-for-lease");
   expect(station.returned).toBe(true);
 });
 

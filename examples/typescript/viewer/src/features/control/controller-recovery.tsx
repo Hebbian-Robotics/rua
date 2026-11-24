@@ -26,7 +26,7 @@ export function ControllerRecovery() {
   const controllerQuery = useQuery({
     queryKey: ["controller-status"],
     queryFn: async () =>
-      controllerStatusSchema.parse(await stationJson("api/controller")),
+      controllerStatusSchema.parse(await stationJson("/api/controller")),
     refetchInterval: 1000,
     refetchIntervalInBackground: true,
     retry: false,
@@ -38,7 +38,7 @@ export function ControllerRecovery() {
 
   const reconnect = useMutation({
     mutationFn: async () => {
-      await stationJson("api/controller/reconnect", {
+      await stationJson("/api/controller/reconnect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ supported: true }),

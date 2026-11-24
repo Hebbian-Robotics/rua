@@ -1,5 +1,10 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
+import { agentApi } from "../agent-api.js";
 import { useCameraRoom } from "../features/cameras/live-cameras.js";
 import {
   RecordingControls,
@@ -10,7 +15,26 @@ import { recordingNavigationLinks } from "../features/recordings/recording-navig
 import { useViewerPreferences } from "../features/settings/use-viewer-preferences.js";
 import { WorkspaceApp } from "./workspace.js";
 
-function FullViewer() {
+function Viewer() {
+  const backendUrl = globalThis.location.origin;
+  const health = useQuery({
+    queryKey: ["viewer-health", backendUrl],
+    queryFn: () => agentApi.health(backendUrl),
+  });
+  if (!health.data) {
+    return health.isError ? (
+      <p role="alert">
+        Could not connect to the viewer backend. Check that it is running, then
+        reload.
+      </p>
+    ) : (
+      <p role="status">Connecting to the viewer backend…</p>
+    );
+  }
+  return <FullViewer manualOnly={health.data.manualOnly} />;
+}
+
+function FullViewer({ manualOnly }: { manualOnly: boolean }) {
   const viewerPreferences = useViewerPreferences();
   const { preferences, updatePreferences } = viewerPreferences;
   const cameras = useCameraRoom();
@@ -18,6 +42,7 @@ function FullViewer() {
 
   return (
     <WorkspaceApp
+      manualOnly={manualOnly}
       viewerPreferences={viewerPreferences}
       cameras={cameras}
       navigationLinks={recordingNavigationLinks}
@@ -50,6 +75,6 @@ if (!root) throw new Error("Viewer root is missing");
 const queryClient = new QueryClient();
 createRoot(root).render(
   <QueryClientProvider client={queryClient}>
-    <FullViewer />
+    <Viewer />
   </QueryClientProvider>,
 );

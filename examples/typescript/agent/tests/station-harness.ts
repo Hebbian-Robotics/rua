@@ -222,12 +222,9 @@ export class ScriptedStation {
       this.spans.push(...(body["spans"] as WireSpan[]));
       return new Response(null, { status: 204 });
     }
-    if (path === "/viewer/api/recording/status")
-      return Response.json({ state: "idle" });
-    if (path === "/viewer/api/recording/start")
-      return Response.json("recording-1");
-    if (path === "/viewer/api/recording/stop-for-lease")
-      return Response.json({});
+    if (path === "/recording/status") return Response.json({ state: "idle" });
+    if (path === "/recording/start") return Response.json("recording-1");
+    if (path === "/recording/stop-for-lease") return Response.json({});
     if (path.startsWith("/cameras/"))
       return new Response(new Uint8Array([1, 2, 3]));
     return new Response("not found", { status: 404 });

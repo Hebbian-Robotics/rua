@@ -79,6 +79,13 @@ export class ClaudeConversation implements ModelConversation {
         apiKey: settings.apiKey,
         maxRetries: PROVIDER_MAX_RETRIES,
         timeout: PROVIDER_TIMEOUT_MILLISECONDS,
+        openTelemetry: settings.tracerProvider
+          ? {
+              tracerProvider: settings.tracerProvider,
+              propagation: false,
+              traces: { contentMode: "metadata_only" },
+            }
+          : false,
       });
     this.thread = anthropic.beta.messages.thread({
       model: settings.model,

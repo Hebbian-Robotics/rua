@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createRecordingClient } from "hebbian-rua";
+import { apiSchemas } from "hebbian-rua";
 import { CircleIcon } from "lucide-react";
 import { useRef } from "react";
 import { z } from "zod";
@@ -11,7 +11,6 @@ import { stationJson } from "../../api.js";
 import { errorMessage } from "../../errors.js";
 import type { Run } from "../../run-logic.js";
 
-const recordingClient = createRecordingClient(globalThis.location.href);
 const recordingStatusKey = ["recording-status"] as const;
 
 export function useControlRecording(recordWithControl: boolean) {
@@ -20,12 +19,15 @@ export function useControlRecording(recordWithControl: boolean) {
     useQuery({
       queryKey: ["recording-enabled"],
       queryFn: async () =>
-        z.boolean().parse(await stationJson("api/recording-enabled")),
+        z.boolean().parse(await stationJson("/api/recording/enabled")),
       retry: false,
     }).data ?? false;
   const status = useQuery({
     queryKey: recordingStatusKey,
-    queryFn: () => recordingClient.status(),
+    queryFn: async () =>
+      apiSchemas.shape.RecordingStatus.parse(
+        await stationJson("/api/recording/status"),
+      ),
     refetchInterval: 3000,
     refetchIntervalInBackground: true,
     retry: false,
@@ -38,9 +40,11 @@ export function useControlRecording(recordWithControl: boolean) {
   const change = useMutation({
     mutationFn: async (action: "start" | "stop") => {
       if (action === "stop") {
-        await recordingClient.stop();
+        await stationJson("/api/recording/stop", { method: "POST" });
       } else {
-        const recordingName = await recordingClient.start();
+        const recordingName = z
+          .string()
+          .parse(await stationJson("/api/recording/start", { method: "POST" }));
         await queryClient.cancelQueries({ queryKey: recordingStatusKey });
         queryClient.setQueryData(recordingStatusKey, {
           state: "recording",

@@ -33,7 +33,7 @@ export function PhoneCameraSetup() {
   const inviteMutation = useMutation({
     mutationFn: async (cameraLabel: string) => {
       const invite = apiSchemas.shape.PhoneInvite.parse(
-        await stationJson("api/phone-invites", {
+        await stationJson("/api/media/phone-invites", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

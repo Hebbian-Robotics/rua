@@ -1,8 +1,7 @@
-// The agent server's HTTP surface. It only starts, stops and lists runs; live
-// data (state, video, control, telemetry) comes from the robot server.
-
+import { StationHttpError } from "hebbian-rua";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import type { ZodType } from "zod";
 import { DEFAULT_MODELS } from "../../../agent/src/providers/types.js";
@@ -24,17 +23,22 @@ const RUN_STREAM_HEARTBEAT_MILLISECONDS = 10_000;
 export interface AppOptions {
   manager: RunManager;
   allowedOrigins: string[];
-  configuredProviders: () => Provider[];
+  manualOnly: boolean;
+  configuredProviders: readonly Provider[];
 }
 
 export function createApp({
   manager,
   allowedOrigins,
+  manualOnly,
   configuredProviders,
 }: AppOptions): Hono {
   const app = new Hono();
   app.use("/api/*", cors({ origin: allowedOrigins }));
   app.onError((error, context) => {
+    if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof StationHttpError)
+      return Response.json({ detail: error.message }, { status: error.status });
     if (error instanceof RunConflictError)
       return context.json({ detail: error.message }, 409);
     if (error instanceof RunNotFoundError)
@@ -45,10 +49,10 @@ export function createApp({
     return context.json({ detail: error.message }, 500);
   });
 
-  app.get("/api/health", (context) => context.json({ ok: true }));
+  app.get("/api/health", (context) => context.json({ ok: true, manualOnly }));
   app.get("/api/model-providers", (context) =>
     context.json(
-      configuredProviders().map((provider) => ({
+      (manualOnly ? [] : configuredProviders).map((provider) => ({
         provider,
         defaultModel: DEFAULT_MODELS[provider],
       })),
@@ -66,6 +70,11 @@ export function createApp({
     });
   });
   app.post("/api/runs", async (context) => {
+    if (manualOnly)
+      return context.json(
+        { detail: "The viewer is running in manual-only mode." },
+        403,
+      );
     const body = await readJson(context.req.json(), runRequestSchema);
     if (!body.success) return context.json({ detail: body.detail }, 400);
     return context.json(manager.start(body.data), 201);

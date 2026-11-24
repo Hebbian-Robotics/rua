@@ -24,7 +24,7 @@ tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
-anyhow = "1.0.104"
+anyhow = "1.0.105"
 axum = "0.8.9"
 hebbian-robot-use-core = { path = "../server-core" }
 # The run telemetry buffer lives in the station; the telemetry test needs a real one.

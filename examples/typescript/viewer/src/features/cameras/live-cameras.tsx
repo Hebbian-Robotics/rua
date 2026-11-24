@@ -132,7 +132,7 @@ export function useCameraRoom(): CameraRoomState {
         });
       try {
         const access = apiSchemas.shape.RoomAccess.parse(
-          await stationJson("api/token"),
+          await stationJson("/api/media/access-token"),
         );
         if (!active) return;
         await connecting.connect(access.server_url, access.token);

@@ -30,10 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             axum::http::HeaderValue::from_static("no-cache"),
         ));
     let app = Router::new()
-        .nest(
-            "/viewer/api",
-            router(RecordingLibrary::new(arguments.directory)),
-        )
+        .nest("/api", router(RecordingLibrary::new(arguments.directory)))
         .route(
             "/",
             get(|| async { Redirect::temporary("/viewer/recording.html") }),

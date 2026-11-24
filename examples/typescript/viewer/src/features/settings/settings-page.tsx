@@ -2,13 +2,11 @@ import type { ArmState } from "hebbian-rua";
 import { BotIcon, SunIcon } from "lucide-react";
 import { useEffect } from "react";
 import { Card } from "@/components/ui/card.js";
-import { Input } from "@/components/ui/input.js";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select.js";
 import { Switch } from "@/components/ui/switch.js";
-import { resolveAgentUrl } from "../../agent-api.js";
 import type { useAgentRun } from "../agent/use-agent-run.js";
 import type { ViewerPreferences } from "./preferences.js";
 
@@ -17,14 +15,12 @@ export function SettingsPage({
   update,
   arms,
   agent,
-  agentSettingsLocked,
   section,
 }: {
   preferences: ViewerPreferences;
   update: (next: ViewerPreferences) => void;
   arms: ArmState[] | null;
   agent: ReturnType<typeof useAgentRun>;
-  agentSettingsLocked: boolean;
   section: string | undefined;
 }) {
   const { status, connectionError } = agent;
@@ -125,35 +121,13 @@ export function SettingsPage({
         <h2 id="settings-agent" tabIndex={-1}>
           <BotIcon aria-hidden="true" /> Agent connection
         </h2>
-        <div className="grid gap-2">
-          <label htmlFor="agent-server-address">
-            Agent server address
-            <Input
-              id="agent-server-address"
-              type="url"
-              disabled={agentSettingsLocked}
-              value={preferences.agentServerUrl}
-              placeholder={resolveAgentUrl("")}
-              onChange={(event) =>
-                update({
-                  ...preferences,
-                  agentServerUrl: event.currentTarget.value,
-                })
-              }
-            />
-          </label>
-          {status === "unreachable" && (
-            <p role="status">
-              Could not connect to{" "}
-              <code>{resolveAgentUrl(preferences.agentServerUrl)}</code>. Start
-              the server with <code>pnpm start:agent</code>, then check the
-              address and allowed origins. {connectionError}
-            </p>
-          )}
-        </div>
-        {agentSettingsLocked && (
-          <p>Change the agent server address when the task ends.</p>
-        )}
+        <p role="status">
+          {status === "unreachable"
+            ? connectionError
+            : status === "disabled"
+              ? "Disabled in manual-only mode"
+              : status}
+        </p>
       </Card>
     </main>
   );

@@ -51,10 +51,12 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-The viewer in this checkout uses the published `v0.1.4` SDK. Follow
-[Getting started](getting-started.md#2-verify-manual-control) to serve it with
-the bundled `v0.1.4` station. The source-built station exposes the station API.
-Camera builds have
+Configure a model-provider key before running `pnpm start:viewer` to serve
+the built viewer and run the example agent backend. See the
+[viewer setup](../examples/typescript/viewer/README.md).
+The viewer uses the published TypeScript SDK from the lockfile. For the matching
+published station, see [Getting started](getting-started.md). To test station
+changes, [start the station from source](#start-the-station). Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
@@ -68,15 +70,15 @@ Run commands from the repository root. After pulling dependency changes, run
 | --- | --- | --- |
 | Rust station or hardware profile | `uv run cargo run -p hebbian-robot-use-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
 | Rust CLI | `cargo run -p hebbian-robot-use-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-robot-use` stays at its installed version. |
-| TypeScript agent | `pnpm start:agent` | Restart the agent server to load example changes. |
+| Viewer and agent backend | `pnpm start:viewer` | Restart the viewer backend to load example changes. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
-| Viewer served by the bundled v0.1.4 station | `pnpm build` | Refresh the browser; no station restart is needed. |
+| Viewer served by the example backend | `pnpm build` | Refresh the browser; no station restart is needed. |
 | Viewer during development | `pnpm dev` | Viewer hot reload and agent server watch mode. |
 | Rust SDK or PyO3 bindings | Run `uv sync` and restart the Python process to load the rebuilt extension. | The next Python process imports the new native module. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |
 
-Example environments install the published SDKs. The SDKs' own test suites use the
-source checkout. Run `pnpm test:package` to validate the packed TypeScript SDK.
+The examples pin the published SDKs. Run `pnpm test:package` to build and
+validate the TypeScript SDK from your checkout.
 `pnpm build` builds the static viewer in
 `dist/viewer` without building Rust binaries or restarting services.
 A running process continues using its loaded code until it restarts.

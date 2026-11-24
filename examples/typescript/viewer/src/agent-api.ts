@@ -1,6 +1,3 @@
-// The viewer's calls to the optional agent server: starting, stopping and
-// listing runs. Live data comes from the robot station, never from here.
-
 import type { ZodType } from "zod";
 import {
   currentRunSchema,
@@ -11,14 +8,6 @@ import {
   type RunRequest,
   runSchema,
 } from "../shared/run-api.js";
-
-export function resolveAgentUrl(setting: string): string {
-  const configured =
-    setting.trim() ||
-    (import.meta.env["VITE_AGENT_URL"] as string | undefined) ||
-    `${globalThis.location.protocol}//${globalThis.location.hostname}:8793`;
-  return configured.replace(/\/+$/, "");
-}
 
 async function agentJson<T>(
   baseUrl: string,

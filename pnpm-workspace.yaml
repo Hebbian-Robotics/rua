@@ -5,7 +5,7 @@ packages:
   - examples/typescript/agent
 minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
-  - "hebbian-rua@0.1.4"
+  - "hebbian-rua@0.1.5"
 allowBuilds:
   esbuild: true
   workerd: true

@@ -60,9 +60,7 @@ precedence over these files.
 ## Watch a USB camera
 
 1. With LiveKit configured and the station running, get a viewer token on the
-   station host. The command below uses the source-built station's API. For the
-   bundled `v0.1.4` station used in [Getting started](getting-started.md),
-   use `/viewer/api/token`.
+   station host:
 
    ```sh
    curl --fail http://127.0.0.1:8792/media/access-token
@@ -74,6 +72,9 @@ precedence over these files.
    then connect. The browser connects directly to LiveKit. Keep the room
    token private and leave the LiveKit API key and secret on the station.
 
+Alternatively, paste the same URL and token into the **Custom** tab in
+[LiveKit Meet](https://meet.livekit.io/?tab=custom).
+
 Use the camera label you chose in SDK calls or example flags such as
 `--camera wrist`. If you have the RUA station viewer installed, you can
 also watch the feed under **Workspace**.
@@ -82,10 +83,11 @@ also watch the feed under **Workspace**.
 
 With LiveKit configured, run `hebbian-robot-use phone-invite overhead` on the
 station host and open the printed URL on your phone. You can also use the
-HTTP request below against the source station and open the response’s `url`. On the camera page, allow camera access
+HTTP request below and open the response’s `url`. On the camera page, allow camera access
 and select **Start streaming**. Keep the invite URL private. The station accepts
-invite requests over loopback. In the local viewer, open **Camera setup** in
-**Workspace**. Under **Remote camera**, enter a camera location and select
+invite requests over loopback. Run the viewer backend on the station host and
+connect it to the station over loopback. In **Workspace**, open **Camera setup**.
+Under **Remote camera**, enter a camera location and select
 **Create invite**. On your phone, open the invite link or scan its QR code.
 To connect manually, open **Manual LiveKit connection** in the viewer, then
 paste its **LiveKit server URL** and **Publishing token** into the camera page
