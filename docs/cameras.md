@@ -203,8 +203,10 @@ The station limits concurrent forwarded camera requests and returns `503` when
 the limit is reached or `504` when the media companion times out.
 
 For direct access, use the companion URL, `http://127.0.0.1:8781` by default.
-Set the SDK or viewer's `HEBBIAN_MEDIA_SERVER` override or pass `--media-server`
-to the CLI. To serve previews and snapshots exclusively from the companion, start the station with
+For direct camera requests, set the Python SDK or viewer's
+`HEBBIAN_MEDIA_SERVER` override, set the TypeScript HTTP client's `mediaUrl`,
+or pass `--media-server` to the CLI. SDK observations and sequence image
+history use station routes. To serve previews and snapshots exclusively from the companion, start the station with
 `--disable-camera-forwarding`. Use `--media-address` to choose which address
 the companion listens on. The media URL override also lets a new SDK fetch
 snapshots from an older station's companion.

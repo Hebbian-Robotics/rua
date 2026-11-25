@@ -10,8 +10,10 @@ camera. The arm nods for yes or shakes its head for no.
 [registered wrist camera](../../../docs/cameras.md#connect-a-usb-camera), and set
 `OPENAI_API_KEY`. Use a supported resting pose and verify clearance for
 `PRESENT_JOINTS` and the gestures in [`inspect_blocks.py`](inspect_blocks.py).
-Release any active control lease before starting. If the viewer holds the
-manual lease, follow the [viewer handoff](../../../docs/getting-started.md#enable-the-arm-in-agent-mode).
+Start with the arm disabled in a supported resting pose and release any active
+control lease. If the viewer holds the manual lease, use the
+[disable controls](../../../docs/so101-manual-control.md#controls) first.
+The application enables the arm and saves that pose for rehoming.
 
 From the repository root, replace `wrist` with the camera's registered name.
 
