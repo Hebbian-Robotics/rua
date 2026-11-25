@@ -29,10 +29,21 @@ from hebbian_rua import (
     StationClient,
     filter_sequence_actions,
 )
-from hebbian_rua.client.contract.station_api import ArmMode
+from hebbian_rua.client.contract.station_api import (
+    ActionSequenceRecord,
+    ActionSequenceStopped,
+    ArmMode,
+    CommandOutcomeUnknown,
+    CommandRefused,
+    ExecutionAuthorityLost,
+    RejectionReason,
+    RuntimeFailure,
+    UncertainAdmission,
+)
 from hebbian_rua.client.environment import load_environment
 from hebbian_rua.client.llm.robot_tools import CallWrapper, CapturedObservation
 from hebbian_rua.client.station_client import commands_parented_to
+from hebbian_rua.client.station_types import LeaseLost
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 
@@ -223,6 +234,79 @@ class UpdateNotesArguments(BaseModel):
     notes: list[str]
 
 
+def recoverable_refusal(data: object) -> bool:
+    if not isinstance(data, dict) or data.get("status") != "refused":
+        return False
+    try:
+        refusal = CommandRefused.model_validate(data)
+    except ValidationError:
+        return False
+    return refusal.reason in {
+        RejectionReason.stale_revision,
+        RejectionReason.interlocked,
+    }
+
+
+def sequence_outcome_requires_stop(result: RobotToolResult) -> bool:
+    if (
+        result.call.name != "action_sequence"
+        or not result.is_error
+        or not isinstance(result.data, dict)
+        or result.data.get("status") == "refused"
+    ):
+        return False
+    try:
+        sequence = ActionSequenceRecord.model_validate(result.data)
+    except ValidationError:
+        return True
+    return (
+        isinstance(sequence.phase, ActionSequenceStopped)
+        and isinstance(
+            sequence.phase.failure,
+            (UncertainAdmission, RuntimeFailure, ExecutionAuthorityLost),
+        )
+    ) or any(
+        isinstance(arm.record.phase, CommandOutcomeUnknown)
+        for step in sequence.steps
+        for arm in step
+    )
+
+
+def must_stop_after_tools(results: Sequence[RobotToolResult]) -> bool:
+    # INVARIANT: A refusal confirms this command never ran. An interruption
+    # without that evidence can leave the executed motion uncertain.
+    return any(
+        result.halt
+        or (result.interrupted and not recoverable_refusal(result.data))
+        or sequence_outcome_requires_stop(result)
+        for result in results
+    )
+
+
+def needs_live_observation(call: RobotToolCall) -> bool:
+    if call.name in MEMORY_TOOLS or call.name == "preview_pose":
+        return False
+    return not (
+        call.name == "observe"
+        and isinstance(call.arguments, dict)
+        and call.arguments.get("source") == "last_sequence"
+    )
+
+
+def next_observation_revisions(
+    previous: Mapping[str, int], results: Sequence[RobotToolResult]
+) -> Mapping[str, int] | None:
+    if any(recoverable_refusal(result.data) for result in results):
+        return None
+    live_results = [result for result in results if needs_live_observation(result.call)]
+    if not live_results:
+        return previous
+    # CONSTRAINT: A live observe in a concurrent motion batch can precede motion.
+    if len(live_results) == 1 and live_results[0].call.name == "observe":
+        return live_results[0].observed_revisions
+    return None
+
+
 class AgentRobotTools(RobotTools):
     finish_reason: str | None = None
     plan: UpdatePlanArguments | None = None
@@ -279,6 +363,17 @@ class AgentRobotTools(RobotTools):
     ) -> CapturedObservation:
         return await super().capture(note, (*self.memory_lines(), *extra_lines))
 
+    async def observation_is_stale(self, revisions: Mapping[str, int]) -> bool:
+        if self.station.lease_lost.is_set():
+            raise LeaseLost
+        arm = await self.station.arm(self.arm).state()
+        return arm.revision != revisions.get(self.arm) or arm.mode in {
+            ArmMode.disconnected,
+            ArmMode.reconnected,
+            ArmMode.faulted,
+            ArmMode.disabled,
+        }
+
     async def apply_memory_update(self, call: RobotToolCall) -> RobotToolResult:
         try:
             if call.name == UPDATE_PLAN_TOOL:
@@ -319,6 +414,28 @@ class AgentRobotTools(RobotTools):
         expected_revision: int | None = None,
         expected_revisions: Mapping[str, int] | None = None,
     ) -> list[RobotToolResult]:
+        if (
+            calls
+            and expected_revisions is not None
+            and await self.observation_is_stale(expected_revisions)
+        ):
+            detail = (
+                "The arm changed before this batch ran. "
+                "Re-evaluate from the fresh observation."
+            )
+            return [
+                RobotToolResult(
+                    call,
+                    detail,
+                    is_error=True,
+                    interrupted=True,
+                    data=CommandRefused(
+                        reason=RejectionReason.stale_revision,
+                        detail=detail,
+                    ).model_dump(mode="json"),
+                )
+                for call in calls
+            ]
         if not any(call.name == "finish" for call in calls):
             wrap_call = wrap or self.trace_tool_call
             results_by_index: dict[int, RobotToolResult] = {}
@@ -385,7 +502,7 @@ async def run_openai(
     async with AsyncOpenAI() as client:
         revisions: Mapping[str, int] | None = None
         for turn_number in count(1):
-            if revisions is None:
+            if revisions is None or await robot.observation_is_stale(revisions):
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
@@ -408,14 +525,15 @@ async def run_openai(
             )
             previous_response_id = response.id
             pending_input = turn.messages
-            revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
-            if turn.should_stop or not turn.results:
+            must_stop = must_stop_after_tools(turn.results)
+            if must_stop or not turn.results:
                 print(response.output_text)
-                report_stop(turn.should_stop)
+                report_stop(must_stop)
                 return
+            revisions = next_observation_revisions(revisions, turn.results)
 
 
 async def run_anthropic(
@@ -445,7 +563,7 @@ async def run_anthropic(
         )
         revisions: Mapping[str, int] | None = None
         for turn_number in count(1):
-            if revisions is None:
+            if revisions is None or await robot.observation_is_stale(revisions):
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
@@ -459,18 +577,19 @@ async def run_anthropic(
                     response = await thread.send(*pending_input)
             turn = await robot_tools.execute(response, expected_revisions=revisions)
             pending_input = turn.messages
-            revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
-            if turn.should_stop or not turn.results:
+            must_stop = must_stop_after_tools(turn.results)
+            if must_stop or not turn.results:
                 print(
                     "\n".join(
                         block.text for block in response.content if block.type == "text"
                     )
                 )
-                report_stop(turn.should_stop)
+                report_stop(must_stop)
                 return
+            revisions = next_observation_revisions(revisions, turn.results)
 
 
 async def run_gemini(
@@ -493,7 +612,7 @@ async def run_gemini(
     async with genai.Client().aio as client:
         revisions: Mapping[str, int] | None = None
         for turn_number in count(1):
-            if revisions is None:
+            if revisions is None or await robot.observation_is_stale(revisions):
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
                 revisions = observation.revisions
@@ -516,14 +635,15 @@ async def run_gemini(
             turn = await robot_tools.execute(response, expected_revisions=revisions)
             continuation = {"previous_interaction_id": response.id}
             pending_input = turn.messages
-            revisions = turn.observed_revisions
             if robot.finish_reason is not None:
                 print(robot.finish_reason)
                 return
-            if turn.should_stop or not turn.results:
+            must_stop = must_stop_after_tools(turn.results)
+            if must_stop or not turn.results:
                 print(response.output_text or "")
-                report_stop(turn.should_stop)
+                report_stop(must_stop)
                 return
+            revisions = next_observation_revisions(revisions, turn.results)
 
 
 def report_stop(should_stop: bool) -> None:

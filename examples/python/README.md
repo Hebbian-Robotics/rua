@@ -63,6 +63,12 @@ The model can use `update_plan` and `update_notes` to keep track of the task.
 Each update replaces the previous plan or notes. The example includes the
 current plan and notes in observations for that run.
 
+Plan, notes, preview-only, and sequence-history turns can reuse the last live
+observation. The agent refreshes it after motion or a stale observation. If the
+station refuses a command because of a stale revision or interlock, the agent
+waits for a fresh observation before continuing. A fault or uncertain command
+outcome ends the run.
+
 ## Watch live cameras
 
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
