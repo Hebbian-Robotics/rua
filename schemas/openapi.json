@@ -98,6 +98,16 @@
           {
             "additionalProperties": false,
             "properties": {
+              "at_seconds": {
+                "description": "Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+                "format": "double",
+                "minimum": 0.0,
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
               "goal": {
                 "$ref": "#/components/schemas/ActionSequenceGoal"
               },
@@ -437,6 +447,16 @@
         "properties": {
           "at": {
             "$ref": "#/components/schemas/CompiledGoal"
+          },
+          "at_seconds": {
+            "description": "Earliest reference crossing in seconds from the start of this move.",
+            "format": "double",
+            "minimum": 0.0,
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-omit-when-none": true
           },
           "gripper_opening": {
             "description": "Start moving the gripper when passing this waypoint.",
@@ -1930,11 +1950,20 @@
                   "null"
                 ]
               },
+              "minimum_duration_seconds": {
+                "description": "Lower bound for the final section, from the preceding configuration to the goal.",
+                "minimum": 0.0,
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "x-omit-when-none": true
+              },
               "waypoints": {
                 "default": [],
                 "description": "Pass through these intermediate configurations before settling at the goal.",
                 "items": {
-                  "$ref": "#/components/schemas/ActionSequenceWaypoint"
+                  "$ref": "#/components/schemas/CompiledSequenceWaypoint"
                 },
                 "type": "array"
               }
@@ -2070,6 +2099,37 @@
           "steps",
           "arms",
           "reused_operations"
+        ],
+        "type": "object"
+      },
+      "CompiledSequenceWaypoint": {
+        "additionalProperties": false,
+        "description": "A pass-through configuration with the lower bound for the section ending there.",
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/CompiledGoal"
+          },
+          "gripper_opening": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "GripperOpening",
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-omit-when-none": true
+          },
+          "minimum_duration_seconds": {
+            "minimum": 0.0,
+            "type": [
+              "number",
+              "null"
+            ],
+            "x-omit-when-none": true
+          }
+        },
+        "required": [
+          "at"
         ],
         "type": "object"
       },

@@ -386,30 +386,32 @@ async fn a_refused_command_does_not_stop_the_holders_motion() -> TestResult {
     Ok(())
 }
 
+fn joint_sequence_step(joints: Vec<f64>, at_seconds: Option<f64>) -> ActionSequenceStep {
+    ActionSequenceStep::single(
+        ARM,
+        ActionSequenceArmAction::Move {
+            at_seconds,
+            max_joint_acceleration: None,
+            max_joint_jerk: None,
+            waypoints: vec![],
+            goal: ActionSequenceGoal::Joints {
+                joints,
+                max_joint_speed: None,
+            },
+            gripper_opening: None,
+            max_joint_speed: None,
+        },
+    )
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResult {
     let station = TestStation::start().await?;
     let client = station.connect().await?;
-    let joints_step = |joints: Vec<f64>| {
-        ActionSequenceStep::single(
-            ARM,
-            ActionSequenceArmAction::Move {
-                max_joint_acceleration: None,
-                max_joint_jerk: None,
-                waypoints: vec![],
-                goal: ActionSequenceGoal::Joints {
-                    joints,
-                    max_joint_speed: None,
-                },
-                gripper_opening: None,
-                max_joint_speed: None,
-            },
-        )
-    };
     let source = ActionSequenceRequest {
         steps: vec![
-            joints_step(vec![0.2, -0.5, 0.5, 0.0, 0.0]),
-            joints_step(vec![-0.2, -0.5, 0.5, 0.0, 0.0]),
+            joint_sequence_step(vec![0.2, -0.5, 0.5, 0.0, 0.0], None),
+            joint_sequence_step(vec![-0.2, -0.5, 0.5, 0.0, 0.0], None),
         ],
         expected_revisions: BTreeMap::default(),
     };
@@ -450,7 +452,7 @@ async fn compiled_sequence_can_run_and_continue_under_a_live_lease() -> TestResu
     let mut revised_source = source;
     revised_source
         .steps
-        .push(joints_step(vec![0.1, -0.5, 0.5, 0.0, 0.0]));
+        .push(joint_sequence_step(vec![0.1, -0.5, 0.5, 0.0, 0.0], None));
     let CompilationOutcome::Compiled { artifact: revised } =
         client.compile_action_sequence(&revised_source).await?
     else {
@@ -1024,6 +1026,7 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                at_seconds: None,
                 max_joint_acceleration: None,
                 max_joint_jerk: None,
                 waypoints: vec![],
@@ -1062,6 +1065,7 @@ async fn taking_the_lease_stops_the_previous_holders_action_sequence() -> TestRe
         steps: vec![ActionSequenceStep::single(
             ARM,
             ActionSequenceArmAction::Move {
+                at_seconds: None,
                 max_joint_acceleration: None,
                 max_joint_jerk: None,
                 waypoints: vec![],
@@ -1091,22 +1095,7 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
     within(client.enable(ARM)).await??;
     let steps = [vec![100.0, -0.5, 0.5, 0.0, 0.0], REST.to_vec()]
         .into_iter()
-        .map(|joints| {
-            ActionSequenceStep::single(
-                ARM,
-                ActionSequenceArmAction::Move {
-                    max_joint_acceleration: None,
-                    max_joint_jerk: None,
-                    waypoints: vec![],
-                    goal: ActionSequenceGoal::Joints {
-                        joints,
-                        max_joint_speed: None,
-                    },
-                    gripper_opening: None,
-                    max_joint_speed: None,
-                },
-            )
-        })
+        .map(|joints| joint_sequence_step(joints, None))
         .collect();
     let id = within(lease.start_action_sequence(ActionSequenceRequest {
         steps,
@@ -1595,6 +1584,7 @@ async fn multi_arm_sequences_admit_whole_steps_and_report_each_arms_motion_and_g
     let lease = within(client.acquire_lease(agent("multi-arm sequence"))).await??;
     within(client.enable("left")).await??;
     let action = |pan, gripper_opening| ActionSequenceArmAction::Move {
+        at_seconds: None,
         max_joint_acceleration: None,
         max_joint_jerk: None,
         waypoints: vec![],
@@ -1775,7 +1765,7 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult {
+async fn timed_waypoint_opens_the_jaw_and_each_move_uses_its_own_clock() -> TestResult {
     let station = TestStation::start().await?;
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("waypoints"))).await??;
@@ -1785,23 +1775,28 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
     let mut goal = REST.to_vec();
     goal[0] += 0.23;
     let execution = within(lease.start_action_sequence(ActionSequenceRequest {
-        steps: vec![ActionSequenceStep::single(
-            ARM,
-            ActionSequenceArmAction::Move {
-                max_joint_acceleration: None,
-                max_joint_jerk: None,
-                goal: ActionSequenceGoal::Joints {
-                    joints: goal.clone(),
+        steps: vec![
+            ActionSequenceStep::single(
+                ARM,
+                ActionSequenceArmAction::Move {
+                    at_seconds: Some(3.0),
+                    max_joint_acceleration: None,
+                    max_joint_jerk: None,
+                    goal: ActionSequenceGoal::Joints {
+                        joints: goal.clone(),
+                        max_joint_speed: None,
+                    },
+                    waypoints: vec![hebbian_contracts::ActionSequenceWaypoint {
+                        at_seconds: Some(1.5),
+                        at: hebbian_contracts::CompiledGoal::Joints { joints: waypoint },
+                        gripper_opening: Some(0.35.try_into()?),
+                    }],
+                    gripper_opening: None,
                     max_joint_speed: None,
                 },
-                waypoints: vec![hebbian_contracts::ActionSequenceWaypoint {
-                    at: hebbian_contracts::CompiledGoal::Joints { joints: waypoint },
-                    gripper_opening: Some(0.35.try_into()?),
-                }],
-                gripper_opening: None,
-                max_joint_speed: None,
-            },
-        )],
+            ),
+            joint_sequence_step(REST.to_vec(), Some(2.0)),
+        ],
         expected_revisions: BTreeMap::new(),
     }))
     .await??;
@@ -1814,7 +1809,7 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
             .gripper_opening
             .is_some_and(|opening| opening < 0.01)
     );
-    within(client.wait_for_state(|state| {
+    let after_waypoint = within(client.wait_for_state(|state| {
         let arm = &state.arms[0];
         (0.1..0.22).contains(&arm.measured_joints[0])
             && arm.gripper_opening.is_some_and(|opening| opening > 0.01)
@@ -1826,6 +1821,17 @@ async fn continuous_move_opens_the_jaw_and_finishes_at_the_goal() -> TestResult 
         result.steps[0][0].record.destination_joints(),
         Some(goal.as_slice())
     );
+    let first_move = &result.steps[0][0].record;
+    let return_move = &result.steps[1][0].record;
+    let waypoint_observed = after_waypoint.arms[0].sampled_unix_nano.unwrap();
+    // Allow 100 ms around the clock boundary for the controller and station samples.
+    assert!(waypoint_observed.0 - first_move.accepted_unix_nano.0 >= 1_400_000_000);
+    for (movement, minimum_nanos) in [(first_move, 2_900_000_000), (return_move, 1_900_000_000)] {
+        let hebbian_contracts::CommandPhase::Finished { completion, .. } = &movement.phase else {
+            panic!("Expected a finished move, got {:?}", movement.phase);
+        };
+        assert!(completion.finished_unix_nano.0 - movement.accepted_unix_nano.0 >= minimum_nanos);
+    }
     let state = within(client.get_state()).await??;
     assert!(
         state.arms[0]
