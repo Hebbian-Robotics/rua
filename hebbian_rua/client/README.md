@@ -9,7 +9,9 @@ or run one of the [agent examples](../../examples/python/README.md#run-an-agent)
 `StationClient()` uses `HEBBIAN_STATION_URL` or `http://127.0.0.1:8792` for
 station requests, including observations. Set `media_server` or
 `HEBBIAN_MEDIA_SERVER` to use the media companion directly for individual camera
-reads and sequence images. The examples use the default model view.
+requests. The SDK fetches
+[sequence image history](../../docs/model-output.md#images-during-action-sequences)
+from the station by execution ID. The examples use the default model view.
 Use the [motion unit converters](../../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
 to prepare direct SDK requests in your preferred units.
 

@@ -6,11 +6,16 @@ No simulator, scene or renderer is included in `hebbian-rua`.
 Use [a real arm](getting-started.md) whenever available. Reserve a simulator
 profile for testing without hardware.
 
-Start the station with the bundled socket profile, or a profile for your robot:
+From a [prepared source checkout](install-from-source.md#prepare-the-checkout),
+build and start the station with the bundled socket profile, or a profile for
+your robot:
 
 ```sh
-uv run rua serve --profile so101-sim-only-no-real-arm --work-directory /tmp/rua-station
+uv run cargo run --locked -p hebbian-rua-server -- serve --profile so101-sim-only-no-real-arm --work-directory /tmp/rua-station
 ```
+
+With the published wheel, use `uvx --from hebbian-rua==0.1.7 rua serve`
+with the same profile and work-directory arguments.
 
 Then start your simulator integration before the station's connection timeout,
 30 seconds by default (`--simulator-connect-seconds`).

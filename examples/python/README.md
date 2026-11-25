@@ -4,7 +4,8 @@ Start a station with [a real arm connected](../../docs/getting-started.md)
 whenever available. Reserve [simulation](../../docs/simulation.md) for testing
 without hardware. The examples connect to the station at `HEBBIAN_STATION_URL`
 or the local default.
-The example environment installs the published Python SDK. From the repository root:
+The example environment pins the published Python SDK to 0.1.7. Use a station
+running the same version. From the repository root:
 
 ```sh
 cd examples/python
@@ -34,6 +35,8 @@ PYTHON
 
 [`hello_robot.py`](hello_robot.py) enables the arm, previews a target, moves,
 and opens the gripper. Check the target and clearance before running on hardware.
+Release any active control lease before starting. If the viewer holds the
+manual lease, follow the [viewer handoff](../../docs/getting-started.md#enable-the-arm-in-agent-mode).
 If hardware is unavailable, use the [simulation quickstart](../../docs/simulation.md#2-run-hello_robot).
 
 ## Run an agent
@@ -63,12 +66,10 @@ the conversation to restore an expired or interrupted thread.
 
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
 named cameras to the station. Repeat `--camera NAME` for each camera the agent
-should see, using the names from `hebbian-rua camera list`. On the station host,
-get the room URL and token with `curl --fail http://127.0.0.1:8792/media/access-token`,
-then enter them in the [hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/)
-to watch while the agent runs.
-
-[Options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable)
+should see, using the names from `uv run hebbian-rua camera list` in this example
+directory. Follow [watch a USB camera](../../docs/cameras.md#watch-a-usb-camera)
+to view the feeds while the agent runs. The camera guide also covers
+[options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable).
 
 ## Inspect a run in Jaeger
 

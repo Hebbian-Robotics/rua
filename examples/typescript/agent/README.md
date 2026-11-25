@@ -14,8 +14,10 @@ testing without hardware. Use the Node.js version in the repository's `.nvmrc`
 and the pnpm version in `package.json`.
 
 Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the environment
-or `.env`. [Enable the arm in the viewer](../../../docs/getting-started.md#2-verify-manual-control),
-then try a state-only task from the repository root.
+or `.env`. [Enable the arm in Agent mode](../../../docs/getting-started.md#enable-the-arm-in-agent-mode).
+Confirm that the arm is holding and no client holds the lease. Check the
+`lease` field in [station state](http://127.0.0.1:8792/state) for `null`. The
+terminal agent acquires its own lease when it starts. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile

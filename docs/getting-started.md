@@ -40,6 +40,21 @@ See [viewer controls](so101-manual-control.md#controls) for details and
 
 ## 3. Run your first agent
 
+### Enable the arm in Agent mode
+
+If the arm is enabled in **Manual**, disable it first. Use
+**Rehome and disable** if the saved pose lets the arm rest securely and the
+path is clear.
+To remove torque at the current pose, support the arm before confirming
+**Disable in place…**. Wait for the arm to show **disabled**. The viewer
+releases its manual lease when the last enabled arm is disabled.
+
+Under **Control mode**, select **Agent**, then select **Enable arm** and wait
+for the arm to show **holding**. Enabling in Agent mode leaves the lease
+available for the program that runs the task.
+
+### Start a task in the viewer
+
 1. In **Run a task**, choose your provider and model. If you set up cameras,
    confirm their live feeds and select the views to share under **Run options**.
 2. With the arm enabled and holding, enter “Describe what you can observe. Keep
