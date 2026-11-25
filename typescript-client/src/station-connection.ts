@@ -313,7 +313,7 @@ export function createStationConnection(
   const connectionListeners = new Set<(connected: boolean) => void>();
   const leaseLostListeners = new Set<() => void>();
   const changeListeners = new Set<() => void>();
-  let commandLifetime = new AbortController();
+  let operationLifetime = new AbortController();
   let runAfter = options.runAfter;
   let connectionLoop: AbortController | null = null;
   let eventCursor: string | null = null;
@@ -824,8 +824,8 @@ export function createStationConnection(
         );
     };
     const requestSignal = signal
-      ? AbortSignal.any([signal, commandLifetime.signal])
-      : commandLifetime.signal;
+      ? AbortSignal.any([signal, operationLifetime.signal])
+      : operationLifetime.signal;
     requestSignal.throwIfAborted();
     signal?.addEventListener("abort", cancel, { once: true });
     let retainedCancellation = false;
@@ -1322,13 +1322,13 @@ export function createStationConnection(
   return {
     baseUrl,
     start() {
-      if (closed) commandLifetime = new AbortController();
+      if (closed) operationLifetime = new AbortController();
       closed = false;
       if (connectionLoop === null) connect();
     },
     close() {
       closed = true;
-      commandLifetime.abort(
+      operationLifetime.abort(
         new StationConnectionError("The station connection is closed"),
       );
       void returnLease(true).catch((error: unknown) =>
@@ -1351,54 +1351,34 @@ export function createStationConnection(
       stationApi(signal).getSequenceCameraHistory(id),
     async waitForActionSequence(actionSequenceId, options = {}) {
       const { signal, timeoutMilliseconds } = options;
-      const lookup = new AbortController();
-      let result: ActionSequenceRecord | undefined;
-      let failure: Error | undefined;
-      const listener = (current: ActionSequenceRecord | null) => {
-        if (
-          current?.id === actionSequenceId &&
-          current.phase.state !== "running"
-        ) {
-          result = current;
-        } else if (current && current.id !== actionSequenceId) {
-          void stationApi(lookup.signal)
-            .getActionSequence(actionSequenceId)
-            .then((previous) => {
-              if (previous.phase.state !== "running") result = previous;
-              notify();
-            })
-            .catch((error: unknown) => {
-              failure = asError(error);
-              notify();
-            });
-        }
-      };
-      action_sequenceListeners.add(listener);
+      const timeout =
+        timeoutMilliseconds === undefined
+          ? undefined
+          : AbortSignal.timeout(Math.max(0, Math.trunc(timeoutMilliseconds)));
+      const requestSignal = AbortSignal.any([
+        operationLifetime.signal,
+        ...(signal ? [signal] : []),
+        ...(timeout ? [timeout] : []),
+      ]);
       try {
-        if (latestActionSequence !== undefined) listener(latestActionSequence);
-        return await waitFor(
-          () => {
-            if (failure !== undefined) throw failure;
-            return result;
-          },
-          {
-            ...(signal === undefined ? {} : { signal }),
-            ...(timeoutMilliseconds === undefined
-              ? {}
-              : {
-                  timeout: {
-                    milliseconds: timeoutMilliseconds,
-                    error: () =>
-                      new StationTimeoutError(
-                        `Timed out waiting for action sequence ${actionSequenceId}`,
-                      ),
-                  },
-                }),
-          },
-        );
-      } finally {
-        action_sequenceListeners.delete(listener);
-        lookup.abort();
+        while (true) {
+          const record = await retryOperationRequest(
+            (attempt) =>
+              stationApi(attempt).waitActionSequenceCompletion(
+                actionSequenceId,
+              ),
+            requestSignal,
+          );
+          if (record !== null)
+            return apiSchemas.shape.ActionSequenceRecord.parse(record);
+        }
+      } catch (error) {
+        if (timeout?.aborted && requestSignal.reason === timeout.reason) {
+          throw new StationTimeoutError(
+            `Timed out waiting for action sequence ${actionSequenceId}`,
+          );
+        }
+        throw error;
       }
     },
     async cancelActionSequence(action_sequenceId) {

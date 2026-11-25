@@ -1010,6 +1010,12 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("test"))).await??;
     within(client.enable(ARM)).await??;
+    let completion_client = station.connect().await?;
+    completion_client.close_event_stream();
+    assert!(matches!(
+        within(completion_client.wait_for_action_sequence("missing-execution")).await?,
+        Err(Error::Http { status: 404, .. })
+    ));
     let mut updates = client.action_sequence_updates();
     let id = within(lease.start_action_sequence(ActionSequenceRequest {
         steps: vec![ActionSequenceStep::single(
@@ -1031,7 +1037,7 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
     }))
     .await??;
     within(client.cancel_action_sequence(&id)).await??;
-    let ended = within(client.wait_for_action_sequence(&id)).await??;
+    let ended = within(completion_client.wait_for_action_sequence(&id)).await??;
     assert!(matches!(ended.phase, ActionSequencePhase::Stopped { .. }));
     let published = within(updates.wait_for(|action_sequence| {
         action_sequence.as_ref().is_some_and(|action_sequence| {

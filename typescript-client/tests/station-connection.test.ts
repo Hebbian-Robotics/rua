@@ -183,10 +183,9 @@ test.each(["before", "after"] as const)(
   },
 );
 
-test.each(["stream", "retained", "close during lookup"] as const)(
+test.each(["still running", "retained", "close during wait"] as const)(
   "action-sequence waits handle %s results",
   async (delivery) => {
-    const instance = "11111111-1111-4111-8111-111111111111";
     const completed: ActionSequenceRecord = {
       arms: ["follower"],
       id: "sequence",
@@ -207,28 +206,21 @@ test.each(["stream", "retained", "close during lookup"] as const)(
       continuation: null,
       steps: [],
     };
-    let stream: ServerResponse | undefined;
+    let sentPending = false;
     let lookupRequested: (() => void) | undefined;
     const requested = new Promise<void>((resolve) => {
       lookupRequested = resolve;
     });
     const server = createServer((request, response) => {
-      if (request.url === "/events") {
-        stream = response;
-        const current =
-          delivery === "stream"
-            ? { ...completed, phase: { state: "running", step: 0 } }
-            : { ...completed, id: "newer-sequence" };
-        response.writeHead(200, { "Content-Type": "text/event-stream" });
-        response.write(
-          `id: ${instance}:1\nevent: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{}]), { kind: "action_sequence_state", action_sequence: current }] })}\n\n`,
-        );
-      } else if (request.url === "/action_sequence/sequence") {
+      if (request.url === "/action_sequence/sequence/completion") {
         lookupRequested?.();
-        if (delivery === "retained")
-          response
-            .writeHead(200, { "Content-Type": "application/json" })
-            .end(JSON.stringify(completed));
+        if (delivery === "close during wait") return;
+        const body =
+          delivery === "still running" && !sentPending ? null : completed;
+        sentPending = true;
+        response
+          .writeHead(200, { "Content-Type": "application/json" })
+          .end(JSON.stringify(body));
       } else response.writeHead(404).end();
     });
     await new Promise<void>((resolve) =>
@@ -240,15 +232,8 @@ test.each(["stream", "retained", "close during lookup"] as const)(
       "agent",
     );
     try {
-      connection.start();
-      await connection.waitUntilConnected();
       const waiting = connection.waitForActionSequence("sequence");
-      if (delivery === "stream") {
-        stream?.write(
-          `id: ${instance}:2\nevent: station\ndata: ${JSON.stringify({ kind: "action_sequence_state", action_sequence: completed })}\n\n`,
-        );
-      }
-      if (delivery === "close during lookup") {
+      if (delivery === "close during wait") {
         const rejected = expect(waiting).rejects.toThrow(/connection.*closed/);
         await requested;
         connection.close();

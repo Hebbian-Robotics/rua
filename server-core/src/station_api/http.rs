@@ -207,6 +207,10 @@ fn router(station_state: Arc<StationHttpState>) -> Router {
         .route("/action_sequence", get(read_action_sequence))
         .route("/action_sequence/{id}", get(read_action_sequence_by_id))
         .route(
+            "/action_sequence/{id}/completion",
+            get(wait_action_sequence_completion),
+        )
+        .route(
             "/action_sequence/{id}/images",
             get(super::sequence_images::read_images),
         )
@@ -269,6 +273,42 @@ fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> 
         StatusCode::BAD_REQUEST,
         "Expected a UUID v4 operation ID".to_owned(),
     ))
+}
+
+async fn wait_action_sequence_completion(
+    State(station_state): State<Arc<StationHttpState>>,
+    UrlPath(id): UrlPath<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut progress = station_state
+        .admission
+        .decide(move |state| state.executions.progress_for(&id))
+        .await
+        .map_err(admission_unavailable)?
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "Action sequence is not retained".to_owned(),
+        ))?;
+    let outcome = tokio::time::timeout(
+        OPERATION_WAIT,
+        progress.wait_for(|record| {
+            !matches!(
+                record.phase,
+                hebbian_contracts::ActionSequencePhase::Running { .. }
+            )
+        }),
+    )
+    .await;
+    let record = match outcome {
+        Ok(Ok(record)) => Some(record.clone()),
+        Ok(Err(_)) => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Action sequence progress is unavailable".to_owned(),
+            ));
+        }
+        Err(_) => None,
+    };
+    Ok(([(header::CACHE_CONTROL, "no-store")], Json(record)))
 }
 
 async fn read_operation(

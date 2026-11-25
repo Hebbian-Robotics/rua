@@ -766,8 +766,8 @@ impl Station {
         })
     }
 
-    /// Wait until the action sequence stops running, also after a reconnect or once a
-    /// newer action sequence has replaced it.
+    /// Wait for the named execution to finish through the station's completion route.
+    /// The event stream is independent of this wait.
     ///
     /// # Errors
     /// [`Error::Http`] when the station no longer remembers it.
@@ -775,40 +775,12 @@ impl Station {
         &self,
         action_sequence_id: &str,
     ) -> Result<ActionSequenceRecord> {
-        let mut seen = 0;
         loop {
-            let (latest, revision) = self
-                .shared
-                .wait_for(|inner| {
-                    (inner.action_sequence_revision > seen).then(|| {
-                        (
-                            inner.action_sequence.clone(),
-                            inner.action_sequence_revision,
-                        )
-                    })
-                })
-                .await;
-            seen = revision;
-            match latest {
-                Some(action_sequence)
-                    if action_sequence.id == action_sequence_id
-                        && !matches!(
-                            action_sequence.phase,
-                            hebbian_contracts::ActionSequencePhase::Running { .. }
-                        ) =>
-                {
-                    return Ok(action_sequence);
-                }
-                Some(action_sequence) if action_sequence.id != action_sequence_id => {
-                    let earlier = self.get_action_sequence(action_sequence_id).await?;
-                    if !matches!(
-                        earlier.phase,
-                        hebbian_contracts::ActionSequencePhase::Running { .. }
-                    ) {
-                        return Ok(earlier);
-                    }
-                }
-                _ => {}
+            if let Some(record) =
+                retry_operation_request(|| self.wait_action_sequence_completion(action_sequence_id))
+                    .await?
+            {
+                return Ok(record);
             }
         }
     }

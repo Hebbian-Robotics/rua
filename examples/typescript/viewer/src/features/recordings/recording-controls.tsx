@@ -179,18 +179,12 @@ export function RecordingStatus({
   return (
     <div className="empty:hidden" role="status">
       {message && (
-        <Badge
-          variant="outline"
-          title={message}
-          className="group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:px-0"
-        >
+        <Badge variant="outline" title={message}>
           <CircleIcon
             aria-hidden="true"
             className="fill-destructive text-destructive"
           />
-          <span className="group-data-[collapsible=icon]:sr-only">
-            {message}
-          </span>
+          <span className="viewer-nav-label">{message}</span>
         </Badge>
       )}
     </div>

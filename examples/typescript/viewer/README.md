@@ -21,6 +21,11 @@ served through the example backend. The station owns capture and storage.
 
 ## Use the viewer
 
+In a narrow side pane, use the links at the top to switch between
+**Workspace**, **Recordings**, and **Settings**. The **Workspace** shortcuts
+jump to **Cameras**, **Control**, **Joint telemetry**, or **Run activity**.
+**Stop arms** stays visible as you scroll.
+
 See [arm controls](../../../docs/so101-manual-control.md#controls) for manual
 operation and [the agent example](../agent/README.md) for model setup. Open
 **Camera setup** in **Workspace** to connect a local or remote camera. See

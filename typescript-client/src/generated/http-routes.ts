@@ -46,6 +46,18 @@ export function createStationApi(
         jsonRequestInit("POST", undefined, signal),
       );
     },
+    /** Wait for one retained execution to finish. Returns null if still running after twenty seconds. */
+    async waitActionSequenceCompletion(id: string) {
+      return apiSchemas.shape.ActionSequenceRecord.nullable().parse(
+        await stationRequest(
+          new URL(
+            `/action_sequence/${encodeURIComponent(id)}/completion`,
+            stationUrl,
+          ),
+          jsonRequestInit("GET", undefined, signal),
+        ),
+      );
+    },
     /** Read the station's retained camera images for one execution. */
     async getSequenceCameraHistory(id: string) {
       return apiSchemas.shape.SequenceCameraHistory.nullable().parse(
