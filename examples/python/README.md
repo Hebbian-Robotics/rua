@@ -66,8 +66,9 @@ current plan and notes in observations for that run.
 ## Watch live cameras
 
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
-named cameras to the station. Repeat `--camera NAME` for each camera the agent
-should see, using the names from `hebbian-rua camera list`. On the station host,
+named cameras to the station. Repeat `--camera NAME` for each required camera.
+Use `--optional-camera NAME` for views the agent can proceed without if they
+are unavailable. Use the names from `hebbian-rua camera list`. On the station host,
 get the room URL and token with `curl --fail http://127.0.0.1:8792/media/access-token`,
 then enter them in the [hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/)
 to watch while the agent runs.

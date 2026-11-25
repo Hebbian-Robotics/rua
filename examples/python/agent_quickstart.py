@@ -39,8 +39,9 @@ CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
 Set a model-provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY or GEMINI_API_KEY).
 Connect to a station with a real arm whenever available. Reserve simulation
 for testing without hardware.
-Select station cameras with --camera wrist --camera overhead. Configure LiveKit
-on the station to watch in Room viewer at https://hebbian-robotics.github.io/livekit-cameras/.
+Select required cameras with --camera wrist and optional cameras with
+--optional-camera overhead. Configure LiveKit on the station to watch in Room
+viewer at https://hebbian-robotics.github.io/livekit-cameras/.
 If LiveKit Cloud is unavailable, run a local LiveKit server or restart the
 station with --local-only-no-remote-cameras, then open the RUA example viewer.
 
@@ -537,12 +538,13 @@ async def run_task(
     arm_name: str,
     cameras: list[str],
     *,
+    optional_cameras: Sequence[str] = (),
     tracer_provider: trace.TracerProvider,
 ) -> None:
     async with station.holding_lease(task, required_cameras=cameras) as lease:
-        robot = AgentRobotTools(station, lease, arm_name, cameras).map_tools(
-            filter_sequence_actions(lambda action: action != "joints")
-        )
+        robot = AgentRobotTools(
+            station, lease, arm_name, cameras, optional_cameras=optional_cameras
+        ).map_tools(filter_sequence_actions(lambda action: action != "joints"))
         robot.tracer_provider = tracer_provider
         if directory := os.environ.get("HEBBIAN_RUA_MODEL_INPUTS_DIR"):
             robot.model_inputs = ModelInputCapture(directory)
@@ -607,7 +609,14 @@ async def main(
     camera: Annotated[
         tuple[str, ...],
         Parameter(
-            help="Station camera name. Repeat for multiple cameras, such as --camera wrist --camera overhead.",
+            help="Required station camera name. Repeat for multiple cameras.",
+            negative=False,
+        ),
+    ] = (),
+    optional_camera: Annotated[
+        tuple[str, ...],
+        Parameter(
+            help="Station camera that may be unavailable. Repeat for multiple cameras.",
             negative=False,
         ),
     ] = (),
@@ -656,6 +665,7 @@ async def main(
                 task,
                 arm_name,
                 list(camera),
+                optional_cameras=optional_camera,
                 tracer_provider=tracer_provider,
             )
     return None
