@@ -1,8 +1,13 @@
 // What the model sees each turn, traced and recorded for the viewer.
 
-import type { RobotObservation } from "hebbian-rua";
+import {
+  apiSchemas,
+  type RobotObservation,
+  type RobotToolResult,
+} from "hebbian-rua";
 import { type RunEnvironment, reportEvent } from "./environment.js";
 import type { Observation } from "./providers/types.js";
+import { MEMORY_TOOLS } from "./tools.js";
 import { KIND_ATTRIBUTE } from "./tracing.js";
 
 export interface RevisedObservation {
@@ -19,6 +24,42 @@ export function cameraNames(cameras: string | undefined): string[] {
   if (new Set(names).size !== names.length)
     throw new Error(`Camera names repeat: ${cameras}`);
   return names;
+}
+
+export function reuseBatchObservation(results: RobotToolResult[]): {
+  captured?: RobotObservation;
+  results: RobotToolResult[];
+} {
+  let observationIndex: number | undefined;
+  for (const [index, result] of results.entries()) {
+    const name = result.call.name;
+    if (name === "preview_pose" || MEMORY_TOOLS.includes(name)) continue;
+    if (name !== "observe") return { results };
+    if (result.isError || result.sequenceImages) continue;
+    if (observationIndex !== undefined) return { results };
+    observationIndex = index;
+  }
+  const observation =
+    observationIndex === undefined ? undefined : results[observationIndex];
+  if (observation === undefined) return { results };
+  const parsed = apiSchemas.shape.StationState.safeParse(observation.data);
+  if (!parsed.success) return { results };
+
+  return {
+    captured: {
+      data: parsed.data,
+      text: observation.text,
+      cameras: observation.cameras ?? {},
+      revisions: Object.fromEntries(
+        parsed.data.arms.map((arm) => [arm.arm, arm.revision]),
+      ),
+    },
+    results: results.map((result, index) =>
+      index === observationIndex
+        ? { ...result, text: "ok", data: "ok", cameras: {} }
+        : result,
+    ),
+  };
 }
 
 export async function observe(

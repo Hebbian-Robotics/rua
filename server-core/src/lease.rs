@@ -301,6 +301,19 @@ struct AuthorityState {
     controller: ControllerPresence,
 }
 
+impl AuthorityState {
+    fn authorizes_captured_lease(&self, token: Option<&str>, now: Instant) -> bool {
+        if self.controller.ready_epoch().is_none() {
+            return false;
+        }
+        match (&self.held, token) {
+            (None, None) => true,
+            (Some(claim), Some(token)) => claim.active_at(now) && claim.is_held_by(Some(token)),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ControllerEpoch(u64);
 
@@ -531,16 +544,9 @@ impl Lease {
         action: impl FnOnce() -> R,
     ) -> Option<R> {
         let authority = self.authority.lock_unpoisoned();
-        authority.controller.ready_epoch()?;
-        let now = Instant::now();
-        let authorized = match (&authority.held, token) {
-            (None, None) => true,
-            (Some(claim), Some(token)) => {
-                claim.expires_at > now && claim.is_active_holder(Some(token))
-            }
-            _ => false,
-        };
-        authorized.then(action)
+        authority
+            .authorizes_captured_lease(token, Instant::now())
+            .then(action)
     }
 
     // CONSTRAINT: Lease transfer waits for every arm to stop before granting control and must run outside asynchronous workers.
@@ -1254,6 +1260,9 @@ mod tests {
                 .is_some()
         );
         assert!(stopped);
+        let authority = lease.authority.lock_unpoisoned();
+        let expires_at = authority.held.as_ref().unwrap().expires_at;
+        assert!(!authority.authorizes_captured_lease(Some(&token), expires_at));
     }
 
     #[test]

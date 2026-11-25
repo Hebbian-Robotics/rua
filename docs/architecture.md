@@ -33,24 +33,12 @@ flowchart TB
     SDK -.->|"Observations and tool results"| Agent
 ```
 
-1. The **Robot Use Compiler** checks the sequence against the station’s
-   configured arm capabilities and translates it into typed operations,
-   preserving the ordered steps and their arm groups. This stage can run
-   before the client acquires a lease and can reuse unchanged operations.
-2. The **Robot Use Runtime** prepares each step from arm feedback and submits
-   the participating actions together. Direct moves and compiled steps share
-   the station planner. The link provides the latest sample or waits for the
-   first one when planning needs feedback.
-3. **Command admission** orders direct commands, sequence steps, and
-   cancellations in one station task. Prepared work passes the live authority
-   check at controller handoff.
-4. The **motor controller** applies final protective checks and drives the arms
-   through the coordinated control loop.
-
-Clients can also compile explicitly, inspect the artifact, and run it later by
-ID. The station retains recent artifacts and writes inspection files for explicit
-compilations. Each execution has its own outcome and uses fresh feedback. See the
-[compile-before-running workflow](control-model.md#compile-before-running).
+Direct commands and compiled steps share the station planner. A station task
+orders their admission and cancellations, then the controller checks live
+authority and applies protective checks before driving the arms. See
+[compile before running](control-model.md#compile-before-running) to inspect
+and run a compiled artifact and the [controller guide](controller.md) for how
+commands reach the motor loop.
 
 ## Station and companion processes
 

@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { match } from "ts-pattern";
 import { isRunActive, type Run } from "../../../shared/run-api.js";
 import { agentApi } from "../../agent-api.js";
 import { errorMessage } from "../../errors.js";
 import {
+  applyRunEvent,
   openRunEventStream,
   type RunStreamRecovery,
   runStreamId,
@@ -12,7 +12,6 @@ import {
 } from "./run-event-stream.js";
 
 const IDLE_POLL_MILLISECONDS = 3000;
-const OUTPUT_LINE_LIMIT = 200;
 
 type AgentServerStatus = "disabled" | "checking" | "reachable" | "unreachable";
 
@@ -72,32 +71,7 @@ export function useAgentRun(baseUrl: string, enabled = true) {
     if (activeId === null) return;
     return openRunEventStream(
       `${baseUrl}/api/runs/${activeId}/events`,
-      (event) => {
-        match(event)
-          .with({ type: "snapshot" }, ({ run }) => setRun(run))
-          .with({ type: "phase" }, ({ phase }) => {
-            setRun((previous) => previous && { ...previous, phase });
-          })
-          .with({ type: "persistence_error" }, ({ detail }) =>
-            setRun(
-              (previous) =>
-                previous && {
-                  ...previous,
-                  persistenceError: detail ?? undefined,
-                },
-            ),
-          )
-          .with({ type: "output" }, ({ line }) =>
-            setRun(
-              (previous) =>
-                previous && {
-                  ...previous,
-                  output: [...previous.output, line].slice(-OUTPUT_LINE_LIMIT),
-                },
-            ),
-          )
-          .exhaustive();
-      },
+      (event) => setRun((previous) => applyRunEvent(previous, event)),
       () => setRecovery(runStreamRecovery("stream_lost")),
     );
   }, [baseUrl, activeId, setRun]);
