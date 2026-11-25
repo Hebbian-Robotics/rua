@@ -98,9 +98,6 @@ test("a run is created and started in one call, then conflicts", async () => {
   expect(created.status).toBe(201);
   expect(runSchema.parse(await created.json()).phase.state).toBe("running");
   const second = await server.request("/api/runs", post);
-  console.log(
-    JSON.stringify(await (await server.request("/api/runs/current")).json()),
-  );
   expect(second.status).toBe(409);
   const stopped = runSchema.parse(
     await (

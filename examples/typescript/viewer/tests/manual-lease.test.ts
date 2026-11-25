@@ -1,4 +1,5 @@
 import {
+  type CommandAnswer,
   type Lease,
   type LeaseAnswer,
   LeaseHeldElsewhereError,
@@ -36,17 +37,18 @@ function fakeConnection() {
       },
       sendCommand: async (arm: string) => {
         sent.push(arm);
-        return { status: "accepted", records: [] };
+        return state.commandAnswer;
       },
     } as unknown as Lease;
   }
-  const state: { answer: LeaseAnswer | Error } = {
+  const state: { answer: LeaseAnswer | Error; commandAnswer: CommandAnswer } = {
     answer: {
       kind: "granted",
       lease_token: "t",
       lease_seconds: 15,
       status: holder,
     },
+    commandAnswer: { status: "accepted", records: [] },
   };
   return {
     claims,
@@ -111,6 +113,11 @@ test("a refused or unreachable acquire holds nothing", async () => {
     refused.kind === "refused" && refused.heldBy.label === "stack the cups",
     "A refused acquire reports the holder",
   );
+  fake.state.answer = { kind: "holder", status: null };
+  assert(
+    (await lease.acquire()).kind === "failed",
+    "A vanished holder cannot grant control",
+  );
   fake.state.answer = new Error("network down");
   const failed = await lease.acquire();
   assert(
@@ -128,17 +135,19 @@ test("the lease ends when the station says so or a command is refused for it", a
   assert(!lease.holdsLease(), "lease_lost or a dropped connection ends it");
 
   await lease.acquire();
-  lease.noteCommandAnswer({
+  fake.state.commandAnswer = {
     status: "refused",
     reason: "not_enabled",
-    detail: "x",
-  });
+    detail: "Arm is disabled",
+  };
+  await lease.send("follower", { kind: "set_gripper", opening: 1 });
   assert(lease.holdsLease(), "A refusal about the arm keeps the lease");
-  lease.noteCommandAnswer({
+  fake.state.commandAnswer = {
     status: "refused",
     reason: "lease_held_elsewhere",
-    detail: "an agent holds the lease",
-  });
+    detail: "An agent holds the lease",
+  };
+  await lease.send("follower", { kind: "set_gripper", opening: 1 });
   assert(!lease.holdsLease(), "lease_held_elsewhere ends it");
 });
 

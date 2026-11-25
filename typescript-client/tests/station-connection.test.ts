@@ -574,33 +574,38 @@ test("aborting an accepted command cancels it after a completion request fails",
 });
 
 test("a lease grant is released when its initial renewal fails", async () => {
-  let releaseLease: (() => void) | undefined;
-  const released = new Promise<void>((resolve) => {
-    releaseLease = resolve;
-  });
+  const releaseRequests: unknown[] = [];
   const { connection, close } = await startLeaseStation(
     15,
     (request, response) => {
-      if (request.url === "/leases/renew")
+      if (request.method === "POST" && request.url === "/leases/renew") {
         response.writeHead(503).end("renewal failed");
-      else {
-        response.writeHead(204).end();
-        releaseLease?.();
+      } else if (
+        request.method === "POST" &&
+        request.url === "/leases/release"
+      ) {
+        request.setEncoding("utf8");
+        let body = "";
+        request.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          releaseRequests.push(JSON.parse(body) as unknown);
+          response.writeHead(204).end();
+        });
+      } else {
+        response.writeHead(404).end();
       }
     },
   );
   try {
     connection.start();
     await connection.waitUntilConnected();
-    await expect(connection.acquireLease("test")).rejects.toThrow();
-    await expect(
-      Promise.race([
-        released.then(() => true),
-        new Promise<boolean>((resolve) =>
-          setTimeout(() => resolve(false), 250),
-        ),
-      ]),
-    ).resolves.toBe(true);
+    await expect(connection.acquireLease("test")).rejects.toMatchObject({
+      status: 503,
+      body: "renewal failed",
+    });
+    expect(releaseRequests).toEqual([{ lease_token: "token" }]);
   } finally {
     await close();
   }

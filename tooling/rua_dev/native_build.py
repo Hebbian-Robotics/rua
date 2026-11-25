@@ -1,6 +1,11 @@
-import json
 import subprocess
 from pathlib import Path
+
+from pydantic import BaseModel
+
+
+class CargoBuildDirectories(BaseModel):
+    target_directory: Path
 
 
 def build_server() -> Path:
@@ -23,5 +28,7 @@ def build_server() -> Path:
         text=True,
         check=True,
     )
-    target_directory = Path(json.loads(metadata.stdout)["target_directory"])
+    target_directory = CargoBuildDirectories.model_validate_json(
+        metadata.stdout
+    ).target_directory
     return target_directory / "debug/hebbian-rua-server"

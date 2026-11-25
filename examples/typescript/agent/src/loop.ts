@@ -362,7 +362,7 @@ function armRevisionChangedSinceObservation(
   );
 }
 
-export function wireTurn(turn: ModelTurn | ModelRefusal) {
+function wireTurn(turn: ModelTurn | ModelRefusal) {
   const usage = turn.usage && wireUsage(turn.usage);
   return turn.kind === "refusal"
     ? { usage }
@@ -550,14 +550,16 @@ async function runTurns(
     for (const result of outcome.results)
       if (result.halt)
         return incompleteEnding(`Arm fault; loop stopped: ${result.text}`);
-    if (outcome.finishReason !== null)
-      return finishedEnding(outcome.finishReason);
+    if (outcome.kind === "finished") {
+      signal?.throwIfAborted();
+      return finishedEnding(outcome.reason);
+    }
     if (
       outcome.results.some((result) => result.interrupted) &&
       !(await robot.waitForArmRecovery())
     )
       return incompleteEnding("The arm faulted while waiting for recovery");
-    if (outcome.needsObservation) {
+    if (outcome.kind === "observe") {
       const { captured, results } = reuseBatchObservation(outcome.results);
       lastObservation = await observe(
         environment,

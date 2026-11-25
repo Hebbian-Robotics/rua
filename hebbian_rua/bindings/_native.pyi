@@ -2,6 +2,8 @@ from typing import TypedDict
 
 from pydantic import JsonValue
 
+from hebbian_rua.bindings import ToolDisposition
+
 METRES_PER_MILLIMETRE: float
 RADIANS_PER_DEGREE: float
 
@@ -109,9 +111,7 @@ class _ToolOutcome(TypedDict):
     data: object
     cameras: dict[str, bytes]
     sequence_images: object
-    is_error: bool
-    interrupted: bool
-    halt: bool
+    disposition: ToolDisposition
 
 class NativeTools:
     def __init__(

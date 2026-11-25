@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 
 from hebbian_rua import (
     RobotOutput,
@@ -17,8 +18,6 @@ from hebbian_rua.client.contract.station_api import (
     KnownCommandOutcome,
     RecordedMove,
 )
-from hebbian_rua.client.llm.response_format import result_from_data
-from hebbian_rua.client.llm.types import RobotToolCall
 
 
 def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_history() -> (
@@ -39,12 +38,10 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
             achieved=Achieved(joints=[0.123456789], sampled_at=124.123456789),
         ),
     )
-    result = result_from_data(
-        RobotToolCall("call-1", "set_arm_gripper", {}),
-        record.model_dump(mode="json"),
-        is_error=True,
-    )
-    summary = json.loads(result.text)
+    raw_payload = record.model_dump(mode="json")
+    original_payload = deepcopy(raw_payload)
+    output = RobotOutput("result", raw_payload)
+    summary = json.loads(default_formatter(output).text)
     assert summary["completion"] == {
         "outcome": "stopped_short",
         "detail": "Object contact",
@@ -53,13 +50,12 @@ def test_motion_summary_keeps_failure_and_achieved_pose_without_losing_raw_histo
     assert "checkpoints" not in summary
     assert "accepted_unix_nano" not in summary
     assert "command_id" not in summary
-    assert result.is_error
-    assert result.data == record.model_dump(mode="json")
-    detailed = full_formatter(RobotOutput("result", result.data, call=result.call))
+    detailed = full_formatter(output)
     assert json.loads(detailed.text)["command_id"] == "move-1"
     assert json.loads(detailed.text)["checkpoints"][0]["measured_joints"] == [
         0.123456789
     ]
+    assert raw_payload == original_payload
 
 
 def test_observation_summary_preserves_interlocks_cameras_and_recovery_context() -> (

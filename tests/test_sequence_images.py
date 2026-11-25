@@ -91,7 +91,7 @@ def test_missing_camera_does_not_change_sequence_outcome_or_drop_other_images(
                 assert review.cameras
                 assert all(name.startswith("Sequence move") for name in review.cameras)
                 assert all(jpeg == b"jpeg" for jpeg in review.cameras.values())
-                assert set((await mapped.observe()).cameras) == {"front"}
+            assert set((await mapped.observe()).cameras) == {"front"}
 
             def without_history_images(output: RobotOutput) -> ModelContent:
                 if output.sequence_images is not None:

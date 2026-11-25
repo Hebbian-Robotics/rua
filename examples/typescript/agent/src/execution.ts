@@ -10,9 +10,10 @@ import { type RunEnvironment, reportEvent } from "./environment.js";
 import {
   FINISH_TOOL,
   finishInputSchema,
-  MEMORY_TOOLS,
-  type TaskMemory,
+  isMemoryTool,
+  type MemoryToolName,
   UPDATE_NOTES_TOOL,
+  type UpdatePlanInput,
   updateNotesInputSchema,
   updatePlanInputSchema,
 } from "./tools.js";
@@ -22,36 +23,42 @@ import {
   traceContextForSpan,
 } from "./tracing.js";
 
-interface IndexedCall {
+type MemoryToolCall = RobotToolCall & { name: MemoryToolName };
+
+interface IndexedCall<Call extends RobotToolCall = RobotToolCall> {
   index: number;
-  call: RobotToolCall;
+  call: Call;
 }
 
-export type BatchPlan =
+function isMemoryToolCall(call: RobotToolCall): call is MemoryToolCall {
+  return isMemoryTool(call.name);
+}
+
+type BatchPlan =
   | { kind: "reject_finish" }
+  | { kind: "finish"; call: RobotToolCall }
   | {
       kind: "run";
-      memoryCalls: IndexedCall[];
-      finishCalls: IndexedCall[];
+      memoryCalls: IndexedCall<MemoryToolCall>[];
       robotCalls: IndexedCall[];
     };
 
 // INVARIANT: Apply plan/notes updates in call order before motor calls so telemetry boundaries
 // are recorded before motion; finish must be the only call in its batch.
-export function planToolBatch(calls: readonly RobotToolCall[]): BatchPlan {
-  if (calls.length > 1 && calls.some((call) => call.name === FINISH_TOOL))
-    return { kind: "reject_finish" };
+function planToolBatch(calls: readonly RobotToolCall[]): BatchPlan {
+  const finish = calls.find((call) => call.name === FINISH_TOOL);
+  if (finish)
+    return calls.length === 1
+      ? { kind: "finish", call: finish }
+      : { kind: "reject_finish" };
   const plan: BatchPlan = {
     kind: "run",
     memoryCalls: [],
-    finishCalls: [],
     robotCalls: [],
   };
   for (const [index, call] of calls.entries()) {
-    const entry = { index, call };
-    if (MEMORY_TOOLS.includes(call.name)) plan.memoryCalls.push(entry);
-    else if (call.name === FINISH_TOOL) plan.finishCalls.push(entry);
-    else plan.robotCalls.push(entry);
+    if (isMemoryToolCall(call)) plan.memoryCalls.push({ index, call });
+    else plan.robotCalls.push({ index, call });
   }
   return plan;
 }
@@ -84,68 +91,67 @@ function invalidInput(call: RobotToolCall, error: z.ZodError): RobotToolResult {
 
 function runMemoryTool(
   environment: RunEnvironment,
-  call: RobotToolCall,
+  call: MemoryToolCall,
   span: Span,
 ): RobotToolResult {
-  const unixNanoseconds = (BigInt(Date.now()) * 1_000_000n).toString();
-  const { memory } = environment;
-  const payload = applyMemoryUpdate(call, memory, unixNanoseconds);
-  if (payload.kind === "invalid") return invalidInput(call, payload.error);
-  span.setAttributes({
-    ...payload.spanAttributes,
-    "hebbian.memory": memory.viewerSnapshot(),
-  });
-  reportEvent(environment.connection, {
-    type: payload.eventType,
-    ...payload.body,
-    timestamp_unix_ns: unixNanoseconds,
-    tool_call_id: call.id,
-  });
+  const update = parseMemoryUpdate(call.name, call.arguments);
+  const timestamp = (BigInt(Date.now()) * 1_000_000n).toString();
+  const coordinates = { timestamp_unix_ns: timestamp, tool_call_id: call.id };
+  const { connection, memory } = environment;
+  switch (update.kind) {
+    case "invalid":
+      return invalidInput(call, update.error);
+    case "notes_update":
+      memory.notes = update.notes;
+      span.setAttributes({
+        "hebbian.notes": update.notes,
+        "hebbian.notes.updated_at_unix_ns": timestamp,
+        "hebbian.memory": memory.viewerSnapshot(),
+      });
+      reportEvent(connection, {
+        type: update.kind,
+        notes: update.notes,
+        ...coordinates,
+      });
+      break;
+    case "plan_update":
+      memory.plan = update.plan;
+      span.setAttributes({
+        "hebbian.plan.steps": JSON.stringify(update.plan.steps),
+        "hebbian.plan.note": update.plan.note ?? "",
+        "hebbian.plan.updated_at_unix_ns": timestamp,
+        "hebbian.memory": memory.viewerSnapshot(),
+      });
+      reportEvent(connection, {
+        type: update.kind,
+        steps: update.plan.steps,
+        note: update.plan.note ?? null,
+        ...coordinates,
+      });
+      break;
+  }
   return createAgentToolResult(call, "ok", "success");
 }
 
 type MemoryUpdate =
   | { kind: "invalid"; error: z.ZodError }
-  | {
-      kind: "applied";
-      eventType: "plan_update" | "notes_update";
-      body: Record<string, unknown>;
-      spanAttributes: Record<string, string | string[]>;
-    };
+  | { kind: "notes_update"; notes: string[] }
+  | { kind: "plan_update"; plan: UpdatePlanInput };
 
-function applyMemoryUpdate(
-  call: RobotToolCall,
-  memory: TaskMemory,
-  unixNanoseconds: string,
+function parseMemoryUpdate(
+  name: MemoryToolName,
+  argumentsValue: unknown,
 ): MemoryUpdate {
-  if (call.name === UPDATE_NOTES_TOOL) {
-    const parsed = updateNotesInputSchema.safeParse(call.arguments);
-    if (!parsed.success) return { kind: "invalid", error: parsed.error };
-    memory.notes = parsed.data.notes;
-    return {
-      kind: "applied",
-      eventType: "notes_update",
-      body: { notes: parsed.data.notes },
-      spanAttributes: {
-        "hebbian.notes": parsed.data.notes,
-        "hebbian.notes.updated_at_unix_ns": unixNanoseconds,
-      },
-    };
+  if (name === UPDATE_NOTES_TOOL) {
+    const parsed = updateNotesInputSchema.safeParse(argumentsValue);
+    return parsed.success
+      ? { kind: "notes_update", notes: parsed.data.notes }
+      : { kind: "invalid", error: parsed.error };
   }
-  const parsed = updatePlanInputSchema.safeParse(call.arguments);
-  if (!parsed.success) return { kind: "invalid", error: parsed.error };
-  memory.plan = parsed.data;
-  const body = { steps: parsed.data.steps, note: parsed.data.note ?? null };
-  return {
-    kind: "applied",
-    eventType: "plan_update",
-    body,
-    spanAttributes: {
-      "hebbian.plan.steps": JSON.stringify(body.steps),
-      "hebbian.plan.note": body.note ?? "",
-      "hebbian.plan.updated_at_unix_ns": unixNanoseconds,
-    },
-  };
+  const parsed = updatePlanInputSchema.safeParse(argumentsValue);
+  return parsed.success
+    ? { kind: "plan_update", plan: parsed.data }
+    : { kind: "invalid", error: parsed.error };
 }
 
 function tracedCall(
@@ -174,11 +180,11 @@ function tracedCall(
   );
 }
 
-export interface BatchOutcome {
-  results: RobotToolResult[];
-  finishReason: string | null;
-  needsObservation: boolean;
-}
+type BatchOutcome = { results: RobotToolResult[] } & (
+  | { kind: "finished"; reason: string }
+  | { kind: "observe" }
+  | { kind: "continue" }
+);
 
 export async function runToolBatch(
   environment: RunEnvironment,
@@ -196,6 +202,17 @@ export async function runToolBatch(
         "error",
       ),
     );
+  } else if (plan.kind === "finish") {
+    const { call } = plan;
+    const parsed = finishInputSchema.safeParse(call.arguments);
+    results = [
+      await tracedCall(environment, call, async () =>
+        parsed.success
+          ? createAgentToolResult(call, "ok", "success")
+          : invalidInput(call, parsed.error),
+      ),
+    ];
+    if (parsed.success) finish = parsed.data.reason;
   } else {
     const resultsByCallIndex = new Map<number, RobotToolResult>();
     for (const { index, call } of plan.memoryCalls) {
@@ -204,17 +221,6 @@ export async function runToolBatch(
         await tracedCall(environment, call, async (span) =>
           runMemoryTool(environment, call, span),
         ),
-      );
-    }
-    for (const { index, call } of plan.finishCalls) {
-      resultsByCallIndex.set(
-        index,
-        await tracedCall(environment, call, async () => {
-          const parsed = finishInputSchema.safeParse(call.arguments);
-          if (!parsed.success) return invalidInput(call, parsed.error);
-          finish = parsed.data.reason;
-          return createAgentToolResult(call, "ok", "success");
-        }),
       );
     }
     const wrap: ToolCallWrapper = (call, run) =>
@@ -246,10 +252,13 @@ export async function runToolBatch(
       type: "tool_result",
       result: wireResult(result),
     });
-  const needsObservation =
+  if (finish !== null) return { kind: "finished", reason: finish, results };
+  if (
     plan.kind === "run" &&
-    plan.robotCalls.some(({ call }) => needsObservationAfter(call));
-  return { results, finishReason: finish, needsObservation };
+    plan.robotCalls.some(({ call }) => needsObservationAfter(call))
+  )
+    return { kind: "observe", results };
+  return { kind: "continue", results };
 }
 
 function needsObservationAfter(call: RobotToolCall): boolean {

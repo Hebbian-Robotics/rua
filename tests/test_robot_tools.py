@@ -232,22 +232,29 @@ def test_calls_run_concurrently_and_results_keep_input_order(robot: RobotTools) 
     async def exercise() -> None:
         from collections.abc import Awaitable, Callable
 
-        entered: list[str] = []
-        ready = asyncio.Event()
+        calls = [RobotToolCall(str(index), "unknown", {}) for index in range(3)]
+        started = {call.call_id: asyncio.Event() for call in calls}
+        release = {call.call_id: asyncio.Event() for call in calls}
+        completed = {call.call_id: asyncio.Event() for call in calls}
 
         async def wrap(
             call: RobotToolCall, run: Callable[[], Awaitable[RobotToolResult]]
         ) -> RobotToolResult:
-            entered.append(call.call_id)
-            if len(entered) == 3:
-                ready.set()
-            await ready.wait()
-            return await run()
+            started[call.call_id].set()
+            await release[call.call_id].wait()
+            result = await run()
+            completed[call.call_id].set()
+            return result
 
-        calls = [RobotToolCall(str(index), "unknown", {}) for index in range(3)]
-        results = await asyncio.wait_for(robot.execute(calls, wrap), 2)
-        assert entered == ["0", "1", "2"]
-        assert [result.call.call_id for result in results] == entered
+        async with asyncio.timeout(2), asyncio.TaskGroup() as tasks:
+            batch = tasks.create_task(robot.execute(calls, wrap))
+            await asyncio.gather(*(event.wait() for event in started.values()))
+            for call in reversed(calls):
+                release[call.call_id].set()
+                await completed[call.call_id].wait()
+
+        results = batch.result()
+        assert [result.call.call_id for result in results] == ["0", "1", "2"]
         assert all(result.is_error for result in results)
 
     asyncio.run(exercise())

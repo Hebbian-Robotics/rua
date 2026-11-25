@@ -576,25 +576,24 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
         fn parse<T: serde::de::DeserializeOwned>(value: Value) -> std::result::Result<T, String> {
             serde_json::from_value(value).map_err(|error| error.to_string())
         }
-        if !self
-            .definitions()
+        use hebbian_contracts::RobotToolCapability;
+        let capability = self
+            .capabilities
             .iter()
-            .any(|definition| definition.name == name)
-        {
-            return Err(format!("Tool {name} is not available"));
-        }
-        Ok(match name {
-            "preview_pose" => ToolOperation::PosePreviews {
+            .find(|capability| capability.name() == name)
+            .ok_or_else(|| format!("Tool {name} is not available"))?;
+        Ok(match capability {
+            RobotToolCapability::PreviewPose => ToolOperation::PosePreviews {
                 poses: parse::<PreviewPoseArguments>(arguments)?
                     .poses
                     .into_iter()
                     .map(|candidate| candidate.pose)
                     .collect(),
             },
-            "move_arms" => ToolOperation::MoveArms {
+            RobotToolCapability::MoveArms => ToolOperation::MoveArms {
                 command: parse(arguments)?,
             },
-            "set_arm_gripper" => {
+            RobotToolCapability::SetArmGripper => {
                 let mut fields = arguments.as_object().cloned().ok_or("expected an object")?;
                 let Some(Value::String(arm)) = fields.remove("arm") else {
                     return Err("arm must be a string".into());
@@ -617,8 +616,8 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
                     max_joint_speed,
                 }
             }
-            "action_sequence" => {
-                let steps = parse_sequence_tool_arguments(arguments, &self.sequence, &self.arm)?;
+            RobotToolCapability::ActionSequence(configuration) => {
+                let steps = parse_sequence_tool_arguments(arguments, configuration, &self.arm)?;
                 ToolOperation::ActionSequence {
                     action_sequence: ActionSequenceRequest {
                         steps,
@@ -626,19 +625,19 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
                     },
                 }
             }
-            "stop" => {
+            RobotToolCapability::Stop => {
                 let _: StopArguments = parse(arguments)?;
                 ToolOperation::Stop {
                     arm: self.arm.clone(),
                 }
             }
-            "rehome" => {
+            RobotToolCapability::Rehome => {
                 let _: StopArguments = parse(arguments)?;
                 ToolOperation::Rehome {
                     arm: self.arm.clone(),
                 }
             }
-            "observe" => {
+            RobotToolCapability::Observe => {
                 let input: ObserveArguments = parse(arguments)?;
                 if !(0.0..=10.0).contains(&input.wait_seconds) {
                     return Err("wait_seconds must be between 0 and 10".into());
@@ -648,7 +647,6 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
                     wait_seconds: input.wait_seconds,
                 }
             }
-            _ => return Err(format!("unknown tool {name}")),
         })
     }
 
@@ -992,29 +990,20 @@ mod outcome_tests {
                     grouped,
                 )
                 .unwrap();
-                let (value, incomplete) = match outcome {
-                    RobotToolOutcome::Returned(value) => (value, false),
-                    RobotToolOutcome::Incomplete(value) => (value, true),
-                    _ => panic!("unexpected outcome"),
+                let incomplete = match &outcome {
+                    RobotToolOutcome::Returned(_) => false,
+                    RobotToolOutcome::Incomplete(_) => true,
+                    actual => panic!("unexpected outcome: {actual:?}"),
                 };
                 assert_eq!(incomplete, example["expected_error"]);
-                let result = super::RobotToolResult {
-                    sequence_images: None,
-                    cameras: std::collections::BTreeMap::new(),
-                    call_id: "test-call".into(),
-                    outcome: if incomplete {
-                        RobotToolOutcome::Incomplete(value.clone())
-                    } else {
-                        RobotToolOutcome::Returned(value.clone())
-                    },
-                };
+                let result = super::RobotToolResult::new("test-call".into(), outcome);
+                let value = result.data();
                 let raw_record = if grouped {
                     &value["commands"][0]
                 } else {
                     &value
                 };
                 assert_eq!(raw_record, &record_data);
-                assert_eq!(result.data(), value);
                 let model = result.model_data();
                 let model_record = if grouped {
                     &model["commands"][0]

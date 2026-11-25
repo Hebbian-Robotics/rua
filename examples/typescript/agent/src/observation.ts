@@ -5,7 +5,7 @@ import {
 } from "hebbian-rua";
 import { type RunEnvironment, reportEvent } from "./environment.js";
 import type { Observation } from "./providers/types.js";
-import { MEMORY_TOOLS } from "./tools.js";
+import { isMemoryTool } from "./tools.js";
 import { KIND_ATTRIBUTE } from "./tracing.js";
 
 export interface RevisedObservation {
@@ -31,7 +31,7 @@ export function reuseBatchObservation(results: RobotToolResult[]): {
   let observationIndex: number | undefined;
   for (const [index, result] of results.entries()) {
     const name = result.call.name;
-    if (name === "preview_pose" || MEMORY_TOOLS.includes(name)) continue;
+    if (name === "preview_pose" || isMemoryTool(name)) continue;
     if (name !== "observe") return { results };
     if (result.isError || result.sequenceImages) continue;
     if (observationIndex !== undefined) return { results };

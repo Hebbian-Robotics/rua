@@ -1,16 +1,25 @@
-import json
 import shutil
 from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+
+class CargoBuildMessage(BaseModel):
+    reason: str
+    package_id: str | None = None
+    linked_paths: list[str] = Field(default_factory=list)
 
 
 def collect_webrtc_license(build_messages: Path, destination: Path) -> None:
     licenses: set[Path] = set()
     for line in build_messages.read_text().splitlines():
-        message = json.loads(line)
-        package = message.get("package_id", "").rsplit("#", 1)[-1].split("@", 1)[0]
-        if message.get("reason") != "build-script-executed" or package != "webrtc-sys":
+        message = CargoBuildMessage.model_validate_json(line)
+        if message.reason != "build-script-executed" or message.package_id is None:
             continue
-        for link_path in message.get("linked_paths", []):
+        package = message.package_id.rsplit("#", 1)[-1].split("@", 1)[0]
+        if package != "webrtc-sys":
+            continue
+        for link_path in message.linked_paths:
             library_directory = Path(link_path.removeprefix("native="))
             if any(
                 (library_directory / library).is_file()

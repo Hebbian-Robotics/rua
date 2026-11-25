@@ -34,16 +34,6 @@ fn fixture() -> (TempDir, RecordingLibrary) {
     let library = RecordingLibrary::new(root.path());
     (root, library)
 }
-#[test]
-fn lists_each_recording_with_its_data_file() {
-    let (_root, library) = fixture();
-    let listed = library.recordings().unwrap();
-    assert_eq!(listed.recordings.len(), 1);
-    let recording = &listed.recordings[0];
-    assert_eq!(recording.name, "take");
-    assert_eq!(recording.mcap_path.as_deref(), Some(FILE));
-    assert_eq!(recording.size_bytes, DATA.len() as u64);
-}
 #[cfg(target_os = "linux")]
 #[test]
 fn skips_recording_directories_with_non_utf8_names() {
@@ -75,7 +65,10 @@ async fn serves_ranges_and_refuses_traversal_before_deleting_a_listed_recording(
     assert_eq!(response.status(), StatusCode::OK);
     let listing: Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(listing["recordings"][0]["mcapPath"], FILE);
+    assert_eq!(
+        listing["recordings"],
+        serde_json::json!([{"name": "take", "mcapPath": FILE, "sizeBytes": DATA.len()}])
+    );
     let response = app
         .clone()
         .oneshot(

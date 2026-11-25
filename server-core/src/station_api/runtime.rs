@@ -1029,40 +1029,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn only_completed_unlimited_commands_allow_advancing() {
-        let mut command = CommandRecord::new(
-            "1".into(),
-            "move_to_pose",
-            hebbian_contracts::UnixNanos(0),
-            RecordedCommand::PolicyReach {
-                goal_pose: CommandPose {
-                    position: [0.0; 3],
-                    quaternion: [0.0, 0.0, 0.0, 1.0],
-                },
-            },
-        );
-        assert!(!command_allows_next_step(&command));
-        command.phase = CommandPhase::Finished {
-            completion: CommandCompletion {
-                finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
-                outcome: KnownCommandOutcome::Completed,
-                detail: None,
-                gripper: None,
-            },
-            achieved: None,
-        };
-        assert!(command_allows_next_step(&command));
-        command.phase = CommandPhase::OutcomeUnknown {
-            finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
-            detail: None,
-        };
-        assert!(!command_allows_next_step(&command));
-    }
-
-    #[test]
-    fn action_sequence_stops_after_an_interrupted_step() {
-        let mut action_sequence = ActionSequenceRecord {
+    fn pending_sequence_step() -> (ActionSequenceRecord, CommandRecord) {
+        let action_sequence = ActionSequenceRecord {
             continuation: None,
             compilation_id: "compilation".into(),
             id: "s".into(),
@@ -1071,7 +1039,7 @@ mod tests {
             phase: ActionSequencePhase::Running { step: 0 },
             steps: vec![],
         };
-        let mut command = CommandRecord::new(
+        let command = CommandRecord::new(
             "1".into(),
             "move_to_pose",
             hebbian_contracts::UnixNanos(0),
@@ -1082,6 +1050,33 @@ mod tests {
                 },
             },
         );
+        (action_sequence, command)
+    }
+
+    #[test]
+    fn an_action_sequence_advances_only_when_an_authorized_step_reaches_its_target() {
+        let (mut action_sequence, mut command) = pending_sequence_step();
+        let arm_records = |record: CommandRecord| {
+            vec![ArmRecord {
+                arm: "arm".into(),
+                record,
+            }]
+        };
+        assert_eq!(
+            finish_step(
+                &mut action_sequence,
+                arm_records(command.clone()),
+                3,
+                &BTreeMap::new(),
+            ),
+            StepAdvance::End
+        );
+        assert!(matches!(
+            action_sequence.phase,
+            ActionSequencePhase::Running { step: 0 }
+        ));
+        assert_eq!(action_sequence.steps.len(), 0);
+
         command.phase = CommandPhase::Finished {
             completion: CommandCompletion {
                 finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
@@ -1094,10 +1089,7 @@ mod tests {
         assert_eq!(
             finish_step(
                 &mut action_sequence,
-                vec![ArmRecord {
-                    arm: "arm".into(),
-                    record: command.clone()
-                }],
+                arm_records(command.clone()),
                 3,
                 &BTreeMap::new(),
             ),
@@ -1106,10 +1098,7 @@ mod tests {
         let mut after_lease_loss = action_sequence.clone();
         let late_completion = ExecutionUpdate::StepFinished {
             step: 1,
-            records: vec![ArmRecord {
-                arm: "arm".into(),
-                record: command.clone(),
-            }],
+            records: arm_records(command.clone()),
             step_count: 3,
             commands: BTreeMap::new(),
             authority: ExecutionAuthority::Lost,
@@ -1123,26 +1112,40 @@ mod tests {
             ActionSequencePhase::Running { step: 1 }
         ));
         assert_eq!(after_lease_loss.steps.len(), 2);
+        let mut limited = command.clone();
+        limited.command = RecordedCommand::Move {
+            destination_joints: vec![0.2],
+            destination_position: None,
+            destination_quaternion: None,
+            joint_speed: 1.0,
+            effective_motion_limits: None,
+            path_limited: Some(hebbian_contracts::PathLimited {
+                reason: "Surface guard".into(),
+            }),
+            pose_limited: None,
+            group_id: None,
+        };
         command.phase = CommandPhase::OutcomeUnknown {
             finished_unix_nano: hebbian_contracts::UnixNanos(1_000_000_000),
             detail: None,
         };
-        assert_eq!(
-            finish_step(
-                &mut action_sequence,
-                vec![ArmRecord {
-                    arm: "arm".into(),
-                    record: command
-                }],
-                3,
-                &BTreeMap::new(),
-            ),
-            StepAdvance::End
-        );
-        assert!(matches!(
-            action_sequence.phase,
-            ActionSequencePhase::Stopped { .. }
-        ));
-        assert_eq!(action_sequence.steps.len(), 2);
+        for (scenario, record) in [("unknown outcome", command), ("limited move", limited)] {
+            let mut sequence = action_sequence.clone();
+            assert_eq!(
+                finish_step(&mut sequence, arm_records(record), 3, &BTreeMap::new(),),
+                StepAdvance::End,
+                "{scenario}"
+            );
+            assert!(
+                matches!(
+                    sequence.phase,
+                    ActionSequencePhase::Stopped {
+                        failure: ExecutionFailure::Execution { step: 1, .. }
+                    }
+                ),
+                "{scenario}"
+            );
+            assert_eq!(sequence.steps.len(), 2, "{scenario}");
+        }
     }
 }

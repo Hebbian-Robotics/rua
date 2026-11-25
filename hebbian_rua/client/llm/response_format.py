@@ -5,7 +5,7 @@ from collections.abc import Collection
 from dataclasses import replace
 from typing import Literal
 
-from hebbian_rua.bindings import _native
+from hebbian_rua.bindings import ToolDisposition, _native
 from hebbian_rua.client.llm.types import (
     ModelContent,
     RobotOutput,
@@ -112,9 +112,7 @@ def result_from_data(
     call: RobotToolCall,
     data: object,
     *,
-    is_error: bool,
-    halt: bool = False,
-    interrupted: bool = False,
+    disposition: ToolDisposition,
     cameras: dict[str, bytes] | None = None,
     sequence_images: SequenceImageHistory | None = None,
     observed_revisions: dict[str, int] | None = None,
@@ -132,9 +130,9 @@ def result_from_data(
     return RobotToolResult(
         call,
         content.text,
-        is_error=is_error,
-        halt=halt,
-        interrupted=interrupted,
+        is_error=disposition != "returned",
+        halt=disposition == "faulted",
+        interrupted=disposition == "interrupted",
         data=data,
         cameras=content.cameras,
         sequence_images=sequence_images,

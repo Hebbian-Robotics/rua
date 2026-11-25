@@ -1,9 +1,4 @@
-import type {
-  CommandAnswer,
-  Interlock,
-  LeaseAnswer,
-  LeaseStatus,
-} from "hebbian-rua";
+import type { CommandAnswer, Interlock, LeaseStatus } from "hebbian-rua";
 import { match } from "ts-pattern";
 // INVARIANT: Use snapshots to render lease state. A snapshot can predate an
 // acquire, so only a lease-loss event, connection closure or an authoritative
@@ -62,28 +57,10 @@ export function describeHolder(lease: LeaseStatus): string {
     .exhaustive();
 }
 
-export function describeLease(
-  lease: LeaseStatus | null,
-  ownLabel: string,
-): string {
-  if (lease === null) return "No one holds the lease";
-  if (lease.holder === "manual" && lease.label === ownLabel)
-    return "Manual control: this viewer holds the lease";
-  return `${describeHolder(lease)} holds the lease`;
-}
-
 export type AcquireOutcome =
   | { kind: "granted"; leaseSeconds: number }
   | { kind: "refused"; heldBy: LeaseStatus }
   | { kind: "failed"; message: string };
-
-export function interpretLeaseAnswer(answer: LeaseAnswer): AcquireOutcome {
-  if (answer.kind === "granted")
-    return { kind: "granted", leaseSeconds: answer.lease_seconds };
-  return answer.status
-    ? { kind: "refused", heldBy: answer.status }
-    : { kind: "failed", message: "The lease was not granted" };
-}
 
 export function isLeaseHeldElsewhere(answer: CommandAnswer): boolean {
   return (

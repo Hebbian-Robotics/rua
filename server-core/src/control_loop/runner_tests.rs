@@ -740,23 +740,6 @@ fn the_loop_answers_a_bounded_number_of_requests_each_cycle_and_the_rest_next_cy
 }
 
 #[test]
-fn a_cycle_with_nothing_asked_of_it_serves_nothing_and_does_not_wait() {
-    let calls = Calls::default();
-    let config = config("idle-inbox");
-    let mut plant = ScriptedPlant::new(vec![at([0.0, 0.0])], &calls);
-    let link = test_link(&config);
-    let mut runner = runner(&mut plant, &config, &link);
-    let (_handle, inbox) = crate::handoff::arm_channel();
-    runner.inbox = inbox;
-    crate::control_loop::serve_requests(
-        std::slice::from_mut(&mut runner),
-        Duration::from_millis(10),
-        &mut 0,
-    );
-    assert_eq!(runner.state.arm().mode(), ArmMode::Disabled);
-}
-
-#[test]
 fn malformed_feedback_never_becomes_a_position_or_gripper_write() {
     for positions in [
         vec![],

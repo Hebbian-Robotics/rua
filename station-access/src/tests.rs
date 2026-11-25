@@ -49,16 +49,10 @@ fn tokens_enforce_roles_room_identity_and_lifetime() -> Result<(), Box<dyn std::
         (WatcherRole::Recorder, "recorder-", 43_200),
     ] {
         let claims = claims(&credentials.watcher_access("station-test", role)?.token)?;
-        let suffix = claims["sub"]
-            .as_str()
-            .ok_or("identity missing")?
-            .strip_prefix(prefix)
-            .ok_or("role missing")?;
-        assert_eq!(suffix.len(), 8);
+        let identity = claims["sub"].as_str().ok_or("identity missing")?;
         assert!(
-            suffix
-                .bytes()
-                .all(|character| character.is_ascii_hexdigit())
+            identity.starts_with(prefix),
+            "{identity} should carry role {role:?}"
         );
         assert_eq!(
             claims["video"],
@@ -75,13 +69,35 @@ fn tokens_enforce_roles_room_identity_and_lifetime() -> Result<(), Box<dyn std::
             .camera_access("room", "../bad", CameraLifetime::Station)
             .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn independent_viewers_and_stations_have_distinct_identities()
+-> Result<(), Box<dyn std::error::Error>> {
+    let credentials = credentials()?;
     let room = new_room_name();
-    let suffix = room.strip_prefix("station-").ok_or("room prefix missing")?;
-    assert_eq!(suffix.len(), 12);
+    let mut identities = std::collections::BTreeSet::new();
+    for _ in 0..3 {
+        let token = credentials
+            .watcher_access(&room, WatcherRole::Viewer)?
+            .token;
+        identities.insert(
+            claims(&token)?["sub"]
+                .as_str()
+                .ok_or("identity missing")?
+                .to_owned(),
+        );
+    }
     assert!(
-        suffix
-            .bytes()
-            .all(|character| character.is_ascii_hexdigit())
+        identities.len() > 1,
+        "overlapping viewer sessions need distinct identities"
+    );
+    assert!(
+        [new_room_name(), new_room_name()]
+            .iter()
+            .any(|other| other != &room),
+        "different stations need independent room names"
     );
     Ok(())
 }

@@ -7,7 +7,6 @@ import {
 } from "hebbian-rua";
 import {
   type AcquireOutcome,
-  interpretLeaseAnswer,
   isLeaseHeldElsewhere,
   newManualLabel,
 } from "./control-logic.js";
@@ -32,8 +31,6 @@ export interface ManualLease {
   updateStreamGoal: Lease["updateStreamGoal"];
 
   rehome(arm: string, signal: AbortSignal): Promise<CommandAnswer>;
-
-  noteCommandAnswer(answer: CommandAnswer): void;
 
   onChange(listener: () => void): () => void;
 }
@@ -70,8 +67,12 @@ export function createManualLease(
         setHeld(true);
         return { kind: "granted", leaseSeconds: lease.leaseSeconds };
       } catch (error: unknown) {
-        if (error instanceof LeaseHeldElsewhereError)
-          return interpretLeaseAnswer(error.answer);
+        if (error instanceof LeaseHeldElsewhereError) {
+          const { status } = error.answer;
+          return status
+            ? { kind: "refused", heldBy: status }
+            : { kind: "failed", message: "The lease was not granted" };
+        }
         return {
           kind: "failed",
           message: `Could not reach the station: ${errorMessage(error)}`,
@@ -122,9 +123,6 @@ export function createManualLease(
       const answer = await current.arm(arm, { signal }).rehome();
       if (isLeaseHeldElsewhere(answer)) setHeld(false);
       return answer;
-    },
-    noteCommandAnswer(answer: CommandAnswer): void {
-      if (isLeaseHeldElsewhere(answer)) setHeld(false);
     },
     onChange(listener: () => void): () => void {
       listeners.add(listener);

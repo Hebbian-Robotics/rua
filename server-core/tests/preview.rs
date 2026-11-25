@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use hebbian_rua_core::arm::ReachGoal;
 use hebbian_rua_core::config::ControllerConfig;
@@ -47,14 +47,18 @@ fn bundled_urdf() -> PathBuf {
         .join("robots/so101/robot-soft-gripper-camera.urdf")
 }
 
-fn assets() -> Option<PathBuf> {
-    // CONSTRAINT: These optional tests require an explicitly selected ONNX runtime as well
-    // as the private policy assets; the standard build does not bundle one.
-    std::env::var_os("ORT_DYLIB_PATH")?;
+fn policy_assets() -> PathBuf {
+    std::env::var_os("ORT_DYLIB_PATH").expect("Set ORT_DYLIB_PATH to a compatible ONNX Runtime");
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()?
+        .parent()
+        .unwrap()
         .join(".cache/so101-policy-assets");
-    directory.join("policy.onnx").is_file().then_some(directory)
+    assert!(
+        directory.join("policy.onnx").is_file(),
+        "Place the private policy checkpoint at {}",
+        directory.join("policy.onnx").display()
+    );
+    directory
 }
 
 fn control() -> Arc<Lease> {
@@ -127,32 +131,21 @@ fn request(goal: ReachGoal) -> PreviewRequest {
 }
 
 #[test]
+#[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_reachable_pose_settles_and_the_same_question_gets_the_same_answer() {
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
+    let assets = policy_assets();
     let mut preview = Preview::new(&config(&assets)).unwrap().unwrap();
     let asked = request(goal_near_start([0.06, 0.0, 0.0]));
-    let started = Instant::now();
     let first = preview.reach(&asked).unwrap();
-    eprintln!(
-        "rehearsed {} cycles ({:.2} s simulated) in {:?}",
-        first.steps,
-        first.simulated_seconds,
-        started.elapsed()
-    );
     assert_eq!(first.outcome, PreviewOutcome::Settled, "{first:?}");
     assert!(first.position_error_meters <= 0.02, "{first:?}");
     assert_eq!(preview.reach(&asked).unwrap(), first);
 }
 
 #[test]
+#[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_model_whose_action_step_exceeds_the_accepted_target_lead_is_refused() {
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
+    let assets = policy_assets();
     let error = Preview::new(&config_accepting_target_lead(&assets, 0.04))
         .err()
         .unwrap();
@@ -163,22 +156,13 @@ fn a_model_whose_action_step_exceeds_the_accepted_target_lead_is_refused() {
 }
 
 #[test]
+#[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_pose_beyond_reach_ends_once_the_arm_stops_closing_on_it() {
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
+    let assets = policy_assets();
     let mut preview = Preview::new(&config(&assets)).unwrap().unwrap();
-    let started = Instant::now();
     let ended = preview
         .reach(&request(goal_near_start([1.5, 0.0, 0.0])))
         .unwrap();
-    eprintln!(
-        "worst case: {} cycles ({:.2} s simulated) in {:?}",
-        ended.steps,
-        ended.simulated_seconds,
-        started.elapsed()
-    );
     assert_eq!(ended.outcome, PreviewOutcome::TimedOut);
     assert!(ended.reason.is_some());
     // WHY: Once the arm rests short of the pose, the rest of the 8 s deadline would end at
@@ -187,11 +171,9 @@ fn a_pose_beyond_reach_ends_once_the_arm_stops_closing_on_it() {
 }
 
 #[test]
+#[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_wrong_joint_count_is_refused() {
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
+    let assets = policy_assets();
     let mut preview = Preview::new(&config(&assets)).unwrap().unwrap();
     let mut asked = request(goal_near_start([0.0, 0.0, 0.0]));
     asked.joints.pop();
@@ -199,11 +181,9 @@ fn a_wrong_joint_count_is_refused() {
 }
 
 #[test]
+#[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_rehearsal_over_the_link_leaves_the_arm_and_its_records_alone() {
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
+    let assets = policy_assets();
     let link = Link::new(&config(&assets), control()).unwrap();
     let handle = link.handle();
     let mut client = LinkClient::connect(&handle);
@@ -243,149 +223,20 @@ fn a_rehearsal_over_the_link_leaves_the_arm_and_its_records_alone() {
 
 #[test]
 fn an_arm_without_a_policy_refuses_to_rehearse() {
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
-    let mut without_policy = config(&assets).into_input();
+    let mut without_policy = config(Path::new("unused-policy-directory")).into_input();
     without_policy.policy = None;
     let without_policy = ControllerConfig::try_from(without_policy).unwrap();
     assert!(Preview::new(&without_policy).unwrap().is_none());
 }
 
 #[test]
-#[ignore = "prints policy responses to roll goals for viewer control design"]
-fn orientation_study() {
-    use nalgebra::UnitQuaternion;
-    let Some(assets) = assets() else { return };
-    let mut preview = Preview::new(&config(&assets)).unwrap().unwrap();
-    let joints: Vec<String> = JOINTS.iter().map(|name| (*name).to_owned()).collect();
-    let robot = Robot::load(&bundled_urdf(), &joints).unwrap();
-    let pose_at = |arm: &[f64]| {
-        let mut full = arm.to_vec();
-        full.push(0.0);
-        robot.link_pose(TOOL_LINK, &full).unwrap()
-    };
-    let starts: [[f64; 5]; 3] = [
-        START,
-        [0.4, -0.3, 0.6, 0.9, 0.3],
-        [-0.5, -0.8, 1.0, 0.4, -0.4],
-    ];
-    for (which, start) in starts.iter().enumerate() {
-        let here = pose_at(start);
-        // CONSTRAINT: The roll joint's axis in the tool frame.
-        let mut rolled = *start;
-        rolled[4] += 0.1;
-        let axis_local = (here.rotation.inverse() * pose_at(&rolled).rotation).scaled_axis() / 0.1;
-        eprintln!("start {which}: roll axis in tool frame {axis_local:.3}");
-        for offset in [[0.04, 0.0, 0.0], [0.0, 0.0, -0.03]] {
-            for roll in [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0] {
-                let rotated = here.rotation * UnitQuaternion::from_scaled_axis(axis_local * roll);
-                let goal = ReachGoal {
-                    target: nalgebra::Isometry3::from_parts(
-                        (here.translation.vector + nalgebra::Vector3::from(offset)).into(),
-                        rotated,
-                    ),
-                    position_tolerance_meters: 0.02,
-                    orientation_tolerance_radians: 0.1,
-                };
-                let ended = preview
-                    .reach(&PreviewRequest {
-                        goal,
-                        joints: start.to_vec(),
-                        gripper_angle: Some(0.0),
-                    })
-                    .unwrap();
-                eprintln!(
-                    "  off {offset:?} roll {roll:+.2}: {:?} pos {:.1} mm ori {:.3} rad roll_joint {:+.2} (asked {:+.2}) steps {}",
-                    ended.outcome,
-                    ended.position_error_meters * 1000.0,
-                    ended.orientation_error_radians,
-                    ended.joints[4],
-                    start[4] + roll,
-                    ended.steps,
-                );
-            }
-        }
-    }
-}
-
-#[test]
-#[ignore = "prints policy responses to unreachable orientations excluded from settling"]
-fn orientation_ignored_study() {
-    use nalgebra::{UnitQuaternion, Vector3};
-    let Some(assets) = assets() else { return };
-    let mut preview = Preview::new(&config(&assets)).unwrap().unwrap();
-    let joints: Vec<String> = JOINTS.iter().map(|name| (*name).to_owned()).collect();
-    let robot = Robot::load(&bundled_urdf(), &joints).unwrap();
-    let mut full = START.to_vec();
-    full.push(0.0);
-    let here = robot.link_pose(TOOL_LINK, &full).unwrap();
-    for (label, turn) in [
-        ("same orientation", UnitQuaternion::identity()),
-        (
-            "tool pitched 0.5 rad",
-            UnitQuaternion::from_scaled_axis(Vector3::x() * 0.5),
-        ),
-        (
-            "tool pitched -0.5 rad",
-            UnitQuaternion::from_scaled_axis(Vector3::x() * -0.5),
-        ),
-        (
-            "tool pitched 1.0 rad",
-            UnitQuaternion::from_scaled_axis(Vector3::x() * 1.0),
-        ),
-        (
-            "tool yawed (local y) 0.5 rad",
-            UnitQuaternion::from_scaled_axis(Vector3::y() * 0.5),
-        ),
-        (
-            "tool yawed (local y) 1.0 rad",
-            UnitQuaternion::from_scaled_axis(Vector3::y() * 1.0),
-        ),
-        (
-            "tool flipped 3.0 rad about x",
-            UnitQuaternion::from_scaled_axis(Vector3::x() * 3.0),
-        ),
-    ] {
-        let rotated = here.rotation * turn;
-        for offset in [[0.04, 0.0, 0.0], [0.0, 0.0, -0.03]] {
-            let goal = ReachGoal {
-                target: nalgebra::Isometry3::from_parts(
-                    (here.translation.vector + nalgebra::Vector3::from(offset)).into(),
-                    rotated,
-                ),
-                position_tolerance_meters: 0.02,
-                orientation_tolerance_radians: 0.1,
-            };
-            let ended = preview
-                .reach(&PreviewRequest {
-                    goal,
-                    joints: START.to_vec(),
-                    gripper_angle: Some(0.0),
-                })
-                .unwrap();
-            eprintln!(
-                "{label:30} off {offset:?}: {:?} pos {:.1} mm ori {:.3} rad steps {}",
-                ended.outcome,
-                ended.position_error_meters * 1000.0,
-                ended.orientation_error_radians,
-                ended.steps,
-            );
-        }
-    }
-}
-
-#[test]
+#[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation() {
     use hebbian_rua_core::control_loop::run;
     use hebbian_rua_core::plant::NoPhysicsStandIn;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
-    let Some(assets) = assets() else {
-        eprintln!("skipped: the policy assets or ORT_DYLIB_PATH are unavailable");
-        return;
-    };
+    let assets = policy_assets();
     let config = config(&assets);
     let link = Link::new(&config, control()).unwrap();
     let handle = link.handle();

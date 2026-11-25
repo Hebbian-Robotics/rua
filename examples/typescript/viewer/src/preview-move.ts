@@ -79,23 +79,6 @@ export function describeApproach(approach: Approach): string {
   return `custom (${approach.map((value) => value.toFixed(2)).join(", ")})`;
 }
 
-function wrapRadians(radians: number): number {
-  const fullTurn = 2 * Math.PI;
-  return ((radians % fullTurn) + fullTurn) % fullTurn;
-}
-
-export function jawYawReachable(
-  ranges: JawYawRange[],
-  jawYawRadians: number,
-): boolean | null {
-  if (ranges.length === 0) return null;
-  const yaw = wrapRadians(jawYawRadians);
-  const containing = ranges.find(
-    (range) => yaw >= range.from_radians && yaw <= range.to_radians,
-  );
-  return containing ? containing.reachable : null;
-}
-
 export function unreachableYawLines(ranges: JawYawRange[]): string[] {
   return ranges
     .filter((range) => !range.reachable)

@@ -181,28 +181,41 @@ mod tests {
     #[test]
     fn an_action_step_rejects_an_arm_without_a_target_at_the_transport_boundary() {
         let instance = ControllerInstanceId([1; 16]);
-        let envelope = serde_json::json!({
-            "instance": instance,
-            "message": {
-                "Request": {
-                    "request_id": 3,
-                    "arm": "left",
-                    "request": {
-                        "ActionStep": {
-                            "actions": [{"arm": "left", "movement": null, "gripper": null}],
-                            "trace_context": null
+        let receive_action_step = |gripper: serde_json::Value| {
+            let envelope = serde_json::json!({
+                "instance": instance,
+                "message": {
+                    "Request": {
+                        "request_id": 3,
+                        "arm": "left",
+                        "request": {
+                            "ActionStep": {
+                                "actions": [{"arm": "left", "kind": "gripper", "gripper": gripper}],
+                                "trace_context": null
+                            }
                         }
                     }
                 }
-            }
-        });
-        let body = serde_json::to_vec(&envelope).unwrap();
-        let length = u32::try_from(body.len()).unwrap();
-        let mut frame = length.to_be_bytes().to_vec();
-        frame.extend(body);
-        let mut controller = ControllerTransport::new(frame.as_slice(), instance);
+            });
+            let body = serde_json::to_vec(&envelope).unwrap();
+            let length = u32::try_from(body.len()).unwrap();
+            let mut frame = length.to_be_bytes().to_vec();
+            frame.extend(body);
+            ControllerTransport::new(frame.as_slice(), instance).receive()
+        };
+        let target = serde_json::json!({"angle": 0.2, "joint_speed": null});
+        assert!(matches!(
+            receive_action_step(target).unwrap(),
+            ControllerMessage::Request {
+                request_id: ControllerRequestId(3),
+                request: ControllerRequest::ActionStep { actions, .. },
+                ..
+            } if actions.len() == 1 && actions[0].arm() == "left"
+        ));
         assert_eq!(
-            controller.receive().unwrap_err().kind(),
+            receive_action_step(serde_json::Value::Null)
+                .unwrap_err()
+                .kind(),
             io::ErrorKind::InvalidData,
         );
     }

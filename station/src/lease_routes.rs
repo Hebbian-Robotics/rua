@@ -6,15 +6,26 @@ use axum::Json;
 use axum::http::StatusCode;
 use hebbian_contracts::CameraListing;
 use hebbian_rua_core::control_link::LinkHandle;
+use serde::{Deserialize, Serialize};
 
 const CAMERA_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 pub type ServedArms = Arc<OnceLock<BTreeMap<String, LinkHandle>>>;
 
-pub type Refusal = (StatusCode, Json<serde_json::Value>);
+#[derive(Deserialize, Serialize)]
+pub struct RefusalBody {
+    pub detail: String,
+}
+
+pub type Refusal = (StatusCode, Json<RefusalBody>);
 
 pub fn refusal(status: StatusCode, detail: impl Into<String>) -> Refusal {
-    (status, Json(serde_json::json!({ "detail": detail.into() })))
+    (
+        status,
+        Json(RefusalBody {
+            detail: detail.into(),
+        }),
+    )
 }
 
 pub async fn monitor_required_cameras(link: LinkHandle, camera_list_url: Option<String>) {

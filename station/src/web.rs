@@ -13,7 +13,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use crate::lease_routes::ServedArms;
+use crate::lease_routes::{Refusal, ServedArms, refusal};
 use crate::recording::{RecordingConfiguration, RecordingManager};
 use hebbian_contracts::{PhoneInvite, PhoneInviteRequest};
 use hebbian_rua_core::control_link::LinkHandle;
@@ -66,22 +66,14 @@ struct Access {
     phone_page_url: String,
 }
 
-struct Refusal(StatusCode, String);
-
-impl IntoResponse for Refusal {
-    fn into_response(self) -> Response {
-        (self.0, Json(serde_json::json!({ "detail": self.1 }))).into_response()
-    }
-}
-
 fn credentials(access: &Access) -> Result<&Credentials, Refusal> {
     match &access.cameras {
         Cameras::On(credentials) => Ok(credentials),
-        Cameras::LocalOnly => Err(Refusal(
+        Cameras::LocalOnly => Err(refusal(
             StatusCode::CONFLICT,
-            "Local cameras only. Remote cameras require LiveKit.".to_owned(),
+            "Local cameras only. Remote cameras require LiveKit.",
         )),
-        Cameras::Off(reason) => Err(Refusal(
+        Cameras::Off(reason) => Err(refusal(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("Cameras are off: {reason}"),
         )),
@@ -91,7 +83,7 @@ fn credentials(access: &Access) -> Result<&Credentials, Refusal> {
 async fn create_token(State(access): State<Arc<Access>>) -> Result<Response, Refusal> {
     let granted = credentials(&access)?
         .watcher_access(&access.room, WatcherRole::Viewer)
-        .map_err(|error| Refusal(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+        .map_err(|error| refusal(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     Ok((
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
         Json(granted),
@@ -105,9 +97,9 @@ async fn create_phone_invite(
     Json(request): Json<PhoneInviteRequest>,
 ) -> Result<Response, Refusal> {
     if !peer.ip().to_canonical().is_loopback() {
-        return Err(Refusal(
+        return Err(refusal(
             StatusCode::FORBIDDEN,
-            "Create phone camera invites from the station itself".to_owned(),
+            "Create phone camera invites from the station itself",
         ));
     }
     let invite: PhoneInvite = credentials(&access)?
@@ -117,7 +109,7 @@ async fn create_phone_invite(
                 station_access::AccessError::PhoneCannotReachServer(_) => StatusCode::CONFLICT,
                 _ => StatusCode::BAD_REQUEST,
             };
-            Refusal(status, error.to_string())
+            refusal(status, error.to_string())
         })?;
     Ok((
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
@@ -185,7 +177,7 @@ async fn media_status_response(
         .map(Json)
         .map_err(|error| {
             tracing::debug!(%error, "Camera status unavailable");
-            Refusal(
+            refusal(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Camera status could not be refreshed".to_owned(),
             )

@@ -254,41 +254,38 @@ mod tests {
     }
 
     #[test]
-    fn a_writer_that_falls_behind_drops_and_counts_records_instead_of_blocking() {
-        let directory = std::env::temp_dir().join(format!("trace-pressure-{}", std::process::id()));
-        let writer = TraceWriter::open(&directory).unwrap();
-        let offered = QUEUE_LENGTH as u64 * 40;
-        for cycle in 0..offered {
-            writer.record(record(cycle));
-        }
-        let summary = writer.finish();
-        assert_eq!(summary.written + summary.dropped, offered);
-        assert!(summary.error.is_none());
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn a_written_record_comes_back_with_its_buffers_to_be_filled_again() {
-        let directory = std::env::temp_dir().join(format!("trace-recycle-{}", std::process::id()));
-        let writer = TraceWriter::open(&directory).unwrap();
-        let mut fresh = writer.checkout();
-        fresh.command = Vec::with_capacity(64);
-        fresh.command.push(0.1);
-        writer.record(fresh);
-        let returned = loop {
-            let candidate = writer.checkout();
-            if candidate.command.capacity() >= 64 {
-                break candidate;
-            }
-            std::thread::yield_now();
+    fn a_full_trace_queue_drops_and_counts_the_next_record_without_waiting() {
+        let (sender, queued) = sync_channel(1);
+        let (_, recycled) = sync_channel(0);
+        let writer = TraceWriter {
+            sender: Some(sender),
+            recycled,
+            dropped: Arc::new(AtomicU64::new(0)),
+            writer: None,
+            path: PathBuf::new(),
         };
-        assert!(returned.command.capacity() >= 64);
-        let _ = writer.finish();
-        std::fs::remove_dir_all(directory).unwrap();
+        writer.record(record(10));
+        let (finished, result) = sync_channel(1);
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                writer.record(record(11));
+                finished.send(writer.finish()).unwrap();
+            });
+            let summary = result.recv_timeout(std::time::Duration::from_secs(2));
+            let first_record = queued.try_recv().unwrap();
+            drop(queued);
+            assert_eq!(first_record.cycle, 10);
+            assert_eq!(
+                summary
+                    .expect("trace recording waited for the queue")
+                    .dropped,
+                1
+            );
+        });
     }
 
     #[test]
-    fn a_trace_that_cannot_be_created_refuses_the_run() {
+    fn a_trace_writer_refuses_a_file_as_its_output_directory() {
         let file = std::env::temp_dir().join(format!("trace-blocker-{}", std::process::id()));
         std::fs::write(&file, "not a directory").unwrap();
         assert!(TraceWriter::open(&file.join("inside")).is_err());

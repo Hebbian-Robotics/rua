@@ -4,10 +4,11 @@ import type { ToolSpec } from "./providers/types.js";
 export const FINISH_TOOL = "finish";
 const UPDATE_PLAN_TOOL = "update_plan";
 export const UPDATE_NOTES_TOOL = "update_notes";
-export const MEMORY_TOOLS: readonly string[] = [
-  UPDATE_PLAN_TOOL,
-  UPDATE_NOTES_TOOL,
-];
+export type MemoryToolName = typeof UPDATE_PLAN_TOOL | typeof UPDATE_NOTES_TOOL;
+
+export function isMemoryTool(name: string): name is MemoryToolName {
+  return name === UPDATE_PLAN_TOOL || name === UPDATE_NOTES_TOOL;
+}
 
 const planStepSchema = z.object({
   text: z.string(),

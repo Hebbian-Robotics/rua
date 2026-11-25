@@ -144,7 +144,7 @@ def test_a_command_result_reports_how_its_record_or_refusal_ended() -> None:
     assert result.detail == "Controller connection lost"
 
 
-def test_command_result_distinguishes_completed_and_limited_plans() -> None:
+def test_command_result_reports_plan_limits_independently_of_completion() -> None:
     completed = CommandRecord(
         command_id="move",
         label="move_to_pose",
@@ -158,7 +158,6 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
             )
         ),
     )
-    assert CommandResult(completed).completed
     assert not CommandResult(completed).was_limited
     limits = [
         {"path_limited": PathLimited(reason="self-collision")},
@@ -183,7 +182,6 @@ def test_command_result_distinguishes_completed_and_limited_plans() -> None:
     refused = CommandResult(
         CommandRefused(reason=RejectionReason.not_enabled, detail="enable it first")
     )
-    assert not refused.completed
     assert not refused.was_limited
 
 

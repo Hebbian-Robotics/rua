@@ -46,6 +46,15 @@ test("a recording cut off mid-write keeps what was read before the cut", async (
     bytesReadable(take.slice(0, take.length - 40)),
   );
   expect(timeline.truncated).toBe(true);
+  expect(timeline.state?.times).toEqual([1, 2]);
+  expect(timeline.events).toContainEqual(
+    expect.objectContaining({
+      topic: "/model/events",
+      data: expect.objectContaining({
+        event: { type: "observation", cameras: ["front"] },
+      }),
+    }),
+  );
 });
 
 test("playback bounds exclude replayed events and support many camera segments", () => {

@@ -44,7 +44,7 @@ async function runLoop(
   const connection = createStationConnection("http://station", "agent");
   connection.start();
   const conversation = new ScriptedConversation(steps);
-  const lines: string[] = [];
+  const output: { line: string; requestsSent: number }[] = [];
   try {
     const outcome = await station.run(
       drive(
@@ -52,12 +52,13 @@ async function runLoop(
         { connection, stationUrl: "http://station", mediaUrl: "http://media" },
         {
           openConversation: () => conversation,
-          print: (line) => lines.push(line),
+          print: (line) =>
+            output.push({ line, requestsSent: station.requests.length }),
           ...(signal ? { signal } : {}),
         },
       ),
     );
-    return { ...outcome, conversation, lines };
+    return { ...outcome, conversation, output };
   } finally {
     connection.close();
   }
@@ -178,11 +179,18 @@ function resultsOf(received: Received | undefined) {
 }
 
 test("a plan, a motion and a finish run end to end and are reported to the station", async () => {
-  const { result, conversation, lines } = await runLoop([
-    turn(
-      ["stop", {}],
-      ["update_plan", { steps: [{ text: "touch", status: "active" }] }],
-    ),
+  const plan = { steps: [{ text: "touch", status: "active" }] };
+  const notes = { notes: ["Red block"] };
+  const preview = { poses: [{ pose: { position_mm: [200, 0, 100] } }] };
+  const motionTurn = turn(
+    ["stop", {}],
+    ["update_notes", notes],
+    ["preview_pose", preview],
+    ["update_plan", plan],
+  );
+  motionTurn.reasoningSummaries = ["Touch the red block"];
+  const { result, conversation, output } = await runLoop([
+    motionTurn,
     turn(["finish", { reason: "Touched the block" }]),
   ]);
   expect(result).toBe("Touched the block");
@@ -200,6 +208,34 @@ test("a plan, a motion and a finish run end to end and are reported to the stati
       "plan_update",
     ]),
   );
+  expect(station.eventsOfType("model_turn")[0]).toEqual({
+    type: "model_turn",
+    turn: {
+      tool_calls: [
+        { call_id: "call-stop-0", name: "stop", arguments: {} },
+        {
+          call_id: "call-update_notes-1",
+          name: "update_notes",
+          arguments: notes,
+        },
+        {
+          call_id: "call-preview_pose-2",
+          name: "preview_pose",
+          arguments: preview,
+        },
+        { call_id: "call-update_plan-3", name: "update_plan", arguments: plan },
+      ],
+      reasoning_summaries: ["Touch the red block"],
+      usage: {
+        model: "scripted",
+        input_tokens: 10,
+        cached_input_tokens: 4,
+        output_tokens: 5,
+        reasoning_tokens: 2,
+        cache_write_tokens: 0,
+      },
+    },
+  });
   expect(station.eventsOfType("run_finished")[0]).toMatchObject({
     result: "Touched the block",
     usage: {
@@ -210,13 +246,31 @@ test("a plan, a motion and a finish run end to end and are reported to the stati
       reasoning_tokens: 4,
     },
   });
-  expect(lines.at(-1)).toBe(
+  expect(output.at(-1)?.line).toBe(
     "2 model calls, 20 input (8 cached) and 10 output tokens",
   );
+  const commandRequest = station.requests.indexOf("POST /commands");
+  const previewRequest = station.requests.indexOf("POST /pose_previews");
+  expect(commandRequest).toBeGreaterThanOrEqual(0);
+  expect(previewRequest).toBeGreaterThanOrEqual(0);
+  const firstRobotRequest = Math.min(commandRequest, previewRequest);
+  expect(output[0]?.line).toMatch(/^update_notes /);
+  expect(output[1]?.line).toMatch(/^update_plan /);
+  for (const entry of output.slice(0, 2)) {
+    expect(entry.requestsSent).toBeLessThanOrEqual(firstRobotRequest);
+  }
 
   const first = resultsOf(conversation.received[0]);
-  expect(first.calls.map((call) => call.name)).toEqual(["stop", "update_plan"]);
+  expect(first.calls.map((call) => call.id)).toEqual([
+    "call-stop-0",
+    "call-update_notes-1",
+    "call-preview_pose-2",
+    "call-update_plan-3",
+  ]);
+  expect(first.errors).toEqual([false, false, false, false]);
+  expect(first.texts[2]).toContain("No reachable pose");
   expect(first.observation?.text).toContain("Current plan:\n1. [active] touch");
+  expect(first.observation?.text).toContain("- Red block");
   expect(Object.keys(first.observation?.cameras ?? {})).toEqual(["cam"]);
 
   const finished = station.finishedSpans();
@@ -229,6 +283,8 @@ test("a plan, a motion and a finish run end to end and are reported to the stati
       "observe",
       "chat anthropic",
       "execute_tool stop",
+      "execute_tool update_notes",
+      "execute_tool preview_pose",
       "execute_tool update_plan",
       "execute_tool finish",
       "invoke_agent hebbian",
@@ -343,6 +399,9 @@ test("a model that keeps replying without an outcome ends at an explicit turn li
 test("a refusal ends the run with the provider named", async () => {
   const { result } = await runLoop([{ kind: "refusal", usage: null }]);
   expect(result).toBe("The anthropic model declined the task");
+  expect(station.eventsOfType("model_turn")).toEqual([
+    { type: "model_turn", turn: { usage: null } },
+  ]);
   const span = station
     .finishedSpans()
     .find((candidate) => candidate.name === "chat anthropic");
@@ -440,7 +499,7 @@ test("cancellation returns the lease while a model request is still pending", as
   const conversation = new ScriptedConversation([]);
   conversation.nextTurn = () =>
     new Promise((resolve) => {
-      completeModelTurn = () => resolve(turn(["finish", { reason: "done" }]));
+      completeModelTurn = () => resolve(turn(["stop", {}]));
       abort.abort();
     });
   const running = drive(
@@ -463,7 +522,8 @@ test("cancellation returns the lease while a model request is still pending", as
     expect(result.cancelled).toBe(true);
     // INVARIANT: A late provider response must not execute any of its proposed tools.
     completeModelTurn();
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(station.eventsOfType("tool_result")).toEqual([]);
     expect(station.commands).toHaveLength(0);
   } finally {
     connection.close();

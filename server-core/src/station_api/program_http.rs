@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::Json;
@@ -6,11 +7,13 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use hebbian_contracts::{
     ActionSequenceRequest, ActionSequenceStartRequest, CompilationArtifact, CompilationOutcome,
-    RunCompiledProgramRequest,
+    ProgramContinuation, RunCompiledProgramRequest, SnapshotName,
 };
 
 use super::http_state::{SHUTTING_DOWN, StationHttpState};
-use super::programs::{COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramCompilation};
+use super::programs::{
+    COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramArtifact, ProgramCompilation,
+};
 use super::submissions::{
     ProgramSubmissionError, ProgramSubmissionRequest, RequestReservation, SubmissionCompletion,
     wait_for_outcome,
@@ -124,38 +127,21 @@ pub(crate) async fn execute_source(
     State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<ActionSequenceStartRequest>,
 ) -> Result<Json<String>, HttpFailure> {
-    let request_id = request.request_id.clone();
-    let instance_id = request.station_instance_id.clone();
-    submit_program(
-        station_state,
-        &request_id,
-        &instance_id,
-        ProgramSubmissionRequest::Source(request),
-    )
-    .await
+    submit_program(station_state, ProgramSubmissionRequest::Source(request)).await
 }
 
 pub(crate) async fn run_program(
     State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<RunCompiledProgramRequest>,
 ) -> Result<Json<String>, HttpFailure> {
-    let request_id = request.request_id.clone();
-    let instance_id = request.station_instance_id.clone();
-    submit_program(
-        station_state,
-        &request_id,
-        &instance_id,
-        ProgramSubmissionRequest::Compiled(request),
-    )
-    .await
+    submit_program(station_state, ProgramSubmissionRequest::Compiled(request)).await
 }
 
 async fn submit_program(
     station_state: Arc<StationHttpState>,
-    request_id: &str,
-    instance_id: &str,
     request: ProgramSubmissionRequest,
 ) -> Result<Json<String>, HttpFailure> {
+    let (instance_id, request_id) = request.submission_identity();
     let request_id = station_state.validate_submission_id(instance_id, request_id)?;
     let response = match station_state
         .program_submissions
@@ -204,7 +190,7 @@ async fn execute_submission(
     check_admission(&station_state)?;
     let links = station_links(&station_state)?.clone();
     let worker_station = Arc::clone(&station_state);
-    let (token, artifact, expected_revisions, continuation, capture_cameras) =
+    let prepared =
         tokio::task::spawn_blocking(move || prepare_submission(&worker_station, request))
             .await
             .map_err(|error| ProgramSubmissionError::Internal(error.to_string()))??;
@@ -218,19 +204,19 @@ async fn execute_submission(
                 owner,
                 &mut state.executions,
                 &links,
-                token,
-                artifact,
-                expected_revisions,
-                continuation,
+                prepared.lease_token,
+                prepared.artifact,
+                prepared.expected_revisions,
+                prepared.continuation,
             )
             .map_err(ProgramSubmissionError::ExecutionRefused)?;
-            if !capture_cameras.is_empty()
+            if !prepared.capture_cameras.is_empty()
                 && let Some(progress) = state.executions.progress_for(&id)
             {
                 station_state.sequence_images.start(
                     id.clone(),
                     progress,
-                    capture_cameras,
+                    prepared.capture_cameras,
                     station_state.sequence_cameras.get().cloned(),
                 );
             }
@@ -243,13 +229,13 @@ async fn execute_submission(
         .map_err(|_| ProgramSubmissionError::Unavailable("Station admission is unavailable"))?
 }
 
-type PreparedProgram = (
-    String,
-    Arc<super::programs::ProgramArtifact>,
-    std::collections::BTreeMap<String, u64>,
-    Option<hebbian_contracts::ProgramContinuation>,
-    Vec<hebbian_contracts::SnapshotName>,
-);
+struct PreparedProgram {
+    lease_token: String,
+    artifact: Arc<ProgramArtifact>,
+    expected_revisions: BTreeMap<String, u64>,
+    continuation: Option<ProgramContinuation>,
+    capture_cameras: Vec<SnapshotName>,
+}
 
 fn prepare_submission(
     station_state: &StationHttpState,
@@ -267,23 +253,23 @@ fn prepare_submission(
                 }
             };
             let expected_revisions = artifact.compilation.source.expected_revisions.clone();
-            (
-                request.lease_token,
+            PreparedProgram {
+                lease_token: request.lease_token,
                 artifact,
                 expected_revisions,
-                None,
-                request.capture_cameras,
-            )
+                continuation: None,
+                capture_cameras: request.capture_cameras,
+            }
         }
         ProgramSubmissionRequest::Compiled(request) => {
             let artifact = station_state.lookup_compilation(&request.compilation_id)?;
-            (
-                request.lease_token,
+            PreparedProgram {
+                lease_token: request.lease_token,
                 artifact,
-                request.expected_revisions,
-                request.continuation,
-                Vec::new(),
-            )
+                expected_revisions: request.expected_revisions,
+                continuation: request.continuation,
+                capture_cameras: Vec::new(),
+            }
         }
     })
 }

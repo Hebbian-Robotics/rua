@@ -14,8 +14,12 @@ type RequestOutcome<Reply, Failure> = Result<Reply, Failure>;
 
 // INVARIANT: Every started submission publishes an outcome, even if its worker exits early.
 pub(super) struct SubmissionCompletion<Reply, Failure> {
-    outcome: Option<watch::Sender<Option<RequestOutcome<Reply, Failure>>>>,
-    failure: Option<Failure>,
+    pending: Option<PendingCompletion<Reply, Failure>>,
+}
+
+struct PendingCompletion<Reply, Failure> {
+    outcome: watch::Sender<Option<RequestOutcome<Reply, Failure>>>,
+    failure: Failure,
 }
 
 impl<Reply, Failure> SubmissionCompletion<Reply, Failure> {
@@ -26,23 +30,22 @@ impl<Reply, Failure> SubmissionCompletion<Reply, Failure> {
     ) -> watch::Receiver<Option<RequestOutcome<Reply, Failure>>> {
         let response = outcome.subscribe();
         start(Self {
-            outcome: Some(outcome),
-            failure: Some(failure),
+            pending: Some(PendingCompletion { outcome, failure }),
         });
         response
     }
 
     pub(super) fn publish(mut self, result: RequestOutcome<Reply, Failure>) {
-        if let Some(outcome) = self.outcome.take() {
-            outcome.send_replace(Some(result));
+        if let Some(pending) = self.pending.take() {
+            pending.outcome.send_replace(Some(result));
         }
     }
 }
 
 impl<Reply, Failure> Drop for SubmissionCompletion<Reply, Failure> {
     fn drop(&mut self) {
-        if let (Some(outcome), Some(failure)) = (self.outcome.take(), self.failure.take()) {
-            outcome.send_replace(Some(Err(failure)));
+        if let Some(pending) = self.pending.take() {
+            pending.outcome.send_replace(Some(Err(pending.failure)));
         }
     }
 }
@@ -83,6 +86,15 @@ pub type LeaseSubmissions =
 pub(crate) enum ProgramSubmissionRequest {
     Source(hebbian_contracts::ActionSequenceStartRequest),
     Compiled(hebbian_contracts::RunCompiledProgramRequest),
+}
+
+impl ProgramSubmissionRequest {
+    pub(super) fn submission_identity(&self) -> (&str, &str) {
+        match self {
+            Self::Source(request) => (&request.station_instance_id, &request.request_id),
+            Self::Compiled(request) => (&request.station_instance_id, &request.request_id),
+        }
+    }
 }
 
 #[derive(Clone)]
