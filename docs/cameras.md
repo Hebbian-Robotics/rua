@@ -185,9 +185,8 @@ Normal viewer startup requires a model-provider key. Watching cameras uses no
 control lease.
 [Example viewer setup](../examples/typescript/viewer/README.md)
 
-Phone camera invites, remote feeds, and video recording are disabled in this mode.
-Remove `--enable-recording` or unset `HEBBIAN_ENABLE_RECORDING` before restarting
-if you enabled recording.
+Phone camera invites, remote feeds, and recording are disabled in this mode.
+To keep LiveKit streaming on a host without FFmpeg, use `rua serve --no-recording`.
 
 The viewer previews each camera by fetching its latest JPEG snapshot several
 times a second, from the same USB capture used for model snapshots. Custom

@@ -45,7 +45,7 @@ def station(
         environment.setenv("LIVEKIT_API_KEY", "test-key")
         environment.setenv("LIVEKIT_API_SECRET", "test-secret")
         with station_process(
-            server_binary, "--enable-recording", "--media-executable", str(recorder)
+            server_binary, "--media-executable", str(recorder), local_cameras_only=False
         ) as process:
             server = process.http_server()
             wait_until_station_live(server)

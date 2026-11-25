@@ -124,6 +124,7 @@ def station_process(
     *extra_arguments: str,
     profile: Path = MUJOCO_PROFILE,
     work_directory: Path | None = None,
+    local_cameras_only: bool = True,
 ) -> Generator[StationProcess]:
     with tempfile.TemporaryDirectory(prefix="hebbian-test-") as scratch:
         station = StationProcess(
@@ -131,6 +132,7 @@ def station_process(
                 "--profile",
                 str(profile),
                 "--no-physics-stand-in",
+                *(("--local-only-no-remote-cameras",) if local_cameras_only else ()),
                 "--http-address",
                 "127.0.0.1:0",
                 *(

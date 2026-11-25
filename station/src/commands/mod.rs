@@ -142,7 +142,7 @@ pub(crate) enum Command {
 /// `LIVEKIT_API_SECRET`; without them `LiveKit` cameras are unavailable.
 #[derive(clap::Args)]
 pub(crate) struct WebArguments {
-    /// Stream and capture snapshots from local cameras only. Disables remote cameras.
+    /// Stream and capture snapshots from local cameras only. Disables remote cameras and recording.
     ///
     /// Use this fallback when `LiveKit` is unavailable and you cannot run a local
     /// `livekit-server`. Open the RUA example viewer to watch local USB cameras. For
@@ -150,8 +150,7 @@ pub(crate) struct WebArguments {
     /// in the environment or `.env`.
     #[arg(
         long = "local-only-no-remote-cameras",
-        aliases = ["local-cameras-only", "local-cameras-only-no-stream-preview"],
-        conflicts_with = "enable_recording"
+        aliases = ["local-cameras-only", "local-cameras-only-no-stream-preview"]
     )]
     local_cameras_only: bool,
     /// Where `hebbian-rua-media` writes recordings, one directory per recording.
@@ -161,9 +160,9 @@ pub(crate) struct WebArguments {
         default_value = "recordings"
     )]
     recordings_directory: PathBuf,
-    /// Enable recording; requires `LiveKit` and `FFmpeg` (see docs/recording.md).
-    #[arg(long, env = "HEBBIAN_ENABLE_RECORDING", default_value_t = false)]
-    enable_recording: bool,
+    /// Keep `LiveKit` streaming active without requiring `FFmpeg` or accepting recording requests.
+    #[arg(long, env = "HEBBIAN_NO_RECORDING")]
+    no_recording: bool,
     /// The installed `hebbian-rua-media`, which records the cameras.
     /// Default: beside this executable, else on `PATH`, else `target/debug`.
     #[arg(long, env = "HEBBIAN_MEDIA")]
@@ -190,7 +189,7 @@ impl WebArguments {
         WebSettings {
             local_cameras_only: self.local_cameras_only,
             recordings_directory: self.recordings_directory,
-            enable_recording: self.enable_recording,
+            enable_recording: !self.local_cameras_only && !self.no_recording,
             media_address: None,
             camera_forwarding: if self.disable_camera_forwarding {
                 CameraForwarding::DirectOnly

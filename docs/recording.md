@@ -1,8 +1,8 @@
 # Recording
 
-Recording is optional and disabled by default. It captures station telemetry and
-LiveKit camera streams for playback. Camera streaming and robot control do not
-require recording to be enabled.
+The station makes recording available by default. Capture starts when a client
+requests a recording and saves station telemetry and LiveKit video for playback.
+Use `rua serve --no-recording` to keep LiveKit streaming without FFmpeg.
 
 RUA owns recording sessions, station telemetry and interruption status.
 [LiveKit Cameras](https://github.com/Hebbian-Robotics/livekit-cameras/tree/main/native/recorder)
@@ -70,10 +70,10 @@ terminal. For a service or container, install FFmpeg and configure `PATH` inside
 that environment too, then restart the station so it sees the change. Support
 and disable a connected arm before restarting its station.
 
-## Enable recording
+## Start a recording
 
-Configure [LiveKit cameras](cameras.md), then add `--enable-recording` to the
-station start command or set `HEBBIAN_ENABLE_RECORDING=true`.
+Configure [LiveKit cameras](cameras.md) and install FFmpeg before starting the
+station. Use `--local-only-no-remote-cameras` to run without LiveKit or recording.
 
 Call `await station.ensure_recording()` with the Python SDK to start or join
 a recording. The TypeScript equivalent is `createRecordingClient(url).ensure()`.
@@ -105,8 +105,9 @@ as incomplete when possible.
 Recording requests are rejected when recording is disabled. Previously saved
 recordings remain available for playback. The viewer reports recorder failures;
 camera streaming runs separately.
-If FFmpeg or LiveKit credentials are missing at startup, the station logs why
-recording is unavailable and continues serving control and cameras.
+Startup requires LiveKit credentials and a successful `ffmpeg -version` check
+by default. The station reports a startup error when a required dependency is
+missing.
 
 The recorder starts with a station snapshot and follows one ordered event stream
 for arm and agent telemetry. It resumes from the last archived event after a

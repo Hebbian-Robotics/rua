@@ -21,7 +21,7 @@ uv sync --project examples/python --locked
 Start the station from the repository root:
 
 ```sh
-uv run cargo run --locked -p hebbian-rua-server -- serve \
+uv run cargo run --locked -p hebbian-rua-server -- serve --local-only-no-remote-cameras \
   --profile "$PWD/examples/mujoco_sim/profiles/single.toml" \
   --work-directory /tmp/hebbian-station
 ```
@@ -73,7 +73,7 @@ onnx = "/absolute/path/to/policy.onnx"
 EOF
 
 ORT_DYLIB_PATH=/absolute/path/to/libonnxruntime.so \
-  uv run cargo run --locked -p hebbian-rua-server -- serve \
+  uv run cargo run --locked -p hebbian-rua-server -- serve --local-only-no-remote-cameras \
   --profile "$policy_directory/policy.toml" \
   --profile-directory "$PWD/profiles" \
   --work-directory /tmp/hebbian-station

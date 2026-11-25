@@ -203,18 +203,7 @@ pub fn mount(
         recordings::RecordingLibrary::new(settings.recordings_directory.clone());
     let credentials = if settings.enable_recording {
         match Credentials::from_environment() {
-            Ok(credentials) => match std::process::Command::new("ffmpeg")
-                .arg("-version")
-                .output()
-            {
-                Ok(output) if output.status.success() => Some(credentials),
-                _ => {
-                    tracing::warn!(
-                        "Recording disabled: install ffmpeg and put it on PATH (docs/recording.md)"
-                    );
-                    None
-                }
-            },
+            Ok(credentials) => Some(credentials),
             Err(error) => {
                 tracing::warn!(%error, "Recording disabled: LiveKit credentials are unavailable");
                 None

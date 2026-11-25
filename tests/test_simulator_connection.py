@@ -62,6 +62,7 @@ def test_simulator_and_station_state_use_the_selected_arm_in_a_reused_directory(
         (work / ".simulator-arms.json").write_text('["bench_a"]')
         station = StationProcess(
             [
+                "--local-only-no-remote-cameras",
                 "--profile",
                 str(profile),
                 "--arm",
