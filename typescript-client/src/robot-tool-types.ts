@@ -45,7 +45,7 @@ export type ToolCallWrapper = (
   run: (traceContext?: TraceContext) => Promise<RobotToolResult>,
 ) => Promise<RobotToolResult>;
 
-/** A camera sample retrieved during a model action sequence; timing is client-local. */
+/** A camera sample retrieved during a model action sequence; timing is measured at the station. */
 export interface SequenceImage {
   camera: string;
   jpeg: Uint8Array;

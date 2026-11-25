@@ -6,8 +6,8 @@ use hebbian_contracts::{
     MediaStatusReport, ObservationAnswer, ObservationRequest, OperationCompletion, OperationStatus,
     PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse,
     ReconnectRequest, RecordingStatus, RoomAccess, RunCompiledProgramRequest, RunEvent,
-    RunSpansRequest, ServerMessage, StationInstance, StationState, StreamGoalUpdateRequest,
-    TraceFile,
+    RunSpansRequest, SequenceCameraHistory, ServerMessage, StationInstance, StationState,
+    StreamGoalUpdateRequest, TraceFile,
 };
 use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
@@ -248,6 +248,15 @@ pub fn routes() -> Vec<Route> {
             "A running or recently finished action sequence by identifier.",
             None,
             Reply::Json(schema_of::<ActionSequenceRecord>),
+            true,
+        ),
+        route(
+            "get_sequence_camera_history",
+            "get",
+            "/action_sequence/{id}/images",
+            "Read the station's retained camera images for one execution.",
+            None,
+            Reply::Json(schema_of::<Option<SequenceCameraHistory>>),
             true,
         ),
         route(

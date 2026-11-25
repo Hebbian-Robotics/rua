@@ -19,20 +19,24 @@ images across calls.
 
 ## Images during action sequences
 
-The model tools can sample camera images during an action sequence. Capture
-runs alongside motion and is separate from recording. Slow or unavailable
-cameras can leave gaps, and retrieval times indicate when the SDK fetched the
-images.
+When a model tool starts an action sequence with cameras configured, the
+station samples its media companion alongside motion. Slow or unavailable
+cameras can leave gaps. Retrieval times are measured at the station.
+Capture is independent of recording and does not delay motion.
 
-Use the `observe` tool with `source: "last_sequence"` to retrieve the latest
-retained sequence images or `source: "current"` for a fresh observation.
-The SDK holds a bounded, temporary history in memory. Provider adapters attach
-labelled images to their tool replies. Application code can also use
-`sequence_images()` in Python and Rust or `sequenceImages()` in TypeScript.
-See capture and retention in
-[Python](../python-bindings/src/model_tools.rs),
-[TypeScript](../typescript-client/src/sequence-images.ts), and
-[Rust](../sdk/src/sequence_images.rs).
+Use `observe` with `source: "last_sequence"` for the latest captured sequence
+or `source: "current"` for a fresh observation. Provider adapters attach
+labelled images to their tool replies. The SDKs expose the last retrieved
+history through `sequence_images()` in Python and Rust or `sequenceImages()`
+in TypeScript.
+
+An HTTP client can opt in by including `capture_cameras` when starting
+`POST /action_sequence`. Read `GET /action_sequence/{id}/images` with the
+returned execution ID, including after reconnecting. The route returns
+`null` when capture is still pending or the history is unavailable.
+The station keeps up to eight active or completed histories. A completed
+history expires after five minutes or when evicted to make room. Each
+response includes up to eight images and 2 MiB of JPEG data.
 
 ## Full output
 

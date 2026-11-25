@@ -57,6 +57,19 @@ class ActionSequenceCompleted(BaseModel):
 type ExpectedRevisionsAdditionalProperty = Annotated[int, Field(ge=0)]
 
 
+class CaptureCamera(RootModel[str]):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+    root: Annotated[
+        str,
+        Field(
+            description="Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            pattern="^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+        ),
+    ]
+
+
 class ApproachDirection(RootModel[list[StrictFloat]]):
     model_config = ConfigDict(
         frozen=True,
@@ -1313,6 +1326,13 @@ class Sample(BaseModel):
     ]
 
 
+class SequenceImageBoundary(StrEnum):
+    start = "start"
+    motion = "motion"
+    step = "step"
+    end = "end"
+
+
 class ActionSequenceAccepted(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1943,6 +1963,23 @@ class RunMemory(BaseModel):
     task: str | None = None
 
 
+class SequenceCameraImage(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    boundary: SequenceImageBoundary
+    camera: Annotated[
+        str,
+        Field(
+            description="Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            pattern="^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+        ),
+    ]
+    elapsed_seconds: StrictFloat
+    frame: ObservationFrame
+
+
 class SpanStatus(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2420,6 +2457,22 @@ class RunSpansRequest(BaseModel):
         frozen=True,
     )
     spans: list[TraceSpan]
+
+
+class SequenceCameraHistory(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    expires_in_seconds: Annotated[
+        StrictFloat,
+        Field(
+            description="Remaining retention at the time the station prepared this response."
+        ),
+    ]
+    images: list[SequenceCameraImage]
+    missed_samples: Annotated[int, Field(ge=0)]
+    truncated: bool
 
 
 class LeaseReply(BaseModel):
@@ -3011,6 +3064,12 @@ class ActionSequenceStartRequest(BaseModel):
         frozen=True,
     )
     action_sequence: ActionSequenceRequest
+    capture_cameras: Annotated[
+        list[CaptureCamera] | None,
+        Field(
+            description="Best-effort image capture for this execution. Empty disables capture."
+        ),
+    ] = None
     lease_token: str
     request_id: str
     station_instance_id: str

@@ -181,6 +181,49 @@ pub struct ActionSequenceStartRequest {
     pub station_instance_id: String,
     pub lease_token: String,
     pub action_sequence: ActionSequenceRequest,
+    /// Best-effort image capture for this execution. Empty disables capture.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capture_cameras: Vec<crate::SnapshotName>,
+}
+
+/// Why a best-effort sequence image was requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SequenceImageBoundary {
+    Start,
+    Motion,
+    Step,
+    End,
+}
+
+impl std::fmt::Display for SequenceImageBoundary {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Start => "start",
+            Self::Motion => "motion",
+            Self::Step => "step",
+            Self::End => "end",
+        })
+    }
+}
+
+/// One image requested during an action sequence.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SequenceCameraImage {
+    pub camera: crate::SnapshotName,
+    pub frame: ObservationFrame,
+    pub elapsed_seconds: f64,
+    pub boundary: SequenceImageBoundary,
+}
+
+/// Selected evidence for one execution. Image timing is measured at the station.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SequenceCameraHistory {
+    /// Remaining retention at the time the station prepared this response.
+    pub expires_in_seconds: f64,
+    pub images: Vec<SequenceCameraImage>,
+    pub missed_samples: usize,
+    pub truncated: bool,
 }
 
 /// Submit a station-owned compilation under current execution authority.

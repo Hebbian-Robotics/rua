@@ -46,6 +46,18 @@ export function createStationApi(
         jsonRequestInit("POST", undefined, signal),
       );
     },
+    /** Read the station's retained camera images for one execution. */
+    async getSequenceCameraHistory(id: string) {
+      return apiSchemas.shape.SequenceCameraHistory.nullable().parse(
+        await stationRequest(
+          new URL(
+            `/action_sequence/${encodeURIComponent(id)}/images`,
+            stationUrl,
+          ),
+          jsonRequestInit("GET", undefined, signal),
+        ),
+      );
+    },
     /** Stop one arm while holding the lease. */
     async stopLeasedArmHttp(arm: string, body: ApiSchemas["LeaseToken"]) {
       await stationFetch(

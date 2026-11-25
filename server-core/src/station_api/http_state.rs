@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use axum::http::StatusCode;
 use hebbian_contracts::{
-    ActionSequenceRequest, ArmRecord, CompilationTarget, RunEvent, ServerMessage, TraceSpan,
+    ActionSequenceRequest, CompilationTarget, RunEvent, ServerMessage, TraceSpan,
 };
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -32,6 +32,8 @@ pub(super) struct SnapshotSubscription {
 
 pub(super) struct StationHttpState {
     shutdown_requested: Arc<AtomicBool>,
+    pub(super) sequence_cameras: OnceLock<super::SequenceCameraSource>,
+    pub(super) sequence_images: super::sequence_images::SequenceImages,
     pub(super) program_submissions: ProgramSubmissions,
     programs: ProgramStore,
     compilation_targets: OnceLock<Result<BTreeMap<String, CompilationTarget>, String>>,
@@ -52,8 +54,12 @@ impl StationHttpState {
         telemetry: Arc<dyn RunTelemetry>,
     ) -> Self {
         let events = Arc::new(EventJournal::default());
+        let sequence_images = super::sequence_images::SequenceImages::default();
+        sequence_images.start_cleanup(runtime);
         Self {
             shutdown_requested,
+            sequence_cameras: OnceLock::new(),
+            sequence_images,
             program_submissions: ProgramSubmissions::default(),
             programs: ProgramStore::default(),
             compilation_targets: OnceLock::new(),
@@ -65,6 +71,13 @@ impl StationHttpState {
             lease_submissions: LeaseSubmissions::default(),
             events,
         }
+    }
+
+    pub(super) async fn state_reflecting(
+        &self,
+        records: &[hebbian_contracts::ArmRecord],
+    ) -> Option<u64> {
+        self.events.state_reflecting(records).await
     }
 
     pub(super) fn is_shutting_down(&self) -> bool {
@@ -185,10 +198,6 @@ impl StationHttpState {
 
     pub(super) fn subscribe_after(&self, sequence: u64) -> EventSubscription {
         self.events.subscribe_after(sequence)
-    }
-
-    pub(super) async fn state_sequence_reflecting(&self, records: &[ArmRecord]) -> Option<u64> {
-        self.events.state_reflecting(records).await
     }
 
     pub(super) fn record_run_event(&self, event: RunEvent) {

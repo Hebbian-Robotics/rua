@@ -35,7 +35,7 @@ function createCommand(): Command {
     )
     .option(
       "--media-server <url>",
-      "Direct camera service. Defaults to HEBBIAN_MEDIA_SERVER or the station URL.",
+      "Deprecated. Camera capture uses the station’s configured media companion.",
     )
     .option("--camera <names>", "Comma-separated cameras to show the model.")
     .option(

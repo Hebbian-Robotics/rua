@@ -141,10 +141,25 @@ fn camera_access() -> Cameras {
 pub struct Mounted {
     pub recording: RecordingManager,
     pub arms: ServedArms,
+    camera_proxy: Option<Arc<crate::camera_proxy::CameraProxy>>,
     media_connect_address: Option<SocketAddr>,
 }
 
 impl Mounted {
+    pub fn attach_sequence_cameras(&self, server: &hebbian_rua_core::station_api::HttpServer) {
+        if let Some(proxy) = &self.camera_proxy {
+            let proxy = Arc::clone(proxy);
+            server.attach_sequence_cameras(Arc::new(move |name, maximum_bytes| {
+                let proxy = Arc::clone(&proxy);
+                Box::pin(async move {
+                    proxy
+                        .capture_frame(&name, std::time::Duration::from_millis(500), maximum_bytes)
+                        .await
+                })
+            }));
+        }
+    }
+
     pub fn attach_arms(
         &self,
         runtime: &tokio::runtime::Handle,
@@ -265,7 +280,7 @@ pub fn mount(
         proxy.clone(),
     ));
     let router = match settings.camera_forwarding {
-        CameraForwarding::Enabled => router.merge(crate::camera_proxy::router(proxy)),
+        CameraForwarding::Enabled => router.merge(crate::camera_proxy::router(proxy.clone())),
         CameraForwarding::DirectOnly => router,
     };
     (
@@ -273,6 +288,7 @@ pub fn mount(
         Mounted {
             recording: manager,
             arms,
+            camera_proxy: proxy,
             media_connect_address,
         },
     )
