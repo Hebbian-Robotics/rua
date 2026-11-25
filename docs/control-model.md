@@ -100,10 +100,12 @@ use two steps so the arm can settle there. A direct move needs only `goal`.
 
 Use separate goal steps for a sequence of stops. The station prepares each
 step from current feedback, so an earlier step can complete before a later
-step is refused. Move records report the admitted `destination_joints` and,
-when available, `destination_position` and `destination_quaternion`. A
-policy reach records its requested `goal_pose`. Model-facing `goal_status`
-indicates whether the move reached its goal or was limited or interrupted.
+step is refused. Station move records report the admitted `destination_joints`
+and, when available, `destination_position` and `destination_quaternion`.
+The model view reports `destination_joints_degrees` and
+`destination_position_mm`. A policy reach records its requested `goal_pose`.
+Model-facing `goal_status` indicates whether the move reached its goal or was
+limited or interrupted.
 
 Execution depends on the lease and current interlocks. If a disconnected client
 stops renewing the lease, expiry stops the arms. Lease handoff, revocation and
@@ -117,6 +119,9 @@ by one IK-controlled arm. For a continuous move, also set `at_seconds` beside
 each waypoint's `at`. These are times from the start of the same step. They
 must be finite and non-negative and increase strictly from waypoint to goal.
 Omit all times for the default motion.
+
+This example uses the single-arm model tool. For a JSON file you can pass to
+`hebbian-rua action-sequence run`, see the [CLI example](../cli/README.md#timed-action-sequences).
 
 ```json
 {
@@ -143,10 +148,17 @@ joint travel. Timing is available for planned moves in single-arm steps.
 
 ### Per-move trajectory caps
 
-Single-arm IK moves accept optional `max_joint_speed` (rad/s),
-`max_joint_acceleration` (rad/s²), and `max_joint_jerk` (rad/s³).
+Single-arm IK moves accept optional joint speed, acceleration, and jerk caps.
 In an action sequence, put these fields on the arm's move alongside `goal`
-and `waypoints`. Omitted caps use the arm profile. The station clamps a speed
+and `waypoints`.
+
+| Cap | Model tools and default CLI JSON | Station JSON (`--input-station`) |
+| --- | --- | --- |
+| Speed | `max_joint_speed_degrees_per_second` | `max_joint_speed` (rad/s) |
+| Acceleration | `max_joint_acceleration_degrees_per_second_squared` | `max_joint_acceleration` (rad/s²) |
+| Jerk | `max_joint_jerk_degrees_per_second_cubed` | `max_joint_jerk` (rad/s³) |
+
+Omitted caps use the arm profile. The station clamps a speed
 request to the profile ceiling and refuses acceleration or jerk above the
 profile ceiling. Pose previews and completed move records report
 `effective_motion_limits`. The acceleration and jerk overrides apply to planned
@@ -154,8 +166,9 @@ single-arm moves.
 
 Use `--speed-degrees-per-second`, `--acceleration-degrees-per-second-squared`,
 and `--jerk-degrees-per-second-cubed` with the CLI's `move-joints`, `move-pose`,
-or `preview-pose` commands. The CLI also accepts the corresponding flags
-named in radians. In the viewer, open **Settings →
+or `preview-pose` commands. For radians, use `--speed-radians-per-second`,
+`--acceleration-radians-per-second-squared`, and
+`--jerk-radians-per-second-cubed`. In the viewer, open **Settings →
 Advanced motion limits**. The browser saves these caps for planned IK moves
 and the agent runs it starts. Manual dragging in Follow mode also uses the
 saved speed cap, or the arm profile default when the field is blank.

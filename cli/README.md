@@ -59,15 +59,40 @@ fields `position_mm`, `joints_degrees`, and
 `preview-poses <arm> <file|->` (a JSON array of poses, one answer each, in order);
 `approve-recovery <arm>`; `--expected-revision ARM=REV` refuses a command as stale once the
 arm's revision has moved on; `--take-lease` takes the lease from its holder (operator only);
-`action-sequence run <file|->` / `cancel <id>` / `get <id>` (JSON `ActionSequenceRequest`);
+`action-sequence run <file|->` (model-unit JSON by default, native station
+`ActionSequenceRequest` with `--input-station`) / `cancel <id>` / `get <id>`;
 `lease status|revoke`; `record start|stop|status`; `phone-invite <label>` (prints the
 invite URL, or the full response with `--raw`); `camera list` (name and availability) / `camera snapshot <name> --out <path>` (an unavailable
 camera fails with `camera_unavailable`, naming the cameras known and the station's `last_error`);
 `traces list` / `traces pull [names...] --output <dir>` (files are written exactly as
 served, gzip-compressed).
 
-For a [timed single-arm sequence](../docs/control-model.md#optional-move-timing),
-`at_seconds` is in seconds from the start of the step in both JSON formats.
+## Timed action sequences
+
+Save this model-unit example as `steps.json` and run
+`hebbian-rua action-sequence run steps.json`. Replace `arm` with the station's
+arm name if needed.
+
+```json
+{
+  "steps": [{
+    "arms": {
+      "arm": {
+        "waypoints": [{
+          "at": {"joints_degrees": [5, -30, 30, 0, 0]},
+          "at_seconds": 1
+        }],
+        "goal": {"joints_degrees": [10, -30, 30, 0, 0]},
+        "at_seconds": 3
+      }
+    }
+  }]
+}
+```
+
+Both CLI input formats use the `arms` map and measure `at_seconds` from the
+start of the step. See [optional move timing](../docs/control-model.md#optional-move-timing)
+for how the station applies those times.
 
 ## Set up live cameras
 

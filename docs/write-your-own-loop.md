@@ -190,6 +190,8 @@ The SDK’s default model tools are `action_sequence`, `preview_pose`, `stop`
 and `observe`. The single-arm sequence scope supports pose, joint and gripper
 actions. Reference agents expose pose and gripper actions and add application
 tools such as `finish`.
+See [optional move timing](control-model.md#optional-move-timing) to request a
+minimum duration for a planned single-arm move.
 
 Configure available actions in code; the same configuration constrains both the
 schema and argument parsing:

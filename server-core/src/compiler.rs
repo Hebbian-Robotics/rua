@@ -198,6 +198,9 @@ fn check_support(
             goal,
             gripper_opening,
             waypoints,
+            minimum_duration_seconds,
+            max_joint_acceleration,
+            max_joint_jerk,
             ..
         } => {
             for goal in waypoints
@@ -234,6 +237,18 @@ fn check_support(
                         )
                         .map_err(|_| "Invalid pose orientation")?;
                     }
+                }
+            }
+            // WHY: Station targets expose joint moves only when they use the trajectory planner.
+            if !target.supports_joints {
+                if minimum_duration_seconds.is_some() {
+                    return Err("Timing requires a planned move");
+                }
+                if !waypoints.is_empty() {
+                    return Err("Continuous moves require a planned move");
+                }
+                if max_joint_acceleration.is_some() || max_joint_jerk.is_some() {
+                    return Err("Per-move acceleration and jerk require an IK move");
                 }
             }
             if (gripper_opening.is_some()
@@ -448,6 +463,81 @@ mod tests {
                 .detail
                 .contains("one planned arm")
         );
+    }
+
+    #[test]
+    fn a_pose_only_arm_rejects_planned_move_options_during_compilation() {
+        let targets = BTreeMap::from([(
+            "policy".into(),
+            CompilationTarget {
+                configuration_identity: "policy-config".into(),
+                joint_count: 5,
+                jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
+                supports_joints: false,
+                supports_pose: true,
+                has_gripper: true,
+            },
+        )]);
+        let goal = ActionSequenceGoal::Pose {
+            position: [0.2, 0.0, 0.1],
+            orientation: hebbian_contracts::PoseOrientation::Quaternion {
+                quaternion: [0.0, 0.0, 0.0, 1.0],
+            },
+            max_joint_speed: None,
+        };
+        let request =
+            |at_seconds, waypoints, max_joint_acceleration, max_joint_jerk| ActionSequenceRequest {
+                steps: vec![hebbian_contracts::ActionSequenceStep::single(
+                    "policy",
+                    ActionSequenceArmAction::Move {
+                        goal: goal.clone(),
+                        waypoints,
+                        at_seconds,
+                        gripper_opening: None,
+                        max_joint_speed: None,
+                        max_joint_acceleration,
+                        max_joint_jerk,
+                    },
+                )],
+                expected_revisions: BTreeMap::new(),
+            };
+        let mut compiler = RobotUseCompiler::default();
+        let untimed = request(None, vec![], None, None);
+        compiler.compile(&untimed, &targets).unwrap();
+        let waypoint = ActionSequenceWaypoint {
+            at: CompiledGoal::Pose {
+                position: [0.15, 0.0, 0.1],
+                orientation: hebbian_contracts::PoseOrientation::Quaternion {
+                    quaternion: [0.0, 0.0, 0.0, 1.0],
+                },
+            },
+            at_seconds: None,
+            gripper_opening: None,
+        };
+        for (mut unsupported, detail) in [
+            (
+                request(Some(1.0), vec![], None, None),
+                "Timing requires a planned move",
+            ),
+            (
+                request(None, vec![waypoint], None, None),
+                "Continuous moves require a planned move",
+            ),
+            (
+                request(None, vec![], Some(2.0), None),
+                "Per-move acceleration and jerk require an IK move",
+            ),
+            (
+                request(None, vec![], None, Some(2.0)),
+                "Per-move acceleration and jerk require an IK move",
+            ),
+        ] {
+            unsupported.steps.insert(0, untimed.steps[0].clone());
+            let diagnostic = compiler.compile(&unsupported, &targets).unwrap_err();
+            assert_eq!(diagnostic.step, Some(1));
+            assert_eq!(diagnostic.arm.as_deref(), Some("policy"));
+            assert_eq!(diagnostic.detail, detail);
+        }
     }
 
     #[test]
