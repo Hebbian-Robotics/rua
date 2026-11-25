@@ -1,7 +1,7 @@
 # Get started with an SO-101
 
 Use the browser viewer to verify manual control and run your first agent.
-Use the [v0.1.6 checkout](https://github.com/Hebbian-Robotics/rua/tree/v0.1.6)
+Use the [v0.1.7 checkout](https://github.com/Hebbian-Robotics/rua/tree/v0.1.7)
 to run these steps with the published station and SDKs. The development
 checkout's viewer uses the current station schema. For development, follow
 [Install from source](install-from-source.md).
@@ -22,7 +22,7 @@ arms, supervise the first motions, and keep a physical power cutoff accessible.
 Before starting the viewer, [add your LiveKit credentials to the station’s `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
 
 ```sh
-uvx --from hebbian-rua==0.1.6 rua serve --manual-control
+uvx --from hebbian-rua==0.1.7 rua serve
 ```
 
 Set at least one model-provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
