@@ -34,7 +34,9 @@ Run it with `pnpm exec tsx --conditions=development read-state.ts`.
 
 ## Run an action sequence
 
-Start the station and enable the arm before running this example. See the [getting started guide](../docs/getting-started.md).
+Start a station from this checkout and enable the arm before running this
+example. If you use the viewer, [enable the arm in Agent mode](../docs/getting-started.md#enable-the-arm-in-agent-mode)
+so the example can acquire its own lease.
 
 ```ts
 import { createStationConnection } from "hebbian-rua";
@@ -148,12 +150,13 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
   to resolve once the station accepts the command. Pass `{ signal }` to request cancellation
   of that operation on abort. Pass `operationId` from `newOperationId()` to keep
   a handle for `getOperation`, `lease.updateStreamGoal` or `lease.cancelOperation`.
-- The lease's `runCommand` and `runGroup` resolve once the command's record finished and the
-  first state frame reflects it (no arm still has it active, and an arm reports it as
-  its last command or a sampling arm was sampled at or after completion), so
-  `state()` right after shows the arm at rest. The wait survives a reconnect for
-  30 s. An aborted `AbortSignal` requests cancellation of that operation in
-  the background. Observe the arm to confirm its state before continuing.
+- By default, the lease's `runCommand` and `runGroup` wait for the station's
+  terminal records. While the event stream is connected, they also wait for
+  the station's completion event sequence to reach the state cache. If the
+  stream disconnects, they can return the terminal records before the cache
+  reflects the result. An aborted `AbortSignal` requests cancellation of that
+  operation in the background. See
+  [SDK recovery behavior](../docs/reference.md#sdk-recovery-behavior).
 - `waitForState(predicate)` returns the first state frame that satisfies it, checking
   the latest first; `StationTimeoutError` after 30 s. `state()` waits up to 10 s for
   the first frame.

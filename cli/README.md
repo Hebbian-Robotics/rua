@@ -5,7 +5,7 @@ Coding agents can chain these commands in the shell. Each invocation opens a
 connection and runs one command. Commands print JSON to stdout, with plain-text
 output for the phone invite URL.
 
-The `hebbian-rua` Python package provides the command alongside `rua`. Run it
+The published `hebbian-rua` wheel provides the command alongside `rua`. Run it
 from the agent project that serves the station, so the CLI and station come from
 the same locked version. The motion flags below describe the CLI in this
 checkout. For a published wheel, see `--help` or the README at its release tag.
@@ -21,7 +21,7 @@ uv run hebbian-rua preview-pose arm --position-mm 200,0,100
 ```
 
 Without a project, pin the station’s version: `uvx hebbian-rua==<station version> state`.
-From a source checkout, `cargo run -p hebbian-rua-cli -- state` builds and runs
+From a source checkout, `cargo run --locked -p hebbian-rua-cli -- state` builds and runs
 the current source, and `cargo install --locked --path cli` installs it. The
 examples below omit the `uv run` prefix.
 

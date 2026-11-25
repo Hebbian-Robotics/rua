@@ -103,8 +103,8 @@ and per-joint tolerances observed on one calibrated arm resting on its table.
 The wrist-roll tolerance is intentionally broad because wrist rotation does not
 determine whether the arm is supported. Compare the 3D model and physical arm
 and validate this reference on each assembly; override it in the local profile
-if needed. The Rust and Python profile `RestReference.matches` methods compare
-measured joint angles with those tolerances. A matching pose does not establish
+if needed. The profile loader's `RestReference::matches` compares measured
+joint angles with those tolerances. A matching pose does not establish
 physical support, command a move, or change the controller's runtime rest pose
 or shutdown behavior.
 
@@ -140,12 +140,17 @@ profiles inherit a 0.5-second timeout by default.
 
 ## Controls
 
-From a terminal, `uv run hebbian-rua state`, `enable <arm>` and `stop <arm>` (see [cli/README.md](../cli/README.md)) read and command the same arms; while the viewer holds the lease, motion commands exit 4 with the holder in the error.
+From the checkout root, use `cargo run --locked -p hebbian-rua-cli -- state`
+to read the same arms. Replace `state` with `enable <arm>` or `stop <arm>`
+for power or stop commands. While the viewer holds the lease, motion commands
+exit 4 and report the holder. See the [CLI guide](../cli/README.md) for the
+command installed by the release wheel.
 
 Choose **Manual** while the arm is disabled, then select and enable the arm.
 Enabling acquires the manual lease. If another client holds control, it must
 release control first. Disabling the last enabled arm releases the lease and
-clears the goal and preview. You can then switch to **Agent** and start a task.
+clears the goal and preview. To continue in Agent mode, follow the
+[viewer handoff](getting-started.md#enable-the-arm-in-agent-mode).
 If the viewer loses its lease while the arm is still enabled, the goal clears.
 Use **Reconnect manual control** when control is available again.
 The station checks [interlocks and command requirements](control-model.md).
@@ -153,10 +158,10 @@ The station checks [interlocks and command requirements](control-model.md).
 - **Enable arm** saves and holds the measured starting pose. **Stop and hold**
   stops motion and is available even when another client holds the control lease.
 - **Rehome and disable** returns the arm to the saved pose before removing torque.
-  Use it when the saved pose lets the arm rest securely. **Rehome** returns to
-  the saved pose and keeps holding. If a saved joint angle is past a limit
-  by at most the profile's recovery tolerance, rehoming uses the limit for
-  that joint. A saved angle beyond that tolerance is refused.
+  Use it when the saved pose lets the arm rest securely and the path is clear.
+  **Rehome** returns to the saved pose and keeps holding. If a saved joint angle
+  is past a limit by at most the profile's recovery tolerance, rehoming uses
+  the limit for that joint. A saved angle beyond that tolerance is refused.
 - **Disable in place…** is below the main arm controls and removes torque at
   the current pose. Physically support the arm before confirming.
 - **Use current position** copies the measured tool position and gripper
