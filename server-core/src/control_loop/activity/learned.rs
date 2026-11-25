@@ -1,37 +1,19 @@
 // INVARIANT: Learned-policy adaptation produces references and advances command state; hardware writes and setpoint guards remain in the common loop.
 
-use super::activity::{Activity, Loop};
-use super::trajectory::MotionOutput;
+use super::{Activity, Loop, MotionOutput, MotionPlan, PolicyRequest, PolicySession};
 use crate::arm::ReachGoal;
 use crate::limits::Trip;
 use crate::plant::Feedback;
 use crate::policy::{ActiveReach, ReachStatus};
 use anyhow::Context;
 use hebbian_contracts::CommandOutcome;
-use nalgebra::Isometry3;
 
-#[derive(Clone, Copy)]
-pub(super) enum PolicySession {
-    Continue,
-    Reset,
-}
-
-pub(super) struct PolicyRequest {
-    pub(super) session: PolicySession,
-    pub(super) target: Isometry3<f64>,
-}
-
-pub(super) enum MotionPlan {
-    ReferenceReady(MotionOutput),
-    Infer(PolicyRequest),
-}
-
-pub(super) fn policy_failure(error: &anyhow::Error) -> Trip {
+pub(in crate::control_loop) fn policy_failure(error: &anyhow::Error) -> Trip {
     Trip::Policy(format!("Policy failed: {error:#}"))
 }
 
 impl Loop<'_> {
-    pub(super) fn start_reach(&mut self, goal: ReachGoal) -> anyhow::Result<()> {
+    pub(in crate::control_loop) fn start_reach(&mut self, goal: ReachGoal) -> anyhow::Result<()> {
         let runtime = self
             .policy
             .as_mut()
@@ -91,7 +73,10 @@ impl Loop<'_> {
         }))
     }
 
-    pub(super) fn adopt_policy_target(&mut self, joint_goal: &[f64]) -> MotionOutput {
+    pub(in crate::control_loop) fn adopt_policy_target(
+        &mut self,
+        joint_goal: &[f64],
+    ) -> MotionOutput {
         if let Activity::Stream(stream) = &mut self.activity {
             stream.policy_session = PolicySession::Continue;
         }

@@ -30,6 +30,15 @@ pub struct PoseGoalSettings {
     pub orientation_tolerance_radians: f64,
 }
 
+impl From<&crate::config::PolicyConfig> for PoseGoalSettings {
+    fn from(policy: &crate::config::PolicyConfig) -> Self {
+        Self {
+            position_tolerance_meters: policy.position_tolerance_meters,
+            orientation_tolerance_radians: policy.orientation_tolerance_radians,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Limits {
     pub joint_bounds: hebbian_robot_geometry::joint_limits::JointRecoveryLimits,
@@ -39,6 +48,23 @@ pub struct Limits {
     pub default_joint_speed: f64,
     pub max_joint_speed: f64,
     pub trajectory_limits: hebbian_contracts::TrajectoryLimits,
+}
+
+impl From<&crate::config::ControllerConfig> for Limits {
+    fn from(config: &crate::config::ControllerConfig) -> Self {
+        Self {
+            joint_bounds: config.recovery_limits().clone(),
+            gripper: config
+                .gripper
+                .as_ref()
+                .map(|limits| (limits.minimum_radians(), limits.maximum_radians())),
+            pose_goals: config.policy.as_ref().map(PoseGoalSettings::from),
+            jaw_closing_axis: config.jaw_closing_axis,
+            default_joint_speed: config.default_joint_speed,
+            max_joint_speed: config.max_joint_speed,
+            trajectory_limits: config.motion.trajectory_limits(),
+        }
+    }
 }
 
 // CONSTRAINT: Use wall time for records and monotonic time for deadlines; callers supply both.
@@ -54,45 +80,6 @@ impl Now {
         Self {
             unix_nano: hebbian_contracts::UnixNanos::now(),
             instant: Instant::now(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Job {
-    Enable {
-        command_id: hebbian_contracts::CommandId,
-    },
-    ApproveRecovery {
-        command_id: hebbian_contracts::CommandId,
-    },
-    Release {
-        command_id: hebbian_contracts::CommandId,
-    },
-    Move {
-        command_id: hebbian_contracts::CommandId,
-        plan: super::AdmittedPlan,
-        group: Option<GroupMembership>,
-    },
-    Reach {
-        command_id: hebbian_contracts::CommandId,
-        goal: ReachGoal,
-    },
-    Stream {
-        command_id: hebbian_contracts::CommandId,
-    },
-}
-
-impl Job {
-    #[must_use]
-    pub(crate) fn command_id(&self) -> &hebbian_contracts::CommandId {
-        match self {
-            Self::Enable { command_id }
-            | Self::ApproveRecovery { command_id }
-            | Self::Release { command_id }
-            | Self::Move { command_id, .. }
-            | Self::Reach { command_id, .. }
-            | Self::Stream { command_id } => command_id,
         }
     }
 }
@@ -205,21 +192,6 @@ impl PowerState {
             Self::Reconnected => ArmMode::Reconnected,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) enum CommandState {
-    Idle,
-    Queued(Job),
-    // INVARIANT: The previous motion has been superseded, but the loop still owns it.
-    // The replacement can be cancelled before the loop lets go.
-    Superseding(Option<Job>),
-    Starting(hebbian_contracts::CommandId),
-    Executing {
-        command_id: hebbian_contracts::CommandId,
-        settling: bool,
-    },
-    Stopping(hebbian_contracts::CommandId),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

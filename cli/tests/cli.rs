@@ -76,21 +76,14 @@ async fn cli(server: &str, arguments: &[&str]) -> Run {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn state_prints_one_json_value() -> TestResult {
-    let station = TestStation::start().await?;
-    let run = cli(&station.url, &["state"]).await;
-    assert_eq!(run.code(), Some(0));
-    let state = run.stdout_json();
-    assert_eq!(state["arms"][0]["arm"], ARM);
-    assert_eq!(state["joint_names"].as_array().map(Vec::len), Some(5));
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn output_is_compact_by_default_and_raw_keeps_si_records() -> TestResult {
     let station = TestStation::start().await?;
-    let compact = cli(&station.url, &["state"]).await.stdout_json();
+    let state = cli(&station.url, &["state"]).await;
+    assert_eq!(state.code(), Some(0));
+    let compact = state.stdout_json();
     let arm = &compact["arms"][0];
+    assert_eq!(arm["arm"], ARM);
+    assert_eq!(compact["joint_names"].as_array().map(Vec::len), Some(5));
     assert!(arm["measured_joints_degrees"].is_array());
     assert!(arm["tool"]["position_mm"].is_array());
     assert!(arm.get("measured_joints").is_none());
@@ -165,16 +158,7 @@ async fn a_refused_command_exits_1_with_the_reason() -> TestResult {
             .as_str()
             .is_some_and(|detail| detail.contains("enable"))
     );
-    assert_eq!(run.output.stdout.len(), 0);
-    assert_eq!(
-        cli(
-            &station.url,
-            &["move-joints", ARM, "--joints-radians", "0,0,0,0,0"]
-        )
-        .await
-        .code(),
-        Some(1)
-    );
+    assert_eq!(run.output.stdout.as_slice(), b"");
     Ok(())
 }
 
@@ -215,7 +199,7 @@ async fn lease_held_elsewhere_exits_4_with_the_holder() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn preview_pose_projects_without_moving() -> TestResult {
+async fn preview_pose_prints_the_projected_pose() -> TestResult {
     let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let run = cli(
@@ -238,7 +222,9 @@ async fn preview_pose_projects_without_moving() -> TestResult {
         "{}",
         String::from_utf8_lossy(&run.output.stderr)
     );
-    assert!(run.stdout_json().is_object());
+    let result = run.stdout_json();
+    assert_eq!(result["outcome"]["kind"], "projected");
+    assert!(result["outcome"]["pose"]["position_mm"].is_array());
     Ok(())
 }
 

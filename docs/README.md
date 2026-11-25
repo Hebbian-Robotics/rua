@@ -53,6 +53,5 @@ reports what happened for the model’s next turn.
   engine, browser UI, native setup format and its RUA adapter boundary.
 - [Control invariants](control-invariants.md): motion admission, geometry guards and failure handling.
 - [Contributing](../CONTRIBUTING.md): contributor workflow, validation and style.
-- [Development reference](development.md): validation details and generated contracts.
-- [Integration tests](development.md#validation-details): test selection and setup.
+- [Development reference](development.md) covers test selection, setup and generated contracts.
 - [Release preparation](releasing.md): distribution and checks before publishing.

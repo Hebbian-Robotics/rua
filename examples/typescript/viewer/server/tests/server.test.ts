@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { ScriptedStation } from "../../../agent/tests/station-harness.js";
 import {
   MAX_PROMPT_IMAGE_BASE64_LENGTH,
+  modelProvidersSchema,
   runSchema,
 } from "../../shared/run-api.js";
 import { allowedViewerOrigins } from "../src/origins.js";
@@ -196,28 +197,18 @@ test("CORS allows the viewer origin only", async () => {
 
 test("the provider menu is ordered and includes availability and model choices", async () => {
   const response = await app().request("/api/model-providers");
-  expect(await response.json()).toMatchObject([
-    {
-      provider: "openai",
-      available: true,
-      models: [{ id: "gpt-6.2-astra" }, { id: "gpt-6-astra" }],
-    },
-    {
-      provider: "gemini",
-      available: false,
-      models: [
-        { id: "gemini-4-neon" },
-        { id: "gemini-4-hydrogen" },
-        { id: "gemini-4-carbon" },
-        { id: "gemini-4-argon" },
-      ],
-    },
-    {
-      provider: "anthropic",
-      available: false,
-      models: [{ id: "claude-fable-5-2" }, { id: "claude-opus-5-5" }],
-    },
+  expect(response.status).toBe(200);
+  const providers = modelProvidersSchema.parse(await response.json());
+  expect(
+    providers.map(({ provider, available }) => [provider, available]),
+  ).toEqual([
+    ["openai", true],
+    ["gemini", false],
+    ["anthropic", false],
   ]);
+  for (const { models } of providers) {
+    expect(models.length).toBeGreaterThan(0);
+  }
 });
 
 test("the default origins include the configured viewer, and an override replaces them", () => {

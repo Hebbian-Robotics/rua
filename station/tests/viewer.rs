@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
+use hebbian_contracts::RecordingStatus;
 use hebbian_rua_core::config::ControllerConfig;
 use hebbian_rua_core::control_link::Link;
 use hebbian_rua_core::control_loop::run;
@@ -440,6 +441,21 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
     assert_eq!(get_json(address, "/recordings")["active"], recording);
     let (status, stopped) = post_json(address, "/recording/stop", &json!({}));
     assert_eq!(status, 200, "{stopped}");
+    let finalization_deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = serde_json::from_value(get_json(address, "/recording/status")).unwrap();
+        match status {
+            RecordingStatus::Finished { name, .. } | RecordingStatus::Failed { name, .. } => {
+                assert_eq!(recording, name);
+                break;
+            }
+            RecordingStatus::Stopping { .. } => {
+                assert!(Instant::now() < finalization_deadline, "{status:?}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            _ => panic!("Expected the recorder to be stopping or finalized: {status:?}"),
+        }
+    }
 
     let granted = acquire_lease(address, "manual", &[]);
     let manual_token = granted["lease_token"].as_str().unwrap();

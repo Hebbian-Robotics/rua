@@ -473,7 +473,7 @@ mod tests {
         let (request, station_answer) = station_arm.next_request().unwrap();
         let loop_answer = loop_arm.submit(request).unwrap();
         let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
-        let mut core = ArmCore::new(config.arm_limits(), |_| {});
+        let mut core = ArmCore::new(crate::arm::Limits::from(&config), |_| {});
         apply_single_request(loop_inbox.next().unwrap(), &mut core);
         station_answer.answer(loop_answer.wait());
         assert_eq!(waiting.recv().unwrap().unwrap().label, "enable");

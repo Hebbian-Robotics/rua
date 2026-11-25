@@ -11,5 +11,5 @@ mod types;
 mod tests;
 
 pub use state::ArmCore;
-pub(crate) use state::new_identifier;
+pub(crate) use state::{Job, new_identifier};
 pub use types::*;

@@ -5,13 +5,13 @@ use axum::extract::{Path as UrlPath, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-use super::http::StationState;
+use super::http_state::StationHttpState;
 
 pub(super) async fn read_model_asset(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath((arm, asset)): UrlPath<(String, String)>,
 ) -> Response {
-    let Some(link) = station_state.arms.get().and_then(|arms| arms.get(&arm)) else {
+    let Some(link) = station_state.arms().and_then(|arms| arms.get(&arm)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let urdf = link.config().urdf.clone();

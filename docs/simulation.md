@@ -1,11 +1,8 @@
 # Simulate the SO-101 with MuJoCo
 
-Use [a real arm](getting-started.md) whenever available. Reserve simulation for
-testing without hardware. The examples connect to a station URL, and the
-station's profile determines whether the arm is real or simulated. The MuJoCo
-fixture models the arm and table. For physics and model details, see the
-[MuJoCo fixture](../examples/mujoco_sim/README.md). To connect a different engine,
-use the [simulator interface](simulators.md).
+The MuJoCo fixture models the SO-101 and its table. See the
+[MuJoCo fixture](../examples/mujoco_sim/README.md) for physics and model details
+or the [simulator interface](simulators.md) for other engines.
 
 ## Prepare the checkout
 
@@ -27,7 +24,8 @@ uv run cargo run --locked -p hebbian-rua-server -- serve \
   --work-directory /tmp/hebbian-station
 ```
 
-When the station prints `Plant sockets`, start MuJoCo in a second terminal:
+When the station logs `Simulator plant sockets are ready`, start MuJoCo in a
+second terminal:
 
 ```sh
 uv run --project examples/mujoco_sim --locked python examples/mujoco_sim/run.py \

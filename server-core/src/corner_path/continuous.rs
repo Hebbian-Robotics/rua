@@ -5,9 +5,7 @@ use rsruckig::prelude::{
 };
 use rsruckig::util::integrate;
 
-use crate::corner_path::{
-    CONTINUITY_RADIANS, INITIAL_PERIOD_SECONDS, plan_initial_corner, validate_plan,
-};
+use super::{CONTINUITY_RADIANS, INITIAL_PERIOD_SECONDS, plan_initial_corner, validate_plan};
 use crate::reference_filter::Reference;
 
 pub(crate) struct ContinuousPath {
@@ -292,9 +290,10 @@ mod tests {
 
     #[test]
     fn circular_waypoints_do_not_reverse_inside_a_section() {
-        let knots: Vec<Vec<f64>> =
-            serde_json::from_str(include_str!("../tests/support/so101_circle_waypoints.json"))
-                .unwrap();
+        let knots: Vec<Vec<f64>> = serde_json::from_str(include_str!(
+            "../../tests/support/so101_circle_waypoints.json"
+        ))
+        .unwrap();
         let segments = knots
             .windows(2)
             .enumerate()

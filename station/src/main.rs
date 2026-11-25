@@ -1,9 +1,11 @@
 mod commands;
+mod controller_setup;
 mod media;
 mod run;
 mod serve;
 mod so101;
 mod status;
+mod timing;
 mod tools;
 
 use clap::Parser;

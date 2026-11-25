@@ -99,7 +99,7 @@ pub(crate) struct Inner {
     pub(crate) connected: bool,
     pub(crate) connection_generation: u64,
     event_cursor: Option<String>,
-    pub(crate) disconnected_since: Option<tokio::time::Instant>,
+    disconnected_since: Option<tokio::time::Instant>,
     pub(crate) last_error: Option<String>,
     pub(crate) state: Option<StationState>,
     /// State frames received so far, so a waiter can tell a frame that arrived after
@@ -116,6 +116,10 @@ pub(crate) struct Inner {
 }
 
 impl Inner {
+    fn observation_cursor(&self) -> (u64, u64) {
+        (self.state_count, self.connection_generation)
+    }
+
     pub(crate) fn record(&self, command_id: &str) -> Option<&ArmRecord> {
         self.records.get(command_id)
     }
@@ -189,7 +193,7 @@ pub(crate) struct Shared {
     inner: Mutex<Inner>,
     changed: watch::Sender<u64>,
     run_updates: broadcast::Sender<RunUpdate>,
-    pub(crate) action_sequence_updates: watch::Sender<Option<ActionSequenceRecord>>,
+    action_sequence_updates: watch::Sender<Option<ActionSequenceRecord>>,
     lease_lost: watch::Sender<bool>,
 }
 
@@ -211,6 +215,31 @@ impl Shared {
 
     pub(crate) fn subscribe_run(&self) -> broadcast::Receiver<RunUpdate> {
         self.run_updates.subscribe()
+    }
+
+    pub(crate) fn subscribe_action_sequence(
+        &self,
+    ) -> watch::Receiver<Option<ActionSequenceRecord>> {
+        self.action_sequence_updates.subscribe()
+    }
+
+    pub(crate) fn observation_cursor(&self) -> (u64, u64) {
+        self.read(Inner::observation_cursor)
+    }
+
+    pub(crate) async fn wait_for_observation(&self, cursor: (u64, u64)) {
+        self.wait_for(|inner| (inner.observation_cursor() != cursor).then_some(()))
+            .await;
+    }
+
+    pub(crate) async fn wait_for_continuous_disconnect(&self, patience: Duration) {
+        loop {
+            let since = self.wait_for(|inner| inner.disconnected_since).await;
+            tokio::time::sleep_until(since + patience).await;
+            if self.read(|inner| inner.disconnected_since) == Some(since) {
+                return;
+            }
+        }
     }
 
     pub(crate) fn subscribe_lease_lost(&self) -> watch::Receiver<bool> {
@@ -308,7 +337,7 @@ impl Shared {
         clippy::expect_used,
         reason = "Poisoning may indicate an incomplete SDK state update; fail closed rather than reuse uncertain state."
     )]
-    pub(crate) fn read<R>(&self, read: impl FnOnce(&Inner) -> R) -> R {
+    fn read<R>(&self, read: impl FnOnce(&Inner) -> R) -> R {
         read(&self.inner.lock().expect("the state lock is never poisoned"))
     }
 

@@ -90,7 +90,7 @@ pub(crate) enum ProgramSubmissionError {
     Unavailable(&'static str),
     MissingCompilation,
     IncompatibleCompilation,
-    ExecutionRefused(super::runtime::ExecutionRefusal),
+    ExecutionRefused(super::executions::ExecutionRefusal),
     CompilationRejected(hebbian_contracts::CompilationDiagnostic),
     Internal(String),
 }

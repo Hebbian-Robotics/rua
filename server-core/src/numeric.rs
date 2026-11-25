@@ -18,3 +18,8 @@ pub(crate) fn positive_clock_duration(seconds: f64, field: &str) -> anyhow::Resu
     );
     Ok(duration)
 }
+
+#[must_use]
+pub(crate) fn is_finite_joint_vector(values: &[f64], joint_count: usize) -> bool {
+    values.len() == joint_count && values.iter().all(|value| value.is_finite())
+}

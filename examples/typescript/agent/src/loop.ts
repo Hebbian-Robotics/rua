@@ -1,13 +1,11 @@
 import type { Span } from "@opentelemetry/api";
 import {
   ArmRecoveryEndedError,
-  apiSchemas,
   createRecordingClient,
   createRobotTools,
   filterSequenceActions,
   LeaseLostError,
   type OnInterruption,
-  type RobotObservation,
   type RobotToolsOptions,
   type StationConnection,
   StationConnectionError,
@@ -16,7 +14,11 @@ import {
 } from "hebbian-rua";
 import { type RunEnvironment, reportEvent } from "./environment.js";
 import { createAgentToolResult, runToolBatch } from "./execution.js";
-import { observe, type RevisedObservation } from "./observation.js";
+import {
+  observe,
+  type RevisedObservation,
+  reuseBatchObservation,
+} from "./observation.js";
 import { isProviderError } from "./providers/errors.js";
 import { startConversation } from "./providers/index.js";
 import {
@@ -547,47 +549,12 @@ async function runTurns(
     )
       return incompleteEnding("The arm faulted while waiting for recovery");
     if (outcome.needsObservation) {
-      let alreadyCaptured: RobotObservation | undefined;
-      const onlyReadTools = outcome.results.every((result) =>
-        ["observe", "preview_pose", "update_plan", "update_notes"].includes(
-          result.call.name,
-        ),
-      );
-      if (onlyReadTools) {
-        const currentResults = outcome.results.filter(
-          (result) =>
-            result.call.name === "observe" &&
-            !result.isError &&
-            !result.sequenceImages,
-        );
-        const current =
-          currentResults.length === 1 ? currentResults[0] : undefined;
-        const parsed = apiSchemas.shape.StationState.safeParse(current?.data);
-        if (current && parsed.success) {
-          alreadyCaptured = {
-            data: parsed.data,
-            text: current.text,
-            cameras: current.cameras ?? {},
-            revisions: Object.fromEntries(
-              parsed.data.arms.map((arm) => [arm.arm, arm.revision]),
-            ),
-          };
-        }
-      }
+      const { captured, results } = reuseBatchObservation(outcome.results);
       lastObservation = await observe(
         environment,
         "Observation after the tools ran.",
-        alreadyCaptured,
+        captured,
       );
-      const results = alreadyCaptured
-        ? outcome.results.map((result) =>
-            result.call.name === "observe" &&
-            !result.isError &&
-            !result.sequenceImages
-              ? { ...result, text: "ok", data: "ok", cameras: {} }
-              : result,
-          )
-        : outcome.results;
       conversation.addToolResults(results, lastObservation.observation);
     } else {
       conversation.addToolResults(outcome.results);
