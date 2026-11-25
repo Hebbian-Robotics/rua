@@ -24,7 +24,7 @@ import {
 } from "./types.js";
 
 export function openaiUsage(response: Response): TokenUsage | null {
-  const { usage } = response;
+  const { usage, service_tier: serviceTier } = response;
   if (!usage) return null;
   return {
     model: response.model,
@@ -33,6 +33,9 @@ export function openaiUsage(response: Response): TokenUsage | null {
     outputTokens: usage.output_tokens,
     reasoningTokens: usage.output_tokens_details.reasoning_tokens,
     cacheWriteTokens: usage.input_tokens_details.cache_write_tokens ?? 0,
+    ...(serviceTier && serviceTier !== "auto"
+      ? { priceContext: { service_tier: serviceTier } }
+      : {}),
   };
 }
 

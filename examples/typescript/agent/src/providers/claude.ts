@@ -32,6 +32,7 @@ export function claudeUsage(response: BetaMessage): TokenUsage {
     // CONSTRAINT: Thinking is billed as output; the usage does not split it out.
     reasoningTokens: 0,
     cacheWriteTokens: cacheWrite,
+    ...(usage.speed ? { priceContext: { speed: usage.speed } } : {}),
   };
 }
 

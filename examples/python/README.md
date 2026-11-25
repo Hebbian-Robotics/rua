@@ -62,12 +62,33 @@ or Gemini Interactions. Each provider holds the conversation history. Subsequent
 turns send the new tool results and observations. The Claude SDK can replay
 the conversation to restore an expired or interrupted thread.
 
+The model can use `update_plan` and `update_notes` to keep track of the task.
+Each update replaces the previous plan or notes. The example includes the
+current plan and notes in observations for that run.
+
+Plan, notes, preview-only, and sequence-history turns can reuse the last live
+observation. The agent refreshes it after motion or a stale observation. If the
+station refuses a command because of a stale revision or interlock, the agent
+waits for a fresh observation before continuing. A fault or uncertain command
+outcome ends the run.
+
 ## Watch live cameras
 
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
-named cameras to the station. Repeat `--camera NAME` for each camera the agent
-should see, using the names from `uv run hebbian-rua camera list` in this example
-directory. Follow [watch a USB camera](../../docs/cameras.md#watch-a-usb-camera)
+named cameras to the station. Repeat `--camera NAME` for each required camera.
+Use `--optional-camera NAME` for views the agent can proceed without if they
+are unavailable. Use `uv run hebbian-rua camera list` in this example directory
+to find the station's camera names.
+
+To add a remote phone camera, configure LiveKit on the station and create an
+invite from **Workspace → Camera setup → Remote camera** in the viewer, or run
+`uv run hebbian-rua phone-invite overhead` on the station host. Open the invite
+on the phone and start streaming. The label `overhead` appears as
+`phone_overhead`. Pass `--optional-camera phone_overhead` to the Python example,
+or use `--camera phone_overhead` if the run requires it.
+See [Add a phone](../../docs/cameras.md#add-a-phone) for setup details.
+
+Follow [watch a USB camera](../../docs/cameras.md#watch-a-usb-camera)
 to view the feeds while the agent runs. The camera guide also covers
 [options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable).
 

@@ -190,7 +190,7 @@ def provider_reply(provider: Provider, first_turn: bool) -> dict[str, object]:
 )
 def test_python_agent_continues_with_new_tool_results_and_observations(
     provider: Provider,
-    run_agent: Callable[[AgentRobotTools, str, str, str, int], Awaitable[None]],
+    run_agent: Callable[[AgentRobotTools, str, str, str], Awaitable[None]],
     base_url_variable: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -250,7 +250,7 @@ def test_python_agent_continues_with_new_tool_results_and_observations(
                     client, lease, "follower"
                 ).with_output_formatter(format_observation)
                 robot.model_inputs = ModelInputCapture(str(tmp_path))
-                await run_agent(robot, "initial task", model_id, "instructions", 2)
+                await run_agent(robot, "initial task", model_id, "instructions")
 
     asyncio.run(exercise())
 
