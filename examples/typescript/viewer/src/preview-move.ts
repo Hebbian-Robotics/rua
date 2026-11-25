@@ -1,4 +1,9 @@
-import type { ArmState, PreviewPose, StationCommand } from "hebbian-rua";
+import {
+  type ArmState,
+  angularDegrees,
+  type PreviewPose,
+  type StationCommand,
+} from "hebbian-rua";
 import { MathUtils } from "three";
 import type { Approach, JawYawRange, ProposedPose } from "./pose-projection.js";
 
@@ -96,6 +101,6 @@ export function unreachableYawLines(ranges: JawYawRange[]): string[] {
     .filter((range) => !range.reachable)
     .map(
       (range) =>
-        `${Math.round(MathUtils.radToDeg(range.from_radians))}°–${Math.round(MathUtils.radToDeg(range.to_radians))}°: ${range.reason ?? "unreachable"}`,
+        `${Math.round(angularDegrees(range.from_radians, "rad"))}°–${Math.round(angularDegrees(range.to_radians, "rad"))}°: ${range.reason ?? "unreachable"}`,
     );
 }

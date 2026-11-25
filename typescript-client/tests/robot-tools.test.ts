@@ -2,9 +2,13 @@ import { readFileSync } from "node:fs";
 import { expect, test, vi } from "vitest";
 import { apiSchemas } from "../src/generated/api-schemas.js";
 import {
+  angularDegrees,
+  angularRadians,
   createRobotTools,
   createStationConnection,
   filterSequenceActions,
+  jointRadians,
+  positionMetres,
 } from "../src/index.js";
 import { parseRobotToolCall } from "../src/robot-tool-input.js";
 import { fakeLease, stateMessage } from "./station-fakes.js";
@@ -23,6 +27,14 @@ const robot = createRobotTools({
   connection,
   lease: fakeLease(),
   arm: "follower",
+});
+
+test("public SDK units produce the same station inputs", () => {
+  expect(positionMetres([200, -100, 50], "mm")).toEqual([0.2, -0.1, 0.05]);
+  expect(positionMetres([0.2, -0.1, 0.05], "m")).toEqual([0.2, -0.1, 0.05]);
+  expect(angularRadians(90, "deg")).toBeCloseTo(Math.PI / 2);
+  expect(angularDegrees(Math.PI / 2, "rad")).toBeCloseTo(90);
+  expect(jointRadians([90, -180], "deg")).toEqual([Math.PI / 2, -Math.PI]);
 });
 
 test("tool input units match the station contract", () => {

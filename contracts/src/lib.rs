@@ -36,6 +36,10 @@ mod telemetry;
 pub use telemetry::*;
 mod station_message;
 pub use station_message::*;
+mod units;
+pub use units::{
+    DEGREES_PER_RADIAN, METRES_PER_MILLIMETRE, MILLIMETRES_PER_METRE, RADIANS_PER_DEGREE,
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

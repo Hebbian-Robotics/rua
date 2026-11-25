@@ -14,6 +14,7 @@ mod response_format;
 mod robot_tools;
 mod sequence_images;
 mod station;
+mod units;
 
 pub use hebbian_contracts as contracts;
 
@@ -31,5 +32,7 @@ pub use station::{
     CameraJpeg, CommandOptions, ConnectOptions, DEFAULT_MEDIA_SERVER, DEFAULT_SERVER, LeaseGuard,
     LeaseRequest, Station,
 };
+
+pub use units::{AngleUnit, LengthUnit};
 
 mod tool_operations;

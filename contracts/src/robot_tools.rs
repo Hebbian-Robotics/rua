@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
-    ActionSequenceArmAction, ActionSequenceStep, MoveArmsCommand, PreviewPose, StationCommand,
+    ActionSequenceArmAction, ActionSequenceStep, DEGREES_PER_RADIAN, METRES_PER_MILLIMETRE,
+    MILLIMETRES_PER_METRE, MoveArmsCommand, PreviewPose, RADIANS_PER_DEGREE, StationCommand,
 };
 use std::collections::BTreeSet;
 
@@ -309,112 +310,112 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
 
 /// Station field, model field, and multiplier for model-facing output.
 pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
-    ("position", "position_mm", 1000.0),
-    ("goal_position", "goal_position_mm", 1000.0),
-    ("destination_position", "destination_position_mm", 1000.0),
-    ("tool_position", "tool_position_mm", 1000.0),
-    ("surface_height_meters", "surface_height_mm", 1000.0),
-    ("leeway_meters", "leeway_mm", 1000.0),
-    ("model_points", "model_points_mm", 1000.0),
-    ("position_error_meters", "position_error_mm", 1000.0),
-    ("position_shortfall_meters", "position_shortfall_mm", 1000.0),
+    ("position", "position_mm", MILLIMETRES_PER_METRE),
+    ("goal_position", "goal_position_mm", MILLIMETRES_PER_METRE),
     (
-        "jaw_yaw_radians",
-        "jaw_yaw_degrees",
-        180.0 / std::f64::consts::PI,
+        "destination_position",
+        "destination_position_mm",
+        MILLIMETRES_PER_METRE,
+    ),
+    ("tool_position", "tool_position_mm", MILLIMETRES_PER_METRE),
+    (
+        "surface_height_meters",
+        "surface_height_mm",
+        MILLIMETRES_PER_METRE,
+    ),
+    ("leeway_meters", "leeway_mm", MILLIMETRES_PER_METRE),
+    ("model_points", "model_points_mm", MILLIMETRES_PER_METRE),
+    (
+        "position_error_meters",
+        "position_error_mm",
+        MILLIMETRES_PER_METRE,
     ),
     (
-        "radians_from_down",
-        "degrees_from_down",
-        180.0 / std::f64::consts::PI,
+        "position_shortfall_meters",
+        "position_shortfall_mm",
+        MILLIMETRES_PER_METRE,
     ),
+    ("jaw_yaw_radians", "jaw_yaw_degrees", DEGREES_PER_RADIAN),
+    ("radians_from_down", "degrees_from_down", DEGREES_PER_RADIAN),
     (
         "approach_error_radians",
         "approach_error_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
-    ("from_radians", "from_degrees", 180.0 / std::f64::consts::PI),
-    ("to_radians", "to_degrees", 180.0 / std::f64::consts::PI),
-    ("joints", "joints_degrees", 180.0 / std::f64::consts::PI),
+    ("from_radians", "from_degrees", DEGREES_PER_RADIAN),
+    ("to_radians", "to_degrees", DEGREES_PER_RADIAN),
+    ("joints", "joints_degrees", DEGREES_PER_RADIAN),
     (
         "measured_joints",
         "measured_joints_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "measured_joint_velocities",
         "measured_joint_velocities_degrees_per_second",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "commanded_joints",
         "commanded_joints_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
-    (
-        "rest_pose",
-        "rest_pose_degrees",
-        180.0 / std::f64::consts::PI,
-    ),
+    ("rest_pose", "rest_pose_degrees", DEGREES_PER_RADIAN),
     (
         "destination_joints",
         "destination_joints_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
-    (
-        "goal_joints",
-        "goal_joints_degrees",
-        180.0 / std::f64::consts::PI,
-    ),
+    ("goal_joints", "goal_joints_degrees", DEGREES_PER_RADIAN),
     (
         "joint_error_radians",
         "joint_error_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "joint_errors_radians",
         "joint_errors_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "orientation_error_radians",
         "orientation_error_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "orientation_shortfall_radians",
         "orientation_shortfall_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "measured_angle_radians",
         "measured_angle_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "target_angle_radians",
         "target_angle_degrees",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "joint_speed",
         "joint_speed_degrees_per_second",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "max_joint_speed",
         "max_joint_speed_degrees_per_second",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "max_joint_acceleration",
         "max_joint_acceleration_degrees_per_second_squared",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
     (
         "max_joint_jerk",
         "max_joint_jerk_degrees_per_second_cubed",
-        180.0 / std::f64::consts::PI,
+        DEGREES_PER_RADIAN,
     ),
 ];
 
@@ -431,32 +432,32 @@ pub const MODEL_INPUT_UNITS: [ModelInputUnit; 6] = [
     ModelInputUnit {
         model_field: "position_mm",
         station_field: "position",
-        scale_to_station: 0.001,
+        scale_to_station: METRES_PER_MILLIMETRE,
     },
     ModelInputUnit {
         model_field: "jaw_yaw_degrees",
         station_field: "jaw_yaw_radians",
-        scale_to_station: std::f64::consts::PI / 180.0,
+        scale_to_station: RADIANS_PER_DEGREE,
     },
     ModelInputUnit {
         model_field: "joints_degrees",
         station_field: "joints",
-        scale_to_station: std::f64::consts::PI / 180.0,
+        scale_to_station: RADIANS_PER_DEGREE,
     },
     ModelInputUnit {
         model_field: "max_joint_speed_degrees_per_second",
         station_field: "max_joint_speed",
-        scale_to_station: std::f64::consts::PI / 180.0,
+        scale_to_station: RADIANS_PER_DEGREE,
     },
     ModelInputUnit {
         model_field: "max_joint_acceleration_degrees_per_second_squared",
         station_field: "max_joint_acceleration",
-        scale_to_station: std::f64::consts::PI / 180.0,
+        scale_to_station: RADIANS_PER_DEGREE,
     },
     ModelInputUnit {
         model_field: "max_joint_jerk_degrees_per_second_cubed",
         station_field: "max_joint_jerk",
-        scale_to_station: std::f64::consts::PI / 180.0,
+        scale_to_station: RADIANS_PER_DEGREE,
     },
 ];
 

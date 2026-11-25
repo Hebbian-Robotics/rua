@@ -35,11 +35,21 @@ from hebbian_rua.client.llm.types import (
 )
 from hebbian_rua.client.station_client import StationClient
 from hebbian_rua.client.station_types import ActionSequenceUnavailable
+from hebbian_rua.client.units import (
+    AngleUnit,
+    LengthUnit,
+    angular_degrees,
+    angular_radians,
+    joint_radians,
+    position_metres,
+)
 
 __all__ = [
     "ActionSequenceTool",
     "ActionSequenceUnavailable",
+    "AngleUnit",
     "HttpError",
+    "LengthUnit",
     "ModelContent",
     "NamedArmSequence",
     "OutputFormatter",
@@ -57,6 +67,8 @@ __all__ = [
     "StandaloneTool",
     "StationClient",
     "all_robot_tool_capabilities",
+    "angular_degrees",
+    "angular_radians",
     "concise_output",
     "concise_response",
     "create_robot_tool_catalog",
@@ -64,7 +76,9 @@ __all__ = [
     "default_robot_tool_mapping",
     "filter_sequence_actions",
     "full_formatter",
+    "joint_radians",
     "model_response",
+    "position_metres",
     "render_output",
     "select_output_cameras",
     "summarize_output",

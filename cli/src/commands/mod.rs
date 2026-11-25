@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
-use hebbian_rua::DEFAULT_SERVER;
 use hebbian_rua::contracts::{Approach, NamedApproach, PoseOrientation, PreviewPose};
+use hebbian_rua::{AngleUnit, DEFAULT_SERVER, LengthUnit};
 
 fn default_station_url() -> String {
     std::env::var("HEBBIAN_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.to_owned())
@@ -250,11 +250,7 @@ pub struct JointArgs {
 impl JointArgs {
     pub fn into_radians(self) -> Vec<f64> {
         self.joints_radians.unwrap_or_else(|| {
-            self.joints_degrees
-                .into_iter()
-                .flatten()
-                .map(f64::to_radians)
-                .collect()
+            AngleUnit::Degrees.joint_radians(self.joints_degrees.unwrap_or_default())
         })
     }
 }
@@ -285,20 +281,24 @@ pub struct TrajectoryArgs {
 
 impl TrajectoryArgs {
     pub fn speed_radians(&self) -> Option<f64> {
-        self.speed_radians_per_second
-            .or_else(|| self.speed_degrees_per_second.map(f64::to_radians))
+        self.speed_radians_per_second.or_else(|| {
+            self.speed_degrees_per_second
+                .map(|value| AngleUnit::Degrees.to_radians(value))
+        })
     }
 
     pub fn acceleration_radians(&self) -> Option<f64> {
         self.acceleration_radians_per_second_squared.or_else(|| {
             self.acceleration_degrees_per_second_squared
-                .map(f64::to_radians)
+                .map(|value| AngleUnit::Degrees.to_radians(value))
         })
     }
 
     pub fn jerk_radians(&self) -> Option<f64> {
-        self.jerk_radians_per_second_cubed
-            .or_else(|| self.jerk_degrees_per_second_cubed.map(f64::to_radians))
+        self.jerk_radians_per_second_cubed.or_else(|| {
+            self.jerk_degrees_per_second_cubed
+                .map(|value| AngleUnit::Degrees.to_radians(value))
+        })
     }
 }
 
@@ -311,7 +311,7 @@ impl PoseArgs {
         self.position_m
             .or_else(|| {
                 self.position_mm
-                    .map(|position| position.map(|value| value / 1000.0))
+                    .map(|position| LengthUnit::Millimetres.position_metres(position))
             })
             .expect("clap requires a position")
     }
@@ -322,7 +322,7 @@ impl PoseArgs {
         }
         Some(PoseOrientation::Grasp {
             approach: self.approach?,
-            jaw_yaw_radians: self.jaw_yaw_degrees?.to_radians(),
+            jaw_yaw_radians: AngleUnit::Degrees.to_radians(self.jaw_yaw_degrees?),
         })
     }
 

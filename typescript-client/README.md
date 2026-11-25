@@ -2,6 +2,8 @@
 
 Use the TypeScript client to control a running station from a browser or Node.js.
 Install a released version with `pnpm add hebbian-rua`.
+Use the [motion unit converters](../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
+to prepare direct SDK requests in your preferred units.
 
 ## Try the workspace SDK
 

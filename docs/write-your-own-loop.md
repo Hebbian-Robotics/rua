@@ -31,6 +31,35 @@ Use `station.holding_lease(...)` to acquire a lease and send motion through
 `lease.arm("arm")`. Check the enable result before moving. See
 [control leases](control-model.md#control-leases) for handoff and interruption.
 
+## Choose motion units in the SDK
+
+Direct SDK calls use metres and radians on the wire. To construct a command
+from explicitly chosen units, use the SDK's converters. They use the same
+scales as the CLI and model tools and keep the station payload in its native
+schema.
+
+In Python, pass the converted values to a normal SDK call:
+
+```python
+from hebbian_rua import angular_radians, position_metres
+from hebbian_rua.client.contract.station_api import GraspOrientation, NamedApproach
+
+target = position_metres([200, 0, 100], unit="mm")
+orientation = GraspOrientation(
+    approach=NamedApproach.down,
+    jaw_yaw_radians=angular_radians(90, unit="deg"),
+)
+# Example: await station.arm("arm").preview_pose(target, orientation)
+```
+
+In TypeScript, use `positionMetres([200, 0, 100], "mm")` and
+`angularRadians(90, "deg")`. In Rust, use
+`LengthUnit::Millimetres.position_metres([200.0, 0.0, 100.0])` and
+`AngleUnit::Degrees.to_radians(90.0)`. Each SDK also offers a joint array
+converter and a converter to degrees for display. Angular rate conversion
+keeps the time denominator. For example, degrees per second squared becomes
+radians per second squared.
+
 ## Commands and outcomes
 
 | Call | Does |

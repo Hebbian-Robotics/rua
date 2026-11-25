@@ -82,3 +82,11 @@ export {
   defaultRobotToolMapping,
   filterSequenceActions,
 } from "./tool-catalog.js";
+export {
+  type AngleUnit,
+  angularDegrees,
+  angularRadians,
+  jointRadians,
+  type LengthUnit,
+  positionMetres,
+} from "./units.js";

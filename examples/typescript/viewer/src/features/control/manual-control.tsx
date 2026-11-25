@@ -1,5 +1,7 @@
 import {
   type ArmState,
+  angularDegrees,
+  angularRadians,
   commandPlan,
   type PreviewPose,
   type StationCommand,
@@ -499,7 +501,7 @@ export function ManualControl({
 
   const displayedOrientation = orientation ?? chosenOrientation;
   const displayedYawDegrees = Math.round(
-    MathUtils.radToDeg(displayedOrientation?.jaw_yaw_radians ?? 0),
+    angularDegrees(displayedOrientation?.jaw_yaw_radians ?? 0, "rad"),
   );
   const confirmedForSelection = previewMatchesSelection({
     confirmed,
@@ -663,8 +665,9 @@ export function ManualControl({
                     setOrientation({
                       kind: "grasp",
                       approach: displayedOrientation.approach,
-                      jaw_yaw_radians: MathUtils.degToRad(
+                      jaw_yaw_radians: angularRadians(
                         Number(event.currentTarget.value) % 360,
+                        "deg",
                       ),
                     });
                   }}
