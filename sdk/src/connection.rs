@@ -1,6 +1,7 @@
 //! The resumable HTTP event stream and its cached station observations.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::convert::Infallible;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -47,8 +48,10 @@ pub enum RunUpdate {
 enum Incoming {
     Control(StreamControl),
     Known(Box<ServerMessage>),
-    /// A kind this SDK does not know: skipped, so a newer station still works.
-    Unknown(#[allow(dead_code, reason = "only to accept any JSON")] serde::de::IgnoredAny),
+    /// A message this SDK could not decode, including newer variants nested in arm frames.
+    Unsupported {
+        kind: String,
+    },
 }
 
 #[derive(serde::Deserialize)]
@@ -95,12 +98,30 @@ impl LeaseState {
 }
 
 #[derive(Default)]
+enum EventStreamState {
+    #[default]
+    Starting,
+    Streaming,
+    Disconnected {
+        since: tokio::time::Instant,
+        error: String,
+    },
+}
+
+impl EventStreamState {
+    fn disconnected_since(&self) -> Option<tokio::time::Instant> {
+        match self {
+            Self::Disconnected { since, .. } => Some(*since),
+            Self::Starting | Self::Streaming => None,
+        }
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct Inner {
-    pub(crate) connected: bool,
-    pub(crate) connection_generation: u64,
+    stream: EventStreamState,
+    connection_generation: u64,
     event_cursor: Option<String>,
-    disconnected_since: Option<tokio::time::Instant>,
-    pub(crate) last_error: Option<String>,
     pub(crate) state: Option<StationState>,
     /// State frames received so far, so a waiter can tell a frame that arrived after
     /// some event from the cached one.
@@ -116,6 +137,20 @@ pub(crate) struct Inner {
 }
 
 impl Inner {
+    pub(crate) fn is_connected(&self) -> bool {
+        matches!(self.stream, EventStreamState::Streaming)
+    }
+
+    pub(crate) fn handshake_result(&self) -> Option<Result<(), String>> {
+        match &self.stream {
+            EventStreamState::Streaming => Some(Ok(())),
+            EventStreamState::Disconnected { error, .. } if self.connection_generation == 0 => {
+                Some(Err(error.clone()))
+            }
+            EventStreamState::Starting | EventStreamState::Disconnected { .. } => None,
+        }
+    }
+
     fn observation_cursor(&self) -> (u64, u64) {
         (self.state_count, self.connection_generation)
     }
@@ -245,16 +280,18 @@ impl Shared {
                                 .parse::<u64>()
                                 .is_ok_and(|applied| applied >= sequence)
                     });
-            (!inner.connected || state_reflected).then_some(())
+            (!inner.is_connected() || state_reflected).then_some(())
         })
         .await;
     }
 
     pub(crate) async fn wait_for_continuous_disconnect(&self, patience: Duration) {
         loop {
-            let since = self.wait_for(|inner| inner.disconnected_since).await;
+            let since = self
+                .wait_for(|inner| inner.stream.disconnected_since())
+                .await;
             tokio::time::sleep_until(since + patience).await;
-            if self.read(|inner| inner.disconnected_since) == Some(since) {
+            if self.read(|inner| inner.stream.disconnected_since()) == Some(since) {
                 return;
             }
         }
@@ -266,7 +303,7 @@ impl Shared {
 
     pub(crate) fn reserve_lease_acquisition(&self) -> Option<u64> {
         self.update(|inner| {
-            if !inner.connected || !matches!(inner.lease_state, LeaseState::Idle) {
+            if !inner.is_connected() || !matches!(inner.lease_state, LeaseState::Idle) {
                 return None;
             }
             inner.lease_state = LeaseState::Acquiring;
@@ -284,7 +321,7 @@ impl Shared {
 
     pub(crate) fn install_lease(&self, generation: u64, token: String) -> bool {
         let installed = self.update(|inner| {
-            if !inner.connected
+            if !inner.is_connected()
                 || inner.connection_generation != generation
                 || !matches!(inner.lease_state, LeaseState::Acquiring)
             {
@@ -331,7 +368,7 @@ impl Shared {
     pub(crate) fn observes_lease(&self, token: &str) -> Option<bool> {
         self.read(|inner| {
             (inner.lease_state.token() == Some(token))
-                .then_some(inner.connected && inner.state.is_some())
+                .then_some(inner.is_connected() && inner.state.is_some())
         })
     }
 
@@ -376,20 +413,20 @@ impl Shared {
     pub(crate) async fn keep_connected(&self) {
         let mut backoff = hebbian_contracts::Backoff::new(RECONNECT_DELAY_CAP);
         loop {
-            let ended = self.serve().await;
+            let Err(error) = self.serve().await;
             let (was_connected, lease_lost) = self.update(|inner| {
-                let was_connected = inner.connected;
+                let was_connected = inner.is_connected();
                 if was_connected {
                     inner.connection_generation = inner.connection_generation.wrapping_add(1);
                 }
-                inner.connected = false;
+                inner.stream = EventStreamState::Disconnected {
+                    since: inner
+                        .stream
+                        .disconnected_since()
+                        .unwrap_or_else(tokio::time::Instant::now),
+                    error,
+                };
                 inner.state = None;
-                inner
-                    .disconnected_since
-                    .get_or_insert_with(tokio::time::Instant::now);
-                if let Err(error) = &ended {
-                    inner.last_error = Some(error.clone());
-                }
                 let lease_lost = inner.lease_state.lose();
                 inner.lease_loss_status |= lease_lost;
                 (was_connected, lease_lost)
@@ -405,7 +442,7 @@ impl Shared {
         }
     }
 
-    async fn serve(&self) -> Result<(), String> {
+    async fn serve(&self) -> Result<Infallible, String> {
         let client = reqwest::Client::builder()
             .read_timeout(EVENT_READ_TIMEOUT)
             .build()
@@ -443,7 +480,7 @@ impl Shared {
                         .await?;
                     if matches!(update, StreamUpdate::SnapshotRequired) {
                         let retry_without_cursor = self.update(|inner| {
-                            inner.event_cursor.take().is_some() && !inner.connected
+                            inner.event_cursor.take().is_some() && !inner.is_connected()
                         });
                         if retry_without_cursor {
                             continue 'snapshot;
@@ -474,20 +511,10 @@ impl Shared {
                 run_sequence,
                 ..
             } = snapshot;
-            let replay_after = self.update(|inner| {
-                inner.state = None;
-                inner.records.clear();
-                inner.record_order.clear();
-                inner.resume_after.clear();
-                let previous = inner.run_after;
-                if previous.is_none() {
-                    inner.run_after = Some(run_sequence);
-                }
-                previous
-            });
-            if let Some(after) = replay_after {
+            let replay_after = self.read(|inner| inner.run_after);
+            let records: Vec<Incoming> = if let Some(after) = replay_after {
                 let url = format!("{}/run/records", self.url.trim_end_matches('/'));
-                let records: Vec<Incoming> = client
+                client
                     .get(url)
                     .query(&[("after", after)])
                     .timeout(HANDSHAKE_TIMEOUT)
@@ -498,12 +525,19 @@ impl Shared {
                     .map_err(|error| error.to_string())?
                     .json()
                     .await
-                    .map_err(|error| error.to_string())?;
-                for record in records {
-                    self.receive(record);
-                }
-            }
-            for item in items {
+                    .map_err(|error| format!("Invalid run replay: {error}"))?
+            } else {
+                Vec::new()
+            };
+            // INVARIANT: A replay failure must leave the previous snapshot and cursor intact.
+            self.update(|inner| {
+                inner.state = None;
+                inner.records.clear();
+                inner.record_order.clear();
+                inner.resume_after.clear();
+                inner.run_after.get_or_insert(run_sequence);
+            });
+            for item in records.into_iter().chain(items) {
                 self.receive(item);
             }
         } else if kind == "station" {
@@ -519,16 +553,19 @@ impl Shared {
             if let Some(event_id) = event_id.filter(|id| !id.is_empty()) {
                 inner.event_cursor = Some(event_id.to_owned());
             }
-            inner.connected = true;
-            inner.disconnected_since = None;
-            inner.last_error = None;
+            inner.stream = EventStreamState::Streaming;
         });
         Ok(StreamUpdate::Continue)
     }
 
     fn receive(&self, incoming: Incoming) {
-        let Incoming::Known(message) = incoming else {
-            return;
+        let message = match incoming {
+            Incoming::Known(message) => message,
+            Incoming::Control(_) => return,
+            Incoming::Unsupported { kind } => {
+                tracing::debug!(kind, "Ignoring unsupported station message");
+                return;
+            }
         };
         match *message {
             ServerMessage::State { state } => self.update(|inner| {
@@ -616,14 +653,14 @@ impl Shared {
 
 #[cfg(test)]
 mod tests {
-    use super::Shared;
+    use super::{EventStreamState, Shared};
     use std::time::Duration;
 
     #[tokio::test]
     async fn lease_loss_is_visible_while_a_subscriber_holds_the_previous_notification()
     -> Result<(), Box<dyn std::error::Error>> {
         let shared = Shared::new(String::new(), None);
-        shared.update(|inner| inner.connected = true);
+        shared.update(|inner| inner.stream = EventStreamState::Streaming);
         let generation = shared
             .reserve_lease_acquisition()
             .ok_or("reservation refused")?;

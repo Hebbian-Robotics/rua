@@ -188,15 +188,8 @@ impl Station {
         // INVARIANT: A refused connection fails at once; a slow one gets CONNECT_TIMEOUT.
         let connected = tokio::time::timeout(
             CONNECT_TIMEOUT,
-            self.shared.wait_for(|inner| {
-                if inner.connected {
-                    Some(Ok(()))
-                } else if inner.connection_generation == 0 {
-                    inner.last_error.clone().map(Err)
-                } else {
-                    None
-                }
-            }),
+            self.shared
+                .wait_for(crate::connection::Inner::handshake_result),
         )
         .await
         .map_err(|_| Error::Connection(format!("no connection to {}", self.shared.url)))?;
@@ -657,7 +650,7 @@ impl Station {
         self.shared
             .wait_for(|inner| {
                 let Some(state) = &inner.state else {
-                    return (!inner.connected).then_some(());
+                    return (!inner.is_connected()).then_some(());
                 };
                 let arm = state.arms.iter().find(|arm| arm.arm == command_arm)?;
                 if arm

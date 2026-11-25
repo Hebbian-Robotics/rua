@@ -1,5 +1,5 @@
-import { apiSchemas } from "./generated/api-schemas.js";
 /** Readable model responses; station records retain their original SI values. */
+import { apiSchemas } from "./generated/api-schemas.js";
 import {
   modelOutcomes,
   modelOutputUnits,
@@ -16,6 +16,14 @@ const outputConversions = new Map<string, readonly [string, number]>(
 function rounded(value: number, decimals: number): number {
   const scale = 10 ** decimals;
   return (Math.sign(value) * Math.round(Math.abs(value) * scale)) / scale;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function arrayOrEmpty(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function scaleNumbers(value: unknown, factor: number, round: boolean): unknown {
@@ -81,9 +89,9 @@ function formatModelField(value: unknown, fieldName: string): unknown {
   if (fieldName === "approach") return value;
   if (Array.isArray(value))
     return value.map((item) => formatModelField(item, fieldName));
-  if (typeof value === "object" && value !== null) {
-    const formatted: Record<string, unknown> = {};
-    const record = modelCommandRecord(value as Record<string, unknown>);
+  if (isRecord(value)) {
+    const formatted: [string, unknown][] = [];
+    const record = modelCommandRecord(value);
     for (const [key, item] of Object.entries(record)) {
       if (
         item == null ||
@@ -91,19 +99,25 @@ function formatModelField(value: unknown, fieldName: string): unknown {
       )
         continue;
       const conversion = outputConversions.get(key);
-      if (conversion)
-        formatted[conversion[0]] = scaleNumbers(
-          item,
-          conversion[1],
-          conversion[0] !== "jaw_yaw_degrees",
-        );
-      else formatted[key] = formatModelField(item, key);
+      if (conversion) {
+        const [modelField, conversionFactor] = conversion;
+        formatted.push([
+          modelField,
+          scaleNumbers(
+            item,
+            conversionFactor,
+            modelField !== "jaw_yaw_degrees",
+          ),
+        ]);
+      } else {
+        formatted.push([key, formatModelField(item, key)]);
+      }
     }
-    return formatted;
+    return Object.fromEntries(formatted);
   }
   if (typeof value === "number" && !Number.isInteger(value)) {
     const timestamp =
-      fieldName.includes("unix_seconds") || ["sampled_at"].includes(fieldName);
+      fieldName.includes("unix_seconds") || fieldName === "sampled_at";
     return rounded(value, timestamp ? 3 : 4);
   }
   return value;
@@ -132,17 +146,14 @@ function keepFields(
 // keeps full concise detail for the model's next decision.
 function compactEarlierStep(value: unknown): unknown {
   if (!Array.isArray(value)) return conciseOutput(value);
-  return value.map((item) => {
-    if (typeof item !== "object" || item === null || !("record" in item))
-      return conciseOutput(item);
-    const entry = item as Record<string, unknown>;
+  return value.map((entry: unknown) => {
+    if (!isRecord(entry)) return conciseOutput(entry);
     const record = entry["record"];
-    if (typeof record !== "object" || record === null)
-      return conciseOutput(item);
+    if (!isRecord(record)) return conciseOutput(entry);
     return conciseOutput({
       ...keepFields(entry, ["arm"]),
       record: keepFields(
-        modelCommandRecord(record as Record<string, unknown>),
+        modelCommandRecord(record),
         modelResponseFields.earlier_step,
       ),
     });
@@ -159,10 +170,10 @@ export function conciseOutput(
 ): unknown {
   if (Array.isArray(value))
     return value.map((item) => conciseOutput(item, options));
-  if (typeof value !== "object" || value === null) return value;
-  const record = modelCommandRecord(value as Record<string, unknown>);
+  if (!isRecord(value)) return value;
+  const record = modelCommandRecord(value);
   if ("arms" in record && "joint_names" in record) {
-    const arms = Array.isArray(record["arms"]) ? record["arms"] : [];
+    const arms = arrayOrEmpty(record["arms"]);
     return {
       ...keepFields(record, [
         ...modelResponseFields.state,
@@ -172,14 +183,14 @@ export function conciseOutput(
       ]),
       arms: arms.map((arm) =>
         conciseOutput(
-          keepFields(arm as Record<string, unknown>, modelResponseFields.arm),
+          isRecord(arm) ? keepFields(arm, modelResponseFields.arm) : {},
         ),
       ),
     };
   }
   if ("requested_steps" in record && "steps" in record) {
-    const requested = record["requested_steps"] as unknown[];
-    const steps = record["steps"] as unknown[];
+    const requested = arrayOrEmpty(record["requested_steps"]);
+    const steps = arrayOrEmpty(record["steps"]);
     return {
       ...keepFields(record, ["arms", "phase"]),
       requested_step_count: requested.length,

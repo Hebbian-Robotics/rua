@@ -77,6 +77,50 @@ test("a silent event stream reconnects and refreshes an expired cursor immediate
   }
 });
 
+test("a malformed snapshot never publishes its state before reconnecting", async () => {
+  const cursor = "11111111-1111-4111-8111-111111111111:1";
+  let sentMalformedSnapshot = false;
+  const server = createServer((_request, response) => {
+    const items = sentMalformedSnapshot
+      ? [{ kind: "future_event" }, stateMessage([{ revision: 2 }])]
+      : [stateMessage([{ revision: 1 }]), { kind: "state", state: null }];
+    sentMalformedSnapshot = true;
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `id: ${cursor}\nevent: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  const revisions: (number | undefined)[] = [];
+  connection.onState((state) => revisions.push(state.arms[0]?.revision));
+  const disconnected = new Promise<void>((resolve) => {
+    connection.onConnectionChange((connected) => {
+      if (!connected) resolve();
+    });
+  });
+  try {
+    connection.start();
+    await disconnected;
+    expect(revisions).toEqual([]);
+    const state = await connection.waitForState(
+      (state) => state.arms[0]?.revision === 2,
+    );
+    expect(state.arms[0]?.revision).toBe(2);
+    expect(revisions).toEqual([2]);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("a handshake timeout backs off even when a listener asks to reconnect", async () => {
   let signalFirstRequest: () => void = () => {};
   let signalRetry: (startedAt: number) => void = () => {};
