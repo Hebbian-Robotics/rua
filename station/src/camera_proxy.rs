@@ -382,3 +382,40 @@ async fn observe(
         missing_optional_cameras,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{ObservationRequest, ObservationSelection};
+    use hebbian_contracts::SnapshotName;
+
+    #[test]
+    fn observation_cameras_must_be_unique_across_required_and_optional_lists() -> anyhow::Result<()>
+    {
+        let wrist = SnapshotName::try_from("wrist".to_owned())?;
+        let selection = ObservationSelection::try_from(ObservationRequest {
+            arms: vec![],
+            required_cameras: vec![wrist.clone()],
+            optional_cameras: vec![wrist],
+        });
+        assert!(selection.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn observation_accepts_eight_cameras_total_and_rejects_nine() -> anyhow::Result<()> {
+        let cameras = |indices: std::ops::Range<usize>| {
+            indices
+                .map(|index| SnapshotName::try_from(format!("camera_{index}")))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        let mut request = ObservationRequest {
+            arms: vec![],
+            required_cameras: cameras(0..4)?,
+            optional_cameras: cameras(4..8)?,
+        };
+        assert!(ObservationSelection::try_from(request.clone()).is_ok());
+        request.optional_cameras.extend(cameras(8..9)?);
+        assert!(ObservationSelection::try_from(request).is_err());
+        Ok(())
+    }
+}

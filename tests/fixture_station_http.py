@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -50,6 +50,7 @@ def state_message(
     active: str | None = None,
     last: str | None = None,
     holder: str | None = None,
+    revision: int = 0,
 ) -> dict[str, Any]:
     return {
         "kind": "state",
@@ -79,7 +80,7 @@ def state_message(
                     "segment": None,
                     "tool": None,
                     "interlocks": [],
-                    "revision": 0,
+                    "revision": revision,
                 }
             ],
             "lease": None
@@ -102,7 +103,9 @@ def state_message(
 
 
 class ScriptedHttpStation:
-    def __init__(self) -> None:
+    def __init__(
+        self, capture_observation: Callable[[], Awaitable[object]] | None = None
+    ) -> None:
         self.url = ""
         self.streams: list[asyncio.StreamWriter] = []
         self.stream_arrived = asyncio.Condition()
@@ -113,6 +116,7 @@ class ScriptedHttpStation:
         self.lease_released = asyncio.Event()
         self.refuse_lease = False
         self.retained_run_records: list[dict[str, object]] = []
+        self.capture_observation = capture_observation
 
     async def handle(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -157,12 +161,15 @@ class ScriptedHttpStation:
             elif path == "/state":
                 result = state_message(holder="agent")["state"]
             elif method == "POST" and path == "/observations":
-                result = {
-                    "status": "observation_captured",
-                    "state": state_message(holder="agent")["state"],
-                    "cameras": {},
-                    "missing_optional_cameras": [],
-                }
+                if self.capture_observation is not None:
+                    result = await self.capture_observation()
+                else:
+                    result = {
+                        "status": "observation_captured",
+                        "state": state_message(holder="agent")["state"],
+                        "cameras": {},
+                        "missing_optional_cameras": [],
+                    }
             elif path.startswith("/run/records?"):
                 result = self.retained_run_records
             elif method == "POST" and path == "/leases":
@@ -233,8 +240,10 @@ class ScriptedHttpStation:
 
 
 @asynccontextmanager
-async def scripted_http_station() -> AsyncGenerator[ScriptedHttpStation]:
-    station = ScriptedHttpStation()
+async def scripted_http_station(
+    *, capture_observation: Callable[[], Awaitable[object]] | None = None
+) -> AsyncGenerator[ScriptedHttpStation]:
+    station = ScriptedHttpStation(capture_observation)
     server = await asyncio.start_server(station.handle, "127.0.0.1", 0)
     station.url = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
     try:
