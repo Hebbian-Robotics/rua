@@ -113,6 +113,51 @@ pub struct Station {
     media_server: String,
 }
 
+/// An accepted sequence bound to the connection and station instance that admitted it.
+pub struct SequenceExecution {
+    station: Station,
+    instance_id: String,
+    execution_id: String,
+}
+
+impl SequenceExecution {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.execution_id
+    }
+
+    #[must_use]
+    pub fn station_instance_id(&self) -> &str {
+        &self.instance_id
+    }
+
+    fn reference(&self) -> String {
+        format!("{}~{}", self.instance_id, self.execution_id)
+    }
+
+    /// # Errors
+    /// The station changed or no longer retains this execution.
+    pub async fn status(&self) -> Result<ActionSequenceRecord> {
+        self.station.get_action_sequence(&self.reference()).await
+    }
+
+    /// # Errors
+    /// The station changed or cannot report completion.
+    pub async fn wait(&self) -> Result<ActionSequenceRecord> {
+        self.station
+            .wait_for_action_sequence(&self.reference())
+            .await
+    }
+
+    /// # Errors
+    /// The station changed or cannot cancel the execution.
+    pub async fn cancel(&self) -> Result<()> {
+        self.station
+            .cancel_action_sequence_http(&self.reference())
+            .await
+    }
+}
+
 impl Station {
     /// Connect to a station at its HTTP base URL, such as `http://127.0.0.1:8792`.
     ///
@@ -785,7 +830,7 @@ impl Station {
     /// [`Error::Connection`] when the station stays unreachable.
     pub async fn cancel_action_sequence(&self, action_sequence_id: &str) -> Result<()> {
         match self.cancel_action_sequence_http(action_sequence_id).await {
-            Err(Error::Http { status: 404, .. }) => Ok(()),
+            Err(Error::Http { status: 404, .. }) if !action_sequence_id.contains('~') => Ok(()),
             result => result,
         }
     }
@@ -940,8 +985,10 @@ impl LeaseGuard {
         &self,
         action_sequence: ActionSequenceRequest,
     ) -> Result<ActionSequenceRecord> {
-        let id = self.start_action_sequence(action_sequence).await?;
-        self.station.wait_for_action_sequence(&id).await
+        self.start_sequence_execution(action_sequence, Vec::new())
+            .await?
+            .wait()
+            .await
     }
 
     /// Submit an ordered action sequence under this connection's lease and
@@ -965,6 +1012,20 @@ impl LeaseGuard {
         action_sequence: ActionSequenceRequest,
         capture_cameras: Vec<hebbian_contracts::SnapshotName>,
     ) -> Result<String> {
+        Ok(self
+            .start_sequence_execution(action_sequence, capture_cameras)
+            .await?
+            .execution_id)
+    }
+
+    /// Start a sequence and bind follow-up requests to its admitting instance.
+    /// # Errors
+    /// The station refused admission or could not be reached.
+    pub async fn start_sequence_execution(
+        &self,
+        action_sequence: ActionSequenceRequest,
+        capture_cameras: Vec<hebbian_contracts::SnapshotName>,
+    ) -> Result<SequenceExecution> {
         let submission = ActionSequenceStartRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             station_instance_id: self.station.get_station_instance().await?.id,
@@ -972,7 +1033,14 @@ impl LeaseGuard {
             action_sequence,
             capture_cameras,
         };
-        retry_operation_request(|| self.station.start_action_sequence_http(&submission)).await
+        let execution_id =
+            retry_operation_request(|| self.station.start_action_sequence_http(&submission))
+                .await?;
+        Ok(SequenceExecution {
+            station: self.station.clone(),
+            instance_id: submission.station_instance_id,
+            execution_id,
+        })
     }
 
     /// Submit a retained compilation with fresh authority and live admission checks.
@@ -1011,6 +1079,21 @@ impl LeaseGuard {
         expected_revisions: BTreeMap<String, u64>,
         continuation: Option<hebbian_contracts::ProgramContinuation>,
     ) -> Result<String> {
+        Ok(self
+            .start_compiled_execution(compilation_id, expected_revisions, continuation)
+            .await?
+            .execution_id)
+    }
+
+    /// Start a sequence and bind follow-up requests to its admitting instance.
+    /// # Errors
+    /// The station refused admission or could not be reached.
+    pub async fn start_compiled_execution(
+        &self,
+        compilation_id: &str,
+        expected_revisions: BTreeMap<String, u64>,
+        continuation: Option<hebbian_contracts::ProgramContinuation>,
+    ) -> Result<SequenceExecution> {
         let submission = RunCompiledProgramRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
             station_instance_id: self.station.get_station_instance().await?.id,
@@ -1019,7 +1102,14 @@ impl LeaseGuard {
             lease_token: self.lease_token.clone(),
             expected_revisions,
         };
-        retry_operation_request(|| self.station.run_compiled_sequence_http(&submission)).await
+        let execution_id =
+            retry_operation_request(|| self.station.run_compiled_sequence_http(&submission))
+                .await?;
+        Ok(SequenceExecution {
+            station: self.station.clone(),
+            instance_id: submission.station_instance_id,
+            execution_id,
+        })
     }
 
     /// Execute a retained compilation and wait for its actual outcome.
@@ -1031,10 +1121,10 @@ impl LeaseGuard {
         compilation_id: &str,
         expected_revisions: BTreeMap<String, u64>,
     ) -> Result<ActionSequenceRecord> {
-        let execution_id = self
-            .start_compiled_sequence(compilation_id, expected_revisions)
-            .await?;
-        self.station.wait_for_action_sequence(&execution_id).await
+        self.start_compiled_execution(compilation_id, expected_revisions, None)
+            .await?
+            .wait()
+            .await
     }
 
     /// Submit a command with a caller-selected identity and return its admission answer.

@@ -146,3 +146,15 @@ A software stop brakes and holds the arm. Disabling releases torque, and an
 unsupported arm can fall. A physical power cutoff operates separately from the
 controller. See [failure responses](control-invariants.md#failure-responses)
 for protective stops and recovery.
+
+### Station-bound sequence executions
+
+Sequence status, completion and cancellation accept either the execution ID or
+`{station_instance_id}~{execution_id}` in the existing ID path segment. The
+station checks the instance before looking up or cancelling the execution. A
+different instance returns HTTP 409, including after a restart at the same URL.
+SDK execution handles retain the instance from the accepted submission and
+the connection used for it. Create a new connection when selecting a different
+station. A TypeScript URL callback is evaluated once at connection creation.
+Deploy the updated station before using execution handles or the agent loops
+that use them. Earlier stations only understand bare execution IDs.

@@ -188,9 +188,11 @@ def test_canceled_sequence_releases_the_arm_for_the_next_sequence(
                         ]
                     )
 
-                canceled_id = await lease.start_action_sequence(sequence(target_joints))
-                await client.cancel_action_sequence(canceled_id)
-                canceled = await client.wait_for_action_sequence(canceled_id)
+                execution = await lease.start_sequence_execution(
+                    sequence(target_joints)
+                )
+                await execution.cancel()
+                canceled = await execution.wait()
                 assert canceled.phase.state == "stopped"
                 assert canceled.phase.failure.stage == "cancellation"
 

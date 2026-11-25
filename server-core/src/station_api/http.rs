@@ -257,6 +257,10 @@ async fn read_action_sequence_by_id(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Response {
+    let id = match station_state.execution_id(id) {
+        Ok(id) => id,
+        Err(error) => return error.into_response(),
+    };
     match station_state
         .admission
         .decide(move |state| state.executions.lookup(&id))
@@ -279,7 +283,7 @@ async fn wait_action_sequence_completion(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let id = OperationId::parse(&id);
+    let id = OperationId::parse(&station_state.execution_id(id)?);
     let mut progress = station_state
         .admission
         .decide(move |state| id.and_then(|id| state.operations.program_completion(id)))
@@ -417,6 +421,7 @@ async fn cancel_action_sequence(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
+    let id = station_state.execution_id(id)?;
     if station_state
         .admission
         .decide(move |state| state.executions.cancel(&id))

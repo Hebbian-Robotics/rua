@@ -49,12 +49,12 @@ let lease: Awaited<ReturnType<typeof connection.acquireLease>> | undefined;
 try {
   // Motion exists only on the lease; throws LeaseHeldElsewhereError when someone else holds it.
   lease = await connection.acquireLease("my program");
-  const actionSequenceId = await lease.startActionSequence({
+  const execution = await lease.startSequenceExecution({
     steps: [
       { arms: { arm: { goal: { kind: "joints", joints: [0, 0, 0, 0, 0] }, gripper_opening: 1 } } },
     ],
   });
-  const result = await connection.waitForActionSequence(actionSequenceId);
+  const result = await execution.wait();
   console.log(result.phase, result.steps);
 } finally {
   try {
@@ -70,9 +70,8 @@ reached its planned targets; a stopped result explains why it ended. A dropped
 connection stops the action sequence by default. See the
 [control model](../docs/control-model.md) for lease and interruption behavior.
 
-Pass `signal` or `timeoutMilliseconds` to `waitForActionSequence` to bound the
-client's wait. To stop a running sequence, call `cancelActionSequence` with its
-ID and wait for a terminal result before submitting another move.
+Pass `signal` or `timeoutMilliseconds` to `execution.wait()` to bound the
+client's wait. To stop a running sequence, call `execution.cancel()` and wait for a terminal result before submitting another move.
 
 ## Compile before running
 
@@ -82,10 +81,10 @@ Ordinary sequences compile automatically. Advanced callers can inspect first:
 const outcome = await connection.compileActionSequence(source);
 if (outcome.kind === "compiled") {
   console.log(outcome.artifact.compiled);
-  const executionId = await lease.startCompiledSequence(
+  const execution = await lease.startCompiledExecution(
     outcome.artifact.compilation_id,
   );
-  const result = await connection.waitForActionSequence(executionId);
+  const result = await execution.wait();
   console.log(result.compilation_id, result.phase);
 } else {
   console.log(outcome.diagnostics);

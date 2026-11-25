@@ -8,16 +8,26 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Literal
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pytest
 
+from hebbian_rua import HttpError
 from hebbian_rua.client.contract.station_api import (
     ActionSequenceCompleted,
     ActionSequenceGripper,
+    ActionSequenceRequest,
+    ActionSequenceStep,
     CommandRecord,
 )
-from hebbian_rua.client.station_client import StationClient
-from tests.fixture_station import ARM, REPOSITORY_ROOT, running_station
+from hebbian_rua.client.station_client import SequenceExecution, StationClient
+from tests.fixture_station import (
+    ARM,
+    REPOSITORY_ROOT,
+    running_station,
+    station_process,
+    wait_until_station_live,
+)
 
 
 async def run_python_operation(
@@ -169,3 +179,77 @@ def test_sdk_recovers_the_original_operation_after_losing_its_reply(
         assert set(submissions) == {(submissions[0][0], result_id)}
         if operation != "command":
             assert result_id == submissions[0][0]
+
+
+@pytest.mark.server
+def test_foreign_instance_cannot_read_wait_or_cancel_an_existing_execution(
+    server_binary: Path,
+) -> None:
+    async def check(station_url: str) -> None:
+        async with (
+            StationClient(station_url) as client,
+            client.holding_lease("execution identity test") as lease,
+        ):
+            execution = await lease.start_sequence_execution(
+                ActionSequenceRequest(
+                    steps=[
+                        ActionSequenceStep(
+                            arms={ARM: ActionSequenceGripper(gripper_opening=1)}
+                        )
+                    ]
+                )
+            )
+            foreign = SequenceExecution(client, str(uuid4()), execution.id)
+            for operation in (foreign.status, foreign.wait, foreign.cancel):
+                with pytest.raises(
+                    HttpError, match="Station instance changed"
+                ) as refusal:
+                    await operation()
+                assert refusal.value.status == 409
+            assert isinstance((await execution.wait()).phase, ActionSequenceCompleted)
+            assert (await execution.status()).id == execution.id
+
+    with running_station(server_binary) as station:
+        asyncio.run(check(station.server))
+
+
+@pytest.mark.server
+def test_execution_handle_detects_station_restart_at_same_url(
+    server_binary: Path,
+) -> None:
+    async def check() -> None:
+        with station_process(server_binary) as original:
+            url = original.http_server()
+            wait_until_station_live(url)
+            async with StationClient(url) as client:
+                await client.arm(ARM).enable()
+                async with client.holding_lease("restart test") as lease:
+                    execution = await lease.start_sequence_execution(
+                        ActionSequenceRequest(
+                            steps=[
+                                ActionSequenceStep(
+                                    arms={ARM: ActionSequenceGripper(gripper_opening=1)}
+                                )
+                            ]
+                        )
+                    )
+                    assert isinstance(
+                        (await execution.wait()).phase, ActionSequenceCompleted
+                    )
+                original.stop()
+                with station_process(
+                    server_binary, http_address=urlsplit(url).netloc
+                ) as replacement:
+                    assert replacement.http_server() == url
+                    for operation in (
+                        execution.status,
+                        execution.wait,
+                        execution.cancel,
+                    ):
+                        with pytest.raises(
+                            HttpError, match="Station instance changed"
+                        ) as refusal:
+                            await operation()
+                        assert refusal.value.status == 409
+
+    asyncio.run(check())

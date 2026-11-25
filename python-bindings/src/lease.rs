@@ -106,17 +106,21 @@ impl NativeLease {
             guard.run_arms_records(command, options).await
         })
     }
-    fn start_action_sequence<'py>(
+    fn start_sequence_execution<'py>(
         &self,
         py: Python<'py>,
         request: &Bound<'_, PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let request = depythonize(request)?;
         self.operation(py, move |guard| async move {
-            guard.start_action_sequence(request).await
+            let execution = guard.start_sequence_execution(request, Vec::new()).await?;
+            Ok((
+                execution.station_instance_id().to_owned(),
+                execution.id().to_owned(),
+            ))
         })
     }
-    fn start_compiled_sequence<'py>(
+    fn start_compiled_execution<'py>(
         &self,
         py: Python<'py>,
         identifier: String,
@@ -126,9 +130,13 @@ impl NativeLease {
         let revisions = depythonize(revisions)?;
         let continuation = depythonize(continuation)?;
         self.operation(py, move |guard| async move {
-            guard
-                .submit_compiled_sequence(&identifier, revisions, continuation)
-                .await
+            let execution = guard
+                .start_compiled_execution(&identifier, revisions, continuation)
+                .await?;
+            Ok((
+                execution.station_instance_id().to_owned(),
+                execution.id().to_owned(),
+            ))
         })
     }
     fn send_operation<'py>(

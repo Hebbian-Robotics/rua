@@ -6286,6 +6286,7 @@
             "name": "id",
             "required": true,
             "schema": {
+              "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409.",
               "type": "string"
             }
           }
@@ -6334,6 +6335,7 @@
             "name": "id",
             "required": true,
             "schema": {
+              "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409.",
               "type": "string"
             }
           }
@@ -6375,6 +6377,7 @@
             "name": "id",
             "required": true,
             "schema": {
+              "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409.",
               "type": "string"
             }
           }

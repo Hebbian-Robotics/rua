@@ -624,19 +624,17 @@ function createRobotToolsCore(
                 { kind: "message", message: { kind: "start_action_sequence" } },
                 async ({ call, message }) => {
                   tracking.sequenceImages.clear();
-                  const sequenceId = await lease.startActionSequence(
+                  const execution = await lease.startSequenceExecution(
                     capActionSequence(
                       message.action_sequence,
                       options.motionLimits,
                     ),
                     captureCameras,
                   );
+                  const sequenceId = execution.id;
                   if (captureCameras.length)
                     tracking.sequenceImages.select(sequenceId, call.id);
-                  const sequence = await connection.waitForActionSequence(
-                    sequenceId,
-                    waitOptions,
-                  );
+                  const sequence = await execution.wait(waitOptions);
                   if (captureCameras.length)
                     await refreshSequenceImages(sequenceId);
                   const outcomes = sequence.steps

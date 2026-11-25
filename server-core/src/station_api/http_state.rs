@@ -271,6 +271,14 @@ impl StationHttpState {
         Ok(())
     }
 
+    pub(super) fn execution_id(&self, reference: String) -> Result<String, (StatusCode, String)> {
+        if let Some((instance, execution_id)) = reference.split_once('~') {
+            self.require_station_instance(instance)?;
+            return Ok(execution_id.to_owned());
+        }
+        Ok(reference)
+    }
+
     pub(super) fn validate_submission_id(
         &self,
         station_instance_id: &str,

@@ -20,8 +20,10 @@ Published wheels include the Rust client. Source installs build it with maturin.
 A lease context awaits release on exit. The lease object exposes its status and
 operations. Use `Lease.send` and `Lease.cancel_operation` when you need a
 caller-assigned operation ID. Use `StationClient.wait_for_command` with a
-returned command ID to observe its outcome. A plain sequence wait can be cancelled independently
-of the accepted sequence; use `StationClient.cancel_action_sequence` to stop it.
+returned command ID to observe its outcome. Use `execution = await lease.start_sequence_execution(source)`
+to obtain a handle bound to the accepting station. Use `await execution.wait()` for
+completion or `await execution.cancel()` to stop the sequence. A station restart
+invalidates the handle and its follow-up requests return HTTP 409.
 HTTP failures surface as `hebbian_rua.HttpError` with the status and response
 body in `status` and `body`.
 

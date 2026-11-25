@@ -547,6 +547,8 @@ fn path_parameters(path: &str) -> Vec<Value> {
         .map(|name| {
             let schema = if path == "/cameras/{name}" {
                 json!({"type": "string", "pattern": hebbian_contracts::SnapshotName::PATTERN})
+            } else if matches!(path, "/action_sequence/{id}" | "/action_sequence/{id}/completion" | "/action_sequence/{id}/cancel") {
+                json!({"type": "string", "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409."})
             } else {
                 json!({"type":"string"})
             };

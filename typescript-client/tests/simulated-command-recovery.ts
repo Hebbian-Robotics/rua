@@ -63,10 +63,10 @@ try {
       };
       const sequence = await (async () => {
         try {
-          const id = compilationId
-            ? await lease.startCompiledSequence(compilationId, revisions)
-            : await lease.startActionSequence(source);
-          return await connection.waitForActionSequence(id);
+          const execution = compilationId
+            ? await lease.startCompiledExecution(compilationId, revisions)
+            : await lease.startSequenceExecution(source);
+          return await execution.wait();
         } finally {
           globalThis.fetch = fetchFromNetwork;
           selectedStation = stationUrl;
