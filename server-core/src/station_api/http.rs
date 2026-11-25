@@ -310,14 +310,10 @@ async fn wait_operation(
                 return Err((StatusCode::INTERNAL_SERVER_ERROR, detail.to_string()));
             }
         };
-        let sequence = station_state
-            .events
-            .state_reflecting(&records)
-            .await
-            .ok_or((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Station state is unavailable".to_owned(),
-            ))?;
+        let sequence = station_state.state_reflecting(&records).await.ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Station state is unavailable".to_owned(),
+        ))?;
         Ok(hebbian_contracts::OperationCompletion {
             records,
             state_sequence: sequence.to_string(),
