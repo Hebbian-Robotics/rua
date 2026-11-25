@@ -6,7 +6,7 @@ use crate::config::ControllerConfig;
 use crate::control_link::LinkHandle;
 use crate::planning::Planner;
 use hebbian_contracts::{
-    ActionSequenceWaypoint, ArmMode, Command, CompiledArmAction, CompiledGoal, GripperOpening,
+    ArmMode, Command, CompiledArmAction, CompiledGoal, CompiledSequenceWaypoint, GripperOpening,
     JointSpeed, MoveArmsCommand, PlannedMotion, PoseOrientation, PoseProjection, PreviewPose,
     RejectionReason, Sample, StationCommand, Waypoint,
 };
@@ -352,7 +352,7 @@ fn prepare_waypoint_crossings(
     link: &LinkHandle,
     arm: &str,
     movement: &mut PreparedMovement,
-    waypoints: &[ActionSequenceWaypoint],
+    waypoints: &[CompiledSequenceWaypoint],
     gripper_opening: Option<GripperOpening>,
 ) -> Result<(), Rejection> {
     let PreparedMovement::Trajectory {
@@ -370,7 +370,18 @@ fn prepare_waypoint_crossings(
             "Continuous move cannot reach its requested path",
         ));
     }
-    for (segment, point) in plan.segments.iter_mut().zip(waypoints) {
+    let (_, waypoint_sections) = plan
+        .segments
+        .split_last_mut()
+        .filter(|(_, sections)| sections.len() == waypoints.len())
+        .ok_or_else(|| {
+            rejection(
+                RejectionReason::InvalidTarget,
+                "Continuous move needs one section per waypoint and goal",
+            )
+        })?;
+    for (segment, point) in waypoint_sections.iter_mut().zip(waypoints) {
+        segment.minimum_duration_seconds = point.minimum_duration_seconds.map(f64::from);
         segment.pass_through = Some(hebbian_contracts::PassThrough {
             gripper_angle: point
                 .gripper_opening
@@ -402,13 +413,13 @@ pub(super) fn prepare_compiled_action(
         CompiledArmAction::Move {
             waypoints,
             goal,
-            at_seconds,
+            minimum_duration_seconds,
             gripper_opening,
             max_joint_speed,
             max_joint_acceleration,
             max_joint_jerk,
         } => {
-            if at_seconds.is_some() && link.has_policy() {
+            if minimum_duration_seconds.is_some() && link.has_policy() {
                 return Err(rejection(
                     RejectionReason::InvalidTarget,
                     "Timing requires a planned move",
@@ -457,18 +468,10 @@ pub(super) fn prepare_compiled_action(
                 *max_joint_acceleration,
                 *max_joint_jerk,
             )?;
-            if let (Some(goal_seconds), PreparedMovement::Trajectory { plan, .. }) =
-                (at_seconds, &mut movement)
+            if let PreparedMovement::Trajectory { plan, .. } = &mut movement
+                && let Some(final_segment) = plan.segments.last_mut()
             {
-                let mut previous_seconds = 0.0;
-                let arrival_times = waypoints
-                    .iter()
-                    .filter_map(|waypoint| waypoint.at_seconds)
-                    .chain(std::iter::once(*goal_seconds));
-                for (segment, arrival_seconds) in plan.segments.iter_mut().zip(arrival_times) {
-                    segment.minimum_duration_seconds = Some(arrival_seconds - previous_seconds);
-                    previous_seconds = arrival_seconds;
-                }
+                final_segment.minimum_duration_seconds = minimum_duration_seconds.map(f64::from);
             }
             if !waypoints.is_empty() {
                 prepare_waypoint_crossings(link, arm, &mut movement, waypoints, *gripper_opening)?;

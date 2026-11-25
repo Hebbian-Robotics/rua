@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use hebbian_contracts::{
     CompilationDiagnostic, CompiledArmAction, CompiledGoal, CompiledOperation,
+    CompiledSequenceWaypoint, MinimumSectionDuration,
 };
 pub(crate) use hebbian_contracts::{CompilationTarget, CompiledProgram, CompiledStep};
 use sha2::{Digest, Sha256};
@@ -273,7 +274,7 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
             max_joint_acceleration,
             max_joint_jerk,
         } => {
-            check_move_schedule(&waypoints, at_seconds)?;
+            let (waypoints, minimum_duration_seconds) = compile_move_timing(waypoints, at_seconds)?;
             let (goal, movement_speed) = match goal {
                 ActionSequenceGoal::Joints {
                     joints,
@@ -301,7 +302,7 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
             Ok(CompiledArmAction::Move {
                 waypoints,
                 goal,
-                at_seconds,
+                minimum_duration_seconds,
                 gripper_opening: gripper_opening.map(opening).transpose()?,
                 max_joint_speed,
                 max_joint_acceleration,
@@ -321,30 +322,47 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
     }
 }
 
-fn check_move_schedule(
-    waypoints: &[ActionSequenceWaypoint],
+fn compile_move_timing(
+    waypoints: Vec<ActionSequenceWaypoint>,
     goal_seconds: Option<f64>,
-) -> Result<(), &'static str> {
-    let arrival_times = waypoints
-        .iter()
-        .map(|waypoint| waypoint.at_seconds)
-        .chain(std::iter::once(goal_seconds));
-    let mut previous = None;
-    for arrival in arrival_times {
+) -> Result<
+    (
+        Vec<CompiledSequenceWaypoint>,
+        Option<MinimumSectionDuration>,
+    ),
+    &'static str,
+> {
+    let mut previous_arrival_seconds = None;
+    let mut compile_arrival = |arrival: Option<f64>| {
         if arrival.is_some() != goal_seconds.is_some() {
             return Err("Set at_seconds on every waypoint and the goal, or omit all times");
         }
-        if let Some(seconds) = arrival {
-            if !seconds.is_finite() || seconds < 0.0 {
-                return Err("at_seconds must be finite and non-negative");
-            }
-            if previous.is_some_and(|previous| seconds <= previous) {
-                return Err("at_seconds must strictly increase from waypoint to goal");
-            }
-            previous = Some(seconds);
+        let Some(arrival_seconds) = arrival else {
+            return Ok(None);
+        };
+        if !arrival_seconds.is_finite() || arrival_seconds < 0.0 {
+            return Err("at_seconds must be finite and non-negative");
         }
-    }
-    Ok(())
+        if previous_arrival_seconds.is_some_and(|previous| arrival_seconds <= previous) {
+            return Err("at_seconds must strictly increase from waypoint to goal");
+        }
+        let section_seconds = arrival_seconds - previous_arrival_seconds.unwrap_or(0.0);
+        previous_arrival_seconds = Some(arrival_seconds);
+        MinimumSectionDuration::try_from(section_seconds).map(Some)
+    };
+    let compiled_waypoints = waypoints
+        .into_iter()
+        .map(|waypoint| {
+            compile_arrival(waypoint.at_seconds).map(|minimum_duration_seconds| {
+                CompiledSequenceWaypoint {
+                    at: waypoint.at,
+                    gripper_opening: waypoint.gripper_opening,
+                    minimum_duration_seconds,
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((compiled_waypoints, compile_arrival(goal_seconds)?))
 }
 
 #[cfg(test)]
@@ -398,8 +416,24 @@ mod tests {
             assert_eq!(error.step, Some(0));
             assert!(error.detail.contains(message));
         }
-        let mut timed = request(Some(0.0), Some(1.0));
-        compiler.compile(&timed, &targets).unwrap();
+        compiler
+            .compile(&request(Some(0.0), Some(1.0)), &targets)
+            .unwrap();
+        let mut timed = request(Some(0.25), Some(1.0));
+        let program = compiler.compile(&timed, &targets).unwrap();
+        let CompiledArmAction::Move {
+            waypoints,
+            minimum_duration_seconds,
+            ..
+        } = &program.steps[0]["arm"].action
+        else {
+            panic!("Expected a compiled move");
+        };
+        assert_eq!(
+            waypoints[0].minimum_duration_seconds.map(f64::from),
+            Some(0.25)
+        );
+        assert_eq!(minimum_duration_seconds.map(f64::from), Some(0.75));
         timed.steps[0].arms.insert(
             "other".into(),
             ActionSequenceArmAction::Gripper {

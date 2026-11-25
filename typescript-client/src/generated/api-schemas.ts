@@ -6433,9 +6433,6 @@ export const apiSchemas = z.object({
                 action: z.union([
                   z
                     .object({
-                      at_seconds: z
-                        .union([z.number().gte(0), z.null()])
-                        .optional(),
                       goal: z.union([
                         z
                           .object({
@@ -6537,6 +6534,24 @@ export const apiSchemas = z.object({
                       max_joint_speed: z
                         .union([z.number().gt(0), z.null()])
                         .optional(),
+                      minimum_duration_seconds: z
+                        .union([
+                          z
+                            .number()
+                            .gte(0)
+                            .describe(
+                              "Lower bound for the final section, from the preceding configuration to the goal.",
+                            ),
+                          z
+                            .null()
+                            .describe(
+                              "Lower bound for the final section, from the preceding configuration to the goal.",
+                            ),
+                        ])
+                        .describe(
+                          "Lower bound for the final section, from the preceding configuration to the goal.",
+                        )
+                        .optional(),
                       waypoints: z
                         .array(
                           z
@@ -6602,47 +6617,16 @@ export const apiSchemas = z.object({
                                   })
                                   .strict(),
                               ]),
-                              at_seconds: z
-                                .union([
-                                  z
-                                    .number()
-                                    .gte(0)
-                                    .describe(
-                                      "Earliest reference crossing in seconds from the start of this move.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "Earliest reference crossing in seconds from the start of this move.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Earliest reference crossing in seconds from the start of this move.",
-                                )
-                                .optional(),
                               gripper_opening: z
-                                .union([
-                                  z
-                                    .number()
-                                    .gte(0)
-                                    .lte(1)
-                                    .describe(
-                                      "Start moving the gripper when passing this waypoint.",
-                                    ),
-                                  z
-                                    .null()
-                                    .describe(
-                                      "Start moving the gripper when passing this waypoint.",
-                                    ),
-                                ])
-                                .describe(
-                                  "Start moving the gripper when passing this waypoint.",
-                                )
+                                .union([z.number().gte(0).lte(1), z.null()])
+                                .optional(),
+                              minimum_duration_seconds: z
+                                .union([z.number().gte(0), z.null()])
                                 .optional(),
                             })
                             .strict()
                             .describe(
-                              "An intermediate configuration along one continuous move.",
+                              "A pass-through configuration with the lower bound for the section ending there.",
                             ),
                         )
                         .describe(
@@ -7031,9 +7015,6 @@ export const apiSchemas = z.object({
                       action: z.union([
                         z
                           .object({
-                            at_seconds: z
-                              .union([z.number().gte(0), z.null()])
-                              .optional(),
                             goal: z.union([
                               z
                                 .object({
@@ -7135,6 +7116,24 @@ export const apiSchemas = z.object({
                             max_joint_speed: z
                               .union([z.number().gt(0), z.null()])
                               .optional(),
+                            minimum_duration_seconds: z
+                              .union([
+                                z
+                                  .number()
+                                  .gte(0)
+                                  .describe(
+                                    "Lower bound for the final section, from the preceding configuration to the goal.",
+                                  ),
+                                z
+                                  .null()
+                                  .describe(
+                                    "Lower bound for the final section, from the preceding configuration to the goal.",
+                                  ),
+                              ])
+                              .describe(
+                                "Lower bound for the final section, from the preceding configuration to the goal.",
+                              )
+                              .optional(),
                             waypoints: z
                               .array(
                                 z
@@ -7207,47 +7206,19 @@ export const apiSchemas = z.object({
                                         })
                                         .strict(),
                                     ]),
-                                    at_seconds: z
-                                      .union([
-                                        z
-                                          .number()
-                                          .gte(0)
-                                          .describe(
-                                            "Earliest reference crossing in seconds from the start of this move.",
-                                          ),
-                                        z
-                                          .null()
-                                          .describe(
-                                            "Earliest reference crossing in seconds from the start of this move.",
-                                          ),
-                                      ])
-                                      .describe(
-                                        "Earliest reference crossing in seconds from the start of this move.",
-                                      )
-                                      .optional(),
                                     gripper_opening: z
                                       .union([
-                                        z
-                                          .number()
-                                          .gte(0)
-                                          .lte(1)
-                                          .describe(
-                                            "Start moving the gripper when passing this waypoint.",
-                                          ),
-                                        z
-                                          .null()
-                                          .describe(
-                                            "Start moving the gripper when passing this waypoint.",
-                                          ),
+                                        z.number().gte(0).lte(1),
+                                        z.null(),
                                       ])
-                                      .describe(
-                                        "Start moving the gripper when passing this waypoint.",
-                                      )
+                                      .optional(),
+                                    minimum_duration_seconds: z
+                                      .union([z.number().gte(0), z.null()])
                                       .optional(),
                                   })
                                   .strict()
                                   .describe(
-                                    "An intermediate configuration along one continuous move.",
+                                    "A pass-through configuration with the lower bound for the section ending there.",
                                   ),
                               )
                               .describe(
@@ -7666,7 +7637,6 @@ export const apiSchemas = z.object({
   CompiledArmAction: z.union([
     z
       .object({
-        at_seconds: z.union([z.number().gte(0), z.null()]).optional(),
         goal: z.union([
           z
             .object({ joints: z.array(z.number()), kind: z.literal("joints") })
@@ -7748,6 +7718,24 @@ export const apiSchemas = z.object({
           .describe("Joint jerk cap in rad/s³; defaults to the arm profile.")
           .optional(),
         max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
+        minimum_duration_seconds: z
+          .union([
+            z
+              .number()
+              .gte(0)
+              .describe(
+                "Lower bound for the final section, from the preceding configuration to the goal.",
+              ),
+            z
+              .null()
+              .describe(
+                "Lower bound for the final section, from the preceding configuration to the goal.",
+              ),
+          ])
+          .describe(
+            "Lower bound for the final section, from the preceding configuration to the goal.",
+          )
+          .optional(),
         waypoints: z
           .array(
             z
@@ -7799,47 +7787,16 @@ export const apiSchemas = z.object({
                     })
                     .strict(),
                 ]),
-                at_seconds: z
-                  .union([
-                    z
-                      .number()
-                      .gte(0)
-                      .describe(
-                        "Earliest reference crossing in seconds from the start of this move.",
-                      ),
-                    z
-                      .null()
-                      .describe(
-                        "Earliest reference crossing in seconds from the start of this move.",
-                      ),
-                  ])
-                  .describe(
-                    "Earliest reference crossing in seconds from the start of this move.",
-                  )
-                  .optional(),
                 gripper_opening: z
-                  .union([
-                    z
-                      .number()
-                      .gte(0)
-                      .lte(1)
-                      .describe(
-                        "Start moving the gripper when passing this waypoint.",
-                      ),
-                    z
-                      .null()
-                      .describe(
-                        "Start moving the gripper when passing this waypoint.",
-                      ),
-                  ])
-                  .describe(
-                    "Start moving the gripper when passing this waypoint.",
-                  )
+                  .union([z.number().gte(0).lte(1), z.null()])
+                  .optional(),
+                minimum_duration_seconds: z
+                  .union([z.number().gte(0), z.null()])
                   .optional(),
               })
               .strict()
               .describe(
-                "An intermediate configuration along one continuous move.",
+                "A pass-through configuration with the lower bound for the section ending there.",
               ),
           )
           .describe(
@@ -7903,7 +7860,6 @@ export const apiSchemas = z.object({
       action: z.union([
         z
           .object({
-            at_seconds: z.union([z.number().gte(0), z.null()]).optional(),
             goal: z.union([
               z
                 .object({
@@ -7990,6 +7946,24 @@ export const apiSchemas = z.object({
               )
               .optional(),
             max_joint_speed: z.union([z.number().gt(0), z.null()]).optional(),
+            minimum_duration_seconds: z
+              .union([
+                z
+                  .number()
+                  .gte(0)
+                  .describe(
+                    "Lower bound for the final section, from the preceding configuration to the goal.",
+                  ),
+                z
+                  .null()
+                  .describe(
+                    "Lower bound for the final section, from the preceding configuration to the goal.",
+                  ),
+              ])
+              .describe(
+                "Lower bound for the final section, from the preceding configuration to the goal.",
+              )
+              .optional(),
             waypoints: z
               .array(
                 z
@@ -8047,47 +8021,16 @@ export const apiSchemas = z.object({
                         })
                         .strict(),
                     ]),
-                    at_seconds: z
-                      .union([
-                        z
-                          .number()
-                          .gte(0)
-                          .describe(
-                            "Earliest reference crossing in seconds from the start of this move.",
-                          ),
-                        z
-                          .null()
-                          .describe(
-                            "Earliest reference crossing in seconds from the start of this move.",
-                          ),
-                      ])
-                      .describe(
-                        "Earliest reference crossing in seconds from the start of this move.",
-                      )
-                      .optional(),
                     gripper_opening: z
-                      .union([
-                        z
-                          .number()
-                          .gte(0)
-                          .lte(1)
-                          .describe(
-                            "Start moving the gripper when passing this waypoint.",
-                          ),
-                        z
-                          .null()
-                          .describe(
-                            "Start moving the gripper when passing this waypoint.",
-                          ),
-                      ])
-                      .describe(
-                        "Start moving the gripper when passing this waypoint.",
-                      )
+                      .union([z.number().gte(0).lte(1), z.null()])
+                      .optional(),
+                    minimum_duration_seconds: z
+                      .union([z.number().gte(0), z.null()])
                       .optional(),
                   })
                   .strict()
                   .describe(
-                    "An intermediate configuration along one continuous move.",
+                    "A pass-through configuration with the lower bound for the section ending there.",
                   ),
               )
               .describe(
@@ -8120,7 +8063,6 @@ export const apiSchemas = z.object({
             action: z.union([
               z
                 .object({
-                  at_seconds: z.union([z.number().gte(0), z.null()]).optional(),
                   goal: z.union([
                     z
                       .object({
@@ -8211,6 +8153,24 @@ export const apiSchemas = z.object({
                   max_joint_speed: z
                     .union([z.number().gt(0), z.null()])
                     .optional(),
+                  minimum_duration_seconds: z
+                    .union([
+                      z
+                        .number()
+                        .gte(0)
+                        .describe(
+                          "Lower bound for the final section, from the preceding configuration to the goal.",
+                        ),
+                      z
+                        .null()
+                        .describe(
+                          "Lower bound for the final section, from the preceding configuration to the goal.",
+                        ),
+                    ])
+                    .describe(
+                      "Lower bound for the final section, from the preceding configuration to the goal.",
+                    )
+                    .optional(),
                   waypoints: z
                     .array(
                       z
@@ -8273,47 +8233,16 @@ export const apiSchemas = z.object({
                               })
                               .strict(),
                           ]),
-                          at_seconds: z
-                            .union([
-                              z
-                                .number()
-                                .gte(0)
-                                .describe(
-                                  "Earliest reference crossing in seconds from the start of this move.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Earliest reference crossing in seconds from the start of this move.",
-                                ),
-                            ])
-                            .describe(
-                              "Earliest reference crossing in seconds from the start of this move.",
-                            )
-                            .optional(),
                           gripper_opening: z
-                            .union([
-                              z
-                                .number()
-                                .gte(0)
-                                .lte(1)
-                                .describe(
-                                  "Start moving the gripper when passing this waypoint.",
-                                ),
-                              z
-                                .null()
-                                .describe(
-                                  "Start moving the gripper when passing this waypoint.",
-                                ),
-                            ])
-                            .describe(
-                              "Start moving the gripper when passing this waypoint.",
-                            )
+                            .union([z.number().gte(0).lte(1), z.null()])
+                            .optional(),
+                          minimum_duration_seconds: z
+                            .union([z.number().gte(0), z.null()])
                             .optional(),
                         })
                         .strict()
                         .describe(
-                          "An intermediate configuration along one continuous move.",
+                          "A pass-through configuration with the lower bound for the section ending there.",
                         ),
                     )
                     .describe(
@@ -8340,6 +8269,59 @@ export const apiSchemas = z.object({
       ),
     ),
   }),
+  CompiledSequenceWaypoint: z
+    .object({
+      at: z.union([
+        z
+          .object({ joints: z.array(z.number()), kind: z.literal("joints") })
+          .strict(),
+        z
+          .object({
+            kind: z.literal("pose"),
+            orientation: z
+              .union([
+                z
+                  .object({
+                    approach: z
+                      .union([
+                        z
+                          .union([
+                            z.literal("down").describe("World -Z."),
+                            z.literal("forward").describe("World +X."),
+                          ])
+                          .describe("A named approach direction."),
+                        z.array(z.number()).min(3).max(3),
+                      ])
+                      .describe(
+                        "The direction the jaws point along: a named one, or a nonzero world direction.",
+                      ),
+                    jaw_yaw_degrees: z.number(),
+                    kind: z.literal("grasp"),
+                  })
+                  .describe(
+                    "The approach direction and the jaw yaw about it, in degrees.",
+                  ),
+                z
+                  .object({
+                    kind: z.literal("quaternion"),
+                    quaternion: z.array(z.number()).min(4).max(4),
+                  })
+                  .describe("A raw quaternion, `[x, y, z, w]`."),
+              ])
+              .describe("A tool orientation as a client gives it."),
+            position: z.array(z.number()).min(3).max(3),
+          })
+          .strict(),
+      ]),
+      gripper_opening: z.union([z.number().gte(0).lte(1), z.null()]).optional(),
+      minimum_duration_seconds: z
+        .union([z.number().gte(0), z.null()])
+        .optional(),
+    })
+    .strict()
+    .describe(
+      "A pass-through configuration with the lower bound for the section ending there.",
+    ),
   ControlAction: z
     .enum([
       "enable",
