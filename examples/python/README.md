@@ -67,12 +67,9 @@ the conversation to restore an expired or interrupted thread.
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
 named cameras to the station. Repeat `--camera NAME` for each camera the agent
 should see, using the names from `uv run hebbian-rua camera list` in this example
-directory. On the station host, get the room URL and token with
-`curl --fail http://127.0.0.1:8792/media/access-token`,
-then enter them in the [hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/)
-to watch while the agent runs.
-
-[Options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable)
+directory. Follow [watch a USB camera](../../docs/cameras.md#watch-a-usb-camera)
+to view the feeds while the agent runs. The camera guide also covers
+[options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable).
 
 ## Inspect a run in Jaeger
 

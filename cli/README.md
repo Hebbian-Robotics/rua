@@ -96,29 +96,10 @@ for how the station applies those times.
 
 ## Set up live cameras
 
-Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the station's
-environment or `.env`. On the station host, run `rua camera-devices` and repeat
-`--camera NAME=DEVICE` for each camera when starting the station. This command
-uses device indices `2` and `4`.
-
-```sh
-rua serve --camera wrist=2 --camera overhead=4
-```
-
-On the station host, open another terminal to list the cameras and get the
-room's viewer token.
-
-```sh
-hebbian-rua camera list
-curl --fail http://127.0.0.1:8792/media/access-token
-```
-
-Paste the response's `server_url` and `token` into **Room viewer** on the
-[hosted LiveKit Cameras page](https://hebbian-robotics.github.io/livekit-cameras/).
-See the [camera guide](../docs/cameras.md) for device selectors, source setup,
-and phone invites. This setup is also shown in `hebbian-rua camera --help`.
-
-[Options when LiveKit Cloud is unavailable](../docs/cameras.md#when-livekit-cloud-is-unavailable)
+Follow the [camera guide](../docs/cameras.md) to configure LiveKit, select
+devices, list cameras, and watch their feeds. It also covers phone invites and
+[options when LiveKit Cloud is unavailable](../docs/cameras.md#when-livekit-cloud-is-unavailable).
+Run `hebbian-rua camera --help` for CLI commands.
 
 ## Exit codes and errors
 
