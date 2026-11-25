@@ -6,7 +6,8 @@ use hebbian_contracts::{
     LeaseGrant, LeaseToken, ObservationAnswer, ObservationRequest, OperationCompletion,
     OperationStatus, PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest,
     PosePreviewBatchResponse, RecordingStatus, RunCompiledProgramRequest, RunEvent,
-    RunSpansRequest, StationInstance, StationState, StreamGoalUpdateRequest, TraceFile,
+    RunSpansRequest, SequenceCameraHistory, StationInstance, StationState, StreamGoalUpdateRequest,
+    TraceFile,
 };
 use reqwest::{Method, Response};
 
@@ -58,6 +59,26 @@ impl Station {
         )
         .await?;
         Ok(())
+    }
+
+    /// Read the station's retained camera images for one execution.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn get_sequence_camera_history(
+        &self,
+        id: &str,
+    ) -> Result<Option<SequenceCameraHistory>> {
+        Ok(self
+            .request(
+                Method::GET,
+                &self.server,
+                &["action_sequence", id, "images"],
+                None::<&()>,
+            )
+            .await?
+            .json()
+            .await?)
     }
 
     /// Stop one arm while holding the lease.

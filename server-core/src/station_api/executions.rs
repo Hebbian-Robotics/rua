@@ -83,6 +83,13 @@ impl ExecutionRegistry {
             .find_map(|active| active.record_for_id(id))
     }
 
+    pub(super) fn progress_for(&self, id: &str) -> Option<watch::Receiver<ActionSequenceRecord>> {
+        self.sequences
+            .iter()
+            .find(|active| active.has_id(id))
+            .map(ActiveExecution::subscribe)
+    }
+
     #[must_use]
     pub fn current(&self) -> Option<watch::Receiver<ActionSequenceRecord>> {
         self.sequences.back().map(ActiveExecution::subscribe)

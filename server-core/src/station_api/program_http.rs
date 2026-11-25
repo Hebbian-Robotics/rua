@@ -204,7 +204,7 @@ async fn execute_submission(
     check_admission(&station_state)?;
     let links = station_links(&station_state)?.clone();
     let worker_station = Arc::clone(&station_state);
-    let (token, artifact, expected_revisions, continuation) =
+    let (token, artifact, expected_revisions, continuation, capture_cameras) =
         tokio::task::spawn_blocking(move || prepare_submission(&worker_station, request))
             .await
             .map_err(|error| ProgramSubmissionError::Internal(error.to_string()))??;
@@ -224,6 +224,16 @@ async fn execute_submission(
                 continuation,
             )
             .map_err(ProgramSubmissionError::ExecutionRefused)?;
+            if !capture_cameras.is_empty()
+                && let Some(progress) = state.executions.progress_for(&id)
+            {
+                station_state.sequence_images.start(
+                    id.clone(),
+                    progress,
+                    capture_cameras,
+                    station_state.sequence_cameras.get().cloned(),
+                );
+            }
             if let Some(record) = state.executions.lookup(&id) {
                 state.publish_execution(record);
             }
@@ -238,6 +248,7 @@ type PreparedProgram = (
     Arc<super::programs::ProgramArtifact>,
     std::collections::BTreeMap<String, u64>,
     Option<hebbian_contracts::ProgramContinuation>,
+    Vec<hebbian_contracts::SnapshotName>,
 );
 
 fn prepare_submission(
@@ -256,7 +267,13 @@ fn prepare_submission(
                 }
             };
             let expected_revisions = artifact.compilation.source.expected_revisions.clone();
-            (request.lease_token, artifact, expected_revisions, None)
+            (
+                request.lease_token,
+                artifact,
+                expected_revisions,
+                None,
+                request.capture_cameras,
+            )
         }
         ProgramSubmissionRequest::Compiled(request) => {
             let artifact = station_state.lookup_compilation(&request.compilation_id)?;
@@ -265,6 +282,7 @@ fn prepare_submission(
                 artifact,
                 request.expected_revisions,
                 request.continuation,
+                Vec::new(),
             )
         }
     })

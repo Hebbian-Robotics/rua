@@ -124,6 +124,7 @@ impl SimulatedStation {
             .map(|(name, _, link)| (name.clone(), link.handle()))
             .collect();
         if let Some(mounted) = mounted {
+            mounted.attach_sequence_cameras(&server);
             mounted.attach_arms(&server.runtime_handle(), &handles);
         }
         server.attach_arms(handles);

@@ -407,6 +407,15 @@
           "action_sequence": {
             "$ref": "#/components/schemas/ActionSequenceRequest"
           },
+          "capture_cameras": {
+            "description": "Best-effort image capture for this execution. Empty disables capture.",
+            "items": {
+              "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+              "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "lease_token": {
             "type": "string"
           },
@@ -5086,6 +5095,74 @@
         ],
         "type": "object"
       },
+      "SequenceCameraHistory": {
+        "description": "Selected evidence for one execution. Image timing is measured at the station.",
+        "properties": {
+          "expires_in_seconds": {
+            "description": "Remaining retention at the time the station prepared this response.",
+            "format": "double",
+            "type": "number"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/SequenceCameraImage"
+            },
+            "type": "array"
+          },
+          "missed_samples": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expires_in_seconds",
+          "images",
+          "missed_samples",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "SequenceCameraImage": {
+        "description": "One image requested during an action sequence.",
+        "properties": {
+          "boundary": {
+            "$ref": "#/components/schemas/SequenceImageBoundary"
+          },
+          "camera": {
+            "description": "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            "pattern": "^(?:[a-z0-9_]{1,40}|sim_[\\s\\S]+)$",
+            "type": "string"
+          },
+          "elapsed_seconds": {
+            "format": "double",
+            "type": "number"
+          },
+          "frame": {
+            "$ref": "#/components/schemas/ObservationFrame"
+          }
+        },
+        "required": [
+          "camera",
+          "frame",
+          "elapsed_seconds",
+          "boundary"
+        ],
+        "type": "object"
+      },
+      "SequenceImageBoundary": {
+        "description": "Why a best-effort sequence image was requested.",
+        "enum": [
+          "start",
+          "motion",
+          "step",
+          "end"
+        ],
+        "type": "string"
+      },
       "ServerMessage": {
         "description": "Station event and result models shared with SDKs.",
         "oneOf": [
@@ -6231,6 +6308,61 @@
           }
         },
         "summary": "Cancel an action sequence.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/action_sequence/{id}/images": {
+      "get": {
+        "operationId": "get_sequence_camera_history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SequenceCameraHistory"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Read the station's retained camera images for one execution.",
         "x-sdk": true,
         "x-server": "station"
       }
