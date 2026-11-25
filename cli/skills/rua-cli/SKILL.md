@@ -6,11 +6,11 @@ description: Operate and inspect a Hebbian robot-use station with the hebbian-ru
 # RUA CLI
 
 Use `hebbian-rua` to talk to an existing station. This client is separate
-from `rua serve`, which starts the station. Both come with the `hebbian-rua`
-Python package. In the project that runs the station, call it as
+from `rua serve`, which starts the station. Both come with the published
+`hebbian-rua` Python wheel. In a project that installs the wheel, call it as
 `uv run hebbian-rua`; without a project, use `uvx hebbian-rua==<station version>`
 so the CLI matches the station. From a RUA source checkout, use
-`cargo run -p hebbian-rua-cli --`.
+`cargo run --locked -p hebbian-rua-cli --`.
 
 Choose commands according to the task. `state` reports arm names, joint order,
 measured joints, faults, interlocks, and the lease holder without changing
