@@ -23,8 +23,6 @@ import {
   type ActionSequenceRequest,
   type ClientMessage,
   type CommandAnswer,
-  type CommandRecord,
-  commandResult,
   type LeaseAnswer,
   type LeaseHolder,
   type LeaseStatus,
@@ -47,18 +45,7 @@ const CONNECT_TIMEOUT_MILLISECONDS = 10_000;
 const EVENT_READ_TIMEOUT_MILLISECONDS = 30_000;
 /** How long a request, or an awaited state, waits before it is given up on. */
 const REPLY_TIMEOUT_MILLISECONDS = 30_000;
-/** How long a command's outcome is awaited across a lost connection. */
-const DISCONNECT_PATIENCE_MILLISECONDS = 30_000;
-const RETAINED_RECORDS = 10_000;
-
 class StationReplayGap extends StationConnectionError {}
-
-type ArmRecord = Extract<
-  CommandAnswer,
-  { status: "accepted" }
->["records"][number];
-
-type Frame = Extract<ServerMessage, { kind: "frame" }>["frame"];
 
 /** A model loop's run telemetry, in order, each record once. */
 export type RunRecord = Extract<
@@ -287,8 +274,6 @@ interface Wait {
   signal?: AbortSignal;
   /** Reject with this after the timeout. */
   timeout?: { milliseconds: number; error: () => Error };
-  /** Reject once the connection has been down for the patience period. */
-  patient?: boolean;
 }
 
 function asError(error: unknown): Error {
@@ -321,15 +306,13 @@ export function createStationConnection(
   const connectionListeners = new Set<(connected: boolean) => void>();
   const leaseLostListeners = new Set<() => void>();
   const changeListeners = new Set<() => void>();
-  const records = new Map<string, ArmRecord>();
-  const resumeAfter = new Map<string, number>();
+  let commandLifetime = new AbortController();
   let runAfter = options.runAfter;
   let connectionLoop: AbortController | null = null;
   let eventCursor: string | null = null;
   let closed = false;
   let ready = false;
   let connectionGeneration = 0;
-  let disconnectedSince: number | null = null;
   let lastError: string | null = null;
   let leaseState:
     | { kind: "idle" }
@@ -369,12 +352,10 @@ export function createStationConnection(
   ): Promise<Result> {
     return new Promise((resolve, reject) => {
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-      let patienceTimer: ReturnType<typeof setTimeout> | undefined;
       const finish = () => {
         changeListeners.delete(evaluate);
         wait.signal?.removeEventListener("abort", abort);
         clearTimeout(timeoutTimer);
-        clearTimeout(patienceTimer);
       };
       const fail = (error: Error) => {
         finish();
@@ -386,10 +367,6 @@ export function createStationConnection(
         return;
       }
       wait.signal?.addEventListener("abort", abort, { once: true });
-      const unreachable = () =>
-        new StationConnectionError(
-          `${typeof stationUrl === "string" ? stationUrl : stationUrl()} has been unreachable for too long`,
-        );
       function evaluate(): void {
         if (closed) {
           fail(new StationConnectionError("The station connection is closed"));
@@ -406,22 +383,6 @@ export function createStationConnection(
           finish();
           resolve(value);
           return;
-        }
-        if (!wait.patient) return;
-        if (disconnectedSince === null) {
-          clearTimeout(patienceTimer);
-          patienceTimer = undefined;
-          return;
-        }
-        const remaining =
-          disconnectedSince + DISCONNECT_PATIENCE_MILLISECONDS - Date.now();
-        if (remaining <= 0) {
-          fail(unreachable());
-        } else if (patienceTimer === undefined) {
-          patienceTimer = setTimeout(() => {
-            patienceTimer = undefined;
-            evaluate();
-          }, remaining);
         }
       }
       if (wait.timeout) {
@@ -441,63 +402,6 @@ export function createStationConnection(
     for (const listener of leaseLostListeners) listener();
   }
 
-  function rememberRecord(armRecord: ArmRecord): void {
-    const { record } = armRecord;
-    const previous = records.get(record.command_id);
-    // A late, unfinished revision never replaces the finished one.
-    if (
-      previous !== undefined &&
-      previous.record.phase.kind !== "pending" &&
-      record.phase.kind === "pending"
-    )
-      return;
-    records.delete(record.command_id);
-    records.set(record.command_id, armRecord);
-    if (records.size > RETAINED_RECORDS) {
-      const oldest = records.keys().next().value;
-      if (oldest !== undefined) records.delete(oldest);
-    }
-    notify();
-  }
-
-  /** Keep a frame's records and advance the arm's resume cursor. */
-  function keepFrame(arm: string, frame: Frame): void {
-    const previous = resumeAfter.get(arm);
-    if (
-      typeof frame.seq === "number" &&
-      previous !== undefined &&
-      frame.seq <= previous
-    )
-      return;
-    const cursor = match(frame.event)
-      .with({ kind: "record" }, ({ kind, ...record }) => {
-        void kind;
-        rememberRecord({ arm, record });
-        return frame.seq;
-      })
-      .with({ kind: "snapshot" }, (snapshot) => {
-        for (const retained of snapshot.log) keepFrame(arm, retained);
-        for (const record of snapshot.records) rememberRecord({ arm, record });
-        return snapshot.seq;
-      })
-      .with(
-        {
-          kind: P.union(
-            "state",
-            "resync",
-            "mode",
-            "rejected",
-            "tripped",
-            "controller_unavailable",
-            "controller_available",
-          ),
-        },
-        () => frame.seq,
-      )
-      .exhaustive();
-    if (typeof cursor === "number") resumeAfter.set(arm, cursor);
-  }
-
   /** Deliver a run record once, in order, after a resume or a duplicate. */
   function deliverRunRecord(record: Extract<RunRecord, { seq: number }>): void {
     if (runAfter !== undefined && record.seq <= runAfter) return;
@@ -505,89 +409,20 @@ export function createStationConnection(
     for (const listener of runRecordListeners) listener(record);
   }
 
-  async function finishedAnswer(
-    answer: CommandAnswer,
-    signal?: AbortSignal,
-  ): Promise<CommandAnswer> {
-    if (answer.status === "refused") return answer;
-    const completed = await Promise.all(
-      answer.records.map(async (entry) => ({
-        arm: entry.arm,
-        record: await waitForOutcome(entry.record.command_id, signal),
-      })),
-    );
-    return { ...answer, records: completed };
-  }
-
-  async function waitForOutcome(
-    commandId: string,
-    signal?: AbortSignal,
-  ): Promise<CommandRecord> {
-    const { arm: commandArm, record } = await waitFor(
-      () => {
-        const latest = records.get(commandId);
-        return latest && latest.record.phase.kind !== "pending"
-          ? latest
-          : undefined;
-      },
-      { patient: true, signal },
-    );
-    await waitFor(
-      () => {
-        if (!ready) return true;
-        if (latestState === null) return undefined;
-        const arm = latestState.arms.find((arm) => arm.arm === commandArm);
-        if (arm === undefined || arm.active_command?.command_id === commandId)
-          return undefined;
-        const finishedAt = BigInt(
-          commandResult(record)?.finished_unix_nano ?? 0,
-        );
-        // Commands that finish in one cycle show only the latest on that arm.
-        return arm.last_command?.command_id === commandId ||
-          BigInt(commandResult(arm.last_command)?.finished_unix_nano ?? -1) >=
-            finishedAt
-          ? true
-          : undefined;
-      },
-      { signal },
-    );
-    return record;
-  }
-
   function receive(text: string): void {
     const raw: unknown = JSON.parse(text);
-    // Arm samples are most of the traffic; only the cursor, records and
-    // snapshots of a frame are read.
     if (
       typeof raw === "object" &&
       raw !== null &&
       "kind" in raw &&
-      raw.kind === "frame" &&
-      "arm" in raw &&
-      typeof raw.arm === "string" &&
-      "frame" in raw &&
-      typeof raw.frame === "object" &&
-      raw.frame !== null &&
-      "event" in raw.frame &&
-      typeof raw.frame.event === "object" &&
-      raw.frame.event !== null &&
-      "kind" in raw.frame.event &&
-      raw.frame.event.kind !== "record" &&
-      raw.frame.event.kind !== "snapshot"
-    ) {
-      if ("seq" in raw.frame && typeof raw.frame.seq === "number") {
-        const previous = resumeAfter.get(raw.arm);
-        if (previous === undefined || raw.frame.seq > previous)
-          resumeAfter.set(raw.arm, raw.frame.seq);
-      }
+      raw.kind === "frame"
+    )
       return;
-    }
     match(serverMessageSchema.parse(raw))
       .with({ kind: "state" }, ({ state }) => {
         latestState = state;
         stateFrameCount += 1;
         for (const listener of stateListeners) listener(state);
-        notify();
       })
       .with({ kind: "run" }, ({ run }) => {
         for (const listener of runListeners) listener(run);
@@ -604,13 +439,13 @@ export function createStationConnection(
         notify();
       })
       .with({ kind: "lease_lost" }, loseLease)
-      .with({ kind: "frame" }, ({ arm, frame }) => keepFrame(arm, frame))
       // The event stream applies updates. Request replies are handled by their callers.
       .with(
         {
           kind: P.union(
             "action_sequence_accepted",
             "hello",
+            "frame",
             "lease",
             "command_answer",
             "preview_answer",
@@ -638,6 +473,7 @@ export function createStationConnection(
     ) {
       throw new StationReplayGap("Station event replay requires a snapshot");
     }
+    const previousStateFrameCount = stateFrameCount;
     if (event.kind === "snapshot") {
       if (
         typeof payload !== "object" ||
@@ -649,8 +485,6 @@ export function createStationConnection(
       )
         throw new StationConnectionError("Invalid station snapshot");
       latestState = null;
-      records.clear();
-      resumeAfter.clear();
       if (runAfter === undefined) {
         runAfter = payload.run_sequence;
       } else {
@@ -671,9 +505,9 @@ export function createStationConnection(
       return;
     }
     eventCursor = event.id || eventCursor;
-    disconnectedSince = null;
     lastError = null;
     if (!ready) setReady(true);
+    else if (stateFrameCount !== previousStateFrameCount) notify();
   }
 
   async function consumeEventStream(
@@ -755,7 +589,6 @@ export function createStationConnection(
               const wasReady = ready;
               latestState = null;
               if (!wasReady) lastError = "The station refused the connection";
-              disconnectedSince ??= Date.now();
               loseLease();
               setReady(false);
               if (!wasReady)
@@ -815,6 +648,24 @@ export function createStationConnection(
     );
   }
 
+  async function commandStationInstance(
+    base: string,
+    needsCompletion: boolean,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const instance = await createStationApi(
+      base,
+      base,
+      signal,
+    ).getStationInstance();
+    if (needsCompletion && !instance.supports_operation_completion) {
+      throw new StationConnectionError(
+        "Update the station to use command completion",
+      );
+    }
+    return instance.id;
+  }
+
   async function sendCommand(
     arm: string,
     command: StationCommand,
@@ -837,7 +688,12 @@ export function createStationConnection(
       ].includes(command.kind)
     )
       throw new LeaseLostError();
-    const station_instance_id = (await stationApi().getStationInstance()).id;
+    const base = baseUrl();
+    const station_instance_id = await commandStationInstance(
+      base,
+      awaitCompletion || signal !== undefined,
+      signal,
+    );
     if (signal?.aborted) throw asError(signal.reason);
     const operation_id = operationId ?? newRequestId();
     const submission = apiSchemas.shape.CommandSubmissionRequest.parse({
@@ -852,7 +708,8 @@ export function createStationConnection(
       ...(traceContext ? { trace_context: traceContext } : {}),
     });
     return submitHttpCommand(
-      () => stationApi().submitCommandHttp(submission),
+      base,
+      (api) => api.submitCommandHttp(submission),
       { operation_id, station_instance_id, token },
       signal,
       awaitCompletion,
@@ -870,7 +727,12 @@ export function createStationConnection(
     if (signal?.aborted) throw asError(signal.reason);
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
-    const station_instance_id = (await stationApi().getStationInstance()).id;
+    const base = baseUrl();
+    const station_instance_id = await commandStationInstance(
+      base,
+      awaitCompletion || signal !== undefined,
+      signal,
+    );
     if (signal?.aborted) throw asError(signal.reason);
     const operation_id = operationId ?? newRequestId();
     const submission = apiSchemas.shape.GroupCommandSubmissionRequest.parse({
@@ -882,7 +744,8 @@ export function createStationConnection(
       ...(traceContext ? { trace_context: traceContext } : {}),
     });
     return submitHttpCommand(
-      () => stationApi().submitGroupCommandHttp(submission),
+      base,
+      (api) => api.submitGroupCommandHttp(submission),
       {
         operation_id,
         station_instance_id,
@@ -907,8 +770,33 @@ export function createStationConnection(
     return message.answer;
   }
 
+  async function retryOperationRequest<Result>(
+    request: (signal: AbortSignal) => Promise<Result>,
+    signal: AbortSignal,
+  ): Promise<Result> {
+    const deadline = performance.now() + REPLY_TIMEOUT_MILLISECONDS;
+    while (true) {
+      signal.throwIfAborted();
+      const remaining = Math.max(0, Math.ceil(deadline - performance.now()));
+      try {
+        return await request(
+          AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
+        );
+      } catch (error) {
+        signal.throwIfAborted();
+        if (
+          !(error instanceof TypeError) ||
+          performance.now() + 100 >= deadline
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+  }
+
   async function submitHttpCommand(
-    submit: () => Promise<z.infer<typeof apiSchemas.shape.CommandAnswer>>,
+    base: string,
+    submit: (api: ReturnType<typeof createStationApi>) => Promise<unknown>,
     identity: {
       operation_id: string;
       station_instance_id: string;
@@ -917,74 +805,91 @@ export function createStationConnection(
     signal?: AbortSignal,
     awaitCompletion = false,
   ): Promise<CommandAnswer> {
+    const { operation_id, station_instance_id, token } = identity;
     const cancel = () => {
-      if (identity.token === null) return;
-      void stationApi()
-        .cancelOperationHttp(identity.operation_id, {
-          station_instance_id: identity.station_instance_id,
-          lease_token: identity.token,
+      if (token === null) return;
+      void createStationApi(base, base)
+        .cancelOperationHttp(operation_id, {
+          station_instance_id,
+          lease_token: token,
         })
         .catch((error: unknown) =>
           console.warn("Could not cancel command", error),
         );
     };
-    if (signal?.aborted) throw asError(signal.reason);
+    const requestSignal = signal
+      ? AbortSignal.any([signal, commandLifetime.signal])
+      : commandLifetime.signal;
+    requestSignal.throwIfAborted();
+    signal?.addEventListener("abort", cancel, { once: true });
     let retainedCancellation = false;
-    const submitAndWait = async (): Promise<CommandAnswer> => {
-      const deadline = Date.now() + REPLY_TIMEOUT_MILLISECONDS;
-      let response: z.infer<typeof apiSchemas.shape.CommandAnswer>;
+    const completion = async () => {
       while (true) {
-        if (signal?.aborted) throw asError(signal.reason);
-        try {
-          response = await submit();
-          break;
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          if (error instanceof TypeError && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            continue;
-          }
-          if (!(error instanceof StationHttpError)) cancel();
-          throw error;
-        }
-      }
-      const answer = parseCommandAnswer(identity.operation_id, response);
-      if (answer.status === "accepted")
-        for (const entry of answer.records) rememberRecord(entry);
-      if (awaitCompletion) return finishedAnswer(answer, signal);
-      if (signal && !signal.aborted && answer.status === "accepted") {
-        retainedCancellation = true;
-        const commandIds = answer.records.map(
-          (entry) => entry.record.command_id,
+        const result = await retryOperationRequest(
+          (attempt) =>
+            createStationApi(base, base, attempt).waitOperationHttp(
+              operation_id,
+              { id: station_instance_id },
+            ),
+          requestSignal,
         );
-        void waitFor(
-          () =>
-            commandIds.every(
-              (id) => commandResult(records.get(id)?.record) != null,
-            )
-              ? true
-              : undefined,
-          { signal, patient: true },
-        )
-          .catch(() => {})
-          .finally(() => signal.removeEventListener("abort", onAbort));
+        if (result !== null) return result;
       }
-      return answer;
     };
-    let rejectAbort: (reason: Error) => void = () => {};
-    const aborted = new Promise<never>((_resolve, reject) => {
-      rejectAbort = reject;
-    });
-    const onAbort = () => {
-      cancel();
-      rejectAbort(asError(signal?.reason));
-    };
-    if (signal === undefined) return submitAndWait();
-    signal.addEventListener("abort", onAbort, { once: true });
     try {
-      return await Promise.race([submitAndWait(), aborted]);
+      const answer = parseCommandAnswer(
+        operation_id,
+        await retryOperationRequest(
+          (attempt) => submit(createStationApi(base, base, attempt)),
+          requestSignal,
+        ),
+      );
+      if (answer.status === "refused") return answer;
+      if (!awaitCompletion) {
+        if (
+          signal &&
+          answer.records.some(({ record }) => record.phase.kind === "pending")
+        ) {
+          retainedCancellation = true;
+          void completion()
+            .catch(() => {})
+            .finally(() => signal.removeEventListener("abort", cancel));
+        }
+        return answer;
+      }
+
+      const { records, state_sequence } = await completion();
+      if (ready) {
+        const prefix = `${station_instance_id}:`;
+        const requiredSequence = BigInt(state_sequence);
+        await waitFor(
+          () => {
+            if (!ready) return true;
+            return latestState !== null &&
+              eventCursor?.startsWith(prefix) &&
+              BigInt(eventCursor.slice(prefix.length)) >= requiredSequence
+              ? true
+              : undefined;
+          },
+          {
+            signal: requestSignal,
+            timeout: {
+              milliseconds: REPLY_TIMEOUT_MILLISECONDS,
+              error: () =>
+                new StationTimeoutError(
+                  "Timed out waiting for the station state after command completion",
+                ),
+            },
+          },
+        );
+      }
+      return parseCommandAnswer(operation_id, { status: "accepted", records });
+    } catch (error) {
+      if (!requestSignal.aborted && !(error instanceof StationHttpError))
+        cancel();
+      throw error;
     } finally {
-      if (!retainedCancellation) signal.removeEventListener("abort", onAbort);
+      if (!retainedCancellation) signal?.removeEventListener("abort", cancel);
     }
   }
 
@@ -1394,11 +1299,15 @@ export function createStationConnection(
   return {
     baseUrl,
     start() {
+      if (closed) commandLifetime = new AbortController();
       closed = false;
       if (connectionLoop === null) connect();
     },
     close() {
       closed = true;
+      commandLifetime.abort(
+        new StationConnectionError("The station connection is closed"),
+      );
       void returnLease(true).catch((error: unknown) =>
         console.warn("Could not release lease", error),
       );

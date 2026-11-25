@@ -36,22 +36,6 @@ export function commandRecord(
   };
 }
 
-export function recordFrame(
-  arm: string,
-  seq: number,
-  record: ReturnType<typeof commandRecord>,
-) {
-  return {
-    kind: "frame",
-    arm,
-    frame: {
-      seq,
-      emitted_unix_nano: "1",
-      event: { ...record, kind: "record" },
-    },
-  };
-}
-
 interface ArmOptions {
   arm?: string;
   mode?: string;

@@ -4,7 +4,6 @@ import type { RobotToolCall, RobotToolResult } from "hebbian-rua";
 import { vi } from "vitest";
 import {
   commandRecord,
-  recordFrame,
   stateMessage,
 } from "../../../../typescript-client/tests/station-fakes.js";
 import type {
@@ -16,6 +15,7 @@ import type {
 import type { WireSpan } from "../src/tracing.js";
 
 const MAXIMUM_PUMPS = 5000;
+const STATION_INSTANCE = "11111111-1111-4111-8111-111111111111";
 
 export interface SentCommand {
   arm: string;
@@ -35,7 +35,7 @@ export class ScriptedStation {
   returned = false;
 
   leaseStops: string[] = [];
-  private commandCount = 0;
+  private completions = new Map<string, unknown>();
   private lastCommandId: string | undefined;
   private stream: ReadableStreamDefaultController<Uint8Array> | null = null;
   private eventSequence = 0;
@@ -51,7 +51,7 @@ export class ScriptedStation {
     try {
       this.stream?.enqueue(
         new TextEncoder().encode(
-          `id: station:${this.eventSequence}\nevent: ${kind}\ndata: ${JSON.stringify(payload)}\n\n`,
+          `id: ${STATION_INSTANCE}:${this.eventSequence}\nevent: ${kind}\ndata: ${JSON.stringify(payload)}\n\n`,
         ),
       );
     } catch {
@@ -114,7 +114,7 @@ export class ScriptedStation {
         start: (controller) => {
           this.stream = controller;
           this.emit("snapshot", {
-            station_instance_id: "11111111-1111-4111-8111-111111111111",
+            station_instance_id: STATION_INSTANCE,
             sequence: 0,
             run_sequence: 0,
             items: [this.stationStateMessage()],
@@ -141,7 +141,10 @@ export class ScriptedStation {
       });
     }
     if (path === "/instance")
-      return Response.json({ id: "11111111-1111-4111-8111-111111111111" });
+      return Response.json({
+        id: STATION_INSTANCE,
+        supports_operation_completion: true,
+      });
     if (path === "/leases") {
       const request = body["request"] as Record<string, unknown>;
       return Response.json({
@@ -197,17 +200,25 @@ export class ScriptedStation {
     if (path === "/commands") {
       const command = body as unknown as SentCommand;
       this.commands.push(command);
-      this.commandCount += 1;
-      const id = `command-${this.commandCount}`;
+      const id = `command-${this.commands.length}`;
       this.lastCommandId = id;
-      this.emit(
-        "station",
-        recordFrame(command.arm, this.commandCount, commandRecord(id, 2)),
-      );
+      this.emitState();
+      const operationId = String(body["operation_id"]);
+      this.completions.set(operationId, {
+        records: [{ arm: command.arm, record: commandRecord(id, 2) }],
+        state_sequence: String(this.eventSequence),
+      });
       return Response.json({
         status: "accepted",
         records: [{ arm: command.arm, record: commandRecord(id) }],
       });
+    }
+    const completion = path.match(/^\/operations\/([^/]+)\/completion$/);
+    if (completion) {
+      const outcome = this.completions.get(completion[1] ?? "");
+      return outcome
+        ? Response.json(outcome)
+        : new Response(null, { status: 404 });
     }
     const stop = path.match(/^\/arms\/([^/]+)\/stop$/);
     if (stop) {

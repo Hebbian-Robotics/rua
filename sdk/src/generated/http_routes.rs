@@ -3,10 +3,10 @@ use hebbian_contracts::{
     ActionSequenceRecord, ActionSequenceRequest, ActionSequenceStartRequest, CameraListing,
     CommandAnswer, CommandCancellationRequest, CommandSubmissionRequest, CompilationArtifact,
     CompilationOutcome, GroupCommandSubmissionRequest, LeaseAcquireRequest, LeaseCameraReport,
-    LeaseGrant, LeaseToken, ObservationAnswer, ObservationRequest, OperationStatus, PhoneInvite,
-    PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse, RecordingStatus,
-    RunCompiledProgramRequest, RunEvent, RunSpansRequest, StationInstance, StationState,
-    StreamGoalUpdateRequest, TraceFile,
+    LeaseGrant, LeaseToken, ObservationAnswer, ObservationRequest, OperationCompletion,
+    OperationStatus, PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest,
+    PosePreviewBatchResponse, RecordingStatus, RunCompiledProgramRequest, RunEvent,
+    RunSpansRequest, StationInstance, StationState, StreamGoalUpdateRequest, TraceFile,
 };
 use reqwest::{Method, Response};
 
@@ -333,6 +333,27 @@ impl Station {
         )
         .await?;
         Ok(())
+    }
+
+    /// Wait for a terminal operation and the event sequence of its reflected arm state. Returns null if still waiting.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn wait_operation_http(
+        &self,
+        id: &str,
+        body: &StationInstance,
+    ) -> Result<Option<OperationCompletion>> {
+        Ok(self
+            .request(
+                Method::POST,
+                &self.server,
+                &["operations", id, "completion"],
+                Some(body),
+            )
+            .await?
+            .json()
+            .await?)
     }
 
     /// Update a live stream using its operation identifier and a newer goal sequence.

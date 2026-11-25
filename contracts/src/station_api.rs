@@ -101,6 +101,9 @@ pub enum StationCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StationInstance {
     pub id: String,
+    /// Supports awaiting command outcomes with a state event sequence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_operation_completion: Option<bool>,
 }
 
 /// A position in one station process's retained event stream.
@@ -303,6 +306,14 @@ pub enum OperationStatus {
     OutcomeUnknown {
         detail: String,
     },
+}
+
+/// A terminal operation outcome and the event sequence of the state that reflects it.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OperationCompletion {
+    pub records: Vec<ArmRecord>,
+    /// Decimal station event sequence.
+    pub state_sequence: String,
 }
 
 /// Select robot state and camera snapshots for one observation.

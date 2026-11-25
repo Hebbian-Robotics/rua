@@ -232,6 +232,24 @@ impl Shared {
             .await;
     }
 
+    pub(crate) async fn wait_for_state_event(&self, instance: &str, sequence: u64) {
+        self.wait_for(|inner| {
+            let state_reflected = inner.state.is_some()
+                && inner
+                    .event_cursor
+                    .as_deref()
+                    .and_then(|cursor| cursor.rsplit_once(':'))
+                    .is_some_and(|(applied_instance, applied_sequence)| {
+                        applied_instance == instance
+                            && applied_sequence
+                                .parse::<u64>()
+                                .is_ok_and(|applied| applied >= sequence)
+                    });
+            (!inner.connected || state_reflected).then_some(())
+        })
+        .await;
+    }
+
     pub(crate) async fn wait_for_continuous_disconnect(&self, patience: Duration) {
         loop {
             let since = self.wait_for(|inner| inner.disconnected_since).await;

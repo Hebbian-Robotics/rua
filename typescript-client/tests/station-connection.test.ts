@@ -11,7 +11,7 @@ import {
   type ActionSequenceRecord,
   createStationConnection,
 } from "../src/index.js";
-import { commandRecord, recordFrame, stateMessage } from "./station-fakes.js";
+import { commandRecord, stateMessage } from "./station-fakes.js";
 
 test("a cancelled acceptance-only command rejects with its abort reason", async () => {
   const connection = createStationConnection("http://127.0.0.1:1", "agent");
@@ -266,129 +266,96 @@ test.each(["stream", "retained", "close during lookup"] as const)(
   },
 );
 
-// Exercise the SDK over HTTP: a completed record can precede its command reply,
-// but the command must not finish until a later state reflects that outcome.
-test.each(["c", "newer"])(
-  "HTTP commands wait for their own arm to settle with last command %s",
-  async (lastCommandId) => {
-    const instance = "11111111-1111-4111-8111-111111111111";
-    let stream: ServerResponse | undefined;
-    let sequence = 0;
-    let commandReceived: (() => void) | undefined;
-    const received = new Promise<void>((resolve) => {
-      commandReceived = resolve;
-    });
-    let commandBody: unknown;
-    const publish = (kind: string, data: unknown) => {
-      sequence += 1;
-      stream?.write(
-        `id: ${instance}:${sequence}\nevent: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
-      );
-    };
-    const server = createServer((request, response) => {
-      if (request.url === "/events") {
-        stream = response;
-        response.writeHead(200, { "Content-Type": "text/event-stream" });
-        publish("snapshot", {
-          station_instance_id: instance,
-          sequence: 0,
-          run_sequence: 0,
-          items: [stateMessage([{}])],
-        });
-        return;
-      }
-      if (request.url === "/instance") {
-        response
-          .writeHead(200, { "Content-Type": "application/json" })
-          .end(JSON.stringify({ id: instance }));
-        return;
-      }
-      if (request.url === "/commands" && request.method === "POST") {
-        let body = "";
-        request.setEncoding("utf8");
-        request.on("data", (chunk: string) => {
-          body += chunk;
-        });
-        request.on("end", () => {
-          commandBody = JSON.parse(body) as unknown;
-          publish("station", recordFrame("follower", 1, commandRecord("c", 2)));
-          response.writeHead(200, { "Content-Type": "application/json" }).end(
-            JSON.stringify({
-              status: "accepted",
-              records: [{ arm: "follower", record: commandRecord("c") }],
-            }),
-          );
-          commandReceived?.();
-        });
-        return;
-      }
-      response.writeHead(404).end();
-    });
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
+test("HTTP completion waits for the station's state cursor to reach the cache", async () => {
+  const instance = "11111111-1111-4111-8111-111111111111";
+  let stream: ServerResponse | undefined;
+  let completionReceived: (() => void) | undefined;
+  const received = new Promise<void>((resolve) => {
+    completionReceived = resolve;
+  });
+  let supportsCompletion = false;
+  const commandId = "completed-command";
+  const publish = (sequence: number, kind: string, data: unknown) =>
+    stream?.write(
+      `id: ${instance}:${sequence}\nevent: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
     );
-    const address = server.address() as AddressInfo;
-    const connection = createStationConnection(
-      `http://127.0.0.1:${address.port}`,
-      "agent",
-    );
-    try {
-      connection.start();
-      await connection.waitUntilConnected();
-      let finished = false;
-      const command = connection
-        .arm("follower")
-        .enable()
-        .then((answer) => {
-          finished = true;
-          return answer;
-        });
-      await received;
-      expect(commandBody).toMatchObject({
-        arm: "follower",
-        command: { kind: "enable" },
+  const server = createServer((request, response) => {
+    const json = (body: unknown) =>
+      response
+        .writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify(body));
+    if (request.url === "/events") {
+      stream = response;
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      publish(1, "snapshot", {
         station_instance_id: instance,
+        sequence: 1,
+        run_sequence: 0,
+        items: [stateMessage([{}])],
       });
-      publish(
-        "station",
-        stateMessage([
-          { sampledAt: 1, activeCommandId: "c" },
-          { arm: "other", lastCommandId: "newer" },
-        ]),
-      );
-      await connection.waitForState(
-        (state) => state.arms[0]?.sampled_unix_nano === "1000000000",
-      );
-      await setImmediate();
-      expect(finished).toBe(false);
-      publish(
-        "station",
-        stateMessage([
-          { sampledAt: 1.5 },
-          { arm: "other", lastCommandId: "newer" },
-        ]),
-      );
-      await connection.waitForState(
-        (state) => state.arms[0]?.sampled_unix_nano === "1500000000",
-      );
-      await setImmediate();
-      expect(finished).toBe(false);
-      publish("station", stateMessage([{ sampledAt: 3, lastCommandId }]));
-      const answer = await command;
-      assert.equal(answer.status, "accepted");
-      expect(answer.records[0]?.record.phase).toMatchObject({
-        kind: "finished",
-        completion: { outcome: "completed" },
+    } else if (request.url === "/instance") {
+      json({ id: instance, supports_operation_completion: supportsCompletion });
+    } else if (request.url === "/commands") {
+      request.resume();
+      json({
+        status: "accepted",
+        records: [{ arm: "follower", record: commandRecord(commandId) }],
       });
-    } finally {
-      connection.close();
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
-    }
-  },
-);
+    } else if (request.url?.endsWith("/completion")) {
+      request.resume();
+      json({
+        records: [{ arm: "follower", record: commandRecord(commandId, 2) }],
+        state_sequence: "3",
+      });
+      completionReceived?.();
+    } else response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  try {
+    await connection.waitUntilConnected();
+    await expect(connection.arm("follower").enable()).rejects.toThrow(
+      "Update the station",
+    );
+    supportsCompletion = true;
+    let finished = false;
+    const command = connection
+      .arm("follower")
+      .enable()
+      .then((answer) => {
+        finished = true;
+        return answer;
+      });
+    await received;
+    publish(2, "station", stateMessage([{ sampledAt: 2 }]));
+    await connection.waitForState(
+      (state) => state.arms[0]?.sampled_unix_nano === "2000000000",
+    );
+    await setImmediate();
+    expect(finished).toBe(false);
+    publish(
+      3,
+      "station",
+      stateMessage([{ sampledAt: 3, lastCommandId: commandId }]),
+    );
+    const answer = await command;
+    assert.equal(answer.status, "accepted");
+    expect(answer.records[0]?.record.phase.kind).toBe("finished");
+    expect(connection.getState()?.arms[0]?.last_command?.command_id).toBe(
+      commandId,
+    );
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
 
 // A reconnect must not make an earlier in-flight acquisition appear current.
 test.each(["reconnection", "close"] as const)(
@@ -413,9 +380,12 @@ test.each(["reconnection", "close"] as const)(
           `id: ${instance}:1\nevent: snapshot\ndata: ${JSON.stringify({ station_instance_id: instance, sequence: 1, run_sequence: 0, items: [stateMessage([{}])] })}\n\n`,
         );
       } else if (request.url === "/instance") {
-        response
-          .writeHead(200, { "Content-Type": "application/json" })
-          .end(JSON.stringify({ id: instance }));
+        response.writeHead(200, { "Content-Type": "application/json" }).end(
+          JSON.stringify({
+            id: instance,
+            supports_operation_completion: true,
+          }),
+        );
       } else if (request.url === "/leases") {
         leaseResponse = response;
         leaseRequested?.();
@@ -503,7 +473,9 @@ async function startLeaseStation(
     } else if (request.url === "/instance") {
       response
         .writeHead(200, { "Content-Type": "application/json" })
-        .end(JSON.stringify({ id: instance }));
+        .end(
+          JSON.stringify({ id: instance, supports_operation_completion: true }),
+        );
     } else if (request.url === "/leases") {
       response.writeHead(200, { "Content-Type": "application/json" }).end(
         JSON.stringify({
@@ -550,6 +522,10 @@ test("aborting an accepted leased command cancels the original submission", asyn
   const { connection, close } = await startLeaseStation(
     15,
     (request, response) => {
+      if (request.url?.endsWith("/completion")) {
+        request.resume();
+        return;
+      }
       if (request.url === "/commands" || request.url?.endsWith("/cancel")) {
         request.setEncoding("utf8");
         let body = "";

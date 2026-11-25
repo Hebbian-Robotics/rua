@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use hebbian_contracts::{Event, Frame, ServerMessage};
 use serde::Serialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 const RETAINED_EVENTS: usize = 4096;
 const RETAINED_ARM_LOG_FRAMES: usize = 4096;
@@ -58,6 +58,7 @@ struct JournalState {
 pub(super) struct EventJournal {
     state: Mutex<JournalState>,
     updates: broadcast::Sender<StationEvent>,
+    station_state: watch::Sender<Option<StationEvent>>,
 }
 
 // CONSTRAINT: A cursor outside retained history requires a new snapshot.
@@ -80,6 +81,7 @@ impl Default for EventJournal {
                 records: VecDeque::new(),
             }),
             updates,
+            station_state: watch::channel(None).0,
         }
     }
 }
@@ -97,10 +99,49 @@ impl EventJournal {
     }
 
     fn publish_payload(&self, payload: StreamPayload) {
-        self.state
+        let is_state = payload.is_station_state();
+        let mut journal = self
+            .state
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .publish(payload, &self.updates);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let event = journal.publish(payload, &self.updates);
+        if is_state {
+            self.station_state.send_replace(Some(event));
+        }
+    }
+
+    pub async fn state_reflecting(&self, records: &[hebbian_contracts::ArmRecord]) -> Option<u64> {
+        let mut states = self.station_state.subscribe();
+        // WHY: Controller loss can finish a record without a follow-up sample.
+        // Use a later state reporting unavailable feedback in that case.
+        let previously_published = states.borrow().as_ref().map(|event| event.sequence);
+        let event = states
+            .wait_for(|event| {
+                let Some(event) = event else { return false };
+                let StreamPayload::Message(ServerMessage::State { state }) = event.payload.as_ref()
+                else {
+                    return false;
+                };
+                records.iter().all(|record| {
+                    state.arms.iter().any(|arm| {
+                        arm.arm == record.arm
+                            && arm
+                                .active_command
+                                .as_ref()
+                                .is_none_or(|active| active.command_id != record.record.command_id)
+                            && ((arm.sampled_unix_nano.is_none()
+                                && Some(event.sequence) > previously_published)
+                                || arm.last_command.as_ref().is_some_and(|last| {
+                                    last.command_id == record.record.command_id
+                                        || last.finished_unix_nano()
+                                            >= record.record.finished_unix_nano()
+                                }))
+                    })
+                })
+            })
+            .await
+            .ok()?;
+        event.as_ref().map(|event| event.sequence)
     }
 
     pub fn invalidate_station_state(&self) {
@@ -109,6 +150,7 @@ impl EventJournal {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if state.snapshots.remove(&SnapshotKey::StationState).is_some() {
+            self.station_state.send_replace(None);
             state.publish(
                 StreamPayload::Notice(StreamNotice::ResyncRequired {
                     arm: None,
@@ -176,7 +218,11 @@ impl JournalState {
         clippy::expect_used,
         reason = "A u64 event counter cannot exhaust in practice; wrapping would make replay cursors ambiguous."
     )]
-    fn publish(&mut self, payload: StreamPayload, updates: &broadcast::Sender<StationEvent>) {
+    fn publish(
+        &mut self,
+        payload: StreamPayload,
+        updates: &broadcast::Sender<StationEvent>,
+    ) -> StationEvent {
         let event = StationEvent {
             sequence: self.next_sequence,
             payload: Arc::new(payload),
@@ -213,7 +259,8 @@ impl JournalState {
         if self.events.len() > RETAINED_EVENTS {
             self.events.pop_front();
         }
-        let _ = updates.send(event);
+        let _ = updates.send(event.clone());
+        event
     }
 
     fn retain_arm_frame(
