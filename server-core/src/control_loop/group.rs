@@ -42,10 +42,10 @@ impl<P: Plant> Runner<'_, P> {
 const GROUP_SEGMENT_LABEL: &str = "group_target";
 
 pub(super) struct ActiveGroup {
-    pub(super) id: GroupId,
-    pub(super) members: Vec<usize>,
-    pub(super) joint_counts: Vec<usize>,
-    pub(super) supervisor: MotionSupervisor,
+    id: GroupId,
+    members: Vec<usize>,
+    joint_counts: Vec<usize>,
+    supervisor: MotionSupervisor,
     checkpoints_sent: usize,
     step_pending: bool,
     shares: Vec<GroupReference>,
@@ -152,23 +152,12 @@ impl ActiveGroup {
         let segment = self.supervisor.segment_label().map(|_| GROUP_SEGMENT_LABEL);
         let status = MotionStatus::of(&self.supervisor);
         let final_pose = (status != MotionStatus::Running).then(|| self.supervisor.final_pose());
-        let reference = self.supervisor.reference();
         let mut start = 0;
         for (count, share) in self.joint_counts.iter().zip(&mut self.shares) {
             let part = start..start + count;
             start += count;
-            share
-                .reference
-                .positions
-                .copy_from_slice(&reference.positions[part.clone()]);
-            share
-                .reference
-                .velocities
-                .copy_from_slice(&reference.velocities[part.clone()]);
-            share
-                .reference
-                .accelerations
-                .copy_from_slice(&reference.accelerations[part.clone()]);
+            self.supervisor
+                .copy_joint_reference_to(part.clone(), &mut share.reference);
             share.checkpoints.clear();
             share
                 .checkpoints
@@ -197,6 +186,123 @@ impl ActiveGroup {
     pub(super) fn member_reference(&self, index: usize) -> &GroupReference {
         &self.shares[index]
     }
+
+    fn matches(&self, group_id: &GroupId) -> bool {
+        self.id == *group_id
+    }
+
+    fn step_members<P: Plant>(
+        &mut self,
+        group_index: usize,
+        runners: &mut [Runner<'_, P>],
+        begun: &[Option<PendingCycle>],
+        steps: &mut [Option<Result<GroupMemberReferenceIndex, Trip>>],
+        measured: &mut Vec<f64>,
+    ) {
+        if let Some(stopping) = self.members.iter().copied().find(|&index| {
+            runners[index]
+                .group_member()
+                .is_some_and(|member| member.group.id == self.id)
+                && runners[index].state.core.stop_requested()
+        }) {
+            let reason = format!("{} requested stop", runners[stopping].name);
+            for &index in &self.members {
+                if index != stopping
+                    && runners[index]
+                        .group_member()
+                        .is_some_and(|member| member.group.id == self.id)
+                    && !runners[index].state.core.stop_requested()
+                {
+                    runners[index].state.request_group_stop(&reason);
+                }
+            }
+            return;
+        }
+        // INVARIANT: A member that did not read this cycle (its plant failed) cannot be
+        // stepped with; the others hold until the group is settled.
+        let interval = self
+            .members
+            .iter()
+            .try_fold(f64::INFINITY, |interval, index| {
+                let runner = &runners[*index];
+                let member = runner.group_member()?;
+                if member.group.id != self.id
+                    || member.stop_reason.is_some()
+                    || runner.state.core.stop_requested()
+                {
+                    return None;
+                }
+                Some(interval.min(begun[*index].as_ref()?.interval))
+            });
+        let Some(interval) = interval else { return };
+        measured.clear();
+        measured.extend(
+            self.members
+                .iter()
+                .flat_map(|index| runners[*index].feedback.positions.iter().copied()),
+        );
+        match self.step(measured, interval) {
+            Ok(_) => {
+                for (member, index) in self.members.iter().enumerate() {
+                    steps[*index] = Some(Ok(GroupMemberReferenceIndex {
+                        group: group_index,
+                        member,
+                    }));
+                }
+            }
+            Err(trip) => {
+                for index in &self.members {
+                    steps[*index] = Some(Err(trip.clone()));
+                }
+            }
+        }
+    }
+
+    fn confirm_writes<P: Plant>(
+        &mut self,
+        runners: &mut [Runner<'_, P>],
+        writes: &mut [Option<GroupWrite>],
+    ) {
+        let confirmed = self.members.iter().all(|index| writes[*index].is_some());
+        if confirmed {
+            self.confirm_step();
+        }
+        for &index in &self.members {
+            if let Some(write) = writes[index].take() {
+                runners[index].finish_group_write(write, confirmed);
+            }
+        }
+    }
+
+    // SAFETY: Stop the remaining arms if a member fails and retire the group once no arms follow it.
+    fn settle<P: Plant>(&self, runners: &mut [Runner<'_, P>]) -> bool {
+        let is_following = |runner: &Runner<'_, P>| {
+            runner
+                .group_member()
+                .is_some_and(|member| member.group.id == self.id)
+        };
+        if !self
+            .members
+            .iter()
+            .any(|index| is_following(&runners[*index]))
+        {
+            return false;
+        }
+        let ended_badly = self
+            .members
+            .iter()
+            .filter(|index| !is_following(&runners[**index]))
+            .find_map(|index| runners[*index].last_group_failure(&self.id));
+        if let Some(detail) = ended_badly {
+            for index in &self.members {
+                if is_following(&runners[*index]) {
+                    runners[*index].state.request_group_stop(&detail);
+                }
+            }
+            return false;
+        }
+        true
+    }
 }
 
 // INVARIANT: Start the groups whose arms have all begun their parts. Arms are admitted
@@ -206,7 +312,7 @@ pub(super) fn form_groups<P: Plant>(runners: &mut [Runner<'_, P>], groups: &mut 
     let mut candidates: Vec<GroupMembership> = Vec::new();
     for runner in runners.iter() {
         if let Some(member) = runner.group_member()
-            && !groups.iter().any(|group| group.id == member.group.id)
+            && !groups.iter().any(|group| group.matches(&member.group.id))
             && !candidates.iter().any(|group| group.id == member.group.id)
         {
             candidates.push(member.group.clone());
@@ -266,64 +372,7 @@ pub(super) fn step_groups<P: Plant>(
     steps.clear();
     steps.resize_with(runners.len(), || None);
     for (group_index, group) in groups.iter_mut().enumerate() {
-        if let Some(stopping) = group.members.iter().copied().find(|&index| {
-            runners[index]
-                .group_member()
-                .is_some_and(|member| member.group.id == group.id)
-                && runners[index].state.core.stop_requested()
-        }) {
-            let reason = format!("{} requested stop", runners[stopping].name);
-            for &index in &group.members {
-                if index != stopping
-                    && runners[index]
-                        .group_member()
-                        .is_some_and(|member| member.group.id == group.id)
-                    && !runners[index].state.core.stop_requested()
-                {
-                    runners[index].state.request_group_stop(&reason);
-                }
-            }
-            continue;
-        }
-        // INVARIANT: A member that did not read this cycle (its plant failed) cannot be
-        // stepped with; the others hold until the group is settled.
-        let interval = group
-            .members
-            .iter()
-            .try_fold(f64::INFINITY, |interval, index| {
-                let runner = &runners[*index];
-                let member = runner.group_member()?;
-                if member.group.id != group.id
-                    || member.stop_reason.is_some()
-                    || runner.state.core.stop_requested()
-                {
-                    return None;
-                }
-                Some(interval.min(begun[*index].as_ref()?.interval))
-            });
-        let Some(interval) = interval else { continue };
-        measured.clear();
-        measured.extend(
-            group
-                .members
-                .iter()
-                .flat_map(|index| runners[*index].feedback.positions.iter().copied()),
-        );
-        match group.step(measured, interval) {
-            Ok(_) => {
-                for (member, index) in group.members.iter().enumerate() {
-                    steps[*index] = Some(Ok(GroupMemberReferenceIndex {
-                        group: group_index,
-                        member,
-                    }));
-                }
-            }
-            Err(trip) => {
-                for index in &group.members {
-                    steps[*index] = Some(Err(trip.clone()));
-                }
-            }
-        }
+        group.step_members(group_index, runners, begun, steps, measured);
     }
 }
 
@@ -333,50 +382,13 @@ pub(super) fn confirm_group_writes<P: Plant>(
     writes: &mut [Option<GroupWrite>],
 ) {
     for group in groups {
-        let confirmed = group.members.iter().all(|index| writes[*index].is_some());
-        if confirmed {
-            group.confirm_step();
-        }
-        for &index in &group.members {
-            if let Some(write) = writes[index].take() {
-                runners[index].finish_group_write(write, confirmed);
-            }
-        }
+        group.confirm_writes(runners, writes);
     }
 }
 
-// SAFETY: When one arm of a group has ended without completing, stop the others where
-// they are; forget groups no arm is following any more.
 pub(super) fn settle_groups<P: Plant>(
     runners: &mut [Runner<'_, P>],
     groups: &mut Vec<ActiveGroup>,
 ) {
-    groups.retain(|group| {
-        let is_following = |runner: &Runner<'_, P>| {
-            runner
-                .group_member()
-                .is_some_and(|member| member.group.id == group.id)
-        };
-        if !group
-            .members
-            .iter()
-            .any(|index| is_following(&runners[*index]))
-        {
-            return false;
-        }
-        let ended_badly = group
-            .members
-            .iter()
-            .filter(|index| !is_following(&runners[**index]))
-            .find_map(|index| runners[*index].last_group_failure(&group.id));
-        if let Some(detail) = ended_badly {
-            for index in &group.members {
-                if is_following(&runners[*index]) {
-                    runners[*index].state.request_group_stop(&detail);
-                }
-            }
-            return false;
-        }
-        true
-    });
+    groups.retain(|group| group.settle(runners));
 }

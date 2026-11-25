@@ -87,10 +87,17 @@ impl SerialChain {
 
     #[must_use]
     pub fn model_points(&self, joints: &[f64]) -> Vec<[f64; 3]> {
+        self.tool_pose_and_model_points(joints).1
+    }
+
+    pub(crate) fn tool_pose_and_model_points(
+        &self,
+        joints: &[f64],
+    ) -> (Isometry3<f64>, Vec<[f64; 3]>) {
         let mut points = Vec::with_capacity(self.joints.len() + 1);
         let tool = self.evaluate(joints, |pose| points.push(pose.translation.vector.into()));
         points.push(tool.translation.vector.into());
-        points
+        (tool, points)
     }
 
     // CONSTRAINT: Jacobian rows are linear then angular velocity, expressed in the root frame.
