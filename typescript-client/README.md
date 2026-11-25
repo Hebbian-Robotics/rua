@@ -5,12 +5,12 @@ Install a released version with `pnpm add hebbian-rua`.
 Use the [motion unit converters](../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
 to prepare direct SDK requests in your preferred units.
 
-## Try the workspace SDK
+## Try the published SDK
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
 From the checkout root, install dependencies with `pnpm install --frozen-lockfile`.
-The runnable TypeScript examples and the snippet below use the SDK from this
-checkout. Run them against a station built from the same checkout.
+The runnable examples and the snippet below use the published SDK pinned in
+the root lockfile. To try SDK changes from source, see [Package builds](#package-builds).
 
 To read state without moving the robot, start a station
 ([MuJoCo quickstart](../docs/simulation.md) or [hardware setup](../docs/getting-started.md)).
@@ -34,7 +34,9 @@ Run it with `pnpm exec tsx --conditions=development read-state.ts`.
 
 ## Run an action sequence
 
-Start the station and enable the arm before running this example. See the [getting started guide](../docs/getting-started.md).
+Start a station from this checkout and enable the arm before running this
+example. If you use the viewer, [enable the arm in Agent mode](../docs/getting-started.md#enable-the-arm-in-agent-mode)
+so the example can acquire its own lease.
 
 ```ts
 import { createStationConnection } from "hebbian-rua";
@@ -148,12 +150,13 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
   to resolve once the station accepts the command. Pass `{ signal }` to request cancellation
   of that operation on abort. Pass `operationId` from `newOperationId()` to keep
   a handle for `getOperation`, `lease.updateStreamGoal` or `lease.cancelOperation`.
-- The lease's `runCommand` and `runGroup` resolve once the command's record finished and the
-  first state frame reflects it (no arm still has it active, and an arm reports it as
-  its last command or a sampling arm was sampled at or after completion), so
-  `state()` right after shows the arm at rest. The wait survives a reconnect for
-  30 s. An aborted `AbortSignal` requests cancellation of that operation in
-  the background. Observe the arm to confirm its state before continuing.
+- By default, the lease's `runCommand` and `runGroup` wait for the station's
+  terminal records. While the event stream is connected, they also wait for
+  the station's completion event sequence to reach the state cache. If the
+  stream disconnects, they can return the terminal records before the cache
+  reflects the result. An aborted `AbortSignal` requests cancellation of that
+  operation in the background. See
+  [SDK recovery behavior](../docs/reference.md#sdk-recovery-behavior).
 - `waitForState(predicate)` returns the first state frame that satisfies it, checking
   the latest first; `StationTimeoutError` after 30 s. `state()` waits up to 10 s for
   the first frame.
@@ -176,9 +179,9 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
 - `createStationHttpClient({ stationUrl, mediaUrl })` lists cameras, fetches
   snapshots, creates phone invites and lists or downloads traces (gzip bytes as served).
   Direct camera requests use the station URL unless `mediaUrl` is set.
-  `createRobotTools` uses the station’s observation route and its configured
-  media companion for sequence images. Update the station before enabling
-  sequence image capture with this SDK.
+  `createRobotTools` uses the station’s observation route and retrieves
+  sequence image history from the station by execution ID. See
+  [sequence image history](../docs/model-output.md#images-during-action-sequences).
 
 Errors: `StationConnectionError`, `StationTimeoutError`, `StationRefusedError` (a
 message the station could not act on), `LeaseHeldElsewhereError` and
@@ -201,8 +204,9 @@ results with structured `data`, `text`, and outcome flags. Calls use `{ id, name
 arguments }` with parsed JSON arguments. Model inputs use `position_mm`,
 `joints_degrees`, and `max_joint_speed_degrees_per_second`. `data` retains full SI
 payloads; `text` and `modelData` provide the selected model view. Preview candidates contain only a `pose`; results follow input order
-without IDs or labels. The adapter generates transport IDs internally. The station admits calls as one batch
-and rejects the whole batch if two calls command the same arm resource. An
+without IDs or labels. The adapter generates transport IDs internally. The SDK
+executes calls concurrently and returns results in input order. The station
+evaluates each submitted action against current control and admission state. An
 `observe` defaults to current state in `data` and labelled JPEGs in `cameras`.
 Call it with `{ source: "last_sequence" }` to retrieve retained sequence images
 and timing metadata instead. Automatic `await robot.observe()` calls always
@@ -282,3 +286,10 @@ From your Node.js project, install the archive with
 archive uses the compiled entry point. SDK tests in the workspace continue to
 exercise the SDK under development. Run `pnpm test:package` to pack, install,
 import and typecheck the SDK in a temporary consumer outside the workspace.
+
+To try local SDK changes in the viewer or TypeScript agent, use a separate
+checkout. Pack the SDK there as shown above, then set the `hebbian-rua` dependency
+in the root and `examples/typescript/agent/package.json` manifests to
+`file:/tmp/rua-client.tgz`. Run `pnpm install --no-frozen-lockfile` from the
+root before building or starting the example. Keep those local pins and the
+resulting lockfile out of commits.

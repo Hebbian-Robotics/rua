@@ -57,10 +57,12 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   `JointSpeed::new(0.5)?` for a speed of 0.5 rad/s.
 - Requests use HTTP; an event-stream task reconnects using the station cursor.
   Each command submission has a request ID that the station uses to avoid
-  executing a repeated submission twice. A command's
-  outcome is awaited across reconnects (30 s of unreachable station at most),
-  then until a state frame shows it no longer running, sampled after it finished, so a state read
-  right after `run` shows the arm at rest.
+  executing a repeated submission twice. The station's completion endpoint
+  returns terminal records and the event sequence of a state that reflects
+  the result. While the event stream is connected, the SDK waits for that
+  sequence to reach its state cache. If the stream disconnects, the SDK can
+  return the terminal records before its cache reflects the result. See
+  [SDK recovery behavior](../docs/reference.md#sdk-recovery-behavior).
 - The SDK renews the lease until it is released or expires. `take_lease` takes it
   from the holder; `revoke_lease` is the operator's override. `LeaseGuard::lost()`
   resolves after a take, revoke, lapse, disconnect, or a return for an interruption

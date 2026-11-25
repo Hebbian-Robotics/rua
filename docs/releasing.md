@@ -13,10 +13,10 @@ source commit. The Python wheels include the station, media companion and `hebbi
 ## Prepare and verify
 
 Choose a new version across all three registries. Update the release package
-manifests, the contracts dependency version in `sdk/Cargo.toml`, the local
-Python dependency pins, and the lockfiles.
-Run the version check with the planned tag, for example
-`uv run --locked rua-dev check-release-versions --tag v0.1.3`. Regenerate and
+manifests, the contracts dependency version in `sdk/Cargo.toml`, and the
+lockfiles. Run the version check with the planned tag, substituting the
+version you are preparing, for example
+`uv run --locked rua-dev check-release-versions --tag v0.1.7`. Regenerate and
 verify affected contracts with `uv run --locked rua-dev contracts --check` after
 committing the generated files.
 

@@ -54,9 +54,10 @@ pnpm build
 Configure a model-provider key before running `pnpm start:viewer` to serve
 the built viewer and run the example agent backend. See the
 [viewer setup](../examples/typescript/viewer/README.md).
-The viewer uses the TypeScript SDK from this checkout. Use a matching
-[station built from source](#start-the-station). For the published setup,
-see [Getting started](getting-started.md). Camera builds have
+The viewer and TypeScript agent install the published SDK pinned in the
+lockfile. To test unpublished station or SDK changes with the viewer,
+[pack and use the SDK from the same checkout](../typescript-client/README.md#package-builds).
+For the published setup, see [Getting started](getting-started.md). Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
@@ -69,7 +70,7 @@ Run commands from the repository root. After pulling dependency changes, run
 | What changed | Command | When the change takes effect |
 | --- | --- | --- |
 | Rust station or hardware profile | `uv run cargo run -p hebbian-rua-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
-| Rust CLI | `cargo run -p hebbian-rua-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-rua` stays at its installed version. |
+| Rust CLI | `cargo run --locked -p hebbian-rua-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-rua` stays at its installed version. |
 | Viewer and agent backend | `pnpm start:viewer` | Restart the viewer backend to load example changes. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
 | Viewer served by the example backend | `pnpm build` | Refresh the browser; no station restart is needed. |

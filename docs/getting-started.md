@@ -1,10 +1,9 @@
 # Get started with an SO-101
 
 Use the browser viewer to verify manual control and run your first agent.
-Use the [v0.1.7 checkout](https://github.com/Hebbian-Robotics/rua/tree/v0.1.7)
-to run these steps with the published station and SDKs. The development
-checkout's viewer uses the current station schema. For development, follow
-[Install from source](install-from-source.md).
+Use the examples from [RUA's main branch](https://github.com/Hebbian-Robotics/rua/tree/main)
+with the published station and SDKs. This guide uses 0.1.7. For development,
+follow [Install from source](install-from-source.md).
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).
 
@@ -40,6 +39,21 @@ See [viewer controls](so101-manual-control.md#controls) for details and
 [fault recovery](so101-manual-control.md#recovering-from-a-fault) if needed.
 
 ## 3. Run your first agent
+
+### Enable the arm in Agent mode
+
+If the arm is enabled in **Manual**, disable it first. Use
+**Rehome and disable** if the saved pose lets the arm rest securely and the
+path is clear.
+To remove torque at the current pose, support the arm before confirming
+**Disable in place…**. Wait for the arm to show **disabled**. The viewer
+releases its manual lease when the last enabled arm is disabled.
+
+Under **Control mode**, select **Agent**, then select **Enable arm** and wait
+for the arm to show **holding**. Enabling in Agent mode leaves the lease
+available for the program that runs the task.
+
+### Start a task in the viewer
 
 1. In **Run a task**, choose your provider and model. If you set up cameras,
    confirm their live feeds and select the views to share under **Run options**.

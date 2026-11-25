@@ -3,8 +3,8 @@
 Run an example robot-use agent built with the
 [TypeScript SDK](../../../typescript-client/README.md). Give it a task and
 the LLM uses robot observations and tools to decide what to do.
-The example uses the TypeScript SDK from this checkout and supports Anthropic, OpenAI,
-and Gemini.
+The example uses the published TypeScript SDK pinned in the repository lockfile
+and supports Anthropic, OpenAI, and Gemini.
 
 ## Run the agent
 
@@ -14,8 +14,10 @@ testing without hardware. Use the Node.js version in the repository's `.nvmrc`
 and the pnpm version in `package.json`.
 
 Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the environment
-or `.env`. [Enable the arm in the viewer](../../../docs/getting-started.md#2-verify-manual-control),
-then try a state-only task from the repository root.
+or `.env`. [Enable the arm in Agent mode](../../../docs/getting-started.md#enable-the-arm-in-agent-mode).
+Confirm that the arm is holding and no client holds the lease. Check the
+`lease` field in [station state](http://127.0.0.1:8792/state) for `null`. The
+terminal agent acquires its own lease when it starts. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile

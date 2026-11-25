@@ -88,12 +88,14 @@ also watch the feed under **Workspace**.
 
 ## Add a phone
 
-With LiveKit configured, run `uv run hebbian-rua phone-invite overhead` on the
-station host and open the printed URL on your phone. You can also use the
-HTTP request below and open the response’s `url`. On the camera page, allow camera access
-and select **Start streaming**. Check the feed under **Workspace** in the laptop
-viewer to confirm its orientation and framing. Keep the invite URL private. The
-station accepts invite requests over loopback. Run the viewer backend on the
+With LiveKit configured, run
+`cargo run --locked -p hebbian-rua-cli -- phone-invite overhead` from the
+checkout root on the station host and open the printed URL on your phone.
+You can also use the HTTP request below and open the response’s `url`. On the
+camera page, allow camera access and select **Start streaming**. Check the feed
+under **Workspace** in the laptop viewer to confirm its orientation and framing.
+
+The station accepts invite requests over loopback. Run the viewer backend on the
 station host and connect it to the station over loopback. In **Workspace**, open
 **Camera setup**.
 Under **Remote camera**, enter a camera location and select
@@ -119,13 +121,15 @@ LiveKit camera names use 1–40 lowercase ASCII letters, digits or underscores.
 Simulator snapshots use `sim_` followed by the renderer's view name. Use the
 name returned by the camera list for snapshot, observation and lease requests.
 
-With the station running, list available camera names and save a JPEG:
+With the station running, list available camera names and save a JPEG from
+the checkout root:
 
 ```sh
-uv run hebbian-rua camera list
-uv run hebbian-rua camera snapshot wrist --out wrist.jpg
+cargo run --locked -p hebbian-rua-cli -- camera list
+cargo run --locked -p hebbian-rua-cli -- camera snapshot wrist --out wrist.jpg
 ```
 
+If you installed the release wheel, use [its `hebbian-rua` command](../cli/README.md).
 Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 
 ## When LiveKit Cloud is unavailable
@@ -199,8 +203,10 @@ The station limits concurrent forwarded camera requests and returns `503` when
 the limit is reached or `504` when the media companion times out.
 
 For direct access, use the companion URL, `http://127.0.0.1:8781` by default.
-Set the SDK or viewer's `HEBBIAN_MEDIA_SERVER` override or pass `--media-server`
-to the CLI. To serve previews and snapshots exclusively from the companion, start the station with
+For direct camera requests, set the Python SDK or viewer's
+`HEBBIAN_MEDIA_SERVER` override, set the TypeScript HTTP client's `mediaUrl`,
+or pass `--media-server` to the CLI. SDK observations and sequence image
+history use station routes. To serve previews and snapshots exclusively from the companion, start the station with
 `--disable-camera-forwarding`. Use `--media-address` to choose which address
 the companion listens on. The media URL override also lets a new SDK fetch
 snapshots from an older station's companion.

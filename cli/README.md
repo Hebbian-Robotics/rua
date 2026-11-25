@@ -5,7 +5,7 @@ Coding agents can chain these commands in the shell. Each invocation opens a
 connection and runs one command. Commands print JSON to stdout, with plain-text
 output for the phone invite URL.
 
-The `hebbian-rua` Python package provides the command alongside `rua`. Run it
+The published `hebbian-rua` wheel provides the command alongside `rua`. Run it
 from the agent project that serves the station, so the CLI and station come from
 the same locked version. The motion flags below describe the CLI in this
 checkout. For a published wheel, see `--help` or the README at its release tag.
@@ -21,7 +21,7 @@ uv run hebbian-rua preview-pose arm --position-mm 200,0,100
 ```
 
 Without a project, pin the station’s version: `uvx hebbian-rua==<station version> state`.
-From a source checkout, `cargo run -p hebbian-rua-cli -- state` builds and runs
+From a source checkout, `cargo run --locked -p hebbian-rua-cli -- state` builds and runs
 the current source, and `cargo install --locked --path cli` installs it. The
 examples below omit the `uv run` prefix.
 
@@ -96,29 +96,10 @@ for how the station applies those times.
 
 ## Set up live cameras
 
-Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the station's
-environment or `.env`. On the station host, run `rua camera-devices` and repeat
-`--camera NAME=DEVICE` for each camera when starting the station. This command
-uses device indices `2` and `4`.
-
-```sh
-rua serve --camera wrist=2 --camera overhead=4
-```
-
-On the station host, open another terminal to list the cameras and get the
-room's viewer token.
-
-```sh
-hebbian-rua camera list
-curl --fail http://127.0.0.1:8792/media/access-token
-```
-
-Paste the response's `server_url` and `token` into **Room viewer** on the
-[hosted LiveKit Cameras page](https://hebbian-robotics.github.io/livekit-cameras/).
-See the [camera guide](../docs/cameras.md) for device selectors, source setup,
-and phone invites. This setup is also shown in `hebbian-rua camera --help`.
-
-[Options when LiveKit Cloud is unavailable](../docs/cameras.md#when-livekit-cloud-is-unavailable)
+Follow the [camera guide](../docs/cameras.md) to configure LiveKit, select
+devices, list cameras, and watch their feeds. It also covers phone invites and
+[options when LiveKit Cloud is unavailable](../docs/cameras.md#when-livekit-cloud-is-unavailable).
+Run `hebbian-rua camera --help` for CLI commands.
 
 ## Exit codes and errors
 

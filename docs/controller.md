@@ -87,8 +87,16 @@ operating hardware.
 ## The cycle trace
 
 The [trace writer](../server-core/src/trace.rs) defines the JSONL fields, queue
-capacity and drop accounting. Use `uv run hebbian-rua traces list` to find traces
-and `uv run hebbian-rua traces pull` to download gzip-compressed files.
+capacity and drop accounting. From the checkout root, use the CLI to list
+traces and download gzip-compressed files:
+
+```sh
+cargo run --locked -p hebbian-rua-cli -- traces list
+cargo run --locked -p hebbian-rua-cli -- traces pull --output ./traces
+```
+
+The [release wheel](../cli/README.md) provides the same commands through
+`hebbian-rua`.
 
 Each row contains feedback from the start of the cycle and the command computed
 from that feedback. Measure command-to-motion delay from one row's `writeTime`

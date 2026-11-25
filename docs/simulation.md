@@ -7,7 +7,9 @@ or the [simulator interface](simulators.md) for other engines.
 ## Prepare the checkout
 
 Follow the [source setup guide](install-from-source.md#prepare-the-checkout).
-From the repository root, install the example dependencies:
+The station built from this checkout and the published Python SDK pinned by
+the examples both use version 0.1.7. From the repository root, install the
+example dependencies:
 
 ```sh
 uv sync --project examples/mujoco_sim --locked
@@ -39,7 +41,7 @@ station command.
 ## 2. Run hello_robot
 
 Wait for populated `measured_joints` in [station state](http://127.0.0.1:8792/state)
-or run `cargo run --locked -p hebbian-rua-cli -- state`. Then run the
+or run `cargo run --locked -p hebbian-rua-cli -- --raw state`. Then run the
 [Python example](../examples/python/hello_robot.py) in a third terminal:
 
 ```sh
