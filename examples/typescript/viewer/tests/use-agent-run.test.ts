@@ -21,8 +21,8 @@ const run: Run = {
     settings: {
       provider: "openai",
       model: "gpt-6.2-astra",
-      reasoningEffort: null,
-      inferenceMode: null,
+      reasoningEffort: "high",
+      inferenceMode: "standard",
     },
   },
   phase: { state: "running", startedAt: 1000 },

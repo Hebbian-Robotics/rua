@@ -1,6 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import { isRunActive, type Run } from "../../../shared/run-api.js";
+import {
+  isRunActive,
+  type Provider,
+  type Run,
+} from "../../../shared/run-api.js";
 import { agentApi } from "../../agent-api.js";
 import { errorMessage } from "../../errors.js";
 import {
@@ -13,15 +17,14 @@ import {
 
 const IDLE_POLL_MILLISECONDS = 3000;
 
-type AgentServerStatus = "disabled" | "checking" | "reachable" | "unreachable";
+type AgentServerStatus = "checking" | "reachable" | "unreachable";
 
-export function useAgentRun(baseUrl: string, enabled = true) {
+export function useAgentRun(baseUrl: string) {
   const queryClient = useQueryClient();
   const [recovery, setRecovery] = useState<RunStreamRecovery>("ready");
   const runQuery = useQuery({
     queryKey: ["agent-run", baseUrl],
     queryFn: () => agentApi.currentRun(baseUrl),
-    enabled,
     retry: false,
     refetchInterval: (query) => {
       const current = query.state.data ?? null;
@@ -32,24 +35,47 @@ export function useAgentRun(baseUrl: string, enabled = true) {
     },
     refetchIntervalInBackground: true,
   });
-  const run = enabled ? (runQuery.data ?? null) : null;
+  const run = runQuery.data ?? null;
   const activeId = runStreamId(
     isRunActive(run) ? (run?.id ?? null) : null,
     recovery,
   );
-  const status: AgentServerStatus = !enabled
-    ? "disabled"
-    : runQuery.isError
-      ? "unreachable"
-      : runQuery.isPending
-        ? "checking"
-        : "reachable";
+  const status: AgentServerStatus = runQuery.isError
+    ? "unreachable"
+    : runQuery.isPending
+      ? "checking"
+      : "reachable";
   const providersQuery = useQuery({
     queryKey: ["agent-providers", baseUrl],
     queryFn: () => agentApi.providers(baseUrl),
     enabled: status === "reachable",
     retry: false,
   });
+  const [, refreshKeys] = useState(0);
+  useEffect(() => {
+    const refresh = () => refreshKeys((previous) => previous + 1);
+    window.addEventListener("storage", refresh);
+    return () => window.removeEventListener("storage", refresh);
+  }, []);
+  function browserKey(provider: Provider) {
+    if (
+      providersQuery.data?.some(
+        (entry) => entry.provider === provider && entry.available,
+      )
+    )
+      return undefined;
+    try {
+      return localStorage.getItem(`rua.viewer.keys.${provider}`) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  function saveKey(provider: Provider, value: string) {
+    const name = `rua.viewer.keys.${provider}`;
+    if (value) localStorage.setItem(name, value);
+    else localStorage.removeItem(name);
+    refreshKeys((previous) => previous + 1);
+  }
   const setRun = useCallback(
     (value: Run | null | ((previous: Run | null) => Run | null)) => {
       queryClient.setQueryData<Run | null>(
@@ -79,6 +105,8 @@ export function useAgentRun(baseUrl: string, enabled = true) {
   return {
     run,
     setRun,
+    browserKey,
+    saveKey,
     status,
     providers: providersQuery.data ?? null,
     connectionError: runQuery.error ? errorMessage(runQuery.error) : "",

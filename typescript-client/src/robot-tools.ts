@@ -226,8 +226,7 @@ export type RobotToolsOptions = {
   readonly connection: StationConnection;
   readonly lease: Lease;
   readonly arm: string;
-  /** @deprecated Sequence images use the station’s configured media companion. */
-  readonly mediaUrl?: string;
+
   readonly cameras?: readonly string[];
   readonly optionalCameras?: readonly string[];
   readonly signal?: AbortSignal;

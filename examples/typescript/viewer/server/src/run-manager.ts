@@ -4,7 +4,7 @@
 import { type ActorRefFrom, createActor } from "xstate";
 import {
   type AgentOutcome,
-  apiKeyFromEnvironment,
+  configuredApiKey,
   DEFAULT_INFERENCE_MODE,
   DEFAULT_REASONING_EFFORT,
   type RunAgentOptions,
@@ -39,7 +39,6 @@ export class RunSettingsError extends Error {}
 
 export interface RunManagerOptions {
   stationUrl: string;
-  mediaUrl: string;
 
   environment: NodeJS.ProcessEnv;
 
@@ -101,7 +100,7 @@ export class RunManager {
     await this.writes;
   }
 
-  start(request: ParsedRunRequest): Run {
+  start(request: ParsedRunRequest, browserApiKey?: string): Run {
     if (this.activeRun() !== null)
       throw new RunConflictError("A run is already active");
     const { promptImage, ...historyRequest } = request;
@@ -111,6 +110,13 @@ export class RunManager {
       unsupportedReasoningEffort(provider, model, reasoningEffort) ??
       unsupportedInferenceMode(provider, model, inferenceMode);
     if (settingsProblem !== null) throw new RunSettingsError(settingsProblem);
+    const apiKey =
+      configuredApiKey(provider, this.options.environment) ??
+      browserApiKey?.trim();
+    if (!apiKey)
+      throw new RunSettingsError(
+        `Set a ${provider} API key in viewer Settings.`,
+      );
     const now = this.options.now();
     const run: Run = {
       id: this.options.newId(),
@@ -127,7 +133,7 @@ export class RunManager {
     this.runs.set(run.id, entry);
     this.persist(entry.run);
     const started = entry.run;
-    entry.finished = this.execute(entry, { ...request, settings });
+    entry.finished = this.execute(entry, { ...request, settings }, apiKey);
     return started;
   }
 
@@ -241,6 +247,7 @@ export class RunManager {
   private async execute(
     entry: LiveRun,
     request: RunnableRequest,
+    apiKey: string,
   ): Promise<void> {
     const { provider, model, reasoningEffort, inferenceMode } =
       request.settings;
@@ -271,8 +278,7 @@ export class RunManager {
           onInterruption: "wait_for_approval",
           record: false,
           stationUrl: this.options.stationUrl,
-          mediaUrl: this.options.mediaUrl,
-          apiKey: apiKeyFromEnvironment(provider, this.options.environment),
+          apiKey,
         },
         {
           signal: entry.abort.signal,

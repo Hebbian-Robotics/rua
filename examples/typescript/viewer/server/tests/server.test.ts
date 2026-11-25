@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { afterEach, expect, test, vi } from "vitest";
 import { ScriptedStation } from "../../../agent/tests/station-harness.js";
 import {
@@ -14,12 +13,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function app(manualOnly = false) {
+function app(environment: NodeJS.ProcessEnv = { OPENAI_API_KEY: "key" }) {
   new ScriptedStation().install();
   const manager = new RunManager({
     stationUrl: "http://station",
-    mediaUrl: "http://media",
-    environment: { OPENAI_API_KEY: "key" },
+    environment,
     openConversation: () => ({
       nextTurn: () => new Promise(() => {}),
       addToolResults() {},
@@ -37,8 +35,7 @@ function app(manualOnly = false) {
   return createApp({
     manager,
     allowedOrigins: ["http://station:8792"],
-    manualOnly,
-    configuredProviders: ["openai"],
+    configuredProviders: environment["OPENAI_API_KEY"] ? ["openai"] : [],
   });
 }
 
@@ -53,43 +50,26 @@ const post = {
   body,
 };
 
-test("viewer startup requires a model-provider key by default", {
-  timeout: 15_000,
-}, () => {
-  const result = spawnSync(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      "--conditions=development",
-      "examples/typescript/viewer/server/src/main.ts",
-    ],
-    {
-      env: {
-        ...process.env,
-        OPENAI_API_KEY: "",
-        ANTHROPIC_API_KEY: " ",
-        GEMINI_API_KEY: "",
-        GOOGLE_API_KEY: "",
-        AGENT_PORT: "0",
-      },
-      encoding: "utf-8",
-      timeout: 12_000,
-    },
-  );
-  expect(result.status, result.stderr).toBe(1);
-  expect(result.stderr).toContain("OPENAI_API_KEY");
-  expect(result.stderr).toContain("--manual-control-only-no-agent");
-});
-
-test("manual-only mode refuses agent runs even with a configured provider", async () => {
-  const server = app(true);
+test("a keyless viewer accepts a browser key only for the submitted run", async () => {
+  const server = app({});
   expect(await (await server.request("/api/health")).json()).toEqual({
     ok: true,
-    manualOnly: true,
   });
-  expect((await server.request("/api/runs", post)).status).toBe(403);
-  expect(await (await server.request("/api/runs/current")).json()).toBeNull();
+  expect((await server.request("/api/runs", post)).status).toBe(400);
+  const response = await server.request("/api/runs", {
+    ...post,
+    headers: { ...post.headers, "X-Model-Api-Key": "browser-secret" },
+  });
+  expect(response.status).toBe(201);
+  expect(await response.text()).not.toContain("browser-secret");
+  expect(await (await server.request("/api/runs")).text()).not.toContain(
+    "browser-secret",
+  );
+  expect(await (await server.request("/api/model-providers")).json()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ provider: "openai", available: false }),
+    ]),
+  );
 });
 
 test("a run is created and started in one call, then conflicts", async () => {

@@ -52,7 +52,7 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-Configure a model-provider key before running `pnpm start:viewer` to serve
+Run `pnpm start:viewer` to serve
 the built viewer and run the example agent backend. See the
 [viewer setup](../examples/typescript/viewer/README.md).
 The viewer and TypeScript agent install the published SDK pinned in the

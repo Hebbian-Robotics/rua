@@ -12,7 +12,16 @@ test("run output survives restart separately from metadata", async () => {
     const run = runSchema.parse({
       id: "run-1",
       createdAt: 1,
-      request: { arm: "arm", task: "task", settings: {} },
+      request: {
+        arm: "arm",
+        task: "task",
+        settings: {
+          provider: "openai",
+          model: "example-model",
+          reasoningEffort: "high",
+          inferenceMode: "standard",
+        },
+      },
       phase: { state: "running", startedAt: 1 },
       output: [],
     });

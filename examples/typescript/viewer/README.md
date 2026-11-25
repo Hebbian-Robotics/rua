@@ -2,9 +2,7 @@
 
 ![RUA viewer workspace](viewer-preview.png)
 
-The example Node server hosts the React viewer and agent loop. Set at least
-one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in your
-environment or the repository’s `.env`. Run `pnpm build` and
+The example Node server hosts the React viewer and agent loop. Run `pnpm build` and
 `pnpm start:viewer`, then open <http://127.0.0.1:8793/viewer/>. Set
 `HEBBIAN_STATION_URL` to connect to a station other than the local default. Follow the
 [viewer build instructions](../../../docs/install-from-source.md#optional-viewer)
@@ -35,12 +33,21 @@ operation and [the agent example](../agent/README.md) for model setup. Open
 
 [Options when LiveKit Cloud is unavailable](../../../docs/cameras.md#when-livekit-cloud-is-unavailable)
 
-## Debug manual controls
+## Model API keys
 
-To debug manual controls without a model-provider key, run
-`pnpm start:viewer --manual-control-only-no-agent`. This opens **Manual** and
-disables **Agent** for the session. Camera previews follow the station's camera
-mode.
+Choose a provider in Agent Run. Follow **Set key** to save its API key in
+this browser profile. Settings also lets you replace or remove a browser key.
+The Node backend receives the selected key for that run. For shared devices,
+anyone using the same browser profile can use its saved keys.
+
+To supply a key for all users of the viewer, set `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the viewer environment or
+repository’s `.env`. Settings shows **Set in viewer environment** for these
+providers. Change the value there and restart the viewer. Manual controls
+and camera previews work without a model key.
+
+Run history requires the saved provider, model, reasoning effort, and inference mode.
+The viewer skips metadata missing those settings and output lines missing timestamps.
 
 ## Develop the viewer
 

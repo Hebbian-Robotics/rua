@@ -49,7 +49,7 @@ async function runLoop(
     const outcome = await station.run(
       drive(
         { ...config, ...overrides },
-        { connection, stationUrl: "http://station", mediaUrl: "http://media" },
+        { connection, stationUrl: "http://station" },
         {
           openConversation: () => conversation,
           print: (line) =>
@@ -137,7 +137,7 @@ test("Claude request telemetry is parented to the model turn without model conte
     const outcome = await station.run(
       drive(
         { ...config, task: "private prompt" },
-        { connection, stationUrl: "http://station", mediaUrl: "http://media" },
+        { connection, stationUrl: "http://station" },
         { apiKey: "local-test-key" },
       ),
     );
@@ -504,7 +504,7 @@ test("cancellation returns the lease while a model request is still pending", as
     });
   const running = drive(
     config,
-    { connection, stationUrl: "http://station", mediaUrl: "http://media" },
+    { connection, stationUrl: "http://station" },
     { signal: abort.signal, openConversation: () => conversation },
   );
   try {

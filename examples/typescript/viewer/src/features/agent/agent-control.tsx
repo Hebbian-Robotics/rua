@@ -89,6 +89,10 @@ export function AgentControl({
   const currentProvider = providers?.find(
     ({ provider }) => provider === selectedProvider,
   );
+  const keyMissing =
+    currentProvider &&
+    !currentProvider.available &&
+    !agent.browserKey(currentProvider.provider);
   const customModelSelected = modelSelection?.custom === true;
   const presetModel =
     currentProvider?.models.find(({ id }) => id === modelSelection?.model)
@@ -150,10 +154,6 @@ export function AgentControl({
     unavailable = `Could not load model providers: ${providersError}`;
   } else if (providers === null) {
     unavailable = "Checking model providers…";
-  } else if (!providers.some(({ available }) => available)) {
-    unavailable = "No model API keys configured on the agent server.";
-  } else if (selectedProvider && !currentProvider?.available) {
-    unavailable = "The selected model provider is unavailable.";
   } else if (controlView.kind === "elsewhere") {
     unavailable = `${describeHolder(controlView.heldBy)} holds control. Release it there to start a task.`;
   } else if (selectedArmState?.mode !== "holding") {
@@ -174,6 +174,7 @@ export function AgentControl({
           event.preventDefault();
           if (
             !preparingPromptImage &&
+            !keyMissing &&
             !unavailable &&
             decision.kind === "allowed"
           )
@@ -271,25 +272,26 @@ export function AgentControl({
               <NativeSelectOption value="" disabled>
                 Select a provider
               </NativeSelectOption>
-              {providers?.map(({ provider, label, available }) => (
-                <NativeSelectOption
-                  key={provider}
-                  value={provider}
-                  disabled={!available}
-                >
+              {providers?.map(({ provider, label }) => (
+                <NativeSelectOption key={provider} value={provider}>
                   {label}
-                  {available ? "" : " (unavailable)"}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
           </label>
+          {keyMissing && (
+            <p role="status">
+              Add a {currentProvider.label} API key to run this agent.{" "}
+              <a href={`#settings/key-${currentProvider.provider}`}>Set key</a>
+            </p>
+          )}
           <label htmlFor="agent-model">
             Model
             <NativeSelect
               id="agent-model"
               name="model"
               required
-              disabled={!currentProvider?.available}
+              disabled={!currentProvider}
               value={customModelSelected ? CUSTOM_MODEL_OPTION : presetModel}
               onChange={(event) => {
                 if (!currentProvider) return;
@@ -323,7 +325,7 @@ export function AgentControl({
                 name="customModel"
                 type="text"
                 required
-                disabled={!currentProvider?.available}
+                disabled={!currentProvider}
                 autoComplete="off"
                 autoCapitalize="none"
                 autoCorrect="off"
@@ -433,6 +435,7 @@ export function AgentControl({
               type="submit"
               disabled={
                 preparingPromptImage ||
+                !!keyMissing ||
                 !!unavailable ||
                 decision.kind === "blocked"
               }

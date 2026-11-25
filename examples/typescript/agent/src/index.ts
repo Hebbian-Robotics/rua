@@ -17,6 +17,7 @@ export {
   type AgentEvent,
   type AgentOutcome,
   apiKeyFromEnvironment,
+  configuredApiKey,
   type RunAgentOptions,
   runAgent,
 } from "./run.js";

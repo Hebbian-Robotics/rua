@@ -33,10 +33,6 @@ function createCommand(): Command {
       "--server <url>",
       `Station URL. Defaults to HEBBIAN_STATION_URL or ${DEFAULT_STATION_URL}.`,
     )
-    .option(
-      "--media-server <url>",
-      "Deprecated. Camera capture uses the station’s configured media companion.",
-    )
     .option("--camera <names>", "Comma-separated cameras to show the model.")
     .option(
       "--optional-camera <names>",
@@ -81,7 +77,6 @@ function createCommand(): Command {
 interface CommandOptions {
   arm?: string;
   server?: string;
-  mediaServer?: string;
   camera?: string;
   optionalCamera?: string;
   provider: Provider;
@@ -96,7 +91,6 @@ interface CommandOptions {
 export interface CommandLine {
   config: LoopConfig;
   server: string;
-  mediaServer: string;
 }
 
 export function parseCommandLine(
@@ -140,8 +134,6 @@ export function parseCommandLine(
     values.server ?? environment["HEBBIAN_STATION_URL"] ?? DEFAULT_STATION_URL;
   return {
     server,
-    mediaServer:
-      values.mediaServer ?? environment["HEBBIAN_MEDIA_SERVER"] ?? server,
     config: {
       ...(arm === undefined ? {} : { arm }),
       task: taskForNamedArm ?? armOrTask,
@@ -176,7 +168,7 @@ async function main(): Promise<number> {
     createCommand().outputHelp();
     return 0;
   }
-  const { config, server, mediaServer } = commandLine;
+  const { config, server } = commandLine;
   const apiKey = apiKeyFromEnvironment(config.provider, process.env);
   const cancellation = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const)
@@ -186,7 +178,7 @@ async function main(): Promise<number> {
       process.once(signal, () => process.exit(1));
     });
   const outcome = await runAgent(
-    { ...config, stationUrl: server, mediaUrl: mediaServer, apiKey },
+    { ...config, stationUrl: server, apiKey },
     {
       signal: cancellation.signal,
       onEvent: (event) => console.log(event.line),

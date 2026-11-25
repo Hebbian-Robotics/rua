@@ -26,7 +26,6 @@ const loopConfig: LoopConfig = {
 const config: AgentConfig = {
   ...loopConfig,
   stationUrl: "http://station",
-  mediaUrl: "http://media",
   apiKey: "unused",
 };
 
@@ -60,7 +59,6 @@ test("a task with no arm name uses the station's sole arm", async () => {
       {
         ...commandLine.config,
         stationUrl: commandLine.server,
-        mediaUrl: commandLine.mediaServer,
         apiKey: config.apiKey,
       },
       {

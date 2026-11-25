@@ -124,7 +124,6 @@ function RecoveryControls({ state }: { state: StationState | null }) {
 }
 
 type WorkspaceAppProps = {
-  manualOnly: boolean;
   viewerPreferences: ReturnType<typeof useViewerPreferences>;
   cameras: CameraRoomState;
   navigationLinks?: readonly ViewerNavigationLink[];
@@ -135,7 +134,6 @@ type WorkspaceAppProps = {
 };
 
 export function WorkspaceApp({
-  manualOnly,
   viewerPreferences,
   cameras,
   navigationLinks,
@@ -147,7 +145,7 @@ export function WorkspaceApp({
   const [route, setRoute] = useState(() => location.hash);
   const [routePage, settingsSection] = route.split("/");
   const page = routePage === "#settings" ? "settings" : "workspace";
-  const [preferredControlMode, setControlMode] = useState<ControlMode>(() => {
+  const [controlMode, setControlMode] = useState<ControlMode>(() => {
     try {
       return sessionStorage.getItem(CONTROL_MODE_KEY) === "manual"
         ? "manual"
@@ -156,7 +154,6 @@ export function WorkspaceApp({
       return "agent";
     }
   });
-  const controlMode = manualOnly ? "manual" : preferredControlMode;
   const [selectedArm, setSelectedArm] = useState("");
   const [telemetryOpen, setTelemetryOpen] = useState(false);
   const { stationState, connected } = useStationState();
@@ -178,7 +175,7 @@ export function WorkspaceApp({
   const [stoppingRun, setStoppingRun] = useState(false);
   const { preferences, updatePreferences, colorScheme } = viewerPreferences;
   const agentUrl = globalThis.location.origin;
-  const agent = useAgentRun(agentUrl, !manualOnly);
+  const agent = useAgentRun(agentUrl);
   const { run, setRun } = agent;
   const runActive = isRunActive(run);
   const controlModeLocked = controlModeLockReason(
@@ -261,7 +258,6 @@ export function WorkspaceApp({
   function selectControlMode(value: unknown): void {
     if (value !== "agent" && value !== "manual") return;
     if (
-      (manualOnly && value === "agent") ||
       value === controlMode ||
       controlModeLockReason(
         stationConnection.isConnected()
@@ -286,7 +282,7 @@ export function WorkspaceApp({
   }
 
   async function startRun(request: RunRequest): Promise<void> {
-    if (manualOnly || startingRun || runActive) return;
+    if (startingRun || runActive) return;
     setStartingRun(true);
     setRunError("");
     try {
@@ -297,12 +293,16 @@ export function WorkspaceApp({
         ({ arm }) => arm === request.arm,
       )?.controller;
       setRun(
-        await agentApi.startRun(agentUrl, {
-          ...request,
-          ...(controller === "ik"
-            ? { motionLimits: preferences.motionLimits }
-            : {}),
-        }),
+        await agentApi.startRun(
+          agentUrl,
+          {
+            ...request,
+            ...(controller === "ik"
+              ? { motionLimits: preferences.motionLimits }
+              : {}),
+          },
+          agent.browserKey(request.settings.provider),
+        ),
       );
     } catch (error: unknown) {
       setRunError(`Could not start the run: ${errorMessage(error)}`);
@@ -482,7 +482,6 @@ export function WorkspaceApp({
                         name="control-mode"
                         value={value}
                         checked={controlMode === value}
-                        disabled={manualOnly && value === "agent"}
                         onChange={() => selectControlMode(value)}
                       />
                       <span className="control-mode-label">
@@ -496,32 +495,14 @@ export function WorkspaceApp({
                   ))}
                 </div>
               </fieldset>
-              {manualOnly ? (
-                <Alert
-                  id="control-mode-hint"
-                  role="status"
-                  variant="destructive"
-                >
-                  <TriangleAlertIcon aria-hidden="true" />
-                  <p className="m-0">
-                    <strong>Agent disabled.</strong> The viewer was started with{" "}
-                    <code>--manual-control-only-no-agent</code>, which is only
-                    for debugging manual control. To use the agent, set{" "}
-                    <code>OPENAI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>,
-                    or <code>GEMINI_API_KEY</code> and restart the viewer
-                    without that flag.
-                  </p>
-                </Alert>
-              ) : (
-                <p
-                  id="control-mode-hint"
-                  role="status"
-                  className="m-0 text-xs text-muted-foreground"
-                >
-                  {controlModeLocked ??
-                    "Choose a control mode, then enable the arm."}
-                </p>
-              )}
+              <p
+                id="control-mode-hint"
+                role="status"
+                className="m-0 text-xs text-muted-foreground"
+              >
+                {controlModeLocked ??
+                  "Choose a control mode, then enable the arm."}
+              </p>
             </div>
             <ArmControl
               stationState={connected ? stationState : null}
@@ -546,25 +527,23 @@ export function WorkspaceApp({
               onStopFollowing={stopFollowing}
               onPowerTransition={setChangingArmPower}
             />
-            {!manualOnly && (
-              <div hidden={controlMode !== "agent"}>
-                <AgentControl
-                  agent={agent}
-                  startingRun={startingRun}
-                  onStartRun={startRun}
-                  runError={runError}
-                  armName={armName}
-                  modelSelection={preferences.agentModelSelection}
-                  onModelSelectionChange={(agentModelSelection) =>
-                    updatePreferences({ ...preferences, agentModelSelection })
-                  }
-                  onStopRun={stopRun}
-                  stoppingRun={stoppingRun}
-                  stationState={connected ? stationState : null}
-                  cameraNames={cameraNames}
-                />
-              </div>
-            )}
+            <div hidden={controlMode !== "agent"}>
+              <AgentControl
+                agent={agent}
+                startingRun={startingRun}
+                onStartRun={startRun}
+                runError={runError}
+                armName={armName}
+                modelSelection={preferences.agentModelSelection}
+                onModelSelectionChange={(agentModelSelection) =>
+                  updatePreferences({ ...preferences, agentModelSelection })
+                }
+                onStopRun={stopRun}
+                stoppingRun={stoppingRun}
+                stationState={connected ? stationState : null}
+                cameraNames={cameraNames}
+              />
+            </div>
             <div hidden={controlMode !== "manual"}>
               {connected ? (
                 <ManualControl

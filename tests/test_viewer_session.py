@@ -21,9 +21,7 @@ VIEWER_COMMAND = [
 
 
 @contextmanager
-def viewer_backend(
-    station_url: str, run_directory: Path, *, manual_only: bool = True
-) -> Generator[str]:
+def viewer_backend(station_url: str, run_directory: Path) -> Generator[str]:
     environment = {
         **os.environ,
         "HEBBIAN_STATION_URL": station_url,
@@ -31,13 +29,8 @@ def viewer_backend(
         "AGENT_PORT": "0",
         "AGENT_RUNS_DIR": str(run_directory),
     }
-    arguments = (
-        [*VIEWER_COMMAND, "--manual-control-only-no-agent"]
-        if manual_only
-        else VIEWER_COMMAND
-    )
     with subprocess.Popen(
-        arguments,
+        VIEWER_COMMAND,
         env=environment,
         cwd=REPOSITORY_ROOT,
         stdout=subprocess.PIPE,
@@ -64,7 +57,7 @@ def test_viewer_reads_provider_keys_from_the_process_environment(
     monkeypatch.setenv("GEMINI_API_KEY", "")
     monkeypatch.setenv("GOOGLE_API_KEY", "")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
-    with viewer_backend("http://127.0.0.1:1", tmp_path, manual_only=False) as viewer:
+    with viewer_backend("http://127.0.0.1:1", tmp_path) as viewer:
         response = httpx2.get(f"{viewer}/api/model-providers", timeout=10)
         response.raise_for_status()
         assert {entry["provider"]: entry["available"] for entry in response.json()} == {
@@ -92,10 +85,16 @@ def ready_session(lines: Iterator[str]) -> str:
 def test_manual_sessions_release_control_on_disconnect(
     server_binary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    for variable in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+    ):
+        monkeypatch.setenv(variable, "")
     with (
         running_station(server_binary, enabled=False) as station,
-        viewer_backend(station.server, tmp_path, manual_only=False) as viewer,
+        viewer_backend(station.server, tmp_path) as viewer,
         httpx2.Client(base_url=viewer, timeout=10) as client,
         client.stream("GET", "/api/manual/events") as observer,
     ):

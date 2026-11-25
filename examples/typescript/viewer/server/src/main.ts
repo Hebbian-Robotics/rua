@@ -25,35 +25,17 @@ try {
 const { values } = parseArgs({
   options: {
     help: { type: "boolean", short: "h" },
-    "manual-control-only-no-agent": { type: "boolean" },
-    "manual-only": { type: "boolean" },
   },
 });
-const manualControlOption = "--manual-control-only-no-agent";
-const manualControlHelp =
-  "Disables the agent. Use only when you need to debug manual controls.";
 if (values.help) {
-  console.log(`Usage: pnpm start:viewer [${manualControlOption}]
+  console.log(`Usage: pnpm start:viewer
 
-  ${manualControlOption}  ${manualControlHelp}
-
-Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env for agent runs.
+Add a model key in viewer Settings or set one of ${Object.values(API_KEY_VARIABLES).join(", ")} for agent runs.
 Connect to a station with a real arm whenever available. Reserve simulation for testing without hardware.
 Configure LiveKit on the station for live camera previews.`);
   process.exit(0);
 }
-const manualOnly =
-  values["manual-control-only-no-agent"] === true ||
-  values["manual-only"] === true;
 const environment = process.env;
-const availableProviders = configuredProviders(environment);
-if (!manualOnly && availableProviders.length === 0) {
-  console.error(
-    `Set one of ${Object.values(API_KEY_VARIABLES).join(", ")} in the environment or .env to start the viewer.\n` +
-      `pnpm start:viewer ${manualControlOption}: ${manualControlHelp}`,
-  );
-  process.exit(1);
-}
 const port = Number(environment["AGENT_PORT"] ?? 8793);
 const host = environment["AGENT_HOST"] ?? "127.0.0.1";
 const stationUrl =
@@ -66,7 +48,6 @@ const allowedOrigins = allowedViewerOrigins(
 
 const manager = new RunManager({
   stationUrl,
-  mediaUrl,
   environment,
   now: Date.now,
   store: fileRunStore(environment["AGENT_RUNS_DIR"] ?? ".agent-runs"),
@@ -77,8 +58,7 @@ await manager.open();
 const app = createApp({
   manager,
   allowedOrigins,
-  manualOnly,
-  configuredProviders: availableProviders,
+  configuredProviders: configuredProviders(environment),
 });
 const recording = createRecordingClient(stationUrl);
 const protectRecordingWrite = csrf({
