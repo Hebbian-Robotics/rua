@@ -34,12 +34,8 @@ impl PolicyRuntime {
         }))
     }
 
-    pub(crate) fn begin_cycle(&mut self) {
-        self.policy.inference_seconds = 0.0;
-    }
-
-    pub(crate) fn inference_seconds(&self) -> f64 {
-        self.policy.inference_seconds
+    pub(crate) fn take_inference_seconds(&mut self) -> f64 {
+        self.policy.take_inference_seconds()
     }
 
     pub(crate) fn reset(&mut self) {

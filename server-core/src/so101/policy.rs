@@ -162,7 +162,7 @@ pub struct Policy {
     observation_joint_offset: [f64; JOINT_COUNT],
     previous_action: [f64; JOINT_COUNT],
     history: Option<Vec<f64>>,
-    pub(crate) inference_seconds: f64,
+    inference_seconds: f64,
 }
 
 impl Policy {
@@ -266,6 +266,10 @@ impl Policy {
     pub fn reset(&mut self) {
         self.previous_action = [0.0; JOINT_COUNT];
         self.history = None;
+    }
+
+    pub(crate) fn take_inference_seconds(&mut self) -> f64 {
+        std::mem::take(&mut self.inference_seconds)
     }
 
     pub fn step(

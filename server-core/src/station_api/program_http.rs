@@ -10,9 +10,7 @@ use hebbian_contracts::{
 };
 
 use super::http_state::{SHUTTING_DOWN, StationHttpState};
-use super::programs::{
-    ArtifactLookup, COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramCompilation,
-};
+use super::programs::{COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramCompilation};
 use super::submissions::{
     ProgramSubmissionError, ProgramSubmissionRequest, RequestReservation, SubmissionCompletion,
     wait_for_outcome,
@@ -67,17 +65,8 @@ pub(crate) async fn compile_action_sequence(
     Json(source): Json<ActionSequenceRequest>,
 ) -> Result<Response, HttpFailure> {
     tokio::task::spawn_blocking(move || {
-        let targets = station_state
-            .compilation_targets()
-            .map_err(internal_failure)?;
         let result = station_state
-            .compiler
-            .compile(
-                &station_state.instance_id,
-                targets,
-                source,
-                CompilationRetention::WithInspectionFiles,
-            )
+            .compile_program(source, CompilationRetention::WithInspectionFiles)
             .map_err(internal_failure)?;
         Ok(match result {
             ProgramCompilation::Ready(artifact) => Json(CompilationOutcome::Compiled {
@@ -122,26 +111,13 @@ pub(crate) async fn inspect_compilation(
     Path(id): Path<String>,
 ) -> Result<Response, HttpFailure> {
     tokio::task::spawn_blocking(move || {
-        lookup_artifact(&station_state, &id)
+        station_state
+            .lookup_compilation(&id)
             .map(|artifact| Json(&artifact.compilation).into_response())
             .map_err(HttpFailure::from)
     })
     .await
     .map_err(internal_failure)?
-}
-
-fn lookup_artifact(
-    station_state: &StationHttpState,
-    id: &str,
-) -> Result<Arc<super::programs::ProgramArtifact>, ProgramSubmissionError> {
-    let targets = station_state
-        .compilation_targets()
-        .map_err(ProgramSubmissionError::Internal)?;
-    match station_state.compiler.lookup(id, targets) {
-        ArtifactLookup::Found(artifact) => Ok(artifact),
-        ArtifactLookup::Missing => Err(ProgramSubmissionError::MissingCompilation),
-        ArtifactLookup::Incompatible => Err(ProgramSubmissionError::IncompatibleCompilation),
-    }
 }
 
 pub(crate) async fn execute_source(
@@ -270,17 +246,8 @@ fn prepare_submission(
 ) -> Result<PreparedProgram, ProgramSubmissionError> {
     Ok(match request {
         ProgramSubmissionRequest::Source(request) => {
-            let targets = station_state
-                .compilation_targets()
-                .map_err(ProgramSubmissionError::Internal)?;
             let artifact = match station_state
-                .compiler
-                .compile(
-                    &station_state.instance_id,
-                    targets,
-                    request.action_sequence,
-                    CompilationRetention::InMemory,
-                )
+                .compile_program(request.action_sequence, CompilationRetention::InMemory)
                 .map_err(|error| ProgramSubmissionError::Internal(format!("{error:#}")))?
             {
                 ProgramCompilation::Ready(artifact) => artifact,
@@ -292,7 +259,7 @@ fn prepare_submission(
             (request.lease_token, artifact, expected_revisions, None)
         }
         ProgramSubmissionRequest::Compiled(request) => {
-            let artifact = lookup_artifact(station_state, &request.compilation_id)?;
+            let artifact = station_state.lookup_compilation(&request.compilation_id)?;
             (
                 request.lease_token,
                 artifact,
