@@ -176,7 +176,9 @@ jobs:
       - name: Build and check crates.io packages
         run: |
           cargo package --locked -p hebbian-rua-contracts -p hebbian-rua
-          cp target/package/hebbian-rua-*.crate dist/sdk/
+          version="$(node -p 'require("./typescript-client/package.json").version')"
+          cp "target/package/hebbian-rua-${version}.crate" \
+            "target/package/hebbian-rua-contracts-${version}.crate" dist/sdk/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rua-sdk-packages
