@@ -7,11 +7,12 @@ from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from functools import partial
+from itertools import count
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict, cast
 from uuid import uuid4
 
-from cyclopts import App, Parameter, validators
+from cyclopts import App, Parameter
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
@@ -48,7 +49,6 @@ The provider stores conversation history. The loop executes the robot tools.
 
 type Provider = Literal["openai", "anthropic", "gemini"]
 
-DEFAULT_MAX_TURNS = 20
 command_line = App(help=CLI_HELP, version_flags=())
 
 
@@ -368,7 +368,7 @@ class AgentRobotTools(RobotTools):
 
 
 async def run_openai(
-    robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
+    robot: AgentRobotTools, task: str, model: str, instructions: str
 ) -> None:
     from openai import AsyncOpenAI
     from openai.types.responses import ResponseInputItemParam
@@ -382,7 +382,7 @@ async def run_openai(
     tools = robot_tools.tools
     async with AsyncOpenAI() as client:
         revisions: Mapping[str, int] | None = None
-        for turn_number in range(1, max_turns + 1):
+        for turn_number in count(1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
@@ -414,11 +414,10 @@ async def run_openai(
                 print(response.output_text)
                 report_stop(turn.should_stop)
                 return
-    raise SystemExit(f"No task outcome after {max_turns} model turns")
 
 
 async def run_anthropic(
-    robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
+    robot: AgentRobotTools, task: str, model: str, instructions: str
 ) -> None:
     from anthropic import AsyncAnthropic
     from anthropic.types.beta import BetaMessageParam
@@ -443,7 +442,7 @@ async def run_anthropic(
             cache_control={"type": "ephemeral"},
         )
         revisions: Mapping[str, int] | None = None
-        for turn_number in range(1, max_turns + 1):
+        for turn_number in count(1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
@@ -470,11 +469,10 @@ async def run_anthropic(
                 )
                 report_stop(turn.should_stop)
                 return
-    raise SystemExit(f"No task outcome after {max_turns} model turns")
 
 
 async def run_gemini(
-    robot: AgentRobotTools, task: str, model: str, instructions: str, max_turns: int
+    robot: AgentRobotTools, task: str, model: str, instructions: str
 ) -> None:
     from google import genai
     from google.genai.interactions import Interaction, ModelParam, StepParam
@@ -492,7 +490,7 @@ async def run_gemini(
     continuation: Continuation = {}
     async with genai.Client().aio as client:
         revisions: Mapping[str, int] | None = None
-        for turn_number in range(1, max_turns + 1):
+        for turn_number in count(1):
             if revisions is None:
                 observation = await robot_tools.observe(wait_for_recovery=True)
                 pending_input.append(observation.message)
@@ -524,7 +522,6 @@ async def run_gemini(
                 print(response.output_text or "")
                 report_stop(turn.should_stop)
                 return
-    raise SystemExit(f"No task outcome after {max_turns} model turns")
 
 
 def report_stop(should_stop: bool) -> None:
@@ -539,7 +536,6 @@ async def run_task(
     task: str,
     arm_name: str,
     cameras: list[str],
-    max_turns: int = DEFAULT_MAX_TURNS,
     *,
     tracer_provider: trace.TracerProvider,
 ) -> None:
@@ -577,11 +573,11 @@ async def run_task(
                 raise SystemExit(f"Could not enable the arm: {enabled}")
         match provider:
             case "openai":
-                await run_openai(robot, task, model, instructions, max_turns)
+                await run_openai(robot, task, model, instructions)
             case "anthropic":
-                await run_anthropic(robot, task, model, instructions, max_turns)
+                await run_anthropic(robot, task, model, instructions)
             case "gemini":
-                await run_gemini(robot, task, model, instructions, max_turns)
+                await run_gemini(robot, task, model, instructions)
 
 
 def configured_api_key(
@@ -605,12 +601,6 @@ async def main(
     *,
     provider: Annotated[Provider, Parameter(help="Model provider.")],
     model: Annotated[str, Parameter(help="Model ID.")],
-    max_turns: Annotated[
-        int,
-        Parameter(
-            help="Maximum number of model turns.", validator=validators.Number(gte=1)
-        ),
-    ] = DEFAULT_MAX_TURNS,
     arm: Annotated[
         str | None, Parameter(help="Arm name. Defaults to the station's sole arm.")
     ] = None,
@@ -666,7 +656,6 @@ async def main(
                 task,
                 arm_name,
                 list(camera),
-                max_turns,
                 tracer_provider=tracer_provider,
             )
     return None
