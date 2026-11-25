@@ -3,6 +3,7 @@ mod lease;
 mod model_tools;
 mod station;
 use hebbian_rua::ConciseOptions;
+use hebbian_rua::contracts::{METRES_PER_MILLIMETRE, RADIANS_PER_DEGREE};
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
 
@@ -42,6 +43,8 @@ fn concise_response<'py>(
 
 #[pymodule(name = "_native")]
 fn native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add("METRES_PER_MILLIMETRE", METRES_PER_MILLIMETRE)?;
+    module.add("RADIANS_PER_DEGREE", RADIANS_PER_DEGREE)?;
     module.add("HttpError", module.py().get_type::<error::HttpError>())?;
     module.add(
         "CommandRefused",

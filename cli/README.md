@@ -41,14 +41,15 @@ and `--jerk`) must be migrated before using this CLI.
 
 The CLI emits the concise model view with millimetres and degrees. Use
 `--raw` for full station output in native units. Gripper opening runs from
-0 (closed) to 1 (open), and jaw yaw is in degrees in both formats.
+0 (closed) to 1 (open). Jaw yaw uses degrees in CLI flags and model JSON,
+and radians in native station JSON.
 
 For `move-arms`, `preview-poses`, and `action-sequence run`, use the SDK model
 fields `position_mm`, `joints_degrees`, and
 `max_joint_speed_degrees_per_second`. The optional caps are
 `max_joint_acceleration_degrees_per_second_squared` and
 `max_joint_jerk_degrees_per_second_cubed`. For native station JSON, pass
-`--input-si` to that command. See
+`--input-station` to that command. See
 [Model output](../docs/model-output.md) for more on the shared model format.
 
 ## Commands
@@ -64,6 +65,9 @@ invite URL, or the full response with `--raw`); `camera list` (name and availabi
 camera fails with `camera_unavailable`, naming the cameras known and the station's `last_error`);
 `traces list` / `traces pull [names...] --output <dir>` (files are written exactly as
 served, gzip-compressed).
+
+For a [timed single-arm sequence](../docs/control-model.md#optional-move-timing),
+`at_seconds` is in seconds from the start of the step in both JSON formats.
 
 ## Set up live cameras
 

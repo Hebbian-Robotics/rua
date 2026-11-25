@@ -54,9 +54,9 @@ pnpm build
 Configure a model-provider key before running `pnpm start:viewer` to serve
 the built viewer and run the example agent backend. See the
 [viewer setup](../examples/typescript/viewer/README.md).
-The viewer uses the published TypeScript SDK from the lockfile. For the matching
-published station, see [Getting started](getting-started.md). To test station
-changes, [start the station from source](#start-the-station). Camera builds have
+The viewer uses the TypeScript SDK from this checkout. Use a matching
+[station built from source](#start-the-station). For the published setup,
+see [Getting started](getting-started.md). Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
@@ -77,8 +77,8 @@ Run commands from the repository root. After pulling dependency changes, run
 | Rust SDK or PyO3 bindings | Run `uv sync` and restart the Python process to load the rebuilt extension. | The next Python process imports the new native module. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |
 
-The examples pin the published SDKs. Run `pnpm test:package` to build and
-validate the TypeScript SDK from your checkout.
+The Python examples pin the published SDK. Run `pnpm test:package` to
+build and validate the TypeScript SDK from your checkout.
 `pnpm build` builds the static viewer in
 `dist/viewer` without building Rust binaries or restarting services.
 A running process continues using its loaded code until it restarts.

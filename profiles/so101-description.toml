@@ -10,11 +10,11 @@ Camera extrinsics and the table plane are not verified. Gripper opening 0
 is closed and 1 is open; contact is an estimate.
 
 Frames: world +X forward, +Y left, +Z up. gripper_frame_link local +Z points
-toward the jaw tips; the jaws close along local X. jaw_yaw_degrees is set by
+toward the jaw tips; the jaws close along local X. Jaw yaw is set by
 wrist_roll, whose limits exclude some yaws; the jaws close along the same
-line at yaw + 180, so try that after a rejection. The arm swings in a
+line at yaw plus a half turn, so try that after a rejection. The arm swings in a
 vertical plane through its shoulder_pan axis, so the approach direction's
 heading follows the target's direction from that arm's base; choose its tilt
 (down, forward or between). Receipts report achieved approach,
-degrees_from_down, jaw_yaw_degrees and target errors; the examples specify
+tilt from down, jaw yaw and target errors; the examples specify
 orientation, not collision-free grasp positions."""

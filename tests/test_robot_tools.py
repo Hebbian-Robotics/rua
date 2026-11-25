@@ -1,11 +1,13 @@
 import asyncio
 import json
+import math
 from collections.abc import Iterator
 from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
 
+from hebbian_rua import angular_degrees, angular_radians, joint_radians, position_metres
 from hebbian_rua.client.llm.robot_tools import RobotTools
 from hebbian_rua.client.llm.tool_catalog import (
     RobotToolConfiguration,
@@ -177,6 +179,18 @@ def test_custom_description_is_scoped_to_one_model_tool_view(robot: RobotTools) 
     assert "Close the inspection gripper" not in {
         tool.description for tool in robot.tools
     }
+
+
+def test_sdk_motion_units_produce_the_same_native_target() -> None:
+    assert position_metres([200, -100, 50], unit="mm") == [0.2, -0.1, 0.05]
+    assert position_metres([0.2, -0.1, 0.05], unit="m") == [0.2, -0.1, 0.05]
+    assert angular_radians(90, unit="deg") == pytest.approx(math.pi / 2)
+    assert angular_degrees(math.pi / 2, unit="rad") == pytest.approx(90)
+    assert joint_radians([90, -180], unit="deg") == pytest.approx(
+        [math.pi / 2, -math.pi]
+    )
+    with pytest.raises(ValueError, match="three coordinates"):
+        position_metres([200, 50], unit="mm")
 
 
 def test_model_response_uses_readable_units_and_preserves_copyable_orientation() -> (

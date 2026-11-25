@@ -36,6 +36,10 @@ mod telemetry;
 pub use telemetry::*;
 mod station_message;
 pub use station_message::*;
+mod units;
+pub use units::{
+    DEGREES_PER_RADIAN, METRES_PER_MILLIMETRE, MILLIMETRES_PER_METRE, RADIANS_PER_DEGREE,
+};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -205,16 +209,16 @@ pub enum JawYawReference {
     WorldY,
 }
 
-/// A tool orientation in grasp terms, rounded for people to read: where the jaws
+/// A tool orientation in grasp terms: where the jaws
 /// point, how far that is from straight down, and the jaw yaw about it. With a
 /// target, also how far the orientation is from it.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct OrientationSummary {
     pub approach: [f64; 3],
-    #[schemars(range(min = 0.0, max = 180.0))]
-    pub degrees_from_down: f64,
-    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
-    pub jaw_yaw_degrees: f64,
+    #[schemars(range(min = 0.0, max = std::f64::consts::PI))]
+    pub radians_from_down: f64,
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = std::f64::consts::TAU))]
+    pub jaw_yaw_radians: f64,
     pub jaw_yaw_reference: JawYawReference,
     pub goal: Option<GoalComparison>,
 }
@@ -224,13 +228,13 @@ pub struct OrientationSummary {
 /// physical error.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GoalComparison {
-    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
-    pub jaw_yaw_degrees: f64,
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = std::f64::consts::TAU))]
+    pub jaw_yaw_radians: f64,
     pub jaw_yaw_reference: JawYawReference,
-    #[schemars(range(min = 0.0, max = 180.0))]
-    pub approach_error_degrees: f64,
-    #[schemars(range(min = 0.0, max = 180.0))]
-    pub orientation_error_degrees: f64,
+    #[schemars(range(min = 0.0, max = std::f64::consts::PI))]
+    pub approach_error_radians: f64,
+    #[schemars(range(min = 0.0, max = std::f64::consts::PI))]
+    pub orientation_error_radians: f64,
 }
 
 /// The tool's pose at some joints, in the station's world frame.

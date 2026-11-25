@@ -202,29 +202,29 @@ async fn lease_held_elsewhere_exits_4_with_the_holder() -> TestResult {
 async fn preview_pose_prints_the_projected_pose() -> TestResult {
     let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
-    let run = cli(
-        &station.url,
-        &[
-            "preview-pose",
-            ARM,
-            "--position-mm",
-            "200,0,100",
-            "--approach",
-            "down",
-            "--jaw-yaw-degrees",
-            "0",
-        ],
-    )
-    .await;
-    assert_eq!(
-        run.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&run.output.stderr)
-    );
-    let result = run.stdout_json();
+    let preview_arguments = [
+        "preview-pose",
+        ARM,
+        "--position-mm",
+        "200,0,100",
+        "--approach",
+        "down",
+        "--jaw-yaw-degrees",
+        "90",
+    ];
+    let compact = cli(&station.url, &preview_arguments).await;
+    assert_eq!(compact.code(), Some(0));
+    let result = compact.stdout_json();
     assert_eq!(result["outcome"]["kind"], "projected");
     assert!(result["outcome"]["pose"]["position_mm"].is_array());
+
+    let raw_arguments: Vec<_> = ["--raw"].into_iter().chain(preview_arguments).collect();
+    let raw = cli(&station.url, &raw_arguments).await;
+    assert_eq!(raw.code(), Some(0));
+    let yaw = raw.stdout_json()["requested"]["orientation"]["jaw_yaw_radians"]
+        .as_f64()
+        .expect("native preview includes the requested jaw yaw");
+    assert!((yaw - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     Ok(())
 }
 
@@ -275,31 +275,73 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
             .as_str()
             .is_some_and(|detail| detail.contains("use explicit model units for position"))
     );
-    let native = cli(&station.url, &["preview-poses", ARM, "--input-si", &path]).await;
+    let native = cli(
+        &station.url,
+        &["preview-poses", ARM, "--input-station", &path],
+    )
+    .await;
     assert_eq!(native.code(), Some(0));
     assert_eq!(native.stdout_json()[0]["label"], "native");
+
+    for station_orientation in [
+        serde_json::json!({"kind": "grasp", "approach": "down", "jaw_yaw_degrees": 90}),
+        serde_json::json!({
+            "kind": "grasp",
+            "approach": "down",
+            "jaw_yaw_radians": std::f64::consts::FRAC_PI_2,
+            "jaw_yaw_degrees": 0
+        }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!([{
+                "position": [0.2, 0.0, 0.1],
+                "orientation": station_orientation,
+            }])
+            .to_string(),
+        )?;
+        let rejected = cli(
+            &station.url,
+            &["preview-poses", ARM, "--input-station", &path],
+        )
+        .await;
+        assert_eq!(rejected.code(), Some(2));
+        assert!(
+            rejected.stderr_json()["error"]["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("jaw_yaw_degrees"))
+        );
+    }
     std::fs::remove_file(file)?;
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_action_sequence_runs_from_a_file() -> TestResult {
+async fn a_timed_action_sequence_runs_from_a_model_unit_file() -> TestResult {
     let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let file = std::env::temp_dir().join(format!(
         "hebbian-cli-action_sequence-{}.json",
         std::process::id()
     ));
-    let step =
-        |joints: [f64; 5]| serde_json::json!({"arms": {ARM: {"goal": {"joints_degrees": joints}}}});
     std::fs::write(
         &file,
-        serde_json::json!({"steps": [step([10.0, -30.0, 30.0, 0.0, 0.0]), step([-10.0, -30.0, 30.0, 0.0, 0.0])]})
-            .to_string(),
+        serde_json::json!({"steps": [
+            {"arms": {ARM: {
+                "waypoints": [{
+                    "at": {"joints_degrees": [5.0, -30.0, 30.0, 0.0, 0.0]},
+                    "at_seconds": 1.0
+                }],
+                "goal": {"joints_degrees": [10.0, -30.0, 30.0, 0.0, 0.0]},
+                "at_seconds": 3.0
+            }}},
+            {"arms": {ARM: {"goal": {"joints_degrees": [-10.0, -30.0, 30.0, 0.0, 0.0]}}}}
+        ]})
+        .to_string(),
     )?;
     let run = cli(
         &station.url,
-        &["action-sequence", "run", &file.to_string_lossy()],
+        &["--raw", "action-sequence", "run", &file.to_string_lossy()],
     )
     .await;
     assert_eq!(
@@ -308,7 +350,28 @@ async fn a_action_sequence_runs_from_a_file() -> TestResult {
         "{}",
         String::from_utf8_lossy(&run.output.stderr)
     );
-    assert_eq!(run.stdout_json()["phase"]["state"], "completed");
+    let record: hebbian_rua::contracts::ActionSequenceRecord =
+        serde_json::from_value(run.stdout_json())?;
+    assert_eq!(
+        record.phase,
+        hebbian_rua::contracts::ActionSequencePhase::Completed
+    );
+    let hebbian_rua::contracts::ActionSequenceArmAction::Move {
+        at_seconds,
+        waypoints,
+        ..
+    } = &record.requested_steps[0].arms[ARM]
+    else {
+        panic!("expected a timed move");
+    };
+    assert_eq!(*at_seconds, Some(3.0));
+    assert_eq!(waypoints[0].at_seconds, Some(1.0));
+    let first_move = &record.steps[0][0].record;
+    let hebbian_rua::contracts::CommandPhase::Finished { completion, .. } = &first_move.phase
+    else {
+        panic!("expected the timed move to finish");
+    };
+    assert!(completion.finished_unix_nano.0 - first_move.accepted_unix_nano.0 >= 2_900_000_000);
     std::fs::remove_file(file)?;
     Ok(())
 }

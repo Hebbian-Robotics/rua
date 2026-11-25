@@ -13,7 +13,7 @@
     "goals": {
       "position": {
         "position": [0.25, -0.125, 0.0],
-        "orientation": {"approach": "down", "jaw_yaw_degrees": 90}
+        "orientation": {"approach": "down", "jaw_yaw_radians": 1.5707963267948966}
       },
       "joints_degrees": {"joints": [1.5707963267948966, -3.141592653589793, 0.0]}
     },

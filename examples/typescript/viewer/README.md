@@ -11,7 +11,8 @@ environment or the repository’s `.env`. Run `pnpm build` and
 and start a station with [a real arm connected](../../../docs/getting-started.md)
 whenever available. Reserve [MuJoCo simulation](../../../docs/simulation.md) for
 testing without hardware.
-The viewer uses the published TypeScript SDK from the lockfile.
+The viewer uses the TypeScript SDK from this checkout and needs a station
+that implements the same schema.
 Each browser tab opens a session on the viewer backend. The backend connects
 to the station through the TypeScript SDK, streams state to the tab, and
 releases its manual lease when the session ends. The browser renders the robot

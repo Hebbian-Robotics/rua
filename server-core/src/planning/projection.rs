@@ -1,3 +1,4 @@
+use std::f64::consts::TAU;
 use std::time::Instant;
 
 use nalgebra::{UnitQuaternion, Vector3};
@@ -12,15 +13,15 @@ use hebbian_contracts::{
 };
 
 fn pieces_in_full_turn(start: f64, end: f64) -> Vec<(f64, f64)> {
-    let (start, end) = if start >= 360.0 {
-        (start - 360.0, end - 360.0)
+    let (start, end) = if start >= TAU {
+        (start - TAU, end - TAU)
     } else {
         (start, end)
     };
-    let pieces = if end <= 360.0 {
+    let pieces = if end <= TAU {
         vec![(start, end)]
     } else {
-        vec![(start, 360.0), (0.0, end - 360.0)]
+        vec![(start, TAU), (0.0, end - TAU)]
     };
     pieces.into_iter().filter(|(from, to)| to > from).collect()
 }
@@ -51,32 +52,32 @@ impl Planner {
         let (lower, upper) = (self.lower[roll], self.upper[roll]);
         let mut at_lower = joints.to_vec();
         at_lower[roll] = lower;
-        let start = tool_orientation(&self.tool_rotation(&at_lower), self.jaw_axis).jaw_yaw_degrees;
-        let arc = (upper - lower).to_degrees().min(360.0);
+        let start = tool_orientation(&self.tool_rotation(&at_lower), self.jaw_axis).jaw_yaw_radians;
+        let arc = (upper - lower).min(TAU);
         let reason = format!(
             "Needs a wrist roll outside its calibrated range of {:.0} to {:.0} degrees",
             lower.to_degrees(),
             upper.to_degrees()
         );
         let mut arcs = vec![(start, start + arc, true)];
-        if arc < 360.0 {
-            arcs.push((start + arc, start + 360.0, false));
+        if arc < TAU {
+            arcs.push((start + arc, start + TAU, false));
         }
         let mut ranges: Vec<JawYawRange> = arcs
             .into_iter()
             .flat_map(|(from, to, reachable)| {
                 pieces_in_full_turn(from, to)
                     .into_iter()
-                    .map(move |(from_degrees, to_degrees)| (from_degrees, to_degrees, reachable))
+                    .map(move |(from_radians, to_radians)| (from_radians, to_radians, reachable))
             })
-            .map(|(from_degrees, to_degrees, reachable)| JawYawRange {
-                from_degrees,
-                to_degrees,
+            .map(|(from_radians, to_radians, reachable)| JawYawRange {
+                from_radians,
+                to_radians,
                 reachable,
                 reason: (!reachable).then(|| reason.clone()),
             })
             .collect();
-        ranges.sort_by(|a, b| a.from_degrees.total_cmp(&b.from_degrees));
+        ranges.sort_by(|a, b| a.from_radians.total_cmp(&b.from_radians));
         ranges
     }
 
@@ -245,15 +246,15 @@ fn policy_outcome(
 
 #[cfg(test)]
 mod tests {
-    use super::pieces_in_full_turn;
+    use super::{TAU, pieces_in_full_turn};
 
     #[test]
     fn an_arc_past_a_full_turn_continues_from_zero() {
         assert_eq!(
-            pieces_in_full_turn(300.0, 420.0),
-            vec![(300.0, 360.0), (0.0, 60.0)]
+            pieces_in_full_turn(TAU - 1.0, TAU + 1.0),
+            vec![(TAU - 1.0, TAU), (0.0, 1.0)]
         );
-        assert_eq!(pieces_in_full_turn(370.0, 400.0), vec![(10.0, 40.0)]);
-        assert_eq!(pieces_in_full_turn(10.0, 10.0), Vec::new());
+        assert_eq!(pieces_in_full_turn(TAU + 1.0, TAU + 2.0), vec![(1.0, 2.0)]);
+        assert_eq!(pieces_in_full_turn(1.0, 1.0), Vec::new());
     }
 }

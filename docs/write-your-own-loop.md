@@ -31,11 +31,40 @@ Use `station.holding_lease(...)` to acquire a lease and send motion through
 `lease.arm("arm")`. Check the enable result before moving. See
 [control leases](control-model.md#control-leases) for handoff and interruption.
 
+## Choose motion units in the SDK
+
+Direct SDK calls use metres and radians on the wire. To construct a command
+from explicitly chosen units, use the SDK's converters. They use the same
+scales as the CLI and model tools and keep the station payload in its native
+schema.
+
+In Python, pass the converted values to a normal SDK call:
+
+```python
+from hebbian_rua import angular_radians, position_metres
+from hebbian_rua.client.contract.station_api import GraspOrientation, NamedApproach
+
+target = position_metres([200, 0, 100], unit="mm")
+orientation = GraspOrientation(
+    approach=NamedApproach.down,
+    jaw_yaw_radians=angular_radians(90, unit="deg"),
+)
+# Example: await station.arm("arm").preview_pose(target, orientation)
+```
+
+In TypeScript, use `positionMetres([200, 0, 100], "mm")` and
+`angularRadians(90, "deg")`. In Rust, use
+`LengthUnit::Millimetres.position_metres([200.0, 0.0, 100.0])` and
+`AngleUnit::Degrees.to_radians(90.0)`. Each SDK also offers a joint array
+converter and a converter to degrees for display. Angular rate conversion
+keeps the time denominator. For example, degrees per second squared becomes
+radians per second squared.
+
 ## Commands and outcomes
 
 | Call | Does |
 | --- | --- |
-| `lease.arm(name).move_to_pose(position, orientation=None, *, max_joint_speed=None)` | Tool position in metres, world frame. A `GraspOrientation(approach, jaw_yaw_degrees)` is an approach (`"down"`, `"forward"` or a vector) plus jaw yaw in degrees. Without one, the tool keeps its current orientation. |
+| `lease.arm(name).move_to_pose(position, orientation=None, *, max_joint_speed=None)` | Tool position in metres, world frame. A `GraspOrientation(approach, jaw_yaw_radians)` is an approach (`"down"`, `"forward"` or a vector) plus jaw yaw in radians. Without one, the tool keeps its current orientation. |
 | `station.arm(name).preview_pose(position, orientation=None)` | Moves nothing. Returns a `PoseProjection` whose outcome is `projected` with a pose, `within_tolerance`, pose errors and any constraint reason, or `unavailable` with a reason and no pose. It also includes the available jaw yaws. A request refusal returns `PreviewRefused`. Without an orientation the solver chooses one. |
 | `lease.arm(name).move_to_joints(joints, *, max_joint_speed=None)` | Joint targets in radians. |
 | `lease.arm(name).rehome()` | Return to the joint pose and gripper opening saved at enable time. |
@@ -64,7 +93,7 @@ snapshot.mode  # ArmMode: disabled, holding, moving, faulted
 snapshot.measured_joints  # radians
 snapshot.tool.position  # [x, y, z] metres; `tool` is None before a pose exists
 snapshot.tool.quaternion  # [x, y, z, w]
-snapshot.tool.orientation  # approach, degrees_from_down, jaw_yaw_degrees
+snapshot.tool.orientation  # approach, radians_from_down, jaw_yaw_radians
 snapshot.gripper_opening  # 0 closed to 1 open; None without a gripper
 snapshot.fault  # str or None
 ```

@@ -84,6 +84,16 @@
   },
   "overrides": [
     {
+      "includes": ["typescript-client/src/generated/api-schemas.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noApproximativeNumericConstant": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["typescript-client/src/**"],
       "linter": {
         "rules": {

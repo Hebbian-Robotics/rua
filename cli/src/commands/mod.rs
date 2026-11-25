@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
-use hebbian_rua::DEFAULT_SERVER;
 use hebbian_rua::contracts::{Approach, NamedApproach, PoseOrientation, PreviewPose};
+use hebbian_rua::{AngleUnit, DEFAULT_SERVER, LengthUnit};
 
 fn default_station_url() -> String {
     std::env::var("HEBBIAN_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.to_owned())
@@ -31,12 +31,12 @@ as plain text unless you pass --raw.
 Motion flags name their units. Use millimetres for world positions (+X forward, +Y left,
 +Z up) and degrees for joint angles and jaw yaw. Gripper opening is 0 (closed) to 1 (open).
 Motion JSON uses the SDK's model fields (position_mm, joints_degrees,
-max_joint_speed_degrees_per_second). Use --input-si for native station JSON.
+max_joint_speed_degrees_per_second). Use --input-station for native station JSON.
 Output is the same concise model view the SDKs give their tools: positions in millimetres
 (`position_mm`), joint angles in degrees (`joints_degrees`), rounded, null fields omitted, and
 history and diagnostics left out (checkpoints, trace metadata, render geometry, a sequence's full
 steps, each arm's last command). `state` also keeps the robot `description` (frames) and the lease
-holder. Pass `--raw` for the station's full records in SI units (metres and radians).
+holder. Pass `--raw` for full records with the station's native field units.
 Motion commands wait for the outcome and exit 1 unless it completed.
 
 Lease: motion commands (`rehome`, `move-joints`, `move-pose`, `move-arms`, `gripper`, `action-sequence
@@ -60,7 +60,7 @@ pub struct Cli {
     /// Direct media URL for cameras. Defaults to the station URL.
     #[arg(long, global = true, env = "HEBBIAN_MEDIA_SERVER", value_name = "URL")]
     pub media_server: Option<String>,
-    /// Print the station's full records in SI units (metres, radians) instead of the compact
+    /// Print the station's full records in their native units instead of the compact
     /// millimetre and degree form.
     #[arg(long, global = true)]
     pub raw: bool,
@@ -209,9 +209,9 @@ pub enum Command {
 pub struct MotionFileArgs {
     /// A JSON file, or `-` for stdin.
     pub path: PathBuf,
-    /// Interpret a native station payload in metres, radians and their derivatives.
+    /// Read JSON in the native station schema, using the units specified by each field.
     #[arg(long)]
-    pub input_si: bool,
+    pub input_station: bool,
 }
 
 /// A target pose. Orientation is one of `--quaternion` or `--approach` with `--jaw-yaw-degrees`.
@@ -250,11 +250,7 @@ pub struct JointArgs {
 impl JointArgs {
     pub fn into_radians(self) -> Vec<f64> {
         self.joints_radians.unwrap_or_else(|| {
-            self.joints_degrees
-                .into_iter()
-                .flatten()
-                .map(f64::to_radians)
-                .collect()
+            AngleUnit::Degrees.joint_radians(self.joints_degrees.unwrap_or_default())
         })
     }
 }
@@ -285,20 +281,24 @@ pub struct TrajectoryArgs {
 
 impl TrajectoryArgs {
     pub fn speed_radians(&self) -> Option<f64> {
-        self.speed_radians_per_second
-            .or_else(|| self.speed_degrees_per_second.map(f64::to_radians))
+        self.speed_radians_per_second.or_else(|| {
+            self.speed_degrees_per_second
+                .map(|value| AngleUnit::Degrees.to_radians(value))
+        })
     }
 
     pub fn acceleration_radians(&self) -> Option<f64> {
         self.acceleration_radians_per_second_squared.or_else(|| {
             self.acceleration_degrees_per_second_squared
-                .map(f64::to_radians)
+                .map(|value| AngleUnit::Degrees.to_radians(value))
         })
     }
 
     pub fn jerk_radians(&self) -> Option<f64> {
-        self.jerk_radians_per_second_cubed
-            .or_else(|| self.jerk_degrees_per_second_cubed.map(f64::to_radians))
+        self.jerk_radians_per_second_cubed.or_else(|| {
+            self.jerk_degrees_per_second_cubed
+                .map(|value| AngleUnit::Degrees.to_radians(value))
+        })
     }
 }
 
@@ -311,7 +311,7 @@ impl PoseArgs {
         self.position_m
             .or_else(|| {
                 self.position_mm
-                    .map(|position| position.map(|value| value / 1000.0))
+                    .map(|position| LengthUnit::Millimetres.position_metres(position))
             })
             .expect("clap requires a position")
     }
@@ -322,7 +322,7 @@ impl PoseArgs {
         }
         Some(PoseOrientation::Grasp {
             approach: self.approach?,
-            jaw_yaw_degrees: self.jaw_yaw_degrees?,
+            jaw_yaw_radians: AngleUnit::Degrees.to_radians(self.jaw_yaw_degrees?),
         })
     }
 
@@ -382,7 +382,8 @@ pub enum ActionSequenceCommand {
         action_sequence_request_example!(),
         "\nA pose goal is {\"position_mm\": [x, y, z], \"orientation\": ...}, \
          where orientation is {\"quaternion\": [x, y, z, w]} or \
-         {\"approach\": [x, y, z], \"jaw_yaw_degrees\": d}."
+         {\"approach\": [x, y, z], \"jaw_yaw_degrees\": d}.\nFor a timed single-arm move, set at_seconds beside each waypoint's at and the \
+         step's goal. Times are in seconds from the start of the step and must increase."
     ))]
     Run {
         #[command(flatten)]
@@ -549,7 +550,7 @@ mod tests {
             pose.orientation(),
             Some(PoseOrientation::Grasp {
                 approach: Approach::Direction([0.0, -1.0, 0.0]),
-                jaw_yaw_degrees: -45.0
+                jaw_yaw_radians: -std::f64::consts::FRAC_PI_4
             })
         );
     }

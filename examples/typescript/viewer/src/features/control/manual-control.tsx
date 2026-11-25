@@ -1,5 +1,7 @@
 import {
   type ArmState,
+  angularDegrees,
+  angularRadians,
   commandPlan,
   type PreviewPose,
   type StationCommand,
@@ -450,8 +452,8 @@ export function ManualControl({
       setOrientation({
         kind: "grasp",
         approach: value,
-        jaw_yaw_degrees:
-          (orientation ?? chosenOrientation)?.jaw_yaw_degrees ?? 0,
+        jaw_yaw_radians:
+          (orientation ?? chosenOrientation)?.jaw_yaw_radians ?? 0,
       });
   }
 
@@ -498,6 +500,9 @@ export function ManualControl({
   }
 
   const displayedOrientation = orientation ?? chosenOrientation;
+  const displayedYawDegrees = Math.round(
+    angularDegrees(displayedOrientation?.jaw_yaw_radians ?? 0, "rad"),
+  );
   const confirmedForSelection = previewMatchesSelection({
     confirmed,
     arm: armName,
@@ -641,13 +646,13 @@ export function ManualControl({
             </label>
             {displayedOrientation && (
               <label>
-                Jaw yaw {Math.round(displayedOrientation.jaw_yaw_degrees)}°
+                Jaw yaw {displayedYawDegrees}°
                 <input
                   type="range"
                   min="0"
                   max="360"
                   step="1"
-                  value={Math.round(displayedOrientation.jaw_yaw_degrees)}
+                  value={displayedYawDegrees}
                   onChange={(event) => {
                     orientationEpoch.current += 1;
                     follow.current?.setDragging(true);
@@ -660,7 +665,10 @@ export function ManualControl({
                     setOrientation({
                       kind: "grasp",
                       approach: displayedOrientation.approach,
-                      jaw_yaw_degrees: Number(event.currentTarget.value) % 360,
+                      jaw_yaw_radians: angularRadians(
+                        Number(event.currentTarget.value) % 360,
+                        "deg",
+                      ),
                     });
                   }}
                 />

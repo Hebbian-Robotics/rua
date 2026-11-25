@@ -2,13 +2,15 @@
 
 Use the TypeScript client to control a running station from a browser or Node.js.
 Install a released version with `pnpm add hebbian-rua`.
+Use the [motion unit converters](../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
+to prepare direct SDK requests in your preferred units.
 
-## Try the published SDK
+## Try the workspace SDK
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
 From the checkout root, install dependencies with `pnpm install --frozen-lockfile`.
-The runnable examples and the snippet below use the published SDK pinned in
-the root lockfile. To test changes to the SDK source, see [Package builds](#package-builds).
+The runnable TypeScript examples and the snippet below use the SDK from this
+checkout. Run them against a station built from the same checkout.
 
 To read state without moving the robot, start a station
 ([MuJoCo quickstart](../docs/simulation.md) or [hardware setup](../docs/getting-started.md)).
@@ -279,10 +281,3 @@ From your Node.js project, install the archive with
 archive uses the compiled entry point. SDK tests in the workspace continue to
 exercise the SDK under development. Run `pnpm test:package` to pack, install,
 import and typecheck the SDK in a temporary consumer outside the workspace.
-
-To try local SDK changes in the viewer or TypeScript agent, use a separate
-checkout. Pack the SDK there as shown above, then set the `hebbian-rua` dependency
-in the root and `examples/typescript/agent/package.json` manifests to
-`file:/tmp/rua-client.tgz`. Run `pnpm install --no-frozen-lockfile` from the
-root before building or starting the example. Keep those local pins and the
-resulting lockfile out of commits.

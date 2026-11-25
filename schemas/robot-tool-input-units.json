@@ -5,6 +5,11 @@
     "station_field": "position"
   },
   {
+    "model_field": "jaw_yaw_degrees",
+    "scale_to_station": 0.017453292519943295,
+    "station_field": "jaw_yaw_radians"
+  },
+  {
     "model_field": "joints_degrees",
     "scale_to_station": 0.017453292519943295,
     "station_field": "joints"

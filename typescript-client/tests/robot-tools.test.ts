@@ -2,9 +2,13 @@ import { readFileSync } from "node:fs";
 import { expect, test, vi } from "vitest";
 import { apiSchemas } from "../src/generated/api-schemas.js";
 import {
+  angularDegrees,
+  angularRadians,
   createRobotTools,
   createStationConnection,
   filterSequenceActions,
+  jointRadians,
+  positionMetres,
 } from "../src/index.js";
 import { parseRobotToolCall } from "../src/robot-tool-input.js";
 import { fakeLease, stateMessage } from "./station-fakes.js";
@@ -23,6 +27,14 @@ const robot = createRobotTools({
   connection,
   lease: fakeLease(),
   arm: "follower",
+});
+
+test("public SDK units produce the same station inputs", () => {
+  expect(positionMetres([200, -100, 50], "mm")).toEqual([0.2, -0.1, 0.05]);
+  expect(positionMetres([0.2, -0.1, 0.05], "m")).toEqual([0.2, -0.1, 0.05]);
+  expect(angularRadians(90, "deg")).toBeCloseTo(Math.PI / 2);
+  expect(angularDegrees(Math.PI / 2, "rad")).toBeCloseTo(90);
+  expect(jointRadians([90, -180], "deg")).toEqual([Math.PI / 2, -Math.PI]);
 });
 
 test("tool input units match the station contract", () => {
@@ -44,6 +56,59 @@ test("tool input units match the station contract", () => {
   expect(parsed).toMatchObject({
     kind: "message",
     message: { kind: "move_arms", command: fixture.station_command },
+  });
+});
+
+test("timed sequences convert angles and retain waypoint and goal seconds", () => {
+  const parsed = parseRobotToolCall(
+    {
+      id: "timed-move",
+      name: "action_sequence",
+      arguments: {
+        steps: [
+          {
+            waypoints: [
+              {
+                at: { joints_degrees: [45, 0, 0] },
+                at_seconds: 1.25,
+              },
+            ],
+            goal: { joints_degrees: [90, 0, 0] },
+            at_seconds: 2.5,
+          },
+        ],
+      },
+    },
+    {
+      arm: "follower",
+      sequenceScope: { kind: "single" },
+      sequenceActions: new Set(["joints"]),
+      availableToolNames: new Map([["action_sequence", "action_sequence"]]),
+    },
+  );
+  expect(parsed).toMatchObject({
+    kind: "message",
+    message: {
+      kind: "start_action_sequence",
+      action_sequence: {
+        steps: [
+          {
+            arms: {
+              follower: {
+                waypoints: [
+                  {
+                    at: { kind: "joints", joints: [Math.PI / 4, 0, 0] },
+                    at_seconds: 1.25,
+                  },
+                ],
+                goal: { kind: "joints", joints: [Math.PI / 2, 0, 0] },
+                at_seconds: 2.5,
+              },
+            },
+          },
+        ],
+      },
+    },
   });
 });
 

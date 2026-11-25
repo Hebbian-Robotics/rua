@@ -1,3 +1,5 @@
+use std::f64::consts::TAU;
+
 // CONSTRAINT: Tool +Z points palm-to-fingertips. Jaw yaw turns right-handed about minus approach; zero projects world +X, switching to +Y near parallel. See the public orientation contract.
 
 use hebbian_contracts::{
@@ -69,27 +71,26 @@ fn closing_column(rotation: &Matrix3<f64>, axis: JawClosingAxis) -> Vector3<f64>
         .into_owned()
 }
 
-fn jaw_yaw_degrees(rotation: &Matrix3<f64>, axis: JawClosingAxis) -> f64 {
+fn jaw_yaw_radians(rotation: &Matrix3<f64>, axis: JawClosingAxis) -> f64 {
     let direction = rotation.column(2).into_owned();
     let (_, reference) = jaw_reference(&direction);
     let closing = closing_column(rotation, axis);
     closing
         .dot(&reference.cross(&direction))
         .atan2(closing.dot(&reference))
-        .to_degrees()
 }
 
 pub fn grasp_rotation(
     approach: Approach,
-    jaw_yaw_degrees: f64,
+    jaw_yaw_radians: f64,
     axis: JawClosingAxis,
 ) -> Result<UnitQuaternion<f64>, OrientationRefusal> {
-    if !jaw_yaw_degrees.is_finite() {
+    if !jaw_yaw_radians.is_finite() {
         return Err(OrientationRefusal::NonFiniteYaw);
     }
     let direction = approach_direction(approach)?.into_inner();
     let (_, reference) = jaw_reference(&direction);
-    let yaw = jaw_yaw_degrees.rem_euclid(360.0).to_radians();
+    let yaw = jaw_yaw_radians.rem_euclid(TAU);
     let closing = reference * yaw.cos() + reference.cross(&direction) * yaw.sin();
     let columns = match axis {
         JawClosingAxis::X => [closing, direction.cross(&closing), direction],
@@ -120,8 +121,8 @@ pub fn pose_orientation_rotation(
     match orientation {
         PoseOrientation::Grasp {
             approach,
-            jaw_yaw_degrees,
-        } => grasp_rotation(approach, jaw_yaw_degrees, axis),
+            jaw_yaw_radians,
+        } => grasp_rotation(approach, jaw_yaw_radians, axis),
         PoseOrientation::Quaternion { quaternion } => quaternion_rotation(quaternion),
     }
 }
@@ -155,11 +156,10 @@ pub fn xyzw(rotation: &UnitQuaternion<f64>) -> [f64; 4] {
 #[must_use]
 pub fn tool_orientation(rotation: &UnitQuaternion<f64>, axis: JawClosingAxis) -> ToolOrientation {
     let matrix = rotation.to_rotation_matrix().into_inner();
-    let yaw = jaw_yaw_degrees(&matrix, axis).rem_euclid(360.0);
+    let yaw = wrap_yaw(jaw_yaw_radians(&matrix, axis));
     ToolOrientation {
         approach: matrix.column(2).into_owned().into(),
-        // CONSTRAINT: A negative yaw just under a full turn can come out as 360 itself.
-        jaw_yaw_degrees: if yaw >= 360.0 { 0.0 } else { yaw },
+        jaw_yaw_radians: yaw,
     }
 }
 
@@ -169,13 +169,14 @@ pub fn rounded(value: f64, digits: i32) -> f64 {
     (value * scale).round() / scale
 }
 
-fn rounded_in_full_turn(degrees: f64) -> f64 {
-    // CONSTRAINT: The second remainder maps a value that rounds up to 360 back to 0.
-    rounded(degrees.rem_euclid(360.0), 1).rem_euclid(360.0)
+fn wrap_yaw(radians: f64) -> f64 {
+    let wrapped = radians.rem_euclid(TAU);
+    // CONSTRAINT: Floating point wrap can return a full turn for a tiny negative yaw.
+    if wrapped >= TAU { 0.0 } else { wrapped }
 }
 
-fn degrees_between(first: &Vector3<f64>, second: &Vector3<f64>) -> f64 {
-    first.dot(second).clamp(-1.0, 1.0).acos().to_degrees()
+fn angle_between(first: &Vector3<f64>, second: &Vector3<f64>) -> f64 {
+    first.cross(second).norm().atan2(first.dot(second))
 }
 
 #[must_use]
@@ -189,17 +190,17 @@ pub fn orientation_summary(
     let (reference, _) = jaw_reference(&direction);
     OrientationSummary {
         approach: direction.map(|value| rounded(value, 4)).into(),
-        degrees_from_down: rounded(degrees_between(&direction, &-Vector3::z()), 1),
-        jaw_yaw_degrees: rounded_in_full_turn(jaw_yaw_degrees(&matrix, axis)),
+        radians_from_down: angle_between(&direction, &-Vector3::z()),
+        jaw_yaw_radians: wrap_yaw(jaw_yaw_radians(&matrix, axis)),
         jaw_yaw_reference: reference,
         goal: goal.map(|goal| {
             let goal_matrix = goal.to_rotation_matrix().into_inner();
             let goal_direction = goal_matrix.column(2).into_owned();
             GoalComparison {
-                jaw_yaw_degrees: rounded_in_full_turn(jaw_yaw_degrees(&goal_matrix, axis)),
+                jaw_yaw_radians: wrap_yaw(jaw_yaw_radians(&goal_matrix, axis)),
                 jaw_yaw_reference: jaw_reference(&goal_direction).0,
-                approach_error_degrees: rounded(degrees_between(&direction, &goal_direction), 1),
-                orientation_error_degrees: rounded(rotation.angle_to(goal).to_degrees(), 1),
+                approach_error_radians: angle_between(&direction, &goal_direction),
+                orientation_error_radians: rotation.angle_to(goal),
             }
         }),
     }
@@ -218,7 +219,7 @@ mod tests {
         for axis in [JawClosingAxis::X, JawClosingAxis::Y] {
             let down = Approach::Named(NamedApproach::Down);
             let at_zero = grasp_rotation(down, 0.0, axis).unwrap();
-            let at_ninety = grasp_rotation(down, 90.0, axis).unwrap();
+            let at_ninety = grasp_rotation(down, 90_f64.to_radians(), axis).unwrap();
             assert!((closing_axis(&at_zero, axis) - Vector3::x()).norm() < 1e-12);
             assert!((closing_axis(&at_ninety, axis) - Vector3::y()).norm() < 1e-12);
             assert!((at_zero * Vector3::z() + Vector3::z()).norm() < 1e-12);
@@ -236,7 +237,7 @@ mod tests {
             ),
             (
                 Approach::Named(NamedApproach::Down),
-                90.0,
+                90_f64.to_radians(),
                 [0.0, 0.0, -1.0],
                 [0.0, 1.0, 0.0],
             ),
@@ -248,13 +249,13 @@ mod tests {
             ),
             (
                 Approach::Named(NamedApproach::Forward),
-                180.0,
+                180_f64.to_radians(),
                 [1.0, 0.0, 0.0],
                 [0.0, -1.0, 0.0],
             ),
             (
                 Approach::Direction([0.0, 0.0, -20.0]),
-                450.0,
+                450_f64.to_radians(),
                 [0.0, 0.0, -1.0],
                 [0.0, 1.0, 0.0],
             ),
@@ -282,7 +283,7 @@ mod tests {
         }
         let forward = grasp_rotation(
             Approach::Named(NamedApproach::Forward),
-            90.0,
+            90_f64.to_radians(),
             JawClosingAxis::X,
         )
         .unwrap();
@@ -299,17 +300,17 @@ mod tests {
             * down;
         let target = grasp_rotation(
             Approach::Named(NamedApproach::Down),
-            90.0,
+            90_f64.to_radians(),
             JawClosingAxis::Y,
         )
         .unwrap();
         let summary = orientation_summary(&rotation, JawClosingAxis::Y, Some(&target));
-        assert!((summary.degrees_from_down - 12.0).abs() < 1e-9);
-        assert!((summary.jaw_yaw_degrees - 87.0).abs() < 1e-9);
+        assert!((summary.radians_from_down - 12_f64.to_radians()).abs() < 1e-9);
+        assert!((summary.jaw_yaw_radians - 87_f64.to_radians()).abs() < 1e-9);
         let comparison = summary.goal.unwrap();
-        assert!((comparison.jaw_yaw_degrees - 90.0).abs() < 1e-9);
-        assert!((comparison.approach_error_degrees - 12.0).abs() < 1e-9);
-        assert!(comparison.orientation_error_degrees > 12.0);
+        assert!((comparison.jaw_yaw_radians - 90_f64.to_radians()).abs() < 1e-9);
+        assert!((comparison.approach_error_radians - 12_f64.to_radians()).abs() < 1e-9);
+        assert!(comparison.orientation_error_radians > 12_f64.to_radians());
     }
 
     #[test]
@@ -323,23 +324,24 @@ mod tests {
         assert!((closing_axis(&forward, JawClosingAxis::X) - Vector3::y()).norm() < 1e-12);
         let summary = orientation_summary(&forward, JawClosingAxis::X, None);
         assert_eq!(summary.jaw_yaw_reference, JawYawReference::WorldY);
-        assert!((summary.degrees_from_down - 90.0).abs() < 1e-9);
+        assert!((summary.radians_from_down - 90_f64.to_radians()).abs() < 1e-9);
     }
 
     #[test]
     fn an_orientation_read_back_reproduces_its_rotation() {
         for axis in [JawClosingAxis::X, JawClosingAxis::Y] {
-            for (approach, yaw) in [
+            for (approach, yaw_degrees) in [
                 (Approach::Direction([0.3, -0.2, -0.9]), 37.5),
                 (Approach::Direction([0.99, 0.05, 0.1]), 300.0),
                 (Approach::Named(NamedApproach::Down), -45.0),
             ] {
-                let rotation = grasp_rotation(approach, yaw, axis).unwrap();
+                let rotation =
+                    grasp_rotation(approach, f64::to_radians(yaw_degrees), axis).unwrap();
                 let read = tool_orientation(&rotation, axis);
-                assert!((0.0..360.0).contains(&read.jaw_yaw_degrees));
+                assert!((0.0..TAU).contains(&read.jaw_yaw_radians));
                 let again = grasp_rotation(
                     Approach::Direction(read.approach),
-                    read.jaw_yaw_degrees,
+                    read.jaw_yaw_radians,
                     axis,
                 )
                 .unwrap();
@@ -391,13 +393,13 @@ mod tests {
     #[test]
     fn a_summary_against_its_target_reports_the_turn_between() {
         let down = Approach::Named(NamedApproach::Down);
-        let achieved = grasp_rotation(down, 10.0, JawClosingAxis::X).unwrap();
-        let target = grasp_rotation(down, 40.0, JawClosingAxis::X).unwrap();
+        let achieved = grasp_rotation(down, 10_f64.to_radians(), JawClosingAxis::X).unwrap();
+        let target = grasp_rotation(down, 40_f64.to_radians(), JawClosingAxis::X).unwrap();
         let summary = orientation_summary(&achieved, JawClosingAxis::X, Some(&target));
         let comparison = summary.goal.unwrap();
-        assert!((summary.jaw_yaw_degrees - 10.0).abs() < 1e-9);
-        assert!((comparison.jaw_yaw_degrees - 40.0).abs() < 1e-9);
-        assert!(comparison.approach_error_degrees.abs() < 1e-9);
-        assert!((comparison.orientation_error_degrees - 30.0).abs() < 1e-9);
+        assert!((summary.jaw_yaw_radians - 10_f64.to_radians()).abs() < 1e-9);
+        assert!((comparison.jaw_yaw_radians - 40_f64.to_radians()).abs() < 1e-9);
+        assert!(comparison.approach_error_radians.abs() < 1e-9);
+        assert!((comparison.orientation_error_radians - 30_f64.to_radians()).abs() < 1e-9);
     }
 }

@@ -18,6 +18,8 @@ state, preview poses, follow run telemetry, and use the station's HTTP routes
 and light networking crates only (tokio and reqwest), never on the
 controller, station, `LiveKit` or axum. Wire types are re-exported as
 `hebbian_rua::contracts`.
+Use the [motion unit converters](../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
+to prepare direct SDK requests in your preferred units.
 
 ```rust
 use hebbian_rua::{LeaseRequest, Station, contracts::LeaseHolder};

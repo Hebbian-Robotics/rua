@@ -38,12 +38,12 @@ async function askForProjection(
 
 function grasp(orientation: {
   approach: number[];
-  jaw_yaw_degrees: number;
+  jaw_yaw_radians: number;
 }): Orientation {
   return {
     kind: "grasp",
     approach: orientation.approach,
-    jaw_yaw_degrees: orientation.jaw_yaw_degrees,
+    jaw_yaw_radians: orientation.jaw_yaw_radians,
   };
 }
 

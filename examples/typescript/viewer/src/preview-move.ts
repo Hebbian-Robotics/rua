@@ -1,4 +1,9 @@
-import type { ArmState, PreviewPose, StationCommand } from "hebbian-rua";
+import {
+  type ArmState,
+  angularDegrees,
+  type PreviewPose,
+  type StationCommand,
+} from "hebbian-rua";
 import { MathUtils } from "three";
 import type { Approach, JawYawRange, ProposedPose } from "./pose-projection.js";
 
@@ -74,18 +79,19 @@ export function describeApproach(approach: Approach): string {
   return `custom (${approach.map((value) => value.toFixed(2)).join(", ")})`;
 }
 
-function wrapDegrees(degrees: number): number {
-  return ((degrees % 360) + 360) % 360;
+function wrapRadians(radians: number): number {
+  const fullTurn = 2 * Math.PI;
+  return ((radians % fullTurn) + fullTurn) % fullTurn;
 }
 
 export function jawYawReachable(
   ranges: JawYawRange[],
-  jawYawDegrees: number,
+  jawYawRadians: number,
 ): boolean | null {
   if (ranges.length === 0) return null;
-  const yaw = wrapDegrees(jawYawDegrees);
+  const yaw = wrapRadians(jawYawRadians);
   const containing = ranges.find(
-    (range) => yaw >= range.from_degrees && yaw <= range.to_degrees,
+    (range) => yaw >= range.from_radians && yaw <= range.to_radians,
   );
   return containing ? containing.reachable : null;
 }
@@ -95,6 +101,6 @@ export function unreachableYawLines(ranges: JawYawRange[]): string[] {
     .filter((range) => !range.reachable)
     .map(
       (range) =>
-        `${Math.round(range.from_degrees)}°–${Math.round(range.to_degrees)}°: ${range.reason ?? "unreachable"}`,
+        `${Math.round(angularDegrees(range.from_radians, "rad"))}°–${Math.round(angularDegrees(range.to_radians, "rad"))}°: ${range.reason ?? "unreachable"}`,
     );
 }

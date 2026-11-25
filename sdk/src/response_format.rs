@@ -3,14 +3,24 @@
 use hebbian_contracts::MODEL_RESPONSE_FIELDS;
 use serde_json::{Map, Number, Value};
 
-fn scaled(value: Value, factor: f64) -> Value {
+fn scaled(value: Value, factor: f64, round: bool) -> Value {
     match value {
-        Value::Array(items) => {
-            Value::Array(items.into_iter().map(|item| scaled(item, factor)).collect())
-        }
+        Value::Array(items) => Value::Array(
+            items
+                .into_iter()
+                .map(|item| scaled(item, factor, round))
+                .collect(),
+        ),
         Value::Number(number) => number
             .as_f64()
-            .and_then(|number| Number::from_f64((number * factor * 10.0).round() / 10.0))
+            .and_then(|number| {
+                let converted = number * factor;
+                Number::from_f64(if round {
+                    (converted * 10.0).round() / 10.0
+                } else {
+                    converted
+                })
+            })
             .map_or(Value::Null, Value::Number),
         other => other,
     }
@@ -234,7 +244,7 @@ fn model_unit_field(field: &str) -> Option<(&'static str, f64)> {
 }
 
 fn format_model_field(value: Value, field: &str) -> Value {
-    if matches!(field, "approach" | "jaw_yaw_degrees") {
+    if field == "approach" {
         return value;
     }
     match value {
@@ -248,7 +258,10 @@ fn format_model_field(value: Value, field: &str) -> Value {
                     continue;
                 }
                 if let Some((name, factor)) = model_unit_field(&key) {
-                    formatted.insert(name.to_owned(), scaled(value, factor));
+                    formatted.insert(
+                        name.to_owned(),
+                        scaled(value, factor, name != "jaw_yaw_degrees"),
+                    );
                 } else {
                     formatted.insert(key.clone(), format_model_field(value, &key));
                 }

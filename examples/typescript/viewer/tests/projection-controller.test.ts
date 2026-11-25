@@ -20,7 +20,7 @@ function projected(joint: number): PreviewAnswer {
           joints: [joint],
           position: [0, 0, 0],
           quaternion: [0, 0, 0, 1],
-          orientation: { approach: [0, 0, -1], jaw_yaw_degrees: 0 },
+          orientation: { approach: [0, 0, -1], jaw_yaw_radians: 0 },
           position_error_meters: 0,
           orientation_error_radians: null,
         },
@@ -95,7 +95,11 @@ test("a changed target can show an older result but only the latest result is co
   controller.targetChanged();
   await flushMicrotasks();
   target = [0.2, 0, 0.2];
-  orientation = { kind: "grasp", approach: "forward", jaw_yaw_degrees: 90 };
+  orientation = {
+    kind: "grasp",
+    approach: "forward",
+    jaw_yaw_radians: Math.PI / 2,
+  };
   controller.targetChanged();
   replies[0]?.(projected(0.1));
   await flushMicrotasks();
@@ -120,11 +124,16 @@ test("an approximate projection preserves the requested pose and exact feasible 
   const projection = {
     ...answer.projection,
     requested: {
-      orientation: { approach: [1, 0, 0], jaw_yaw_degrees: 90 },
+      orientation: { approach: [1, 0, 0], jaw_yaw_radians: Math.PI / 2 },
       quaternion: [0, 0, 0, 1],
     },
     jaw_yaw_ranges: [
-      { from_degrees: 0, to_degrees: 20, reachable: false, reason: "Limit" },
+      {
+        from_radians: 0,
+        to_radians: (20 * Math.PI) / 180,
+        reachable: false,
+        reason: "Limit",
+      },
     ],
     outcome: {
       kind: "projected" as const,
@@ -150,7 +159,7 @@ test("an approximate projection preserves the requested pose and exact feasible 
     requestedPosition: [0.2, 0, 0.1],
     requestedQuaternion: [0, 0, 0, 1],
   });
-  expect(result.chosenOrientation?.jaw_yaw_degrees).toBe(90);
+  expect(result.chosenOrientation?.jaw_yaw_radians).toBe(Math.PI / 2);
   expect(result.jawYawRanges[0]?.reachable).toBe(false);
   expect(result.withinTolerance).toBe(false);
   expect(result.message).toContain("approximate pose");

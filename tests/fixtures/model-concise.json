@@ -51,8 +51,8 @@
                 0.0245,
                 -0.896
               ],
-              "degrees_from_down": 26.4,
-              "jaw_yaw_degrees": 87.9
+              "radians_from_down": 0.460766922526503,
+              "jaw_yaw_radians": 1.5341444125030157
             },
             "model_points": [
               [
@@ -133,8 +133,8 @@
                     0.0002,
                     -1.0
                   ],
-                  "degrees_from_down": 0.5,
-                  "jaw_yaw_degrees": 90.1,
+                  "radians_from_down": 0.008726646259971648,
+                  "jaw_yaw_radians": 1.5725416560468908,
                   "jaw_yaw_reference": "world_x",
                   "goal": null
                 },
@@ -222,8 +222,8 @@
                 0.0245,
                 -0.896
               ],
-              "degrees_from_down": 26.4,
-              "jaw_yaw_degrees": 87.9
+              "radians_from_down": 0.460766922526503,
+              "jaw_yaw_radians": 1.5341444125030157
             }
           },
           "fault": null,
@@ -347,8 +347,8 @@
                 0.0245,
                 -0.896
               ],
-              "degrees_from_down": 26.4,
-              "jaw_yaw_degrees": 87.9
+              "radians_from_down": 0.460766922526503,
+              "jaw_yaw_radians": 1.5341444125030157
             },
             "model_points": [
               [
@@ -429,8 +429,8 @@
                     0.0002,
                     -1.0
                   ],
-                  "degrees_from_down": 0.5,
-                  "jaw_yaw_degrees": 90.1,
+                  "radians_from_down": 0.008726646259971648,
+                  "jaw_yaw_radians": 1.5725416560468908,
                   "jaw_yaw_reference": "world_x",
                   "goal": null
                 },
@@ -522,8 +522,8 @@
                 0.0245,
                 -0.896
               ],
-              "degrees_from_down": 26.4,
-              "jaw_yaw_degrees": 87.9
+              "radians_from_down": 0.460766922526503,
+              "jaw_yaw_radians": 1.5341444125030157
             }
           },
           "fault": null,
@@ -868,8 +868,8 @@
                   0.0002,
                   -1.0
                 ],
-                "degrees_from_down": 0.5,
-                "jaw_yaw_degrees": 90.1,
+                "radians_from_down": 0.008726646259971648,
+                "jaw_yaw_radians": 1.5725416560468908,
                 "jaw_yaw_reference": "world_x",
                 "goal": null
               },
@@ -953,8 +953,8 @@
                 0.0002,
                 -1.0
               ],
-              "degrees_from_down": 0.5,
-              "jaw_yaw_degrees": 90.1,
+              "radians_from_down": 0.008726646259971648,
+              "jaw_yaw_radians": 1.5725416560468908,
               "jaw_yaw_reference": "world_x",
               "goal": null
             },

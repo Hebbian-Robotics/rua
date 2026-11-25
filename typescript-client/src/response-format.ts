@@ -18,10 +18,12 @@ function rounded(value: number, decimals: number): number {
   return (Math.sign(value) * Math.round(Math.abs(value) * scale)) / scale;
 }
 
-function scaleNumbers(value: unknown, factor: number): unknown {
+function scaleNumbers(value: unknown, factor: number, round: boolean): unknown {
   if (Array.isArray(value))
-    return value.map((item) => scaleNumbers(item, factor));
-  return typeof value === "number" ? rounded(value * factor, 1) : value;
+    return value.map((item) => scaleNumbers(item, factor, round));
+  if (typeof value !== "number") return value;
+  const converted = value * factor;
+  return round ? rounded(converted, 1) : converted;
 }
 
 function modelCommandRecord(
@@ -76,7 +78,7 @@ export function modelResponse(value: unknown): unknown {
 }
 
 function formatModelField(value: unknown, fieldName: string): unknown {
-  if (["approach", "jaw_yaw_degrees"].includes(fieldName)) return value;
+  if (fieldName === "approach") return value;
   if (Array.isArray(value))
     return value.map((item) => formatModelField(item, fieldName));
   if (typeof value === "object" && value !== null) {
@@ -90,7 +92,11 @@ function formatModelField(value: unknown, fieldName: string): unknown {
         continue;
       const conversion = outputConversions.get(key);
       if (conversion)
-        formatted[conversion[0]] = scaleNumbers(item, conversion[1]);
+        formatted[conversion[0]] = scaleNumbers(
+          item,
+          conversion[1],
+          conversion[0] !== "jaw_yaw_degrees",
+        );
       else formatted[key] = formatModelField(item, key);
     }
     return formatted;

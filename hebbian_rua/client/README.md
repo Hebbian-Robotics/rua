@@ -10,6 +10,8 @@ or run one of the [agent examples](../../examples/python/README.md#run-an-agent)
 station requests, including observations. Set `media_server` or
 `HEBBIAN_MEDIA_SERVER` to use the media companion directly for individual camera
 reads and sequence images. The examples use the default model view.
+Use the [motion unit converters](../../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
+to prepare direct SDK requests in your preferred units.
 
 The Python package contains a PyO3 extension for CPython 3.12 and later.
 Published wheels include the Rust client. Source installs build it with maturin.

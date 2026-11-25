@@ -80,7 +80,7 @@ export function interpretProjection(
     ? {
         kind: "grasp" as const,
         approach: orientation.approach,
-        jaw_yaw_degrees: orientation.jaw_yaw_degrees,
+        jaw_yaw_radians: orientation.jaw_yaw_radians,
       }
     : null;
   if (outcome.kind === "unavailable")

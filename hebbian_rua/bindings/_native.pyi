@@ -2,6 +2,9 @@ from typing import TypedDict
 
 from pydantic import JsonValue
 
+METRES_PER_MILLIMETRE: float
+RADIANS_PER_DEGREE: float
+
 def model_response(value: object) -> object: ...
 def concise_response(
     value: object, *, keep_station_context: bool = False

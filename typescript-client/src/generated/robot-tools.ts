@@ -94,8 +94,9 @@ export const robotToolSpecifications = [
                         description: "A tool orientation as a client gives it.",
                         oneOf: [
                           {
+                            additionalProperties: false,
                             description:
-                              "The approach direction and the jaw yaw about it, in degrees.",
+                              "The approach direction and the jaw yaw about it.",
                             properties: {
                               approach: {
                                 anyOf: [
@@ -128,6 +129,7 @@ export const robotToolSpecifications = [
                                   "The direction the jaws point along: a named one, or a nonzero world direction.",
                               },
                               jaw_yaw_degrees: {
+                                description: "Jaw yaw in degrees.",
                                 type: "number",
                               },
                             },
@@ -136,6 +138,7 @@ export const robotToolSpecifications = [
                             type: "object",
                           },
                           {
+                            additionalProperties: false,
                             description: "A raw quaternion, `[x, y, z, w]`.",
                             properties: {
                               quaternion: {
@@ -244,8 +247,9 @@ export const robotToolSpecifications = [
                                 "A tool orientation as a client gives it.",
                               oneOf: [
                                 {
+                                  additionalProperties: false,
                                   description:
-                                    "The approach direction and the jaw yaw about it, in degrees.",
+                                    "The approach direction and the jaw yaw about it.",
                                   properties: {
                                     approach: {
                                       anyOf: [
@@ -279,6 +283,7 @@ export const robotToolSpecifications = [
                                         "The direction the jaws point along: a named one, or a nonzero world direction.",
                                     },
                                     jaw_yaw_degrees: {
+                                      description: "Jaw yaw in degrees.",
                                       type: "number",
                                     },
                                   },
@@ -287,6 +292,7 @@ export const robotToolSpecifications = [
                                   type: "object",
                                 },
                                 {
+                                  additionalProperties: false,
                                   description:
                                     "A raw quaternion, `[x, y, z, w]`.",
                                   properties: {
@@ -418,13 +424,14 @@ export const robotToolSpecifications = [
           description: "A tool orientation as a client gives it.",
           oneOf: [
             {
-              description:
-                "The approach direction and the jaw yaw about it, in degrees.",
+              additionalProperties: false,
+              description: "The approach direction and the jaw yaw about it.",
               properties: {
                 approach: {
                   $ref: "#/$defs/Approach",
                 },
                 jaw_yaw_degrees: {
+                  description: "Jaw yaw in degrees.",
                   type: "number",
                 },
               },
@@ -433,6 +440,7 @@ export const robotToolSpecifications = [
               type: "object",
             },
             {
+              additionalProperties: false,
               description: "A raw quaternion, `[x, y, z, w]`.",
               properties: {
                 quaternion: {
@@ -578,13 +586,14 @@ export const robotToolSpecifications = [
           description: "A tool orientation as a client gives it.",
           oneOf: [
             {
-              description:
-                "The approach direction and the jaw yaw about it, in degrees.",
+              additionalProperties: false,
+              description: "The approach direction and the jaw yaw about it.",
               properties: {
                 approach: {
                   $ref: "#/$defs/Approach",
                 },
                 jaw_yaw_degrees: {
+                  description: "Jaw yaw in degrees.",
                   type: "number",
                 },
               },
@@ -593,6 +602,7 @@ export const robotToolSpecifications = [
               type: "object",
             },
             {
+              additionalProperties: false,
               description: "A raw quaternion, `[x, y, z, w]`.",
               properties: {
                 quaternion: {
@@ -793,6 +803,11 @@ export const robotToolInputUnits = [
     station_field: "position",
   },
   {
+    model_field: "jaw_yaw_degrees",
+    scale_to_station: 0.017453292519943295,
+    station_field: "jaw_yaw_radians",
+  },
+  {
     model_field: "joints_degrees",
     scale_to_station: 0.017453292519943295,
     station_field: "joints",
@@ -823,6 +838,11 @@ export const modelOutputUnits = [
   ["model_points", "model_points_mm", 1000.0],
   ["position_error_meters", "position_error_mm", 1000.0],
   ["position_shortfall_meters", "position_shortfall_mm", 1000.0],
+  ["jaw_yaw_radians", "jaw_yaw_degrees", 57.29577951308232],
+  ["radians_from_down", "degrees_from_down", 57.29577951308232],
+  ["approach_error_radians", "approach_error_degrees", 57.29577951308232],
+  ["from_radians", "from_degrees", 57.29577951308232],
+  ["to_radians", "to_degrees", 57.29577951308232],
   ["joints", "joints_degrees", 57.29577951308232],
   ["measured_joints", "measured_joints_degrees", 57.29577951308232],
   [

@@ -67,7 +67,7 @@ test("a confirmed preview cannot be reused for a different arm, target, or orien
   expect(
     previewMatchesSelection({
       ...base,
-      orientation: { kind: "grasp", approach: "down", jaw_yaw_degrees: 0 },
+      orientation: { kind: "grasp", approach: "down", jaw_yaw_radians: 0 },
     }),
   ).toBe(false);
 });
