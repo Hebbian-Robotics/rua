@@ -3626,6 +3626,26 @@
           }
         ]
       },
+      "OperationCompletion": {
+        "description": "A terminal operation outcome and the event sequence of the state that reflects it.",
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ArmRecord"
+            },
+            "type": "array"
+          },
+          "state_sequence": {
+            "description": "Decimal station event sequence.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "records",
+          "state_sequence"
+        ],
+        "type": "object"
+      },
       "OperationStatus": {
         "description": "Station-owned progress of one operation.",
         "oneOf": [
@@ -5703,6 +5723,13 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "supports_operation_completion": {
+            "description": "Supports awaiting command outcomes with a state event sequence.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "required": [
@@ -7426,6 +7453,71 @@
           }
         },
         "summary": "Cancel an operation while holding its lease.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
+    "/operations/{id}/completion": {
+      "post": {
+        "operationId": "wait_operation_http",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StationInstance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OperationCompletion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Wait for a terminal operation and the event sequence of its reflected arm state. Returns null if still waiting.",
         "x-sdk": true,
         "x-server": "station"
       }

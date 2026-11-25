@@ -11,7 +11,10 @@
       "project": ["examples/typescript/viewer/**/*.{ts,tsx}"]
     },
     "typescript-client": {
-      "entry": ["tests/*.test.ts", "tests/simulated-robot-tools.ts"],
+      "entry": [
+        "tests/*.test.ts",
+        "tests/simulated-{robot-tools,command-recovery}.ts"
+      ],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "examples/typescript/agent": {

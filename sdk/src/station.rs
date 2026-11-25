@@ -15,8 +15,8 @@ use hebbian_contracts::{
     CommandSubmissionRequest, GroupCommandSubmissionRequest, LeaseCameraReport, LeaseHolder,
     LeaseStatus, LeaseToken, MoveArmsCommand, OnInterruption, PoseOrientation,
     PosePreviewBatchRequest, PosePreviewCandidate, PoseProjection, PreviewAnswer, PreviewPose,
-    RejectionReason, RunCompiledProgramRequest, RunEvent, StationCommand, StationState,
-    TraceContext, TraceSpan,
+    RejectionReason, RunCompiledProgramRequest, RunEvent, StationCommand, StationInstance,
+    StationState, TraceContext, TraceSpan,
 };
 use tokio::sync::{broadcast, watch};
 
@@ -478,7 +478,7 @@ impl Station {
                 .operation_id
                 .unwrap_or_else(uuid::Uuid::new_v4)
                 .to_string(),
-            station_instance_id: self.get_station_instance().await?.id,
+            station_instance_id: self.command_completion_station().await?.id,
             arm: arm.to_owned(),
             command,
             lease_token,
@@ -486,6 +486,8 @@ impl Station {
             trace_context: options.trace_context,
         };
         self.submit_and_finish_command(
+            &submission.operation_id,
+            &submission.station_instance_id,
             submission
                 .lease_token
                 .as_ref()
@@ -496,37 +498,70 @@ impl Station {
                         lease_token: token.clone(),
                     },
                 }),
-            self.submit_command_http(&submission),
-            Some(1),
+            || self.submit_command_http(&submission),
         )
         .await
     }
 
-    async fn submit_and_finish_command(
+    async fn command_completion_station(&self) -> Result<StationInstance> {
+        let instance = self.get_station_instance().await?;
+        if instance.supports_operation_completion == Some(true) {
+            Ok(instance)
+        } else {
+            Err(Error::Connection(
+                "Update the station to use command completion".to_owned(),
+            ))
+        }
+    }
+
+    async fn submit_and_finish_command<
+        SubmissionFuture: Future<Output = Result<CommandAnswer>> + Send,
+    >(
         &self,
+        operation_id: &str,
+        station_instance_id: &str,
         cancellation: Option<OperationCancellation>,
-        submit: impl Future<Output = Result<CommandAnswer>>,
-        expected_record_count: Option<usize>,
+        submit: impl Fn() -> SubmissionFuture + Send,
     ) -> Result<Vec<ArmRecord>> {
         let mut pending = PendingHttpCommand::new(self, cancellation);
-        let answer = submit.await?;
-        if matches!(answer, CommandAnswer::Refused { .. }) {
-            pending.disarm();
+        match retry_operation_request(submit).await {
+            Ok(CommandAnswer::Accepted { .. }) => {}
+            Ok(CommandAnswer::Refused { reason, detail }) => {
+                pending.disarm();
+                return Err(Error::Refused { reason, detail });
+            }
+            Err(error) => {
+                if matches!(error, Error::Http { .. }) {
+                    pending.disarm();
+                }
+                return Err(error);
+            }
         }
-        let mut records = self.accepted_records(answer)?;
-        if let Some(expected) = expected_record_count
-            && records.len() != expected
-        {
-            return Err(Error::Connection(format!(
-                "expected one record, got {}",
-                records.len()
-            )));
-        }
-        for arm_record in &mut records {
-            arm_record.record = self.wait_for_outcome(&arm_record.record.command_id).await?;
-        }
+
+        let instance = StationInstance {
+            id: station_instance_id.to_owned(),
+            supports_operation_completion: None,
+        };
+        let completion = loop {
+            if let Some(completion) =
+                retry_operation_request(|| self.wait_operation_http(operation_id, &instance))
+                    .await?
+            {
+                break completion;
+            }
+        };
         pending.disarm();
-        Ok(records)
+        let sequence = completion.state_sequence.parse().map_err(|_| {
+            Error::Connection("Invalid station completion event sequence".to_owned())
+        })?;
+        tokio::time::timeout(
+            REPLY_TIMEOUT,
+            self.shared
+                .wait_for_state_event(station_instance_id, sequence),
+        )
+        .await
+        .map_err(|_| Error::Timeout("the station state after command completion"))?;
+        Ok(completion.records)
     }
 
     fn accepted_records(&self, answer: CommandAnswer) -> Result<Vec<ArmRecord>> {
@@ -879,7 +914,7 @@ impl LeaseGuard {
                 .operation_id
                 .unwrap_or_else(uuid::Uuid::new_v4)
                 .to_string(),
-            station_instance_id: self.station.get_station_instance().await?.id,
+            station_instance_id: self.station.command_completion_station().await?.id,
             command,
             lease_token: Some(self.lease_token.clone()),
             trace_context: options.trace_context,
@@ -887,6 +922,8 @@ impl LeaseGuard {
         };
         self.station
             .submit_and_finish_command(
+                &submission.operation_id,
+                &submission.station_instance_id,
                 Some(OperationCancellation {
                     id: submission.operation_id.clone(),
                     authorization: CommandCancellationRequest {
@@ -894,8 +931,7 @@ impl LeaseGuard {
                         lease_token: self.lease_token.clone(),
                     },
                 }),
-                self.station.submit_group_command_http(&submission),
-                None,
+                || self.station.submit_group_command_http(&submission),
             )
             .await
     }
@@ -1063,7 +1099,8 @@ impl LeaseGuard {
                 },
             }),
         );
-        let answer = self.station.submit_command_http(&submission).await?;
+        let answer =
+            retry_operation_request(|| self.station.submit_command_http(&submission)).await?;
         pending.disarm();
         self.station.accepted_records(answer)
     }
@@ -1233,6 +1270,28 @@ impl Drop for LeaseGuard {
         self.renewal.abort();
         if self.clear_local_lease() {
             self.release_in_background();
+        }
+    }
+}
+
+async fn retry_operation_request<Reply, RequestFuture: Future<Output = Result<Reply>> + Send>(
+    request: impl Fn() -> RequestFuture + Send,
+) -> Result<Reply> {
+    let retry_delay = Duration::from_millis(100);
+    let deadline = tokio::time::Instant::now() + REPLY_TIMEOUT;
+    loop {
+        match tokio::time::timeout_at(deadline, request()).await {
+            Ok(Err(Error::Connection(_)))
+                if tokio::time::Instant::now() + retry_delay < deadline =>
+            {
+                tokio::time::sleep(retry_delay).await;
+            }
+            Ok(result) => return result,
+            Err(_) => {
+                return Err(Error::Connection(
+                    "Station operation request timed out".to_owned(),
+                ));
+            }
         }
     }
 }

@@ -64,12 +64,20 @@ The SDKs resume telemetry with the event cursor and request a fresh snapshot
 when replay is unavailable. See [control leases](control-model.md#control-leases)
 for what to verify before resuming motion after an interruption.
 
-Python and Rust report command submission failures to the caller. Keep the
-operation ID to look up its status after a transport error. TypeScript retries
-transient transport failures using the same operation ID. All three clients
-can request cancellation for a specific operation under its original lease.
-See the [shared Python and Rust client](../sdk/src/station.rs) and the
-[TypeScript client](../typescript-client/src/station-connection.ts).
+The SDKs retry transient command submission failures for up to 30 seconds
+using the same request and operation ID. The station reuses the original
+admission and rejects reuse of that ID with a different request. If the retry
+window expires, keep the operation ID to look up the retained status.
+
+When a caller waits for a command to finish, the SDKs use
+`POST /operations/{id}/completion` on the station that accepted it. This
+endpoint returns the terminal command records and the event sequence of a state
+that reflects the result. If the controller lost feedback, the state reports
+that loss. The SDKs wait for that event sequence to reach their state cache
+while connected. A station advertises this capability via `GET /instance`.
+The SDK rejects a completion-waiting command before submission if the station
+needs an upgrade. Admission-only submissions still return as soon as admitted.
+Cancel a specific operation using its original lease.
 
 ## Control, tools and results
 

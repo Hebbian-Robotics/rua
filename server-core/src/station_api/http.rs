@@ -27,11 +27,12 @@ use super::admission::{AdmissionClosed, AdmissionState};
 use super::http_state::{SHUTTING_DOWN, StationHttpState};
 use super::submissions::{
     Admission, CommandOutcomeUnknown, OperationId, PendingAdmission, SubmissionCompletion,
-    wait_for_outcome,
+    TerminalMotion, wait_for_outcome,
 };
 
 const WORKER_THREADS: usize = 2;
 const PREVIEW_WORKERS: usize = 4;
+const OPERATION_WAIT: Duration = Duration::from_secs(20);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Serialize)]
@@ -281,6 +282,7 @@ fn router(station_state: Arc<StationHttpState>) -> Router {
         .route("/action_sequence", get(read_action_sequence))
         .route("/action_sequence/{id}", get(read_action_sequence_by_id))
         .route("/operations/{id}", get(read_operation))
+        .route("/operations/{id}/completion", post(wait_operation))
         .with_state(station_state)
 }
 
@@ -355,6 +357,56 @@ async fn read_operation(
             StatusCode::NOT_FOUND,
             format!("Operation {id} is not retained"),
         ))
+}
+
+async fn wait_operation(
+    State(station_state): State<Arc<StationHttpState>>,
+    UrlPath(id): UrlPath<String>,
+    Json(instance): Json<hebbian_contracts::StationInstance>,
+) -> Result<Json<Option<hebbian_contracts::OperationCompletion>>, (StatusCode, String)> {
+    station_state.require_station_instance(&instance.id)?;
+    let operation_id = parse_operation_id(&id)?;
+    let operations = station_state
+        .admission
+        .decide(|state| state.operations.clone())
+        .await
+        .map_err(admission_unavailable)?;
+    let completion = tokio::time::timeout(OPERATION_WAIT, async {
+        let outcome = operations.wait_for_completion(operation_id).await.ok_or((
+            StatusCode::NOT_FOUND,
+            format!("Operation {id} is not retained"),
+        ))?;
+        let records = match outcome {
+            TerminalMotion::Finished(records) => records,
+            TerminalMotion::Refused { detail, .. } => return Err((StatusCode::CONFLICT, detail)),
+            TerminalMotion::CancelledBeforeAdmission => {
+                return Err((
+                    StatusCode::CONFLICT,
+                    "Operation was cancelled before admission".to_owned(),
+                ));
+            }
+            TerminalMotion::OutcomeUnknown(detail) => {
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, detail.to_string()));
+            }
+        };
+        let sequence = station_state
+            .events
+            .state_reflecting(&records)
+            .await
+            .ok_or((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Station state is unavailable".to_owned(),
+            ))?;
+        Ok(hebbian_contracts::OperationCompletion {
+            records,
+            state_sequence: sequence.to_string(),
+        })
+    })
+    .await;
+    match completion {
+        Ok(result) => result.map(|completion| Json(Some(completion))),
+        Err(_) => Ok(Json(None)),
+    }
 }
 
 async fn preview_poses(
@@ -1208,6 +1260,7 @@ async fn station_instance(
 ) -> Json<hebbian_contracts::StationInstance> {
     Json(hebbian_contracts::StationInstance {
         id: station_state.instance_id.clone(),
+        supports_operation_completion: Some(true),
     })
 }
 

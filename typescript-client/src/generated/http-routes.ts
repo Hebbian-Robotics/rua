@@ -207,6 +207,18 @@ export function createStationApi(
         jsonRequestInit("POST", body, signal),
       );
     },
+    /** Wait for a terminal operation and the event sequence of its reflected arm state. Returns null if still waiting. */
+    async waitOperationHttp(id: string, body: ApiSchemas["StationInstance"]) {
+      return apiSchemas.shape.OperationCompletion.nullable().parse(
+        await stationRequest(
+          new URL(
+            `/operations/${encodeURIComponent(id)}/completion`,
+            stationUrl,
+          ),
+          jsonRequestInit("POST", body, signal),
+        ),
+      );
+    },
     /** Update a live stream using its operation identifier and a newer goal sequence. */
     async updateStreamGoalHttp(
       id: string,

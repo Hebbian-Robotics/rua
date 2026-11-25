@@ -1489,6 +1489,12 @@ class StationInstance(BaseModel):
         frozen=True,
     )
     id: str
+    supports_operation_completion: Annotated[
+        bool | None,
+        Field(
+            description="Supports awaiting command outcomes with a state event sequence."
+        ),
+    ] = None
 
 
 class StreamGoalUpdateRequest(BaseModel):
@@ -2714,6 +2720,15 @@ class GroupCommandSubmissionRequest(BaseModel):
     ]
     station_instance_id: str
     trace_context: TraceContext | None = None
+
+
+class OperationCompletion(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    records: list[ArmRecord]
+    state_sequence: Annotated[str, Field(description="Decimal station event sequence.")]
 
 
 class OperationStatus2(BaseModel):

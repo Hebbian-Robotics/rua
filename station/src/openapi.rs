@@ -3,10 +3,11 @@ use hebbian_contracts::{
     ClientMessage, CommandAnswer, CommandCancellationRequest, CommandSubmissionRequest,
     CompilationArtifact, CompilationOutcome, ControlCapabilities, ControllerStatus,
     GroupCommandSubmissionRequest, LeaseAcquireRequest, LeaseCameraReport, LeaseGrant, LeaseToken,
-    MediaStatusReport, ObservationAnswer, ObservationRequest, OperationStatus, PhoneInvite,
-    PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse, ReconnectRequest,
-    RecordingStatus, RoomAccess, RunCompiledProgramRequest, RunEvent, RunSpansRequest,
-    ServerMessage, StationInstance, StationState, StreamGoalUpdateRequest, TraceFile,
+    MediaStatusReport, ObservationAnswer, ObservationRequest, OperationCompletion, OperationStatus,
+    PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse,
+    ReconnectRequest, RecordingStatus, RoomAccess, RunCompiledProgramRequest, RunEvent,
+    RunSpansRequest, ServerMessage, StationInstance, StationState, StreamGoalUpdateRequest,
+    TraceFile,
 };
 use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
@@ -292,6 +293,15 @@ pub fn routes() -> Vec<Route> {
             "The retained status and outcomes of an operation.",
             None,
             Reply::Json(schema_of::<OperationStatus>),
+            true,
+        ),
+        route(
+            "wait_operation_http",
+            "post",
+            "/operations/{id}/completion",
+            "Wait for a terminal operation and the event sequence of its reflected arm state. Returns null if still waiting.",
+            Some(schema_of::<StationInstance>),
+            Reply::Json(schema_of::<Option<OperationCompletion>>),
             true,
         ),
         route(

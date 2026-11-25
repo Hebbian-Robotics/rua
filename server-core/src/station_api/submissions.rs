@@ -234,7 +234,8 @@ impl std::fmt::Display for CommandOutcomeUnknown {
     }
 }
 
-enum TerminalMotion {
+#[derive(Clone)]
+pub(super) enum TerminalMotion {
     Finished(Vec<ArmRecord>),
     Refused {
         reason: hebbian_contracts::RejectionReason,
@@ -271,7 +272,7 @@ enum OperationState {
         newest_goal: Option<u32>,
     },
     Cancelling(Vec<ArmRecord>),
-    Terminal(TerminalMotion),
+    Terminal,
 }
 
 enum CancellationEffect<'a> {
@@ -292,7 +293,7 @@ impl OperationState {
                 CancellationEffect::StopActive(vec![record.as_ref().clone()])
             }
             Self::Cancelling(records) => CancellationEffect::RepeatStop(records),
-            Self::Terminal(_) => CancellationEffect::NoMotion,
+            Self::Terminal => CancellationEffect::NoMotion,
         }
     }
 }
@@ -300,10 +301,16 @@ impl OperationState {
 struct Operation {
     request: SubmissionRequest,
     admission: watch::Sender<Option<Admission>>,
+    completion: watch::Sender<Option<TerminalMotion>>,
     state: OperationState,
 }
 
 impl Operation {
+    fn finish(&self, result: TerminalMotion) -> OperationState {
+        self.completion.send_replace(Some(result));
+        OperationState::Terminal
+    }
+
     fn cancel(&mut self) -> CancellationResult {
         let target = match self.state.cancellation_effect() {
             CancellationEffect::FenceAdmission(fence) => {
@@ -337,7 +344,7 @@ enum Submission {
 impl Submission {
     fn is_evictable(&self) -> bool {
         match self {
-            Self::Operation(operation) => matches!(operation.state, OperationState::Terminal(_)),
+            Self::Operation(operation) => matches!(operation.state, OperationState::Terminal),
             Self::CancelledBeforeArrival { .. } => true,
         }
     }
@@ -438,20 +445,20 @@ impl Operations {
                 }
             }
             Ok(CommandAnswer::Accepted { records }) => {
-                OperationState::Terminal(TerminalMotion::Finished(records.clone()))
+                operation.finish(TerminalMotion::Finished(records.clone()))
             }
             Ok(CommandAnswer::Refused { .. })
                 if matches!(operation.state, OperationState::CancellingAdmission) =>
             {
-                OperationState::Terminal(TerminalMotion::CancelledBeforeAdmission)
+                operation.finish(TerminalMotion::CancelledBeforeAdmission)
             }
             Ok(CommandAnswer::Refused { reason, detail }) => {
-                OperationState::Terminal(TerminalMotion::Refused {
+                operation.finish(TerminalMotion::Refused {
                     reason: *reason,
                     detail: detail.clone(),
                 })
             }
-            Err(detail) => OperationState::Terminal(TerminalMotion::OutcomeUnknown(detail.clone())),
+            Err(detail) => operation.finish(TerminalMotion::OutcomeUnknown(detail.clone())),
         };
         operation.admission.send_replace(Some(answer));
         unfinished
@@ -474,7 +481,7 @@ impl Operations {
                     | OperationState::Cancelling(_)
             )
         {
-            operation.state = OperationState::Terminal(match result {
+            operation.state = operation.finish(match result {
                 Ok(records) => TerminalMotion::Finished(records),
                 Err(detail) => TerminalMotion::OutcomeUnknown(detail),
             });
@@ -502,9 +509,26 @@ impl Operations {
                 OperationState::Cancelling(records) => OperationStatus::Cancelling {
                     records: records.clone(),
                 },
-                OperationState::Terminal(status) => status.status(),
+                OperationState::Terminal => operation.completion.borrow().as_ref()?.status(),
             },
         })
+    }
+
+    pub(super) async fn wait_for_completion(&self, id: OperationId) -> Option<TerminalMotion> {
+        let mut completion = {
+            let entries = self
+                .entries
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            match entries.retained.get(&id)? {
+                Submission::CancelledBeforeArrival { .. } => {
+                    return Some(TerminalMotion::CancelledBeforeAdmission);
+                }
+                Submission::Operation(operation) => operation.completion.subscribe(),
+            }
+        };
+        let result = completion.wait_for(Option::is_some).await.ok()?;
+        result.clone()
     }
 
     // INVARIANT: The lock orders every update enqueue against both cancellation and other
@@ -594,6 +618,7 @@ impl Operations {
             Submission::Operation(Box::new(Operation {
                 request,
                 admission,
+                completion: watch::channel(None).0,
                 state: OperationState::Pending(cancelled),
             })),
         );

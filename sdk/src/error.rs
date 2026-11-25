@@ -9,7 +9,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     /// The station could not be reached, the connection was lost before an
     /// answer arrived, or the station sent something unreadable. A command that
-    /// failed this way may or may not have been accepted; the SDK never retries it.
+    /// failed this way may or may not have been accepted. Keep its operation ID to recover the outcome.
     #[error("station connection: {0}")]
     Connection(String),
     /// Someone else holds the lease. `None` when the holder is not known.
