@@ -285,6 +285,32 @@ mod tests {
     }
 
     #[test]
+    fn a_written_trace_returns_its_command_buffer_for_the_next_cycle() {
+        use std::time::{Duration, Instant};
+
+        let directory = tempfile::tempdir().unwrap();
+        let writer = TraceWriter::open(directory.path()).unwrap();
+        let submitted = record(42);
+        let command_buffer = submitted.command.as_ptr();
+        writer.record(submitted);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let recycled = writer.checkout();
+            if std::ptr::eq(recycled.command.as_ptr(), command_buffer) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "trace command buffer was not returned"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let summary = writer.finish();
+        assert_eq!((summary.written, summary.dropped), (1, 0));
+    }
+
+    #[test]
     fn a_trace_writer_refuses_a_file_as_its_output_directory() {
         let file = std::env::temp_dir().join(format!("trace-blocker-{}", std::process::id()));
         std::fs::write(&file, "not a directory").unwrap();

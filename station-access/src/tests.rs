@@ -89,15 +89,16 @@ fn independent_viewers_and_stations_have_distinct_identities()
                 .to_owned(),
         );
     }
-    assert!(
-        identities.len() > 1,
-        "overlapping viewer sessions need distinct identities"
+    assert_eq!(
+        identities.len(),
+        3,
+        "overlapping viewer sessions need distinct identities: {identities:?}"
     );
-    assert!(
-        [new_room_name(), new_room_name()]
-            .iter()
-            .any(|other| other != &room),
-        "different stations need independent room names"
+    let rooms = std::collections::BTreeSet::from([room, new_room_name(), new_room_name()]);
+    assert_eq!(
+        rooms.len(),
+        3,
+        "different stations need independent room names: {rooms:?}"
     );
     Ok(())
 }
