@@ -725,9 +725,6 @@ impl<P: Plant> Runner<'_, P> {
         let gripper = self.state.plan_gripper(feedback, interval, failure);
         self.timings.gripper_seconds = gripper_began.elapsed().as_secs_f64();
         let computation_began = Instant::now();
-        if let Some(runtime) = &mut self.state.policy {
-            runtime.begin_cycle();
-        }
         let motion = self.state.plan_motion(interval, feedback, group, now);
         let motion = motion.and_then(|plan| match plan {
             MotionPlan::ReferenceReady(effects) => Ok(effects),
@@ -744,8 +741,8 @@ impl<P: Plant> Runner<'_, P> {
         self.timings.policy_inference_seconds = self
             .state
             .policy
-            .as_ref()
-            .map_or(0.0, crate::policy::PolicyRuntime::inference_seconds);
+            .as_mut()
+            .map_or(0.0, crate::policy::PolicyRuntime::take_inference_seconds);
         let command_start_time = self.started.elapsed().as_secs_f64();
         let written = self.write_setpoints(&gripper, interval);
         self.publish_trip(trip, feedback, now);

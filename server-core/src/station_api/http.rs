@@ -24,7 +24,7 @@ use tokio_util::io::ReaderStream;
 use crate::control_link::{LinkHandle, SubmissionAuthority};
 
 use super::admission::{AdmissionClosed, AdmissionState};
-use super::http_state::{SHUTTING_DOWN, StationHttpState};
+use super::http_state::{SHUTTING_DOWN, SnapshotSubscription, StationHttpState};
 use super::submissions::{
     Admission, CommandOutcomeUnknown, OperationId, PendingAdmission, SubmissionCompletion,
     TerminalMotion, wait_for_outcome,
@@ -114,89 +114,10 @@ impl HttpServer {
     }
 
     pub fn attach_arms(&self, arms: BTreeMap<String, LinkHandle>) {
-        if !self.station_state.attach_arms(&arms) {
-            return;
-        }
-        let Some(runtime) = &self.runtime else {
-            return;
-        };
-        let snapshot_arms = arms.clone();
-        let snapshot_journal = Arc::clone(&self.station_state.events);
-        runtime.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            loop {
-                interval.tick().await;
-                if let Ok(Some(state)) = tokio::time::timeout(
-                    Duration::from_secs(3),
-                    crate::station_api::state::station_state(&snapshot_arms),
-                )
-                .await
-                {
-                    snapshot_journal.publish(ServerMessage::State {
-                        state: Box::new(state),
-                    });
-                } else {
-                    snapshot_journal.invalidate_station_state();
-                }
-            }
-        });
-        let telemetry = Arc::clone(&self.station_state.telemetry);
-        let journal = Arc::clone(&self.station_state.events);
-        runtime.spawn(async move {
-            let mut cursor = telemetry.newest_seq();
-            let mut revision = None;
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            loop {
-                interval.tick().await;
-                let updates = telemetry.updates(&mut cursor, &mut revision);
-                for record in updates.records {
-                    journal.publish(record);
-                }
-                if let Some(run) = updates.snapshot {
-                    journal.publish(ServerMessage::Run { run: Box::new(run) });
-                }
-            }
-        });
-        if let Some(lease_link) = arms.values().next().cloned() {
-            let admission = self.station_state.admission.clone();
-            runtime.spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(100));
-                loop {
-                    interval.tick().await;
-                    let lease_link = lease_link.clone();
-                    if admission
-                        .decide(move |_| lease_link.tick_lease())
-                        .await
-                        .is_err()
-                    {
-                        return;
-                    }
-                }
-            });
-        }
-        for (arm_name, link) in arms {
-            let journal = Arc::clone(&self.station_state.events);
-            let event_link = link.clone();
-            runtime.spawn(async move {
-                loop {
-                    let (client, mut frames) = event_link.connect(4096);
-                    event_link.snapshot(client);
-                    while let Some(frame) = frames.recv().await {
-                        journal.publish(ServerMessage::Frame {
-                            arm: arm_name.clone(),
-                            frame: Box::new(frame),
-                        });
-                    }
-                    event_link.disconnect(client);
-                    journal.resync_arm(arm_name.clone());
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-            });
-            runtime.spawn(crate::station_api::interlocks::watch_arm(
-                link,
-                self.station_state.admission.clone(),
-            ));
-        }
+        self.station_state.attach_arms(
+            arms,
+            self.runtime.as_ref().map(tokio::runtime::Runtime::handle),
+        );
     }
 
     pub fn close(mut self) {
@@ -1100,7 +1021,7 @@ async fn record_run_event(
     State(station_state): State<Arc<StationHttpState>>,
     Json(event): Json<hebbian_contracts::RunEvent>,
 ) -> axum::http::StatusCode {
-    station_state.telemetry.record_event(event);
+    station_state.record_run_event(event);
     axum::http::StatusCode::NO_CONTENT
 }
 
@@ -1112,17 +1033,15 @@ struct RunReplayQuery {
 async fn replay_run_records(
     State(station_state): State<Arc<StationHttpState>>,
     Query(query): Query<RunReplayQuery>,
-) -> Json<Vec<hebbian_contracts::ServerMessage>> {
-    let mut cursor = query.after;
-    let updates = station_state.telemetry.updates(&mut cursor, &mut None);
-    Json(updates.records)
+) -> Json<Vec<ServerMessage>> {
+    Json(station_state.replay_run_records(query.after))
 }
 
 async fn record_run_spans(
     State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<hebbian_contracts::RunSpansRequest>,
 ) -> axum::http::StatusCode {
-    station_state.telemetry.record_spans(request.spans);
+    station_state.record_run_spans(request.spans);
     axum::http::StatusCode::NO_CONTENT
 }
 
@@ -1170,27 +1089,31 @@ async fn stream_events(
     let cursor = parse_event_cursor(&headers)?;
     let (initial, mut updates) = match cursor {
         None => {
-            let (sequence, snapshot, updates) = station_state.events.subscribe_with_snapshot();
-            if !snapshot.iter().any(|event| event.is_station_state()) {
-                return Err((
+            let SnapshotSubscription {
+                sequence,
+                run_sequence,
+                items,
+                updates,
+            } = station_state.subscribe_with_snapshot().ok_or_else(|| {
+                (
                     StatusCode::SERVICE_UNAVAILABLE,
                     "Station snapshot is not ready".to_owned(),
-                ));
-            }
+                )
+            })?;
             let event = Event::default()
                 .event("snapshot")
                 .id(format!("{}:{sequence}", station_state.instance_id))
                 .json_data(hebbian_contracts::StationEventSnapshot {
                     station_instance_id: station_state.instance_id.clone(),
                     sequence,
-                    run_sequence: station_state.telemetry.newest_seq(),
-                    items: snapshot.iter().map(AsRef::as_ref).collect(),
+                    run_sequence,
+                    items: items.iter().map(AsRef::as_ref).collect(),
                 })
                 .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
             (vec![event], updates)
         }
         Some((instance, sequence)) if instance == station_state.instance_id => {
-            match station_state.events.subscribe_after(sequence) {
+            match station_state.subscribe_after(sequence) {
                 EventSubscription::Replay { events, updates } => (
                     events
                         .iter()
@@ -1534,7 +1457,7 @@ mod event_stream_tests {
             |_, _| Ok(axum::Router::new()),
         )
         .unwrap();
-        server.station_state.events.publish(ready_state());
+        server.station_state.publish_event(ready_state());
         let url = format!("http://{}/events", server.local_address());
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1572,10 +1495,7 @@ mod event_stream_tests {
                 .unwrap();
             let cursor = cursor.to_owned();
             drop(response);
-            server
-                .station_state
-                .events
-                .resync_arm("replayed".to_owned());
+            server.station_state.resync_arm("replayed".to_owned());
             let mut resumed = client
                 .get(&url)
                 .header("Last-Event-ID", cursor)
@@ -1598,13 +1518,13 @@ mod event_stream_tests {
             .err()
             .unwrap();
         assert_eq!(error.0, StatusCode::SERVICE_UNAVAILABLE);
-        station_state.events.publish(ready_state());
+        station_state.publish_event(ready_state());
         assert!(
             stream_events(State(Arc::clone(&station_state)), HeaderMap::new())
                 .await
                 .is_ok()
         );
-        station_state.events.invalidate_station_state();
+        station_state.invalidate_station_state();
         let error = stream_events(State(Arc::clone(&station_state)), HeaderMap::new())
             .await
             .err()
