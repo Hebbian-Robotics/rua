@@ -61,6 +61,26 @@ impl Station {
         Ok(())
     }
 
+    /// Wait for one retained execution to finish. Returns null if still running after twenty seconds.
+    ///
+    /// # Errors
+    /// [`crate::Error::Http`] with the service's status, or [`crate::Error::Connection`].
+    pub async fn wait_action_sequence_completion(
+        &self,
+        id: &str,
+    ) -> Result<Option<ActionSequenceRecord>> {
+        Ok(self
+            .request(
+                Method::GET,
+                &self.server,
+                &["action_sequence", id, "completion"],
+                None::<&()>,
+            )
+            .await?
+            .json()
+            .await?)
+    }
+
     /// Read the station's retained camera images for one execution.
     ///
     /// # Errors

@@ -5,7 +5,7 @@
 }
 body {
   margin: 0;
-  min-width: 320px;
+  overflow-wrap: break-word;
 }
 button:focus-visible,
 input:focus-visible,
@@ -16,7 +16,7 @@ summary:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
-a:not([data-sidebar="menu-button"]) {
+a {
   color: var(--accent-ink);
 }
 input[type="checkbox"],
@@ -86,7 +86,7 @@ p {
 }
 .workspace-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -179,7 +179,7 @@ details summary {
   overflow: hidden;
 }
 .robot-scene-canvas {
-  height: clamp(300px, 42vw, 570px);
+  height: clamp(240px, 48cqi, 570px);
   background: var(--scene-background);
 }
 .robot-scene-canvas canvas {
@@ -204,8 +204,6 @@ details summary {
   margin: 6px 10px 0 0;
 }
 .control-panel {
-  position: sticky;
-  top: 12px;
   min-width: 0;
 }
 .agent-control,
@@ -495,12 +493,24 @@ pre {
   margin: 0 auto;
   padding: 32px 24px;
 }
-#workspace-heading,
-.settings-page [tabindex="-1"] {
-  width: fit-content;
-  scroll-margin-top: 4rem;
+.workspace-page > h1 {
+  margin-block-end: 16px;
 }
-#workspace-heading:focus-visible,
+.workspace-section-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block-end: 16px;
+}
+.workspace-section-links a {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.workspace-jump-target,
+.settings-page [tabindex="-1"] {
+  scroll-margin-block-start: 12px;
+}
+.workspace-jump-target:focus-visible,
 .settings-page [tabindex="-1"]:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
@@ -513,21 +523,32 @@ pre {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   min-height: 34px;
 }
-@media (max-width: 850px) {
-  .workspace-page {
-    padding: 16px;
-  }
+@container viewer-content (min-width: 54rem) {
   .workspace-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   }
   .control-panel {
-    position: static;
+    position: sticky;
+    top: 12px;
+  }
+  .workspace-section-links {
+    display: none;
+  }
+}
+@container viewer-content (max-width: 42rem) {
+  .workspace-page,
+  .settings-page {
+    padding: 16px;
   }
   .memory-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+.workspace-page code {
+  overflow-wrap: anywhere;
 }
 
 .telemetry-panel,
@@ -686,15 +707,7 @@ pre {
   color: var(--muted);
   font-size: 14px;
 }
-@media (min-width: 851px) and (max-width: 1100px) {
-  .workspace-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .control-panel {
-    position: static;
-  }
-}
-@media (max-width: 480px) {
+@container viewer-content (max-width: 30rem) {
   .telemetry-panel > summary span,
   .run-diagnostics > summary span {
     display: block;

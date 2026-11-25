@@ -98,7 +98,7 @@
 .playback-grid .robot-scene-canvas {
   height: 300px;
 }
-@media (max-width: 700px) {
+@container viewer-content (max-width: 42rem) {
   .recordings-page {
     padding: 16px;
   }

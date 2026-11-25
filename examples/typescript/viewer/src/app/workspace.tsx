@@ -241,8 +241,15 @@ export function WorkspaceApp({
     };
   }, [stopFollowing]);
   useEffect(() => {
-    if (route === "#workspace")
-      document.getElementById("workspace-heading")?.focus();
+    if (!route.startsWith("#workspace")) return;
+    const fragmentTarget = document.getElementById(route.slice(1));
+    if (
+      fragmentTarget?.classList.contains("workspace-jump-target") &&
+      document.activeElement !== fragmentTarget
+    ) {
+      fragmentTarget.scrollIntoView();
+      fragmentTarget.focus({ preventScroll: true });
+    }
   }, [route]);
   useEffect(() => {
     if (!connected) {
@@ -329,17 +336,32 @@ export function WorkspaceApp({
     >
       <ControllerRecovery />
       <RecoveryControls state={connected ? stationState : null} />
-      <div hidden={page !== "workspace"} className="workspace-page">
+      <main hidden={page !== "workspace"} className="workspace-page">
+        <h1 id="workspace" className="workspace-jump-target" tabIndex={-1}>
+          Workspace
+        </h1>
+        <nav
+          className="workspace-section-links"
+          aria-label="Workspace sections"
+        >
+          <a href="#workspace-cameras">Cameras</a>
+          <a href="#workspace-control">Control</a>
+          <a href="#workspace-telemetry">Joint telemetry</a>
+          <a href="#workspace-activity">Run activity</a>
+        </nav>
         <div className="workspace-layout">
-          <main className="workspace-visuals">
-            <h1 id="workspace-heading" tabIndex={-1}>
-              Workspace
-            </h1>
+          <div className="workspace-visuals">
             <section
               className="grid min-w-0 gap-3"
               aria-labelledby="workspace-cameras"
             >
-              <h2 id="workspace-cameras">Cameras</h2>
+              <h2
+                id="workspace-cameras"
+                className="workspace-jump-target"
+                tabIndex={-1}
+              >
+                Cameras
+              </h2>
               <p className="workspace-camera-status" role="status">
                 {cameras.status}
                 {mediaStatus && <span className="block">{mediaStatus}</span>}
@@ -374,11 +396,8 @@ export function WorkspaceApp({
                   <TriangleAlertIcon aria-hidden="true" />
                   <p className="m-0">
                     <strong>Local camera fallback.</strong> The station was
-                    started with{" "}
-                    <code className="whitespace-nowrap">
-                      --local-only-no-remote-cameras
-                    </code>
-                    , which is only for when LiveKit is unavailable. Prefer
+                    started with <code>--local-only-no-remote-cameras</code>,
+                    which is only for when LiveKit is unavailable. Prefer
                     LiveKit whenever possible: set <code>LIVEKIT_URL</code>,{" "}
                     <code>LIVEKIT_API_KEY</code>, and{" "}
                     <code>LIVEKIT_API_SECRET</code> on the station for LiveKit
@@ -423,11 +442,13 @@ export function WorkspaceApp({
               onTargetDrag={setDragging}
               onProjectionValidityChange={onProjectionValidityChange}
             />
-          </main>
+          </div>
           <Card
             role="complementary"
             aria-label="Control"
-            className="control-panel gap-0 py-0"
+            id="workspace-control"
+            tabIndex={-1}
+            className="workspace-jump-target control-panel gap-0 py-0"
           >
             <div className="grid gap-2 p-4">
               <fieldset
@@ -468,14 +489,11 @@ export function WorkspaceApp({
                   <TriangleAlertIcon aria-hidden="true" />
                   <p className="m-0">
                     <strong>Agent disabled.</strong> The viewer was started with{" "}
-                    <code className="whitespace-nowrap">
-                      --manual-control-only-no-agent
-                    </code>
-                    , which is only for debugging manual control. To use the
-                    agent, set <code>OPENAI_API_KEY</code>,{" "}
-                    <code>ANTHROPIC_API_KEY</code>, or{" "}
-                    <code>GEMINI_API_KEY</code> and restart the viewer without
-                    that flag.
+                    <code>--manual-control-only-no-agent</code>, which is only
+                    for debugging manual control. To use the agent, set{" "}
+                    <code>OPENAI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>,
+                    or <code>GEMINI_API_KEY</code> and restart the viewer
+                    without that flag.
                   </p>
                 </Alert>
               ) : (
@@ -566,7 +584,7 @@ export function WorkspaceApp({
           className="telemetry-panel"
           onToggle={(event) => setTelemetryOpen(event.currentTarget.open)}
         >
-          <summary>
+          <summary id="workspace-telemetry" className="workspace-jump-target">
             Joint telemetry <span>Last 30 seconds</span>
           </summary>
           <LiveTelemetry
@@ -576,7 +594,7 @@ export function WorkspaceApp({
           />
         </details>
         <details className="run-diagnostics">
-          <summary>
+          <summary id="workspace-activity" className="workspace-jump-target">
             Run activity <span>Prompt, settings, memory and traces</span>
           </summary>
           <RunPanels
@@ -589,7 +607,7 @@ export function WorkspaceApp({
             live
           />
         </details>
-      </div>
+      </main>
       {page === "settings" && (
         <SettingsPage
           preferences={preferences}

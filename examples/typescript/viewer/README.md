@@ -21,6 +21,11 @@ served through the example backend. The station owns capture and storage.
 
 ## Use the viewer
 
+In a narrow side pane, use the links at the top to switch between
+**Workspace**, **Recordings**, and **Settings**. The **Workspace** shortcuts
+jump to **Cameras**, **Control**, **Joint telemetry**, or **Run activity**.
+**Stop arms** stays visible as you scroll.
+
 The viewer offers **Manual** and **Agent** with a normal startup. See
 [arm controls](../../../docs/so101-manual-control.md#controls) for manual
 operation and [the agent example](../agent/README.md) for model setup. Open

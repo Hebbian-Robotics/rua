@@ -2,31 +2,18 @@ import {
   CircleIcon,
   LayoutGridIcon,
   type LucideIcon,
+  PanelLeftIcon,
   SettingsIcon,
   SquareIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarSeparator,
-  SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar.js";
-import { TooltipProvider } from "@/components/ui/tooltip.js";
-import { cn } from "@/lib/utils.js";
 import { errorMessage } from "../errors.js";
 import { armControl } from "../manual-lease.js";
 import { useStationState } from "../use-station-state.js";
+import "./navigation.css";
 
 export type ViewerNavigationLink = {
   page: string;
@@ -92,20 +79,20 @@ export function ViewerShell({
   children,
 }: ViewerShellProps) {
   return (
-    <TooltipProvider>
-      <SidebarProvider className="flex-col md:flex-row">
+    <div className="viewer-shell">
+      <div className="viewer-layout">
         <ViewerNavigation
           current={current}
           onStop={onStop}
           navigationLinks={navigationLinks}
           statusIndicator={statusIndicator}
         />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="viewer-content flex min-w-0 flex-1 flex-col">
           <div className="flex-1">{children}</div>
           <ViewerFooter />
         </div>
-      </SidebarProvider>
-    </TooltipProvider>
+      </div>
+    </div>
   );
 }
 
@@ -117,7 +104,22 @@ function ViewerNavigation({
 }: Pick<ViewerShellProps, "current" | "onStop" | "statusIndicator"> & {
   navigationLinks: readonly ViewerNavigationLink[];
 }) {
-  const { isMobile, open, openMobile, setOpenMobile } = useSidebar();
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const sidebarToggle = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    function handleSidebarShortcut(event: KeyboardEvent) {
+      if (
+        event.key === "b" &&
+        (event.metaKey || event.ctrlKey) &&
+        sidebarToggle.current?.getClientRects().length
+      ) {
+        event.preventDefault();
+        setSidebarExpanded((expanded) => !expanded);
+      }
+    }
+    window.addEventListener("keydown", handleSidebarShortcut);
+    return () => window.removeEventListener("keydown", handleSidebarShortcut);
+  }, []);
   const { stationState, connected } = useStationState();
   const [stopMessage, setStopMessage] = useState("");
   const [stopPending, setStopPending] = useState(false);
@@ -152,180 +154,103 @@ function ViewerNavigation({
     setStopMessage(failures.length ? failures.join(" · ") : "Stop requested.");
   }
   const stopDisabled = stopPending || !connected || !stationState?.arms.length;
-  const showInlineFeedback = isMobile ? openMobile : open;
-  const connectionLabel = connected ? "Station connected" : "Station offline";
-
   return (
-    <>
-      {isMobile && (
-        <header className="sticky top-0 z-20 flex w-full items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 py-2">
-          <SidebarTrigger
-            aria-label="Open navigation"
-            aria-expanded={openMobile}
-          />
-          <StationConnection
-            connected={connected}
-            label={connected ? "Connected" : "Offline"}
-          />
-          {statusIndicator}
-          <StopArmsButton
-            className="ml-auto"
-            disabled={stopDisabled}
-            onStop={stopArms}
-          />
-        </header>
-      )}
-      <Sidebar collapsible="icon">
-        <SidebarHeader className="flex-row items-center group-data-[collapsible=icon]:flex-col max-md:pr-12">
-          <SidebarMenu className="min-w-0 flex-1">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                aria-label="Hebbian Robot Use workspace"
-                render={<a href="./#workspace" />}
-                onClick={() => setOpenMobile(false)}
-              >
-                <img
-                  className="size-4 shrink-0 rounded-sm"
-                  src="./hebbian-logo.svg"
-                  alt=""
-                />
-                <span>
-                  Hebbian <strong>Robot Use</strong>
-                </span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-          {!isMobile && (
-            <SidebarTrigger
-              aria-expanded={open}
-              aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-            />
-          )}
-        </SidebarHeader>
-        <SidebarContent>
-          <nav aria-label="Main navigation" className="p-2">
-            <SidebarMenu>
-              {navigationLinks.map(({ page, label, href, Icon }) => (
-                <SidebarMenuItem key={href}>
-                  <SidebarMenuButton
-                    isActive={current === page}
-                    tooltip={label}
-                    render={
-                      <a
-                        href={href}
-                        aria-label={label}
-                        aria-current={current === page ? "page" : undefined}
-                      />
-                    }
-                    onClick={() => setOpenMobile(false)}
-                  >
-                    <Icon aria-hidden="true" />
-                    <span>{label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </nav>
-        </SidebarContent>
-        <SidebarSeparator className="mx-0" />
-        <SidebarFooter
-          aria-label="Station status"
-          role="region"
-          className="min-h-0 max-h-[65%]"
-        >
-          {!isMobile && (
-            <>
-              <StationConnection
-                connected={connected}
-                label={connectionLabel}
-              />
-              {statusIndicator}
-            </>
-          )}
-          <StopArmsButton
-            className="group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0"
-            disabled={stopDisabled}
-            onStop={stopArms}
-          />
-          {showInlineFeedback && (
-            <StopFeedback message={stopMessage} failed={stopFailed} />
-          )}
-        </SidebarFooter>
-      </Sidebar>
-      {!showInlineFeedback && (
-        <StopFeedback
-          className="fixed right-3 bottom-3 z-30 max-w-[min(22rem,calc(100dvw-1.5rem))] shadow-md"
-          message={stopMessage}
-          failed={stopFailed}
-        />
-      )}
-    </>
-  );
-}
-
-function StationConnection({
-  connected,
-  label,
-}: {
-  connected: boolean;
-  label: string;
-}) {
-  return (
-    <div role="status" title={label}>
-      <Badge
-        variant={connected ? "outline" : "destructive"}
-        className="group-data-[collapsible=icon]:w-8 group-data-[collapsible=icon]:px-0"
-      >
-        <CircleIcon
-          aria-hidden="true"
-          className={connected ? "fill-positive text-positive" : "fill-current"}
-        />
-        <span className="group-data-[collapsible=icon]:sr-only">{label}</span>
-      </Badge>
-    </div>
-  );
-}
-
-function StopArmsButton({
-  className,
-  disabled,
-  onStop,
-}: {
-  className?: string;
-  disabled: boolean;
-  onStop: () => Promise<void>;
-}) {
-  return (
-    <Button
-      variant="stop"
-      aria-label="Stop arms"
-      title="Stop arms"
-      className={className}
-      disabled={disabled}
-      onClick={() => void onStop()}
+    <header
+      className="viewer-navigation"
+      data-collapsed={sidebarExpanded ? undefined : ""}
     >
-      <SquareIcon aria-hidden="true" className="fill-current" />
-      <span className="group-data-[collapsible=icon]:sr-only">Stop arms</span>
-    </Button>
+      <div className="viewer-brand">
+        <a
+          className="viewer-nav-link"
+          href="./#workspace"
+          aria-label="Hebbian Robot Use workspace"
+          title="Hebbian Robot Use workspace"
+        >
+          <img src="./hebbian-logo.svg" alt="" width="16" height="16" />
+          <span className="viewer-nav-label">
+            Hebbian <strong>Robot Use</strong>
+          </span>
+        </a>
+        <Button
+          ref={sidebarToggle}
+          className="viewer-sidebar-toggle"
+          variant="ghost"
+          size="icon-sm"
+          aria-expanded={sidebarExpanded}
+          aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+          onClick={() => setSidebarExpanded((expanded) => !expanded)}
+        >
+          <PanelLeftIcon aria-hidden="true" />
+        </Button>
+      </div>
+      <nav aria-label="Main navigation">
+        <ul className="viewer-page-links">
+          {navigationLinks.map(({ page, label, href, Icon }) => (
+            <li key={href}>
+              <a
+                className="viewer-nav-link"
+                href={href}
+                aria-label={label}
+                aria-current={current === page ? "page" : undefined}
+                title={label}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span className="viewer-nav-label">{label}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <div className="viewer-station-status">
+        <div
+          role="status"
+          title={connected ? "Station connected" : "Station offline"}
+        >
+          <Badge variant={connected ? "outline" : "destructive"}>
+            <CircleIcon
+              aria-hidden="true"
+              className={
+                connected ? "fill-positive text-positive" : "fill-current"
+              }
+            />
+            <span className="sr-only">Station </span>
+            <span className="viewer-nav-label">
+              {connected ? "Connected" : "Offline"}
+            </span>
+          </Badge>
+        </div>
+        {statusIndicator}
+        <Button
+          variant="stop"
+          aria-label="Stop arms"
+          title="Stop arms"
+          className="viewer-stop-button"
+          disabled={stopDisabled}
+          onClick={() => void stopArms()}
+        >
+          <SquareIcon aria-hidden="true" className="fill-current" />
+          <span className="viewer-nav-label">Stop arms</span>
+        </Button>
+      </div>
+      <StopFeedback message={stopMessage} failed={stopFailed} />
+    </header>
   );
 }
 
 function StopFeedback({
-  className,
   message,
   failed,
 }: {
-  className?: string;
   message: string;
   failed: boolean;
 }) {
   return (
-    <div role="status">
+    <div className="viewer-stop-feedback" role="status">
       {message && (
         <Alert
           role="presentation"
           variant={failed ? "destructive" : "default"}
-          className={cn("max-h-32 overflow-y-auto wrap-anywhere", className)}
+          className="max-h-32 overflow-y-auto wrap-anywhere"
         >
           {message}
         </Alert>
