@@ -97,6 +97,12 @@ test("observe exposes retained images only when history is requested", async () 
       },
     ]);
     expect(motion?.isError).toBe(false);
+    const exposed = robot.sequenceImages()?.images[0]?.jpeg;
+    expect(exposed).toEqual(new Uint8Array([1, 2, 3]));
+    exposed?.fill(0);
+    expect(robot.sequenceImages()?.images[0]?.jpeg).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
     expect(Object.keys(motion?.cameras ?? {})).toEqual([]);
     expect(Object.keys((await robot.observe()).cameras)).toEqual(["front"]);
     for (let attempt = 0; attempt < 2; attempt++) {
