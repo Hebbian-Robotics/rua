@@ -88,7 +88,7 @@ struct HardwareBinding {
 }
 
 impl HardwareBinding {
-    // SAFETY: The policy's goals are poses of the station tool frame of the URDF it was trained on;
+    // CONSTRAINT: The policy's goals are poses of the station tool frame of the URDF it was trained on;
     // refuse an arm configured with another URDF.
     fn require_urdf(&self, arm_urdf: &Path, arm_urdf_sha256: &str) -> anyhow::Result<()> {
         ensure!(
@@ -151,7 +151,7 @@ fn runtime_environment() -> anyhow::Result<ort::environment::Environment> {
 
 pub struct PolicyStep {
     pub action: [f64; JOINT_COUNT],
-    // SAFETY: At most the model's action step from the measured joints (ActionMapping). The loop's
+    // ROBOT-SAFETY: At most the model's action step from the measured joints (ActionMapping). The loop's
     // guards and joint limits still apply to it.
     pub joint_target: [f64; JOINT_COUNT],
 }

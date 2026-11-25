@@ -7,7 +7,7 @@ import { stationConnection } from "../src/viewer-connection.js";
 const [viewerUrl, stationUrl] = process.argv.slice(2);
 assert.ok(viewerUrl && stationUrl);
 
-// Supply the browser's URL resolution while using the real HTTP and SSE clients.
+// WHY: Supply the browser's URL resolution while using the real HTTP and SSE clients.
 const fetchFromNode = globalThis.fetch;
 globalThis.fetch = (input, init) =>
   fetchFromNode(

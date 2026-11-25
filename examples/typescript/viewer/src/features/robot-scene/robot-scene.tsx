@@ -274,7 +274,7 @@ function SceneControls({
     (controls: ComponentRef<typeof TransformControls> | null) => {
       if (!controls) return;
       const canvas = gl.domElement;
-      // LIFECYCLE: Drei detaches the target when it unmounts. Dispose the
+      // CONSTRAINT: Drei detaches the target when it unmounts. Dispose the
       // underlying controls too so document listeners cannot outlive the gizmo.
       controls.connect(canvas);
       return () => {

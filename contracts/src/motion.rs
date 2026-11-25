@@ -51,7 +51,6 @@ impl JointSpeed {
     }
 
     /// # Errors
-    /// # Errors
     /// Refuses invalid default or maximum speeds.
     pub fn for_request(
         requested: Option<Self>,
@@ -195,18 +194,15 @@ impl JsonSchema for GripperOpening {
 pub enum RejectionReason {
     ArmBusy,
     NotEnabled,
-    // An interlock was raised on the arm since the caller's `expected_revision`.
+    // INVARIANT: An interlock was raised on the arm since the caller's `expected_revision`.
     StaleRevision,
-    // An interlock on the arm refuses motion.
+    // INVARIANT: An interlock on the arm refuses motion.
     Interlocked,
     Faulted,
     InvalidTarget,
     StreamEnded,
-    // No joints put the tool at the pose.
     Unreachable,
-    // Another client holds the lease.
     LeaseHeldElsewhere,
-    // The request was not a readable request at all.
     Malformed,
 }
 

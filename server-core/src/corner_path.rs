@@ -134,7 +134,7 @@ impl ValidatedPlan {
                 || max_joint_deviation(self.initial_corner(), &initial) <= CONTINUITY_RADIANS,
             "Continuous path start changed after planning"
         );
-        // SAFETY: Preserve the exact input to the station's checked waypoint solver.
+        // INVARIANT: Preserve the exact input to the station's checked waypoint solver.
         if !self.0.is_continuous() {
             validate_straight_section_travel(&self.0.segments[0], &initial)?;
             self.0.segments[0].corners[0] = initial;
@@ -329,7 +329,7 @@ impl OnlineSection {
             self.input.max_velocity[0] = speed_limit;
         }
         let finished = self.step(interval, reference)?;
-        // SAFETY: Replanning a timed section would reset its duration. Trip
+        // ROBOT-SAFETY: Replanning a timed section would reset its duration. Trip
         // before sending a sample above the lag-adjusted speed cap.
         ensure!(
             !timed || self.output.new_velocity[0].abs() <= speed_limit + 1e-9,
@@ -530,7 +530,7 @@ impl MotionSupervisor {
         interval: f64,
         speed_fraction: f64,
     ) -> anyhow::Result<()> {
-        // SAFETY: A changing velocity cap needs a new time parameterization.
+        // CONSTRAINT: A changing velocity cap needs a new time parameterization.
         ensure!(
             speed_fraction >= 1.0,
             "Continuous motion exceeded its tracking margin"
@@ -555,7 +555,7 @@ impl MotionSupervisor {
             );
         }
 
-        // SAFETY: Feedback can arrive after the reference crosses. Keep the position
+        // ROBOT-SAFETY: Feedback can arrive after the reference crosses. Keep the position
         // tolerance and confirm each waypoint before crossing another boundary.
         let unconfirmed = self.checkpoints.len();
         let had_pending_crossing = unconfirmed < self.segment_index;
@@ -730,7 +730,7 @@ impl MotionSupervisor {
         Trip::Trajectory(format!("{error:#}"))
     }
 
-    // SAFETY: Tracking remains the control loop’s per-cycle check regardless of which trajectory is running.
+    // ROBOT-SAFETY: Tracking remains the control loop’s per-cycle check regardless of which trajectory is running.
     pub fn step(&mut self, measured: &[f64], interval: f64) -> Result<Reference, Trip> {
         self.advance(measured, interval)?;
         Ok(self.reference.clone())

@@ -459,7 +459,7 @@ impl RecordingManager {
     }
 }
 
-// SAFETY: A lease-checked stop must not let a former holder stop the newer holder's recording.
+// INVARIANT: A lease-checked stop must not let a former holder stop the newer holder's recording.
 pub fn router(manager: RecordingManager, arms: crate::lease_routes::ServedArms) -> Router {
     Router::new()
         .route("/recording/start", post(start_recording))

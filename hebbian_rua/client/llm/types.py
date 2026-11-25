@@ -95,7 +95,7 @@ class RobotToolResult:
     halt: bool = False
     interrupted: bool = False
 
-    # Full station payload in original units, or the original error text.
+    # INVARIANT: Full station payload in original units, or the original error text.
     data: object = field(kw_only=True)
     cameras: dict[str, bytes] = field(default_factory=dict, kw_only=True)
     sequence_images: SequenceImageHistory | None = field(default=None, kw_only=True)

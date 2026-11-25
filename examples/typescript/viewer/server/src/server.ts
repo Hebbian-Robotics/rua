@@ -101,7 +101,8 @@ export function createApp({
   );
   app.get("/api/runs/:id/events", (context) => {
     const id = context.req.param("id");
-    manager.get(id); // 404 before the stream opens
+    // WHY: An unknown run must return 404 before the stream commits its headers.
+    manager.get(id);
     return streamSSE(context, async (stream) => {
       const queue: RunEvent[] = [];
       let wake = () => {};

@@ -7,7 +7,7 @@ import {
   recordingBounds,
 } from "../src/recording-timeline.js";
 
-// Written by the Rust recorder's MCAP writer (zstd chunks): one arm sample,
+// CONSTRAINT: Written by the Rust recorder's MCAP writer (zstd chunks): one arm sample,
 // an empty one, a command, an observation, two span updates and a bad sample.
 const take = new Uint8Array(
   readFileSync(new URL("fixtures/take.mcap", import.meta.url)),

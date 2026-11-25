@@ -191,7 +191,7 @@
             "type": "object"
           }
         ],
-        "description": "An arm action must name a goal or gripper opening. When both are present they start together."
+        "description": "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context."
       },
       "ActionSequenceGoal": {
         "description": "The final pose or joint configuration where this move settles.",
@@ -633,7 +633,7 @@
             ]
           },
           "gripper_opening": {
-            "description": "0 closed to 1 open; none without a gripper.",
+            "description": "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
             "format": "double",
             "type": [
               "number",

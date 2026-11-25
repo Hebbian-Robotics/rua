@@ -484,13 +484,13 @@ fn adapt_model_schema(schema: Schema) -> Value {
     schema
 }
 
-// SDK adapters infer variant tags and convert explicit model units to SI.
+// CONSTRAINT: SDK adapters infer variant tags and convert explicit model units to SI.
 fn adapt(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.remove("format");
             object.remove("x-omit-when-none");
-            // Use the broadly supported anyOf spelling for nullable values.
+            // CONSTRAINT: Use the broadly supported anyOf spelling for nullable values.
             if let Some(Value::Array(types)) = object.get("type")
                 && types.len() == 2
                 && types.iter().any(|kind| kind == "null")

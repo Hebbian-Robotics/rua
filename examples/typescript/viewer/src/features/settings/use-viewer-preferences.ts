@@ -43,7 +43,7 @@ export function useViewerPreferences() {
     try {
       writeViewerPreferences(window.localStorage, next);
     } catch {
-      /* Storage access may itself be blocked. */
+      /* CONSTRAINT: Storage access may itself be blocked. */
     }
   }
   return { preferences, updatePreferences, colorScheme };

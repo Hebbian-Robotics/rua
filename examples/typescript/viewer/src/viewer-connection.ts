@@ -112,7 +112,7 @@ async function leaseRequest(
   try {
     return await request(body);
   } catch (error) {
-    // A lost response can leave the backend renewing a lease the tab no longer knows about.
+    // WHY: A lost response can leave the backend renewing a lease the tab no longer knows about.
     if (
       owner &&
       owner === sessionId &&
@@ -190,7 +190,7 @@ async function acquireLease(label: string): Promise<ViewerLease> {
     signal?: AbortSignal,
   ) {
     signal?.throwIfAborted();
-    // Admission can finish before motion does. Keep cancellation tied to its operation ID.
+    // WHY: Admission can finish before motion does. Keep cancellation tied to its operation ID.
     signal?.addEventListener(
       "abort",
       () => {

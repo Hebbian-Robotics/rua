@@ -394,7 +394,7 @@ export function ManualControl({
         setMessage(commandMessage(result));
         return result.kind !== "rejected";
       }
-      // A second command while one is out is refused, not queued.
+      // INVARIANT: A second command while one is out is refused, not queued.
       if (commandInFlight.current) {
         setMessage("Waiting for the previous command to be submitted.");
         return false;

@@ -20,7 +20,7 @@ import type {
 import { SequenceImages } from "./sequence-images.js";
 import {
   type Lease,
-  newRequestId,
+  newOperationId,
   type StationConnection,
 } from "./station-connection.js";
 import {
@@ -447,7 +447,7 @@ function createRobotToolsCore(
         selected.mode === "reconnected" ||
         selected.mode === "disabled"
       ) {
-        // Recovery shows up as a state frame; wake on the next one.
+        // WHY: Recovery shows up as a state frame; wake on the next one.
         await nextStateOrBackstop();
         continue;
       }
@@ -455,7 +455,7 @@ function createRobotToolsCore(
         await stationState(true);
         const observation = await observe(true, text);
         if (tracking.isLost()) throw new LeaseLostError();
-        // Every required camera just gave a frame: clear its interlock.
+        // WHY: Every required camera just gave a frame: clear its interlock.
         for (const interlock of armOf(await stationState()).interlocks)
           if (
             interlock.kind === "required_camera_unavailable" &&
@@ -541,7 +541,7 @@ function createRobotToolsCore(
                       ...pose.pose,
                       ...capMotion(pose.pose, options.motionLimits ?? {}),
                     },
-                    id: newRequestId(),
+                    id: newOperationId(),
                   })),
                 };
                 const response = await connection.previewPoses(previewBatch);
@@ -705,7 +705,7 @@ function createRobotToolsCore(
       );
     });
     if (formatter === defaultFormatter) return results;
-    // Format after execution and error classification. A callback failure must
+    // WHY: Format after execution and error classification. A callback failure must
     // propagate without retrying a command or being treated as a robot failure.
     return results.map((result) => {
       const content = formatter(

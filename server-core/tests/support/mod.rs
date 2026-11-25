@@ -94,7 +94,7 @@ impl LinkClient {
     }
 }
 
-// SAFETY: Stop simulated arms as soon as the test finishes, including after a panic.
+// INVARIANT: Stop simulated arms as soon as the test finishes, including after a panic.
 pub struct RunningArms {
     shutdown_requested: Arc<AtomicBool>,
     loop_thread: Option<JoinHandle<()>>,

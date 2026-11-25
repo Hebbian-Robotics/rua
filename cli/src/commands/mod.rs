@@ -418,11 +418,11 @@ pub enum RecordCommand {
     ///
     /// Example: hebbian-rua record start
     Start,
-    /// Stop recording.
+    /// Request recording stop and print `{"stopped":true}`. Check status for finalization.
     ///
     /// Example: hebbian-rua record stop
     Stop,
-    /// Print the recording status.
+    /// Print the recorder state as JSON, with a recording name when available.
     ///
     /// Example: hebbian-rua record status
     Status,

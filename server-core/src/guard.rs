@@ -4,7 +4,7 @@
     reason = "The independent guard must read and release hardware after controller failure."
 )]
 
-// SAFETY: Start the separate guard before torque goes on. If heartbeats stop it takes over the bus and supervises the hold; faults, effort, drift or the hold deadline release the arm.
+// ROBOT-SAFETY: Start the separate guard before torque goes on. If heartbeats stop it takes over the bus and supervises the hold; faults, effort, drift or the hold deadline release the arm.
 
 use std::io::{self, Read, Write};
 use std::os::fd::AsFd;
@@ -196,7 +196,7 @@ pub fn serial_bus_may_be_busy(error: &anyhow::Error) -> bool {
 }
 
 fn take_over_bus<A>(open_arm: &mut impl FnMut() -> anyhow::Result<A>) -> anyhow::Result<A> {
-    // SAFETY: Reparenting confirms process exit, but the OS can still be closing the
+    // CONSTRAINT: Reparenting confirms process exit, but the OS can still be closing the
     // exclusive descriptor. Keep taking the exclusive path and retry only briefly.
     let deadline = Instant::now() + BUS_TAKEOVER_GRACE;
     loop {
@@ -262,7 +262,7 @@ enum Beat {
     Closed,
 }
 
-// SAFETY: Open the exclusive bus only after controller heartbeats stop. Failure to take over or release may leave the arm powered and must be reported.
+// ROBOT-SAFETY: Open the exclusive bus only after controller heartbeats stop. Failure to take over or release may leave the arm powered and must be reported.
 pub fn guard<A: GuardedArm>(
     config: &ControllerConfig,
     controller_pid: u32,
@@ -522,7 +522,7 @@ impl GuardProcess {
     }
 }
 
-// SAFETY: A plant with a guard process behind it: the guard starts before torque goes
+// ROBOT-SAFETY: A plant with a guard process behind it: the guard starts before torque goes
 // on, hears every cycle, and is let go once the motors are off.
 pub struct GuardedPlant<P: Plant> {
     inner: P,
@@ -545,7 +545,7 @@ impl<P: Plant> GuardedPlant<P> {
         &self.inner
     }
     fn attach_spawned_guard(&mut self, guard: GuardProcess) -> anyhow::Result<()> {
-        // SAFETY: Keep ownership on readiness or first-heartbeat failure. The enable
+        // ROBOT-SAFETY: Keep ownership on readiness or first-heartbeat failure. The enable
         // failure path releases torque before detaching any guard that may be live.
         self.guard.insert(guard).attach()
     }

@@ -73,7 +73,7 @@ impl ArmCore {
         }
     }
 
-    // SAFETY: A failed gripper calculation ends its command without inventing a target.
+    // ROBOT-SAFETY: A failed gripper calculation ends its command without inventing a target.
     pub(crate) fn fail_gripper(&mut self, detail: &str, now: Now) {
         if let Some(command) = self.gripper_command.take() {
             self.finish(
@@ -230,7 +230,7 @@ impl ArmCore {
         self.stop_on_fault(FaultKind::HardFault, reason, cleanup_errors, now);
     }
 
-    // SAFETY: The bus stopped answering; interrupt commands without changing torque.
+    // ROBOT-SAFETY: The bus stopped answering; interrupt commands without changing torque.
     pub(crate) fn bus_lost(&mut self, reason: &str, cleanup_errors: &[String], now: Now) {
         self.stop_on_fault(FaultKind::Disconnected, reason, cleanup_errors, now);
     }

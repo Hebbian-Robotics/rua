@@ -136,9 +136,9 @@ export class GeminiConversation implements ModelConversation {
         ...(this.previousInteractionId === null
           ? {}
           : { previous_interaction_id: this.previousInteractionId }),
-        // Chaining by previous_interaction_id needs the stored interaction.
+        // CONSTRAINT: Chaining by previous_interaction_id needs the stored interaction.
         store: true,
-        // tools, system_instruction and generation_config are interaction-scoped:
+        // CONSTRAINT: tools, system_instruction and generation_config are interaction-scoped:
         // resent identically every turn so the implicit cache sees a stable prefix.
         system_instruction: this.settings.systemPrompt,
         tools: this.tools,
@@ -146,7 +146,7 @@ export class GeminiConversation implements ModelConversation {
           thinking_level: this.settings.reasoningEffort,
           thinking_summaries: "auto",
         },
-        // Gemini's Priority tier is its fast mode; over its limits a request runs at standard.
+        // CONSTRAINT: Gemini's Priority tier is its fast mode; over its limits a request runs at standard.
         ...(this.settings.inferenceMode === "fast"
           ? { service_tier: "priority" }
           : {}),

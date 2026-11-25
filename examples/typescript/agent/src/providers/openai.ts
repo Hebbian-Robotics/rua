@@ -100,9 +100,8 @@ export class OpenAIConversation implements ModelConversation {
   private readonly settings: ConversationSettings;
   private readonly tools: FunctionTool[];
   private previousResponseId: string | null = null;
-  // Routes every turn of this run to the same cache; the prefix is already stable.
+  // WHY: Routes every turn of this run to the same cache; the prefix is already stable.
   private readonly promptCacheKey = `hebbian-agent-${randomUUID()}`;
-  // Items not yet sent: the next request carries only these.
   private pendingInput: ResponseInputItem[];
 
   constructor(settings: ConversationSettings, client?: OpenAI) {
@@ -119,7 +118,7 @@ export class OpenAIConversation implements ModelConversation {
       name: tool.name,
       description: tool.description,
       parameters: tool.parametersSchema,
-      // Strict mode needs every property required; the loop validates.
+      // CONSTRAINT: Strict mode needs every property required; the loop validates.
       strict: false,
     }));
     this.modelInputs.add(settings.firstObservation.cameras);
@@ -131,18 +130,18 @@ export class OpenAIConversation implements ModelConversation {
     const response = await this.client.responses.create(
       {
         model: this.settings.model,
-        // Instructions do not carry over a previous_response_id chain.
+        // CONSTRAINT: Instructions do not carry over a previous_response_id chain.
         instructions: this.settings.systemPrompt,
         input: this.pendingInput,
         tools: this.tools,
         ...(this.previousResponseId === null
           ? {}
           : { previous_response_id: this.previousResponseId }),
-        // The server keeps the history and its reasoning items for previous_response_id.
+        // CONSTRAINT: The server keeps the history and its reasoning items for previous_response_id.
         store: true,
         prompt_cache_key: this.promptCacheKey,
         reasoning: { effort: this.settings.reasoningEffort, summary: "auto" },
-        // Standard omits the field, leaving the project's default tier.
+        // CONSTRAINT: Standard omits the field, leaving the project's default tier.
         ...(this.settings.inferenceMode === "fast" ||
         this.settings.inferenceMode === "ultrafast"
           ? { service_tier: this.settings.inferenceMode }
@@ -157,7 +156,7 @@ export class OpenAIConversation implements ModelConversation {
   }
 
   addToolResults(results: RobotToolResult[], observation?: Observation): void {
-    // The output has no error flag; the text says rejected or invalid.
+    // CONSTRAINT: The output has no error flag; the text says rejected or invalid.
     for (const result of results)
       this.pendingInput.push({
         type: "function_call_output",

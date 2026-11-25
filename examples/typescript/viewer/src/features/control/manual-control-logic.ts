@@ -32,7 +32,7 @@ export function manualMoveBlockedReason({
   return null;
 }
 
-// SAFETY: A confirmation applies only to the arm, target and orientation it solved.
+// ROBOT-SAFETY: A confirmation applies only to the arm, target and orientation it solved.
 export function previewMatchesSelection({
   confirmed,
   arm,

@@ -1,4 +1,4 @@
-// Owns the one active agent run: runs the loop in this process, keeps its output, aborts it
+// WHY: Owns the one active agent run: runs the loop in this process, keeps its output, aborts it
 // and persists every run. The store and clock are injected so tests need no files or real time.
 
 import { type ActorRefFrom, createActor } from "xstate";

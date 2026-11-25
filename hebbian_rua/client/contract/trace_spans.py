@@ -21,10 +21,9 @@ from pydantic import Field, JsonValue
 from hebbian_rua.client.contract.wire_types import CamelCaseModel
 
 TRACE_SPANS_TOPIC = "/trace/spans"
-# What a span is, for the viewer's lanes: run, observe, model, tool, command.
 KIND_ATTRIBUTE = "hebbian.kind"
 
-# Unix nanoseconds are decimal strings on the wire, as in OTLP/JSON.
+# CONSTRAINT: Unix nanoseconds are decimal strings on the wire, as in OTLP/JSON.
 UnixNanoseconds = Annotated[str, Field(pattern=r"^[0-9]+$")]
 HexTraceId = Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
 HexSpanId = Annotated[str, Field(pattern=r"^[0-9a-f]{16}$")]

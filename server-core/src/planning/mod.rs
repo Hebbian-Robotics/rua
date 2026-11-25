@@ -80,7 +80,7 @@ impl Planner {
         &self.solver
     }
 
-    // SAFETY: Cut a colliding segment short at its last clear sample and discard subsequent waypoints. Refuse a start the arm cannot safely leave.
+    // ROBOT-SAFETY: Cut a colliding segment short at its last clear sample and discard subsequent waypoints. Refuse a start the arm cannot safely leave.
     pub fn plan(
         &self,
         start: &[f64],
@@ -179,7 +179,7 @@ impl Planner {
         })
     }
 
-    // SAFETY: Check the curve the controller will sample, including the possible jaw
+    // ROBOT-SAFETY: Check the curve the controller will sample, including the possible jaw
     // positions while an opening command is still in flight.
     pub(crate) fn check_continuous_path(
         &self,
@@ -251,7 +251,7 @@ impl Planner {
         joint_travel_bounds: &[f64],
         jaw: Option<f64>,
     ) -> anyhow::Result<()> {
-        // SAFETY: Speed times duration bounds joint travel even when the solver
+        // WHY: Speed times duration bounds joint travel even when the solver
         // temporarily reverses a joint between waypoints.
         let (start, end) = path.section_bounds(index);
         let extent = peak_speed * (end - start);

@@ -1,13 +1,3 @@
-// This viewer's manual lease on the arms: acquire, return, and the
-// commands that go out under it. The rules about what the lease allows are in
-// control-logic.ts; this holds the state and talks to the station.
-//
-// The SDK renews the HTTP lease while its event stream is healthy. The station
-// stops leased motion when the lease expires. Commands that move an arm go through the lease
-// handle; enable, disable, clear_fault, approve_recovery and stop do not need it. Nothing here touches
-// `window` or `document` when imported: the commands that import it are tested
-// under a fake browser.
-
 import {
   armMotionCommands,
   type CommandAnswer,

@@ -1,8 +1,10 @@
 reason = """
 Code is the primary documentation. Prefer clear names, types and structure over
 comments that repeat the code. Keep comments that explain a non-obvious decision,
-invariant, external constraint, safety argument or unfinished work. Begin the
-paragraph with WHY:, INVARIANT:, CONSTRAINT:, SAFETY: or TODO: and explain why.
+invariant, external constraint, safety argument or unfinished work. Start each
+ordinary comment paragraph with WHY:, INVARIANT:, CONSTRAINT:, TODO:, SAFETY: or
+ROBOT-SAFETY:. Use SAFETY: for the soundness argument of a Rust unsafe operation
+and ROBOT-SAFETY: for rules that prevent physical robot hazards.
 
 Docstrings, doc comments and schema descriptions are reserved for the public
 interface directories below. Keep useful internal rationale in a classified
@@ -12,17 +14,19 @@ comment beside the code. Put consumer-facing descriptions in the owning public s
 exclude = ["**/target/**", "**/node_modules/**", "**/.venv/**"]
 
 [classification]
-labels = ["WHY", "INVARIANT", "CONSTRAINT", "TODO", "SAFETY"]
+labels = ["WHY", "INVARIANT", "CONSTRAINT", "TODO", "SAFETY", "ROBOT-SAFETY"]
 exclude = [
-    "**/contracts/**",
-    "**/typings/**",
-    "**/examples/**",
-    "**/typescript-client/**",
-    "**/hebbian_rua/**",
-    "**/sdk/**",
-    "**/generated/**",
-    "**/station_api.py",
-    "**/arm_commands.py",
+    "typings/**",
+    "examples/python/**",
+    "examples/applications/**",
+    "examples/mujoco_sim/**",
+    "sdk/src/generated/**",
+    "typescript-client/src/generated/**",
+    "hebbian_rua/client/contract/station_api.py",
+    "hebbian_rua/client/contract/arm_commands.py",
+    "hebbian_rua/simulator/contract.py",
+    "examples/typescript/viewer/shared/media-status-schema.ts",
+    "examples/typescript/viewer/shared/recording-status-schema.ts",
 ]
 
 [public_interface]

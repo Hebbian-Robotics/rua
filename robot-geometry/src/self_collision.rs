@@ -162,7 +162,7 @@ impl SelfCollisionModel {
             for second in first + 1..hulls.len() {
                 let (a, b) = (joints[first], joints[second]);
                 if a != b && !neighbours(a, b) && !neighbours(b, a) {
-                    // SAFETY: Common ancestor joints apply the same rigid motion to
+                    // WHY: Common ancestor joints apply the same rigid motion to
                     // both hulls and cannot change their relative clearance.
                     let joint_reach = joint_reaches[first]
                         .iter()
@@ -217,7 +217,7 @@ impl SelfCollisionModel {
             }))
     }
 
-    // SAFETY: Each supplied speed bounds the corresponding joint derivative
+    // CONSTRAINT: Each supplied speed bounds the corresponding joint derivative
     // over the entire normalized interval, including any reversals.
     pub fn swept_prefix(
         &self,
@@ -303,7 +303,7 @@ impl<Sample: FnMut(f64, &mut [f64])> Sweep<'_, Sample> {
         let Some(pair) = unclear else {
             return Ok(None);
         };
-        // SAFETY: A difficult near-contact path must not tie up planning
+        // WHY: A difficult near-contact path must not tie up planning
         // indefinitely. Exhausting subdivision leaves the interval unverified.
         if depth == 0 || self.remaining_intervals == 0 {
             let first = self
@@ -360,7 +360,7 @@ fn sweep_clears_pair(
             travel + first.radius + second.radius,
         )
         .context("The convex hull sweep query is unsupported")?;
-    // SAFETY: Use Parry's normal to bound the full hull projections. Motion
+    // WHY: Use Parry's normal to bound the full hull projections. Motion
     // can shrink this gap by at most the relative point travel. A gap above
     // minus the allowance bounds the penetration along this separating axis.
     Ok(contact

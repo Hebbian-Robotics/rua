@@ -786,7 +786,7 @@ pub fn normalize_robot_tool_arguments(mut arguments: Value) -> std::result::Resu
     Ok(arguments)
 }
 
-// Model-facing units are converted before station variants are parsed.
+// CONSTRAINT: Model-facing units are converted before station variants are parsed.
 fn convert_model_arguments_to_station_units(value: &mut Value) -> std::result::Result<(), String> {
     use hebbian_contracts::{MODEL_INPUT_UNITS, ModelInputUnit};
 
@@ -849,7 +849,7 @@ fn scale_argument(value: &mut Value, factor: f64) -> std::result::Result<(), Str
     Ok(())
 }
 
-// The station uses tagged variants while models may omit tags whose fields identify them.
+// CONSTRAINT: The station uses tagged variants while models may omit tags whose fields identify them.
 fn normalize_arguments(value: &mut Value) -> std::result::Result<(), String> {
     match value {
         Value::Object(object) => {

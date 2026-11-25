@@ -185,7 +185,7 @@ impl Robot {
 
     pub(crate) fn joint_reach(&self, mut link: usize, mut radius: f64) -> Vec<Option<f64>> {
         let mut reach = vec![None; self.slot_count];
-        // SAFETY: Downstream translations and the hull radius bound a point's
+        // WHY: Downstream translations and the hull radius bound a point's
         // distance from each ancestor joint axis in every configuration.
         for node in self.nodes.iter().rev() {
             if node.child == link {
@@ -329,7 +329,7 @@ impl Robot {
     }
 }
 
-// SAFETY: A driven prismatic or fixed joint would be posed as stationary and make the
+// CONSTRAINT: A driven prismatic or fixed joint would be posed as stationary and make the
 // table guard check the wrong geometry.
 fn ensure_driven_joints_rotate(
     joints: &[urdf_rs::Joint],

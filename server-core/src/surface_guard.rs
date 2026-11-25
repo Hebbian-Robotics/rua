@@ -26,7 +26,7 @@ impl SurfaceGuard {
 
     #[must_use]
     pub(crate) fn descent_reason(&self, before: f64, after: f64) -> Option<String> {
-        // SAFETY: Allow upward recovery even when the arm is already below the limit.
+        // ROBOT-SAFETY: Allow upward recovery even when the arm is already below the limit.
         (after < self.floor && after < before - DESCENT_NOISE_METERS).then(|| {
             format!(
                 "The arm would go {:.1} mm past the table surface guard's limit; raise the target",

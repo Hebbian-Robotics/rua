@@ -2,6 +2,7 @@ import { type ArmState, newOperationId } from "hebbian-rua";
 import { createActor } from "xstate";
 import { errorMessage } from "./errors.js";
 import { createLatestOnly } from "./lib/latest-only.js";
+import { STALE_FEEDBACK_SECONDS } from "./live-feedback.js";
 import { createLivePoseFollowMachine } from "./live-pose-follow-machine.js";
 import { armMotion, manualLease } from "./manual-lease.js";
 
@@ -9,13 +10,10 @@ export type FollowArm = Pick<ArmState, "arm" | "mode"> & {
   sampled_unix_nano?: string | null;
 };
 
-const STALE_FEEDBACK_SECONDS = 0.5;
-// The station ends a stream that gets no goal for `stream_goal_timeout_seconds`
+// CONSTRAINT: The station ends a stream that gets no goal for `stream_goal_timeout_seconds`
 // (0.5 s). A held drag has nothing new to say once the arm catches up, so the
 // newest goal is repeated well inside that deadline to keep the stream open.
 const GOAL_KEEPALIVE_MILLISECONDS = 200;
-// Refusals after which a later goal can still succeed: the stream ended or
-// tripped (stopping at the table, a joint limit), or this goal cannot be had.
 const GOAL_REFUSALS_FOLLOW_SURVIVES: ReadonlySet<string> = new Set([
   "stream_ended",
   "invalid_target",
@@ -96,7 +94,7 @@ export function createLivePoseFollow(
       });
       if (sentInEpoch !== epoch || answer === null) return;
       if (answer.status === "refused") {
-        // The goal or the stream ended, but follow itself can go on: the next
+        // WHY: The goal or the stream ended, but follow itself can go on: the next
         // goal the drag produces starts a new stream. Anything else (a lost
         // lease, an interlock, a disabled arm) is not the drag's to retry.
         if (!GOAL_REFUSALS_FOLLOW_SURVIVES.has(answer.reason))

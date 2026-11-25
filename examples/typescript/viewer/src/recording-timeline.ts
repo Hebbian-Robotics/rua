@@ -1,7 +1,3 @@
-// Builds what the recordings page shows from a recording's `recording.mcap`.
-// The station only lists and serves the files; the page downloads the MCAP and
-// reads its JSON channels here, the same way any other MCAP reader would.
-
 import {
   compressedVideoData,
   remuxToMp4,
@@ -119,7 +115,7 @@ function eventData(topic: string, value: unknown): Record<string, unknown> {
   if (topic !== "/model/events") return value;
   const { event, ...rest } = modelEventSchema.parse(value);
   if (event?.type !== "observation") return value;
-  // Observations embed whole camera images; keep only which cameras were seen.
+  // WHY: Observations embed whole camera images; keep only which cameras were seen.
   const cameras = isObject(event.cameras) ? Object.keys(event.cameras) : [];
   return { ...rest, event: { ...event, cameras } };
 }
@@ -193,7 +189,7 @@ const isVideoTopic = (topic: string) => topic.endsWith("/video");
 const segmentMarkerSchema = z.object({
   camera: z.string(),
   segment: z.string(),
-  // Strings: a nanosecond Unix time does not fit a JSON number exactly.
+  // CONSTRAINT: Strings: a nanosecond Unix time does not fit a JSON number exactly.
   started_unix_nano: z.string().optional(),
   ended_unix_nano: z.string().optional(),
   width: z.number().optional(),
@@ -453,7 +449,7 @@ export function recordingBounds(timeline: RecordingTimeline): {
   start: number;
   end: number;
 } {
-  // The station snapshot can replay command records from before recording began.
+  // CONSTRAINT: The station snapshot can replay command records from before recording began.
   // Metadata is written at recorder startup, so those records cannot extend playback.
   const recordingStartedAt = timeline.events.find(
     (event) => event.topic === "/recording/metadata",

@@ -24,7 +24,6 @@ mod power;
 #[path = "runner_tests.rs"]
 mod runner_tests;
 
-// SAFETY: Only the runner creates a permit. Adapters borrow it for an actuation call.
 pub struct PlantWritePermit {
     _private: (),
 }
@@ -32,7 +31,7 @@ pub struct PlantWritePermit {
 const WRITE_PERMIT: PlantWritePermit = PlantWritePermit { _private: () };
 
 const BUS_FAILURE_GRACE_SECONDS: f64 = 0.5;
-// SAFETY: A cycle longer than this many periods is fed to the generators as this
+// ROBOT-SAFETY: A cycle longer than this many periods is fed to the generators as this
 // many, so a late cycle does not become a jump.
 
 pub(super) enum BusRecovery {
@@ -192,7 +191,7 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    // SAFETY: Interrupt the active motion without issuing a torque-off command.
+    // ROBOT-SAFETY: Interrupt the active motion without issuing a torque-off command.
     fn bus_lost(&mut self, failure: &anyhow::Error, now: Now) {
         if self.plant.pacing().is_set_by_replies() {
             self.plant_failed(failure, now);
@@ -450,7 +449,7 @@ impl<P: Plant> Runner<'_, P> {
         }
     }
 
-    // SAFETY: A bus failure: an enabled arm's servos keep holding their last goal,
+    // ROBOT-SAFETY: A bus failure: an enabled arm's servos keep holding their last goal,
     // so nothing new is commanded and the bus is tried again next cycle; only
     // a failure that lasts the grace period counts as the bus lost.
     pub(super) fn bus_failed(&mut self, failure: &anyhow::Error, now: Now) {
@@ -783,7 +782,7 @@ impl<P: Plant> Runner<'_, P> {
         record.cycle = self.cycle_number;
         record.timings = self.timings;
         record.seconds = cycle_began;
-        record.cycle_seconds = interval;
+        record.integration_step_seconds = interval;
         record.command.clone_from(&self.state.next_command);
         record.positions.clone_from(&feedback.positions);
         record.velocities.clone_from(&feedback.velocities);

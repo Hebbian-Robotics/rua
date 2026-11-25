@@ -109,7 +109,6 @@ fn a_target_on_each_bound_is_kept_and_one_past_it_is_refused() {
                 }],
             );
             assert_eq!(last_corner(&motion)[joint], bound);
-            // WHY: From the bound too, as a plan starts where the last one ended.
             planner
                 .plan(&on_bound, &[joints(&[0.0])], None, None)
                 .unwrap();
@@ -512,8 +511,6 @@ fn the_policy_is_given_the_goal_a_move_would_send() {
     assert!((requested.jaw_yaw_radians - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     assert_ne!(ghost.jaw_yaw_ranges.len(), 0);
 
-    // WHY: Position alone: the goal takes the orientation position-only solving chose,
-    // reported as requested so a move can send the same.
     let mut chosen = Vec::new();
     let free = planner.project_by_policy(&OVER_THE_TABLE, [0.2, 0.0, 0.15], None, |p, q| {
         chosen.push((p, q));
@@ -638,7 +635,6 @@ fn a_move_into_a_collision_runs_to_the_last_clear_sample_and_says_why() {
     assert!(!close(stop, &CLIPPED));
     assert_eq!(segment.destination_position, None);
     assert_eq!(path_refusal(&planner, &NOMINAL, stop), None);
-    // WHY: The next sample on toward the target is the one the guard stops.
     let toward: Vec<f64> = stop
         .iter()
         .zip(&CLIPPED)

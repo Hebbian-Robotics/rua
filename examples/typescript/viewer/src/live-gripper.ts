@@ -1,6 +1,7 @@
 import type { ArmState } from "hebbian-rua";
 import { errorMessage } from "./errors.js";
 import { createLatestOnly } from "./lib/latest-only.js";
+import { STALE_FEEDBACK_SECONDS } from "./live-feedback.js";
 import { armMotion } from "./manual-lease.js";
 
 type GripperArm = Pick<
@@ -26,7 +27,8 @@ export function createLiveGripper(
     return arm?.gripper_opening != null &&
       (arm.mode === "holding" || arm.mode === "moving") &&
       arm.sampled_unix_nano !== null &&
-      Date.now() / 1000 - Number(arm.sampled_unix_nano) / 1e9 < 0.5
+      Date.now() / 1000 - Number(arm.sampled_unix_nano) / 1e9 <
+        STALE_FEEDBACK_SECONDS
       ? arm
       : undefined;
   }
@@ -74,7 +76,7 @@ export function createLiveGripper(
     activity = { kind: "idle" };
     latestOpening.cancel();
   }
-  // SAFETY: Cancel both the acknowledged opening and any update still on the wire.
+  // ROBOT-SAFETY: Cancel both the acknowledged opening and any update still on the wire.
   function hold(): void {
     cancel();
     pending?.abort();

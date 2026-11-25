@@ -77,8 +77,7 @@ function clientMessage(input: unknown) {
   return apiSchemas.shape.ClientMessage.parse(input);
 }
 
-/** The command message of one arm's command, planned at `expectedRevision`, without sending it. */
-function commandMessageOf(arm: string) {
+function commandMessageForArm(arm: string) {
   const message = (command: StationCommand, expectedRevision?: number) =>
     clientMessage({
       kind: "command",
@@ -90,7 +89,6 @@ function commandMessageOf(arm: string) {
   return { ...armMotionCommands(message), ...armPowerCommands(message) };
 }
 
-/** Convert explicit model units to the station's SI fields at the tool boundary. */
 function convertModelArgumentsToStationUnits(value: unknown): unknown {
   if (Array.isArray(value))
     return value.map(convertModelArgumentsToStationUnits);
@@ -290,7 +288,7 @@ export function parseRobotToolCall(
       })
       .with("set_arm_gripper", () => {
         const input = gripperArguments.parse(args);
-        const message = commandMessageOf(input.arm).setGripper(
+        const message = commandMessageForArm(input.arm).setGripper(
           input.opening,
           input.max_joint_speed ?? undefined,
           context.revisions?.[input.arm],
@@ -301,7 +299,7 @@ export function parseRobotToolCall(
       })
       .with("stop", () => {
         stopArguments.parse(args);
-        const message = commandMessageOf(context.arm).stop();
+        const message = commandMessageForArm(context.arm).stop();
         if (message.kind !== "command") throw new Error("Invalid stop command");
         return { kind: "message", call, message };
       })

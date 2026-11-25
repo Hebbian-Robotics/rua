@@ -43,7 +43,7 @@ export type {
 } from "./station-connection.js";
 export {
   createStationConnection,
-  newRequestId as newOperationId,
+  newOperationId,
 } from "./station-connection.js";
 export {
   ArmRecoveryEndedError,

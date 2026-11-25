@@ -649,7 +649,7 @@ impl Lease {
         }
     }
 
-    // SAFETY: Keep expired manual control fenced until every arm confirms it has stopped.
+    // ROBOT-SAFETY: Keep expired manual control fenced until every arm confirms it has stopped.
     pub(crate) fn tick(&self, now: Instant) {
         let mut authority = self.authority.lock_unpoisoned();
         let held = &mut authority.held;
@@ -908,7 +908,7 @@ impl Lease {
         Ok((token, enqueue_stops()))
     }
 
-    // SAFETY: Complete the reservation only after every arm has stopped. A failed
+    // ROBOT-SAFETY: Complete the reservation only after every arm has stopped. A failed
     // transfer stays reserved, preventing unleased commands until a retry.
     fn finish_takeover(
         &self,
@@ -1046,7 +1046,7 @@ impl Lease {
         Ok(())
     }
 
-    // SAFETY: Approving recovery is the operator's, whoever holds the lease.
+    // ROBOT-SAFETY: Approving recovery is the operator's, whoever holds the lease.
     pub(crate) fn admit_recovery_approval<T>(
         &self,
         generations: &[GenerationTicket],

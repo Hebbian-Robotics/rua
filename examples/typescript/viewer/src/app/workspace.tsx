@@ -302,7 +302,7 @@ export function WorkspaceApp({
     try {
       sessionStorage.setItem(CONTROL_MODE_KEY, value);
     } catch {
-      // The selected mode remains usable when browser storage is unavailable.
+      // WHY: The selected mode remains usable when browser storage is unavailable.
     }
   }
 
@@ -339,7 +339,7 @@ export function WorkspaceApp({
     try {
       globalStopHandler.current?.();
       void manualLease.returnLease();
-      // The agent server only signals its loop to exit; its lease ends with
+      // WHY: The agent server only signals its loop to exit; its lease ends with
       // the loop's connection, which stops the arms.
       if (isRunActive(run)) setRun(await agentApi.stopRun(agentUrl, run.id));
     } catch (error: unknown) {

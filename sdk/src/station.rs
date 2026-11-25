@@ -185,7 +185,7 @@ impl Station {
     /// # Errors
     /// The initial connection failed or the connection deadline elapsed.
     pub async fn wait_until_connected(&self) -> Result<()> {
-        // A refused connection fails at once; a slow one gets CONNECT_TIMEOUT.
+        // INVARIANT: A refused connection fails at once; a slow one gets CONNECT_TIMEOUT.
         let connected = tokio::time::timeout(
             CONNECT_TIMEOUT,
             self.shared.wait_for(|inner| {
@@ -293,8 +293,6 @@ impl Station {
     pub fn run_updates(&self) -> broadcast::Receiver<RunUpdate> {
         self.shared.subscribe_run()
     }
-
-    // ---- lease ---------------------------------------------------------------
 
     /// Acquire the lease on every arm for this connection. The station retains
     /// it while the connection is alive, so holding the guard is enough;
@@ -423,7 +421,7 @@ impl Station {
         let guard = self
             .take_lease(LeaseRequest::new(LeaseHolder::Agent, "operator override"))
             .await?;
-        // The cached frame can predate the take and show no holder, so only a frame
+        // CONSTRAINT: The cached frame can predate the take and show no holder, so only a frame
         // received after the take's reply counts.
         let (after_take, _) = self.shared.observation_cursor();
         drop(guard);
@@ -441,8 +439,6 @@ impl Station {
         .await
         .map_err(|_| Error::Timeout("the lease return"))
     }
-
-    // ---- commands ------------------------------------------------------------
 
     async fn run_single_submission(
         &self,
@@ -652,7 +648,7 @@ impl Station {
                 )));
             }
         };
-        // The server shows a command as its arm's last command only once it finished and
+        // CONSTRAINT: The server shows a command as its arm's last command only once it finished and
         // its resting sample was handled, so a state read afterwards shows where the arm
         // came to rest. Commands that finish in one cycle show only the latest, so the
         // wait ends at that arm's last command that finished at or after this one. A lost
@@ -770,8 +766,6 @@ impl Station {
         })
     }
 
-    // ---- action_sequences -------------------------------------------------------------
-
     /// Wait for the named execution to finish through the station's completion route.
     /// The event stream is independent of this wait.
     ///
@@ -802,8 +796,6 @@ impl Station {
             result => result,
         }
     }
-
-    // ---- run telemetry -------------------------------------------------------------
 
     /// Report a model-loop event to the viewer's live run.
     ///

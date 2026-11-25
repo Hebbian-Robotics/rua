@@ -61,7 +61,7 @@ export function useAgentRun(baseUrl: string, enabled = true) {
     [baseUrl, queryClient],
   );
 
-  // A successful poll after a stream error lets the stream reconnect.
+  // WHY: A successful poll after a stream error lets the stream reconnect.
   useEffect(() => {
     if (runQuery.dataUpdatedAt)
       setRecovery(runStreamRecovery("poll_succeeded"));

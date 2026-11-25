@@ -274,7 +274,7 @@ impl ActiveGroup {
         }
     }
 
-    // SAFETY: Stop the remaining arms if a member fails and retire the group once no arms follow it.
+    // ROBOT-SAFETY: Stop the remaining arms if a member fails and retire the group once no arms follow it.
     fn settle<P: Plant>(&self, runners: &mut [Runner<'_, P>]) -> bool {
         let is_following = |runner: &Runner<'_, P>| {
             runner

@@ -36,7 +36,6 @@ test("control logic", async () => {
     expires_in_seconds: 9,
   };
 
-  // ----- where this viewer stands ---------------------------------------------
   assert(
     manualControlView(null, false, OWN_LABEL).kind === "available",
     "With no holder and no token, manual control is available to turn on",
@@ -72,7 +71,6 @@ test("control logic", async () => {
     "Right after releasing, a leftover report naming this viewer is not someone else",
   );
 
-  // ----- what that allows -------------------------------------------------------
   const holding = manualControlView(ownHold, true, OWN_LABEL);
   assert(
     manualControlBlockedReason(holding) === null,
@@ -98,7 +96,6 @@ test("control logic", async () => {
     "An available state tells the user how to start",
   );
 
-  // ----- what everyone reads ------------------------------------------------------
   assert(
     describeLease(null, OWN_LABEL) === "No one holds the lease",
     "Idle is said plainly",
@@ -117,7 +114,6 @@ test("control logic", async () => {
     "Another viewer's hold names that viewer",
   );
 
-  // ----- the station's answer to a claim ------------------------------------------
   const granted = interpretLeaseAnswer({
     kind: "granted",
     lease_token: "secret",
@@ -138,7 +134,6 @@ test("control logic", async () => {
     "No grant and no holder is a failure",
   );
 
-  // ----- refusals -------------------------------------------------------------------
   function refusal(
     reason: "lease_held_elsewhere" | "not_enabled" | "arm_busy" | "unreachable",
   ): CommandAnswer {

@@ -1,14 +1,3 @@
-// What the viewer may do given who holds the lease on the arms. Pure: no DOM, no
-// network, so every decision here is tested directly.
-//
-// Only the station's own answers say a lease is gone (lease_lost, a closed
-// connection, or a lease_held_elsewhere refusal). A state snapshot can predate
-// an acquire, so it is never used to drop a lease, only to decide what to show
-// and allow.
-//
-// The station arbitrates the lease: one holder at a time, held by a connection,
-// and `stop` accepted from anyone. These functions only interpret what it reports.
-
 import type {
   CommandAnswer,
   Interlock,
@@ -16,20 +5,18 @@ import type {
   LeaseStatus,
 } from "hebbian-rua";
 import { match } from "ts-pattern";
+// INVARIANT: Use snapshots to render lease state. A snapshot can predate an
+// acquire, so only a lease-loss event, connection closure or an authoritative
+// refusal can invalidate the viewer's token.
 
 export function newManualLabel(randomHex: string): string {
   return `viewer ${randomHex}`;
 }
 
 export type ManualControlView =
-  // No one holds the lease: the user may turn manual control on.
   | { kind: "available" }
-  // This viewer holds the lease: manual controls are live.
   | { kind: "holding" }
-  // This viewer believed it held the lease but the station shows no holder:
-  // the lease lapsed.
   | { kind: "lapsed" }
-  // Someone else holds the lease, or took it from this viewer.
   | { kind: "elsewhere"; heldBy: LeaseStatus };
 
 export function manualControlView(
@@ -42,7 +29,7 @@ export function manualControlView(
   const namesThisViewer =
     stationLease.holder === "manual" && stationLease.label === ownLabel;
   if (namesThisViewer)
-    // Without the lease the report is a leftover of this viewer's own lease (it
+    // WHY: Without the lease the report is a leftover of this viewer's own lease (it
     // just returned it, and the state stream has not caught up): nobody else.
     return holdsToken ? { kind: "holding" } : { kind: "available" };
   return { kind: "elsewhere", heldBy: stationLease };

@@ -9,7 +9,7 @@ use crate::robot::Robot;
 use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
 
-// SAFETY: The servo setpoint clamped into the joint limits: the one place a setpoint's
+// ROBOT-SAFETY: The servo setpoint clamped into the joint limits: the one place a setpoint's
 // limits are applied, at the write, whatever produced it (a hold at a measured
 // pose that overshot a limit, a filter braking past one). A setpoint that was
 // already outside, as after enabling just past a limit, may stay there or move

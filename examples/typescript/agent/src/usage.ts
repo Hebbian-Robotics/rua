@@ -1,5 +1,3 @@
-// Tokens a model used across a run, in the shape the station records and the viewer shows.
-
 import { calcPrice, updatePrices } from "@pydantic/genai-prices";
 import type { LiveRun } from "hebbian-rua";
 import type { Provider, TokenUsage } from "./providers/types.js";

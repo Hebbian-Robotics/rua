@@ -113,7 +113,7 @@ pub enum Reconnection {
     Restored,
 }
 
-// SAFETY: A plant that cannot be read or commanded leaves the loop unable to keep the
+// ROBOT-SAFETY: A plant that cannot be read or commanded leaves the loop unable to keep the
 // arm under control. An enabled arm is released first as well as the plant
 // allows; one that cannot be released keeps holding its last goal. A simulator
 // that is gone ends the loop; a bus can reconnect and verify its hold.
@@ -125,7 +125,7 @@ pub trait Plant {
     fn hold_recovery(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<RecoveryObservation> {
         anyhow::bail!("Energized recovery is not supported by this plant")
     }
-    // SAFETY: Recovery may re-enable lost torque only after the operator supports the arm and configuration, health and stability checks pass.
+    // ROBOT-SAFETY: Recovery may re-enable lost torque only after the operator supports the arm and configuration, health and stability checks pass.
     fn enable_recovery(
         &mut self,
         _permit: &PlantWritePermit,
@@ -152,7 +152,7 @@ pub trait Plant {
     fn enable(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()>;
     fn release(&mut self, _permit: &PlantWritePermit) -> anyhow::Result<()>;
 
-    // SAFETY: Poll getting a plant back after it stopped answering, without blocking the
+    // ROBOT-SAFETY: Poll getting a plant back after it stopped answering, without blocking the
     // cycle. Torque is never turned on by it. A plant with no connection to
     // reopen is back once it can be read.
     fn reconnect(&mut self) -> Reconnection {
@@ -170,17 +170,17 @@ pub trait Plant {
         Ok(())
     }
 
-    // SAFETY: Start the guard before enabling torque so it can take over if this process stops.
+    // ROBOT-SAFETY: Start the guard before enabling torque so it can take over if this process stops.
     fn start_guard(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    // SAFETY: An enabled arm requires a heartbeat every cycle; losing the guard leaves it unwatched.
+    // ROBOT-SAFETY: An enabled arm requires a heartbeat every cycle; losing the guard leaves it unwatched.
     fn heartbeat(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    // SAFETY: Stop the guard only after the motors are off.
+    // ROBOT-SAFETY: Stop the guard only after the motors are off.
     fn stop_guard(&mut self) -> Vec<String> {
         Vec::new()
     }

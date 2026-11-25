@@ -392,7 +392,7 @@ fn check_group_clearance(actions: &[AdmittedArmAction<'_>]) -> anyhow::Result<()
         let target = geometry.joints_with_gripper(target, target_jaw);
         members.push((&action.arm, geometry, initial, target));
     }
-    // SAFETY: A jaw advances independently from the grouped joint trajectory and
+    // ROBOT-SAFETY: A jaw advances independently from the grouped joint trajectory and
     // other jaws. Only sweep one independent motion at a time.
     anyhow::ensure!(
         moving_jaws == 0 || (moving_jaws == 1 && moving_arms == 0),

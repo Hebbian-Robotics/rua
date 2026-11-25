@@ -15,11 +15,11 @@ import { RunManager } from "./run-manager.js";
 import { fileRunStore } from "./run-store.js";
 import { createApp } from "./server.js";
 
-// Model keys may live in a .env file in the working directory; exported variables win.
+// CONSTRAINT: Model keys may live in a .env file in the working directory; exported variables win.
 try {
   process.loadEnvFile();
 } catch {
-  // No .env file.
+  // WHY: The viewer can start without local model credentials.
 }
 
 const { values } = parseArgs({

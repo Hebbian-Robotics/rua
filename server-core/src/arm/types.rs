@@ -196,7 +196,7 @@ impl PowerState {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct Poses {
-    // SAFETY: Where the arm rested unpowered; shutdown returns there before releasing.
+    // ROBOT-SAFETY: Where the arm rested unpowered; shutdown returns there before releasing.
     pub rest: Vec<f64>,
     pub rest_gripper_angle: Option<f64>,
     pub hold: Vec<f64>,

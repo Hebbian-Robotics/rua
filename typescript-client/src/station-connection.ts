@@ -1,5 +1,3 @@
-// Station requests use HTTP; observations use a resumable event stream.
-
 import pRetry from "p-retry";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
@@ -290,7 +288,7 @@ function asError(error: unknown): Error {
 }
 
 /** Generate a UUID v4 even on LAN pages without a secure context. */
-export function newRequestId(): string {
+export function newOperationId(): string {
   const randomBytes = crypto.getRandomValues(new Uint8Array(16));
   randomBytes[6] = ((randomBytes[6] ?? 0) & 0x0f) | 0x40;
   randomBytes[8] = ((randomBytes[8] ?? 0) & 0x3f) | 0x80;
@@ -448,7 +446,6 @@ export function createStationConnection(
         notify();
       })
       .with({ kind: "lease_lost" }, loseLease)
-      // The event stream applies updates. Request replies are handled by their callers.
       .with(
         {
           kind: P.union(
@@ -704,7 +701,7 @@ export function createStationConnection(
       signal,
     );
     if (signal?.aborted) throw asError(signal.reason);
-    const operation_id = operationId ?? newRequestId();
+    const operation_id = operationId ?? newOperationId();
     const submission = apiSchemas.shape.CommandSubmissionRequest.parse({
       arm,
       command,
@@ -743,7 +740,7 @@ export function createStationConnection(
       signal,
     );
     if (signal?.aborted) throw asError(signal.reason);
-    const operation_id = operationId ?? newRequestId();
+    const operation_id = operationId ?? newOperationId();
     const submission = apiSchemas.shape.GroupCommandSubmissionRequest.parse({
       command,
       operation_id,
@@ -1002,7 +999,7 @@ export function createStationConnection(
       const acquisitionGeneration = connectionGeneration;
       const instance = await stationApi().getStationInstance();
       const body = apiSchemas.shape.LeaseAcquireRequest.parse({
-        request_id: newRequestId(),
+        request_id: newOperationId(),
         station_instance_id: instance.id,
         take: kind === "take_lease",
         request: {
@@ -1024,7 +1021,7 @@ export function createStationConnection(
             error.status === 409 &&
             error.body.startsWith("The lease is held by ")
           ) {
-            // A holder can release between the refusal and the state read.
+            // CONSTRAINT: A holder can release between the refusal and the state read.
             const status = await stationApi()
               .getState()
               .then(
@@ -1164,7 +1161,7 @@ export function createStationConnection(
     if (token === null) throw new LeaseLostError();
     return stationApi().startActionSequenceHttp(
       apiSchemas.shape.ActionSequenceStartRequest.parse({
-        request_id: newRequestId(),
+        request_id: newOperationId(),
         station_instance_id: (await stationApi().getStationInstance()).id,
         lease_token: token,
         action_sequence,
@@ -1267,7 +1264,7 @@ export function createStationConnection(
       ) {
         if (!isHeld()) throw new LeaseLostError();
         return stationApi().runCompiledSequenceHttp({
-          request_id: newRequestId(),
+          request_id: newOperationId(),
           station_instance_id: (await stationApi().getStationInstance()).id,
           compilation_id: compilationId,
           continuation: continuation ?? null,
@@ -1404,7 +1401,7 @@ export function createStationConnection(
         arm,
         poses: [
           {
-            id: newRequestId(),
+            id: newOperationId(),
             pose: { ...pose, orientation: pose.orientation ?? null },
             label: null,
           },
@@ -1443,7 +1440,7 @@ export function createStationConnection(
     async revokeLease() {
       const answer = await requestLease("take_lease", "operator override", {});
       if (answer.kind !== "granted") throw new LeaseHeldElsewhereError(answer);
-      // The cached frame can predate the take and show no holder, so only a
+      // CONSTRAINT: The cached frame can predate the take and show no holder, so only a
       // frame received after the take's reply counts.
       const framesBeforeReturn = stateFrameCount;
       await returnLease();

@@ -2602,7 +2602,9 @@ class ArmState(BaseModel):
     fault: str | None = None
     gripper_opening: Annotated[
         StrictFloat | None,
-        Field(description="0 closed to 1 open; none without a gripper."),
+        Field(
+            description="Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range."
+        ),
     ] = None
     interlocks: Annotated[
         list[

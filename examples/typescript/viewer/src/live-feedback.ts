@@ -1,0 +1,1 @@
+export const STALE_FEEDBACK_SECONDS = 0.5;

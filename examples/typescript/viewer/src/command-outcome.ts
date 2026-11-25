@@ -1,7 +1,7 @@
 import { type CommandRecord, commandResult } from "hebbian-rua";
 import { formatMotionDetail, radiansToDegrees } from "./shared/measurements.js";
 
-// This presentation threshold is for the manual viewer only; the station's
+// CONSTRAINT: This presentation threshold is for the manual viewer only; the station's
 // result and its settling and safety limits remain unchanged.
 const APPROXIMATE_JOINT_ERROR_RADIANS = 0.06;
 

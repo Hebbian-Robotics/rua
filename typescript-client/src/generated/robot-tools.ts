@@ -30,7 +30,7 @@ export const robotToolSpecifications = [
               },
             ],
             description:
-              "An arm action must name a goal or gripper opening. When both are present they start together.",
+              "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
             properties: {
               at_seconds: {
                 anyOf: [

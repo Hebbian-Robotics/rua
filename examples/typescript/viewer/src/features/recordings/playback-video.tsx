@@ -69,7 +69,7 @@ function PlaybackSegment({
     let idleState = true;
     let objectUrl: string | null = null;
     let cancelled = false;
-    // The clip's video is packaged from the recording's MCAP, so it is local
+    // CONSTRAINT: The clip's video is packaged from the recording's MCAP, so it is local
     // once it has loaded and `cacheLocally` has nothing more to fetch.
     const loaded = loadVideo(clip)
       .then((bytes) => {

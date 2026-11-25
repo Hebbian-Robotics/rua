@@ -212,7 +212,7 @@ impl Loop<'_> {
         Ok(None)
     }
 
-    // SAFETY: Refuse jaw motion if the arm is tripped or geometry checks cannot run; never substitute an unchecked target.
+    // ROBOT-SAFETY: Refuse jaw motion if the arm is tripped or geometry checks cannot run; never substitute an unchecked target.
     pub(super) fn safe_jaw_target(
         &self,
         requested: f64,

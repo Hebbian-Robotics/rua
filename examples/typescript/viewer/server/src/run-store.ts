@@ -1,4 +1,3 @@
-// Durable run summaries and append-only output.
 import {
   appendFile,
   mkdir,

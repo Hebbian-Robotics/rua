@@ -1,5 +1,3 @@
-// Builders for station events and model-facing lease test doubles.
-
 import { vi } from "vitest";
 import type { ApiSchemas, CommandRecord, Lease } from "../src/index.js";
 export function commandRecord(

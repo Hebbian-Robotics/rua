@@ -17,9 +17,11 @@ Shared validation and CI run the same check. Append file or directory paths to
 narrow the scan or pass `--json` for a structured report.
 
 [RUA's policy](../../source-doc-lint.toml) defines accepted labels, ordinary
-comment exclusions, and the public-interface directories. Ordinary comment
-exclusions do not affect the documentation boundary. Generated source is
-checked unless the applicable rule or an ignore file excludes it.
+comment exclusions, and public-interface paths. Use `SAFETY:` for Rust
+unsafe soundness arguments and `ROBOT-SAFETY:` for rules addressing physical
+robot hazards. The ordinary comment check covers the SDKs and TypeScript
+examples. It excludes generated sources listed in the policy, typing stubs,
+and Python teaching examples. Those exclusions apply only to ordinary comments.
 
 Keep useful implementation rationale in a classified comment beside the code.
 Put consumer-facing documentation and schema descriptions in the owning public

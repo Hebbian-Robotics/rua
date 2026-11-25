@@ -1,4 +1,4 @@
-// Names for the station contract types the viewer uses. The
+// WHY: Names for the station contract types the viewer uses. The
 // types and the zod schemas come from the Rust types (`uv run rua-dev contracts`);
 // nothing here restates a field.
 
