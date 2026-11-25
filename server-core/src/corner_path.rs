@@ -1,3 +1,7 @@
+mod continuous;
+
+pub(crate) use continuous::ContinuousPath;
+
 use anyhow::{Context, bail, ensure};
 use rsruckig::prelude::{
     InputParameter, OutputParameter, Ruckig, RuckigResult, Synchronization, ThrowErrorHandler,
@@ -367,7 +371,7 @@ struct CornerPathTracker {
     reference: Reference,
     segment_index: usize,
     trajectories: Vec<SmoothTrajectory>,
-    continuous_path: Option<crate::continuous_path::ContinuousPath>,
+    continuous_path: Option<ContinuousPath>,
     waypoint_feedback_lag_seconds: f64,
     section_elapsed: f64,
     corner_index: usize,
@@ -389,9 +393,7 @@ impl CornerPathTracker {
         }
         let continuous_path = plan
             .is_continuous()
-            .then(|| {
-                crate::continuous_path::ContinuousPath::new(&plan, &limits, maximum_step_seconds)
-            })
+            .then(|| ContinuousPath::new(&plan, &limits, maximum_step_seconds))
             .transpose()?;
         let trajectories = if continuous_path.is_some() {
             Vec::new()

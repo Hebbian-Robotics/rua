@@ -1,4 +1,4 @@
-use crate::recorder::{RecorderError, archive::RecordingArchive};
+use super::{RecorderError, archive::RecordingArchive};
 use hebbian_contracts::server_sent_events::ServerSentEvent;
 use hebbian_contracts::{
     Backoff, Event, Frame, ServerMessage, StationEventSnapshot, unix_nanoseconds,
@@ -48,7 +48,7 @@ impl From<ServerSentEvent> for RecorderDelivery {
     }
 }
 
-pub(crate) async fn subscribe(
+pub(super) async fn subscribe(
     url: &str,
     archive: Option<&RecordingArchive>,
     stopped: CancellationToken,

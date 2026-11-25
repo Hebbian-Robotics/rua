@@ -5,7 +5,6 @@ use anyhow::Context;
 
 use crate::config::ControllerConfig;
 use crate::limits::Trip;
-use crate::plant::Feedback;
 use crate::robot::Robot;
 use crate::self_collision::SelfCollisionGuard;
 use crate::surface_guard::SurfaceGuard;
@@ -29,17 +28,18 @@ pub(crate) fn guard_command(
     self_collision: Option<&SelfCollisionGuard>,
     command: &[f64],
     previous_command: &[f64],
-    feedback: &Feedback,
+    measured_positions: &[f64],
+    measured_gripper_angle: Option<f64>,
 ) -> Result<(), Trip> {
-    if !crate::limits::is_finite_joint_vector(command, config.joint_count)
-        || !crate::limits::is_finite_joint_vector(previous_command, config.joint_count)
-        || !crate::limits::is_finite_joint_vector(&feedback.positions, config.joint_count)
+    if !crate::numeric::is_finite_joint_vector(command, config.joint_count)
+        || !crate::numeric::is_finite_joint_vector(previous_command, config.joint_count)
+        || !crate::numeric::is_finite_joint_vector(measured_positions, config.joint_count)
     {
         return Err(Trip::InvalidSetpoint);
     }
     if let Some(guard) = guard {
         let reason = guard
-            .path_reason(&feedback.positions, command, feedback.gripper_angle)
+            .path_reason(measured_positions, command, measured_gripper_angle)
             .map_err(|error| Trip::SurfaceGuard(error.to_string()))?;
         if let Some(reason) = reason {
             return Err(Trip::SurfaceGuard(reason));
@@ -47,7 +47,7 @@ pub(crate) fn guard_command(
     }
     if let Some(self_collision) = self_collision {
         let reason = self_collision
-            .path_reason(&feedback.positions, command, feedback.gripper_angle)
+            .path_reason(measured_positions, command, measured_gripper_angle)
             .map_err(|error| Trip::SelfCollision(error.to_string()))?;
         if let Some(reason) = reason {
             return Err(Trip::SelfCollision(reason));

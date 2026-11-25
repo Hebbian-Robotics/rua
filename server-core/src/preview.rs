@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::arm::ReachGoal;
 use crate::config::ControllerConfig;
-use crate::control_loop::{build_guard, build_self_collision, guard_command, load_shared_robot};
+use crate::motion_guards::{build_guard, build_self_collision, guard_command, load_shared_robot};
 use crate::plant::{Feedback, NoPhysicsStandIn, Plant};
 use crate::policy::{ActiveReach, PolicyRuntime, ReachStatus};
 use crate::self_collision::SelfCollisionGuard;
@@ -149,7 +149,8 @@ impl Preview {
                     self.self_collision.as_ref(),
                     &joint_goal,
                     &previous_command,
-                    &feedback,
+                    &feedback.positions,
+                    feedback.gripper_angle,
                 ) {
                     Ok(()) => {
                         plant.step(&joint_goal, interval);

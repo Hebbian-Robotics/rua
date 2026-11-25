@@ -1,12 +1,12 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use super::activity::Activity;
-use super::activity::{Loop, initialize_loop};
+use super::activity::{
+    Activity, GroupReference, GroupWriteAttempt, Loop, MotionEffects, MotionOutput, MotionPlan,
+    PolicyRequest, PolicySession, initialize_loop, policy_failure,
+};
 use super::cycle::{CycleOutputs, GripperEffect};
-use super::learned::{MotionPlan, PolicyRequest, PolicySession, policy_failure};
 use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
-use super::trajectory::{GroupReference, GroupWriteAttempt, MotionEffects, MotionOutput};
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
 use crate::arm::{ArmCore, Job, Now};
 use crate::config::ControllerConfig;
@@ -122,7 +122,7 @@ pub(super) fn runner_for<'a, P: Plant>(
             return Err(Box::new(report));
         }
     };
-    let core = ArmCore::new(config.arm_limits(), link.log_publisher());
+    let core = ArmCore::new(crate::arm::Limits::from(config), link.log_publisher());
     let initialized = plant.read_feedback().and_then(|feedback| {
         feedback.validate_for_cycle(config)?;
         let state = initialize_loop(config, core, &feedback)?;

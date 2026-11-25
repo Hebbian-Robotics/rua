@@ -1,5 +1,5 @@
-use super::activity::{Activity, Loop};
-use crate::arm::{AdmittedPlan, GroupMembership, Now};
+use super::{Activity, GroupWriteAttempt, Loop, MotionCompletion, MotionEffects, MotionOutput};
+use crate::arm::{AdmittedPlan, GroupMembership};
 use crate::corner_path::{MIN_TRACKING_SPEED_FRACTION, MotionEnd, MotionSupervisor};
 use crate::limits::{Trip, max_joint_deviation};
 use crate::plant::Feedback;
@@ -44,11 +44,11 @@ fn tracking_speed_fraction(
     (fraction * 20.0).round() / 20.0
 }
 
-pub(super) struct ActiveMotion {
+pub(in crate::control_loop) struct ActiveMotion {
     pub(super) speed_fraction: f64,
     pub(super) supervisor: MotionSupervisor,
     pub(super) checkpoints_sent: usize,
-    waypoint_gripper_command: Option<hebbian_contracts::CommandId>,
+    pub(super) waypoint_gripper_command: Option<hebbian_contracts::CommandId>,
 }
 
 enum WaypointGripperStatus {
@@ -102,14 +102,14 @@ impl ActiveMotion {
 
 // INVARIANT: This arm's part of a grouped motion. The group's one trajectory is stepped
 // by the loop that runs every arm, not by the arm.
-pub(super) struct ActiveGroupMember {
-    pub(super) group: GroupMembership,
-    pub(super) plan: crate::arm::AdmittedPlan,
-    pub(super) stop_reason: Option<String>,
+pub(in crate::control_loop) struct ActiveGroupMember {
+    pub(in crate::control_loop) group: GroupMembership,
+    pub(in crate::control_loop) plan: crate::arm::AdmittedPlan,
+    pub(in crate::control_loop) stop_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MotionStatus {
+pub(in crate::control_loop) enum MotionStatus {
     Running,
     Reached,
     StoppedShort,
@@ -117,7 +117,7 @@ pub(super) enum MotionStatus {
 }
 
 impl MotionStatus {
-    pub(super) fn of(supervisor: &MotionSupervisor) -> Self {
+    pub(in crate::control_loop) fn of(supervisor: &MotionSupervisor) -> Self {
         match supervisor.end() {
             None => Self::Running,
             Some(MotionEnd::Reached) => Self::Reached,
@@ -128,59 +128,25 @@ impl MotionStatus {
 }
 
 pub(super) struct MotionProgress {
-    pub(super) checkpoints: Vec<Checkpoint>,
-    pub(super) status: MotionStatus,
-    pub(super) final_pose: Vec<f64>,
+    pub(in crate::control_loop) checkpoints: Vec<Checkpoint>,
+    pub(in crate::control_loop) status: MotionStatus,
+    pub(in crate::control_loop) final_pose: Vec<f64>,
 }
 
-#[derive(Default)]
-pub(super) struct MotionEffects {
-    waypoint_gripper: Option<crate::arm::GripperTarget>,
-    checkpoints: Vec<Checkpoint>,
-    completion: Option<MotionCompletion>,
-}
-
-pub(super) enum MotionOutput {
-    None,
-    Arm(MotionEffects),
-    Group {
-        effects: MotionEffects,
-        attempt: GroupWriteAttempt,
-    },
-}
-
-impl MotionOutput {
-    pub(super) fn ends_motion(&self) -> bool {
-        match self {
-            Self::None => false,
-            Self::Arm(effects) | Self::Group { effects, .. } => effects.completion.is_some(),
-        }
-    }
-}
-
-struct MotionCompletion {
-    outcome: CommandOutcome,
-    detail: Option<String>,
-    hold: Vec<f64>,
-}
-
-#[derive(Clone, Copy)]
-pub(super) enum GroupWriteAttempt {
-    First,
-    Retry,
-}
-
-pub(super) struct GroupReference {
-    pub(super) attempt: GroupWriteAttempt,
-    pub(super) reference: Reference,
-    pub(super) checkpoints: Vec<Checkpoint>,
-    pub(super) segment: Option<&'static str>,
-    pub(super) status: MotionStatus,
-    pub(super) final_pose: Vec<f64>,
+pub(in crate::control_loop) struct GroupReference {
+    pub(in crate::control_loop) attempt: GroupWriteAttempt,
+    pub(in crate::control_loop) reference: Reference,
+    pub(in crate::control_loop) checkpoints: Vec<Checkpoint>,
+    pub(in crate::control_loop) segment: Option<&'static str>,
+    pub(in crate::control_loop) status: MotionStatus,
+    pub(in crate::control_loop) final_pose: Vec<f64>,
 }
 
 impl Loop<'_> {
-    pub(super) fn start_motion(&mut self, plan: AdmittedPlan) -> anyhow::Result<()> {
+    pub(in crate::control_loop) fn start_motion(
+        &mut self,
+        plan: AdmittedPlan,
+    ) -> anyhow::Result<()> {
         let supervisor = MotionSupervisor::from_validated(
             plan.into_validated(),
             &self.config.motion,
@@ -197,7 +163,7 @@ impl Loop<'_> {
         Ok(())
     }
 
-    pub(super) fn start_group_member(
+    pub(in crate::control_loop) fn start_group_member(
         &mut self,
         plan: crate::arm::AdmittedPlan,
         group: GroupMembership,
@@ -313,35 +279,6 @@ impl Loop<'_> {
         Ok(effects)
     }
 
-    pub(super) fn prepare_stop_write(
-        &mut self,
-        checkpoints: Vec<Checkpoint>,
-        detail: String,
-    ) -> MotionEffects {
-        self.prepare_braking_hold(checkpoints, CommandOutcome::Stopped, detail)
-    }
-
-    fn prepare_braking_hold(
-        &mut self,
-        checkpoints: Vec<Checkpoint>,
-        outcome: CommandOutcome,
-        detail: String,
-    ) -> MotionEffects {
-        let hold = self
-            .hold_at
-            .get_or_insert_with(|| self.filter.stopping_position());
-        self.reference.set_at_rest(hold, None);
-        MotionEffects {
-            waypoint_gripper: None,
-            checkpoints,
-            completion: Some(MotionCompletion {
-                outcome,
-                detail: Some(detail),
-                hold: hold.clone(),
-            }),
-        }
-    }
-
     fn prepare_motion_effects(
         &mut self,
         feedback: &Feedback,
@@ -403,47 +340,6 @@ impl Loop<'_> {
                 detail: Some(detail),
                 hold,
             }),
-        }
-    }
-
-    pub(super) fn prepare_measured_hold(
-        &mut self,
-        outcome: CommandOutcome,
-        detail: Option<String>,
-        feedback: &Feedback,
-    ) -> MotionEffects {
-        let hold = feedback.positions.clone();
-        self.filter.reset(&hold);
-        self.reference.set_at_rest(&hold, None);
-        MotionEffects {
-            waypoint_gripper: None,
-            checkpoints: Vec::new(),
-            completion: Some(MotionCompletion {
-                outcome,
-                detail,
-                hold,
-            }),
-        }
-    }
-
-    pub(super) fn commit_motion_effects(&mut self, effects: MotionEffects, now: Now) {
-        if let Activity::Motion(active) = &mut self.activity {
-            if let Some(target) = effects.waypoint_gripper {
-                active.waypoint_gripper_command =
-                    Some(self.core.apply_waypoint_gripper(target, now));
-            }
-            active.checkpoints_sent += effects.checkpoints.len();
-        }
-        for checkpoint in effects.checkpoints {
-            self.core.add_checkpoint(checkpoint);
-        }
-        if let Some(completion) = effects.completion {
-            self.end_activity(
-                completion.outcome,
-                completion.detail,
-                Some(completion.hold),
-                now,
-            );
         }
     }
 

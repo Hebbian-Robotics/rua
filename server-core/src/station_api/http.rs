@@ -2,8 +2,8 @@ use hebbian_contracts::{LeasedStopOutcome, ServerMessage, TraceFile};
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::Context;
@@ -23,7 +23,8 @@ use tokio_util::io::ReaderStream;
 
 use crate::control_link::{LinkHandle, SubmissionAuthority};
 
-use super::admission::{AdmissionClosed, AdmissionOwner, AdmissionState};
+use super::admission::{AdmissionClosed, AdmissionState};
+use super::http_state::{SHUTTING_DOWN, StationHttpState};
 use super::submissions::{
     Admission, CommandOutcomeUnknown, OperationId, PendingAdmission, SubmissionCompletion,
     wait_for_outcome,
@@ -31,7 +32,6 @@ use super::submissions::{
 
 const WORKER_THREADS: usize = 2;
 const PREVIEW_WORKERS: usize = 4;
-pub(super) const SHUTTING_DOWN: &str = "Station is shutting down";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Serialize)]
@@ -39,52 +39,8 @@ struct Health {
     status: &'static str,
 }
 
-pub(crate) struct StationState {
-    shutdown_requested: Arc<AtomicBool>,
-    pub(crate) program_submissions: super::submissions::ProgramSubmissions,
-    pub(crate) compiler: crate::station_api::programs::ProgramStore,
-    compilation_targets:
-        OnceLock<Result<BTreeMap<String, hebbian_contracts::CompilationTarget>, String>>,
-    trace_directories: Vec<PathBuf>,
-    pub(crate) arms: OnceLock<BTreeMap<String, LinkHandle>>,
-    pub(crate) telemetry: Arc<dyn crate::station_api::telemetry::RunTelemetry>,
-    pub(super) admission: AdmissionOwner,
-    pub(crate) instance_id: String,
-    pub(crate) lease_submissions: crate::station_api::submissions::LeaseSubmissions,
-    pub(crate) events: Arc<crate::station_api::events::EventJournal>,
-}
-
-impl StationState {
-    pub(super) fn is_shutting_down(&self) -> bool {
-        self.shutdown_requested.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn compilation_targets(
-        &self,
-    ) -> Result<&BTreeMap<String, hebbian_contracts::CompilationTarget>, String> {
-        let arms = self.arms.get().ok_or("Station arms are not ready")?;
-        self.compilation_targets
-            .get_or_init(|| {
-                super::programs::station_targets(arms).map_err(|error| error.to_string())
-            })
-            .as_ref()
-            .map_err(Clone::clone)
-    }
-
-    // INVARIANT: Every arm shares the station lease; any ready arm can handle lease operations.
-    fn lease_link(&self) -> Result<&LinkHandle, (StatusCode, String)> {
-        self.arms
-            .get()
-            .and_then(|arms| arms.values().next())
-            .ok_or((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Station arms are not ready".to_owned(),
-            ))
-    }
-}
-
 pub struct HttpServer {
-    station_state: Arc<StationState>,
+    station_state: Arc<StationHttpState>,
     runtime: Option<tokio::runtime::Runtime>,
     shutdown: Option<oneshot::Sender<()>>,
     address: SocketAddr,
@@ -109,20 +65,12 @@ impl HttpServer {
             .block_on(tokio::net::TcpListener::bind(address))
             .with_context(|| format!("Cannot listen for HTTP on {address}"))?;
         let bound = listener.local_addr()?;
-        let events = Arc::new(super::events::EventJournal::default());
-        let station_state = Arc::new(StationState {
+        let station_state = Arc::new(StationHttpState::new(
+            runtime.handle(),
             shutdown_requested,
-            program_submissions: crate::station_api::submissions::ProgramSubmissions::default(),
-            compiler: crate::station_api::programs::ProgramStore::default(),
-            compilation_targets: OnceLock::new(),
             trace_directories,
-            arms: OnceLock::new(),
             telemetry,
-            admission: AdmissionOwner::start(runtime.handle(), Arc::clone(&events)),
-            instance_id: uuid::Uuid::new_v4().to_string(),
-            lease_submissions: crate::station_api::submissions::LeaseSubmissions::default(),
-            events,
-        });
+        ));
         let extra = extra_routes(runtime.handle(), bound)?;
         let router = router(Arc::clone(&station_state)).merge(extra);
         let (shutdown, shutdown_requested) = oneshot::channel::<()>();
@@ -165,7 +113,7 @@ impl HttpServer {
     }
 
     pub fn attach_arms(&self, arms: BTreeMap<String, LinkHandle>) {
-        if self.station_state.arms.set(arms.clone()).is_err() {
+        if !self.station_state.attach_arms(&arms) {
             return;
         }
         let Some(runtime) = &self.runtime else {
@@ -271,7 +219,7 @@ impl Drop for HttpServer {
 }
 
 async fn reject_while_shutting_down(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -281,7 +229,7 @@ async fn reject_while_shutting_down(
     next.run(request).await
 }
 
-fn router(station_state: Arc<StationState>) -> Router {
+fn router(station_state: Arc<StationHttpState>) -> Router {
     let admission_routes = Router::new()
         .route("/commands", post(submit_command))
         .route("/group_commands", post(submit_group_command))
@@ -344,8 +292,8 @@ fn arms_not_set_up() -> Response {
         .into_response()
 }
 
-async fn read_state(State(station_state): State<Arc<StationState>>) -> Response {
-    let Some(arms) = station_state.arms.get() else {
+async fn read_state(State(station_state): State<Arc<StationHttpState>>) -> Response {
+    let Some(arms) = station_state.arms() else {
         return arms_not_set_up();
     };
     match crate::station_api::state::station_state(arms).await {
@@ -354,7 +302,7 @@ async fn read_state(State(station_state): State<Arc<StationState>>) -> Response 
     }
 }
 
-async fn read_action_sequence(State(station_state): State<Arc<StationState>>) -> Response {
+async fn read_action_sequence(State(station_state): State<Arc<StationHttpState>>) -> Response {
     match station_state
         .admission
         .decide(|state| {
@@ -371,7 +319,7 @@ async fn read_action_sequence(State(station_state): State<Arc<StationState>>) ->
 }
 
 async fn read_action_sequence_by_id(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Response {
     match station_state
@@ -393,7 +341,7 @@ fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> 
 }
 
 async fn read_operation(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<Json<hebbian_contracts::OperationStatus>, (StatusCode, String)> {
     let operation_id = parse_operation_id(&id)?;
@@ -410,7 +358,7 @@ async fn read_operation(
 }
 
 async fn preview_poses(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<hebbian_contracts::PosePreviewBatchRequest>,
 ) -> Result<Json<hebbian_contracts::PosePreviewBatchResponse>, (StatusCode, String)> {
     execute_pose_previews(station_state, request)
@@ -448,7 +396,7 @@ impl std::fmt::Display for PosePreviewBatchError {
 }
 
 async fn cancel_action_sequence(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
     if station_state
@@ -467,7 +415,7 @@ async fn cancel_action_sequence(
 }
 
 async fn report_lease_camera(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(input): Json<hebbian_contracts::LeaseCameraReport>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
     use crate::lease::CameraReportRefusal;
@@ -495,13 +443,12 @@ async fn report_lease_camera(
 }
 
 async fn stop_leased_arm(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath(arm): UrlPath<String>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let link = station_state
-        .arms
-        .get()
+        .arms()
         .ok_or((
             StatusCode::SERVICE_UNAVAILABLE,
             "Station arms are not ready".to_owned(),
@@ -544,7 +491,7 @@ fn leased_stop_response(
 }
 
 async fn release_lease(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
     let link = station_state.lease_link()?.clone();
@@ -568,7 +515,7 @@ async fn release_lease(
 }
 
 async fn renew_lease(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(input): Json<hebbian_contracts::LeaseToken>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
     let link = station_state.lease_link()?.clone();
@@ -588,49 +535,15 @@ async fn renew_lease(
         .map_err(admission_unavailable)?
 }
 
-fn require_station_instance(
-    station_state: &StationState,
-    station_instance_id: &str,
-) -> Result<(), (StatusCode, String)> {
-    if station_instance_id != station_state.instance_id {
-        return Err((
-            axum::http::StatusCode::CONFLICT,
-            "Station instance changed; request outcome is unknown".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_submission_id(
-    station_state: &StationState,
-    station_instance_id: &str,
-    request_id: &str,
-) -> Result<uuid::Uuid, (axum::http::StatusCode, String)> {
-    require_station_instance(station_state, station_instance_id)?;
-    let id = uuid::Uuid::parse_str(request_id).map_err(|_| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            "Expected a UUID v4 request ID".to_owned(),
-        )
-    })?;
-    if id.get_version_num() != 4 || id.get_variant() != uuid::Variant::RFC4122 {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            "Expected a UUID v4 request ID".to_owned(),
-        ));
-    }
-    Ok(id)
-}
-
 async fn cancel_operation(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
     Json(input): Json<hebbian_contracts::CommandCancellationRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     use super::submissions::{CancellationResult, CancellationTarget};
 
     let id = parse_operation_id(&id)?;
-    require_station_instance(&station_state, &input.station_instance_id)?;
+    station_state.require_station_instance(&input.station_instance_id)?;
     let lease_link = station_state.lease_link()?.clone();
     // INVARIANT: A cancellation handed to the station survives its HTTP caller.
     tokio::spawn(async move {
@@ -683,7 +596,7 @@ async fn cancel_operation(
                 }
             }
         };
-        let arms = station_state.arms.get().cloned().ok_or((
+        let arms = station_state.arms().cloned().ok_or((
             StatusCode::SERVICE_UNAVAILABLE,
             "Station arms are not ready".to_owned(),
         ))?;
@@ -806,7 +719,7 @@ async fn submit_station_command<
     ReplyRecords: Send + 'static,
     Commit: FnOnce(&mut AdmissionState) -> CommandAdmission<ReplyContext, ReplyRecords> + Send + 'static,
 >(
-    station: Arc<StationState>,
+    station: Arc<StationHttpState>,
     request: super::submissions::SubmissionRequest,
     prepare: impl FnOnce(
         &BTreeMap<String, LinkHandle>,
@@ -828,11 +741,10 @@ async fn submit_station_command<
         SubmissionRequest::Single(input) => (&input.station_instance_id, &input.operation_id),
         SubmissionRequest::Group(input) => (&input.station_instance_id, &input.operation_id),
     };
-    require_station_instance(&station, station_instance_id)?;
+    station.require_station_instance(station_instance_id)?;
     let id = parse_operation_id(operation_id)?;
     let links = station
-        .arms
-        .get()
+        .arms()
         .ok_or((
             StatusCode::SERVICE_UNAVAILABLE,
             "Station arms are not ready".to_owned(),
@@ -872,7 +784,7 @@ async fn submit_station_command<
                         return;
                     };
                     if !unfinished.is_empty()
-                        && let Some(links) = station.arms.get()
+                        && let Some(links) = station.arms()
                     {
                         let result = await_motion_completion(links, unfinished).await;
                         let _ = station
@@ -955,7 +867,7 @@ fn arm_busy(detail: &str) -> Rejection {
 }
 
 async fn submit_group_command(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(input): Json<hebbian_contracts::GroupCommandSubmissionRequest>,
 ) -> Result<Json<hebbian_contracts::CommandAnswer>, (axum::http::StatusCode, String)> {
     submit_station_command(
@@ -1006,7 +918,7 @@ async fn submit_group_command(
 }
 
 async fn submit_command(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(input): Json<hebbian_contracts::CommandSubmissionRequest>,
 ) -> Result<Json<hebbian_contracts::CommandAnswer>, (axum::http::StatusCode, String)> {
     submit_station_command(
@@ -1077,14 +989,14 @@ async fn submit_command(
 }
 
 async fn update_stream_goal(
-    State(station): State<Arc<StationState>>,
+    State(station): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
     Json(input): Json<hebbian_contracts::StreamGoalUpdateRequest>,
 ) -> Result<Json<hebbian_contracts::CommandAnswer>, (StatusCode, String)> {
     use hebbian_contracts::{ArmRecord, RejectionReason};
-    require_station_instance(&station, &input.station_instance_id)?;
+    station.require_station_instance(&input.station_instance_id)?;
     let id = parse_operation_id(&id)?;
-    let links = station.arms.get().cloned().unwrap_or_default();
+    let links = station.arms().cloned().unwrap_or_default();
     let admitted = station
         .admission
         .decide(move |state| {
@@ -1133,7 +1045,7 @@ async fn update_stream_goal(
 }
 
 async fn record_run_event(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(event): Json<hebbian_contracts::RunEvent>,
 ) -> axum::http::StatusCode {
     station_state.telemetry.record_event(event);
@@ -1146,7 +1058,7 @@ struct RunReplayQuery {
 }
 
 async fn replay_run_records(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Query(query): Query<RunReplayQuery>,
 ) -> Json<Vec<hebbian_contracts::ServerMessage>> {
     let mut cursor = query.after;
@@ -1155,7 +1067,7 @@ async fn replay_run_records(
 }
 
 async fn record_run_spans(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<hebbian_contracts::RunSpansRequest>,
 ) -> axum::http::StatusCode {
     station_state.telemetry.record_spans(request.spans);
@@ -1198,7 +1110,7 @@ fn encode_station_event(
 }
 
 async fn stream_events(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
     use crate::station_api::events::EventSubscription;
@@ -1292,7 +1204,7 @@ async fn stream_events(
 }
 
 async fn station_instance(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
 ) -> Json<hebbian_contracts::StationInstance> {
     Json(hebbian_contracts::StationInstance {
         id: station_state.instance_id.clone(),
@@ -1300,19 +1212,14 @@ async fn station_instance(
 }
 
 async fn acquire_lease(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(input): Json<hebbian_contracts::LeaseAcquireRequest>,
 ) -> Result<Json<hebbian_contracts::LeaseGrant>, (StatusCode, String)> {
     use crate::station_api::submissions::LeaseReservation;
 
-    let id = validate_submission_id(
-        &station_state,
-        &input.station_instance_id,
-        &input.request_id,
-    )?;
+    let id = station_state.validate_submission_id(&input.station_instance_id, &input.request_id)?;
     let links = station_state
-        .arms
-        .get()
+        .arms()
         .ok_or((
             StatusCode::SERVICE_UNAVAILABLE,
             "Station arms are not ready".to_owned(),
@@ -1351,7 +1258,7 @@ async fn acquire_lease(
                 tokio::task::spawn_blocking(move || {
                     let result = (|| {
                         if input.request.holder == hebbian_contracts::LeaseHolder::Manual {
-                            crate::lease::manual_control_ready_without_waiting(&links)?;
+                            super::interlocks::manual_control_ready_without_waiting(&links)?;
                         }
                         let mode = if input.take {
                             crate::lease::AcquireMode::Takeover
@@ -1379,7 +1286,7 @@ async fn acquire_lease(
 }
 
 pub(crate) async fn execute_pose_previews(
-    station_state: Arc<StationState>,
+    station_state: Arc<StationHttpState>,
     request: hebbian_contracts::PosePreviewBatchRequest,
 ) -> Result<hebbian_contracts::PosePreviewBatchResponse, PosePreviewBatchError> {
     let mut identifiers = std::collections::HashSet::new();
@@ -1397,8 +1304,7 @@ pub(crate) async fn execute_pose_previews(
         }
     }
     let arms = station_state
-        .arms
-        .get()
+        .arms()
         .ok_or(PosePreviewBatchError::StationUnavailable)?
         .clone();
     let mut pending = request.poses.into_iter().enumerate();
@@ -1475,7 +1381,7 @@ fn trace_files(directories: &[PathBuf]) -> Vec<(TraceFile, PathBuf)> {
     files
 }
 
-async fn list_traces(State(station_state): State<Arc<StationState>>) -> Response {
+async fn list_traces(State(station_state): State<Arc<StationHttpState>>) -> Response {
     let directories = station_state.trace_directories.clone();
     match tokio::task::spawn_blocking(move || trace_files(&directories)).await {
         Ok(files) => {
@@ -1494,7 +1400,7 @@ fn find_trace(directories: &[PathBuf], name: &str) -> Option<PathBuf> {
 }
 
 async fn download_trace(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     UrlPath(name): UrlPath<String>,
 ) -> Response {
     let directories = station_state.trace_directories.clone();
@@ -1536,10 +1442,10 @@ pub fn trace_directories<'a>(directories: impl IntoIterator<Item = &'a Path>) ->
 
 #[cfg(test)]
 mod event_stream_tests {
-    use super::{AdmissionOwner, HttpServer, ServerMessage, StationState, stream_events};
+    use super::{HttpServer, ServerMessage, StationHttpState, stream_events};
     use axum::extract::State;
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
-    use std::sync::{Arc, OnceLock};
+    use std::sync::Arc;
 
     fn ready_state() -> ServerMessage {
         ServerMessage::State {
@@ -1556,24 +1462,13 @@ mod event_stream_tests {
         }
     }
 
-    fn station() -> Arc<StationState> {
-        let events = Arc::new(super::super::events::EventJournal::default());
-        Arc::new(StationState {
-            shutdown_requested: Arc::default(),
-            program_submissions: crate::station_api::submissions::ProgramSubmissions::default(),
-            compiler: crate::station_api::programs::ProgramStore::default(),
-            compilation_targets: OnceLock::new(),
-            trace_directories: vec![],
-            arms: OnceLock::new(),
-            telemetry: Arc::new(crate::station_api::telemetry::DiscardTelemetry),
-            admission: AdmissionOwner::start(
-                &tokio::runtime::Handle::current(),
-                Arc::clone(&events),
-            ),
-            instance_id: "instance-a".into(),
-            lease_submissions: crate::station_api::submissions::LeaseSubmissions::default(),
-            events,
-        })
+    fn station() -> Arc<StationHttpState> {
+        Arc::new(StationHttpState::new(
+            &tokio::runtime::Handle::current(),
+            Arc::default(),
+            vec![],
+            Arc::new(crate::station_api::telemetry::DiscardTelemetry),
+        ))
     }
 
     #[test]

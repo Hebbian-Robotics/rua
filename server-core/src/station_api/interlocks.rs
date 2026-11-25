@@ -82,6 +82,23 @@ fn apply_sample(link: &LinkHandle, sample: Sample) {
     });
 }
 
+// CONSTRAINT: Manual control can proceed with a required camera unavailable. Other interlocks on any arm still block it.
+pub(super) fn manual_control_ready_without_waiting(links: &[LinkHandle]) -> Result<(), String> {
+    for link in links {
+        if let Some(interlock) = link
+            .interlocks()
+            .0
+            .into_iter()
+            .find(|interlock| !matches!(interlock, Interlock::RequiredCameraUnavailable { .. }))
+        {
+            return Err(format!(
+                "Manual control is inhibited by an interlock: {interlock:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
