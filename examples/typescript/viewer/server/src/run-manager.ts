@@ -39,7 +39,6 @@ export class RunSettingsError extends Error {}
 
 export interface RunManagerOptions {
   stationUrl: string;
-  mediaUrl: string;
 
   environment: NodeJS.ProcessEnv;
 
@@ -279,7 +278,6 @@ export class RunManager {
           onInterruption: "wait_for_approval",
           record: false,
           stationUrl: this.options.stationUrl,
-          mediaUrl: this.options.mediaUrl,
           apiKey,
         },
         {

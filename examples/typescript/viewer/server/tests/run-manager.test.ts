@@ -53,7 +53,6 @@ function manager(
   let count = 0;
   return new RunManager({
     stationUrl: "http://station",
-    mediaUrl: "http://media",
     environment: options.environment ?? { OPENAI_API_KEY: "key" },
     now: () => (time += 1),
     store: options.store ?? store,
@@ -302,7 +301,14 @@ test("a run left running by a dead server is interrupted on open", async () => {
   const stale: Run = {
     id: "old",
     createdAt: 1,
-    request,
+    request: {
+      ...request,
+      settings: {
+        ...request.settings,
+        reasoningEffort: "high",
+        inferenceMode: "standard",
+      },
+    },
     phase: { state: "running", startedAt: 5 },
     output: [],
   };

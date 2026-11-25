@@ -83,7 +83,6 @@ function toolsFor(connection: StationConnection, lease: Lease = fakeLease()) {
   return createRobotTools({
     connection,
     lease,
-    mediaUrl: "http://media",
     arm: "follower",
   });
 }
@@ -152,7 +151,6 @@ test("an observation carries the note and extra lines above the state, and names
   const robot = createRobotTools({
     connection,
     lease: fakeLease(),
-    mediaUrl: "http://media",
     arm: "follower",
     optionalCameras: ["phone"],
   });

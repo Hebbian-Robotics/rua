@@ -23,8 +23,8 @@ function runIn(phase: Run["phase"]): Run {
       settings: {
         provider: "openai",
         model: "gpt-6.2-astra",
-        reasoningEffort: null,
-        inferenceMode: null,
+        reasoningEffort: "high",
+        inferenceMode: "standard",
       },
     },
     phase,

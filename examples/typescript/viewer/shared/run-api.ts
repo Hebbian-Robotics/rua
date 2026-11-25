@@ -42,7 +42,6 @@ export const runRequestSchema = z.object({
     provider: providerSchema,
     model: z.string().trim().min(1),
     reasoningEffort: reasoningEffortSchema.nullable().default(null),
-    // CONSTRAINT: Runs saved before inference modes read as standard.
     inferenceMode: inferenceModeSchema.nullable().default(null),
   }),
 });
@@ -54,8 +53,8 @@ const storedRunRequestSchema = runRequestSchema
   .extend({
     attachmentFilename: attachmentNameSchema.optional(),
     settings: runRequestSchema.shape.settings.extend({
-      provider: providerSchema.nullable().default(null),
-      model: z.string().min(1).nullable().default(null),
+      reasoningEffort: reasoningEffortSchema,
+      inferenceMode: inferenceModeSchema,
     }),
   });
 

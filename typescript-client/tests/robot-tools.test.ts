@@ -247,7 +247,6 @@ test.each([false, true])(
       ],
       connection,
       lease,
-      mediaUrl: "http://media",
       arm: "follower",
       cameras: ["front"],
     });

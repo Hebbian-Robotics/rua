@@ -13,8 +13,6 @@ import type { UsageSnapshot } from "./usage.js";
 export interface AgentConfig extends LoopConfig {
   stationUrl: string;
 
-  mediaUrl: string;
-
   apiKey: string;
 }
 
@@ -67,7 +65,7 @@ export async function runAgent(
   config: AgentConfig,
   options: RunAgentOptions = {},
 ): Promise<AgentOutcome> {
-  const { stationUrl, mediaUrl, apiKey, ...loopConfig } = config;
+  const { stationUrl, apiKey, ...loopConfig } = config;
   if (
     !PROVIDERS.includes(config.provider) ||
     typeof config.model !== "string" ||
@@ -83,7 +81,7 @@ export async function runAgent(
   try {
     const driven = await drive(
       loopConfig,
-      { connection, stationUrl, mediaUrl },
+      { connection, stationUrl },
       {
         apiKey,
         print: (line) => options.onEvent?.({ type: "output", line }),

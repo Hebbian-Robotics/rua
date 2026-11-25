@@ -65,7 +65,6 @@ export interface LoopConfig {
 export interface StationEndpoints {
   connection: StationConnection;
   stationUrl: string;
-  mediaUrl: string;
 }
 
 export interface DriveOptions {
@@ -176,7 +175,6 @@ export async function drive(
   const robot = createRobotTools({
     connection,
     lease,
-    mediaUrl: endpoints.mediaUrl,
     arm: config.arm,
     cameras: config.cameras,
     optionalCameras: config.optionalCameras,

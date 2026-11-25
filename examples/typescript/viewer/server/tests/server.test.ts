@@ -17,7 +17,6 @@ function app(environment: NodeJS.ProcessEnv = { OPENAI_API_KEY: "key" }) {
   new ScriptedStation().install();
   const manager = new RunManager({
     stationUrl: "http://station",
-    mediaUrl: "http://media",
     environment,
     openConversation: () => ({
       nextTurn: () => new Promise(() => {}),

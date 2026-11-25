@@ -48,7 +48,6 @@ const allowedOrigins = allowedViewerOrigins(
 
 const manager = new RunManager({
   stationUrl,
-  mediaUrl,
   environment,
   now: Date.now,
   store: fileRunStore(environment["AGENT_RUNS_DIR"] ?? ".agent-runs"),

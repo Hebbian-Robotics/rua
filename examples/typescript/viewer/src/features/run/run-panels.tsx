@@ -216,22 +216,14 @@ function RunRequestDetails({ run }: { run: Run }) {
       )}
       <details className="run-settings">
         <summary>
-          Run settings{" "}
-          <span>
-            {request.settings.model ??
-              request.settings.provider ??
-              "Unrecorded"}
-          </span>
+          Run settings <span>{request.settings.model}</span>
         </summary>
         <dl className="run-settings-list">
           {[
-            ["Provider", request.settings.provider ?? "Unrecorded"],
-            ["Model", request.settings.model ?? "Unrecorded"],
-            [
-              "Reasoning effort",
-              request.settings.reasoningEffort ?? "Server default",
-            ],
-            ["Inference mode", request.settings.inferenceMode ?? "standard"],
+            ["Provider", request.settings.provider],
+            ["Model", request.settings.model],
+            ["Reasoning effort", request.settings.reasoningEffort],
+            ["Inference mode", request.settings.inferenceMode],
             ["Arm", request.arm],
             ["Required cameras", request.cameras.join(", ") || "None"],
             ["Optional cameras", request.optionalCameras.join(", ") || "None"],

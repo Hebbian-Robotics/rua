@@ -15,7 +15,10 @@ import {
 } from "../../shared/run-api.js";
 import type { RunStore } from "./run-manager.js";
 
-const outputRecordSchema = z.object({ line: z.string() });
+const outputRecordSchema = z.object({
+  timestamp: z.number(),
+  line: z.string(),
+});
 
 function recentOutput(records: string): string[] {
   return records
@@ -23,7 +26,6 @@ function recentOutput(records: string): string[] {
     .flatMap((line) => {
       if (!line) return [];
       try {
-        // WHY: Older logs and recovery only need the line, even if timing is absent.
         const record = outputRecordSchema.safeParse(JSON.parse(line));
         return record.success ? [record.data.line] : [];
       } catch (error) {

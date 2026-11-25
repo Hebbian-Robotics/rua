@@ -46,6 +46,9 @@ repository’s `.env`. Settings shows **Set in viewer environment** for these
 providers. Change the value there and restart the viewer. Manual controls
 and camera previews work without a model key.
 
+Run history requires the saved provider, model, reasoning effort, and inference mode.
+The viewer skips metadata missing those settings and output lines missing timestamps.
+
 ## Develop the viewer
 
 From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the
