@@ -8519,15 +8519,6 @@ export const apiSchemas = z.object({
       "shutdown",
     ])
     .describe("State-changing commands with no position target."),
-  ControlCapabilities: z
-    .object({
-      manual_pose_control: z
-        .boolean()
-        .describe(
-          "Whether this station is configured for manual pose control.",
-        ),
-    })
-    .describe("`GET /control/capabilities`."),
   ControllerKind: z.enum(["ik", "policy"]),
   ControllerStatus: z.union([
     z.object({ phase: z.literal("unmanaged") }),

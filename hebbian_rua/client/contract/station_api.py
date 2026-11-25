@@ -406,19 +406,6 @@ class ControlAction(StrEnum):
     shutdown = "shutdown"
 
 
-class ControlCapabilities(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-    )
-    manual_pose_control: Annotated[
-        bool,
-        Field(
-            description="Whether this station is configured for manual pose control."
-        ),
-    ]
-
-
 class ControllerKind(StrEnum):
     ik = "ik"
     policy = "policy"

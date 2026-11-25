@@ -141,7 +141,6 @@ pub(crate) enum Command {
 /// `LiveKit` credentials come from `LIVEKIT_URL`, `LIVEKIT_API_KEY` and
 /// `LIVEKIT_API_SECRET`; without them `LiveKit` cameras are unavailable.
 #[derive(clap::Args)]
-#[expect(clippy::struct_excessive_bools, reason = "Independent CLI switches")]
 pub(crate) struct WebArguments {
     /// Stream and capture snapshots from local cameras only. Disables remote cameras.
     ///
@@ -182,9 +181,6 @@ pub(crate) struct WebArguments {
         default_value = hebbian_rua_server::web::DEFAULT_PHONE_PAGE_URL
     )]
     phone_page_url: String,
-    /// Show the viewer's manual pose controls (a single SO-101 arm).
-    #[arg(long)]
-    manual_control: bool,
 }
 
 impl WebArguments {
@@ -204,7 +200,6 @@ impl WebArguments {
             media_executable: crate::media::find_media(self.media_executable),
             room: self.room,
             phone_page_url: self.phone_page_url,
-            manual_control: self.manual_control,
             media_status: hebbian_rua_server::media_status::MediaStatus::default(),
         }
     }

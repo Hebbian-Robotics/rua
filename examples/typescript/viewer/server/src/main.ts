@@ -96,7 +96,6 @@ app.post("/api/recording/stop", protectRecordingWrite, async (context) => {
 app.route("/api/manual", manualSessions(stationUrl));
 app.get("/", (context) => context.redirect("/viewer/"));
 app.get("/viewer", (context) => context.redirect("/viewer/"));
-app.get("/api/control/capabilities", forwardStationApi);
 app.get("/api/controller", forwardStationApi);
 app.post("/api/controller/reconnect", forwardStationApi);
 app.get("/api/media/status", forwardStationApi);

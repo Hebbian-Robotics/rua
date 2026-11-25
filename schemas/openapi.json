@@ -2154,19 +2154,6 @@
         ],
         "type": "string"
       },
-      "ControlCapabilities": {
-        "description": "`GET /control/capabilities`.",
-        "properties": {
-          "manual_pose_control": {
-            "description": "Whether this station is configured for manual pose control.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "manual_pose_control"
-        ],
-        "type": "object"
-      },
       "ControllerKind": {
         "enum": [
           "ik",
@@ -6748,44 +6735,6 @@
         },
         "summary": "Inspect a retained station-owned compilation.",
         "x-sdk": true,
-        "x-server": "station"
-      }
-    },
-    "/control/capabilities": {
-      "get": {
-        "operationId": "get_control_capabilities",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ControlCapabilities"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "detail"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "An error: {\"detail\": ...}"
-          }
-        },
-        "summary": "Whether the station is configured for manual pose control.",
-        "x-sdk": false,
         "x-server": "station"
       }
     },

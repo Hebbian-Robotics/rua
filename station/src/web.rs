@@ -15,7 +15,7 @@ use axum::{Json, Router};
 
 use crate::lease_routes::ServedArms;
 use crate::recording::{RecordingConfiguration, RecordingManager};
-use hebbian_contracts::{ControlCapabilities, PhoneInvite, PhoneInviteRequest};
+use hebbian_contracts::{PhoneInvite, PhoneInviteRequest};
 use hebbian_rua_core::control_link::LinkHandle;
 use station_access::{CameraConfiguration, Credentials, WatcherRole, new_room_name};
 
@@ -51,7 +51,6 @@ pub struct WebSettings {
     pub media_executable: PathBuf,
     pub room: Option<String>,
     pub phone_page_url: String,
-    pub manual_control: bool,
     pub media_status: crate::media_status::MediaStatus,
 }
 
@@ -252,9 +251,6 @@ pub fn mount(
     let media_status = settings.media_status;
     let proxy = crate::camera_proxy::camera_proxy(media_connect_address);
     let status_proxy = proxy.clone();
-    let control_capabilities = ControlCapabilities {
-        manual_pose_control: settings.manual_control,
-    };
     let router = Router::new()
         .route(
             "/recording/enabled",
@@ -263,10 +259,6 @@ pub fn mount(
         .route("/media/access-token", get(create_token))
         .route("/media/phone-invites", post(create_phone_invite))
         .with_state(access)
-        .route(
-            "/control/capabilities",
-            get(move || async move { Json(control_capabilities) }),
-        )
         .route(
             "/media/status",
             get(move || async move {

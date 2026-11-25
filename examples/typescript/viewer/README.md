@@ -21,7 +21,8 @@ served through the example backend. The station owns capture and storage.
 
 ## Use the viewer
 
-See [arm controls](../../../docs/so101-manual-control.md#controls) for manual
+The viewer offers **Manual** and **Agent** with a normal startup. See
+[arm controls](../../../docs/so101-manual-control.md#controls) for manual
 operation and [the agent example](../agent/README.md) for model setup. Open
 **Camera setup** in **Workspace** to connect a local or remote camera. See
 [the camera guide](../../../docs/cameras.md) for connection details and
@@ -31,15 +32,15 @@ operation and [the agent example](../agent/README.md) for model setup. Open
 
 ## Debug manual controls
 
-Use `pnpm start:viewer --manual-control-only-no-agent` only when you need to
-debug manual controls. This bypasses the viewer's model-provider key check,
-opens **Manual**, and disables **Agent** for the session. Start the station
-with `--manual-control` to enable manual pose controls. Camera previews follow
-the station's camera mode.
+To debug manual controls without a model-provider key, run
+`pnpm start:viewer --manual-control-only-no-agent`. This opens **Manual** and
+disables **Agent** for the session. Camera previews follow the station's camera
+mode.
 
 ## Develop the viewer
 
-From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the station separately. Add `--manual-control` to exercise manual motion in simulation.
+From the repository root, run `pnpm dev` and open the Vite viewer URL. Start the
+station separately.
 Use `pnpm check` and `pnpm test:viewer` to check changes.
 
 - [`src/app/`](src/app/) contains the page entry points and workspace. The full

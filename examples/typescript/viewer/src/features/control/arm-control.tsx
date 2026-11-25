@@ -96,7 +96,6 @@ export function ArmControl({
   onSelectArm,
   runActive,
   manualSelected,
-  manualAvailable,
   onManualControlStarted,
   onStopFollowing,
   onPowerTransition,
@@ -106,7 +105,6 @@ export function ArmControl({
   onSelectArm: (name: string) => void;
   runActive: boolean;
   manualSelected: boolean;
-  manualAvailable: boolean;
   onManualControlStarted?: () => Promise<void>;
   onStopFollowing: () => void;
   onPowerTransition: (changing: boolean) => void;
@@ -133,7 +131,6 @@ export function ArmControl({
   const powerOff = arm?.mode === "disabled" || arm?.mode === "reconnected";
   const canReconnectManual =
     manualSelected &&
-    manualAvailable &&
     arm?.mode === "holding" &&
     !holdsLease &&
     leaseView.kind !== "elsewhere";
@@ -316,8 +313,7 @@ export function ArmControl({
           disabled={
             busy ||
             runActive ||
-            (manualSelected &&
-              (!manualAvailable || leaseView.kind === "elsewhere"))
+            (manualSelected && leaseView.kind === "elsewhere")
           }
           onClick={() => void changePower("enable")}
         >
