@@ -5,36 +5,44 @@ import { Button } from "@/components/ui/button.js";
 import { Textarea } from "@/components/ui/textarea.js";
 import { MAX_FEEDBACK_LENGTH } from "../../../shared/run-api.js";
 import { errorMessage } from "../../errors.js";
-import type { Lesson, LessonEdits, Run } from "../../run-logic.js";
+import {
+  type Lesson,
+  type LessonEdits,
+  lessonEdit,
+  type Run,
+} from "../../run-logic.js";
 import type { useAgentRun } from "./use-agent-run.js";
 
 type Agent = ReturnType<typeof useAgentRun>;
 
 const LESSON_LOOKUP_DELAY_MILLISECONDS = 300;
 
-// Lessons for the typed task; refreshed when feedback is saved.
+// Lessons for the typed task; refreshed when feedback is saved. Until the lookup for the
+// current text settles, `ready` is false and no lessons are offered, so a run never starts
+// with lessons loaded for a different task.
 export function useTaskLessons(
   loadLessons: Agent["loadLessons"],
   task: string,
   enabled: boolean,
   refreshKey: unknown,
-): Lesson[] {
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+): { lessons: Lesson[]; ready: boolean } {
+  const [loaded, setLoaded] = useState<{
+    task: string;
+    lessons: Lesson[];
+  } | null>(null);
   const wanted = task.trim();
+  const active = enabled && wanted !== "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey reloads lessons after feedback is saved
   useEffect(() => {
-    if (!enabled || wanted === "") {
-      setLessons([]);
-      return;
-    }
+    if (!active) return;
     let current = true;
     const timer = setTimeout(() => {
       loadLessons(wanted).then(
-        (loaded) => {
-          if (current) setLessons(loaded);
+        (lessons) => {
+          if (current) setLoaded({ task: wanted, lessons });
         },
         () => {
-          if (current) setLessons([]);
+          if (current) setLoaded({ task: wanted, lessons: [] });
         },
       );
     }, LESSON_LOOKUP_DELAY_MILLISECONDS);
@@ -42,8 +50,11 @@ export function useTaskLessons(
       current = false;
       clearTimeout(timer);
     };
-  }, [loadLessons, wanted, enabled, refreshKey]);
-  return lessons;
+  }, [loadLessons, wanted, active, refreshKey]);
+  if (!active) return { lessons: [], ready: true };
+  return loaded?.task === wanted
+    ? { lessons: loaded.lessons, ready: true }
+    : { lessons: [], ready: false };
 }
 
 export function LessonsPicker({
@@ -57,7 +68,7 @@ export function LessonsPicker({
 }) {
   if (lessons.length === 0) return null;
   const enabledCount = lessons.filter(
-    (lesson) => edits[lesson.runId]?.enabled ?? true,
+    (lesson) => lessonEdit(lesson, edits).enabled,
   ).length;
   return (
     <details className="control-options" open>
@@ -71,10 +82,7 @@ export function LessonsPicker({
           this run only.
         </p>
         {lessons.map((lesson) => {
-          const edit = edits[lesson.runId] ?? {
-            enabled: true,
-            text: lesson.text,
-          };
+          const edit = lessonEdit(lesson, edits);
           const id = `agent-lesson-${encodeURIComponent(lesson.runId)}`;
           return (
             <div key={lesson.runId} className="grid gap-1">
@@ -168,6 +176,7 @@ export function RunFeedback({
         <Textarea
           id="agent-run-feedback"
           value={draft}
+          disabled={saving}
           maxLength={MAX_FEEDBACK_LENGTH}
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder="For example: open the gripper wider before descending"

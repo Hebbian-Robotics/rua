@@ -101,7 +101,7 @@ export function createApp({
     const body = await readJson(context.req.json(), feedbackRequestSchema);
     if (!body.success) return context.json({ detail: body.detail }, 400);
     return context.json(
-      manager.setFeedback(context.req.param("id"), body.data.text),
+      await manager.setFeedback(context.req.param("id"), body.data.text),
     );
   });
   app.get("/api/lessons", (context) => {

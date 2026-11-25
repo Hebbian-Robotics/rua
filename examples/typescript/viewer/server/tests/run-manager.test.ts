@@ -371,7 +371,7 @@ test("feedback on an ended run becomes a lesson that reaches the next run of the
     },
   });
   const first = await untilEnded(runs, runs.start(request).id);
-  const withFeedback = runs.setFeedback(
+  const withFeedback = await runs.setFeedback(
     first.id,
     "open the gripper wider before descending",
   );
@@ -413,22 +413,48 @@ test("feedback on an ended run becomes a lesson that reaches the next run of the
 });
 
 test("feedback waits for the run to end, and empty feedback clears it", async () => {
+  let early: Promise<unknown> = Promise.resolve();
   conversations.push(
     new ScriptedConversation([
       () => {
-        expect(() => runs.setFeedback("run-1", "too early")).toThrow(
-          RunConflictError,
-        );
+        early = runs.setFeedback("run-1", "too early");
+        early.catch(() => {});
         return turn(["finish", { reason: "done" }]);
       },
     ]),
   );
   const runs = manager();
   const ended = await untilEnded(runs, runs.start(request).id);
-  runs.setFeedback(ended.id, "approach from above");
-  const cleared = runs.setFeedback(ended.id, "");
+  await expect(early).rejects.toThrow(RunConflictError);
+  await runs.setFeedback(ended.id, "approach from above");
+  const cleared = await runs.setFeedback(ended.id, "");
   expect(cleared.feedback).toBeUndefined();
   expect(runs.lessons("stack")).toEqual([]);
+});
+
+test("feedback that cannot be written is reported and not offered as a lesson", async () => {
+  conversations.push(
+    new ScriptedConversation([turn(["finish", { reason: "done" }])]),
+  );
+  const runs = manager();
+  const ended = await untilEnded(runs, runs.start(request).id);
+  await runs.setFeedback(ended.id, "approach from above");
+  const save = store.save;
+  store.save = async () => {
+    throw new Error("disk full");
+  };
+  await expect(
+    runs.setFeedback(ended.id, "approach from the left"),
+  ).rejects.toThrow("Could not save feedback: disk full");
+  expect(runs.get(ended.id).feedback?.text).toBe("approach from above");
+  expect(runs.lessons("stack").map((lesson) => lesson.text)).toEqual([
+    "approach from above",
+  ]);
+  store.save = save;
+  await runs.setFeedback(ended.id, "approach from the left");
+  expect(store.saved.get(ended.id)?.feedback?.text).toBe(
+    "approach from the left",
+  );
 });
 
 test("saved runs without lessons or feedback still load", () => {

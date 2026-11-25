@@ -115,6 +115,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+// Lesson lookups wait for typing to pause; Start stays blocked until the lookup settles.
+async function lessonsSettled() {
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+}
+
 async function mountAgentControl(
   requests: RunRequest[],
   agentState: typeof agent = agent,
@@ -200,6 +205,7 @@ test("a custom model is saved, restored on reload, and submitted by ID", async (
   expect(providerSelect().value).toBe("openai");
   expect(modelSelect().selectedOptions[0]?.label).toBe("Other");
   expect(customModelInput().value).toBe(" gpt-custom-preview ");
+  await lessonsSettled();
   await act(async () => startButton().click());
   expect(requests).toEqual([
     {
@@ -228,6 +234,7 @@ test("changing providers clears a custom model and requires a fresh selection", 
   await selectOption(providerSelect(), "OpenAI");
   await selectOption(modelSelect(), "Other");
   await enterText(customModelInput(), "gpt-custom-preview");
+  await lessonsSettled();
   expect(startButton().disabled).toBe(false);
 
   await selectOption(providerSelect(), "Gemini");
@@ -279,7 +286,7 @@ test("lessons for the typed task are offered, can be switched off and edited, an
   );
   await selectOption(providerSelect(), "OpenAI");
   await selectOption(modelSelect(), "GPT-6 Sol");
-  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+  await lessonsSettled();
   expect(asked.at(-1)).toBe("pick up the tube");
   expect(view.textContent).toContain("Lessons from earlier runs (2 of 2 on)");
   await act(async () =>
@@ -297,4 +304,121 @@ test("lessons for the typed task are offered, can be switched off and edited, an
       lessons: ["open the gripper wider"],
     }),
   ]);
+});
+
+test("a changed task offers no lessons, and blocks Start, until its own lookup settles", async () => {
+  const requests: RunRequest[] = [];
+  await mountAgentControl(requests, {
+    ...agent,
+    loadLessons: async (task) =>
+      task === "pick up the tube"
+        ? [
+            {
+              runId: "r1",
+              outcome: "stopped",
+              text: "approach from above",
+              savedAt: 1,
+            },
+          ]
+        : [],
+  });
+  await selectOption(providerSelect(), "OpenAI");
+  await selectOption(modelSelect(), "GPT-6 Sol");
+  const task = requireControl<HTMLTextAreaElement>("#agent-task");
+  await enterText(task, "pick up the tube");
+  await lessonsSettled();
+  expect(view.textContent).toContain("Lessons from earlier runs (1 of 1 on)");
+
+  await enterText(task, "wave at the camera");
+  expect(view.textContent).not.toContain("Lessons from earlier runs");
+  expect(view.textContent).toContain("Checking lessons from earlier runs…");
+  expect(startButton().disabled).toBe(true);
+  await act(async () => startButton().click());
+  expect(requests).toEqual([]);
+
+  await lessonsSettled();
+  await act(async () => startButton().click());
+  expect(requests).toEqual([
+    expect.objectContaining({ task: "wave at the camera", lessons: [] }),
+  ]);
+});
+
+test("lesson choices apply to one start only", async () => {
+  const requests: RunRequest[] = [];
+  await mountAgentControl(requests, {
+    ...agent,
+    loadLessons: async () => [
+      {
+        runId: "r1",
+        outcome: "stopped",
+        text: "approach from above",
+        savedAt: 1,
+      },
+    ],
+  });
+  await selectOption(providerSelect(), "OpenAI");
+  await selectOption(modelSelect(), "GPT-6 Sol");
+  await enterText(
+    requireControl<HTMLTextAreaElement>("#agent-task"),
+    "pick up the tube",
+  );
+  await lessonsSettled();
+  await act(async () =>
+    requireControl<HTMLInputElement>("#agent-lesson-r1-on").click(),
+  );
+  await act(async () => startButton().click());
+  expect(view.textContent).toContain("Lessons from earlier runs (1 of 1 on)");
+  await act(async () => startButton().click());
+  expect(requests.map((request) => request.lessons)).toEqual([
+    [],
+    ["approach from above"],
+  ]);
+});
+
+test("feedback cannot be edited mid-save, and a failed save can be retried", async () => {
+  const ended: NonNullable<typeof agent.run> = {
+    id: "r1",
+    createdAt: 1,
+    request: {
+      arm: "follower",
+      task: "pick up the tube",
+      lessons: [],
+      cameras: [],
+      optionalCameras: [],
+      settings: {
+        provider: "openai",
+        model: "gpt-6-sol",
+        reasoningEffort: null,
+        inferenceMode: null,
+      },
+    },
+    phase: {
+      state: "ended",
+      startedAt: 1,
+      endedAt: 2,
+      outcome: { kind: "stopped" },
+    },
+    output: [],
+  };
+  let finishSave: (error?: Error) => void = () => {};
+  await mountAgentControl([], {
+    ...agent,
+    run: ended,
+    saveFeedback: () =>
+      new Promise((resolve, reject) => {
+        finishSave = (error) => (error ? reject(error) : resolve(ended));
+      }),
+  });
+  const field = requireControl<HTMLTextAreaElement>("#agent-run-feedback");
+  await enterText(field, "approach from above");
+  const save = requireControl<HTMLButtonElement>(
+    'form[aria-label="Run feedback"] button[type="submit"]',
+  );
+  await act(async () => save.click());
+  expect(field.disabled).toBe(true);
+  await act(async () => finishSave(new Error("disk full")));
+  expect(field.disabled).toBe(false);
+  expect(field.value).toBe("approach from above");
+  expect(view.textContent).toContain("Could not save feedback: disk full");
+  expect(save.disabled).toBe(false);
 });

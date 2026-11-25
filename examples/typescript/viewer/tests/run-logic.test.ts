@@ -300,9 +300,23 @@ test("chosen lessons apply the operator's edits and switches", () => {
   ]);
   expect(
     chosenLessons(lessons, {
-      a: { enabled: false, text: "approach from above" },
-      b: { enabled: true, text: "  open the gripper wider  " },
-      c: { enabled: true, text: "   " },
+      a: { enabled: false, text: "approach from above", savedAt: 1 },
+      b: { enabled: true, text: "  open the gripper wider  ", savedAt: 1 },
+      c: { enabled: true, text: "   ", savedAt: 1 },
     }),
   ).toEqual(["open the gripper wider"]);
+});
+
+test("edits to superseded feedback give way to the corrected feedback", () => {
+  const corrected = {
+    runId: "a",
+    outcome: "completed" as const,
+    text: "approach from the left",
+    savedAt: 2,
+  };
+  expect(
+    chosenLessons([corrected], {
+      a: { enabled: false, text: "approach from above", savedAt: 1 },
+    }),
+  ).toEqual(["approach from the left"]);
 });

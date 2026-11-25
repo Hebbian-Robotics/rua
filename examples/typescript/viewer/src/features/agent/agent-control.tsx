@@ -89,7 +89,7 @@ export function AgentControl({
   >({});
   const [lessonEdits, setLessonEdits] = useState<LessonEdits>({});
   const { run, status, providers, providersError } = agent;
-  const lessons = useTaskLessons(
+  const { lessons, ready: lessonsReady } = useTaskLessons(
     agent.loadLessons,
     task,
     status === "reachable",
@@ -174,6 +174,8 @@ export function AgentControl({
         : "Wait for the arm to hold before starting a task.";
   } else if (task.trim() && decision.kind === "blocked") {
     unavailable = decision.reason;
+  } else if (!lessonsReady) {
+    unavailable = "Checking lessons from earlier runs…";
   }
   return (
     <section className="agent-control" aria-label="Agent control">
@@ -186,12 +188,16 @@ export function AgentControl({
             !preparingPromptImage &&
             !unavailable &&
             decision.kind === "allowed"
-          )
+          ) {
+            const kept = chosenLessons(lessons, lessonEdits);
+            // Choices apply to one run; the next start reviews lessons afresh.
+            setLessonEdits({});
             void onStartRun({
               ...decision.request,
-              lessons: chosenLessons(lessons, lessonEdits),
+              lessons: kept,
               ...(promptImage ? { promptImage } : {}),
             });
+          }
         }}
       >
         <label htmlFor="agent-task">

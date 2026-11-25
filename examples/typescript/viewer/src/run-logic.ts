@@ -236,16 +236,29 @@ export function shouldFollowOutput(
 }
 
 // Per-start operator choices over the lessons offered for a task, keyed by source run.
-export type LessonEdits = Record<string, { enabled: boolean; text: string }>;
+// An edit remembers which saved feedback it changed, so corrected feedback replaces it.
+export type LessonEdits = Record<
+  string,
+  { enabled: boolean; text: string; savedAt: number }
+>;
+
+export function lessonEdit(
+  lesson: Lesson,
+  edits: LessonEdits,
+): LessonEdits[string] {
+  const edit = edits[lesson.runId];
+  return edit !== undefined && edit.savedAt === lesson.savedAt
+    ? edit
+    : { enabled: true, text: lesson.text, savedAt: lesson.savedAt };
+}
 
 export function chosenLessons(
   lessons: readonly Lesson[],
   edits: LessonEdits,
 ): string[] {
   return lessons.flatMap((lesson) => {
-    const edit = edits[lesson.runId];
-    if (edit !== undefined && !edit.enabled) return [];
-    const text = (edit?.text ?? lesson.text).trim();
-    return text === "" ? [] : [text];
+    const edit = lessonEdit(lesson, edits);
+    const text = edit.text.trim();
+    return edit.enabled && text !== "" ? [text] : [];
   });
 }

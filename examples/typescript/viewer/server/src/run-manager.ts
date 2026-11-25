@@ -60,6 +60,11 @@ interface LiveRun {
   outputWriteFailed: boolean;
 }
 
+function withFeedback(run: Run, feedback: Run["feedback"]): Run {
+  const { feedback: _replaced, ...rest } = run;
+  return feedback === undefined ? rest : { ...rest, feedback };
+}
+
 export class RunManager {
   private readonly runs = new Map<string, LiveRun>();
   private writes: Promise<void> = Promise.resolve();
@@ -81,7 +86,7 @@ export class RunManager {
               },
             };
       this.runs.set(run.id, this.live(run));
-      if (run !== saved) this.persist(run);
+      if (run !== saved) void this.persist(run);
     }
     await this.writes;
   }
@@ -113,7 +118,7 @@ export class RunManager {
     };
     const entry = this.live(run);
     this.runs.set(run.id, entry);
-    this.persist(entry.run);
+    void this.persist(entry.run);
     const started = entry.run;
     entry.finished = this.execute(entry, request);
     return started;
@@ -145,17 +150,23 @@ export class RunManager {
   }
 
   // Feedback belongs to a finished run: it describes what happened, for the next run.
-  setFeedback(id: string, text: string): Run {
+  // Resolves only once the record is on disk, so the operator never sees unsaved advice as saved.
+  async setFeedback(id: string, text: string): Promise<Run> {
     const entry = this.entry(id);
     if (entry.run.phase.state !== "ended")
       throw new RunConflictError("Add feedback after the run ends");
-    const { feedback: _previous, ...rest } = entry.run;
-    entry.run =
-      text === ""
-        ? rest
-        : { ...rest, feedback: { text, savedAt: this.options.now() } };
-    this.persist(entry.run);
-    return entry.run;
+    const previous = entry.run.feedback;
+    entry.run = withFeedback(
+      entry.run,
+      text === "" ? undefined : { text, savedAt: this.options.now() },
+    );
+    const updated = entry.run;
+    const failure = await this.persist(updated);
+    if (failure !== null) {
+      entry.run = withFeedback(entry.run, previous);
+      throw new Error(`Could not save feedback: ${failure}`);
+    }
+    return updated;
   }
 
   // Feedback from earlier runs of exactly this task, newest first.
@@ -241,7 +252,7 @@ export class RunManager {
 
   private setPhase(entry: LiveRun, phase: RunPhase): void {
     entry.run = { ...entry.run, phase };
-    this.persist(entry.run);
+    void this.persist(entry.run);
     if (phase.state === "ended") {
       // WHY: The terminal event closes the stream. Report final persistence first.
       void this.writes.then(() => this.emit(entry, { type: "phase", phase }));
@@ -254,7 +265,7 @@ export class RunManager {
     entry.run.output.push(line);
     if (entry.run.output.length > OUTPUT_LINE_LIMIT) entry.run.output.shift();
     const timestamp = this.options.now();
-    this.enqueueWrite(entry.run.id, "output", () =>
+    void this.enqueueWrite(entry.run.id, "output", () =>
       this.options.store.appendOutput(entry.run.id, line, timestamp),
     );
     this.emit(entry, { type: "output", line });
@@ -350,9 +361,10 @@ export class RunManager {
     });
   }
 
-  private persist(run: Run): void {
+  // Resolves with the write's failure, or null once the record is saved.
+  private persist(run: Run): Promise<string | null> {
     const snapshot = structuredClone(run);
-    this.enqueueWrite(run.id, "metadata", () => {
+    return this.enqueueWrite(run.id, "metadata", () => {
       const entry = this.runs.get(run.id);
       snapshot.persistenceError = entry?.outputWriteFailed
         ? entry.run.persistenceError
@@ -365,8 +377,8 @@ export class RunManager {
     id: string,
     kind: "metadata" | "output",
     write: () => Promise<void>,
-  ): void {
-    this.writes = this.writes
+  ): Promise<string | null> {
+    const done = this.writes
       .then(async () => {
         await write();
         const entry = this.runs.get(id);
@@ -378,6 +390,7 @@ export class RunManager {
           entry.run = { ...entry.run, persistenceError: undefined };
           this.emit(entry, { type: "persistence_error", detail: null });
         }
+        return null;
       })
       .catch((error: unknown) => {
         const entry = this.runs.get(id);
@@ -385,10 +398,13 @@ export class RunManager {
         console.error(`Could not save run ${id}:`, error);
         if (entry) {
           if (kind === "output") entry.outputWriteFailed = true;
-          if (kind === "metadata" && entry.outputWriteFailed) return;
+          if (kind === "metadata" && entry.outputWriteFailed) return detail;
           entry.run = { ...entry.run, persistenceError: detail };
           this.emit(entry, { type: "persistence_error", detail });
         }
+        return detail;
       });
+    this.writes = done.then(() => undefined);
+    return done;
   }
 }
