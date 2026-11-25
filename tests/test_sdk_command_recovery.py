@@ -47,14 +47,25 @@ async def run_python_operation(
 
 @pytest.mark.server
 @pytest.mark.parametrize(
-    "client",
-    ["python", pytest.param("typescript", marks=pytest.mark.typescript)],
+    ("client", "operation"),
+    [
+        ("python", "command"),
+        ("python", "action_sequence"),
+        pytest.param("typescript", "command", marks=pytest.mark.typescript),
+        pytest.param("typescript", "action_sequence", marks=pytest.mark.typescript),
+        pytest.param("typescript", "compiled_sequence", marks=pytest.mark.typescript),
+    ],
 )
-@pytest.mark.parametrize("operation", ["command", "action_sequence"])
 def test_sdk_recovers_the_original_operation_after_losing_its_reply(
-    server_binary: Path, client: str, operation: Literal["command", "action_sequence"]
+    server_binary: Path,
+    client: str,
+    operation: Literal["command", "action_sequence", "compiled_sequence"],
 ) -> None:
-    submission_path = "/commands" if operation == "command" else "/action_sequence"
+    submission_path = {
+        "command": "/commands",
+        "action_sequence": "/action_sequence",
+        "compiled_sequence": "/compilations/run",
+    }[operation]
     with running_station(server_binary) as station:
         upstream_address = urlsplit(station.server)
         submissions: list[tuple[str, str]] = []
@@ -125,6 +136,7 @@ def test_sdk_recovers_the_original_operation_after_losing_its_reply(
             try:
                 proxy_url = f"http://127.0.0.1:{proxy.server_port}"
                 if client == "python":
+                    assert operation != "compiled_sequence"
                     result_id = asyncio.run(
                         asyncio.wait_for(
                             run_python_operation(proxy_url, operation), timeout=15
@@ -155,5 +167,5 @@ def test_sdk_recovers_the_original_operation_after_losing_its_reply(
 
         assert len(submissions) >= 2
         assert set(submissions) == {(submissions[0][0], result_id)}
-        if operation == "action_sequence":
+        if operation != "command":
             assert result_id == submissions[0][0]

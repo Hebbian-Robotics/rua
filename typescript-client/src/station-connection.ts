@@ -53,6 +53,7 @@ const CONNECT_TIMEOUT_MILLISECONDS = 10_000;
 const EVENT_READ_TIMEOUT_MILLISECONDS = 30_000;
 /** How long a request, or an awaited state, waits before it is given up on. */
 const REPLY_TIMEOUT_MILLISECONDS = 30_000;
+const MAX_SEQUENCE_ORIGINS = 256;
 class StationReplayGap extends StationConnectionError {}
 
 /** A model loop's run telemetry, in order, each record once. */
@@ -328,6 +329,7 @@ export function createStationConnection(
     (actionSequence: ActionSequenceRecord | null) => void
   >();
   let latestActionSequence: ActionSequenceRecord | null | undefined;
+  const sequenceOrigins = new Map<string, string>();
   const connectionListeners = new Set<(connected: boolean) => void>();
   const leaseLostListeners = new Set<() => void>();
   const changeListeners = new Set<() => void>();
@@ -944,7 +946,9 @@ export function createStationConnection(
   async function getActionSequence(
     actionSequenceId: string,
   ): Promise<ActionSequenceRecord> {
-    return stationApi().getActionSequence(actionSequenceId);
+    return actionSequenceApi(actionSequenceId).getActionSequence(
+      actionSequenceId,
+    );
   }
 
   async function state(): Promise<StationState> {
@@ -1178,22 +1182,56 @@ export function createStationConnection(
     );
   }
 
+  function actionSequenceApi(id: string, signal?: AbortSignal) {
+    const base = sequenceOrigins.get(id) ?? baseUrl();
+    return createStationApi(base, base, signal);
+  }
+
+  async function submitSequence<Payload extends object>(
+    request: Payload,
+    submit: (
+      api: ReturnType<typeof createStationApi>,
+      submission: Payload & { request_id: string; station_instance_id: string },
+    ) => Promise<string>,
+  ): Promise<string> {
+    const base = baseUrl();
+    const payload = structuredClone(request);
+    const lifetime = operationLifetime.signal;
+    const request_id = newOperationId();
+    const { id: station_instance_id } = await createStationApi(
+      base,
+      base,
+      lifetime,
+    ).getStationInstance();
+    const submission = { ...payload, request_id, station_instance_id };
+    const executionId = await retryOperationRequest(
+      (signal) => submit(createStationApi(base, base, signal), submission),
+      lifetime,
+    );
+    sequenceOrigins.set(executionId, base);
+    if (sequenceOrigins.size > MAX_SEQUENCE_ORIGINS) {
+      const oldest = sequenceOrigins.keys().next().value;
+      if (oldest !== undefined) sequenceOrigins.delete(oldest);
+    }
+    return executionId;
+  }
+
   async function startActionSequence(
     action_sequence: ActionSequenceRequest,
     captureCameras?: readonly string[],
   ): Promise<string> {
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
-    const submission = apiSchemas.shape.ActionSequenceStartRequest.parse({
-      request_id: newOperationId(),
-      station_instance_id: (await stationApi().getStationInstance()).id,
-      lease_token: token,
-      action_sequence,
-      ...(captureCameras?.length ? { capture_cameras: captureCameras } : {}),
-    });
-    return retryOperationRequest(
-      (signal) => stationApi(signal).startActionSequenceHttp(submission),
-      operationLifetime.signal,
+    return submitSequence(
+      {
+        lease_token: token,
+        action_sequence,
+        ...(captureCameras?.length ? { capture_cameras: captureCameras } : {}),
+      },
+      (api, submission) =>
+        api.startActionSequenceHttp(
+          apiSchemas.shape.ActionSequenceStartRequest.parse(submission),
+        ),
     );
   }
 
@@ -1290,17 +1328,17 @@ export function createStationConnection(
         continuation,
       ) {
         if (!isHeld()) throw new LeaseLostError();
-        const submission = {
-          request_id: newOperationId(),
-          station_instance_id: (await stationApi().getStationInstance()).id,
-          compilation_id: compilationId,
-          continuation: continuation ?? null,
-          lease_token: token,
-          expected_revisions: expectedRevisions,
-        };
-        return retryOperationRequest(
-          (signal) => stationApi(signal).runCompiledSequenceHttp(submission),
-          operationLifetime.signal,
+        return submitSequence(
+          {
+            compilation_id: compilationId,
+            continuation: continuation ?? null,
+            lease_token: token,
+            expected_revisions: expectedRevisions,
+          },
+          (api, submission) =>
+            api.runCompiledSequenceHttp(
+              apiSchemas.shape.RunCompiledProgramRequest.parse(submission),
+            ),
         );
       },
       startActionSequence(actionSequence, captureCameras) {
@@ -1402,7 +1440,7 @@ export function createStationConnection(
     getOperation: (operationId) => stationApi().getOperation(operationId),
     getActionSequence,
     getSequenceCameraHistory: (id, signal) =>
-      stationApi(signal).getSequenceCameraHistory(id),
+      actionSequenceApi(id, signal).getSequenceCameraHistory(id),
     async waitForActionSequence(actionSequenceId, options = {}) {
       const { signal, timeoutMilliseconds } = options;
       const timeout =
@@ -1414,13 +1452,16 @@ export function createStationConnection(
         ...(signal ? [signal] : []),
         ...(timeout ? [timeout] : []),
       ]);
+      const base = sequenceOrigins.get(actionSequenceId) ?? baseUrl();
       try {
         while (true) {
           const record = await retryOperationRequest(
             (attempt) =>
-              stationApi(attempt).waitActionSequenceCompletion(
-                actionSequenceId,
-              ),
+              createStationApi(
+                base,
+                base,
+                attempt,
+              ).waitActionSequenceCompletion(actionSequenceId),
             requestSignal,
           );
           if (record !== null)
@@ -1437,7 +1478,9 @@ export function createStationConnection(
     },
     async cancelActionSequence(actionSequenceId) {
       try {
-        await stationApi().cancelActionSequenceHttp(actionSequenceId);
+        await actionSequenceApi(actionSequenceId).cancelActionSequenceHttp(
+          actionSequenceId,
+        );
       } catch (error) {
         if (!(error instanceof StationHttpError && error.status === 404))
           throw error;
