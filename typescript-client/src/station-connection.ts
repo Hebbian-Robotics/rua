@@ -146,7 +146,10 @@ export interface Lease {
     operationId?: string,
   ): Promise<CommandAnswer>;
   /** Start an ordered action_sequence and return its identifier. */
-  startActionSequence(action_sequence: ActionSequenceRequest): Promise<string>;
+  startActionSequence(
+    action_sequence: ActionSequenceRequest,
+    captureCameras?: readonly string[],
+  ): Promise<string>;
   /** Submit a retained compilation with fresh lease and admission checks. */
   startCompiledSequence(
     compilationId: string,
@@ -216,6 +219,12 @@ export interface StationConnection {
     import("./generated/api-schemas.js").ApiSchemas["CompilationArtifact"]
   >;
   getActionSequence(action_sequenceId: string): Promise<ActionSequenceRecord>;
+  getSequenceCameraHistory?(
+    executionId: string,
+    signal?: AbortSignal,
+  ): ReturnType<
+    ReturnType<typeof createStationApi>["getSequenceCameraHistory"]
+  >;
   /** Wait for a terminal result. Aborting or timing out ends the wait; cancel the sequence to stop motion. */
   waitForActionSequence(
     action_sequenceId: string,
@@ -1149,6 +1158,7 @@ export function createStationConnection(
 
   async function startActionSequence(
     action_sequence: ActionSequenceRequest,
+    captureCameras?: readonly string[],
   ): Promise<string> {
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
@@ -1158,6 +1168,7 @@ export function createStationConnection(
         station_instance_id: (await stationApi().getStationInstance()).id,
         lease_token: token,
         action_sequence,
+        ...(captureCameras?.length ? { capture_cameras: captureCameras } : {}),
       }),
     );
   }
@@ -1264,9 +1275,9 @@ export function createStationConnection(
           expected_revisions: expectedRevisions,
         });
       },
-      startActionSequence(actionSequence) {
+      startActionSequence(actionSequence, captureCameras) {
         requireCurrentLease();
-        return startActionSequence(actionSequence);
+        return startActionSequence(actionSequence, captureCameras);
       },
       async stopArm(arm) {
         if (!isHeld()) throw new LeaseLostError();
@@ -1339,6 +1350,8 @@ export function createStationConnection(
       stationApi(signal).captureObservationHttp(selection),
     getOperation: (operationId) => stationApi().getOperation(operationId),
     getActionSequence,
+    getSequenceCameraHistory: (id, signal) =>
+      stationApi(signal).getSequenceCameraHistory(id),
     async waitForActionSequence(actionSequenceId, options = {}) {
       const { signal, timeoutMilliseconds } = options;
       const lookup = new AbortController();

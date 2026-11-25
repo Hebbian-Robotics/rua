@@ -176,8 +176,9 @@ what to do next. `waitUntilConnected()` rejects when the station refuses the con
 - `createStationHttpClient({ stationUrl, mediaUrl })` lists cameras, fetches
   snapshots, creates phone invites and lists or downloads traces (gzip bytes as served).
   Direct camera requests use the station URL unless `mediaUrl` is set.
-  `createRobotTools` uses the station’s observation route. Its `mediaUrl` option
-  sets where it retrieves images during a sequence.
+  `createRobotTools` uses the station’s observation route and its configured
+  media companion for sequence images. Update the station before enabling
+  sequence image capture with this SDK.
 
 Errors: `StationConnectionError`, `StationTimeoutError`, `StationRefusedError` (a
 message the station could not act on), `LeaseHeldElsewhereError` and

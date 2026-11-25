@@ -13,7 +13,7 @@ use hebbian_contracts::{
 };
 use serde_json::Value;
 
-use crate::sequence_images::{SequenceCapture, SequenceImages};
+use crate::sequence_images::SequenceImages;
 use crate::tool_operations::{ToolOperation, ToolOperationAnswer};
 use crate::{CommandOptions, Error, LeaseGuard};
 
@@ -364,6 +364,11 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
     ) -> crate::Result<RobotToolResult> {
         tokio::time::sleep(std::time::Duration::from_secs_f64(wait_seconds)).await;
         if source == ObservationSource::LastSequence {
+            if self.sequence_images().is_none()
+                && let Some(id) = self.sequence_images.execution()
+            {
+                self.refresh_sequence_images(&id).await;
+            }
             return Ok(self.history_observation(call_id));
         }
         let station = self.lease.station();
@@ -479,36 +484,50 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
         call_id: &str,
         request: ActionSequenceRequest,
     ) -> crate::Result<RobotToolOutcome> {
-        let capture = SequenceCapture::start(
-            self.sequence_images.clone(),
-            self.lease.station().clone(),
-            self.cameras
-                .iter()
-                .chain(&self.optional_cameras)
-                .cloned()
-                .collect(),
-            call_id.to_owned(),
-        );
-        let outcome = async {
-            let answer = match self.lease.start_action_sequence(request).await {
-                Ok(action_sequence_id) => {
-                    if let Some(capture) = &capture {
-                        capture.set_sequence_id(action_sequence_id.clone());
-                    }
-                    ToolOperationAnswer::ActionSequence { action_sequence_id }
-                }
-                Err(Error::Refused { reason, detail }) => {
-                    ToolOperationAnswer::Refused { reason, detail }
-                }
-                Err(error) => return Err(error),
-            };
-            self.operation_outcome(answer).await
+        let cameras = self
+            .cameras
+            .iter()
+            .chain(&self.optional_cameras)
+            .cloned()
+            .map(hebbian_contracts::SnapshotName::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let capture = !cameras.is_empty();
+        self.sequence_images.select(None);
+        let id = match self
+            .lease
+            .start_action_sequence_with_cameras(request, cameras)
+            .await
+        {
+            Ok(id) => id,
+            Err(Error::Refused { reason, detail }) => {
+                return self
+                    .operation_outcome(ToolOperationAnswer::Refused { reason, detail })
+                    .await;
+            }
+            Err(error) => return Err(error),
+        };
+        if capture {
+            self.sequence_images
+                .select(Some((id.clone(), call_id.to_owned())));
         }
-        .await;
-        if let Some(capture) = capture {
-            capture.finish().await;
+        let outcome = self
+            .operation_outcome(ToolOperationAnswer::ActionSequence {
+                action_sequence_id: id.clone(),
+            })
+            .await;
+        if capture && outcome.is_ok() {
+            self.refresh_sequence_images(&id).await;
         }
         outcome
+    }
+
+    async fn refresh_sequence_images(&self, id: &str) {
+        let history = self.lease.station().get_sequence_camera_history(id);
+        if let Ok(Ok(Some(history))) =
+            tokio::time::timeout(std::time::Duration::from_secs(2), history).await
+        {
+            self.sequence_images.cache(id, history);
+        }
     }
 
     async fn rehome(&self, arm: &str, options: CommandOptions) -> crate::Result<RobotToolOutcome> {

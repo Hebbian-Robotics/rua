@@ -1954,6 +1954,19 @@ export const apiSchemas = z.object({
         .describe(
           "An ordered set of steps to execute under the caller's lease.",
         ),
+      capture_cameras: z
+        .array(
+          z
+            .string()
+            .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+            .describe(
+              "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+            ),
+        )
+        .describe(
+          "Best-effort image capture for this execution. Empty disables capture.",
+        )
+        .optional(),
       lease_token: z.string(),
       request_id: z.string(),
       station_instance_id: z.string(),
@@ -17452,6 +17465,105 @@ export const apiSchemas = z.object({
     .describe(
       "One control cycle's state; a sample, so a slow client may miss some.",
     ),
+  SequenceCameraHistory: z
+    .object({
+      expires_in_seconds: z
+        .number()
+        .describe(
+          "Remaining retention at the time the station prepared this response.",
+        ),
+      images: z.array(
+        z
+          .object({
+            boundary: z
+              .enum(["start", "motion", "step", "end"])
+              .describe("Why a best-effort sequence image was requested."),
+            camera: z
+              .string()
+              .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+              .describe(
+                "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+              ),
+            elapsed_seconds: z.number(),
+            frame: z
+              .object({
+                captured_at_unix_ns: z
+                  .union([
+                    z
+                      .string()
+                      .describe(
+                        "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+                      ),
+                  ])
+                  .describe(
+                    "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+                  )
+                  .optional(),
+                jpeg_base64: z.string(),
+                retrieved_between_unix_seconds: z
+                  .array(z.number())
+                  .min(2)
+                  .max(2),
+              })
+              .describe(
+                "One captured JPEG with its source timestamp and retrieval interval.",
+              ),
+          })
+          .describe("One image requested during an action sequence."),
+      ),
+      missed_samples: z.number().int().gte(0),
+      truncated: z.boolean(),
+    })
+    .describe(
+      "Selected evidence for one execution. Image timing is measured at the station.",
+    ),
+  SequenceCameraImage: z
+    .object({
+      boundary: z
+        .enum(["start", "motion", "step", "end"])
+        .describe("Why a best-effort sequence image was requested."),
+      camera: z
+        .string()
+        .regex(/^(?:[a-z0-9_]{1,40}|sim_[\s\S]+)$/)
+        .describe(
+          "Camera address used by the station. Simulator views carry a sim_ prefix and an opaque renderer name.",
+        ),
+      elapsed_seconds: z.number(),
+      frame: z
+        .object({
+          captured_at_unix_ns: z
+            .union([
+              z
+                .string()
+                .describe(
+                  "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+                ),
+              z
+                .null()
+                .describe(
+                  "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+                ),
+            ])
+            .describe(
+              "Decimal nanoseconds, encoded as text to preserve precision across SDKs.",
+            )
+            .optional(),
+          jpeg_base64: z.string(),
+          retrieved_between_unix_seconds: z.array(z.number()).min(2).max(2),
+        })
+        .describe(
+          "One captured JPEG with its source timestamp and retrieval interval.",
+        ),
+    })
+    .describe("One image requested during an action sequence."),
+  SequenceImageBoundary: z
+    .enum(["start", "motion", "step", "end"])
+    .describe("Why a best-effort sequence image was requested."),
   ServerMessage: z
     .union([
       z.object({

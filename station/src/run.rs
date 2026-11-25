@@ -236,6 +236,7 @@ pub(crate) fn run_supervised(
         .iter()
         .map(|(name, link)| (name.clone(), link.handle()))
         .collect();
+    mounted.attach_sequence_cameras(&server);
     mounted.attach_arms(&server.runtime_handle(), &handles);
     server.attach_arms(handles);
     let runtime = server.runtime_handle();

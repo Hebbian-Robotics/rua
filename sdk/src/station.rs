@@ -996,12 +996,25 @@ impl LeaseGuard {
         &self,
         action_sequence: ActionSequenceRequest,
     ) -> Result<String> {
+        self.start_action_sequence_with_cameras(action_sequence, Vec::new())
+            .await
+    }
+
+    /// Start an action sequence with best-effort station camera capture.
+    /// # Errors
+    /// The station refuses the request or the connection fails.
+    pub async fn start_action_sequence_with_cameras(
+        &self,
+        action_sequence: ActionSequenceRequest,
+        capture_cameras: Vec<hebbian_contracts::SnapshotName>,
+    ) -> Result<String> {
         self.station
             .start_action_sequence_http(&ActionSequenceStartRequest {
                 request_id: uuid::Uuid::new_v4().to_string(),
                 station_instance_id: self.station.get_station_instance().await?.id,
                 lease_token: self.lease_token.clone(),
                 action_sequence,
+                capture_cameras,
             })
             .await
     }

@@ -95,7 +95,11 @@ impl CameraProxy {
             .map(|status| status.cameras)
     }
 
-    async fn fetch(&self, request: CameraRequest<'_>) -> anyhow::Result<ForwardingOutcome> {
+    async fn fetch(
+        &self,
+        request: CameraRequest<'_>,
+        maximum_bytes: usize,
+    ) -> anyhow::Result<ForwardingOutcome> {
         let mut url = self.camera_list_url.clone();
         match request {
             CameraRequest::Snapshot(name) => {
@@ -123,7 +127,7 @@ impl CameraProxy {
         );
         let mut body = Vec::new();
         while let Some(chunk) = upstream.chunk().await? {
-            if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
+            if chunk.len() > maximum_bytes - body.len() {
                 return Ok(ForwardingOutcome::ResponseTooLarge);
             }
             body.extend_from_slice(&chunk);
@@ -138,22 +142,26 @@ impl CameraProxy {
         let Ok(_permit) = self.in_flight.try_acquire() else {
             return Ok(ForwardingOutcome::Busy);
         };
-        match tokio::time::timeout(UPSTREAM_TIMEOUT, self.fetch(request)).await {
+        match tokio::time::timeout(UPSTREAM_TIMEOUT, self.fetch(request, MAX_RESPONSE_BYTES)).await
+        {
             Ok(outcome) => outcome,
             Err(_) => Ok(ForwardingOutcome::TimedOut),
         }
     }
 
-    async fn capture_frame(
+    pub(crate) async fn capture_frame(
         &self,
         name: &hebbian_contracts::SnapshotName,
         timeout: Duration,
+        maximum_bytes: usize,
     ) -> Option<ObservationFrame> {
         tokio::time::timeout(timeout, async {
             let _permit = self.in_flight.acquire().await.ok()?;
             let started = hebbian_contracts::UnixNanos::now();
-            let ForwardingOutcome::Received(response) =
-                self.fetch(CameraRequest::Snapshot(name)).await.ok()?
+            let ForwardingOutcome::Received(response) = self
+                .fetch(CameraRequest::Snapshot(name), maximum_bytes)
+                .await
+                .ok()?
             else {
                 return None;
             };
@@ -173,7 +181,7 @@ impl CameraProxy {
                 .and_then(|value| value.to_str().ok())
                 .and_then(|value| value.parse::<u64>().ok())
                 .map(|nanos| nanos.to_string());
-            let jpeg = axum::body::to_bytes(response.into_body(), MAX_RESPONSE_BYTES)
+            let jpeg = axum::body::to_bytes(response.into_body(), maximum_bytes)
                 .await
                 .ok()?;
             let finished = hebbian_contracts::UnixNanos::now();
@@ -339,7 +347,9 @@ async fn observe(
                     CameraImportance::Required => REQUIRED_TIMEOUT,
                     CameraImportance::Optional => OPTIONAL_TIMEOUT,
                 };
-                proxy.capture_frame(&name, timeout).await
+                proxy
+                    .capture_frame(&name, timeout, MAX_RESPONSE_BYTES)
+                    .await
             } else {
                 None
             };

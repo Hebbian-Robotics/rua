@@ -32,6 +32,8 @@ pub(super) struct SnapshotSubscription {
 
 pub(super) struct StationHttpState {
     shutdown_requested: Arc<AtomicBool>,
+    pub(super) sequence_cameras: OnceLock<super::SequenceCameraSource>,
+    pub(super) sequence_images: super::sequence_images::SequenceImages,
     pub(super) program_submissions: ProgramSubmissions,
     programs: ProgramStore,
     compilation_targets: OnceLock<Result<BTreeMap<String, CompilationTarget>, String>>,
@@ -52,8 +54,12 @@ impl StationHttpState {
         telemetry: Arc<dyn RunTelemetry>,
     ) -> Self {
         let events = Arc::new(EventJournal::default());
+        let sequence_images = super::sequence_images::SequenceImages::default();
+        sequence_images.start_cleanup(runtime);
         Self {
             shutdown_requested,
+            sequence_cameras: OnceLock::new(),
+            sequence_images,
             program_submissions: ProgramSubmissions::default(),
             programs: ProgramStore::default(),
             compilation_targets: OnceLock::new(),

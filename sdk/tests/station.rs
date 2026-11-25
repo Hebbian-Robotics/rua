@@ -1673,6 +1673,41 @@ fn sequence_camera_routes() -> axum::Router {
     )
 }
 
+async fn verify_station_retained_sequence_images(
+    url: &str,
+    lease: &hebbian_rua::LeaseGuard,
+    execution_id: &str,
+    history: &hebbian_rua::SequenceImageHistory,
+) -> TestResult {
+    let reconnected = Station::connect(url).await?;
+    let retained = reconnected
+        .get_sequence_camera_history(execution_id)
+        .await?
+        .ok_or("station did not retain images by execution ID")?;
+    assert_eq!(retained.images.len(), history.images.len());
+    assert_eq!(retained.missed_samples, history.missed_samples);
+
+    let no_capture = lease
+        .start_action_sequence(serde_json::from_value(json!({
+            "steps": [{"arms": {(ARM): {"gripper_opening": 0.0}}}]
+        }))?)
+        .await?;
+    assert!(
+        reconnected
+            .get_sequence_camera_history(&no_capture)
+            .await?
+            .is_none()
+    );
+    assert!(
+        reconnected
+            .get_sequence_camera_history(execution_id)
+            .await?
+            .is_some()
+    );
+    reconnected.wait_for_action_sequence(&no_capture).await?;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn model_sequences_retain_camera_evidence_without_recording() -> TestResult {
     let media = sequence_camera_routes();
@@ -1715,6 +1750,9 @@ async fn model_sequences_retain_camera_evidence_without_recording() -> TestResul
     assert!(matches!(result.outcome, RobotToolOutcome::Returned(_)));
     let history = tools.sequence_images().ok_or("missing visual history")?;
     assert_eq!(history.call_id, "grip");
+    let sequence = result.data();
+    let execution_id = sequence["id"].as_str().ok_or("missing execution ID")?;
+    verify_station_retained_sequence_images(&station.url, &lease, execution_id, &history).await?;
     assert!(history.missed_samples > 0);
     assert!(
         history

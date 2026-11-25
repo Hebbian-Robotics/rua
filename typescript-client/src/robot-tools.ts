@@ -17,7 +17,7 @@ import type {
   SequenceImageHistory,
   ToolCallWrapper,
 } from "./robot-tool-types.js";
-import { captureSequenceImages, SequenceImages } from "./sequence-images.js";
+import { SequenceImages } from "./sequence-images.js";
 import {
   type Lease,
   newRequestId,
@@ -29,7 +29,6 @@ import {
   StationRefusedError,
   StationTimeoutError,
 } from "./station-errors.js";
-import { DEFAULT_MEDIA_URL } from "./station-http.js";
 import {
   type ActionSequenceRequest,
   type ArmState,
@@ -204,6 +203,7 @@ export type RobotToolsOptions = {
   readonly connection: StationConnection;
   readonly lease: Lease;
   readonly arm: string;
+  /** @deprecated Sequence images use the station’s configured media companion. */
   readonly mediaUrl?: string;
   readonly cameras?: readonly string[];
   readonly optionalCameras?: readonly string[];
@@ -306,8 +306,22 @@ function createRobotToolsCore(
     cameras.length + optionalCameras.length
   )
     throw new Error("Camera names must be unique");
-  const mediaUrl = () =>
-    options.mediaUrl ?? connection.baseUrl?.() ?? DEFAULT_MEDIA_URL;
+  const captureCameras = [...cameras, ...optionalCameras];
+  async function refreshSequenceImages(id: string): Promise<void> {
+    try {
+      const deadline = AbortSignal.timeout(2000);
+      const requestSignal = signal
+        ? AbortSignal.any([signal, deadline])
+        : deadline;
+      const history = await connection.getSequenceCameraHistory?.(
+        id,
+        requestSignal,
+      );
+      if (history) tracking.sequenceImages.cache(id, history);
+    } catch {
+      // WHY: Optional camera evidence cannot change the operation's outcome.
+    }
+  }
 
   const signal = options.signal;
   const waitOptions = signal === undefined ? {} : { signal };
@@ -549,6 +563,9 @@ function createRobotToolsCore(
               .with({ kind: "observe" }, async (item) => {
                 await delay(item.wait * 1000);
                 if (item.source === "last_sequence") {
+                  const execution = tracking.sequenceImages.execution();
+                  if (execution && !tracking.sequenceImages.snapshot())
+                    await refreshSequenceImages(execution);
                   const history = tracking.sequenceImages.snapshot();
                   if (!history)
                     return result(
@@ -627,38 +644,22 @@ function createRobotToolsCore(
               .with(
                 { kind: "message", message: { kind: "start_action_sequence" } },
                 async ({ call, message }) => {
-                  let sequenceId: string | undefined;
-                  let lastStep = -1;
-                  const sequence = await captureSequenceImages(
-                    tracking.sequenceImages,
-                    call.id,
-                    [...cameras, ...optionalCameras],
-                    mediaUrl(),
-                    (sample) =>
-                      connection.onActionSequence((current) => {
-                        if (
-                          current?.id !== sequenceId ||
-                          current?.phase.state !== "running"
-                        )
-                          return;
-                        if (current.phase.step !== lastStep) {
-                          lastStep = current.phase.step;
-                          sample();
-                        }
-                      }),
-                    async () => {
-                      sequenceId = await lease.startActionSequence(
-                        capActionSequence(
-                          message.action_sequence,
-                          options.motionLimits,
-                        ),
-                      );
-                      return connection.waitForActionSequence(
-                        sequenceId,
-                        waitOptions,
-                      );
-                    },
+                  tracking.sequenceImages.clear();
+                  const sequenceId = await lease.startActionSequence(
+                    capActionSequence(
+                      message.action_sequence,
+                      options.motionLimits,
+                    ),
+                    captureCameras,
                   );
+                  if (captureCameras.length)
+                    tracking.sequenceImages.select(sequenceId, call.id);
+                  const sequence = await connection.waitForActionSequence(
+                    sequenceId,
+                    waitOptions,
+                  );
+                  if (captureCameras.length)
+                    await refreshSequenceImages(sequenceId);
                   const outcomes = sequence.steps
                     .flat()
                     .map(({ record }) => modelRecordRule(record).class);

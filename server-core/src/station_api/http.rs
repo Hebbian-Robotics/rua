@@ -113,6 +113,10 @@ impl HttpServer {
             .clone()
     }
 
+    pub fn attach_sequence_cameras(&self, source: super::SequenceCameraSource) {
+        let _ = self.station_state.sequence_cameras.set(source);
+    }
+
     pub fn attach_arms(&self, arms: BTreeMap<String, LinkHandle>) {
         self.station_state.attach_arms(
             arms,
@@ -202,6 +206,10 @@ fn router(station_state: Arc<StationHttpState>) -> Router {
         .route("/state", get(read_state))
         .route("/action_sequence", get(read_action_sequence))
         .route("/action_sequence/{id}", get(read_action_sequence_by_id))
+        .route(
+            "/action_sequence/{id}/images",
+            get(super::sequence_images::read_images),
+        )
         .route("/operations/{id}", get(read_operation))
         .route("/operations/{id}/completion", post(wait_operation))
         .with_state(station_state)
