@@ -79,6 +79,13 @@ The SDK rejects a completion-waiting command before submission if the station
 needs an upgrade. Admission-only submissions still return as soon as admitted.
 Cancel a specific operation using its original lease.
 
+The SDKs wait for action sequences by execution ID through
+`GET /action_sequence/{id}/completion`. The station returns the terminal
+record, `null` if the sequence is still running after twenty seconds, or
+HTTP 404 if the execution is unknown or has been evicted. A caller can
+stop waiting without cancelling the execution. Use the updated SDKs with
+a station that exposes this route.
+
 ## Control, tools and results
 
 See the [control model](control-model.md) for leases, command outcomes, action

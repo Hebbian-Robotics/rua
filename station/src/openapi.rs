@@ -251,6 +251,15 @@ pub fn routes() -> Vec<Route> {
             true,
         ),
         route(
+            "wait_action_sequence_completion",
+            "get",
+            "/action_sequence/{id}/completion",
+            "Wait for one retained execution to finish. Returns null if still running after twenty seconds.",
+            None,
+            Reply::Json(schema_of::<Option<ActionSequenceRecord>>),
+            true,
+        ),
+        route(
             "get_sequence_camera_history",
             "get",
             "/action_sequence/{id}/images",

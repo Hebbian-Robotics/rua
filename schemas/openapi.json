@@ -6312,6 +6312,61 @@
         "x-server": "station"
       }
     },
+    "/action_sequence/{id}/completion": {
+      "get": {
+        "operationId": "wait_action_sequence_completion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ActionSequenceRecord"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "An error: {\"detail\": ...}"
+          }
+        },
+        "summary": "Wait for one retained execution to finish. Returns null if still running after twenty seconds.",
+        "x-sdk": true,
+        "x-server": "station"
+      }
+    },
     "/action_sequence/{id}/images": {
       "get": {
         "operationId": "get_sequence_camera_history",
