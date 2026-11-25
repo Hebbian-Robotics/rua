@@ -69,8 +69,10 @@ come from the profile. Feedback must contain finite values with the configured
 vector sizes. Disconnects and reply timeouts stop control.
 
 Your adapter owns physics, actuator modeling, contacts, scenes and rendering.
-RUA owns target generation and its configured control limits. For cameras,
-publish your simulator's frames to LiveKit and use the [camera integration](cameras.md).
+RUA owns target generation and its configured control limits. To publish your
+simulator’s frames to LiveKit, [configure LiveKit](cameras.md#connect-a-usb-camera)
+and restart the station without `--local-only-no-remote-cameras`. For a source
+build, install FFmpeg or pass `--no-recording` to stream without recording.
 
 For another robot, supply its URDF, joint order, limits and control profile.
 Use `driver = "simulator"` without a `[feetech]` section. Keep engine-specific
