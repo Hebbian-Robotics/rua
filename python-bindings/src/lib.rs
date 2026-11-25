@@ -1,3 +1,4 @@
+mod error;
 mod lease;
 mod model_tools;
 mod station;
@@ -41,19 +42,19 @@ fn concise_response<'py>(
 
 #[pymodule(name = "_native")]
 fn native(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add("HttpError", module.py().get_type::<station::HttpError>())?;
+    module.add("HttpError", module.py().get_type::<error::HttpError>())?;
     module.add(
         "CommandRefused",
-        module.py().get_type::<station::CommandRefused>(),
+        module.py().get_type::<error::CommandRefused>(),
     )?;
     module.add(
         "CommandIncomplete",
-        module.py().get_type::<station::CommandIncomplete>(),
+        module.py().get_type::<error::CommandIncomplete>(),
     )?;
-    module.add("LeaseHeld", module.py().get_type::<station::LeaseHeld>())?;
+    module.add("LeaseHeld", module.py().get_type::<error::LeaseHeld>())?;
     module.add(
         "MissingCamera",
-        module.py().get_type::<station::MissingCamera>(),
+        module.py().get_type::<error::MissingCamera>(),
     )?;
     module.add_function(wrap_pyfunction!(model_tools::tool_names, module)?)?;
     module.add_class::<model_tools::NativeTools>()?;

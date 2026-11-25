@@ -9,7 +9,7 @@ use hebbian_contracts::{
     RunCompiledProgramRequest,
 };
 
-use super::http::{StationState, validate_submission_id};
+use super::http_state::{SHUTTING_DOWN, StationHttpState};
 use super::programs::{
     ArtifactLookup, COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramCompilation,
 };
@@ -46,14 +46,13 @@ impl From<ProgramSubmissionError> for HttpFailure {
 }
 
 fn station_links(
-    station_state: &StationState,
+    station_state: &StationHttpState,
 ) -> Result<
     &std::collections::BTreeMap<String, crate::control_link::LinkHandle>,
     ProgramSubmissionError,
 > {
     station_state
-        .arms
-        .get()
+        .arms()
         .ok_or(ProgramSubmissionError::Unavailable(
             "Station arms are not ready",
         ))
@@ -64,7 +63,7 @@ fn internal_failure(error: impl std::fmt::Display) -> HttpFailure {
 }
 
 pub(crate) async fn compile_action_sequence(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(source): Json<ActionSequenceRequest>,
 ) -> Result<Response, HttpFailure> {
     tokio::task::spawn_blocking(move || {
@@ -98,7 +97,7 @@ pub(crate) async fn compile_action_sequence(
 }
 
 pub(crate) async fn import_compilation(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(artifact): Json<serde_json::Value>,
 ) -> Result<Response, HttpFailure> {
     if artifact
@@ -119,7 +118,7 @@ pub(crate) async fn import_compilation(
 }
 
 pub(crate) async fn inspect_compilation(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Path(id): Path<String>,
 ) -> Result<Response, HttpFailure> {
     tokio::task::spawn_blocking(move || {
@@ -132,7 +131,7 @@ pub(crate) async fn inspect_compilation(
 }
 
 fn lookup_artifact(
-    station_state: &StationState,
+    station_state: &StationHttpState,
     id: &str,
 ) -> Result<Arc<super::programs::ProgramArtifact>, ProgramSubmissionError> {
     let targets = station_state
@@ -146,7 +145,7 @@ fn lookup_artifact(
 }
 
 pub(crate) async fn execute_source(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<ActionSequenceStartRequest>,
 ) -> Result<Json<String>, HttpFailure> {
     let request_id = request.request_id.clone();
@@ -161,7 +160,7 @@ pub(crate) async fn execute_source(
 }
 
 pub(crate) async fn run_program(
-    State(station_state): State<Arc<StationState>>,
+    State(station_state): State<Arc<StationHttpState>>,
     Json(request): Json<RunCompiledProgramRequest>,
 ) -> Result<Json<String>, HttpFailure> {
     let request_id = request.request_id.clone();
@@ -176,12 +175,12 @@ pub(crate) async fn run_program(
 }
 
 async fn submit_program(
-    station_state: Arc<StationState>,
+    station_state: Arc<StationHttpState>,
     request_id: &str,
     instance_id: &str,
     request: ProgramSubmissionRequest,
 ) -> Result<Json<String>, HttpFailure> {
-    let request_id = validate_submission_id(&station_state, instance_id, request_id)?;
+    let request_id = station_state.validate_submission_id(instance_id, request_id)?;
     let response = match station_state
         .program_submissions
         .reserve(request_id, request.clone())
@@ -223,7 +222,7 @@ async fn submit_program(
 }
 
 async fn execute_submission(
-    station_state: Arc<StationState>,
+    station_state: Arc<StationHttpState>,
     request: ProgramSubmissionRequest,
 ) -> Result<String, ProgramSubmissionError> {
     check_admission(&station_state)?;
@@ -266,7 +265,7 @@ type PreparedProgram = (
 );
 
 fn prepare_submission(
-    station_state: &StationState,
+    station_state: &StationHttpState,
     request: ProgramSubmissionRequest,
 ) -> Result<PreparedProgram, ProgramSubmissionError> {
     Ok(match request {
@@ -304,11 +303,9 @@ fn prepare_submission(
     })
 }
 
-fn check_admission(station_state: &StationState) -> Result<(), ProgramSubmissionError> {
+fn check_admission(station_state: &StationHttpState) -> Result<(), ProgramSubmissionError> {
     if station_state.is_shutting_down() {
-        return Err(ProgramSubmissionError::Unavailable(
-            super::http::SHUTTING_DOWN,
-        ));
+        return Err(ProgramSubmissionError::Unavailable(SHUTTING_DOWN));
     }
     Ok(())
 }

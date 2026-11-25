@@ -61,9 +61,8 @@ The [station route table](../station/src/openapi.rs) owns those descriptions.
 ### SDK recovery behavior
 
 The SDKs resume telemetry with the event cursor and request a fresh snapshot
-when replay is unavailable. Inspect the command outcome and reacquire control
-before sending new motion after a lost lease. A cancellation over a failed
-connection leaves the physical outcome uncertain.
+when replay is unavailable. See [control leases](control-model.md#control-leases)
+for what to verify before resuming motion after an interruption.
 
 Python and Rust report command submission failures to the caller. Keep the
 operation ID to look up its status after a transport error. TypeScript retries

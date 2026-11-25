@@ -6,12 +6,12 @@ import {
   turn,
 } from "../../../agent/tests/station-harness.js";
 import {
+  RUN_OUTPUT_LINE_LIMIT,
   type Run,
   type RunEvent,
   runRequestSchema,
 } from "../../shared/run-api.js";
 import {
-  OUTPUT_LINE_LIMIT,
   RunConflictError,
   RunManager,
   type RunManagerOptions,
@@ -274,7 +274,7 @@ test("only one run is active at a time", async () => {
 
 test("output keeps the last lines and reaches subscribers", async () => {
   const lines = Array.from(
-    { length: OUTPUT_LINE_LIMIT + 5 },
+    { length: RUN_OUTPUT_LINE_LIMIT + 5 },
     (_, line) => `line ${line}`,
   );
   conversations.push(
@@ -286,8 +286,8 @@ test("output keeps the last lines and reaches subscribers", async () => {
   runs.subscribe(run.id, (event) => events.push(event));
   const ended = await untilEnded(runs, run.id);
   expect(events.some((event) => event.type === "output")).toBe(true);
-  expect(ended.output.length).toBeLessThanOrEqual(OUTPUT_LINE_LIMIT);
-  expect(lines.length).toBeGreaterThan(OUTPUT_LINE_LIMIT);
+  expect(ended.output.length).toBeLessThanOrEqual(RUN_OUTPUT_LINE_LIMIT);
+  expect(lines.length).toBeGreaterThan(RUN_OUTPUT_LINE_LIMIT);
 });
 
 test("a run left running by a dead server is interrupted on open", async () => {

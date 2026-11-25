@@ -1,14 +1,14 @@
 use super::motion_admission::{
     AdmittedPlan, MotionScope, MoveDecision, MoveDisposition, gripper_target,
 };
-use super::state::{ArmCore, new_identifier};
+use super::state::{ArmCore, CommandState, Job, new_identifier};
 use super::types::{
-    CommandState, GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Job, Now,
-    PowerState, ReachGoal, Rejection, ShortOfTarget, ShutdownState, StreamGoal, rejection,
+    GripperCommand, GripperTarget, GroupMembership, HeldStreamGoal, Now, PowerState, ReachGoal,
+    Rejection, ShortOfTarget, ShutdownState, StreamGoal, rejection,
 };
 use crate::corner_path::ValidatedPlan;
 use crate::motion_values::JointSpeed;
-use crate::planning::orientation::{from_xyzw, orientation_summary, pose_orientation_quaternion};
+use crate::orientation::{from_xyzw, orientation_summary, pose_orientation_quaternion};
 use hebbian_contracts::JawAngle;
 use hebbian_contracts::{
     Achieved, ArmMode, Command, CommandCompletion, CommandOutcome, CommandPhase, CommandPose,
@@ -38,33 +38,6 @@ fn stopped_short_summary(achieved: &Achieved) -> Option<String> {
 }
 
 impl ArmCore {
-    pub(super) fn busy(&self) -> bool {
-        self.command_state != CommandState::Idle
-    }
-
-    pub(super) fn faulted_rejection(&self) -> Rejection {
-        if self.mode() == ArmMode::Disconnected {
-            return rejection(
-                RejectionReason::Faulted,
-                format!(
-                    "{}; the bus is disconnected and reopened every second, then enable is accepted",
-                    self.fault().unwrap_or("The bus stopped answering")
-                ),
-            );
-        }
-        rejection(
-            RejectionReason::Faulted,
-            format!(
-                "{}; send clear_fault after inspecting the arm",
-                self.fault().unwrap_or("The arm is faulted")
-            ),
-        )
-    }
-
-    pub(super) fn shutting_down() -> Rejection {
-        rejection(RejectionReason::ArmBusy, "The controller is shutting down")
-    }
-
     pub(super) fn mode_rejection(&self) -> Option<Rejection> {
         if self.shutdown_requested() {
             return Some(Self::shutting_down());

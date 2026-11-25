@@ -1,5 +1,5 @@
 mod advice;
-pub mod orientation;
+pub use crate::orientation;
 mod projection;
 #[cfg(test)]
 mod tests;
@@ -8,8 +8,8 @@ use anyhow::Context;
 use nalgebra::{UnitQuaternion, Vector3};
 
 use crate::config::ControllerConfig;
-use crate::control_loop::{build_guard, build_self_collision, load_shared_robot};
 use crate::ik::IkSolver;
+use crate::motion_guards::{build_guard, build_self_collision, load_shared_robot};
 use crate::motion_values::JointSpeed;
 use crate::robot::PathCheck;
 use crate::self_collision::SelfCollisionGuard;
@@ -193,7 +193,7 @@ impl Planner {
             limits.acceleration_limit = trajectory_limits.acceleration_limit;
             limits.jerk_limit = trajectory_limits.jerk_limit;
         }
-        let mut path = crate::continuous_path::ContinuousPath::new(
+        let mut path = crate::corner_path::ContinuousPath::new(
             plan,
             &limits,
             config.control_timing.maximum_step_seconds,
@@ -244,7 +244,7 @@ impl Planner {
 
     fn check_continuous_section(
         &self,
-        path: &mut crate::continuous_path::ContinuousPath,
+        path: &mut crate::corner_path::ContinuousPath,
         reference: &mut crate::reference_filter::Reference,
         index: usize,
         peak_speed: f64,

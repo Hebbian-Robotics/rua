@@ -1,5 +1,4 @@
-use super::activity::Loop;
-use super::trajectory::MotionOutput;
+use super::activity::{Loop, MotionOutput};
 use crate::gripper::GripperState;
 use crate::limits::Trip;
 use crate::plant::Feedback;

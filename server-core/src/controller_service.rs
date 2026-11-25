@@ -611,7 +611,7 @@ mod tests {
             assert!(Instant::now() < deadline, "the request reached the loop");
             thread::sleep(Duration::from_millis(1));
         };
-        let mut core = ArmCore::new(config.arm_limits(), |_| {});
+        let mut core = ArmCore::new(crate::arm::Limits::from(&config), |_| {});
         apply_single_request(admitted, &mut core);
         loop {
             if matches!(
@@ -726,7 +726,7 @@ mod tests {
         };
         publishing.store(true, Ordering::Release);
         publisher.join().unwrap();
-        let mut core = ArmCore::new(config.arm_limits(), |_| {});
+        let mut core = ArmCore::new(crate::arm::Limits::from(&config), |_| {});
         apply_single_request(admitted, &mut core);
         let ControllerAnswer::Submitted(record) = pending.wait() else {
             panic!("command was not accepted")

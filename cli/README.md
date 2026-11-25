@@ -90,9 +90,6 @@ Paste the response's `server_url` and `token` into **Room viewer** on the
 See the [camera guide](../docs/cameras.md) for device selectors, source setup,
 and phone invites. This setup is also shown in `hebbian-rua camera --help`.
 
-If LiveKit Cloud is unavailable, run a local LiveKit server or restart the
-station with `--local-only-no-remote-cameras`. Both keep USB camera snapshots
-and the example viewer working.
 [Options when LiveKit Cloud is unavailable](../docs/cameras.md#when-livekit-cloud-is-unavailable)
 
 ## Exit codes and errors
@@ -111,14 +108,11 @@ Failures print `{"error": {"kind", "detail", ...}}` on stderr, with `reason`, `h
 ## Lease
 
 Motion commands (`rehome`, `move-joints`, `move-pose`, `move-arms`, `gripper`, `action-sequence run`)
-take a renewable lease for their invocation and return it on exit. Lease renewal
-ends if the client loses its connection; an unrenewed lease expires and stops motion.
-`lease revoke` explicitly revokes the current holder without acquiring control.
-Power (`enable`, `disable`, `clear-fault`) is separate from
-the lease: a motion command on a disabled arm is refused as `not_enabled` and says to send
-`enable`. While another holder (an agent, the viewer's manual controls) holds the lease, commands
-are refused with exit 4; `stop` is always accepted. Motion is refused while an arm has an interlock (see `state`
-and [the control model](../docs/control-model.md)).
+take a renewable lease for their invocation and return it on exit.
+`lease revoke` explicitly revokes the current holder. Commands refused because
+another client holds control exit with code 4. Use `state` to see interlocks
+and `stop` to request a stop without claiming control. See
+[control leases and command outcomes](../docs/control-model.md#control-leases).
 
 ```sh
 cargo test -p hebbian-rua-cli   # the real binary against an in-process controller on the simulated SO-101

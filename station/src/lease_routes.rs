@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -18,14 +17,13 @@ pub fn refusal(status: StatusCode, detail: impl Into<String>) -> Refusal {
     (status, Json(serde_json::json!({ "detail": detail.into() })))
 }
 
-pub async fn monitor_required_cameras(link: LinkHandle, media_address: Option<SocketAddr>) {
+pub async fn monitor_required_cameras(link: LinkHandle, camera_list_url: Option<String>) {
     let Ok(client) = reqwest::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
     else {
         return;
     };
-    let camera_list_url = media_address.map(crate::camera_proxy::camera_list_url);
     let mut interval = tokio::time::interval(CAMERA_POLL_INTERVAL);
     loop {
         interval.tick().await;

@@ -1,4 +1,5 @@
-import { assign, setup } from "xstate";
+import { assign, type SnapshotFrom, setup } from "xstate";
+import type { AgentOutcome } from "../../../agent/src/index.js";
 import type { RunPhase } from "../../shared/run-api.js";
 
 type EndedPhase = Extract<RunPhase, { state: "ended" }>;
@@ -53,3 +54,24 @@ export const runLifecycle = setup({
     ended: { type: "final" },
   },
 });
+
+export type TerminalRunOutcome = Pick<EndedPhase, "outcome" | "response">;
+
+export function terminalRunOutcome(
+  lifecycleState: SnapshotFrom<typeof runLifecycle>["value"],
+  agentOutcome: AgentOutcome,
+): TerminalRunOutcome {
+  if (lifecycleState === "interrupting")
+    return { outcome: { kind: "interrupted" } };
+  if (lifecycleState === "stopping") return { outcome: { kind: "stopped" } };
+  switch (agentOutcome.kind) {
+    case "completed":
+      return { outcome: { kind: "completed" }, response: agentOutcome.result };
+    case "stopped":
+      return { outcome: { kind: "stopped" } };
+    case "incomplete":
+      return { outcome: { kind: "incomplete", detail: agentOutcome.result } };
+    case "failed":
+      return { outcome: { kind: "failed", detail: agentOutcome.reason } };
+  }
+}

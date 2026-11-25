@@ -1,12 +1,15 @@
 //! The station's HTTP routes: the generated per-route methods (`generated/http_routes.rs`)
 //! and the few that read more than a body.
 
+#[path = "generated/http_routes.rs"]
+mod routes;
+
 use hebbian_contracts::MediaStatusReport;
 use reqwest::{Method, Response, Url};
 use serde::Serialize;
 
+use super::Station;
 use crate::error::{Error, Result};
-use crate::station::Station;
 
 /// One JPEG frame and when it was captured.
 #[derive(Debug, Clone)]
@@ -41,7 +44,7 @@ async fn checked(response: Response) -> Result<Response> {
 
 impl Station {
     /// One request to `base`, with a JSON body when there is one.
-    pub(crate) async fn request(
+    async fn request(
         &self,
         method: Method,
         base: &str,

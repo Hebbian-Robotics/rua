@@ -143,6 +143,51 @@ impl CameraProxy {
             Err(_) => Ok(ForwardingOutcome::TimedOut),
         }
     }
+
+    async fn capture_frame(
+        &self,
+        name: &hebbian_contracts::SnapshotName,
+        timeout: Duration,
+    ) -> Option<ObservationFrame> {
+        tokio::time::timeout(timeout, async {
+            let _permit = self.in_flight.acquire().await.ok()?;
+            let started = hebbian_contracts::UnixNanos::now();
+            let ForwardingOutcome::Received(response) =
+                self.fetch(CameraRequest::Snapshot(name)).await.ok()?
+            else {
+                return None;
+            };
+            if !response.status().is_success()
+                || response
+                    .headers()
+                    .get(header::CONTENT_TYPE)?
+                    .to_str()
+                    .ok()?
+                    != "image/jpeg"
+            {
+                return None;
+            }
+            let captured_at_unix_ns = response
+                .headers()
+                .get(CAPTURED_AT)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(|nanos| nanos.to_string());
+            let jpeg = axum::body::to_bytes(response.into_body(), MAX_RESPONSE_BYTES)
+                .await
+                .ok()?;
+            let finished = hebbian_contracts::UnixNanos::now();
+            Some(ObservationFrame {
+                jpeg_base64: STANDARD.encode(jpeg),
+                captured_at_unix_ns,
+                retrieved_between_unix_seconds: [started, finished]
+                    .map(hebbian_contracts::UnixNanos::as_unix_seconds),
+            })
+        })
+        .await
+        .ok()
+        .flatten()
+    }
 }
 
 pub(crate) fn camera_list_url(media_address: SocketAddr) -> String {
@@ -251,55 +296,6 @@ impl TryFrom<ObservationRequest> for ObservationSelection {
     }
 }
 
-async fn capture_frame(
-    proxy: &CameraProxy,
-    name: &hebbian_contracts::SnapshotName,
-    importance: CameraImportance,
-) -> Option<ObservationFrame> {
-    let timeout = match importance {
-        CameraImportance::Required => REQUIRED_TIMEOUT,
-        CameraImportance::Optional => OPTIONAL_TIMEOUT,
-    };
-    tokio::time::timeout(timeout, async {
-        let _permit = proxy.in_flight.acquire().await.ok()?;
-        let started = hebbian_contracts::UnixNanos::now();
-        let ForwardingOutcome::Received(response) =
-            proxy.fetch(CameraRequest::Snapshot(name)).await.ok()?
-        else {
-            return None;
-        };
-        if !response.status().is_success()
-            || response
-                .headers()
-                .get(header::CONTENT_TYPE)?
-                .to_str()
-                .ok()?
-                != "image/jpeg"
-        {
-            return None;
-        }
-        let captured_at_unix_ns = response
-            .headers()
-            .get(CAPTURED_AT)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .map(|nanos| nanos.to_string());
-        let jpeg = axum::body::to_bytes(response.into_body(), MAX_RESPONSE_BYTES)
-            .await
-            .ok()?;
-        let finished = hebbian_contracts::UnixNanos::now();
-        Some(ObservationFrame {
-            jpeg_base64: STANDARD.encode(jpeg),
-            captured_at_unix_ns,
-            retrieved_between_unix_seconds: [started, finished]
-                .map(hebbian_contracts::UnixNanos::as_unix_seconds),
-        })
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
 async fn observe(
     State(source): State<ObservationSource>,
     Json(request): Json<ObservationRequest>,
@@ -339,7 +335,11 @@ async fn observe(
         let proxy = source.cameras.clone();
         captures.spawn(async move {
             let frame = if let Some(proxy) = proxy {
-                capture_frame(&proxy, &name, importance).await
+                let timeout = match importance {
+                    CameraImportance::Required => REQUIRED_TIMEOUT,
+                    CameraImportance::Optional => OPTIONAL_TIMEOUT,
+                };
+                proxy.capture_frame(&name, timeout).await
             } else {
                 None
             };

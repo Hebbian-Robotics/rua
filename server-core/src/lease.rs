@@ -51,6 +51,10 @@ impl GenerationTicket {
         Arc::ptr_eq(&self.generation, generation).then_some(self.expected)
     }
 
+    fn refresh_after_stop(&mut self) {
+        self.expected = self.generation.load(Ordering::Acquire);
+    }
+
     fn check(&self) -> Result<(), StaleGeneration> {
         if self.generation.load(Ordering::Acquire) == self.expected {
             Ok(())
@@ -297,6 +301,19 @@ struct AuthorityState {
     controller: ControllerPresence,
 }
 
+impl AuthorityState {
+    fn authorizes_captured_lease(&self, token: Option<&str>, now: Instant) -> bool {
+        if self.controller.ready_epoch().is_none() {
+            return false;
+        }
+        match (&self.held, token) {
+            (None, None) => true,
+            (Some(claim), Some(token)) => claim.active_at(now) && claim.is_held_by(Some(token)),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ControllerEpoch(u64);
 
@@ -488,7 +505,7 @@ impl Lease {
             return Err(crate::handoff::loop_not_running());
         }
         for ticket in generations {
-            *ticket = GenerationTicket::capture(&ticket.generation);
+            ticket.refresh_after_stop();
         }
         Ok(())
     }
@@ -527,16 +544,9 @@ impl Lease {
         action: impl FnOnce() -> R,
     ) -> Option<R> {
         let authority = self.authority.lock_unpoisoned();
-        authority.controller.ready_epoch()?;
-        let now = Instant::now();
-        let authorized = match (&authority.held, token) {
-            (None, None) => true,
-            (Some(claim), Some(token)) => {
-                claim.expires_at > now && claim.is_active_holder(Some(token))
-            }
-            _ => false,
-        };
-        authorized.then(action)
+        authority
+            .authorizes_captured_lease(token, Instant::now())
+            .then(action)
     }
 
     // CONSTRAINT: Lease transfer waits for every arm to stop before granting control and must run outside asynchronous workers.
@@ -1114,25 +1124,6 @@ impl Lease {
     }
 }
 
-// CONSTRAINT: Manual control needs no interlock but a required camera's on any arm.
-pub(crate) fn manual_control_ready_without_waiting(
-    links: &[crate::control_link::LinkHandle],
-) -> Result<(), String> {
-    for link in links {
-        if let Some(interlock) = link.interlocks().0.into_iter().find(|interlock| {
-            !matches!(
-                interlock,
-                hebbian_contracts::Interlock::RequiredCameraUnavailable { .. }
-            )
-        }) {
-            return Err(format!(
-                "Manual control is inhibited by an interlock: {interlock:?}"
-            ));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1269,6 +1260,9 @@ mod tests {
                 .is_some()
         );
         assert!(stopped);
+        let authority = lease.authority.lock_unpoisoned();
+        let expires_at = authority.held.as_ref().unwrap().expires_at;
+        assert!(!authority.authorizes_captured_lease(Some(&token), expires_at));
     }
 
     #[test]

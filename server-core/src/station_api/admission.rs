@@ -3,7 +3,7 @@ use std::sync::Arc;
 use hebbian_contracts::{ActionSequenceRecord, ServerMessage};
 use tokio::sync::{mpsc, oneshot};
 
-use super::{events::EventJournal, runtime::ExecutionRegistry, submissions::Operations};
+use super::{events::EventJournal, executions::ExecutionRegistry, submissions::Operations};
 
 pub(super) struct AdmissionState {
     pub executions: ExecutionRegistry,

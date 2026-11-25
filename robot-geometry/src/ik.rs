@@ -935,6 +935,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "wall-clock performance check for a dedicated machine"]
     fn a_solve_is_fast() {
         let solver = so101_like();
         let (position, orientation) = required(&solver, &[0.3, -0.6, 0.9, 0.2, 0.4]);

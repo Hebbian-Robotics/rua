@@ -28,8 +28,8 @@ running it. Use the same steps in your loop, supplying your own target.
 
 Use `station.arm("arm")` to read state, enable the arm or stop it.
 Use `station.holding_lease(...)` to acquire a lease and send motion through
-`lease.arm("arm")`. Check the enable result before moving. The
-[control model](control-model.md) covers lease handoff and interruption.
+`lease.arm("arm")`. Check the enable result before moving. See
+[control leases](control-model.md#control-leases) for handoff and interruption.
 
 ## Commands and outcomes
 

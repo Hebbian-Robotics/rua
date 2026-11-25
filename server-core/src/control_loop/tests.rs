@@ -1,8 +1,8 @@
 use nalgebra::Isometry3;
 
-use super::guard_command;
 use crate::arm::ReachGoal;
 use crate::config::ControllerConfig;
+use crate::motion_guards::{clamp_setpoint, guard_command, load_shared_robot};
 use crate::plant::Feedback;
 use crate::policy::{ActiveReach, PolicyRuntime, ReachStatus};
 
@@ -80,18 +80,29 @@ fn policy_timing_is_checked_before_loading_a_network() {
 fn a_setpoint_is_clamped_into_the_limits_and_only_recovers_inward_from_outside() {
     let config = config();
     let mut overshoot = [2.0001, -2.0001];
-    super::clamp_setpoint(&config, &mut overshoot, &[2.0, -2.0]);
+    clamp_setpoint(&config, &mut overshoot, &[2.0, -2.0]);
     assert_eq!(overshoot, [2.0, -2.0]);
     let previous = [-2.02, 0.0];
     for (asked, sent) in [(-2.03, -2.02), (-2.02, -2.02), (-2.015, -2.015)] {
         let mut command = [asked, 0.0];
-        super::clamp_setpoint(&config, &mut command, &previous);
+        clamp_setpoint(&config, &mut command, &previous);
         assert_eq!(command[0], sent);
     }
     let feedback = feedback(vec![-2.01, 0.0]);
     let mut not_finite = [f64::NAN, 0.0];
-    super::clamp_setpoint(&config, &mut not_finite, &previous);
-    assert!(guard_command(&config, None, None, &not_finite, &previous, &feedback).is_err());
+    clamp_setpoint(&config, &mut not_finite, &previous);
+    assert!(
+        guard_command(
+            &config,
+            None,
+            None,
+            &not_finite,
+            &previous,
+            &feedback.positions,
+            feedback.gripper_angle
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -117,7 +128,7 @@ fn a_record_reports_the_tool_in_the_world_frame_targets_are_planned_in() {
     text["upper_limits"] = serde_json::json!(vec![1.5; 5]);
     text["joint_effort_limits"] = serde_json::json!(vec![10.0; 5]);
     let config = ControllerConfig::parse(&text.to_string()).unwrap();
-    let robot = super::load_shared_robot(&config).unwrap();
+    let robot = load_shared_robot(&config).unwrap();
     let tool = super::tool_pose::ToolPose::new(&config, robot.as_ref())
         .unwrap()
         .unwrap();
@@ -329,8 +340,8 @@ fn admission_yields_at_its_budget_and_resumes_with_the_next_arm() {
 
 #[test]
 fn grouped_arms_share_progress_and_complete_on_the_same_step() {
+    use super::activity::MotionStatus;
     use super::group::ActiveGroup;
-    use super::trajectory::MotionStatus;
     use hebbian_contracts::CornerPlan;
     use serde_json::json;
 

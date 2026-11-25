@@ -154,7 +154,8 @@ impl Mounted {
         if let Some(link) = arms.values().next() {
             runtime.spawn(crate::lease_routes::monitor_required_cameras(
                 link.clone(),
-                self.media_connect_address,
+                self.media_connect_address
+                    .map(crate::camera_proxy::camera_list_url),
             ));
         }
     }

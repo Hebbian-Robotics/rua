@@ -77,7 +77,39 @@ enum RecordingState {
     },
 }
 
+enum RecordingStartDecision<'session> {
+    Launch,
+    Join(&'session str),
+}
+
 impl RecordingState {
+    fn decide_start(
+        &self,
+        request: RecordingStart,
+        shutting_down: bool,
+        configured: bool,
+    ) -> Result<RecordingStartDecision<'_>, &'static str> {
+        if shutting_down {
+            return Err("The station is shutting down");
+        }
+        match (self, request) {
+            (Self::Recording { session, .. }, RecordingStart::StartOrJoin) => {
+                Ok(RecordingStartDecision::Join(&session.name))
+            }
+            (Self::Stopping(_), RecordingStart::StartOrJoin) => Err("A recording is stopping"),
+            (Self::Recording { .. } | Self::Stopping(_), RecordingStart::New) => {
+                Err("A recording is already active")
+            }
+            (Self::Idle | Self::Finished { .. } | Self::Failed { .. }, _) => {
+                if configured {
+                    Ok(RecordingStartDecision::Launch)
+                } else {
+                    Err("LiveKit recording is not configured")
+                }
+            }
+        }
+    }
+
     fn active_session(&self) -> Option<&RecordingSession> {
         match self {
             Self::Recording { session, .. } | Self::Stopping(session) => Some(session),
@@ -250,31 +282,13 @@ impl RecordingManager {
             .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if self.shutting_down.load(Ordering::Acquire) {
-            return Err("The station is shutting down".into());
-        }
-        match (&*state, request) {
-            (RecordingState::Recording { session, .. }, RecordingStart::StartOrJoin) => {
-                return Ok(session.name.clone());
-            }
-            (RecordingState::Stopping(_), RecordingStart::StartOrJoin) => {
-                return Err("A recording is stopping".into());
-            }
-            (
-                RecordingState::Recording { .. } | RecordingState::Stopping(_),
-                RecordingStart::New,
-            ) => {
-                return Err("A recording is already active".into());
-            }
-            (
-                RecordingState::Idle
-                | RecordingState::Finished { .. }
-                | RecordingState::Failed { .. },
-                _,
-            ) => {}
-        }
-        if self.recording.is_none() {
-            return Err("LiveKit recording is not configured".into());
+        match state.decide_start(
+            request,
+            self.shutting_down.load(Ordering::Acquire),
+            self.recording.is_some(),
+        )? {
+            RecordingStartDecision::Join(name) => return Ok(name.to_owned()),
+            RecordingStartDecision::Launch => {}
         }
         let started_at_milliseconds = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

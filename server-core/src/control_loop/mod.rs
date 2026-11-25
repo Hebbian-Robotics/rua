@@ -1,20 +1,14 @@
 mod activity;
 mod cycle;
 mod group;
-mod guards;
-mod learned;
 mod recovery;
 mod runner;
 mod tool_pose;
-mod trajectory;
 
 #[cfg(test)]
 mod tests;
 
 use group::{ActiveGroup, confirm_group_writes, form_groups, settle_groups, step_groups};
-pub(crate) use guards::{
-    build_guard, build_self_collision, clamp_setpoint, guard_command, load_shared_robot,
-};
 pub use runner::PlantWritePermit;
 use runner::{Begun, Flow, PendingCycle, Runner, runner_for};
 

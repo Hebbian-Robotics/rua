@@ -201,7 +201,7 @@ fn check_support(
                         if position.iter().any(|coordinate| !coordinate.is_finite()) {
                             return Err("Pose positions must be finite");
                         }
-                        crate::planning::orientation::pose_orientation_rotation(
+                        crate::orientation::pose_orientation_rotation(
                             *orientation,
                             target.jaw_closing_axis,
                         )

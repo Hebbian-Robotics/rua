@@ -1,9 +1,7 @@
 use std::time::{Duration, Instant};
 
-use super::state::ArmCore;
-use super::types::{
-    ArmFault, CommandState, GripperTarget, Job, Now, Observation, Poses, PowerState, ShutdownState,
-};
+use super::state::{ArmCore, CommandState, Job};
+use super::types::{ArmFault, GripperTarget, Now, Observation, Poses, PowerState, ShutdownState};
 use hebbian_contracts::{Checkpoint, CommandOutcome, GripperResult};
 
 #[derive(Clone, Copy)]

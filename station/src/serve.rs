@@ -9,8 +9,9 @@ use hebbian_rua_server::controller_process::PlantSelection;
 use hebbian_rua_server::web::WebSettings;
 use station_access::new_room_name;
 
+use crate::controller_setup::DEFAULT_STAND_IN_LAG_SECONDS;
 use crate::media::{MediaPlan, SIMULATOR_CAMERA_SOCKET};
-use crate::run::{ConfiguredArm, DEFAULT_STAND_IN_LAG_SECONDS, run_supervised};
+use crate::run::{ConfiguredArm, run_supervised};
 
 use crate::commands::ServeArguments;
 

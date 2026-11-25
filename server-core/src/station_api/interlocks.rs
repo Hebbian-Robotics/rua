@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use hebbian_contracts::{ArmMode, Interlock};
+use hebbian_contracts::{ArmMode, Interlock, Sample};
 
 use crate::control_link::LinkHandle;
 
@@ -35,42 +35,75 @@ async fn update(
     admission.decide(move |_| apply_sample(&link, sample)).await
 }
 
-fn apply_sample(link: &LinkHandle, sample: hebbian_contracts::Sample) {
+enum ConnectionInterlock {
+    Keep,
+    Clear,
+    Hold(Interlock),
+}
+
+fn connection_interlock(sample: Sample) -> ConnectionInterlock {
     match sample.mode {
         ArmMode::Disconnected => {
-            if let Some(issue) = sample.recovery_issue {
-                link.raise_interlock(Interlock::RecoveryApprovalRequired {
+            let interlock = match sample.recovery_issue {
+                Some(issue) => Interlock::RecoveryApprovalRequired {
                     motors: issue
                         .motors_without_torque
                         .iter()
                         .map(ToString::to_string)
                         .collect(),
-                });
-                link.clear_interlocks(|interlock| *interlock == Interlock::ArmDisconnected);
-            } else {
-                link.raise_interlock(Interlock::ArmDisconnected);
-                link.clear_interlocks(|interlock| {
-                    matches!(interlock, Interlock::RecoveryApprovalRequired { .. })
-                });
-            }
+                },
+                None => Interlock::ArmDisconnected,
+            };
+            ConnectionInterlock::Hold(interlock)
         }
         ArmMode::Holding | ArmMode::Disabled | ArmMode::Faulted | ArmMode::Reconnected => {
-            link.clear_interlocks(|interlock| {
-                matches!(
-                    interlock,
-                    Interlock::ArmDisconnected | Interlock::RecoveryApprovalRequired { .. }
-                )
-            });
+            ConnectionInterlock::Clear
         }
-        ArmMode::Moving => {}
+        ArmMode::Moving => ConnectionInterlock::Keep,
     }
+}
+
+fn apply_sample(link: &LinkHandle, sample: Sample) {
+    let retained_kind = match connection_interlock(sample) {
+        ConnectionInterlock::Keep => return,
+        ConnectionInterlock::Clear => None,
+        ConnectionInterlock::Hold(interlock) => {
+            let kind = std::mem::discriminant(&interlock);
+            // INVARIANT: Raise the replacement before clearing to keep motion interlocked.
+            link.raise_interlock(interlock);
+            Some(kind)
+        }
+    };
+    link.clear_interlocks(|interlock| {
+        matches!(
+            interlock,
+            Interlock::ArmDisconnected | Interlock::RecoveryApprovalRequired { .. }
+        ) && Some(std::mem::discriminant(interlock)) != retained_kind
+    });
+}
+
+// CONSTRAINT: Manual control can proceed with a required camera unavailable. Other interlocks on any arm still block it.
+pub(super) fn manual_control_ready_without_waiting(links: &[LinkHandle]) -> Result<(), String> {
+    for link in links {
+        if let Some(interlock) = link
+            .interlocks()
+            .0
+            .into_iter()
+            .find(|interlock| !matches!(interlock, Interlock::RequiredCameraUnavailable { .. }))
+        {
+            return Err(format!(
+                "Manual control is inhibited by an interlock: {interlock:?}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use hebbian_contracts::{ArmRecoveryIssue, Sample};
+    use hebbian_contracts::ArmRecoveryIssue;
 
     use super::*;
     use crate::config::ControllerConfig;
@@ -109,8 +142,14 @@ mod tests {
         update(&handle, &admission).await.unwrap();
         assert_eq!(handle.interlocks().0, vec![Interlock::ArmDisconnected]);
 
-        sample.mode = ArmMode::Reconnected;
+        sample.mode = ArmMode::Moving;
         sample.cycle = 2;
+        link.publish_sample(sample.clone());
+        update(&handle, &admission).await.unwrap();
+        assert_eq!(handle.interlocks().0, vec![Interlock::ArmDisconnected]);
+
+        sample.mode = ArmMode::Reconnected;
+        sample.cycle = 3;
         link.publish_sample(sample);
         update(&handle, &admission).await.unwrap();
         assert_eq!(handle.interlocks().0, [] as [Interlock; 0]);

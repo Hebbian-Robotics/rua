@@ -21,7 +21,7 @@ setpoints throughout execution.
 ## Geometry guards
 
 The [planner](../server-core/src/planning/mod.rs) checks paths against configured
-geometry. The motor loop applies [setpoint guards](../server-core/src/control_loop/guards.rs)
+geometry. The motor loop applies [setpoint guards](../server-core/src/motion_guards.rs)
 before commanding the arm. Check physical clearance from objects and arms
 outside a coordinated step. See [coordinated arm clearance](control-model.md#coordinated-arm-clearance).
 

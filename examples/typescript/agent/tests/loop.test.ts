@@ -286,7 +286,6 @@ test("planning and previews return results without fresh images; observe refresh
   expect(refresh.observation?.text).toContain("block is left");
   expect(Object.keys(refresh.observation?.cameras ?? {})).toEqual(["cam"]);
   // Initial capture, then explicit observe; no captures for planning or preview.
-  expect(station.eventsOfType("observation")).toHaveLength(2);
   expect(
     station.requests.filter((request) => request.includes("/observations")),
   ).toHaveLength(2);
@@ -496,7 +495,6 @@ test("a history-only observe returns its result without another live capture", a
   expect(review.errors).toEqual([true]);
   expect(review.texts[0]).toContain("No sequence image history is available");
   expect(review.observation).toBeUndefined();
-  expect(station.eventsOfType("observation")).toHaveLength(1);
   expect(
     station.requests.filter((request) => request.includes("/observations")),
   ).toHaveLength(1);

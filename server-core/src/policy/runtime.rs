@@ -24,7 +24,7 @@ impl PolicyRuntime {
         let Some(settings) = &config.policy else {
             return Ok(None);
         };
-        crate::so101::policy::validate_execution(config)?;
+        crate::so101::policy::validate_control_rate(config.frequency_hertz)?;
         let policy = Policy::load(Path::new(&settings.onnx), Path::new(&config.urdf))?;
         policy.validate_target_lead(settings.max_target_lead_radians)?;
         Ok(Some(Self {

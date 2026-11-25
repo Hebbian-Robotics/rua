@@ -10,7 +10,9 @@ normal observation interface. The model tools and motion admission rules are unc
 
 ## Start
 
-Follow [source setup](install-from-source.md#prepare-the-checkout) and
+For the published station, follow [Getting started](getting-started.md).
+The commands below use a source checkout. Follow
+[source setup](install-from-source.md#prepare-the-checkout) and
 [build the viewer](install-from-source.md#optional-viewer).
 
 ### Automatically select a registered SO-101

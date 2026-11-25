@@ -23,10 +23,10 @@ independently of it.
 
 | Input | Final reference owner |
 | --- | --- |
-| Planned joint-space sections | [Trajectory execution](../server-core/src/control_loop/trajectory.rs) and [scalar path generator](../server-core/src/corner_path.rs) |
-| Single-arm pass-through waypoints | [Local Ruckig waypoint solver](../server-core/src/continuous_path.rs) |
+| Planned joint-space sections | [Trajectory execution](../server-core/src/control_loop/activity/trajectory.rs) and [scalar path generator](../server-core/src/corner_path.rs) |
+| Single-arm pass-through waypoints | [Local Ruckig waypoint solver](../server-core/src/corner_path/continuous.rs) |
 | Changing joint destinations and normal braking | [Reference filter](../server-core/src/reference_filter.rs) |
-| Learned pose goals | [Learned reach and stream handling](../server-core/src/control_loop/learned.rs) |
+| Learned pose goals | [Learned reach and stream handling](../server-core/src/control_loop/activity/learned.rs) |
 
 Direct moves follow straight joint-space sections. The scalar trajectory
 targets the actual section endpoint and retains commanded velocity and
@@ -46,7 +46,7 @@ It waits for the final jaw command before completing the move.
 
 Grouped trajectories share a progress gate and use feedback from the same cycle.
 The [group implementation](../server-core/src/control_loop/group.rs) handles member
-failure and coordinated stopping. All paths share the [final setpoint guards](../server-core/src/control_loop/guards.rs).
+failure and coordinated stopping. All paths share the [final setpoint guards](../server-core/src/motion_guards.rs).
 Planning uses a snapshot, so the loop still checks live feedback. A protective
 trip can override normal trajectory braking.
 
