@@ -292,8 +292,8 @@ class Lease:
     async def start_action_sequence(
         self, action_sequence: ActionSequenceRequest
     ) -> str:
-        """Submit an ordered action_sequence and return its station-assigned identifier;
-        follow it with `StationClient.wait_for_action_sequence`."""
+        """Submit an ordered action sequence and return its operation ID.
+        Wait for its result with `StationClient.wait_for_action_sequence`."""
         return await self._guard.start_action_sequence(
             action_sequence.model_dump(mode="json")
         )

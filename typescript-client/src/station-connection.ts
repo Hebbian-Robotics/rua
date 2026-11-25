@@ -1159,14 +1159,16 @@ export function createStationConnection(
   ): Promise<string> {
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
-    return stationApi().startActionSequenceHttp(
-      apiSchemas.shape.ActionSequenceStartRequest.parse({
-        request_id: newOperationId(),
-        station_instance_id: (await stationApi().getStationInstance()).id,
-        lease_token: token,
-        action_sequence,
-        ...(captureCameras?.length ? { capture_cameras: captureCameras } : {}),
-      }),
+    const submission = apiSchemas.shape.ActionSequenceStartRequest.parse({
+      request_id: newOperationId(),
+      station_instance_id: (await stationApi().getStationInstance()).id,
+      lease_token: token,
+      action_sequence,
+      ...(captureCameras?.length ? { capture_cameras: captureCameras } : {}),
+    });
+    return retryOperationRequest(
+      (signal) => stationApi(signal).startActionSequenceHttp(submission),
+      operationLifetime.signal,
     );
   }
 
@@ -1263,14 +1265,18 @@ export function createStationConnection(
         continuation,
       ) {
         if (!isHeld()) throw new LeaseLostError();
-        return stationApi().runCompiledSequenceHttp({
+        const submission = {
           request_id: newOperationId(),
           station_instance_id: (await stationApi().getStationInstance()).id,
           compilation_id: compilationId,
           continuation: continuation ?? null,
           lease_token: token,
           expected_revisions: expectedRevisions,
-        });
+        };
+        return retryOperationRequest(
+          (signal) => stationApi(signal).runCompiledSequenceHttp(submission),
+          operationLifetime.signal,
+        );
       },
       startActionSequence(actionSequence, captureCameras) {
         requireCurrentLease();

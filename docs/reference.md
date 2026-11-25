@@ -64,10 +64,16 @@ The SDKs resume telemetry with the event cursor and request a fresh snapshot
 when replay is unavailable. See [control leases](control-model.md#control-leases)
 for what to verify before resuming motion after an interruption.
 
-The SDKs retry transient command submission failures for up to 30 seconds
-using the same request and operation ID. The station reuses the original
-admission and rejects reuse of that ID with a different request. If the retry
-window expires, keep the operation ID to look up the retained status.
+The SDKs retry transient submission failures for commands and action
+sequences for up to 30 seconds. Each retry sends the same request and operation
+ID to the original station instance. The station returns the original admission
+and rejects reuse of that ID for different work, including across operation
+types. An action sequence's `request_id` becomes its execution ID.
+
+The station retains up to 10,000 submission receipts across commands and action
+sequences. It starts evicting finished sequence records at 100 and keeps
+running work available. Evicted submission IDs remain reserved until the
+station restarts. A retry sent to a different station instance returns a conflict.
 
 When a caller waits for a command to finish, the SDKs use
 `POST /operations/{id}/completion` on the station that accepted it. This
@@ -77,7 +83,9 @@ that loss. The SDKs wait for that event sequence to reach their state cache
 while connected. A station advertises this capability via `GET /instance`.
 The SDK rejects a completion-waiting command before submission if the station
 needs an upgrade. Admission-only submissions still return as soon as admitted.
-Cancel a specific operation using its original lease.
+Cancel a command or action sequence through `POST /operations/{id}/cancel`
+using its original station instance and lease. This also fences a submission
+that has yet to reach the station.
 
 The SDKs wait for action sequences by execution ID through
 `GET /action_sequence/{id}/completion`. The station returns the terminal

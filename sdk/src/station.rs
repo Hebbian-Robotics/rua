@@ -972,15 +972,14 @@ impl LeaseGuard {
         action_sequence: ActionSequenceRequest,
         capture_cameras: Vec<hebbian_contracts::SnapshotName>,
     ) -> Result<String> {
-        self.station
-            .start_action_sequence_http(&ActionSequenceStartRequest {
-                request_id: uuid::Uuid::new_v4().to_string(),
-                station_instance_id: self.station.get_station_instance().await?.id,
-                lease_token: self.lease_token.clone(),
-                action_sequence,
-                capture_cameras,
-            })
-            .await
+        let submission = ActionSequenceStartRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            station_instance_id: self.station.get_station_instance().await?.id,
+            lease_token: self.lease_token.clone(),
+            action_sequence,
+            capture_cameras,
+        };
+        retry_operation_request(|| self.station.start_action_sequence_http(&submission)).await
     }
 
     /// Submit a retained compilation with fresh authority and live admission checks.
@@ -1019,16 +1018,15 @@ impl LeaseGuard {
         expected_revisions: BTreeMap<String, u64>,
         continuation: Option<hebbian_contracts::ProgramContinuation>,
     ) -> Result<String> {
-        self.station
-            .run_compiled_sequence_http(&RunCompiledProgramRequest {
-                request_id: uuid::Uuid::new_v4().to_string(),
-                station_instance_id: self.station.get_station_instance().await?.id,
-                compilation_id: compilation_id.to_owned(),
-                continuation,
-                lease_token: self.lease_token.clone(),
-                expected_revisions,
-            })
-            .await
+        let submission = RunCompiledProgramRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            station_instance_id: self.station.get_station_instance().await?.id,
+            compilation_id: compilation_id.to_owned(),
+            continuation,
+            lease_token: self.lease_token.clone(),
+            expected_revisions,
+        };
+        retry_operation_request(|| self.station.run_compiled_sequence_http(&submission)).await
     }
 
     /// Execute a retained compilation and wait for its actual outcome.

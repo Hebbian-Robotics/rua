@@ -18,7 +18,7 @@ use super::events::{EventJournal, EventSubscription, StationEvent, StreamPayload
 use super::programs::{
     ArtifactLookup, CompilationRetention, ProgramArtifact, ProgramCompilation, ProgramStore,
 };
-use super::submissions::{LeaseSubmissions, ProgramSubmissionError, ProgramSubmissions};
+use super::submissions::{LeaseSubmissions, ProgramSubmissionError};
 use super::telemetry::RunTelemetry;
 
 pub(super) const SHUTTING_DOWN: &str = "Station is shutting down";
@@ -34,7 +34,6 @@ pub(super) struct StationHttpState {
     shutdown_requested: Arc<AtomicBool>,
     pub(super) sequence_cameras: OnceLock<super::SequenceCameraSource>,
     pub(super) sequence_images: super::sequence_images::SequenceImages,
-    pub(super) program_submissions: ProgramSubmissions,
     programs: ProgramStore,
     compilation_targets: OnceLock<Result<BTreeMap<String, CompilationTarget>, String>>,
     pub(super) trace_directories: Vec<PathBuf>,
@@ -60,7 +59,6 @@ impl StationHttpState {
             shutdown_requested,
             sequence_cameras: OnceLock::new(),
             sequence_images,
-            program_submissions: ProgramSubmissions::default(),
             programs: ProgramStore::default(),
             compilation_targets: OnceLock::new(),
             trace_directories,

@@ -268,7 +268,7 @@ async fn read_action_sequence_by_id(
     }
 }
 
-fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> {
+pub(super) fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> {
     OperationId::parse(value).ok_or((
         StatusCode::BAD_REQUEST,
         "Expected a UUID v4 operation ID".to_owned(),
@@ -279,9 +279,10 @@ async fn wait_action_sequence_completion(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let id = OperationId::parse(&id);
     let mut progress = station_state
         .admission
-        .decide(move |state| state.executions.progress_for(&id))
+        .decide(move |state| id.and_then(|id| state.operations.program_completion(id)))
         .await
         .map_err(admission_unavailable)?
         .ok_or((
@@ -577,7 +578,9 @@ async fn cancel_operation(
             .await
             .map_err(admission_unavailable)??
         {
-            CancellationResult::AlreadyStopped => return Ok(StatusCode::NO_CONTENT),
+            CancellationResult::AlreadyStopped | CancellationResult::ProgramSignalled => {
+                return Ok(StatusCode::NO_CONTENT);
+            }
             CancellationResult::Expired => {
                 return Err((
                     StatusCode::GONE,
