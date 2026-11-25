@@ -1,5 +1,7 @@
 import asyncio
+import os
 import shutil
+import subprocess
 from collections.abc import Generator
 from pathlib import Path
 
@@ -25,6 +27,70 @@ from tests.fixture_station import (
 from tests.fixture_wait import wait_until_async
 
 pytestmark = pytest.mark.server
+LIVEKIT_CREDENTIALS = {
+    "LIVEKIT_URL": "ws://127.0.0.1:1",
+    "LIVEKIT_API_KEY": "test-key",
+    "LIVEKIT_API_SECRET": "test-secret",
+}
+
+
+@pytest.mark.parametrize("disable_recording", [False, True])
+def test_station_requires_livekit_credentials(
+    server_binary: Path, tmp_path: Path, disable_recording: bool
+) -> None:
+    result = subprocess.run(
+        [server_binary, "serve", *(["--no-recording"] if disable_recording else [])],
+        cwd=tmp_path,
+        env=os.environ | dict.fromkeys(LIVEKIT_CREDENTIALS, ""),
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode != 0
+    assert "LiveKit is required for station startup" in result.stderr
+    assert "--local-only-no-remote-cameras" in result.stderr
+
+
+@pytest.mark.parametrize("ffmpeg_on_path", [False, True], ids=["missing", "fails"])
+def test_default_station_requires_working_ffmpeg(
+    server_binary: Path, tmp_path: Path, ffmpeg_on_path: bool
+) -> None:
+    if ffmpeg_on_path:
+        ffmpeg = tmp_path / "ffmpeg"
+        ffmpeg.write_text("#!/bin/sh\nexit 1\n")
+        ffmpeg.chmod(0o755)
+    result = subprocess.run(
+        [server_binary, "serve"],
+        cwd=tmp_path,
+        env=os.environ | LIVEKIT_CREDENTIALS | {"PATH": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode != 0
+    assert "Recording requires FFmpeg on PATH" in result.stderr
+    assert "--no-recording" in result.stderr
+
+
+@pytest.mark.parametrize("local_cameras_only", [False, True], ids=["livekit", "local"])
+def test_station_can_start_without_ffmpeg(
+    server_binary: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    local_cameras_only: bool,
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    for name, value in LIVEKIT_CREDENTIALS.items():
+        monkeypatch.setenv(name, "" if local_cameras_only else value)
+    arguments = () if local_cameras_only else ("--no-recording",)
+    with station_process(
+        server_binary, *arguments, local_cameras_only=local_cameras_only
+    ) as process:
+        station = RunningStation(process.http_server())
+        assert station.get("/recording/enabled").json() is False
+        if not local_cameras_only:
+            access = station.get("/media/access-token").json()
+            assert access["server_url"] == LIVEKIT_CREDENTIALS["LIVEKIT_URL"]
 
 
 async def recording_has_stopped(client: StationClient) -> bool:
@@ -41,15 +107,16 @@ def station(
     recorder.write_text("#!/bin/sh\nexec sleep 30\n")
     recorder.chmod(0o755)
     with pytest.MonkeyPatch.context() as environment:
-        environment.setenv("LIVEKIT_URL", "ws://127.0.0.1:1")
-        environment.setenv("LIVEKIT_API_KEY", "test-key")
-        environment.setenv("LIVEKIT_API_SECRET", "test-secret")
+        for name, value in LIVEKIT_CREDENTIALS.items():
+            environment.setenv(name, value)
         with station_process(
-            server_binary, "--enable-recording", "--media-executable", str(recorder)
+            server_binary, "--media-executable", str(recorder), local_cameras_only=False
         ) as process:
             server = process.http_server()
             wait_until_station_live(server)
-            yield RunningStation(server)
+            station = RunningStation(server)
+            assert station.get("/recording/enabled").json() is True
+            yield station
 
 
 def test_recording_context_starts_and_stops_recording(station: RunningStation) -> None:

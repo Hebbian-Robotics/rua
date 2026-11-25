@@ -189,6 +189,7 @@ def main() -> None:
                 [
                     command,
                     "serve",
+                    "--local-only-no-remote-cameras",
                     "--profile",
                     "so101-sim-only-no-real-arm",
                     "--work-directory",

@@ -26,8 +26,9 @@ when you want to run those examples.
 
 ## Start the station
 
-For a physical SO-101, [calibrate your arm](so101-calibration.md), then start the
-station from the checkout root:
+For a physical SO-101, [calibrate your arm](so101-calibration.md). Configure
+[LiveKit](cameras.md#connect-a-usb-camera) and [install FFmpeg](recording.md#install-ffmpeg),
+then start the station from the checkout root:
 
 ```sh
 uv run cargo run -p hebbian-rua-server -- serve

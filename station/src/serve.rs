@@ -7,7 +7,7 @@ use hebbian_rua_core::config::{ControllerConfig, SimPlantConfig};
 use hebbian_rua_core::profile::{self, Driver, JointLimitSource};
 use hebbian_rua_server::controller_process::PlantSelection;
 use hebbian_rua_server::web::WebSettings;
-use station_access::new_room_name;
+use station_access::{Credentials, new_room_name};
 
 use crate::controller_setup::DEFAULT_STAND_IN_LAG_SECONDS;
 use crate::media::{MediaPlan, SIMULATOR_CAMERA_SOCKET};
@@ -110,7 +110,26 @@ fn select_arms(profile_arms: &[String], requested: Vec<String>) -> anyhow::Resul
     Ok(requested)
 }
 
+fn validate_media_requirements(web: &WebSettings) -> anyhow::Result<()> {
+    if !web.local_cameras_only {
+        Credentials::from_environment().context(
+            "LiveKit is required for station startup. For local cameras only, pass --local-only-no-remote-cameras",
+        )?;
+    }
+    if web.enable_recording {
+        let ffmpeg_required =
+            "Recording requires FFmpeg on PATH. Install FFmpeg or pass --no-recording";
+        let version = std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .context(ffmpeg_required)?;
+        ensure!(version.status.success(), "{ffmpeg_required}");
+    }
+    Ok(())
+}
+
 pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::Result<()> {
+    validate_media_requirements(&web)?;
     web.media_address = Some(arguments.media_address);
     let profile_directory = arguments
         .profile_directory
