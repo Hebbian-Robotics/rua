@@ -273,21 +273,35 @@ test("only one run is active at a time", async () => {
 });
 
 test("output keeps the last lines and reaches subscribers", async () => {
-  const lines = Array.from(
+  const noteUpdates = Array.from(
     { length: RUN_OUTPUT_LINE_LIMIT + 5 },
-    (_, line) => `line ${line}`,
+    (_, line): [string, unknown] => [
+      "update_notes",
+      { notes: [`line ${line}`] },
+    ],
   );
   conversations.push(
-    new ScriptedConversation([turn(["finish", { reason: "x" }])]),
+    new ScriptedConversation([
+      turn(...noteUpdates),
+      turn(["finish", { reason: "Done keeping output" }]),
+    ]),
   );
   const runs = manager();
   const run = runs.start(request);
   const events: RunEvent[] = [];
   runs.subscribe(run.id, (event) => events.push(event));
   const ended = await untilEnded(runs, run.id);
-  expect(events.some((event) => event.type === "output")).toBe(true);
-  expect(ended.output.length).toBeLessThanOrEqual(RUN_OUTPUT_LINE_LIMIT);
-  expect(lines.length).toBeGreaterThan(RUN_OUTPUT_LINE_LIMIT);
+  const delivered = events.flatMap((event) =>
+    event.type === "output" ? [event.line] : [],
+  );
+  expect(delivered[0]).toContain("line 0");
+  expect(delivered).toEqual(
+    expect.arrayContaining(
+      noteUpdates.map((_, line) => expect.stringContaining(`"line ${line}"`)),
+    ),
+  );
+  expect(delivered.at(-1)).toBe("Done keeping output");
+  expect(ended.output).toEqual(delivered.slice(-RUN_OUTPUT_LINE_LIMIT));
 });
 
 test("a run left running by a dead server is interrupted on open", async () => {

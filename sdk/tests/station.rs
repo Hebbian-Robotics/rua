@@ -15,9 +15,9 @@ use std::time::Duration;
 
 use hebbian_rua::contracts::{
     ActionSequenceArmAction, ActionSequenceGoal, ActionSequencePhase, ActionSequenceRequest,
-    ActionSequenceStep, CommandOutcome, CompilationOutcome, GripperResult, LeaseHolder,
-    PoseOrientation, PosePreviewBatchRequest, PosePreviewCandidate, PreviewAnswer, PreviewPose,
-    ProjectionOutcome, RejectionReason, RunEvent, TraceContext,
+    ActionSequenceStep, CommandOutcome, CompilationOutcome, ExecutionFailure, GripperResult,
+    LeaseHolder, PoseOrientation, PosePreviewBatchRequest, PosePreviewCandidate, PreviewAnswer,
+    PreviewPose, ProjectionOutcome, RejectionReason, RunEvent, TraceContext,
 };
 use hebbian_rua::{
     CommandOptions, ConnectOptions, Error, LeaseRequest, RobotToolCall, RobotToolOutcome,
@@ -1083,7 +1083,7 @@ async fn taking_the_lease_stops_the_previous_holders_action_sequence() -> TestRe
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
+async fn an_out_of_range_sequence_target_prevents_the_first_step_from_running() -> TestResult {
     let station = TestStation::start().await?;
     let client = station.connect().await?;
     let lease = within(client.acquire_lease(agent("test"))).await??;
@@ -1098,8 +1098,20 @@ async fn an_action_sequence_stops_after_a_limited_joint_target() -> TestResult {
     }))
     .await??;
     let outcome = within(client.wait_for_action_sequence(&id)).await??;
-    assert!(matches!(outcome.phase, ActionSequencePhase::Stopped { .. }));
-    assert!(outcome.steps.len() < 2);
+    assert!(
+        matches!(
+            outcome.phase,
+            ActionSequencePhase::Stopped {
+                failure: ExecutionFailure::Preparation {
+                    step: 0,
+                    reason: RejectionReason::InvalidTarget,
+                    ..
+                },
+            }
+        ),
+        "{outcome:?}"
+    );
+    assert!(outcome.steps.is_empty(), "{outcome:?}");
     Ok(())
 }
 

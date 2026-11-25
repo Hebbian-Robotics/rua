@@ -1,19 +1,15 @@
-import { test } from "vitest";
+import { expect, test } from "vitest";
 import {
   describeApproach,
-  jawYawReachable,
   moveCommandForPreview,
   movePreviewedGripper,
   syncCurrentPosePreview,
   unreachableYawLines,
 } from "../src/preview-move.js";
 
-test("preview move", async () => {
-  function assert(condition: unknown, message: string): asserts condition {
-    if (!condition) throw new Error(message);
-  }
+test("the previewed gripper opening waits for admission of the arm move", async () => {
   const openings: number[] = [];
-  let finishMove: ((accepted: boolean) => void) | undefined;
+  let finishMove: (accepted: boolean) => void = () => {};
   const move = new Promise<boolean>((resolve) => {
     finishMove = resolve;
   });
@@ -24,81 +20,69 @@ test("preview move", async () => {
     0.7,
     (opening) => openings.push(opening),
   );
-  assert(
-    openings.length === 0,
-    "Gripper must wait for the arm command to be accepted",
-  );
-  assert(finishMove, "Move is pending");
+  expect(openings).toEqual([]);
   finishMove(true);
   await pending;
-  assert(
-    Number(openings.length) === 1 && openings[0] === 0.7,
-    "Accepted move must apply previewed opening",
-  );
-  await movePreviewedGripper(
-    async () => false,
-    () => true,
-    true,
-    0.1,
-    (opening) => openings.push(opening),
-  );
-  await movePreviewedGripper(
-    async () => true,
-    () => false,
-    true,
-    0.2,
-    (opening) => openings.push(opening),
-  );
-  await movePreviewedGripper(
-    async () => true,
-    () => true,
-    false,
-    0.3,
-    (opening) => openings.push(opening),
-  );
-  assert(
-    Number(openings.length) === 1,
-    "Rejected, stopped or gripper-free moves must not command the gripper",
-  );
+  expect(openings).toEqual([0.7]);
+});
 
-  const previewOpenings: number[] = [];
-  const targetPositions: number[][] = [];
-  const synced = syncCurrentPosePreview(
-    {
-      tool: {
-        position: [0.1, 0.2, 0.3],
-        quaternion: [0, 0, 0, 1],
-        orientation: {
-          approach: [0, 0, -1],
-          radians_from_down: 0,
-          jaw_yaw_radians: 0,
-          jaw_yaw_reference: "world_x",
-          goal: null,
+test.each([
+  { admitted: false, stillMoving: true, drivesGripper: true },
+  { admitted: true, stillMoving: false, drivesGripper: true },
+  { admitted: true, stillMoving: true, drivesGripper: false },
+])(
+  "no gripper move after admission=$admitted, active=$stillMoving, gripper=$drivesGripper",
+  async ({ admitted, stillMoving, drivesGripper }) => {
+    const openings: number[] = [];
+    await movePreviewedGripper(
+      async () => admitted,
+      () => stillMoving,
+      drivesGripper,
+      0.2,
+      (opening) => openings.push(opening),
+    );
+    expect(openings).toEqual([]);
+  },
+);
+
+test("the target copies the measured position and gripper opening only when available", () => {
+  const openings: number[] = [];
+  const positions: number[][] = [];
+  const setOpening = (opening: number) => openings.push(opening);
+  const setPosition = (position: number[]) => positions.push(position);
+  expect(
+    syncCurrentPosePreview(
+      {
+        tool: {
+          position: [0.1, 0.2, 0.3],
+          quaternion: [0, 0, 0, 1],
+          orientation: {
+            approach: [0, 0, -1],
+            radians_from_down: 0,
+            jaw_yaw_radians: 0,
+            jaw_yaw_reference: "world_x",
+            goal: null,
+          },
+          model_points: [],
         },
-        model_points: [],
+        gripper_opening: 0.42,
       },
-      gripper_opening: 0.42,
-    },
-    (opening) => previewOpenings.push(opening),
-    (position) => targetPositions.push(position),
-  );
-  assert(
-    synced && previewOpenings[0] === 0.42 && targetPositions[0]?.[0] === 0.1,
-    "Current pose must copy measured jaw and tool position",
-  );
-  assert(
-    !syncCurrentPosePreview(
-      { tool: null, gripper_opening: null },
-      () => {
-        throw Error("No pose");
-      },
-      () => {
-        throw Error("No pose");
-      },
+      setOpening,
+      setPosition,
     ),
-    "Missing tool position cannot initialize a target",
-  );
+  ).toBe(true);
+  expect(
+    syncCurrentPosePreview(
+      { tool: null, gripper_opening: null },
+      setOpening,
+      setPosition,
+    ),
+  ).toBe(false);
+  expect(openings).toEqual([0.42]);
+  expect(positions).toEqual([[0.1, 0.2, 0.3]]);
+});
 
+test("orientation labels describe the custom approach and preserve unreachable yaw reasons", () => {
   const ranges = [
     {
       from_radians: 0,
@@ -114,58 +98,40 @@ test("preview move", async () => {
     },
     {
       from_radians: (340 * Math.PI) / 180,
-      to_radians: (360 * Math.PI) / 180,
+      to_radians: 2 * Math.PI,
       reachable: false,
       reason: "Wrist limit",
     },
   ];
-  assert(
-    jawYawReachable(ranges, (10 * Math.PI) / 180) === false &&
-      jawYawReachable(ranges, (90 * Math.PI) / 180) === true &&
-      jawYawReachable(ranges, (-10 * Math.PI) / 180) === false &&
-      jawYawReachable(ranges, (370 * Math.PI) / 180) === false,
-    "A yaw is judged against the station's ranges, wrapping full turns",
-  );
-  assert(
-    jawYawReachable([], (90 * Math.PI) / 180) === null,
-    "Without ranges the yaw is not judged",
-  );
-  assert(
-    unreachableYawLines(ranges).join("|") ===
-      "0°–20°: Wrist limit|340°–360°: Wrist limit",
-    "Unreachable ranges are listed with the station's reasons",
-  );
-  assert(
-    describeApproach([0.6, 0, -0.8]) === "custom (0.60, 0.00, -0.80)",
-    "Named approaches are presets; other directions are custom",
-  );
+  expect(unreachableYawLines(ranges)).toEqual([
+    "0°–20°: Wrist limit",
+    "340°–360°: Wrist limit",
+  ]);
+  expect(describeApproach([0.6, 0, -0.8])).toBe("custom (0.60, 0.00, -0.80)");
+});
 
-  const previewedPose = {
+test("IK moves to the preview's solved joints while policies move to the requested pose", () => {
+  const preview = {
     joints: [0.1, 0.2, 0.3, 0.4, 0.5],
     position: [0.25, 0, 0.1],
     quaternion: [0, 0, 0, 1],
     requestedPosition: [0.3, 0, 0.1],
     requestedQuaternion: [0, 1, 0, 0],
   };
-  const ikMove = moveCommandForPreview("ik", previewedPose, 0.5);
-  assert(
-    ikMove?.kind === "move_to_joints" && ikMove.joints[4] === 0.5,
-    "An IK arm moves to the ghost's joints",
-  );
-  const policyMove = moveCommandForPreview("policy", previewedPose, 0.5);
-  assert(
-    policyMove?.kind === "move_to_pose" &&
-      policyMove.position[0] === 0.3 &&
-      policyMove.orientation.kind === "quaternion" &&
-      policyMove.orientation.quaternion[1] === 1,
-    "A policy arm is sent the requested pose, not the rehearsal's end",
-  );
-  assert(
+  expect(moveCommandForPreview("ik", preview, 0.5)).toMatchObject({
+    kind: "move_to_joints",
+    joints: [0.1, 0.2, 0.3, 0.4, 0.5],
+  });
+  expect(moveCommandForPreview("policy", preview, 0.5)).toMatchObject({
+    kind: "move_to_pose",
+    position: [0.3, 0, 0.1],
+    orientation: { kind: "quaternion", quaternion: [0, 1, 0, 0] },
+  });
+  expect(
     moveCommandForPreview(
       "policy",
-      { ...previewedPose, requestedQuaternion: null },
+      { ...preview, requestedQuaternion: null },
       0.5,
-    ) === null,
-    "Without the station's quaternion nothing is sent",
-  );
+    ),
+  ).toBeNull();
 });

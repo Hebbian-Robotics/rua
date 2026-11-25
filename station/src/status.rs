@@ -3,7 +3,6 @@ use std::{path::PathBuf, process::Stdio, time::Duration};
 use anyhow::{Context, Result, ensure};
 use hebbian_contracts::{ArmState, RoomAccess, SnapshotName, StationState};
 use reqwest::{Client, StatusCode, Url, header};
-use serde::Deserialize;
 use tokio::{io::AsyncWriteExt, process::Command, time::Instant};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
@@ -165,18 +164,14 @@ async fn camera_problem(client: &Client, station: &Url, name: &SnapshotName) -> 
     status.cameras.get(name.as_str())?.snapshot_problem()
 }
 
-#[derive(Deserialize)]
-struct Refusal {
-    detail: String,
-}
-
 async fn check_livekit(client: &Client, server: &Url) -> Result<String> {
     let response = client
         .get(endpoint(server, &["media", "access-token"])?)
         .send()
         .await?;
     if response.status() == StatusCode::SERVICE_UNAVAILABLE {
-        let refusal: Refusal = response.json().await.context("Could not get room access")?;
+        let refusal: hebbian_rua_server::lease_routes::RefusalBody =
+            response.json().await.context("Could not get room access")?;
         if let Some(reason) = refusal.detail.strip_prefix("Cameras are off: ") {
             return Ok(format!("off. {reason}"));
         }

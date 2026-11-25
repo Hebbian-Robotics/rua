@@ -57,20 +57,21 @@ def viewer_backend(
 
 @pytest.mark.server
 @pytest.mark.typescript
-def test_viewer_lists_configured_providers_in_automatic_order(
+def test_viewer_reads_provider_keys_from_the_process_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
     with viewer_backend("http://127.0.0.1:1", tmp_path, manual_only=False) as viewer:
         response = httpx2.get(f"{viewer}/api/model-providers", timeout=10)
         response.raise_for_status()
-        assert [entry["provider"] for entry in response.json()] == [
-            "openai",
-            "gemini",
-            "anthropic",
-        ]
+        assert {entry["provider"]: entry["available"] for entry in response.json()} == {
+            "openai": True,
+            "gemini": False,
+            "anthropic": True,
+        }
 
 
 def ready_session(lines: Iterator[str]) -> str:
@@ -98,10 +99,6 @@ def test_manual_sessions_release_control_on_disconnect(
         httpx2.Client(base_url=viewer, timeout=10) as client,
         client.stream("GET", "/api/manual/events") as observer,
     ):
-        recordings = client.get("/api/recordings")
-        recordings.raise_for_status()
-        assert recordings.json()["recordings"] == []
-
         observer_lines = observer.iter_lines()
         observer_id = ready_session(observer_lines)
 

@@ -619,50 +619,57 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
 }
 
 impl RobotToolCapability {
+    /// The model-facing name, independent of the arguments schema.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::ActionSequence(_) => "action_sequence",
+            Self::PreviewPose => "preview_pose",
+            Self::MoveArms => "move_arms",
+            Self::SetArmGripper => "set_arm_gripper",
+            Self::Rehome => "rehome",
+            Self::Stop => "stop",
+            Self::Observe => "observe",
+        }
+    }
+
     /// Build the model-facing definition with the selected sequence configuration.
     ///
     /// # Errors
     /// Returns an error for invalid sequence configuration or missing station schema fields.
     pub fn definition(&self) -> Result<RobotToolDefinition, String> {
-        let (name, description, parameters) = match self {
+        let (description, parameters) = match self {
             Self::ActionSequence(configuration) => (
-                "action_sequence",
                 "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.",
                 action_sequence_tool_schema(configuration)?,
             ),
             Self::PreviewPose => (
-                "preview_pose",
                 "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.",
                 model_arguments::<PreviewPoseArguments>(),
             ),
             Self::MoveArms => (
-                "move_arms",
                 "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
                 model_arguments::<MoveArmsCommand>(),
             ),
             Self::SetArmGripper => (
-                "set_arm_gripper",
                 "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.",
                 gripper_arguments_schema()?,
             ),
             Self::Rehome => (
-                "rehome",
                 "Return this arm to the joint pose and gripper opening recorded when it was enabled.",
                 model_arguments::<StopArguments>(),
             ),
             Self::Stop => (
-                "stop",
                 "Stop this arm's motion; it holds where it stops.",
                 model_arguments::<StopArguments>(),
             ),
             Self::Observe => (
-                "observe",
                 "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.",
                 model_arguments::<ObserveArguments>(),
             ),
         };
         Ok(RobotToolDefinition {
-            name,
+            name: self.name(),
             description: description.into(),
             parameters,
             operation: self.operation(),

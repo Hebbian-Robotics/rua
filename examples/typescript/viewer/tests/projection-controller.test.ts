@@ -32,7 +32,7 @@ function projected(joint: number): PreviewAnswer {
 test("a cleared target never restores or authorizes an in-flight preview", async () => {
   let finish: ((answer: PreviewAnswer) => void) | undefined;
   let target: number[] | null = [0.1, 0, 0.2];
-  const solutions: number[] = [];
+  const solutions: number[][] = [];
   let clears = 0;
   const controller = createProjectionController({
     currentRequest: () =>
@@ -49,9 +49,7 @@ test("a cleared target never restores or authorizes an in-flight preview", async
       clears += 1;
     },
     onFailure: () => {},
-    onSolution: (_solved, confirm) => {
-      if (confirm) solutions.push(1);
-    },
+    onSolution: (solution) => solutions.push(solution.requestedPosition),
   });
   controller.targetChanged();
   await flushMicrotasks();

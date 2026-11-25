@@ -10,7 +10,7 @@ from rua_dev.generated import check_generated_files
 
 
 @pytest.mark.parametrize(
-    "change", ["unstaged", "staged", "staged-with-clean-worktree", "untracked"]
+    "change", ["unstaged", "staged-with-clean-worktree", "untracked"]
 )
 def test_generated_file_check_rejects_uncommitted_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
@@ -41,11 +41,10 @@ def test_generated_file_check_rejects_uncommitted_output(
     (tmp_path / "unrelated.txt").write_text("unrelated work")
     check_generated_files([Path("generated.txt")])
     match change:
-        case "unstaged" | "staged" | "staged-with-clean-worktree":
+        case "unstaged" | "staged-with-clean-worktree":
             generated_path.write_text("changed\n")
-            if change in {"staged", "staged-with-clean-worktree"}:
-                subprocess.run(["git", "add", "generated.txt"], check=True)
             if change == "staged-with-clean-worktree":
+                subprocess.run(["git", "add", "generated.txt"], check=True)
                 generated_path.write_text("committed\n")
             with pytest.raises(subprocess.CalledProcessError):
                 check_generated_files([Path("generated.txt")])

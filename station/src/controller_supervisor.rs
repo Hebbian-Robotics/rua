@@ -404,19 +404,17 @@ async fn read_status(State(supervisor): State<ControllerSupervisor>) -> Json<Con
 async fn reconnect(
     State(supervisor): State<ControllerSupervisor>,
     Json(request): Json<ReconnectRequest>,
-) -> Result<Json<ControllerStatus>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<ControllerStatus>, crate::lease_routes::Refusal> {
+    use crate::lease_routes::refusal;
     if !request.supported {
-        return Err((
+        return Err(refusal(
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "detail": "Support the arm before reconnecting" })),
+            "Support the arm before reconnecting",
         ));
     }
-    supervisor.reconnect().map_err(|reason| {
-        (
-            StatusCode::CONFLICT,
-            Json(serde_json::json!({ "detail": reason })),
-        )
-    })?;
+    supervisor
+        .reconnect()
+        .map_err(|reason| refusal(StatusCode::CONFLICT, reason))?;
     Ok(Json(supervisor.status()))
 }
 

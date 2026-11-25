@@ -32,38 +32,29 @@ impl ToolConfiguration {
                 .map_or(SequenceScope::SingleArm, SequenceScope::NamedArms),
             actions: self.actions,
         };
+        let available: BTreeMap<_, _> = hebbian_rua::contracts::all_robot_tool_capabilities()
+            .into_iter()
+            .map(|capability| (capability.name(), capability))
+            .collect();
         self.tools
             .into_iter()
-            .map(|name| {
-                Ok(match name.as_str() {
-                    "action_sequence" => {
-                        sequence.validate().map_err(PyValueError::new_err)?;
-                        RobotToolCapability::ActionSequence(sequence.clone())
-                    }
-                    "preview_pose" => RobotToolCapability::PreviewPose,
-                    "move_arms" => RobotToolCapability::MoveArms,
-                    "set_arm_gripper" => RobotToolCapability::SetArmGripper,
-                    "rehome" => RobotToolCapability::Rehome,
-                    "stop" => RobotToolCapability::Stop,
-                    "observe" => RobotToolCapability::Observe,
-                    _ => return Err(PyValueError::new_err(format!("Unknown tool {name}"))),
-                })
+            .map(|name| match available.get(name.as_str()) {
+                Some(RobotToolCapability::ActionSequence(_)) => {
+                    sequence.validate().map_err(PyValueError::new_err)?;
+                    Ok(RobotToolCapability::ActionSequence(sequence.clone()))
+                }
+                Some(capability) => Ok(capability.clone()),
+                None => Err(PyValueError::new_err(format!("Unknown tool {name}"))),
             })
             .collect()
     }
 }
 
 #[pyfunction]
-pub fn tool_names() -> PyResult<Vec<String>> {
+pub fn tool_names() -> Vec<&'static str> {
     hebbian_rua::contracts::all_robot_tool_capabilities()
         .iter()
-        .map(|capability| {
-            Ok(capability
-                .definition()
-                .map_err(PyValueError::new_err)?
-                .name
-                .to_owned())
-        })
+        .map(RobotToolCapability::name)
         .collect()
 }
 
@@ -139,26 +130,27 @@ impl NativeTools {
         let tools = self.tools.clone();
         future_into_py(py, async move {
             let result = tools.execute(call, options).await.map_err(station_error)?;
-            let is_error = !matches!(result.outcome, RobotToolOutcome::Returned(_));
-            let halt = matches!(
-                result.outcome,
+            let disposition = match &result.outcome {
+                RobotToolOutcome::Returned(_) => "returned",
                 RobotToolOutcome::Faulted(_)
-                    | RobotToolOutcome::Refused {
-                        reason: RejectionReason::Faulted,
-                        ..
-                    }
-            );
-            let interrupted = matches!(
-                result.outcome,
+                | RobotToolOutcome::Refused {
+                    reason: RejectionReason::Faulted,
+                    ..
+                } => "faulted",
                 RobotToolOutcome::Interrupted(_)
-                    | RobotToolOutcome::Failed(_)
-                    | RobotToolOutcome::Refused {
-                        reason: RejectionReason::StaleRevision
-                            | RejectionReason::Interlocked
-                            | RejectionReason::LeaseHeldElsewhere,
-                        ..
-                    }
-            );
+                | RobotToolOutcome::Failed(_)
+                | RobotToolOutcome::Refused {
+                    reason:
+                        RejectionReason::StaleRevision
+                        | RejectionReason::Interlocked
+                        | RejectionReason::LeaseHeldElsewhere,
+                    ..
+                } => "interrupted",
+                RobotToolOutcome::InvalidInput(_)
+                | RobotToolOutcome::NotExecuted
+                | RobotToolOutcome::Refused { .. }
+                | RobotToolOutcome::Incomplete(_) => "incomplete",
+            };
             Python::attach(|py| {
                 let output = PyDict::new(py);
                 if let RobotToolOutcome::InvalidInput(detail) = &result.outcome {
@@ -166,9 +158,7 @@ impl NativeTools {
                 } else {
                     output.set_item("data", pythonize(py, &result.data())?)?;
                 }
-                output.set_item("is_error", is_error)?;
-                output.set_item("halt", halt)?;
-                output.set_item("interrupted", interrupted)?;
+                output.set_item("disposition", disposition)?;
                 let cameras = result
                     .cameras
                     .iter()

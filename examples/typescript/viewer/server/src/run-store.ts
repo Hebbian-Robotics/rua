@@ -7,10 +7,43 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { type Run, runSchema } from "../../shared/run-api.js";
+import { z } from "zod";
+import {
+  RUN_OUTPUT_LINE_LIMIT,
+  type Run,
+  runSchema,
+} from "../../shared/run-api.js";
 import type { RunStore } from "./run-manager.js";
 
+const outputRecordSchema = z.object({ line: z.string() });
+
+function recentOutput(records: string): string[] {
+  return records
+    .split("\n")
+    .flatMap((line) => {
+      if (!line) return [];
+      try {
+        // WHY: Older logs and recovery only need the line, even if timing is absent.
+        const record = outputRecordSchema.safeParse(JSON.parse(line));
+        return record.success ? [record.data.line] : [];
+      } catch (error) {
+        if (error instanceof SyntaxError) return [];
+        throw error;
+      }
+    })
+    .slice(-RUN_OUTPUT_LINE_LIMIT);
+}
+
 export function fileRunStore(directory: string): RunStore {
+  function readOutput(id: string): Promise<string> {
+    return readFile(join(directory, id, "output.jsonl"), "utf8").catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return "";
+        throw error;
+      },
+    );
+  }
+
   return {
     async loadAll() {
       await mkdir(directory, { recursive: true });
@@ -20,32 +53,7 @@ export function fileRunStore(directory: string): RunStore {
         const path = join(directory, entry.name, "metadata.json");
         try {
           const run = runSchema.parse(JSON.parse(await readFile(path, "utf8")));
-          {
-            const output = await readFile(
-              join(directory, entry.name, "output.jsonl"),
-              "utf8",
-            ).catch((error: NodeJS.ErrnoException) => {
-              if (error.code === "ENOENT") return "";
-              throw error;
-            });
-            run.output = output
-              .split("\n")
-              .flatMap((line) => {
-                if (!line) return [];
-                try {
-                  const record: unknown = JSON.parse(line);
-                  return typeof record === "object" &&
-                    record !== null &&
-                    "line" in record &&
-                    typeof record.line === "string"
-                    ? [record.line]
-                    : [];
-                } catch {
-                  return [];
-                }
-              })
-              .slice(-200);
-          }
+          run.output = recentOutput(await readOutput(entry.name));
           runs.push(run);
         } catch (error: unknown) {
           console.error(`Skipping unreadable run record ${entry.name}:`, error);
@@ -63,14 +71,7 @@ export function fileRunStore(directory: string): RunStore {
       );
       await rename(`${path}.tmp`, path);
     },
-    async readOutput(id) {
-      return readFile(join(directory, id, "output.jsonl"), "utf8").catch(
-        (error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return "";
-          throw error;
-        },
-      );
-    },
+    readOutput,
     async appendOutput(id, line, timestamp) {
       const runDirectory = join(directory, id);
       await mkdir(runDirectory, { recursive: true });

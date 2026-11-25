@@ -10,7 +10,7 @@ function parseRun(
   return parsed;
 }
 
-test("the flags of the manual loop command the viewer shows are understood", () => {
+test("parses the station, camera and model flags with a hyphenated task after --", () => {
   const { config, server } = parseRun(
     [
       "--server",

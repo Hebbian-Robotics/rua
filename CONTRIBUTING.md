@@ -115,8 +115,10 @@ to repeat their defaults. Use independent expected results.
 Use pure logic tests where possible. Integration tests should protect a distinct
 process, transport or lifecycle boundary; keep their setup narrow and avoid
 repeating owner-level assertions. Keep tests independent. When consolidating
-coverage, identify where each meaningful assertion remains. Report skipped tests
-and validation limits.
+coverage, identify where each meaningful assertion remains. Use the test runner's
+skip or ignore mechanism for optional prerequisites. When several guards can
+reject an input, use a passing control that differs only in the condition under
+test. Report skipped tests and validation limits.
 
 ## Code style
 

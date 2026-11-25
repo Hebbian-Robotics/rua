@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn recording_camera_phone_and_traces_commands_parse() {
+    fn documented_auxiliary_commands_accept_their_public_arguments() {
         for arguments in [
             &["record", "start"][..],
             &["record", "status"],
@@ -674,10 +674,19 @@ mod tests {
             &["traces", "list"],
             &["traces", "pull", "a.gz", "b.gz", "--output", "out"],
             &["action-sequence", "cancel", "seq-1"],
-            &["lease", "revoke"],
         ] {
             parse(arguments).unwrap_or_else(|error| panic!("{arguments:?}: {error}"));
         }
-        assert!(parse(&["camera", "snapshot", "wrist"]).is_err());
+    }
+
+    #[test]
+    fn camera_snapshot_requires_an_output_path() {
+        let error = parse(&["camera", "snapshot", "wrist"])
+            .expect_err("omitting the snapshot destination must fail");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+        assert!(error.to_string().contains("--out"));
     }
 }

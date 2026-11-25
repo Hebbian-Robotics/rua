@@ -4,11 +4,9 @@ import {
   decideStart,
   formatElapsed,
   inferenceModeOptions,
-  manualLoopCommand,
   type Run,
   type RunFormValues,
   runStatusLine,
-  shouldFollowOutput,
 } from "../src/run-logic.js";
 
 const startedAt = 1_000_000;
@@ -186,27 +184,6 @@ test("the viewer requests the selected inference mode and blocks an unsupported 
   });
 });
 
-test("the manual loop command quotes the task and carries the choices", () => {
-  const request = buildRunRequest({
-    ...form,
-    task: "it's a cup",
-    provider: "openai",
-  });
-  expect(manualLoopCommand(request, "http://station:8792")).toBe(
-    "pnpm --filter @hebbian/agent start --server http://station:8792 --camera chest,wrist_r --provider openai --model gpt-6.2-astra --reasoning-effort high -- follower 'it'\\''s a cup'",
-  );
-  expect(
-    manualLoopCommand(
-      buildRunRequest({
-        ...form,
-        provider: "openai",
-        inferenceMode: "ultrafast",
-      }),
-      "http://station:8792",
-    ),
-  ).toContain("--reasoning-effort high --inference-mode ultrafast --");
-});
-
 test("the status line shows elapsed time against now, or the run's own duration once ended", () => {
   expect(runStatusLine(null, 5000)).toBe("No run yet.");
   expect(runStatusLine(running, 1012)).toBe("running · 12 s");
@@ -232,10 +209,4 @@ test("elapsed time formats minutes and hours and never goes negative", () => {
     "1 h 02 min",
     "0 s",
   ]);
-});
-
-test("output follows the end unless the reader scrolled up", () => {
-  expect(shouldFollowOutput(700, 300, 1000)).toBe(true);
-  expect(shouldFollowOutput(690, 300, 1000)).toBe(true);
-  expect(shouldFollowOutput(100, 300, 1000)).toBe(false);
 });

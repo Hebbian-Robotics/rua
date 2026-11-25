@@ -121,12 +121,17 @@ def station(
 
 def test_recording_context_starts_and_stops_recording(station: RunningStation) -> None:
     async def record() -> None:
-        async with StationClient(station.server) as client, client.recording() as name:
-            assert station.get("/recordings").json()["active"] == name
-            status = (await client.recording_status()).root
-            assert status.state == "recording"
-            assert status.name == name
-            assert await client.ensure_recording() == name
+        async with StationClient(station.server) as client:
+            async with client.recording() as name:
+                assert station.get("/recordings").json()["active"] == name
+                assert await client.ensure_recording() == name
+
+            async def recording_is_inactive() -> bool:
+                status = (await client.recording_status()).root
+                return status.state not in {"recording", "stopping"}
+
+            await wait_until_async(recording_is_inactive)
+            assert station.get("/recordings").json()["active"] is None
 
     asyncio.run(record())
 

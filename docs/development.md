@@ -18,6 +18,14 @@ tests serial so simulated stations can meet control-loop deadlines. Pytest
 builds the station on demand. To use an existing binary, set
 `HEBBIAN_RUA_SERVER` to its absolute path.
 
+The optional SO-101 policy preview tests exercise the real model through ONNX
+Runtime. Set `ORT_DYLIB_PATH` to a compatible runtime and place the private
+checkpoint at `.cache/so101-policy-assets/policy.onnx`, then run:
+
+```sh
+cargo test --locked -p hebbian-rua-core --test preview -- --include-ignored
+```
+
 ## Generated contracts and SDKs
 
 Edit the owning Rust types or the [station route table](../station/src/openapi.rs),

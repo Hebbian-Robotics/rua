@@ -59,17 +59,32 @@ class ObservationChanged extends Error {
   }
 }
 
+type ToolCompletion = "returned" | "incomplete";
+type ToolInterruption =
+  | "none"
+  | "faulted"
+  | "interrupted"
+  | "faulted_and_interrupted";
+
+function toolInterruption(
+  faulted: boolean,
+  interrupted: boolean,
+): ToolInterruption {
+  if (faulted) return interrupted ? "faulted_and_interrupted" : "faulted";
+  return interrupted ? "interrupted" : "none";
+}
+
 function result(
   call: RobotToolCall,
   value: unknown,
-  isError = false,
-  halt = false,
-  interrupted = false,
-  images: {
+  completion: ToolCompletion = "returned",
+  options: {
+    interruption?: ToolInterruption;
     cameras?: Record<string, Uint8Array>;
     sequenceImages?: SequenceImageHistory;
   } = {},
 ): RobotToolResult {
+  const { interruption = "none", ...images } = options;
   const content = defaultFormatter({
     kind: "result",
     data: value,
@@ -85,9 +100,12 @@ function result(
     get modelData() {
       return parseModelData(this.text);
     },
-    isError,
-    halt,
-    interrupted,
+    isError: completion === "incomplete",
+    halt:
+      interruption === "faulted" || interruption === "faulted_and_interrupted",
+    interrupted:
+      interruption === "interrupted" ||
+      interruption === "faulted_and_interrupted",
   };
 }
 
@@ -100,15 +118,14 @@ function toolCommandResult(
   answer: CommandAnswer,
 ): RobotToolResult {
   if (answer.status === "refused")
-    return result(
-      call,
-      answer,
-      true,
-      answer.reason === "faulted",
-      ["stale_revision", "interlocked", "lease_held_elsewhere"].includes(
-        answer.reason,
+    return result(call, answer, "incomplete", {
+      interruption: toolInterruption(
+        answer.reason === "faulted",
+        ["stale_revision", "interlocked", "lease_held_elsewhere"].includes(
+          answer.reason,
+        ),
       ),
-    );
+    });
   const records = answer.records.map(({ record }) => record);
   const outcomes = records.map((record) => modelRecordRule(record).class);
   const targets = new Set(
@@ -136,9 +153,13 @@ function toolCommandResult(
   return result(
     call,
     payload,
-    status !== "reached",
-    outcomes.includes("faulted"),
-    outcomes.includes("interrupted"),
+    status === "reached" ? "returned" : "incomplete",
+    {
+      interruption: toolInterruption(
+        outcomes.includes("faulted"),
+        outcomes.includes("interrupted"),
+      ),
+    },
   );
 }
 
@@ -530,7 +551,7 @@ function createRobotToolsCore(
           try {
             return await match(item)
               .with({ kind: "invalid" }, ({ call, error }) =>
-                result(call, error, true),
+                result(call, error, "incomplete"),
               )
               .with({ kind: "preview" }, async (item) => {
                 const previewBatch = {
@@ -571,7 +592,7 @@ function createRobotToolsCore(
                     return result(
                       item.call,
                       "No sequence image history is available; none was captured or it expired.",
-                      true,
+                      "incomplete",
                     );
                   return result(
                     item.call,
@@ -588,23 +609,14 @@ function createRobotToolsCore(
                         boundary: image.boundary,
                       })),
                     },
-                    false,
-                    false,
-                    false,
+                    "returned",
                     { sequenceImages: history },
                   );
                 }
                 const observation = await observe();
-                return result(
-                  item.call,
-                  observation.data,
-                  false,
-                  false,
-                  false,
-                  {
-                    cameras: observation.cameras,
-                  },
-                );
+                return result(item.call, observation.data, "returned", {
+                  cameras: observation.cameras,
+                });
               })
               .with({ kind: "rehome" }, async (item) => {
                 return toolCommandResult(
@@ -671,20 +683,29 @@ function createRobotToolsCore(
                   return result(
                     call,
                     sequence,
-                    sequence.phase.state !== "completed",
-                    outcomes.includes("faulted") || modes.includes("faulted"),
-                    outcomes.includes("interrupted") ||
-                      modes.includes("disconnected") ||
-                      modes.includes("reconnected"),
+                    sequence.phase.state === "completed"
+                      ? "returned"
+                      : "incomplete",
+                    {
+                      interruption: toolInterruption(
+                        outcomes.includes("faulted") ||
+                          modes.includes("faulted"),
+                        outcomes.includes("interrupted") ||
+                          modes.includes("disconnected") ||
+                          modes.includes("reconnected"),
+                      ),
+                    },
                   );
                 },
               )
               .exhaustive();
           } catch (error) {
             if (error instanceof StationRefusedError)
-              return result(item.call, error.detail, true);
+              return result(item.call, error.detail, "incomplete");
             if (error instanceof LeaseLostError)
-              return result(item.call, error.message, true, false, true);
+              return result(item.call, error.message, "incomplete", {
+                interruption: "interrupted",
+              });
             throw error;
           }
         });
@@ -699,9 +720,8 @@ function createRobotToolsCore(
       return result(
         call,
         `Tool call failed; its outcome may be unknown: ${String(outcome.reason)}`,
-        true,
-        false,
-        true,
+        "incomplete",
+        { interruption: "interrupted" },
       );
     });
     if (formatter === defaultFormatter) return results;

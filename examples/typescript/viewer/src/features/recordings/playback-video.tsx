@@ -47,6 +47,8 @@ export function PlaybackVideo({
   );
 }
 
+type ClipLoadState = "loading" | "ready" | "failed";
+
 function PlaybackSegment({
   clip,
   loadVideo,
@@ -60,15 +62,28 @@ function PlaybackSegment({
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const [idle, setIdle] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const failedClip = useRef(false);
+  const [loadState, setLoadState] = useState<ClipLoadState>("loading");
   useEffect(() => {
     const element = video.current;
     if (!element) return;
     let idleState = true;
     let objectUrl: string | null = null;
     let cancelled = false;
+    let currentLoadState: ClipLoadState = "loading";
+    setLoadState(currentLoadState);
+    setIdle(true);
+
+    function onLoadedData() {
+      if (currentLoadState !== "loading") return;
+      currentLoadState = "ready";
+      setLoadState(currentLoadState);
+    }
+    function onError() {
+      currentLoadState = "failed";
+      setLoadState(currentLoadState);
+    }
+    element.addEventListener("loadeddata", onLoadedData);
+    element.addEventListener("error", onError);
     // CONSTRAINT: The clip's video is packaged from the recording's MCAP, so it is local
     // once it has loaded and `cacheLocally` has nothing more to fetch.
     const loaded = loadVideo(clip)
@@ -80,16 +95,14 @@ function PlaybackSegment({
         element.src = objectUrl;
       })
       .catch(() => {
-        if (cancelled) return;
-        failedClip.current = true;
-        setFailed(true);
+        if (!cancelled) onError();
       });
     const synced: SyncedClip = {
       video: element,
       startTime: clip.startTime,
       durationSeconds: clip.durationSeconds,
       get failed() {
-        return failedClip.current;
+        return currentLoadState === "failed";
       },
       setIdle(next) {
         if (next !== idleState) {
@@ -105,7 +118,13 @@ function PlaybackSegment({
       cancelled = true;
       register(clip.segment, null);
       onActive(clip.segment, false);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      element.removeEventListener("loadeddata", onLoadedData);
+      element.removeEventListener("error", onError);
+      if (objectUrl) {
+        element.removeAttribute("src");
+        element.load();
+        URL.revokeObjectURL(objectUrl);
+      }
     };
   }, [clip, loadVideo, register, onActive]);
   return (
@@ -115,16 +134,15 @@ function PlaybackSegment({
         muted
         playsInline
         preload="auto"
-        onLoadedData={() => setLoading(false)}
-        onError={() => {
-          failedClip.current = true;
-          setFailed(true);
-        }}
         aria-label={`${clip.cameraName} recording`}
       />
-      {(loading || failed) && (
-        <p>{failed ? "Could not load this clip" : "Loading clip…"}</p>
+      {loadState === "loading" && <p>Loading clip…</p>}
+      {loadState === "failed" && (
+        <p aria-hidden="true">Could not load this clip</p>
       )}
+      <span className="sr-only" role="status">
+        {loadState === "failed" ? "Could not load this clip" : ""}
+      </span>
     </div>
   );
 }

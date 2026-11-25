@@ -7,12 +7,7 @@ import {
   unsupportedInferenceMode,
   unsupportedReasoningEffort,
 } from "../../agent/src/providers/types.js";
-import {
-  isRunActive,
-  type Run,
-  type RunRequest,
-  runRequestSchema,
-} from "../shared/run-api.js";
+import { isRunActive, type Run, type RunRequest } from "../shared/run-api.js";
 
 export { isRunActive, type Run, type RunRequest };
 
@@ -26,8 +21,6 @@ type RunState =
   | "interrupted";
 
 const MILLISECONDS_PER_SECOND = 1000;
-// WHY: Output follows new lines unless the reader scrolled up by more than this.
-const FOLLOW_OUTPUT_SLACK_PIXELS = 24;
 
 function runState(run: Run): RunState {
   return match(run.phase)
@@ -132,57 +125,6 @@ export function buildRunRequest(
   };
 }
 
-function shellQuote(argument: string): string {
-  return /^[\w@%+=:,./-]+$/.test(argument)
-    ? argument
-    : `'${argument.replaceAll("'", `'\\''`)}'`;
-}
-
-function presentFlags(flags: [string, string | null][]): string[] {
-  return flags.flatMap(([flag, value]) =>
-    value === null ? [] : [flag, value],
-  );
-}
-
-export function manualLoopCommand(
-  request: RunRequest,
-  stationUrl: string,
-): string {
-  const { arm, task, cameras, optionalCameras, settings } =
-    runRequestSchema.parse(request);
-  const cameraFlags: [string, string | null][] = [
-    ["--camera", cameras.length > 0 ? cameras.join(",") : null],
-    [
-      "--optional-camera",
-      optionalCameras.length > 0 ? optionalCameras.join(",") : null,
-    ],
-  ];
-  const modelFlags: [string, string | null][] = [
-    ["--provider", settings.provider],
-    ["--model", settings.model],
-    ["--reasoning-effort", settings.reasoningEffort],
-    [
-      "--inference-mode",
-      settings.inferenceMode === "standard" ? null : settings.inferenceMode,
-    ],
-  ];
-  return [
-    "pnpm",
-    "--filter",
-    "@hebbian/agent",
-    "start",
-    "--server",
-    stationUrl,
-    ...presentFlags(cameraFlags),
-    ...presentFlags(modelFlags),
-    "--",
-    arm,
-    task,
-  ]
-    .map(shellQuote)
-    .join(" ");
-}
-
 export function formatElapsed(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
   if (seconds < 60) return `${seconds} s`;
@@ -218,14 +160,4 @@ export function runStatusLine(run: Run | null, nowSeconds: number): string {
       : null;
   const detail = failure === null ? "" : ` · ${failure.detail}`;
   return `${runState(run)}${elapsed === null ? "" : ` · ${formatElapsed(elapsed)}`}${detail}`;
-}
-
-export function shouldFollowOutput(
-  scrollTop: number,
-  clientHeight: number,
-  scrollHeight: number,
-): boolean {
-  return (
-    scrollHeight - (scrollTop + clientHeight) <= FOLLOW_OUTPUT_SLACK_PIXELS
-  );
 }

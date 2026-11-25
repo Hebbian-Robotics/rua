@@ -1,62 +1,53 @@
 import * as THREE from "three";
-import { test } from "vitest";
+import { expect, test } from "vitest";
 import { intersectsBaseSurface } from "../src/base-surface.js";
 
-test("base surface", async () => {
-  function assert(condition: unknown, message: string): asserts condition {
-    if (!condition) throw new Error(message);
-  }
-  function link(name: string): THREE.Group {
-    const group = new THREE.Group();
-    group.name = name;
-    Object.assign(group, { isURDFLink: true });
-    return group;
-  }
-  const robot = link("robot");
-  const base = link("base_link");
-  const shoulder = link("shoulder_link");
+function urdfLink(name: string): THREE.Group {
+  const group = new THREE.Group();
+  group.name = name;
+  return Object.assign(group, { isURDFLink: true });
+}
+
+function robotWithMovingLink() {
+  const robot = urdfLink("robot");
+  const base = urdfLink("base_link");
+  const shoulder = urdfLink("shoulder_link");
   robot.add(base);
   base.add(shoulder);
-  const baseMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2));
-  base.add(baseMesh);
-  const movingMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1));
-  movingMesh.position.z = 0.1;
-  shoulder.add(movingMesh);
-  assert(
-    !intersectsBaseSurface(robot, 0),
-    "Fixed base below its mounting plane must be allowed",
-  );
-  const jaw = link("moving_jaw_so101_v1_link");
-  shoulder.add(jaw);
+  base.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2)));
+  const shoulderMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1));
+  shoulderMesh.position.z = 0.1;
+  shoulder.add(shoulderMesh);
+  return { robot, shoulder, shoulderMesh };
+}
+
+test("the fixed base is allowed below the surface while hand and arm geometry are checked", () => {
+  const { robot, shoulder, shoulderMesh } = robotWithMovingLink();
+  expect(intersectsBaseSurface(robot, 0)).toBe(false);
+
+  const movingJaw = urdfLink("moving_jaw_so101_v1_link");
   const jawMesh = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.02));
   jawMesh.position.z = -0.02;
-  jaw.add(jawMesh);
-  assert(
-    intersectsBaseSurface(robot, 0),
-    "The moving jaw must be checked against the surface",
-  );
+  movingJaw.add(jawMesh);
+  shoulder.add(movingJaw);
+  expect(intersectsBaseSurface(robot, 0)).toBe(true);
+
   jawMesh.position.z = 0.1;
-  movingMesh.position.z = 0.04;
-  assert(
-    intersectsBaseSurface(robot, 0),
-    "A moving link crossing the base plane must be blocked",
-  );
-  assert(
-    !intersectsBaseSurface(robot, -0.1),
-    "A lower surface allows the same pose",
-  );
-  movingMesh.position.z = 0.2;
+  shoulderMesh.position.z = 0.04;
+  expect(intersectsBaseSurface(robot, 0)).toBe(true);
+  expect(intersectsBaseSurface(robot, -0.1)).toBe(false);
+});
+
+test("a link intersects according to its world coordinates after rotation", () => {
+  const { robot, shoulder, shoulderMesh } = robotWithMovingLink();
+  shoulderMesh.position.z = 0.2;
+  expect(intersectsBaseSurface(robot, 0)).toBe(false);
   shoulder.rotation.y = Math.PI / 2;
-  assert(
-    intersectsBaseSurface(robot, 0),
-    "Transformed mesh vertices must be checked in world coordinates",
-  );
-  assert(
-    intersectsBaseSurface(robot, Number.NaN),
-    "An invalid surface height must fail closed",
-  );
-  assert(
-    intersectsBaseSurface(new THREE.Group(), 0),
-    "An unavailable mesh must fail closed",
-  );
+  expect(intersectsBaseSurface(robot, 0)).toBe(true);
+});
+
+test("missing geometry or an invalid surface blocks motion", () => {
+  const { robot } = robotWithMovingLink();
+  expect(intersectsBaseSurface(robot, Number.NaN)).toBe(true);
+  expect(intersectsBaseSurface(new THREE.Group(), 0)).toBe(true);
 });

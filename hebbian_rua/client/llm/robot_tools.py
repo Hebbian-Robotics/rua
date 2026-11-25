@@ -254,9 +254,7 @@ class RobotTools:
                 return result_from_data(
                     current_call,
                     data,
-                    is_error=outcome["is_error"],
-                    halt=outcome["halt"],
-                    interrupted=outcome["interrupted"],
+                    disposition=outcome["disposition"],
                     cameras=outcome["cameras"] if history is None else None,
                     sequence_images=history,
                     observed_revisions=observed_revisions,
@@ -274,8 +272,7 @@ class RobotTools:
                     result_from_data(
                         call,
                         "Tool call was cancelled; its outcome may be unknown",
-                        is_error=True,
-                        interrupted=True,
+                        disposition="interrupted",
                     )
                 )
             elif isinstance(outcome, Exception):
@@ -283,8 +280,7 @@ class RobotTools:
                     result_from_data(
                         call,
                         f"Tool call failed; its outcome may be unknown: {outcome}",
-                        is_error=True,
-                        interrupted=True,
+                        disposition="interrupted",
                     )
                 )
             elif isinstance(outcome, BaseException):

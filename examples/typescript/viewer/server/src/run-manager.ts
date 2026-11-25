@@ -61,6 +61,20 @@ interface LiveRun {
   outputWriteFailed: boolean;
 }
 
+function resolveSettings(settings: ParsedRunRequest["settings"]) {
+  const { provider, model } = settings;
+  return {
+    provider,
+    model,
+    reasoningEffort: settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+    inferenceMode: settings.inferenceMode ?? DEFAULT_INFERENCE_MODE,
+  };
+}
+
+type RunnableRequest = Omit<ParsedRunRequest, "settings"> & {
+  settings: ReturnType<typeof resolveSettings>;
+};
+
 export class RunManager {
   private readonly runs = new Map<string, LiveRun>();
   private writes: Promise<void> = Promise.resolve();
@@ -91,11 +105,8 @@ export class RunManager {
     if (this.activeRun() !== null)
       throw new RunConflictError("A run is already active");
     const { promptImage, ...historyRequest } = request;
-    const { provider, model } = historyRequest.settings;
-    const reasoningEffort =
-      request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
-    const inferenceMode =
-      request.settings.inferenceMode ?? DEFAULT_INFERENCE_MODE;
+    const settings = resolveSettings(request.settings);
+    const { provider, model, reasoningEffort, inferenceMode } = settings;
     const settingsProblem =
       unsupportedReasoningEffort(provider, model, reasoningEffort) ??
       unsupportedInferenceMode(provider, model, inferenceMode);
@@ -107,7 +118,7 @@ export class RunManager {
       request: {
         ...historyRequest,
         ...(promptImage ? { attachmentFilename: promptImage.filename } : {}),
-        settings: { provider, model, reasoningEffort, inferenceMode },
+        settings,
       },
       phase: { state: "running", startedAt: now },
       output: [],
@@ -116,7 +127,7 @@ export class RunManager {
     this.runs.set(run.id, entry);
     this.persist(entry.run);
     const started = entry.run;
-    entry.finished = this.execute(entry, request);
+    entry.finished = this.execute(entry, { ...request, settings });
     return started;
   }
 
@@ -229,9 +240,10 @@ export class RunManager {
 
   private async execute(
     entry: LiveRun,
-    request: ParsedRunRequest,
+    request: RunnableRequest,
   ): Promise<void> {
-    const { provider, model } = request.settings;
+    const { provider, model, reasoningEffort, inferenceMode } =
+      request.settings;
     let outcome: AgentOutcome;
     try {
       outcome = await runAgent(
@@ -254,10 +266,8 @@ export class RunManager {
             : { motionLimits: request.motionLimits }),
           provider,
           model,
-          reasoningEffort:
-            request.settings.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
-          inferenceMode:
-            request.settings.inferenceMode ?? DEFAULT_INFERENCE_MODE,
+          reasoningEffort,
+          inferenceMode,
           onInterruption: "wait_for_approval",
           record: false,
           stationUrl: this.options.stationUrl,
