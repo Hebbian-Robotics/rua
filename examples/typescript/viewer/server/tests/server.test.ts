@@ -253,3 +253,27 @@ test("an idle run event stream sends a heartbeat", async () => {
     vi.useRealTimers();
   }
 });
+
+test("feedback and lessons routes validate their input", async () => {
+  const server = app();
+  const feedback = (id: string, payload: unknown) =>
+    server.request(`/api/runs/${id}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  expect((await feedback("missing", { text: "x" })).status).toBe(404);
+  expect((await server.request("/api/runs", post)).status).toBe(201);
+  expect((await feedback("run-1", { text: 3 })).status).toBe(400);
+  // The scripted model never finishes, so the run is still active.
+  const early = await feedback("run-1", { text: "approach from above" });
+  expect(early.status).toBe(409);
+  expect(await early.json()).toEqual({
+    detail: "Add feedback after the run ends",
+  });
+  expect((await server.request("/api/lessons")).status).toBe(400);
+  expect((await server.request("/api/lessons?task=%20")).status).toBe(400);
+  const lessons = await server.request("/api/lessons?task=t");
+  expect(lessons.status).toBe(200);
+  expect(await lessons.json()).toEqual([]);
+});

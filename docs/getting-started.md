@@ -49,6 +49,13 @@ Use **Attach image** to send one JPEG, PNG, or WebP reference with the prompt.
 The viewer shows a thumbnail before the run and saves the filename in the run
 record. Select **Remove image** to clear the attachment.
 
+When a run ends, write advice for the next attempt under **Advice for the next
+run**, such as “open the gripper wider before descending”, and select
+**Save feedback**. The viewer saves it in that run's record. The next time you
+enter exactly the same task, **Lessons from earlier runs** lists that feedback;
+switch off or edit each lesson before selecting **Start task**. The agent sees
+the lessons you keep in its first observation, and the run record lists them.
+
 ## Next steps
 
 - [Run and customize the Python example](../examples/python/README.md) or use

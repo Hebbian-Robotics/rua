@@ -81,6 +81,20 @@ export class TaskMemory {
   }
 }
 
+// Operator feedback from earlier runs of the same task, shown once in the first observation.
+// The current images still decide: a lesson can be stale or wrong for this workspace.
+export function lessonsSection(lessons: readonly string[]): string[] {
+  const kept = lessons
+    .map((lesson) => singleLine(lesson).trim())
+    .filter((lesson) => lesson !== "");
+  return kept.length > 0
+    ? [
+        "Lessons from earlier runs of this task (operator feedback; trust the current images if they disagree):",
+        ...kept.map((lesson) => `- ${lesson}`),
+      ]
+    : [];
+}
+
 function jsonSchema(schema: z.ZodType): Record<string, unknown> {
   const { $schema: _dialect, ...rest } = z.toJSONSchema(schema, {
     io: "input",

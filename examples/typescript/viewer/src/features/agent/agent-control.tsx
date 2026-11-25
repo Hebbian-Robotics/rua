@@ -23,9 +23,11 @@ import { describeHolder, manualControlView } from "../../control-logic.js";
 import { errorMessage } from "../../errors.js";
 import { manualLease } from "../../manual-lease.js";
 import {
+  chosenLessons,
   decideStart,
   inferenceModeOptions,
   isRunActive,
+  type LessonEdits,
   type RunFormValues,
   type RunRequest,
   runStatusLine,
@@ -36,6 +38,7 @@ import {
   PROMPT_IMAGE_TYPES,
   preparePromptImage,
 } from "./prompt-image.js";
+import { LessonsPicker, RunFeedback, useTaskLessons } from "./run-feedback.js";
 import type { useAgentRun } from "./use-agent-run.js";
 
 const cameraModeSchema = z.enum(["required", "optional", "off"]);
@@ -84,7 +87,14 @@ export function AgentControl({
   const [cameras, setCameras] = useState<
     Record<string, z.infer<typeof cameraModeSchema>>
   >({});
+  const [lessonEdits, setLessonEdits] = useState<LessonEdits>({});
   const { run, status, providers, providersError } = agent;
+  const { lessons, ready: lessonsReady } = useTaskLessons(
+    agent.loadLessons,
+    task,
+    status === "reachable",
+    run?.feedback?.savedAt,
+  );
   const selectedProvider = modelSelection?.provider;
   const currentProvider = providers?.find(
     ({ provider }) => provider === selectedProvider,
@@ -164,6 +174,8 @@ export function AgentControl({
         : "Wait for the arm to hold before starting a task.";
   } else if (task.trim() && decision.kind === "blocked") {
     unavailable = decision.reason;
+  } else if (!lessonsReady) {
+    unavailable = "Checking lessons from earlier runs…";
   }
   return (
     <section className="agent-control" aria-label="Agent control">
@@ -176,12 +188,16 @@ export function AgentControl({
             !preparingPromptImage &&
             !unavailable &&
             decision.kind === "allowed"
-          )
-            void onStartRun(
-              promptImage
-                ? { ...decision.request, promptImage }
-                : decision.request,
-            );
+          ) {
+            const kept = chosenLessons(lessons, lessonEdits);
+            // Choices apply to one run; the next start reviews lessons afresh.
+            setLessonEdits({});
+            void onStartRun({
+              ...decision.request,
+              lessons: kept,
+              ...(promptImage ? { promptImage } : {}),
+            });
+          }
         }}
       >
         <label htmlFor="agent-task">
@@ -202,6 +218,13 @@ export function AgentControl({
             placeholder="Describe what the robot should do"
           />
         </label>
+        {!settingsLocked && (
+          <LessonsPicker
+            lessons={lessons}
+            edits={lessonEdits}
+            onEditsChange={setLessonEdits}
+          />
+        )}
         <div className="grid gap-2">
           <input
             ref={promptImagePicker}
@@ -458,6 +481,7 @@ export function AgentControl({
           {runStatusLine(run, Date.now() / 1000)}
         </p>
       )}
+      {run && <RunFeedback run={run} saveFeedback={agent.saveFeedback} />}
     </section>
   );
 }

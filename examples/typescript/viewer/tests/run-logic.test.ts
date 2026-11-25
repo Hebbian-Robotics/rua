@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   buildRunRequest,
+  chosenLessons,
   decideStart,
   formatElapsed,
   inferenceModeOptions,
@@ -20,6 +21,7 @@ function runIn(phase: Run["phase"]): Run {
     request: {
       arm: "follower",
       task: "stack the cups",
+      lessons: [],
       cameras: [],
       optionalCameras: [],
       settings: {
@@ -277,4 +279,44 @@ test("output follows the end unless the reader scrolled up", () => {
   expect(shouldFollowOutput(700, 300, 1000)).toBe(true);
   expect(shouldFollowOutput(690, 300, 1000)).toBe(true);
   expect(shouldFollowOutput(100, 300, 1000)).toBe(false);
+});
+
+test("chosen lessons apply the operator's edits and switches", () => {
+  const lesson = (runId: string, text: string) => ({
+    runId,
+    outcome: "completed" as const,
+    text,
+    savedAt: 1,
+  });
+  const lessons = [
+    lesson("a", "approach from above"),
+    lesson("b", "open wider"),
+    lesson("c", "closest row is nearest the arm"),
+  ];
+  expect(chosenLessons(lessons, {})).toEqual([
+    "approach from above",
+    "open wider",
+    "closest row is nearest the arm",
+  ]);
+  expect(
+    chosenLessons(lessons, {
+      a: { enabled: false, text: "approach from above", savedAt: 1 },
+      b: { enabled: true, text: "  open the gripper wider  ", savedAt: 1 },
+      c: { enabled: true, text: "   ", savedAt: 1 },
+    }),
+  ).toEqual(["open the gripper wider"]);
+});
+
+test("edits to superseded feedback give way to the corrected feedback", () => {
+  const corrected = {
+    runId: "a",
+    outcome: "completed" as const,
+    text: "approach from the left",
+    savedAt: 2,
+  };
+  expect(
+    chosenLessons([corrected], {
+      a: { enabled: false, text: "approach from above", savedAt: 1 },
+    }),
+  ).toEqual(["approach from the left"]);
 });

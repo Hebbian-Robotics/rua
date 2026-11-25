@@ -102,9 +102,24 @@ export function useAgentRun(baseUrl: string, enabled = true) {
     );
   }, [baseUrl, activeId, setRun]);
 
+  const loadLessons = useCallback(
+    (task: string) => agentApi.lessons(baseUrl, task),
+    [baseUrl],
+  );
+  const saveFeedback = useCallback(
+    async (id: string, text: string) => {
+      const saved = await agentApi.saveFeedback(baseUrl, id, text);
+      setRun((previous) => (previous?.id === saved.id ? saved : previous));
+      return saved;
+    },
+    [baseUrl, setRun],
+  );
+
   return {
     run,
     setRun,
+    loadLessons,
+    saveFeedback,
     status,
     providers: providersQuery.data ?? null,
     connectionError: runQuery.error ? errorMessage(runQuery.error) : "",
