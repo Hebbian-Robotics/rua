@@ -31,10 +31,10 @@ function Viewer() {
       <p role="status">Connecting to the viewer backend…</p>
     );
   }
-  return <FullViewer manualOnly={health.data.manualOnly} />;
+  return <FullViewer />;
 }
 
-function FullViewer({ manualOnly }: { manualOnly: boolean }) {
+function FullViewer() {
   const viewerPreferences = useViewerPreferences();
   const { preferences, updatePreferences } = viewerPreferences;
   const cameras = useCameraRoom();
@@ -42,7 +42,6 @@ function FullViewer({ manualOnly }: { manualOnly: boolean }) {
 
   return (
     <WorkspaceApp
-      manualOnly={manualOnly}
       viewerPreferences={viewerPreferences}
       cameras={cameras}
       navigationLinks={recordingNavigationLinks}

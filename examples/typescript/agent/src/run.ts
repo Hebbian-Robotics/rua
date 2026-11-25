@@ -53,7 +53,7 @@ export function configuredProviders(
   );
 }
 
-function configuredApiKey(
+export function configuredApiKey(
   provider: Provider,
   environment: NodeJS.ProcessEnv,
 ): string | undefined {

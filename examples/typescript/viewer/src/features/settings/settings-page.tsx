@@ -32,11 +32,16 @@ export function SettingsPage({
   agent: ReturnType<typeof useAgentRun>;
   section: string | undefined;
 }) {
+  const [keyError, setKeyError] = useState("");
   const { status, connectionError } = agent;
   const [motionLimitsSaved, setMotionLimitsSaved] = useState(false);
   useEffect(() => {
     const heading = document.getElementById(
-      section === "agent" ? "settings-agent" : "settings-heading",
+      section?.startsWith("key-")
+        ? section
+        : section === "agent"
+          ? "settings-agent"
+          : "settings-heading",
     );
     heading?.focus();
   }, [section]);
@@ -198,12 +203,79 @@ export function SettingsPage({
           <BotIcon aria-hidden="true" /> Agent connection
         </h2>
         <p role="status">
-          {status === "unreachable"
-            ? connectionError
-            : status === "disabled"
-              ? "Disabled: the viewer was started with --manual-control-only-no-agent"
-              : status}
+          {status === "unreachable" ? connectionError : status}
         </p>
+        <h2>Model API keys</h2>
+        {agent.providersError && <p role="alert">{agent.providersError}</p>}
+        {agent.providers?.map(({ provider, label, available }) => {
+          const saved = Boolean(agent.browserKey(provider));
+          const id = `key-${provider}`;
+          if (available)
+            return (
+              <p key={provider} id={id} tabIndex={-1}>
+                {label} · Set in viewer environment
+              </p>
+            );
+          function save(value: string) {
+            try {
+              agent.saveKey(provider, value);
+              setKeyError("");
+              return true;
+            } catch {
+              setKeyError("Browser storage is unavailable.");
+              return false;
+            }
+          }
+          return (
+            <form
+              key={provider}
+              aria-label={`${label} key`}
+              className="grid gap-2"
+              method="post"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const value = new FormData(form).get("apiKey");
+                if (
+                  typeof value === "string" &&
+                  value.trim() &&
+                  save(value.trim())
+                )
+                  form.reset();
+              }}
+            >
+              <label htmlFor={id}>{label} API key</label>
+              <Input
+                type="password"
+                id={id}
+                name="apiKey"
+                required
+                pattern=".*\S.*"
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+              <p role="status">
+                {saved ? "Saved in this browser" : "No key set"}
+              </p>
+              <div>
+                <Button type="submit">
+                  {saved ? "Replace key" : "Save in this browser"}
+                </Button>
+                {saved && (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => save("")}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </form>
+          );
+        })}
+        {keyError && <p role="alert">{keyError}</p>}
+        <a href="#workspace-control">Back to Agent Run</a>
       </Card>
     </main>
   );

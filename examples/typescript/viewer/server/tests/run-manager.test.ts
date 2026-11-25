@@ -247,13 +247,7 @@ test("a run whose lease was lost is recorded incomplete", async () => {
 
 test("a missing API key fails the run without touching the station", () => {
   const runs = manager({ environment: {} });
-  const run = runs.start(request);
-  expect(runs.get(run.id).phase).toMatchObject({
-    outcome: {
-      kind: "failed",
-      detail: expect.stringContaining("OPENAI_API_KEY"),
-    },
-  });
+  expect(() => runs.start(request)).toThrow("API key");
   expect(station.requests).toEqual([]);
 });
 

@@ -8,14 +8,14 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
 
 1. If you run RUA from source, [build the media companion](#rua-configuration)
    once. The Python wheel includes it.
-2. For LiveKit Cloud, we recommend installing the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/).
+2. For a station built from this checkout, we recommend installing the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/).
    Run `lk cloud auth` as the OS user who runs the station
    and choose your project in the browser. Restart the station after setup.
    RUA reads the default project's credentials from `~/.livekit/cli-config.yaml`.
    If you have several projects, select one with `lk project set-default PROJECT`.
    See [LiveKit CLI authentication](https://docs.livekit.io/reference/developer-tools/livekit-cli/auth/).
 
-   For manual setup, open your project in the [LiveKit Cloud dashboard](https://cloud.livekit.io/),
+   For the published 0.1.7 station or manual setup, open your project in the [LiveKit Cloud dashboard](https://cloud.livekit.io/),
    copy its WebSocket URL, and open the project’s **API keys** page for the key and secret.
    If you missed the secret when creating your account or key, you may need to
    create a new API key. Save its secret when it is shown.
@@ -192,8 +192,7 @@ Restart the station with `rua serve --local-only-no-remote-cameras` and keep
 your existing `--camera NAME=DEVICE` arguments. Open or reload the
 [example viewer](http://127.0.0.1:8793/viewer/) to see the local feeds under
 **Cameras**. You can watch while a CLI command or Python agent controls the arm.
-Normal viewer startup requires a model-provider key. Watching cameras uses no
-control lease.
+Watching cameras requires neither a model-provider key nor a control lease.
 [Example viewer setup](../examples/typescript/viewer/README.md)
 
 Phone camera invites, remote feeds, and recording are disabled in this mode.

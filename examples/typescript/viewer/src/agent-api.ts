@@ -45,10 +45,17 @@ export const agentApi = {
     agentJson(baseUrl, "/api/model-providers", modelProvidersSchema),
   currentRun: (baseUrl: string) =>
     agentJson(baseUrl, "/api/runs/current", currentRunSchema),
-  startRun: (baseUrl: string, request: RunRequest): Promise<Run> =>
+  startRun: (
+    baseUrl: string,
+    request: RunRequest,
+    apiKey?: string,
+  ): Promise<Run> =>
     agentJson(baseUrl, "/api/runs", runSchema, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { "X-Model-Api-Key": apiKey } : {}),
+      },
       body: JSON.stringify(request),
     }),
   stopRun: (baseUrl: string, id: string): Promise<Run> =>

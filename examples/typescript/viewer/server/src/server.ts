@@ -26,14 +26,12 @@ const RUN_STREAM_HEARTBEAT_MILLISECONDS = 10_000;
 export interface AppOptions {
   manager: RunManager;
   allowedOrigins: string[];
-  manualOnly: boolean;
   configuredProviders: readonly Provider[];
 }
 
 export function createApp({
   manager,
   allowedOrigins,
-  manualOnly,
   configuredProviders,
 }: AppOptions): Hono {
   const app = new Hono();
@@ -52,16 +50,14 @@ export function createApp({
     return context.json({ detail: error.message }, 500);
   });
 
-  app.get("/api/health", (context) => context.json({ ok: true, manualOnly }));
+  app.get("/api/health", (context) => context.json({ ok: true }));
   app.get("/api/model-providers", (context) =>
     context.json(
-      manualOnly
-        ? []
-        : PROVIDERS.map((provider) => ({
-            provider,
-            ...viewerModelCatalog[provider],
-            available: configuredProviders.includes(provider),
-          })),
+      PROVIDERS.map((provider) => ({
+        provider,
+        ...viewerModelCatalog[provider],
+        available: configuredProviders.includes(provider),
+      })),
     ),
   );
   app.get("/api/runs/current", (context) => context.json(manager.current()));
@@ -83,17 +79,12 @@ export function createApp({
         context.json({ detail: "Run request is too large." }, 413),
     }),
     async (context) => {
-      if (manualOnly)
-        return context.json(
-          {
-            detail:
-              "Agent runs are disabled: the viewer was started with --manual-control-only-no-agent.",
-          },
-          403,
-        );
       const body = await readJson(context.req.json(), runRequestSchema);
       if (!body.success) return context.json({ detail: body.detail }, 400);
-      return context.json(manager.start(body.data), 201);
+      return context.json(
+        manager.start(body.data, context.req.header("X-Model-Api-Key")),
+        201,
+      );
     },
   );
   app.post("/api/runs/:id/stop", (context) =>

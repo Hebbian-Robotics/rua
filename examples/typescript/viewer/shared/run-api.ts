@@ -114,7 +114,6 @@ export const modelProvidersSchema = z.array(
 );
 export const healthSchema = z.object({
   ok: z.literal(true),
-  manualOnly: z.boolean(),
 });
 
 export const runEventSchema = z.discriminatedUnion("type", [

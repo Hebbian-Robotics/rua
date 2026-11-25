@@ -47,6 +47,8 @@ const stationState: StationState = {
 const agent: ComponentProps<typeof AgentControl>["agent"] = {
   run: null,
   setRun: () => {},
+  browserKey: () => undefined,
+  saveKey: () => {},
   status: "reachable",
   providers: [
     {

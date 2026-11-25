@@ -18,15 +18,13 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and
 Support the arm before disabling it. Verify clearance from objects and other
 arms, supervise the first motions, and keep a physical power cutoff accessible.
 
-Before starting the viewer, [configure LiveKit on the station using `lk cloud auth` or `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
+For the pinned 0.1.7 station, set all three [LiveKit variables in the station’s environment or `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
 
 ```sh
 uvx --from hebbian-rua==0.1.7 rua serve
 ```
 
-Set at least one model-provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
-`GEMINI_API_KEY`) in your environment or the repository’s `.env`. Then start the
-viewer in a second terminal with `pnpm start:viewer`.
+Start the viewer in a second terminal with `pnpm start:viewer`. Manual control needs no model key.
 Wait for `measured_joints` to populate in [station state](http://127.0.0.1:8792/state).
 The API can respond before arm feedback arrives. With torque off, open the
 [viewer](http://127.0.0.1:8793/viewer/) and
@@ -39,6 +37,8 @@ See [viewer controls](so101-manual-control.md#controls) for details and
 [fault recovery](so101-manual-control.md#recovering-from-a-fault) if needed.
 
 ## 3. Run your first agent
+
+Choose a provider in Agent Run. If it needs a key, follow **Set key** to Settings, save the key in this browser, and return to Agent Run. You can also supply the key in the viewer environment or `.env`.
 
 ### Enable the arm in Agent mode
 
