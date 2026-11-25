@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Self
 
@@ -107,9 +108,11 @@ def _command_options(
     }
 
 
-async def _lease_operation(operation: Awaitable[None]) -> None:
+async def _lease_operation[LeaseOperationResult](
+    operation: Awaitable[LeaseOperationResult],
+) -> LeaseOperationResult:
     try:
-        await operation
+        return await operation
     except _native.CommandRefused as error:
         if error.reason == RejectionReason.lease_held_elsewhere:
             raise LeaseLost from error
@@ -218,7 +221,7 @@ class LeasedArm(ArmMotionCommands):
         The station refuses the action_sequence while an interlock is active, stops it
         once one is raised, and stops it if this connection disconnects.
         """
-        action_sequence_id = await self._lease.start_action_sequence(
+        execution = await self._lease.start_sequence_execution(
             ActionSequenceRequest(
                 steps=[
                     ActionSequenceStep(arms={self.name: action}) for action in steps
@@ -228,7 +231,7 @@ class LeasedArm(ArmMotionCommands):
                 else {},
             )
         )
-        return await self._lease._client.wait_for_action_sequence(action_sequence_id)
+        return await execution.wait()
 
     async def move_to_pose(
         self,
@@ -254,6 +257,28 @@ class LeasedArm(ArmMotionCommands):
             max_joint_jerk=max_joint_jerk,
             expected_revision=expected_revision,
         )
+
+
+@dataclass(frozen=True)
+class SequenceExecution:
+    """An accepted sequence bound to the station instance that started it."""
+
+    client: "StationClient"
+    station_instance_id: str
+    id: str
+
+    @property
+    def _reference(self) -> str:
+        return f"{self.station_instance_id}~{self.id}"
+
+    async def status(self) -> ActionSequenceRecord:
+        return await self.client.get_action_sequence(self._reference)
+
+    async def wait(self) -> ActionSequenceRecord:
+        return await self.client.wait_for_action_sequence(self._reference)
+
+    async def cancel(self) -> None:
+        await self.client.cancel_action_sequence(self._reference)
 
 
 class Lease:
@@ -292,11 +317,9 @@ class Lease:
     async def start_action_sequence(
         self, action_sequence: ActionSequenceRequest
     ) -> str:
-        """Submit an ordered action_sequence and return its station-assigned identifier;
-        follow it with `StationClient.wait_for_action_sequence`."""
-        return await self._guard.start_action_sequence(
-            action_sequence.model_dump(mode="json")
-        )
+        """Submit an ordered action sequence and return its operation ID.
+        Wait for its result with `StationClient.wait_for_action_sequence`."""
+        return (await self.start_sequence_execution(action_sequence)).id
 
     async def start_compiled_sequence(
         self,
@@ -306,11 +329,36 @@ class Lease:
         continuation: ProgramContinuation | None = None,
     ) -> str:
         """Submit a retained compilation under this lease; return its execution ID."""
-        return await self._guard.start_compiled_sequence(
+        execution = await self.start_compiled_execution(
+            compilation_id,
+            expected_revisions=expected_revisions,
+            continuation=continuation,
+        )
+        return execution.id
+
+    async def start_sequence_execution(
+        self, action_sequence: ActionSequenceRequest
+    ) -> SequenceExecution:
+        """Submit a sequence and bind follow-up requests to the admitting station."""
+        identity = await self._guard.start_sequence_execution(
+            action_sequence.model_dump(mode="json")
+        )
+        return SequenceExecution(self._client, *identity)
+
+    async def start_compiled_execution(
+        self,
+        compilation_id: str,
+        *,
+        expected_revisions: dict[str, int] | None = None,
+        continuation: ProgramContinuation | None = None,
+    ) -> SequenceExecution:
+        """Submit a retained compilation and return its station-bound handle."""
+        identity = await self._guard.start_compiled_execution(
             compilation_id,
             expected_revisions or {},
             continuation.model_dump(mode="json") if continuation else None,
         )
+        return SequenceExecution(self._client, *identity)
 
     async def send(
         self,
@@ -353,6 +401,20 @@ class Lease:
 
     async def cancel_operation(self, operation_id: uuid.UUID) -> None:
         await self._guard.cancel_operation(str(operation_id))
+
+    async def wait_for_observation(
+        self, selection: ObservationRequest, arm: str, timeout_milliseconds: int
+    ) -> ObservationAnswer:
+        """Wait for an observation stamped with the current arm revisions."""
+        return ObservationAnswer.model_validate(
+            await _lease_operation(
+                self._guard.wait_for_observation(
+                    selection.model_dump(mode="json", exclude_none=True),
+                    arm,
+                    timeout_milliseconds,
+                )
+            )
+        )
 
     async def report_camera(self, camera: str, available: bool) -> None:
         await _lease_operation(self._guard.report_camera(camera, available))
@@ -461,7 +523,7 @@ class StationClient:
         """Capture selected arm state and camera frames through the station."""
         return ObservationAnswer.model_validate(
             await self._native.capture_observation_http(
-                selection.model_dump(mode="json")
+                selection.model_dump(mode="json", exclude_none=True)
             )
         )
 

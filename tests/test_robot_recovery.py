@@ -1,10 +1,14 @@
 import asyncio
 from base64 import b64encode
+from pathlib import Path
 
 import pytest
 
 from hebbian_rua import RobotTools, StationClient
+from hebbian_rua.client.contract.station_api import ObservationRequest
 from hebbian_rua.client.llm.recovery import capture_when_ready
+from hebbian_rua.client.station_types import LeaseLost
+from tests.fixture_station import ARM, running_station
 from tests.fixture_station_http import scripted_http_station, state_message
 
 
@@ -69,3 +73,39 @@ def test_recovery_discards_a_capture_from_an_old_arm_revision(
                 assert captured.captures["wrist"].jpeg == b"fresh frame"
 
     asyncio.run(exercise())
+
+
+@pytest.mark.server
+def test_waiting_for_observation_times_out_and_detects_lease_takeover(
+    server_binary: Path,
+) -> None:
+    with running_station(server_binary) as station:
+
+        async def exercise() -> None:
+            selection = ObservationRequest(
+                arms=[ARM], required_cameras=["unavailable_test_camera"]
+            )
+            async with (
+                StationClient(station.server) as client,
+                StationClient(station.server) as replacement,
+                client.holding_lease(
+                    "observation wait", required_cameras=["unavailable_test_camera"]
+                ) as lease,
+                asyncio.timeout(10),
+            ):
+                timed_out = await lease.wait_for_observation(selection, ARM, 100)
+                assert timed_out.root.status == "observation_wait_timed_out"
+                async with asyncio.TaskGroup() as tasks:
+
+                    async def wait_until_lease_lost() -> None:
+                        with pytest.raises(LeaseLost):
+                            await lease.wait_for_observation(selection, ARM, 5000)
+
+                    tasks.create_task(wait_until_lease_lost())
+                    await client.wait_for_state(
+                        lambda state: bool(state.arms[0].interlocks)
+                    )
+                    async with replacement.holding_lease("replacement", take=True):
+                        pass
+
+        asyncio.run(exercise())

@@ -233,8 +233,9 @@ export async function drive(
           },
           (error: unknown) => {
             if (error instanceof ArmRecoveryEndedError) {
+              taskEnded = true;
               incomplete = true;
-              return "The arm faulted while waiting for recovery";
+              return error.message;
             }
             if (error instanceof LeaseLostError) {
               incomplete = true;
@@ -431,7 +432,7 @@ async function runTurns(
   firstObservation: RevisedObservation,
   signal: AbortSignal | undefined,
 ): Promise<LoopEnding> {
-  const { connection, robot, lease, withSpan, arm } = environment;
+  const { connection, lease, withSpan, arm } = environment;
   let lastObservation = firstObservation;
   let modelTurns = 0;
   while (
@@ -509,8 +510,6 @@ async function runTurns(
       armDisconnected ||
       armRevisionChangedSinceObservation(stateAfterTurn, arm, lastObservation)
     ) {
-      if (armDisconnected && !(await robot.waitForArmRecovery()))
-        return incompleteEnding("The arm faulted while waiting for recovery");
       const staleResults = turn.toolCalls.map((call) =>
         createAgentToolResult(
           call,
@@ -554,13 +553,11 @@ async function runTurns(
       signal?.throwIfAborted();
       return finishedEnding(outcome.reason);
     }
-    if (
-      outcome.results.some((result) => result.interrupted) &&
-      !(await robot.waitForArmRecovery())
-    )
-      return incompleteEnding("The arm faulted while waiting for recovery");
-    if (outcome.kind === "observe") {
-      const { captured, results } = reuseBatchObservation(outcome.results);
+    const interrupted = outcome.results.some((result) => result.interrupted);
+    if (outcome.kind === "observe" || interrupted) {
+      const { captured, results } = interrupted
+        ? { captured: undefined, results: outcome.results }
+        : reuseBatchObservation(outcome.results);
       lastObservation = await observe(
         environment,
         "Observation after the tools ran.",

@@ -53,6 +53,8 @@ class RequiredCameraUnavailable extends Error {
   }
 }
 
+class ObservationWaitTimedOut extends Error {}
+
 class ObservationChanged extends Error {
   constructor(arm: string) {
     super(`Arm ${arm} changed during observation`);
@@ -376,20 +378,18 @@ function createRobotToolsCore(
   }
 
   async function captureObservation(
-    allowCameraInterlock = false,
-    text: ObservationText = {},
-  ): Promise<{
-    output: Extract<RobotOutput, { kind: "observation" }>;
-    state: StationState;
-  }> {
-    const capture = await connection.captureObservation(
-      {
-        arms: [],
-        required_cameras: [...cameras],
-        optional_cameras: [...optionalCameras],
-      },
-      signal,
-    );
+    text: ObservationText,
+    mode: "immediate" | "allow_camera_interlock" | "ready",
+  ): Promise<RobotObservation> {
+    const selection = {
+      arms: [],
+      required_cameras: [...cameras],
+      optional_cameras: [...optionalCameras],
+    };
+    const capture =
+      mode === "ready"
+        ? await lease.waitForObservation(selection, arm, 5000, signal)
+        : await connection.captureObservation(selection, signal);
     switch (capture.status) {
       case "observation_required_camera_unavailable":
         throw new RequiredCameraUnavailable(capture.camera);
@@ -397,29 +397,41 @@ function createRobotToolsCore(
         throw new Error(`Arm ${capture.arm} is disconnected`);
       case "observation_revision_changed":
         throw new ObservationChanged(capture.arm);
+      case "observation_wait_timed_out":
+        throw new ObservationWaitTimedOut();
+      case "observation_recovery_ended":
+        throw new ArmRecoveryEndedError(
+          `Arm ${capture.arm} is ${capture.mode}`,
+        );
       case "observation_captured": {
         const state = apiSchemas.shape.StationState.parse(capture.state);
-        requireNoInterlock(armOf(state), allowCameraInterlock);
+        requireNoInterlock(armOf(state), mode === "allow_camera_interlock");
+        const output: Extract<RobotOutput, { kind: "observation" }> = {
+          kind: "observation",
+          data: state,
+          selectedArm: arm,
+          notes: [
+            ...(text.extraLines ?? []),
+            ...(text.note ? [text.note] : []),
+          ],
+          cameras: Object.fromEntries(
+            Object.entries(capture.cameras).map(([name, frame]) => [
+              name,
+              Uint8Array.from(atob(frame.jpeg_base64), (character) =>
+                character.charCodeAt(0),
+              ),
+            ]),
+          ),
+          missingOptionalCameras: capture.missing_optional_cameras,
+        };
+        const content = formatter(structuredClone(output));
         return {
-          state,
-          output: {
-            kind: "observation",
-            data: state,
-            selectedArm: arm,
-            notes: [
-              ...(text.extraLines ?? []),
-              ...(text.note ? [text.note] : []),
-            ],
-            cameras: Object.fromEntries(
-              Object.entries(capture.cameras).map(([name, frame]) => [
-                name,
-                Uint8Array.from(atob(frame.jpeg_base64), (character) =>
-                  character.charCodeAt(0),
-                ),
-              ]),
-            ),
-            missingOptionalCameras: capture.missing_optional_cameras,
-          },
+          data: state,
+          text: content.text,
+          cameras: content.cameras ?? {},
+          revisions: Object.fromEntries(
+            state.arms.map((candidate) => [candidate.arm, candidate.revision]),
+          ),
         };
       }
     }
@@ -428,81 +440,36 @@ function createRobotToolsCore(
     );
   }
 
-  async function observe(
+  function observe(
     allowCameraInterlock = false,
     text: ObservationText = {},
   ): Promise<RobotObservation> {
-    const { output, state } = await captureObservation(
-      allowCameraInterlock,
+    return captureObservation(
       text,
+      allowCameraInterlock ? "allow_camera_interlock" : "immediate",
     );
-    const content = formatter(structuredClone(output));
-    return {
-      data: state,
-      text: content.text,
-      cameras: content.cameras ?? {},
-      revisions: Object.fromEntries(
-        state.arms.map((candidate) => [candidate.arm, candidate.revision]),
-      ),
-    };
   }
 
   /**
    * Wait through arm recovery and required-camera interlocks, then observe
    * again. Needs the lease; throws `LeaseLostError` once it is lost, and
-   * `ArmRecoveryEndedError` when the arm faults.
+   * `ArmRecoveryEndedError` when the arm is disabled or faulted.
    */
   async function observeWhenReady(
     text: ObservationText = {},
   ): Promise<RobotObservation> {
-    let cameraRetryMilliseconds = 100;
     while (true) {
-      if (tracking.isLost()) throw new LeaseLostError();
-      if (!lease.isHeld()) throw new LeaseLostError();
-      const selected = armOf(await stationState());
-      if (selected.mode === "faulted")
-        throw new ArmRecoveryEndedError("Arm is faulted");
-      if (
-        armInterlocks(selected).length > 0 ||
-        selected.mode === "disconnected" ||
-        selected.mode === "reconnected" ||
-        selected.mode === "disabled"
-      ) {
-        // WHY: Recovery shows up as a state frame; wake on the next one.
-        await nextStateOrBackstop();
-        continue;
-      }
+      if (tracking.isLost() || !lease.isHeld()) throw new LeaseLostError();
       try {
-        await stationState(true);
-        const observation = await observe(true, text);
-        if (tracking.isLost()) throw new LeaseLostError();
-        // WHY: Every required camera just gave a frame: clear its interlock.
-        for (const interlock of armOf(await stationState()).interlocks)
-          if (
-            interlock.kind === "required_camera_unavailable" &&
-            cameras.includes(interlock.camera)
-          )
-            await lease.reportCamera(interlock.camera, true);
-        const after = armOf(await stationState(true));
-        if (
-          after.interlocks.length === 0 &&
-          after.revision === observation.revisions[arm] &&
-          !tracking.isLost()
-        )
+        const observation = await captureObservation(text, "ready");
+        const latest = armOf(await stationState());
+        if (tracking.isLost() || !lease.isHeld()) throw new LeaseLostError();
+        const revision = observation.revisions[arm];
+        if (revision !== undefined && latest.revision <= revision)
           return observation;
       } catch (error) {
-        signal?.throwIfAborted();
-        if (error instanceof RequiredCameraUnavailable)
-          await lease.reportCamera(error.camera, false);
-        else if (tracking.isLost()) throw new LeaseLostError();
-        else if (!(error instanceof ObservationChanged)) {
-          const latest = armOf(await stationState());
-          if (latest.interlocks.length === 0 && latest.mode !== "faulted")
-            throw error;
-        }
+        if (!(error instanceof ObservationWaitTimedOut)) throw error;
       }
-      await delay(cameraRetryMilliseconds);
-      cameraRetryMilliseconds = Math.min(1000, cameraRetryMilliseconds * 2);
     }
   }
 
@@ -657,19 +624,17 @@ function createRobotToolsCore(
                 { kind: "message", message: { kind: "start_action_sequence" } },
                 async ({ call, message }) => {
                   tracking.sequenceImages.clear();
-                  const sequenceId = await lease.startActionSequence(
+                  const execution = await lease.startSequenceExecution(
                     capActionSequence(
                       message.action_sequence,
                       options.motionLimits,
                     ),
                     captureCameras,
                   );
+                  const sequenceId = execution.id;
                   if (captureCameras.length)
                     tracking.sequenceImages.select(sequenceId, call.id);
-                  const sequence = await connection.waitForActionSequence(
-                    sequenceId,
-                    waitOptions,
-                  );
+                  const sequence = await execution.wait(waitOptions);
                   if (captureCameras.length)
                     await refreshSequenceImages(sequenceId);
                   const outcomes = sequence.steps

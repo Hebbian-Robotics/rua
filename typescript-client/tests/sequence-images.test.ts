@@ -60,22 +60,26 @@ test("observe exposes retained images only when history is requested", async () 
   const stateSpy = vi
     .spyOn(connection, "waitForState")
     .mockResolvedValue(state);
-  const sequenceSpy = vi
-    .spyOn(connection, "waitForActionSequence")
-    .mockResolvedValue(
-      apiSchemas.shape.ActionSequenceRecord.parse({
-        id: "sequence",
-        arms: ["follower"],
-        phase: { state: "completed" },
-        requested_steps: [],
-        compilation_id: "compilation",
-        continuation: null,
-        steps: [],
-      }),
-    );
+  const sequence = apiSchemas.shape.ActionSequenceRecord.parse({
+    id: "sequence",
+    arms: ["follower"],
+    phase: { state: "completed" },
+    requested_steps: [],
+    compilation_id: "compilation",
+    continuation: null,
+    steps: [],
+  });
   const robot = createRobotTools({
     connection,
-    lease: fakeLease({ startActionSequence: async () => "sequence" }),
+    lease: fakeLease({
+      startSequenceExecution: async () => ({
+        id: sequence.id,
+        stationInstanceId: "station",
+        wait: async () => sequence,
+        status: async () => sequence,
+        cancel: async () => {},
+      }),
+    }),
     arm: "follower",
     cameras: ["front"],
   });
@@ -157,7 +161,6 @@ test("observe exposes retained images only when history is requested", async () 
   } finally {
     robot.close();
     stateSpy.mockRestore();
-    sequenceSpy.mockRestore();
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),

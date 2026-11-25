@@ -38,6 +38,7 @@ export type {
   Lease,
   LeaseOptions,
   RunRecord,
+  SequenceExecution,
   StationConnection,
   StationConnectionOptions,
 } from "./station-connection.js";

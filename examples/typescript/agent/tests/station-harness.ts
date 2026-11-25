@@ -178,6 +178,16 @@ export class ScriptedStation {
       });
     }
     if (path === "/observations") {
+      if (
+        body["wait"] &&
+        (this.armMode === "disabled" || this.armMode === "faulted")
+      ) {
+        return Response.json({
+          status: "observation_recovery_ended",
+          arm: "follower",
+          mode: this.armMode,
+        });
+      }
       const names = (body["required_cameras"] ?? []) as string[];
       return Response.json({
         status: "observation_captured",

@@ -370,6 +370,19 @@ pub struct ObservationRequest {
     pub required_cameras: Vec<crate::SnapshotName>,
     #[serde(default)]
     pub optional_cameras: Vec<crate::SnapshotName>,
+    /// Wait for a selected arm to recover under the current lease.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait: Option<ObservationWait>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationWait {
+    pub arm: String,
+    pub lease_token: String,
+    /// The maximum total wait, including camera capture.
+    #[schemars(range(min = 1, max = 5000))]
+    pub timeout_milliseconds: u32,
 }
 
 /// One captured JPEG with its source timestamp and retrieval interval.
@@ -398,6 +411,11 @@ pub enum ObservationAnswer {
     ObservationRequiredCameraUnavailable {
         camera: String,
     },
+    ObservationRecoveryEnded {
+        arm: String,
+        mode: crate::ArmMode,
+    },
+    ObservationWaitTimedOut,
 }
 
 /// How a preview was answered.

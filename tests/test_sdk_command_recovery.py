@@ -6,21 +6,46 @@ from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, Thread
+from typing import Literal
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pytest
 
-from hebbian_rua.client.contract.station_api import CommandRecord
-from hebbian_rua.client.station_client import StationClient
-from tests.fixture_station import ARM, REPOSITORY_ROOT, running_station
+from hebbian_rua import HttpError
+from hebbian_rua.client.contract.station_api import (
+    ActionSequenceCompleted,
+    ActionSequenceGripper,
+    ActionSequenceRequest,
+    ActionSequenceStep,
+    CommandRecord,
+)
+from hebbian_rua.client.station_client import SequenceExecution, StationClient
+from tests.fixture_station import (
+    ARM,
+    REPOSITORY_ROOT,
+    running_station,
+    station_process,
+    wait_until_station_live,
+)
 
 
-async def run_python_command(station_url: str) -> str:
+async def run_python_operation(
+    station_url: str, operation: Literal["command", "action_sequence"]
+) -> str:
     async with (
         StationClient(station_url) as client,
         client.holding_lease("lost reply test") as lease,
     ):
-        result = await lease.arm(ARM).set_gripper(1)
+        arm = lease.arm(ARM)
+        if operation == "action_sequence":
+            sequence = await arm.run_action_sequence(
+                [ActionSequenceGripper(gripper_opening=1)]
+            )
+            assert isinstance(sequence.phase, ActionSequenceCompleted)
+            assert len(sequence.steps) == 1
+            return sequence.id
+        result = await arm.set_gripper(1)
         assert result.completed, result
         assert isinstance(result.record, CommandRecord)
         state = await client.arm(ARM).state()
@@ -32,23 +57,36 @@ async def run_python_command(station_url: str) -> str:
 
 @pytest.mark.server
 @pytest.mark.parametrize(
-    "client",
-    ["python", pytest.param("typescript", marks=pytest.mark.typescript)],
+    ("client", "operation"),
+    [
+        ("python", "command"),
+        ("python", "action_sequence"),
+        pytest.param("typescript", "command", marks=pytest.mark.typescript),
+        pytest.param("typescript", "action_sequence", marks=pytest.mark.typescript),
+        pytest.param("typescript", "compiled_sequence", marks=pytest.mark.typescript),
+    ],
 )
-def test_sdk_recovers_the_original_command_after_losing_its_reply(
-    server_binary: Path, client: str
+def test_sdk_recovers_the_original_operation_after_losing_its_reply(
+    server_binary: Path,
+    client: str,
+    operation: Literal["command", "action_sequence", "compiled_sequence"],
 ) -> None:
+    submission_path = {
+        "command": "/commands",
+        "action_sequence": "/action_sequence",
+        "compiled_sequence": "/compilations/run",
+    }[operation]
     with running_station(server_binary) as station:
         upstream_address = urlsplit(station.server)
         submissions: list[tuple[str, str]] = []
         submissions_lock = Lock()
 
-        class LoseFirstCommandReply(BaseHTTPRequestHandler):
+        class LoseFirstOperationReply(BaseHTTPRequestHandler):
             def forward(self) -> None:
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 headers = {
                     name: self.headers[name]
-                    for name in ("Content-Type", "Last-Event-ID")
+                    for name in ("Content-Type", "Last-Event-ID", "X-RUA-Run-Cursor")
                     if name in self.headers
                 }
                 upstream = HTTPConnection(
@@ -61,13 +99,23 @@ def test_sdk_recovers_the_original_command_after_losing_its_reply(
                         self.command, self.path, body=body, headers=headers
                     )
                     response = upstream.getresponse()
-                    if self.path == "/commands" and response.status == 200:
+                    if (
+                        self.command == "POST"
+                        and self.path == submission_path
+                        and response.status == 200
+                    ):
                         answer_body = response.read()
-                        operation_id = json.loads(body)["operation_id"]
-                        record = json.loads(answer_body)["records"][0]["record"]
+                        request = json.loads(body)
+                        answer = json.loads(answer_body)
+                        if operation == "command":
+                            operation_id = request["operation_id"]
+                            result_id = answer["records"][0]["record"]["command_id"]
+                        else:
+                            operation_id = request["request_id"]
+                            result_id = answer
                         with submissions_lock:
                             drop_reply = not submissions
-                            submissions.append((operation_id, record["command_id"]))
+                            submissions.append((operation_id, result_id))
                         if drop_reply:
                             self.connection.shutdown(socket.SHUT_RDWR)
                             return
@@ -78,8 +126,9 @@ def test_sdk_recovers_the_original_command_after_losing_its_reply(
                         return
 
                     self.send_response(response.status)
-                    if content_type := response.getheader("Content-Type"):
-                        self.send_header("Content-Type", content_type)
+                    for name in ("Content-Type", "X-RUA-Run-Cursor"):
+                        if value := response.getheader(name):
+                            self.send_header(name, value)
                     self.end_headers()
                     while chunk := response.read1(64 * 1024):
                         self.wfile.write(chunk)
@@ -91,14 +140,17 @@ def test_sdk_recovers_the_original_command_after_losing_its_reply(
             do_GET = forward
             do_POST = forward
 
-        with ThreadingHTTPServer(("127.0.0.1", 0), LoseFirstCommandReply) as proxy:
+        with ThreadingHTTPServer(("127.0.0.1", 0), LoseFirstOperationReply) as proxy:
             proxy_thread = Thread(target=proxy.serve_forever)
             proxy_thread.start()
             try:
                 proxy_url = f"http://127.0.0.1:{proxy.server_port}"
                 if client == "python":
-                    command_id = asyncio.run(
-                        asyncio.wait_for(run_python_command(proxy_url), timeout=15)
+                    assert operation != "compiled_sequence"
+                    result_id = asyncio.run(
+                        asyncio.wait_for(
+                            run_python_operation(proxy_url, operation), timeout=15
+                        )
                     )
                 else:
                     run = subprocess.run(
@@ -110,6 +162,7 @@ def test_sdk_recovers_the_original_command_after_losing_its_reply(
                             "typescript-client/tests/simulated-command-recovery.ts",
                             proxy_url,
                             ARM,
+                            operation,
                         ],
                         cwd=REPOSITORY_ROOT,
                         stdout=subprocess.PIPE,
@@ -117,10 +170,86 @@ def test_sdk_recovers_the_original_command_after_losing_its_reply(
                         check=True,
                         timeout=15,
                     )
-                    command_id = run.stdout
+                    result_id = run.stdout
             finally:
                 proxy.shutdown()
                 proxy_thread.join()
 
         assert len(submissions) >= 2
-        assert set(submissions) == {(submissions[0][0], command_id)}
+        assert set(submissions) == {(submissions[0][0], result_id)}
+        if operation != "command":
+            assert result_id == submissions[0][0]
+
+
+@pytest.mark.server
+def test_foreign_instance_cannot_read_wait_or_cancel_an_existing_execution(
+    server_binary: Path,
+) -> None:
+    async def check(station_url: str) -> None:
+        async with (
+            StationClient(station_url) as client,
+            client.holding_lease("execution identity test") as lease,
+        ):
+            execution = await lease.start_sequence_execution(
+                ActionSequenceRequest(
+                    steps=[
+                        ActionSequenceStep(
+                            arms={ARM: ActionSequenceGripper(gripper_opening=1)}
+                        )
+                    ]
+                )
+            )
+            foreign = SequenceExecution(client, str(uuid4()), execution.id)
+            for operation in (foreign.status, foreign.wait, foreign.cancel):
+                with pytest.raises(
+                    HttpError, match="Station instance changed"
+                ) as refusal:
+                    await operation()
+                assert refusal.value.status == 409
+            assert isinstance((await execution.wait()).phase, ActionSequenceCompleted)
+            assert (await execution.status()).id == execution.id
+
+    with running_station(server_binary) as station:
+        asyncio.run(check(station.server))
+
+
+@pytest.mark.server
+def test_execution_handle_detects_station_restart_at_same_url(
+    server_binary: Path,
+) -> None:
+    async def check() -> None:
+        with station_process(server_binary) as original:
+            url = original.http_server()
+            wait_until_station_live(url)
+            async with StationClient(url) as client:
+                await client.arm(ARM).enable()
+                async with client.holding_lease("restart test") as lease:
+                    execution = await lease.start_sequence_execution(
+                        ActionSequenceRequest(
+                            steps=[
+                                ActionSequenceStep(
+                                    arms={ARM: ActionSequenceGripper(gripper_opening=1)}
+                                )
+                            ]
+                        )
+                    )
+                    assert isinstance(
+                        (await execution.wait()).phase, ActionSequenceCompleted
+                    )
+                original.stop()
+                with station_process(
+                    server_binary, http_address=urlsplit(url).netloc
+                ) as replacement:
+                    assert replacement.http_server() == url
+                    for operation in (
+                        execution.status,
+                        execution.wait,
+                        execution.cancel,
+                    ):
+                        with pytest.raises(
+                            HttpError, match="Station instance changed"
+                        ) as refusal:
+                            await operation()
+                        assert refusal.value.status == 409
+
+    asyncio.run(check())

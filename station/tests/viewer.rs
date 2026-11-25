@@ -263,7 +263,8 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
         live_run.clone(),
         Arc::default(),
         |runtime, bound| {
-            let (routes, opened) = web::mount(runtime, bound, settings, || true);
+            let capabilities = web::MediaCapabilities::resolve(&settings)?;
+            let (routes, opened) = web::mount(runtime, bound, settings, capabilities, || true);
             mounted = Some(opened);
             Ok(routes.merge(hebbian_rua_server::run_telemetry::routes(live_run)))
         },

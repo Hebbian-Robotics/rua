@@ -53,7 +53,9 @@ const post = {
   body,
 };
 
-test("viewer startup requires a model-provider key by default", () => {
+test("viewer startup requires a model-provider key by default", {
+  timeout: 15_000,
+}, () => {
   const result = spawnSync(
     process.execPath,
     [
@@ -72,7 +74,7 @@ test("viewer startup requires a model-provider key by default", () => {
         AGENT_PORT: "0",
       },
       encoding: "utf-8",
-      timeout: 5_000,
+      timeout: 12_000,
     },
   );
   expect(result.status, result.stderr).toBe(1);

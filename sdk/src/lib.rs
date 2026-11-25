@@ -30,7 +30,7 @@ pub use robot_tools::{
 pub use sequence_images::{SequenceImage, SequenceImageBoundary, SequenceImageHistory};
 pub use station::{
     CameraJpeg, CommandOptions, ConnectOptions, DEFAULT_MEDIA_SERVER, DEFAULT_SERVER, LeaseGuard,
-    LeaseRequest, Station,
+    LeaseRequest, SequenceExecution, Station,
 };
 
 pub use units::{AngleUnit, LengthUnit};

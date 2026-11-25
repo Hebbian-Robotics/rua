@@ -76,7 +76,8 @@ def prepare_so101_mujoco_model(pin: So101MujocoModelPin) -> Path:
 def simulated_arm_model(profile_urdf: Path) -> tuple[Path, str]:
     pin = So101MujocoModelPin.load()
     simulated_urdf = ASSET_DIRECTORY / pin.urdf
-    if (REPOSITORY_ROOT / profile_urdf).resolve() != simulated_urdf.resolve():
+    configured_urdf = REPOSITORY_ROOT / profile_urdf
+    if configured_urdf.read_bytes() != simulated_urdf.read_bytes():
         raise ValueError(
             f"The MuJoCo fixture simulates {simulated_urdf}; the profile uses {profile_urdf}"
         )

@@ -600,6 +600,7 @@ async fn compiled_submission_retries_share_one_physical_execution() -> TestResul
     let (first, retry) = tokio::join!(submit(), submit());
     let first_id: String = first?.error_for_status()?.json().await?;
     let retry_id: String = retry?.error_for_status()?.json().await?;
+    assert_eq!(first_id, submission.request_id);
     assert_eq!(first_id, retry_id);
     let completed = within(client.wait_for_action_sequence(&first_id)).await??;
     assert_eq!(completed.phase, ActionSequencePhase::Completed);
@@ -610,6 +611,21 @@ async fn compiled_submission_retries_share_one_physical_execution() -> TestResul
     assert_eq!(retried_id, first_id);
     let after_retry = client.get_action_sequence(&retried_id).await?;
     assert_eq!(after_retry.steps[0][0].record.command_id, command_id);
+
+    let reused_for_command = transport
+        .post(format!("{}/commands", station.url))
+        .json(&json!({
+            "operation_id": submission.request_id,
+            "station_instance_id": submission.station_instance_id,
+            "lease_token": submission.lease_token,
+            "arm": ARM,
+            "command": { "kind": "disable" },
+        }))
+        .send()
+        .await?;
+    assert_eq!(reused_for_command.status(), reqwest::StatusCode::CONFLICT);
+
+    assert_cancelled_program_cannot_start(&transport, &station.url, &client, &submission).await?;
 
     let mut conflicting = submission;
     conflicting.compilation_id = uuid::Uuid::new_v4().to_string();
@@ -628,6 +644,46 @@ async fn compiled_submission_retries_share_one_physical_execution() -> TestResul
         .send()
         .await?;
     assert_eq!(missing.status(), reqwest::StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+async fn assert_cancelled_program_cannot_start(
+    transport: &reqwest::Client,
+    station_url: &str,
+    client: &Station,
+    submission: &hebbian_rua::contracts::RunCompiledProgramRequest,
+) -> TestResult {
+    let mut cancelled = submission.clone();
+    cancelled.request_id = uuid::Uuid::new_v4().to_string();
+    let cancellation = transport
+        .post(format!(
+            "{station_url}/operations/{}/cancel",
+            cancelled.request_id
+        ))
+        .json(&json!({
+            "station_instance_id": cancelled.station_instance_id,
+            "lease_token": cancelled.lease_token,
+        }))
+        .send()
+        .await?;
+    assert_eq!(cancellation.status(), reqwest::StatusCode::NO_CONTENT);
+    let cancelled_submission = transport
+        .post(format!("{station_url}/compilations/run"))
+        .json(&cancelled)
+        .send()
+        .await?;
+    assert_eq!(cancelled_submission.status(), reqwest::StatusCode::CONFLICT);
+    assert!(
+        cancelled_submission
+            .text()
+            .await?
+            .contains("cancelled before admission")
+    );
+    assert!(matches!(
+        client.get_action_sequence(&cancelled.request_id).await,
+        Err(Error::Http { status: 404, .. })
+    ));
+
     Ok(())
 }
 
@@ -1036,7 +1092,7 @@ async fn a_cancelled_action_sequence_stops_and_is_published_on_the_updates() -> 
         expected_revisions: BTreeMap::default(),
     }))
     .await??;
-    within(client.cancel_action_sequence(&id)).await??;
+    within(lease.cancel_operation(uuid::Uuid::parse_str(&id)?)).await??;
     let ended = within(completion_client.wait_for_action_sequence(&id)).await??;
     assert!(matches!(ended.phase, ActionSequencePhase::Stopped { .. }));
     let published = within(updates.wait_for(|action_sequence| {

@@ -3542,6 +3542,38 @@
               "camera"
             ],
             "type": "object"
+          },
+          {
+            "properties": {
+              "arm": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/ArmMode"
+              },
+              "status": {
+                "const": "observation_recovery_ended",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "arm",
+              "mode"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "observation_wait_timed_out",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -3603,8 +3635,43 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "wait": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObservationWait"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wait for a selected arm to recover under the current lease."
           }
         },
+        "type": "object"
+      },
+      "ObservationWait": {
+        "additionalProperties": false,
+        "properties": {
+          "arm": {
+            "type": "string"
+          },
+          "lease_token": {
+            "type": "string"
+          },
+          "timeout_milliseconds": {
+            "description": "The maximum total wait, including camera capture.",
+            "format": "uint32",
+            "maximum": 5000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "arm",
+          "lease_token",
+          "timeout_milliseconds"
+        ],
         "type": "object"
       },
       "OnInterruption": {
@@ -6219,6 +6286,7 @@
             "name": "id",
             "required": true,
             "schema": {
+              "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409.",
               "type": "string"
             }
           }
@@ -6267,6 +6335,7 @@
             "name": "id",
             "required": true,
             "schema": {
+              "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409.",
               "type": "string"
             }
           }
@@ -6308,6 +6377,7 @@
             "name": "id",
             "required": true,
             "schema": {
+              "description": "Execution ID or {station_instance_id}~{execution_id}. A mismatched station instance returns HTTP 409.",
               "type": "string"
             }
           }

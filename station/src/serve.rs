@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::{DirBuilder, File, OpenOptions, Permissions};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -6,8 +7,8 @@ use anyhow::{Context, ensure};
 use hebbian_rua_core::config::{ControllerConfig, SimPlantConfig};
 use hebbian_rua_core::profile::{self, Driver, JointLimitSource};
 use hebbian_rua_server::controller_process::PlantSelection;
-use hebbian_rua_server::web::WebSettings;
-use station_access::{Credentials, new_room_name};
+use hebbian_rua_server::web::{MediaCapabilities, WebSettings};
+use station_access::new_room_name;
 
 use crate::controller_setup::DEFAULT_STAND_IN_LAG_SECONDS;
 use crate::media::{MediaPlan, SIMULATOR_CAMERA_SOCKET};
@@ -110,26 +111,23 @@ fn select_arms(profile_arms: &[String], requested: Vec<String>) -> anyhow::Resul
     Ok(requested)
 }
 
-fn validate_media_requirements(web: &WebSettings) -> anyhow::Result<()> {
-    if !web.local_cameras_only {
-        Credentials::from_environment().context(
-            "LiveKit is required for station startup. For local cameras only, pass --local-only-no-remote-cameras",
-        )?;
+fn apply_camera_overrides(
+    cameras: &mut BTreeMap<String, String>,
+    usb_cameras: &mut BTreeMap<String, String>,
+    overrides: Vec<(String, Option<String>)>,
+) {
+    usb_cameras.retain(|name, _| !cameras.contains_key(name));
+    for (name, device) in overrides {
+        usb_cameras.remove(&name);
+        match device {
+            Some(device) => cameras.insert(name, device),
+            None => cameras.remove(&name),
+        };
     }
-    if web.enable_recording {
-        let ffmpeg_required =
-            "Recording requires FFmpeg on PATH. Install FFmpeg or pass --no-recording";
-        let version = std::process::Command::new("ffmpeg")
-            .arg("-version")
-            .output()
-            .context(ffmpeg_required)?;
-        ensure!(version.status.success(), "{ffmpeg_required}");
-    }
-    Ok(())
 }
 
 pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::Result<()> {
-    validate_media_requirements(&web)?;
+    let capabilities = MediaCapabilities::resolve(&web)?;
     web.media_address = Some(arguments.media_address);
     let profile_directory = arguments
         .profile_directory
@@ -211,14 +209,7 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
     } else {
         std::collections::BTreeMap::new()
     };
-    usb_cameras.retain(|name, _| !cameras.contains_key(name));
-    for (name, device) in arguments.cameras {
-        usb_cameras.remove(&name);
-        match device {
-            Some(device) => cameras.insert(name, device),
-            None => cameras.remove(&name),
-        };
-    }
+    apply_camera_overrides(&mut cameras, &mut usb_cameras, arguments.cameras);
     let media = MediaPlan {
         executable: web.media_executable.clone(),
         address: arguments.media_address,
@@ -229,5 +220,12 @@ pub(crate) fn serve(arguments: ServeArguments, mut web: WebSettings) -> anyhow::
             .then(|| directory.join(SIMULATOR_CAMERA_SOCKET)),
     };
     let http_address = &arguments.http_address;
-    run_supervised(&arms, directory, plant, http_address, web, &media)
+    run_supervised(
+        &arms,
+        directory,
+        plant,
+        http_address,
+        (web, capabilities),
+        &media,
+    )
 }

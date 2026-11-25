@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use hebbian_contracts::{
-    ArmRecord, CommandAnswer, CommandSubmissionRequest, GroupCommandSubmissionRequest,
-    OperationStatus, StationCommand,
+    ActionSequenceRecord, ArmRecord, CommandAnswer, CommandSubmissionRequest,
+    GroupCommandSubmissionRequest, OperationStatus, StationCommand,
 };
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -95,11 +95,19 @@ impl ProgramSubmissionRequest {
             Self::Compiled(request) => (&request.station_instance_id, &request.request_id),
         }
     }
+
+    fn lease_token(&self) -> &str {
+        match self {
+            Self::Source(request) => &request.lease_token,
+            Self::Compiled(request) => &request.lease_token,
+        }
+    }
 }
 
 #[derive(Clone)]
 pub(crate) enum ProgramSubmissionError {
     Unavailable(&'static str),
+    Cancelled,
     MissingCompilation,
     IncompatibleCompilation,
     ExecutionRefused(super::executions::ExecutionRefusal),
@@ -107,8 +115,26 @@ pub(crate) enum ProgramSubmissionError {
     Internal(String),
 }
 
-pub(crate) type ProgramSubmissions =
-    RequestRegistry<ProgramSubmissionRequest, String, ProgramSubmissionError>;
+type ProgramOutcome = Option<RequestOutcome<String, ProgramSubmissionError>>;
+
+struct ProgramSubmission {
+    request: ProgramSubmissionRequest,
+    outcome: watch::Sender<ProgramOutcome>,
+    cancellation: watch::Sender<bool>,
+    progress: Weak<watch::Sender<ActionSequenceRecord>>,
+}
+
+pub(super) enum ProgramReservation {
+    New {
+        outcome: watch::Sender<ProgramOutcome>,
+        cancellation: watch::Sender<bool>,
+    },
+    Existing(watch::Receiver<ProgramOutcome>),
+    Cancelled,
+    Conflict,
+    Expired,
+    Full,
+}
 
 struct SubmissionHistory<T, Id = Uuid> {
     retained: HashMap<Id, T>,
@@ -124,7 +150,30 @@ impl<T, Id> Default for SubmissionHistory<T, Id> {
     }
 }
 
+enum ReservationUnavailable {
+    Expired,
+    Full,
+}
+
 impl<T, Id: Copy + Eq + std::hash::Hash> SubmissionHistory<T, Id> {
+    fn reserve_slot(
+        &mut self,
+        id: Id,
+        completed: impl Fn(&T) -> bool,
+    ) -> Result<Option<&T>, ReservationUnavailable> {
+        if self.seen.contains(&id) {
+            return self
+                .retained
+                .get(&id)
+                .map(Some)
+                .ok_or(ReservationUnavailable::Expired);
+        }
+        if !self.make_room(completed) {
+            return Err(ReservationUnavailable::Full);
+        }
+        Ok(None)
+    }
+
     fn make_room(&mut self, completed: impl Fn(&T) -> bool) -> bool {
         if self.retained.len() < MAX_RETAINED_SUBMISSIONS {
             return true;
@@ -163,18 +212,14 @@ impl<Request: PartialEq, Reply, Failure> RequestRegistry<Request, Reply, Failure
             .entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(existing) = entries.retained.get(&id) {
-            return if existing.request == request {
-                RequestReservation::Existing(existing.outcome.subscribe())
-            } else {
-                RequestReservation::Conflict
-            };
-        }
-        if entries.seen.contains(&id) {
-            return RequestReservation::Expired;
-        }
-        if !entries.make_room(|submission| submission.outcome.borrow().is_some()) {
-            return RequestReservation::Full;
+        match entries.reserve_slot(id, |submission| submission.outcome.borrow().is_some()) {
+            Ok(Some(existing)) if existing.request == request => {
+                return RequestReservation::Existing(existing.outcome.subscribe());
+            }
+            Ok(Some(_)) => return RequestReservation::Conflict,
+            Err(ReservationUnavailable::Expired) => return RequestReservation::Expired,
+            Err(ReservationUnavailable::Full) => return RequestReservation::Full,
+            Ok(None) => {}
         }
         let (outcome, _) = watch::channel(None);
         entries.insert(
@@ -202,6 +247,10 @@ impl OperationId {
         let id = Uuid::parse_str(value).ok()?;
         (id.get_version_num() == 4 && id.get_variant() == uuid::Variant::RFC4122)
             .then_some(Self(id))
+    }
+
+    pub(super) fn canonical_string(self) -> String {
+        self.0.to_string()
     }
 }
 
@@ -350,6 +399,7 @@ impl Operation {
 
 enum Submission {
     Operation(Box<Operation>),
+    Program(Box<ProgramSubmission>),
     CancelledBeforeArrival { lease_token: String },
 }
 
@@ -357,6 +407,9 @@ impl Submission {
     fn is_evictable(&self) -> bool {
         match self {
             Self::Operation(operation) => matches!(operation.state, OperationState::Terminal),
+            Self::Program(program) => {
+                program.outcome.borrow().is_some() && program.progress.strong_count() == 0
+            }
             Self::CancelledBeforeArrival { .. } => true,
         }
     }
@@ -405,6 +458,7 @@ pub(super) enum SubmissionReservation {
 
 pub(super) enum CancellationResult {
     AlreadyStopped,
+    ProgramSignalled,
     Requested(CancellationTarget),
     Expired,
     Conflict,
@@ -507,6 +561,7 @@ impl Operations {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Some(match entries.retained.get(&id)? {
             Submission::CancelledBeforeArrival { .. } => OperationStatus::CancelledBeforeAdmission,
+            Submission::Program(_) => return None,
             Submission::Operation(operation) => match &operation.state {
                 OperationState::Pending(_) => OperationStatus::Pending,
                 OperationState::CancellingAdmission => OperationStatus::Cancelling {
@@ -537,6 +592,7 @@ impl Operations {
                     return Some(TerminalMotion::CancelledBeforeAdmission);
                 }
                 Submission::Operation(operation) => operation.completion.subscribe(),
+                Submission::Program(_) => return None,
             }
         };
         let result = completion.wait_for(Option::is_some).await.ok()?;
@@ -602,26 +658,25 @@ impl Operations {
             .entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(existing) = entries.retained.get(&id) {
-            return match existing {
-                Submission::Operation(operation) if operation.request == request => {
-                    SubmissionReservation::Existing(operation.admission.subscribe())
-                }
-                Submission::CancelledBeforeArrival { lease_token }
-                    if request.lease_token() == Some(lease_token) =>
-                {
-                    SubmissionReservation::Cancelled
-                }
-                Submission::Operation(_) | Submission::CancelledBeforeArrival { .. } => {
-                    SubmissionReservation::Conflict
-                }
-            };
-        }
-        if entries.seen.contains(&id) {
-            return SubmissionReservation::Expired;
-        }
-        if !entries.make_room(Submission::is_evictable) {
-            return SubmissionReservation::Full;
+        match entries.reserve_slot(id, Submission::is_evictable) {
+            Ok(Some(existing)) => {
+                return match existing {
+                    Submission::Operation(operation) if operation.request == request => {
+                        SubmissionReservation::Existing(operation.admission.subscribe())
+                    }
+                    Submission::CancelledBeforeArrival { lease_token }
+                        if request.lease_token() == Some(lease_token) =>
+                    {
+                        SubmissionReservation::Cancelled
+                    }
+                    Submission::Operation(_)
+                    | Submission::Program(_)
+                    | Submission::CancelledBeforeArrival { .. } => SubmissionReservation::Conflict,
+                };
+            }
+            Err(ReservationUnavailable::Expired) => return SubmissionReservation::Expired,
+            Err(ReservationUnavailable::Full) => return SubmissionReservation::Full,
+            Ok(None) => {}
         }
         let (admission, response) = watch::channel(None);
         let (cancelled, cancellation) = watch::channel(false);
@@ -644,6 +699,83 @@ impl Operations {
         }
     }
 
+    pub(super) fn reserve_program(
+        &self,
+        id: OperationId,
+        request: ProgramSubmissionRequest,
+    ) -> ProgramReservation {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match entries.reserve_slot(id, Submission::is_evictable) {
+            Ok(Some(existing)) => {
+                return match existing {
+                    Submission::Program(program) if program.request == request => {
+                        ProgramReservation::Existing(program.outcome.subscribe())
+                    }
+                    Submission::CancelledBeforeArrival { lease_token }
+                        if request.lease_token() == lease_token =>
+                    {
+                        ProgramReservation::Cancelled
+                    }
+                    Submission::Operation(_)
+                    | Submission::Program(_)
+                    | Submission::CancelledBeforeArrival { .. } => ProgramReservation::Conflict,
+                };
+            }
+            Err(ReservationUnavailable::Expired) => return ProgramReservation::Expired,
+            Err(ReservationUnavailable::Full) => return ProgramReservation::Full,
+            Ok(None) => {}
+        }
+        let (outcome, _) = watch::channel(None);
+        let (cancellation, _) = watch::channel(false);
+        entries.insert(
+            id,
+            Submission::Program(Box::new(ProgramSubmission {
+                request,
+                outcome: outcome.clone(),
+                cancellation: cancellation.clone(),
+                progress: Weak::new(),
+            })),
+        );
+        ProgramReservation::New {
+            outcome,
+            cancellation,
+        }
+    }
+
+    pub(super) fn program_completion(
+        &self,
+        id: OperationId,
+    ) -> Option<watch::Receiver<ActionSequenceRecord>> {
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Submission::Program(program) = entries.retained.get(&id)? else {
+            return None;
+        };
+        program
+            .progress
+            .upgrade()
+            .map(|progress| progress.subscribe())
+    }
+
+    pub(super) fn track_program(
+        &self,
+        id: OperationId,
+        progress: &super::executions::ExecutionProgress,
+    ) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(Submission::Program(program)) = entries.retained.get_mut(&id) {
+            program.progress = progress.downgrade();
+        }
+    }
+
     pub(super) fn cancel(&self, id: OperationId, token: &str) -> CancellationResult {
         let mut entries = self
             .entries
@@ -654,6 +786,10 @@ impl Operations {
                 if operation.request.lease_token() == Some(token) =>
             {
                 return operation.cancel();
+            }
+            Some(Submission::Program(program)) if program.request.lease_token() == token => {
+                program.cancellation.send_replace(true);
+                return CancellationResult::ProgramSignalled;
             }
             Some(Submission::CancelledBeforeArrival { lease_token }) if lease_token == token => {
                 return CancellationResult::AlreadyStopped;

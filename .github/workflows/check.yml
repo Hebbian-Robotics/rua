@@ -197,3 +197,8 @@ jobs:
         # Contract checks verify file contents but can change timestamps that
         # uv uses to decide whether to rebuild the already installed extension.
         run: uv run --no-sync pytest -m server
+
+      - run: sudo apt-get install -y libosmesa6
+      - name: Build and run the installed simulator quickstart
+        timeout-minutes: 35
+        run: bash .github/scripts/installed-simulator-quickstart.sh

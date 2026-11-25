@@ -375,6 +375,7 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
         let (state, frames) = match station
             .capture_observation_http(&ObservationRequest {
                 arms: Vec::new(),
+                wait: None,
                 required_cameras: self
                     .cameras
                     .iter()
@@ -400,6 +401,14 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
                     reason: hebbian_contracts::RejectionReason::StaleRevision,
                     detail: format!("Arm {arm} changed during observation"),
                 });
+            }
+            ObservationAnswer::ObservationRecoveryEnded { arm, mode } => {
+                return Err(crate::Error::Connection(format!("Arm {arm} is {mode:?}")));
+            }
+            ObservationAnswer::ObservationWaitTimedOut => {
+                return Err(crate::Error::Connection(
+                    "Observation wait timed out".into(),
+                ));
             }
             ObservationAnswer::ObservationRequiredCameraUnavailable { camera } => {
                 return Err(crate::Error::CameraUnavailable {
@@ -493,11 +502,7 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
             .collect::<Result<Vec<_>, _>>()?;
         let capture = !cameras.is_empty();
         self.sequence_images.select(None);
-        let id = match self
-            .lease
-            .start_action_sequence_with_cameras(request, cameras)
-            .await
-        {
+        let execution = match self.lease.start_sequence_execution(request, cameras).await {
             Ok(id) => id,
             Err(Error::Refused { reason, detail }) => {
                 return self
@@ -506,14 +511,13 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
             }
             Err(error) => return Err(error),
         };
+        let id = execution.id().to_owned();
         if capture {
             self.sequence_images
                 .select(Some((id.clone(), call_id.to_owned())));
         }
         let outcome = self
-            .operation_outcome(ToolOperationAnswer::ActionSequence {
-                action_sequence_id: id.clone(),
-            })
+            .operation_outcome(ToolOperationAnswer::ActionSequence { execution })
             .await;
         if capture && outcome.is_ok() {
             self.refresh_sequence_images(&id).await;
@@ -654,7 +658,6 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
         &self,
         answer: ToolOperationAnswer,
     ) -> crate::Result<RobotToolOutcome> {
-        let station = self.lease.station();
         let value = match answer {
             ToolOperationAnswer::Refused { reason, detail } => {
                 return Ok(RobotToolOutcome::Refused { reason, detail });
@@ -667,10 +670,8 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
                     Error::Connection(format!("cannot serialize tool result: {error}"))
                 })?
             }
-            ToolOperationAnswer::ActionSequence { action_sequence_id } => {
-                let sequence = station
-                    .wait_for_action_sequence(&action_sequence_id)
-                    .await?;
+            ToolOperationAnswer::ActionSequence { execution } => {
+                let sequence = execution.wait().await?;
                 let incomplete = !matches!(sequence.phase, ActionSequencePhase::Completed);
                 let value = serde_json::to_value(&sequence).map_err(|error| {
                     Error::Connection(format!("cannot serialize tool result: {error}"))

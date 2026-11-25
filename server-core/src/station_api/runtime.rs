@@ -621,27 +621,102 @@ fn finish_step(
     StepAdvance::Continue
 }
 
+pub(super) struct ProgramStart {
+    pub id: String,
+    pub token: String,
+    pub cancellation: watch::Sender<bool>,
+    pub artifact: Arc<ProgramArtifact>,
+    pub expected_revisions: BTreeMap<String, u64>,
+    pub continuation: Option<hebbian_contracts::ProgramContinuation>,
+}
+
 pub(super) fn run_compiled_program(
     owner: super::admission::AdmissionOwner,
     executions: &mut ExecutionRegistry,
     links: &BTreeMap<String, LinkHandle>,
-    token: String,
-    artifact: Arc<ProgramArtifact>,
-    expected_revisions: BTreeMap<String, u64>,
-    continuation: Option<hebbian_contracts::ProgramContinuation>,
-) -> Result<String, ExecutionRefusal> {
+    start: ProgramStart,
+) -> Result<ExecutionProgress, ExecutionRefusal> {
+    let ProgramStart {
+        id,
+        token,
+        cancellation,
+        artifact,
+        expected_revisions,
+        continuation,
+    } = start;
     if let Some(continuation) = &continuation {
         let prior = executions
             .lookup(&continuation.prior_execution_id)
             .ok_or(ExecutionRefusal::PriorUnknown)?;
         check_continuation(&prior, &artifact.compilation.source, continuation.next_step)?;
     }
-    let sequence = ProgramExecution {
+    let mut sequence = ProgramExecution {
         continuation,
         artifact,
         expected_revisions,
     };
-    start_execution(owner, executions, links, token, sequence)
+    let arms = &sequence.artifact.compilation.compiled.arms;
+    for arm in arms {
+        let link = links
+            .get(arm)
+            .ok_or_else(|| ExecutionRefusal::UnknownArm(arm.clone()))?;
+        let (interlocks, revision) = link.interlocks();
+        if let Some(interlock) = interlocks.first() {
+            return Err(ExecutionRefusal::Interlocked(interlock.clone()));
+        }
+        sequence
+            .expected_revisions
+            .entry(arm.clone())
+            .or_insert(revision);
+    }
+    sequence
+        .expected_revisions
+        .retain(|arm, _| arms.contains(arm));
+    let record = ActionSequenceRecord {
+        id,
+        compilation_id: sequence.artifact.compilation.compilation_id.clone(),
+        arms: arms.clone(),
+        requested_steps: sequence.artifact.compilation.source.steps.clone(),
+        phase: ActionSequencePhase::Running {
+            step: sequence
+                .continuation
+                .as_ref()
+                .map_or(0, |continuation| continuation.next_step),
+        },
+        continuation: sequence.continuation.clone(),
+        steps: vec![],
+    };
+    let cancellation_receiver = cancellation.subscribe();
+    let active = ActiveExecution::new(record, token.clone(), cancellation);
+    let progress = active.progress();
+    let generation = links[&arms[0]]
+        .with_lease(&token, || {
+            executions.install(active)?;
+            Ok::<_, ExecutionRefusal>(
+                arms.iter()
+                    .map(|arm| links[arm].fence_prior_submissions())
+                    .collect(),
+            )
+        })
+        .ok_or(ExecutionRefusal::LeaseLost)??;
+    let admission = Arc::new(ExecutionAdmission {
+        owner,
+        links: links.clone(),
+        token,
+        gates: sequence
+            .expected_revisions
+            .iter()
+            .map(|(arm, revision)| links[arm].gate(Some(*revision)))
+            .collect(),
+        generation,
+    });
+    tokio::spawn({
+        let progress = progress.clone();
+        async move {
+            execute_program(admission, sequence, &progress, cancellation_receiver).await;
+        }
+    });
+    Ok(progress)
 }
 
 fn check_continuation(
@@ -679,77 +754,18 @@ fn check_continuation(
     Ok(())
 }
 
-fn start_execution(
-    owner: super::admission::AdmissionOwner,
-    executions: &mut ExecutionRegistry,
-    links: &BTreeMap<String, LinkHandle>,
-    token: String,
-    mut sequence: ProgramExecution,
-) -> Result<String, ExecutionRefusal> {
-    let arms = &sequence.artifact.compilation.compiled.arms;
-    for arm in arms {
-        let link = links
-            .get(arm)
-            .ok_or_else(|| ExecutionRefusal::UnknownArm(arm.clone()))?;
-        let (interlocks, revision) = link.interlocks();
-        if let Some(interlock) = interlocks.first() {
-            return Err(ExecutionRefusal::Interlocked(interlock.clone()));
-        }
-        sequence
-            .expected_revisions
-            .entry(arm.clone())
-            .or_insert(revision);
-    }
-    sequence
-        .expected_revisions
-        .retain(|arm, _| arms.contains(arm));
-    let id = crate::arm::new_identifier();
-    let record = ActionSequenceRecord {
-        id: id.clone(),
-        compilation_id: sequence.artifact.compilation.compilation_id.clone(),
-        arms: arms.clone(),
-        requested_steps: sequence.artifact.compilation.source.steps.clone(),
-        phase: ActionSequencePhase::Running {
-            step: sequence
-                .continuation
-                .as_ref()
-                .map_or(0, |continuation| continuation.next_step),
-        },
-        continuation: sequence.continuation.clone(),
-        steps: vec![],
-    };
-    let (active, cancellation) = ActiveExecution::new(record, token.clone());
-    let progress = active.progress();
-    let generation = links[&arms[0]]
-        .with_lease(&token, || {
-            executions.install(active)?;
-            Ok::<_, ExecutionRefusal>(
-                arms.iter()
-                    .map(|arm| links[arm].fence_prior_submissions())
-                    .collect(),
-            )
-        })
-        .ok_or(ExecutionRefusal::LeaseLost)??;
-    let admission = Arc::new(ExecutionAdmission {
-        owner,
-        links: links.clone(),
-        token,
-        gates: sequence
-            .expected_revisions
-            .iter()
-            .map(|(arm, revision)| links[arm].gate(Some(*revision)))
-            .collect(),
-        generation,
-    });
-    tokio::spawn(async move {
-        execute_program(admission, sequence, &progress, cancellation).await;
-    });
-    Ok(id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_execution(
+        record: ActionSequenceRecord,
+        owner: String,
+    ) -> (ActiveExecution, watch::Receiver<bool>) {
+        let (cancellation, receiver) = watch::channel(false);
+        (ActiveExecution::new(record, owner, cancellation), receiver)
+    }
+
     use crate::action_step::PreparedGripper;
     use hebbian_contracts::{
         CommandCompletion, CommandPhase, CommandPose, KnownCommandOutcome, RecordedCommand,
@@ -973,10 +989,10 @@ mod tests {
             phase: ActionSequencePhase::Running { step: 0 },
             steps: vec![],
         };
-        let (first, receiver) = ActiveExecution::new(record(), "owner".into());
+        let (first, receiver) = test_execution(record(), "owner".into());
         let progress = first.progress();
         registry.install(first).unwrap();
-        let (second, _) = ActiveExecution::new(record(), "owner".into());
+        let (second, _) = test_execution(record(), "owner".into());
         assert!(registry.install(second).is_err());
         assert!(!registry.cancel("other"));
         assert!(!*receiver.borrow());
@@ -985,7 +1001,7 @@ mod tests {
         progress.update(|record| record.phase = ActionSequencePhase::Completed);
         let mut second_record = record();
         second_record.id = "second".into();
-        let (second, _) = ActiveExecution::new(second_record, "owner".into());
+        let (second, _) = test_execution(second_record, "owner".into());
         assert!(registry.install(second).is_ok());
         assert!(matches!(
             registry.lookup("first").unwrap().phase,
@@ -997,7 +1013,7 @@ mod tests {
     fn independent_arms_keep_their_own_sequences() {
         let mut registry = ExecutionRegistry::default();
         let new_sequence = |id: &str, arm: &str| {
-            ActiveExecution::new(
+            test_execution(
                 ActionSequenceRecord {
                     continuation: None,
                     compilation_id: "compilation".into(),

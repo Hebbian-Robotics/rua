@@ -308,6 +308,7 @@ async fn observe(
     State(source): State<ObservationSource>,
     Json(request): Json<ObservationRequest>,
 ) -> Result<Json<ObservationAnswer>, (StatusCode, String)> {
+    let wait = request.wait.clone();
     let selection = ObservationSelection::try_from(request)
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let links = source.arms.get().ok_or((
@@ -317,6 +318,172 @@ async fn observe(
     if let Some(arm) = selection.arms.iter().find(|arm| !links.contains_key(*arm)) {
         return Err((StatusCode::BAD_REQUEST, format!("Unknown arm {arm}")));
     }
+    if let Some(wait) = wait {
+        let link = links
+            .get(&wait.arm)
+            .filter(|_| selection.arms.is_empty() || selection.arms.contains(&wait.arm))
+            .ok_or((
+                StatusCode::BAD_REQUEST,
+                format!("Unknown or unselected arm {}", wait.arm),
+            ))?;
+        return wait_for_observation(&source, links, &selection, &wait, link)
+            .await
+            .map(Json);
+    }
+    capture_observation(&source, links, &selection, None)
+        .await
+        .map(Json)
+}
+
+type ObservationResult = Result<ObservationAnswer, (StatusCode, String)>;
+type ObservationLinks = BTreeMap<String, hebbian_rua_core::control_link::LinkHandle>;
+
+fn lease_lost() -> (StatusCode, String) {
+    (
+        StatusCode::FORBIDDEN,
+        "Observation lease is no longer held".to_owned(),
+    )
+}
+
+async fn wait_for_observation(
+    source: &ObservationSource,
+    links: &ObservationLinks,
+    selection: &ObservationSelection,
+    wait: &hebbian_contracts::ObservationWait,
+    link: &hebbian_rua_core::control_link::LinkHandle,
+) -> ObservationResult {
+    if !(1..=5000).contains(&wait.timeout_milliseconds) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Observation wait must be 1–5000 ms".to_owned(),
+        ));
+    }
+    let token = &wait.lease_token;
+    let mut changes = link.authority_changes();
+    link.with_lease(token, || ()).ok_or_else(lease_lost)?;
+    let lost = async {
+        while changes.changed().await.is_ok() {
+            if link.with_lease(token, || ()).is_none() {
+                break;
+            }
+        }
+    };
+    let capture = async {
+        loop {
+            link.with_lease(token, || ()).ok_or_else(lease_lost)?;
+            let answer = capture_observation(source, links, selection, Some(&wait.arm)).await;
+            match answer {
+                Ok(ObservationAnswer::ObservationCaptured {
+                    state,
+                    cameras,
+                    missing_optional_cameras,
+                }) => {
+                    for name in cameras.keys() {
+                        if selection.cameras.iter().any(|(camera, importance)| {
+                            camera.as_str() == name
+                                && matches!(importance, CameraImportance::Required)
+                        }) {
+                            report_observation_camera(link, token, name, true)?;
+                        }
+                    }
+                    let Some(latest) = hebbian_rua_core::station_api::station_state(links).await
+                    else {
+                        continue;
+                    };
+                    let Some(selected) = latest.arms.iter().find(|arm| arm.arm == wait.arm) else {
+                        continue;
+                    };
+                    if let Some(outcome) = arm_recovery_outcome(selected) {
+                        if matches!(outcome, ObservationAnswer::ObservationRecoveryEnded { .. }) {
+                            return Ok(outcome);
+                        }
+                        continue;
+                    }
+                    // INVARIANT: A recovered camera can clear its interlock without changing
+                    // the revision. Refresh the interlocks under the captured revision.
+                    let mut state = state;
+                    let mut stable = true;
+                    for arm in &mut state.arms {
+                        let (interlocks, revision) = links[&arm.arm].interlocks();
+                        stable &= arm.revision == revision;
+                        arm.interlocks = interlocks;
+                    }
+                    if stable
+                        && state
+                            .arms
+                            .iter()
+                            .any(|arm| arm.arm == wait.arm && arm.interlocks.is_empty())
+                    {
+                        link.with_lease(token, || ()).ok_or_else(lease_lost)?;
+                        return Ok(ObservationAnswer::ObservationCaptured {
+                            state,
+                            cameras,
+                            missing_optional_cameras,
+                        });
+                    }
+                }
+                Ok(ObservationAnswer::ObservationRequiredCameraUnavailable { camera }) => {
+                    report_observation_camera(link, token, &camera, false)?;
+                }
+                Ok(
+                    ObservationAnswer::ObservationArmDisconnected { .. }
+                    | ObservationAnswer::ObservationRevisionChanged { .. },
+                )
+                | Err((StatusCode::SERVICE_UNAVAILABLE, _)) => {}
+                other => return other,
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    tokio::select! {
+        biased;
+        () = lost => Err(lease_lost()),
+        answer = tokio::time::timeout(Duration::from_millis(u64::from(wait.timeout_milliseconds)), capture) => {
+            link.with_lease(token, || ()).ok_or_else(lease_lost)?;
+            answer.unwrap_or(Ok(ObservationAnswer::ObservationWaitTimedOut))
+        }
+    }
+}
+
+fn report_observation_camera(
+    link: &hebbian_rua_core::control_link::LinkHandle,
+    token: &str,
+    name: &str,
+    available: bool,
+) -> Result<(), (StatusCode, String)> {
+    use hebbian_rua_core::lease::CameraReportRefusal;
+    match link.report_camera(token, name, available) {
+        Ok(()) | Err(CameraReportRefusal::CameraNotRequired) => Ok(()),
+        Err(CameraReportRefusal::LeaseLost) => Err(lease_lost()),
+    }
+}
+
+fn arm_recovery_outcome(arm: &hebbian_contracts::ArmState) -> Option<ObservationAnswer> {
+    use hebbian_contracts::Interlock;
+    if matches!(arm.mode, ArmMode::Faulted | ArmMode::Disabled) {
+        return Some(ObservationAnswer::ObservationRecoveryEnded {
+            arm: arm.arm.clone(),
+            mode: arm.mode,
+        });
+    }
+    let recovering = matches!(arm.mode, ArmMode::Disconnected | ArmMode::Reconnected)
+        || arm.interlocks.iter().any(|interlock| {
+            matches!(
+                interlock,
+                Interlock::ArmDisconnected | Interlock::RecoveryApprovalRequired { .. }
+            )
+        });
+    recovering.then(|| ObservationAnswer::ObservationArmDisconnected {
+        arm: arm.arm.clone(),
+    })
+}
+
+async fn capture_observation(
+    source: &ObservationSource,
+    links: &ObservationLinks,
+    selection: &ObservationSelection,
+    wait_arm: Option<&str>,
+) -> ObservationResult {
     let state_unavailable = || {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -329,17 +496,22 @@ async fn observe(
     state
         .arms
         .retain(|arm| selection.arms.is_empty() || selection.arms.contains(&arm.arm));
-    if let Some(arm) = state
-        .arms
-        .iter()
-        .find(|arm| matches!(arm.mode, ArmMode::Disconnected | ArmMode::Reconnected))
-    {
-        return Ok(Json(ObservationAnswer::ObservationArmDisconnected {
-            arm: arm.arm.clone(),
-        }));
+    for arm in &state.arms {
+        if wait_arm.is_some_and(|selected| selected != arm.arm) {
+            continue;
+        }
+        if wait_arm.is_some() {
+            if let Some(outcome) = arm_recovery_outcome(arm) {
+                return Ok(outcome);
+            }
+        } else if matches!(arm.mode, ArmMode::Disconnected | ArmMode::Reconnected) {
+            return Ok(ObservationAnswer::ObservationArmDisconnected {
+                arm: arm.arm.clone(),
+            });
+        }
     }
     let mut captures = tokio::task::JoinSet::new();
-    for (name, importance) in selection.cameras {
+    for (name, importance) in selection.cameras.iter().cloned() {
         let proxy = source.cameras.clone();
         captures.spawn(async move {
             let frame = if let Some(proxy) = proxy {
@@ -370,9 +542,9 @@ async fn observe(
                 cameras.insert(name, frame);
             }
             (CameraImportance::Required, None) => {
-                return Ok(Json(
-                    ObservationAnswer::ObservationRequiredCameraUnavailable { camera: name },
-                ));
+                return Ok(ObservationAnswer::ObservationRequiredCameraUnavailable {
+                    camera: name,
+                });
             }
             (CameraImportance::Optional, None) => missing_optional_cameras.push(name),
         }
@@ -381,16 +553,16 @@ async fn observe(
     for arm in &state.arms {
         let link = links.get(&arm.arm).ok_or_else(state_unavailable)?;
         if link.interlocks().1 != arm.revision {
-            return Ok(Json(ObservationAnswer::ObservationRevisionChanged {
+            return Ok(ObservationAnswer::ObservationRevisionChanged {
                 arm: arm.arm.clone(),
-            }));
+            });
         }
     }
-    Ok(Json(ObservationAnswer::ObservationCaptured {
+    Ok(ObservationAnswer::ObservationCaptured {
         state: Box::new(state),
         cameras,
         missing_optional_cameras,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -403,6 +575,7 @@ mod tests {
     {
         let wrist = SnapshotName::try_from("wrist".to_owned())?;
         let selection = ObservationSelection::try_from(ObservationRequest {
+            wait: None,
             arms: vec![],
             required_cameras: vec![wrist.clone()],
             optional_cameras: vec![wrist],
@@ -419,6 +592,7 @@ mod tests {
                 .collect::<Result<Vec<_>, _>>()
         };
         let mut request = ObservationRequest {
+            wait: None,
             arms: vec![],
             required_cameras: cameras(0..4)?,
             optional_cameras: cameras(4..8)?,

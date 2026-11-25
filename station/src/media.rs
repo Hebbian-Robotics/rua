@@ -12,7 +12,6 @@ use hebbian_contracts::MediaState;
 use hebbian_rua_server::child_process_group::{ChildProcessGroup, ProcessExit};
 use hebbian_rua_server::media_status::MediaStatus;
 use nix::sys::signal::Signal;
-use station_access::CameraConfiguration;
 use tokio::{process::Command, runtime::Handle, sync::oneshot, task::JoinHandle};
 const RESTART_DELAY_CAP: Duration = Duration::from_secs(3);
 const STABLE_MEDIA_RUN: Duration = Duration::from_secs(3);
@@ -105,25 +104,13 @@ impl MediaSupervisor {
         plan: &MediaPlan,
         station_url: &str,
         status: &MediaStatus,
-        local_cameras_only: bool,
+        remote_cameras: bool,
     ) -> Self {
-        let livekit = !local_cameras_only
-            && match CameraConfiguration::from_environment() {
-                Ok(CameraConfiguration::Enabled(_)) => true,
-                Ok(CameraConfiguration::Off { reason }) => {
-                    tracing::info!(%reason, "LiveKit is off; cameras are local to the media service");
-                    false
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "LiveKit is not fully configured; cameras are local");
-                    false
-                }
-            };
         tracing::info!(address = %plan.address, "Media HTTP endpoint");
         Self::spawn(
             runtime,
             plan.executable.clone(),
-            plan.serve_arguments(livekit, station_url),
+            plan.serve_arguments(remote_cameras, station_url),
             status.clone(),
         )
     }

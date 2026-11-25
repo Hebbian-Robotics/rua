@@ -99,7 +99,7 @@ impl SimulatedStation {
                         runtime,
                         address,
                         WebSettings {
-                            local_cameras_only: false,
+                            local_cameras_only: true,
                             recordings_directory: std::env::temp_dir(),
                             enable_recording: false,
                             media_address,
@@ -109,6 +109,7 @@ impl SimulatedStation {
                             phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
                             media_status: MediaStatus::default(),
                         },
+                        web::MediaCapabilities::LocalOnly,
                         || true,
                     );
                     mounted = Some(web);

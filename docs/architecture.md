@@ -40,6 +40,11 @@ authority and applies protective checks before driving the arms. See
 and run a compiled artifact and the [controller guide](controller.md) for how
 commands reach the motor loop.
 
+The station admission task reserves command and action-sequence operation IDs
+in one registry. Retries reuse the original reservation. Command results come
+from controller records, and action-sequence results come from runtime progress.
+The SDKs wait on the station's retained outcomes.
+
 ## Station and companion processes
 
 The station owns the HTTP API, control leases, compilation artifacts and

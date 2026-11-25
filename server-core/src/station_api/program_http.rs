@@ -15,8 +15,8 @@ use super::programs::{
     COMPILATION_SCHEMA_VERSION, CompilationRetention, ProgramArtifact, ProgramCompilation,
 };
 use super::submissions::{
-    ProgramSubmissionError, ProgramSubmissionRequest, RequestReservation, SubmissionCompletion,
-    wait_for_outcome,
+    OperationId, ProgramReservation, ProgramSubmissionError, ProgramSubmissionRequest,
+    SubmissionCompletion, wait_for_outcome,
 };
 
 type HttpFailure = (StatusCode, String);
@@ -27,6 +27,10 @@ impl From<ProgramSubmissionError> for HttpFailure {
             ProgramSubmissionError::Unavailable(detail) => {
                 (StatusCode::SERVICE_UNAVAILABLE, detail.into())
             }
+            ProgramSubmissionError::Cancelled => (
+                StatusCode::CONFLICT,
+                "Operation was cancelled before admission".into(),
+            ),
             ProgramSubmissionError::MissingCompilation => (
                 StatusCode::NOT_FOUND,
                 "Compilation artifact is unknown or expired; compile the saved source again".into(),
@@ -142,40 +146,59 @@ async fn submit_program(
     request: ProgramSubmissionRequest,
 ) -> Result<Json<String>, HttpFailure> {
     let (instance_id, request_id) = request.submission_identity();
-    let request_id = station_state.validate_submission_id(instance_id, request_id)?;
-    let response = match station_state
-        .program_submissions
-        .reserve(request_id, request.clone())
-    {
-        RequestReservation::Existing(outcome) => outcome,
-        RequestReservation::New(outcome) => SubmissionCompletion::start(
-            outcome,
-            ProgramSubmissionError::Internal("Program worker failed; outcome is unknown".into()),
-            |completion| {
-                tokio::spawn(async move {
-                    completion.publish(execute_submission(station_state, request).await);
-                });
-            },
-        ),
-        RequestReservation::Conflict => {
-            return Err((
-                StatusCode::CONFLICT,
-                "Request identifier already belongs to different work".into(),
-            ));
-        }
-        RequestReservation::Expired => {
-            return Err((
-                StatusCode::GONE,
-                "Submission outcome expired; this request will not be executed again".into(),
-            ));
-        }
-        RequestReservation::Full => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                "Too many submissions are pending".into(),
-            ));
-        }
-    };
+    station_state.require_station_instance(instance_id)?;
+    let id = super::http::parse_operation_id(request_id)?;
+    // INVARIANT: Start the worker in the reservation decision so a lost HTTP caller
+    // cannot leave the reserved operation without a worker.
+    let response = station_state
+        .admission
+        .clone()
+        .decide(move |state| {
+            let response = match state.operations.reserve_program(id, request.clone()) {
+                ProgramReservation::Existing(outcome) => outcome,
+                ProgramReservation::New {
+                    outcome,
+                    cancellation,
+                } => SubmissionCompletion::start(
+                    outcome,
+                    ProgramSubmissionError::Internal(
+                        "Program worker failed; outcome is unknown".into(),
+                    ),
+                    |completion| {
+                        tokio::spawn(async move {
+                            completion.publish(
+                                execute_submission(station_state, id, request, cancellation).await,
+                            );
+                        });
+                    },
+                ),
+                ProgramReservation::Cancelled => {
+                    return Err(ProgramSubmissionError::Cancelled.into());
+                }
+                ProgramReservation::Conflict => {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        "Request identifier already belongs to different work".into(),
+                    ));
+                }
+                ProgramReservation::Expired => {
+                    return Err((
+                        StatusCode::GONE,
+                        "Submission outcome expired; this request will not be executed again"
+                            .into(),
+                    ));
+                }
+                ProgramReservation::Full => {
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "Too many submissions are pending".into(),
+                    ));
+                }
+            };
+            Ok(response)
+        })
+        .await
+        .map_err(|_| ProgramSubmissionError::Unavailable("Station admission is unavailable"))??;
     wait_for_outcome(response)
         .await
         .map_err(|_| internal_failure("Program submission worker stopped"))?
@@ -185,7 +208,9 @@ async fn submit_program(
 
 async fn execute_submission(
     station_state: Arc<StationHttpState>,
+    operation_id: OperationId,
     request: ProgramSubmissionRequest,
+    cancellation: tokio::sync::watch::Sender<bool>,
 ) -> Result<String, ProgramSubmissionError> {
     check_admission(&station_state)?;
     let links = station_links(&station_state)?.clone();
@@ -200,28 +225,35 @@ async fn execute_submission(
         .clone()
         .decide(move |state| {
             check_admission(&station_state)?;
-            let id = super::runtime::run_compiled_program(
+            if *cancellation.borrow() {
+                return Err(ProgramSubmissionError::Cancelled);
+            }
+            let id = operation_id.canonical_string();
+            let progress = super::runtime::run_compiled_program(
                 owner,
                 &mut state.executions,
                 &links,
-                prepared.lease_token,
-                prepared.artifact,
-                prepared.expected_revisions,
-                prepared.continuation,
+                super::runtime::ProgramStart {
+                    id: id.clone(),
+                    token: prepared.lease_token,
+                    cancellation,
+                    artifact: prepared.artifact,
+                    expected_revisions: prepared.expected_revisions,
+                    continuation: prepared.continuation,
+                },
             )
             .map_err(ProgramSubmissionError::ExecutionRefused)?;
-            if !prepared.capture_cameras.is_empty()
-                && let Some(progress) = state.executions.progress_for(&id)
-            {
+            state.operations.track_program(operation_id, &progress);
+            let updates = progress.subscribe();
+            let record = updates.borrow().clone();
+            state.publish_execution(record);
+            if !prepared.capture_cameras.is_empty() {
                 station_state.sequence_images.start(
                     id.clone(),
-                    progress,
+                    updates,
                     prepared.capture_cameras,
                     station_state.sequence_cameras.get().cloned(),
                 );
-            }
-            if let Some(record) = state.executions.lookup(&id) {
-                state.publish_execution(record);
             }
             Ok(id)
         })

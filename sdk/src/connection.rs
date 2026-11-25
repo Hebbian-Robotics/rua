@@ -134,6 +134,7 @@ pub(crate) struct Inner {
     lease_loss_status: bool,
     resume_after: BTreeMap<String, u64>,
     run_after: Option<u64>,
+    run_instance: Option<String>,
 }
 
 impl Inner {
@@ -449,8 +450,15 @@ impl Shared {
             .map_err(|error| error.to_string())?;
         let url = format!("{}/events", self.url.trim_end_matches('/'));
         'snapshot: loop {
-            let cursor = self.read(|inner| inner.event_cursor.clone());
-            let mut request = client.get(&url);
+            let (cursor, run_cursor) = self.read(|inner| {
+                let run_cursor = match (inner.run_instance.as_deref(), inner.run_after) {
+                    (Some(instance), Some(sequence)) => format!("{instance}:{sequence}"),
+                    (None, Some(sequence)) => sequence.to_string(),
+                    (_, None) => "latest".to_owned(),
+                };
+                (inner.event_cursor.clone(), run_cursor)
+            });
+            let mut request = client.get(&url).header("x-rua-run-cursor", run_cursor);
             if let Some(cursor) = &cursor {
                 request = request.header("Last-Event-ID", cursor);
             }
@@ -462,6 +470,11 @@ impl Shared {
                 self.update(|inner| inner.event_cursor = None);
                 continue;
             }
+            let run_instance = response
+                .headers()
+                .get("x-rua-run-cursor")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
             let mut response = response
                 .error_for_status()
                 .map_err(|error| error.to_string())?;
@@ -476,6 +489,7 @@ impl Shared {
                             &event.kind,
                             event.identifier.as_deref(),
                             &event.data,
+                            run_instance.as_deref(),
                         )
                         .await?;
                     if matches!(update, StreamUpdate::SnapshotRequired) {
@@ -499,6 +513,7 @@ impl Shared {
         kind: &str,
         event_id: Option<&str>,
         data: &str,
+        run_instance: Option<&str>,
     ) -> Result<StreamUpdate, String> {
         if kind == "resync_required" {
             return Ok(StreamUpdate::SnapshotRequired);
@@ -509,9 +524,13 @@ impl Shared {
             let StationEventSnapshot {
                 items,
                 run_sequence,
+                station_instance_id,
                 ..
             } = snapshot;
-            let replay_after = self.read(|inner| inner.run_after);
+            let replay_after = run_instance
+                .is_none()
+                .then(|| self.read(|inner| inner.run_after))
+                .flatten();
             let records: Vec<Incoming> = if let Some(after) = replay_after {
                 let url = format!("{}/run/records", self.url.trim_end_matches('/'));
                 client
@@ -536,10 +555,18 @@ impl Shared {
                 inner.record_order.clear();
                 inner.resume_after.clear();
                 inner.run_after.get_or_insert(run_sequence);
+                inner.run_instance.get_or_insert(station_instance_id);
             });
             for item in records.into_iter().chain(items) {
                 self.receive(item);
             }
+        } else if kind == "run" {
+            let message = serde_json::from_str(data).map_err(|error| error.to_string())?;
+            self.receive(message);
+            if let Some(instance) = run_instance {
+                self.update(|inner| inner.run_instance = Some(instance.to_owned()));
+            }
+            return Ok(StreamUpdate::Continue);
         } else if kind == "station" {
             let incoming = serde_json::from_str(data).map_err(|error| error.to_string())?;
             if matches!(incoming, Incoming::Control(StreamControl::ResyncRequired)) {
