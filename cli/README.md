@@ -48,7 +48,7 @@ fields `position_mm`, `joints_degrees`, and
 `max_joint_speed_degrees_per_second`. The optional caps are
 `max_joint_acceleration_degrees_per_second_squared` and
 `max_joint_jerk_degrees_per_second_cubed`. For native station JSON, pass
-`--input-si` to that command. See
+`--input-station` to that command. See
 [Model output](../docs/model-output.md) for more on the shared model format.
 
 ## Commands

@@ -334,7 +334,7 @@ fn read_json<T: DeserializeOwned>(request: &MotionFileArgs) -> Result<T, Failure
     let usage =
         |error: &dyn std::fmt::Display| Failure::Usage(format!("{}: {error}", input.display()));
     let arguments = serde_json::from_str(&text).map_err(|error| usage(&error))?;
-    let arguments = if request.input_si {
+    let arguments = if request.input_station {
         arguments
     } else {
         hebbian_rua::normalize_robot_tool_arguments(arguments).map_err(|error| usage(&error))?

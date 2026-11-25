@@ -31,12 +31,12 @@ as plain text unless you pass --raw.
 Motion flags name their units. Use millimetres for world positions (+X forward, +Y left,
 +Z up) and degrees for joint angles and jaw yaw. Gripper opening is 0 (closed) to 1 (open).
 Motion JSON uses the SDK's model fields (position_mm, joints_degrees,
-max_joint_speed_degrees_per_second). Use --input-si for native station JSON.
+max_joint_speed_degrees_per_second). Use --input-station for native station JSON.
 Output is the same concise model view the SDKs give their tools: positions in millimetres
 (`position_mm`), joint angles in degrees (`joints_degrees`), rounded, null fields omitted, and
 history and diagnostics left out (checkpoints, trace metadata, render geometry, a sequence's full
 steps, each arm's last command). `state` also keeps the robot `description` (frames) and the lease
-holder. Pass `--raw` for the station's full records in SI units (metres and radians).
+holder. Pass `--raw` for full records with the station's native field units.
 Motion commands wait for the outcome and exit 1 unless it completed.
 
 Lease: motion commands (`rehome`, `move-joints`, `move-pose`, `move-arms`, `gripper`, `action-sequence
@@ -60,7 +60,7 @@ pub struct Cli {
     /// Direct media URL for cameras. Defaults to the station URL.
     #[arg(long, global = true, env = "HEBBIAN_MEDIA_SERVER", value_name = "URL")]
     pub media_server: Option<String>,
-    /// Print the station's full records in SI units (metres, radians) instead of the compact
+    /// Print the station's full records in their native units instead of the compact
     /// millimetre and degree form.
     #[arg(long, global = true)]
     pub raw: bool,
@@ -209,9 +209,9 @@ pub enum Command {
 pub struct MotionFileArgs {
     /// A JSON file, or `-` for stdin.
     pub path: PathBuf,
-    /// Interpret a native station payload in metres, radians and their derivatives.
+    /// Read JSON in the native station schema, using the units specified by each field.
     #[arg(long)]
-    pub input_si: bool,
+    pub input_station: bool,
 }
 
 /// A target pose. Orientation is one of `--quaternion` or `--approach` with `--jaw-yaw-degrees`.

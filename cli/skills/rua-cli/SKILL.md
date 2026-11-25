@@ -26,7 +26,7 @@ command as stale if the arm's revision moved on since you read `state`; `--take-
 lease from its holder and needs the user's authorization. Output is the concise
 model view (millimetres as `*_mm`, degrees as `*_degrees`, nulls, checkpoints, trace metadata and
 render geometry omitted; sequences show progress and the last step; `state` keeps the robot
-`description` and lease holder); `--raw` gives the full SI records, including everything left out. Each invocation connects,
+`description` and lease holder); `--raw` gives the full station records in native units, including everything left out. Each invocation connects,
 executes one command and exits. Successful commands print one JSON value;
 failures use stderr and a nonzero exit code. Motion waits for its outcome.
 
@@ -54,7 +54,7 @@ flags spell out their units. Motion JSON uses the SDK model fields
 `position_mm`, `joints_degrees`, and `max_joint_speed_degrees_per_second`.
 JSON acceleration and jerk caps use
 `max_joint_acceleration_degrees_per_second_squared` and
-`max_joint_jerk_degrees_per_second_cubed`. Use `--input-si` for native station
+`max_joint_jerk_degrees_per_second_cubed`. Use `--input-station` for native station
 JSON. Gripper opening is
 0 closed to 1 open. Quaternions use x,y,z,w; jaw yaw uses degrees. Without an
 orientation, `move-pose` preserves the current orientation, whereas

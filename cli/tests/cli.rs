@@ -289,7 +289,11 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
             .as_str()
             .is_some_and(|detail| detail.contains("use explicit model units for position"))
     );
-    let native = cli(&station.url, &["preview-poses", ARM, "--input-si", &path]).await;
+    let native = cli(
+        &station.url,
+        &["preview-poses", ARM, "--input-station", &path],
+    )
+    .await;
     assert_eq!(native.code(), Some(0));
     assert_eq!(native.stdout_json()[0]["label"], "native");
     std::fs::remove_file(file)?;
