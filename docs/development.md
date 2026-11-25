@@ -10,7 +10,11 @@ The [Check workflow](../.github/workflows/check.yml) runs on Namespace. Pull
 requests select checks by changed path. Pushes to `main` and manual runs execute
 the full suite. Pull requests can reuse
 [Cache Volumes](https://namespace.so/docs/solutions/github-actions/caching), and
-only `main` can persist cache updates.
+only `main` can persist cache updates. The required `integration` check waits
+for the station tests and the installed simulator quickstart, which run in
+parallel with separate cache volumes. The quickstart installs the assembled wheel
+and TypeScript tarball. Its native build disables link-time optimization to
+shorten PR feedback. The publish workflow uses the production profiles.
 
 For station integration tests, install JavaScript dependencies with
 `pnpm install --frozen-lockfile`, then run `uv run pytest -m server`. Keep these

@@ -177,12 +177,12 @@ jobs:
       - run: pnpm test:viewer && pnpm build
       - run: pnpm test:package
 
-  integration:
+  station-integration:
     needs: changes
     if: needs.changes.outputs.integration == 'true'
     runs-on:
       - nscloud-ubuntu-24.04-amd64-4x16-with-cache
-      - nscloud-cache-tag-rua-check-integration
+      - nscloud-cache-tag-rua-check-station
       - nscloud-cache-size-50gb
       - nscloud-cache-allow-commit-from-main
     timeout-minutes: 60
@@ -196,9 +196,55 @@ jobs:
       - name: Run station integration tests
         # Contract checks verify file contents but can change timestamps that
         # uv uses to decide whether to rebuild the already installed extension.
-        run: uv run --no-sync pytest -m server
+        run: uv run --no-sync pytest -m server --durations=10
 
+  installed-quickstart:
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on:
+      - nscloud-ubuntu-24.04-amd64-4x16-with-cache
+      - nscloud-cache-tag-rua-check-integration
+      - nscloud-cache-size-50gb
+      - nscloud-cache-allow-commit-from-main
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-check-station
+        with:
+          install-python-sdk: 'false'
+      - uses: ./.github/actions/setup-check-node
+      - name: Show restored Cargo build profiles
+        run: |
+          target_directory="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)"
+          echo "Cargo target directory is ${target_directory}"
+          df -h "$target_directory" 2>/dev/null || df -h "$GITHUB_WORKSPACE"
+          for profile in release python-extension; do
+            if [[ -d "$target_directory/$profile/.fingerprint" ]]; then
+              du -sh "$target_directory/$profile"
+            else
+              echo "No restored fingerprints for $profile"
+            fi
+          done
       - run: sudo apt-get install -y libosmesa6
       - name: Build and run the installed simulator quickstart
         timeout-minutes: 35
+        env:
+          # The smoke test exercises the assembled packages. Release publishing
+          # builds them with the workspace's production optimization settings.
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+          CARGO_LOG: ${{ runner.debug == '1' && 'cargo::core::compiler::fingerprint=info' || '' }}
         run: bash .github/scripts/installed-simulator-quickstart.sh
+
+  integration:
+    needs: [changes, station-integration, installed-quickstart]
+    if: always() && needs.changes.outputs.integration == 'true'
+    runs-on: nscloud-ubuntu-24.04-amd64-2x4
+    steps:
+      - name: Require both integration jobs to pass
+        env:
+          STATION_RESULT: ${{ needs.station-integration.result }}
+          QUICKSTART_RESULT: ${{ needs.installed-quickstart.result }}
+        run: '[[ "$STATION_RESULT" == success && "$QUICKSTART_RESULT" == success ]]'
