@@ -253,7 +253,6 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
         media_executable: media_executable(&scratch),
         room: Some("station-test".into()),
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
-        manual_control: false,
         media_status: media_status.clone(),
     };
     let mut mounted = None;
@@ -310,10 +309,6 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
     assert_eq!(get(address, "/viewer/").0, 404);
     assert_eq!(get(address, "/viewer/api/recordings").0, 404);
     assert_eq!(get(address, "/").0, 404);
-    assert_eq!(
-        get_json(address, "/control/capabilities"),
-        json!({"manual_pose_control": false})
-    );
     assert_eq!(get_json(address, "/recording/enabled"), json!(true));
     assert_eq!(get_json(address, "/recordings")["recordings"], json!([]));
 

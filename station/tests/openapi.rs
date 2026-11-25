@@ -64,7 +64,6 @@ fn the_openapi_document_matches_the_routers() {
         media_executable: scratch.join("hebbian-rua-media"),
         room: None,
         phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
-        manual_control: false,
         media_status: hebbian_rua_server::media_status::MediaStatus::default(),
     };
     let live_run = Arc::new(hebbian_rua_server::run_telemetry::LiveRunStore::default());

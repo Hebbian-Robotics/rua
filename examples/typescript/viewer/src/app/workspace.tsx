@@ -1,5 +1,5 @@
 import type { LiveRun, StationState } from "hebbian-rua";
-import { apiSchemas, commandPlan, commandWasLimited } from "hebbian-rua";
+import { commandPlan, commandWasLimited } from "hebbian-rua";
 import { BotIcon, HandIcon, TriangleAlertIcon } from "lucide-react";
 import {
   type ReactNode,
@@ -13,7 +13,6 @@ import { Alert } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
 import { agentApi } from "../agent-api.js";
-import { stationJson } from "../api.js";
 import { errorMessage } from "../errors.js";
 import { AgentControl } from "../features/agent/agent-control.js";
 import { useAgentRun } from "../features/agent/use-agent-run.js";
@@ -160,9 +159,6 @@ export function WorkspaceApp({
   const controlMode = manualOnly ? "manual" : preferredControlMode;
   const [selectedArm, setSelectedArm] = useState("");
   const [telemetryOpen, setTelemetryOpen] = useState(false);
-  const [manualMode, setManualMode] = useState<
-    "unknown" | "disabled" | "enabled"
-  >("unknown");
   const { stationState, connected } = useStationState();
   const [liveRun, setLiveRun] = useState<LiveRun | null>(null);
   const [currentTime, setCurrentTime] = useState(() => Date.now() / 1000);
@@ -256,27 +252,10 @@ export function WorkspaceApp({
     }
   }, [route]);
   useEffect(() => {
-    let active = true;
     if (!connected) {
-      setManualMode("unknown");
       setTarget(null);
       setProjection(null);
-      return () => {
-        active = false;
-      };
     }
-    void stationJson("/api/control/capabilities")
-      .then((value) => {
-        const { manual_pose_control } =
-          apiSchemas.shape.ControlCapabilities.parse(value);
-        if (active) setManualMode(manual_pose_control ? "enabled" : "disabled");
-      })
-      .catch(() => {
-        if (active) setManualMode("unknown");
-      });
-    return () => {
-      active = false;
-    };
   }, [connected, setProjection]);
 
   function selectControlMode(value: unknown): void {
@@ -547,7 +526,6 @@ export function WorkspaceApp({
                   ))
               }
               manualSelected={controlMode === "manual"}
-              manualAvailable={manualMode === "enabled"}
               onManualControlStarted={onManualControlStarted}
               onStopFollowing={stopFollowing}
               onPowerTransition={setChangingArmPower}
@@ -572,14 +550,14 @@ export function WorkspaceApp({
               </div>
             )}
             <div hidden={controlMode !== "manual"}>
-              {manualMode === "enabled" ? (
+              {connected ? (
                 <ManualControl
                   key={armName}
                   motionLimits={preferences.motionLimits}
                   armName={armName}
                   changingArmPower={changingArmPower}
                   active={controlMode === "manual"}
-                  stationState={connected ? stationState : null}
+                  stationState={stationState}
                   target={target}
                   setTarget={setTarget}
                   projection={projection}
@@ -595,9 +573,7 @@ export function WorkspaceApp({
                 />
               ) : (
                 <p className="manual-unavailable">
-                  {manualMode === "disabled"
-                    ? "Manual controls are disabled on this station. Start it with --manual-control to use them."
-                    : "Manual control availability is unavailable. Check the station connection."}
+                  Connect to the station to use manual controls.
                 </p>
               )}
             </div>

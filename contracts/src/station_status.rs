@@ -5,13 +5,6 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// `GET /control/capabilities`.
-#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
-pub struct ControlCapabilities {
-    /// Whether this station is configured for manual pose control.
-    pub manual_pose_control: bool,
-}
-
 #[derive(Clone, Debug, Serialize, JsonSchema)]
 #[serde(tag = "phase", rename_all = "snake_case")]
 pub enum ControllerStatus {

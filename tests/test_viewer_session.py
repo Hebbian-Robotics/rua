@@ -89,17 +89,15 @@ def ready_session(lines: Iterator[str]) -> str:
 
 @pytest.mark.typescript
 def test_manual_sessions_release_control_on_disconnect(
-    server_binary: Path, tmp_path: Path
+    server_binary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
     with (
         running_station(server_binary, enabled=False) as station,
-        viewer_backend(station.server, tmp_path) as viewer,
+        viewer_backend(station.server, tmp_path, manual_only=False) as viewer,
         httpx2.Client(base_url=viewer, timeout=10) as client,
         client.stream("GET", "/api/manual/events") as observer,
     ):
-        capabilities = client.get("/api/control/capabilities")
-        capabilities.raise_for_status()
-        assert capabilities.json()["manual_pose_control"] is False
         recordings = client.get("/api/recordings")
         recordings.raise_for_status()
         assert recordings.json()["recordings"] == []

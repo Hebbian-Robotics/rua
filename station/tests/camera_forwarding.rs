@@ -43,7 +43,6 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
                     media_executable: "unused".into(),
                     room: None,
                     phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
-                    manual_control: false,
                     media_status,
                 },
                 || true,

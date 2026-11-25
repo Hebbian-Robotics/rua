@@ -1,13 +1,13 @@
 use hebbian_contracts::{
     ActionSequenceRecord, ActionSequenceRequest, ActionSequenceStartRequest, CameraListing,
     ClientMessage, CommandAnswer, CommandCancellationRequest, CommandSubmissionRequest,
-    CompilationArtifact, CompilationOutcome, ControlCapabilities, ControllerStatus,
-    GroupCommandSubmissionRequest, LeaseAcquireRequest, LeaseCameraReport, LeaseGrant, LeaseToken,
-    MediaStatusReport, ObservationAnswer, ObservationRequest, OperationCompletion, OperationStatus,
-    PhoneInvite, PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse,
-    ReconnectRequest, RecordingStatus, RoomAccess, RunCompiledProgramRequest, RunEvent,
-    RunSpansRequest, SequenceCameraHistory, ServerMessage, StationInstance, StationState,
-    StreamGoalUpdateRequest, TraceFile,
+    CompilationArtifact, CompilationOutcome, ControllerStatus, GroupCommandSubmissionRequest,
+    LeaseAcquireRequest, LeaseCameraReport, LeaseGrant, LeaseToken, MediaStatusReport,
+    ObservationAnswer, ObservationRequest, OperationCompletion, OperationStatus, PhoneInvite,
+    PhoneInviteRequest, PosePreviewBatchRequest, PosePreviewBatchResponse, ReconnectRequest,
+    RecordingStatus, RoomAccess, RunCompiledProgramRequest, RunEvent, RunSpansRequest,
+    SequenceCameraHistory, ServerMessage, StationInstance, StationState, StreamGoalUpdateRequest,
+    TraceFile,
 };
 use schemars::generate::SchemaSettings;
 use schemars::{JsonSchema, SchemaGenerator};
@@ -405,15 +405,6 @@ pub fn routes() -> Vec<Route> {
             Some(schema_of::<PhoneInviteRequest>),
             Reply::Json(schema_of::<PhoneInvite>),
             true,
-        ),
-        route(
-            "get_control_capabilities",
-            "get",
-            "/control/capabilities",
-            "Whether the station is configured for manual pose control.",
-            None,
-            Reply::Json(schema_of::<ControlCapabilities>),
-            false,
         ),
         route(
             "get_controller_status",

@@ -1,12 +1,11 @@
 # SO-101 manual viewer control
 
-Manual control is an optional viewer mode for a single SO-101 arm. It uses
+Manual control is available in the viewer for a single SO-101 arm. It uses
 the station's control lease, so another program cannot command the arm while the
 viewer holds control.
 
-Both modes use the same motor controller, hardware driver, feedback, joint limits,
-trajectory checks and watchdogs. Without `--manual-control`, the viewer keeps its
-normal observation interface. The model tools and motion admission rules are unchanged.
+Manual and agent operation use the same motor controller, hardware driver, feedback,
+joint limits, trajectory checks and watchdogs.
 
 ## Start
 
@@ -34,7 +33,7 @@ uv run cargo run -p hebbian-rua-server -- so101-discover
 For a previously calibrated arm whose servo settings already match its profile:
 
 ```sh
-uv run cargo run -p hebbian-rua-server -- serve --manual-control
+uv run cargo run -p hebbian-rua-server -- serve
 ```
 
 The station selects the only registered USB adapter, uses its current
@@ -133,8 +132,7 @@ calibration_ids = { left = "left", right = "right" }
 To exercise the interface with a
 stand-in with no physics, add `--no-physics-stand-in` and use different ports from
 any real station. The stand-in checks the control interface and configured geometry guards;
-it has no physical contact, gravity or servo loads. For LLM runs, omit `--manual-control` and run the existing LLM
-client. Mode selection controls the viewer, not access authorization to the API.
+it has no physical contact, gravity or servo loads.
 
 Native registered-arm setup uses a 3-second independent guard heartbeat timeout
 for both stock and TPU assemblies, including agent runs. Direct hardware
