@@ -2,12 +2,14 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use hebbian_contracts::{
     CompilationDiagnostic, CompiledArmAction, CompiledGoal, CompiledOperation,
+    CompiledSequenceWaypoint, MinimumSectionDuration,
 };
 pub(crate) use hebbian_contracts::{CompilationTarget, CompiledProgram, CompiledStep};
 use sha2::{Digest, Sha256};
 
 use hebbian_contracts::{
-    ActionSequenceArmAction, ActionSequenceGoal, ActionSequenceRequest, GripperOpening, JointSpeed,
+    ActionSequenceArmAction, ActionSequenceGoal, ActionSequenceRequest, ActionSequenceStep,
+    ActionSequenceWaypoint, GripperOpening, JointSpeed,
 };
 
 use crate::motion_values::is_valid_trajectory_limit;
@@ -81,13 +83,7 @@ fn compile_program(
         .iter()
         .enumerate()
         .map(|(step_index, step)| {
-            if step.arms.is_empty() {
-                return Err(CompilationDiagnostic {
-                    step: Some(step_index),
-                    arm: None,
-                    detail: "An action sequence step must contain at least one arm".into(),
-                });
-            }
+            check_step_shape(step_index, step)?;
             step.arms
                 .iter()
                 .map(|(arm, action)| {
@@ -160,6 +156,37 @@ fn compile_program(
         arms,
         reused_operations,
     })
+}
+
+fn check_step_shape(
+    step_index: usize,
+    step: &ActionSequenceStep,
+) -> Result<(), CompilationDiagnostic> {
+    if step.arms.is_empty() {
+        return Err(CompilationDiagnostic {
+            step: Some(step_index),
+            arm: None,
+            detail: "An action sequence step must contain at least one arm".into(),
+        });
+    }
+    if step.arms.len() > 1
+        && let Some((arm, _)) = step.arms.iter().find(|(_, action)| {
+            matches!(
+                action,
+                ActionSequenceArmAction::Move {
+                    at_seconds: Some(_),
+                    ..
+                }
+            )
+        })
+    {
+        return Err(CompilationDiagnostic {
+            step: Some(step_index),
+            arm: Some(arm.clone()),
+            detail: "Timing requires a step with one planned arm".into(),
+        });
+    }
+    Ok(())
 }
 
 fn check_support(
@@ -241,11 +268,13 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
         ActionSequenceArmAction::Move {
             waypoints,
             goal,
+            at_seconds,
             gripper_opening,
             max_joint_speed,
             max_joint_acceleration,
             max_joint_jerk,
         } => {
+            let (waypoints, minimum_duration_seconds) = compile_move_timing(waypoints, at_seconds)?;
             let (goal, movement_speed) = match goal {
                 ActionSequenceGoal::Joints {
                     joints,
@@ -273,6 +302,7 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
             Ok(CompiledArmAction::Move {
                 waypoints,
                 goal,
+                minimum_duration_seconds,
                 gripper_opening: gripper_opening.map(opening).transpose()?,
                 max_joint_speed,
                 max_joint_acceleration,
@@ -292,9 +322,134 @@ fn compile_arm_action(action: ActionSequenceArmAction) -> Result<CompiledArmActi
     }
 }
 
+fn compile_move_timing(
+    waypoints: Vec<ActionSequenceWaypoint>,
+    goal_seconds: Option<f64>,
+) -> Result<
+    (
+        Vec<CompiledSequenceWaypoint>,
+        Option<MinimumSectionDuration>,
+    ),
+    &'static str,
+> {
+    let mut previous_arrival_seconds = None;
+    let mut compile_arrival = |arrival: Option<f64>| {
+        if arrival.is_some() != goal_seconds.is_some() {
+            return Err("Set at_seconds on every waypoint and the goal, or omit all times");
+        }
+        let Some(arrival_seconds) = arrival else {
+            return Ok(None);
+        };
+        if !arrival_seconds.is_finite() || arrival_seconds < 0.0 {
+            return Err("at_seconds must be finite and non-negative");
+        }
+        if previous_arrival_seconds.is_some_and(|previous| arrival_seconds <= previous) {
+            return Err("at_seconds must strictly increase from waypoint to goal");
+        }
+        let section_seconds = arrival_seconds - previous_arrival_seconds.unwrap_or(0.0);
+        previous_arrival_seconds = Some(arrival_seconds);
+        MinimumSectionDuration::try_from(section_seconds).map(Some)
+    };
+    let compiled_waypoints = waypoints
+        .into_iter()
+        .map(|waypoint| {
+            compile_arrival(waypoint.at_seconds).map(|minimum_duration_seconds| {
+                CompiledSequenceWaypoint {
+                    at: waypoint.at,
+                    gripper_opening: waypoint.gripper_opening,
+                    minimum_duration_seconds,
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((compiled_waypoints, compile_arrival(goal_seconds)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timing_requires_a_complete_increasing_schedule_on_one_arm() {
+        let target = CompilationTarget {
+            configuration_identity: "config".into(),
+            joint_count: 1,
+            jaw_closing_axis: hebbian_contracts::JawClosingAxis::X,
+            supports_joints: true,
+            supports_pose: false,
+            has_gripper: true,
+        };
+        let targets = BTreeMap::from([("arm".into(), target.clone()), ("other".into(), target)]);
+        let request = |waypoint_seconds, goal_seconds| ActionSequenceRequest {
+            steps: vec![hebbian_contracts::ActionSequenceStep::single(
+                "arm",
+                ActionSequenceArmAction::Move {
+                    goal: ActionSequenceGoal::Joints {
+                        joints: vec![0.2],
+                        max_joint_speed: None,
+                    },
+                    waypoints: vec![ActionSequenceWaypoint {
+                        at: CompiledGoal::Joints { joints: vec![0.1] },
+                        at_seconds: waypoint_seconds,
+                        gripper_opening: None,
+                    }],
+                    at_seconds: goal_seconds,
+                    gripper_opening: None,
+                    max_joint_speed: None,
+                    max_joint_acceleration: None,
+                    max_joint_jerk: None,
+                },
+            )],
+            expected_revisions: BTreeMap::new(),
+        };
+        let mut compiler = RobotUseCompiler::default();
+        for (waypoint_seconds, goal_seconds, message) in [
+            (None, Some(1.0), "every waypoint"),
+            (Some(0.5), None, "every waypoint"),
+            (Some(1.0), Some(1.0), "strictly increase"),
+            (Some(2.0), Some(1.0), "strictly increase"),
+            (Some(-0.1), Some(1.0), "non-negative"),
+            (Some(0.5), Some(f64::INFINITY), "finite"),
+        ] {
+            let error = compiler
+                .compile(&request(waypoint_seconds, goal_seconds), &targets)
+                .unwrap_err();
+            assert_eq!(error.step, Some(0));
+            assert!(error.detail.contains(message));
+        }
+        compiler
+            .compile(&request(Some(0.0), Some(1.0)), &targets)
+            .unwrap();
+        let mut timed = request(Some(0.25), Some(1.0));
+        let program = compiler.compile(&timed, &targets).unwrap();
+        let CompiledArmAction::Move {
+            waypoints,
+            minimum_duration_seconds,
+            ..
+        } = &program.steps[0]["arm"].action
+        else {
+            panic!("Expected a compiled move");
+        };
+        assert_eq!(
+            waypoints[0].minimum_duration_seconds.map(f64::from),
+            Some(0.25)
+        );
+        assert_eq!(minimum_duration_seconds.map(f64::from), Some(0.75));
+        timed.steps[0].arms.insert(
+            "other".into(),
+            ActionSequenceArmAction::Gripper {
+                gripper_opening: 0.5,
+                max_joint_speed: None,
+            },
+        );
+        assert!(
+            compiler
+                .compile(&timed, &targets)
+                .unwrap_err()
+                .detail
+                .contains("one planned arm")
+        );
+    }
+
     #[test]
     fn revisions_reuse_only_unchanged_operations_with_matching_configuration() {
         let mut compiler = RobotUseCompiler::default();
@@ -407,6 +562,7 @@ mod tests {
     #[test]
     fn invalid_motion_caps_in_a_later_step_reject_the_whole_sequence() {
         let move_action = |max_joint_acceleration, max_joint_jerk| ActionSequenceArmAction::Move {
+            at_seconds: None,
             waypoints: vec![],
             goal: ActionSequenceGoal::Joints {
                 joints: vec![0.1],
@@ -458,6 +614,7 @@ mod tests {
     #[test]
     fn both_resources_use_the_same_effective_step_speed() {
         let step = |gripper_speed| ActionSequenceArmAction::Move {
+            at_seconds: None,
             waypoints: vec![],
             goal: ActionSequenceGoal::Joints {
                 joints: vec![0.1],

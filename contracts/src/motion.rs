@@ -295,8 +295,7 @@ pub struct Segment {
     pub pass_through: Option<PassThrough>,
     pub label: String,
     pub corners: Vec<Vec<f64>>,
-    /// Slows the section to last at least this long, so arms moving together
-    /// can arrive together. Only for a single straight section.
+    /// Requested minimum duration for a section with exactly two corners.
     #[serde(default)]
     #[schemars(range(min = 0.0))]
     pub minimum_duration_seconds: Option<f64>,

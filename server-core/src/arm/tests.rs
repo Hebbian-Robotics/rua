@@ -719,6 +719,9 @@ fn malformed_motion_plans_are_refused_without_occupying_the_motion_channel() {
         motion_plan.segments[0].minimum_duration_seconds = Some(duration);
         malformed_plans.push(motion_plan);
     }
+    let mut stationary_timed_move = plan([0.0, 0.0], [0.0, 0.0]);
+    stationary_timed_move.segments[0].minimum_duration_seconds = Some(1.0);
+    malformed_plans.push(stationary_timed_move);
     let mut empty_plan = plan([0.0, 0.0], [0.1, 0.0]);
     empty_plan.segments.clear();
     malformed_plans.push(empty_plan);

@@ -110,6 +110,37 @@ stops renewing the lease, expiry stops the arms. Lease handoff, revocation and
 interlocks can also stop execution. An expected arm revision fences a request
 based on observations from before an interruption.
 
+### Optional move timing
+
+Set `at_seconds` alongside `goal` to request a minimum duration for a move
+by one IK-controlled arm. For a continuous move, also set `at_seconds` beside
+each waypoint's `at`. These are times from the start of the same step. They
+must be finite and non-negative and increase strictly from waypoint to goal.
+Omit all times for the default motion.
+
+```json
+{
+  "steps": [{
+    "waypoints": [{
+      "at": {"joints_degrees": [10, -30, 30, 0, 0]},
+      "at_seconds": 1.2
+    }],
+    "goal": {"joints_degrees": [20, -30, 30, 0, 0]},
+    "at_seconds": 2.5
+  }]
+}
+```
+
+This requests at least 1.2 seconds for the first section and at least 1.3
+seconds for the second. Each section takes as long as its motion limits
+require. A late section shifts later arrivals by the same delay. The controller
+advances the reference in control cycles and the physical arm can lag behind.
+The arm settles at the goal before the next step starts with its own clock.
+
+Use moving waypoints. A waypoint that requires a stop or reversal needs a
+separate step to settle there. A positive duration on a direct move requires
+joint travel. Timing is available for planned moves in single-arm steps.
+
 ### Per-move trajectory caps
 
 Single-arm IK moves accept optional `max_joint_speed` (rad/s),

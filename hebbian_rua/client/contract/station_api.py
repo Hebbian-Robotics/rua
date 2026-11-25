@@ -2224,6 +2224,18 @@ class CompiledGoal2(BaseModel):
     position: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
 
 
+class CompiledSequenceWaypoint(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    at: CompiledGoal1 | CompiledGoal2
+    gripper_opening: Annotated[
+        StrictFloat | None, Field(ge=0.0, le=1.0, title="GripperOpening")
+    ] = None
+    minimum_duration_seconds: Annotated[StrictFloat | None, Field(ge=0.0)] = None
+
+
 class Record(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2472,6 +2484,13 @@ class ActionSequenceWaypoint(BaseModel):
         frozen=True,
     )
     at: CompiledGoal1 | CompiledGoal2
+    at_seconds: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Earliest reference crossing in seconds from the start of this move.",
+            ge=0.0,
+        ),
+    ] = None
     gripper_opening: Annotated[
         StrictFloat | None,
         Field(
@@ -2647,8 +2666,15 @@ class CompiledArmAction1(BaseModel):
     max_joint_speed: Annotated[
         StrictFloat | None, Field(gt=0.0, title="JointSpeed")
     ] = None
+    minimum_duration_seconds: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Lower bound for the final section, from the preceding configuration to the goal.",
+            ge=0.0,
+        ),
+    ] = None
     waypoints: Annotated[
-        list[ActionSequenceWaypoint],
+        list[CompiledSequenceWaypoint],
         Field(
             description="Pass through these intermediate configurations before settling at the goal.",
             validate_default=True,
@@ -2821,6 +2847,13 @@ class ActionSequenceMove(BaseModel):
         extra="forbid",
         frozen=True,
     )
+    at_seconds: Annotated[
+        StrictFloat | None,
+        Field(
+            description="Earliest reference arrival in seconds from the start of this move.\nFor one planned arm per step. Time every waypoint and the goal in increasing order.",
+            ge=0.0,
+        ),
+    ] = None
     goal: Annotated[
         ActionSequenceJointsMovement | ActionSequencePoseMovement,
         Field(

@@ -42,12 +42,26 @@ impl ContinuousPath {
             .collect();
         input.max_acceleration.fill(limits.acceleration_limit);
         input.max_jerk.fill(limits.jerk_limit);
-        if maximum_step_seconds > 0.0 {
-            // SAFETY: Leave a nanosecond for rounding cumulative section times.
-            // Every section must last longer than a capped motor step.
-            let minimum_section_seconds = maximum_step_seconds + 1e-9;
-            input.per_section_minimum_duration =
-                Some(vec![minimum_section_seconds; plan.segments.len()]);
+        if maximum_step_seconds > 0.0
+            || plan
+                .segments
+                .iter()
+                .any(|segment| segment.minimum_duration_seconds.is_some())
+        {
+            // SAFETY: Every section must last longer than a capped motor step.
+            // Leave a nanosecond for rounding cumulative section times.
+            let control_cycle_floor = maximum_step_seconds + 1e-9;
+            input.per_section_minimum_duration = Some(
+                plan.segments
+                    .iter()
+                    .map(|segment| {
+                        segment
+                            .minimum_duration_seconds
+                            .unwrap_or(0.0)
+                            .max(control_cycle_floor)
+                    })
+                    .collect(),
+            );
         }
 
         let trajectory = calculate_waypoints(plan, limits, input)?;

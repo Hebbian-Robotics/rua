@@ -382,7 +382,8 @@ pub enum ActionSequenceCommand {
         action_sequence_request_example!(),
         "\nA pose goal is {\"position_mm\": [x, y, z], \"orientation\": ...}, \
          where orientation is {\"quaternion\": [x, y, z, w]} or \
-         {\"approach\": [x, y, z], \"jaw_yaw_degrees\": d}."
+         {\"approach\": [x, y, z], \"jaw_yaw_degrees\": d}.\nFor a timed single-arm move, set at_seconds beside each waypoint's at and the \
+         step's goal. Times are in seconds from the start of the step and must increase."
     ))]
     Run {
         #[command(flatten)]

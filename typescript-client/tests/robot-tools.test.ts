@@ -59,6 +59,59 @@ test("tool input units match the station contract", () => {
   });
 });
 
+test("timed sequences convert angles and retain waypoint and goal seconds", () => {
+  const parsed = parseRobotToolCall(
+    {
+      id: "timed-move",
+      name: "action_sequence",
+      arguments: {
+        steps: [
+          {
+            waypoints: [
+              {
+                at: { joints_degrees: [45, 0, 0] },
+                at_seconds: 1.25,
+              },
+            ],
+            goal: { joints_degrees: [90, 0, 0] },
+            at_seconds: 2.5,
+          },
+        ],
+      },
+    },
+    {
+      arm: "follower",
+      sequenceScope: { kind: "single" },
+      sequenceActions: new Set(["joints"]),
+      availableToolNames: new Map([["action_sequence", "action_sequence"]]),
+    },
+  );
+  expect(parsed).toMatchObject({
+    kind: "message",
+    message: {
+      kind: "start_action_sequence",
+      action_sequence: {
+        steps: [
+          {
+            arms: {
+              follower: {
+                waypoints: [
+                  {
+                    at: { kind: "joints", joints: [Math.PI / 4, 0, 0] },
+                    at_seconds: 1.25,
+                  },
+                ],
+                goal: { kind: "joints", joints: [Math.PI / 2, 0, 0] },
+                at_seconds: 2.5,
+              },
+            },
+          },
+        ],
+      },
+    },
+  });
+});
+
 test("pose previews convert degree-based joint caps to station units", () => {
   const parsed = parseRobotToolCall(
     {

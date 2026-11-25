@@ -66,6 +66,9 @@ camera fails with `camera_unavailable`, naming the cameras known and the station
 `traces list` / `traces pull [names...] --output <dir>` (files are written exactly as
 served, gzip-compressed).
 
+For a [timed single-arm sequence](../docs/control-model.md#optional-move-timing),
+`at_seconds` is in seconds from the start of the step in both JSON formats.
+
 ## Set up live cameras
 
 Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the station's

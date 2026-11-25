@@ -317,23 +317,31 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_action_sequence_runs_from_a_file() -> TestResult {
+async fn a_timed_action_sequence_runs_from_a_model_unit_file() -> TestResult {
     let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
     let file = std::env::temp_dir().join(format!(
         "hebbian-cli-action_sequence-{}.json",
         std::process::id()
     ));
-    let step =
-        |joints: [f64; 5]| serde_json::json!({"arms": {ARM: {"goal": {"joints_degrees": joints}}}});
     std::fs::write(
         &file,
-        serde_json::json!({"steps": [step([10.0, -30.0, 30.0, 0.0, 0.0]), step([-10.0, -30.0, 30.0, 0.0, 0.0])]})
-            .to_string(),
+        serde_json::json!({"steps": [
+            {"arms": {ARM: {
+                "waypoints": [{
+                    "at": {"joints_degrees": [5.0, -30.0, 30.0, 0.0, 0.0]},
+                    "at_seconds": 1.0
+                }],
+                "goal": {"joints_degrees": [10.0, -30.0, 30.0, 0.0, 0.0]},
+                "at_seconds": 3.0
+            }}},
+            {"arms": {ARM: {"goal": {"joints_degrees": [-10.0, -30.0, 30.0, 0.0, 0.0]}}}}
+        ]})
+        .to_string(),
     )?;
     let run = cli(
         &station.url,
-        &["action-sequence", "run", &file.to_string_lossy()],
+        &["--raw", "action-sequence", "run", &file.to_string_lossy()],
     )
     .await;
     assert_eq!(
@@ -342,7 +350,28 @@ async fn a_action_sequence_runs_from_a_file() -> TestResult {
         "{}",
         String::from_utf8_lossy(&run.output.stderr)
     );
-    assert_eq!(run.stdout_json()["phase"]["state"], "completed");
+    let record: hebbian_rua::contracts::ActionSequenceRecord =
+        serde_json::from_value(run.stdout_json())?;
+    assert_eq!(
+        record.phase,
+        hebbian_rua::contracts::ActionSequencePhase::Completed
+    );
+    let hebbian_rua::contracts::ActionSequenceArmAction::Move {
+        at_seconds,
+        waypoints,
+        ..
+    } = &record.requested_steps[0].arms[ARM]
+    else {
+        panic!("expected a timed move");
+    };
+    assert_eq!(*at_seconds, Some(3.0));
+    assert_eq!(waypoints[0].at_seconds, Some(1.0));
+    let first_move = &record.steps[0][0].record;
+    let hebbian_rua::contracts::CommandPhase::Finished { completion, .. } = &first_move.phase
+    else {
+        panic!("expected the timed move to finish");
+    };
+    assert!(completion.finished_unix_nano.0 - first_move.accepted_unix_nano.0 >= 2_900_000_000);
     std::fs::remove_file(file)?;
     Ok(())
 }

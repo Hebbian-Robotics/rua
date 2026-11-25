@@ -30,6 +30,10 @@ pub enum ActionSequenceGoal {
 #[serde(deny_unknown_fields)]
 pub struct ActionSequenceWaypoint {
     pub at: CompiledGoal,
+    /// Earliest reference crossing in seconds from the start of this move.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("minimum" = 0.0, "x-omit-when-none" = true))]
+    pub at_seconds: Option<f64>,
     /// Start moving the gripper when passing this waypoint.
     #[schemars(extend("x-omit-when-none" = true))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,6 +50,11 @@ pub enum ActionSequenceArmAction {
         /// Pass through these intermediate configurations before settling at the goal.
         #[serde(default)]
         waypoints: Vec<ActionSequenceWaypoint>,
+        /// Earliest reference arrival in seconds from the start of this move.
+        /// For one planned arm per step. Time every waypoint and the goal in increasing order.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("minimum" = 0.0, "x-omit-when-none" = true))]
+        at_seconds: Option<f64>,
         #[serde(default)]
         #[schemars(range(min = 0.0, max = 1.0))]
         gripper_opening: Option<f64>,
@@ -140,6 +149,63 @@ pub enum CompiledGoal {
     },
 }
 
+/// A finite, non-negative lower bound on a section's duration in seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct MinimumSectionDuration(f64);
+
+impl MinimumSectionDuration {
+    #[must_use]
+    pub fn seconds(self) -> f64 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for MinimumSectionDuration {
+    type Error = &'static str;
+
+    fn try_from(seconds: f64) -> Result<Self, Self::Error> {
+        if seconds.is_finite() && seconds >= 0.0 {
+            Ok(Self(seconds))
+        } else {
+            Err("A section duration must be finite and non-negative")
+        }
+    }
+}
+
+impl From<MinimumSectionDuration> for f64 {
+    fn from(duration: MinimumSectionDuration) -> Self {
+        duration.seconds()
+    }
+}
+
+impl JsonSchema for MinimumSectionDuration {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "MinimumSectionDuration".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"type": "number", "minimum": 0.0})
+    }
+}
+
+/// A pass-through configuration with the lower bound for the section ending there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompiledSequenceWaypoint {
+    pub at: CompiledGoal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-omit-when-none" = true))]
+    pub minimum_duration_seconds: Option<MinimumSectionDuration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-omit-when-none" = true))]
+    pub gripper_opening: Option<GripperOpening>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CompiledArmAction {
@@ -147,7 +213,11 @@ pub enum CompiledArmAction {
         goal: CompiledGoal,
         /// Pass through these intermediate configurations before settling at the goal.
         #[serde(default)]
-        waypoints: Vec<ActionSequenceWaypoint>,
+        waypoints: Vec<CompiledSequenceWaypoint>,
+        /// Lower bound for the final section, from the preceding configuration to the goal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(extend("x-omit-when-none" = true))]
+        minimum_duration_seconds: Option<MinimumSectionDuration>,
         gripper_opening: Option<GripperOpening>,
         max_joint_speed: Option<JointSpeed>,
         /// Joint acceleration cap in rad/s²; defaults to the arm profile.
