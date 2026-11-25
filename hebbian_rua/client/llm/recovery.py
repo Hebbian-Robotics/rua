@@ -18,7 +18,7 @@ from hebbian_rua.client.llm.robot_tools import (
     RequiredCameraUnavailable,
     RobotTools,
 )
-from hebbian_rua.client.station_client import StationClient
+from hebbian_rua.client.station_client import Lease, StationClient
 from hebbian_rua.client.station_types import LeaseLost
 
 log = logging.getLogger(__name__)
@@ -58,6 +58,13 @@ def _arm_interlocked(arm_state: ArmState) -> bool:
     return any(interlock.kind in ARM_INTERLOCKS for interlock in arm_state.interlocks)
 
 
+async def _report_camera(lease: Lease, camera: str, *, available: bool) -> None:
+    try:
+        await lease.report_camera(camera, available)
+    except (NativeCommandRefused, HttpError, ConnectionError, TimeoutError) as error:
+        log.warning("Could not report camera %s availability: %s", camera, error)
+
+
 async def wait_for_arm_recovery(client: StationClient, arm: str) -> bool:
     """Wait until the arm holds with no arm interlock; false once it is disabled
     or faulted instead. The next observation replaces the old state."""
@@ -66,6 +73,8 @@ async def wait_for_arm_recovery(client: StationClient, arm: str) -> bool:
             raise LeaseLost
         observed = client.change_stamp()
         arm_state = await _arm_state(client, arm)
+        if client.lease_lost.is_set():
+            raise LeaseLost
         if arm_state is not None and arm_state.mode in {
             ArmMode.faulted,
             ArmMode.disabled,
@@ -100,25 +109,19 @@ async def capture_when_ready(
                 continue
             captured = await robot.capture(note, extra_lines)
             after = await _arm_state(robot.station, robot.arm)
+            if robot.station.lease_lost.is_set():
+                raise LeaseLost
             if after is None or after.mode in {ArmMode.faulted, ArmMode.disabled}:
                 raise ArmRecoveryEnded
-            if after.revision != before.revision:
+            captured_revision = captured.observation.revisions[robot.arm]
+            if not before.revision == captured_revision == after.revision:
                 continue
             break
         except RequiredCameraUnavailable as error:
             if error.camera not in missing_cameras:
                 missing_cameras.add(error.camera)
                 log.info("Waiting for required camera: %s", error.camera)
-                try:
-                    await robot.lease.report_camera(error.camera, False)
-                except (
-                    LeaseLost,
-                    NativeCommandRefused,
-                    HttpError,
-                    ConnectionError,
-                    TimeoutError,
-                ) as report_error:
-                    log.warning("Could not report the camera missing: %s", report_error)
+                await _report_camera(robot.lease, error.camera, available=False)
             await asyncio.sleep(camera_retry_seconds)
             camera_retry_seconds = min(
                 camera_retry_seconds * 2, MAX_CAMERA_RETRY_SECONDS
@@ -134,14 +137,7 @@ async def capture_when_ready(
     )
     # WHY: A capture just succeeded, so every required camera gave a fresh frame.
     for camera in missing_cameras:
-        try:
-            await robot.lease.report_camera(camera, True)
-        except (
-            LeaseLost,
-            NativeCommandRefused,
-            HttpError,
-            ConnectionError,
-            TimeoutError,
-        ) as report_error:
-            log.warning("Could not report camera recovery: %s", report_error)
-    return captured, after.revision
+        await _report_camera(robot.lease, camera, available=True)
+    if robot.station.lease_lost.is_set():
+        raise LeaseLost
+    return captured, captured_revision

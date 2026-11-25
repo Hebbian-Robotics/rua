@@ -14,8 +14,18 @@ import {
   StationHttpError,
   StationTimeoutError,
 } from "./station-errors.js";
-import { readStationEvents, type StationEvent } from "./station-events.js";
-import { jsonRequestInit, stationFetch } from "./station-request.js";
+import {
+  type IncomingStationMessage,
+  parseRunReplay,
+  parseStationEvent,
+  readStationEvents,
+  type StationEvent,
+} from "./station-events.js";
+import {
+  jsonRequestInit,
+  stationFetch,
+  stationRequest,
+} from "./station-request.js";
 import {
   type ActionSequenceRecord,
   type ActionSequenceRequest,
@@ -216,7 +226,7 @@ export interface StationConnection {
   ): Promise<
     import("./generated/api-schemas.js").ApiSchemas["CompilationArtifact"]
   >;
-  getActionSequence(action_sequenceId: string): Promise<ActionSequenceRecord>;
+  getActionSequence(actionSequenceId: string): Promise<ActionSequenceRecord>;
   getSequenceCameraHistory?(
     executionId: string,
     signal?: AbortSignal,
@@ -225,10 +235,10 @@ export interface StationConnection {
   >;
   /** Wait for a terminal result. Aborting or timing out ends the wait; cancel the sequence to stop motion. */
   waitForActionSequence(
-    action_sequenceId: string,
+    actionSequenceId: string,
     options?: { signal?: AbortSignal; timeoutMilliseconds?: number },
   ): Promise<ActionSequenceRecord>;
-  cancelActionSequence(action_sequenceId: string): Promise<void>;
+  cancelActionSequence(actionSequenceId: string): Promise<void>;
   onActionSequence(
     listener: (action_sequence: ActionSequenceRecord | null) => void,
   ): () => void;
@@ -306,8 +316,8 @@ export function createStationConnection(
   const stateListeners = new Set<(state: StationState) => void>();
   const runListeners = new Set<(run: LiveRun) => void>();
   const runRecordListeners = new Set<(record: RunRecord) => void>();
-  const action_sequenceListeners = new Set<
-    (action_sequence: ActionSequenceRecord | null) => void
+  const actionSequenceListeners = new Set<
+    (actionSequence: ActionSequenceRecord | null) => void
   >();
   let latestActionSequence: ActionSequenceRecord | null | undefined;
   const connectionListeners = new Set<(connected: boolean) => void>();
@@ -416,16 +426,12 @@ export function createStationConnection(
     for (const listener of runRecordListeners) listener(record);
   }
 
-  function receive(text: string): void {
-    const raw: unknown = JSON.parse(text);
-    if (
-      typeof raw === "object" &&
-      raw !== null &&
-      "kind" in raw &&
-      raw.kind === "frame"
-    )
-      return;
-    match(serverMessageSchema.parse(raw))
+  function receive(incoming: IncomingStationMessage): void {
+    if (incoming.kind === "unknown") {
+      console.warn("Ignoring unknown station event", incoming.wireKind);
+    }
+    if (incoming.kind !== "known") return;
+    match(incoming.message)
       .with({ kind: "state" }, ({ state }) => {
         latestState = state;
         stateFrameCount += 1;
@@ -441,7 +447,7 @@ export function createStationConnection(
       })
       .with({ kind: "action_sequence_state" }, ({ action_sequence }) => {
         latestActionSequence = action_sequence ?? null;
-        for (const listener of action_sequenceListeners)
+        for (const listener of actionSequenceListeners)
           listener(latestActionSequence);
         notify();
       })
@@ -465,55 +471,50 @@ export function createStationConnection(
 
   async function applyStationEvent(
     event: StationEvent,
+    streamUrl: URL,
     signal: AbortSignal,
   ): Promise<void> {
-    if (event.kind === "resync_required") {
+    const incoming = parseStationEvent(event);
+    if (incoming.kind === "resync_required")
       throw new StationReplayGap("Station event replay requires a snapshot");
-    }
-    const payload: unknown = JSON.parse(event.data);
-    if (
-      typeof payload === "object" &&
-      payload !== null &&
-      "kind" in payload &&
-      payload.kind === "resync_required"
-    ) {
-      throw new StationReplayGap("Station event replay requires a snapshot");
+    if (incoming.kind === "ignored_event") {
+      console.warn("Ignoring unknown station stream event", incoming.wireKind);
+      return;
     }
     const previousStateFrameCount = stateFrameCount;
-    if (event.kind === "snapshot") {
-      if (
-        typeof payload !== "object" ||
-        payload === null ||
-        !("items" in payload) ||
-        !Array.isArray(payload.items) ||
-        !("run_sequence" in payload) ||
-        typeof payload.run_sequence !== "number"
-      )
-        throw new StationConnectionError("Invalid station snapshot");
+    if (incoming.kind === "snapshot") {
+      const replay =
+        runAfter === undefined
+          ? []
+          : await replayRunRecords(streamUrl, runAfter, signal);
+      signal.throwIfAborted();
+      // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
       latestState = null;
-      if (runAfter === undefined) {
-        runAfter = payload.run_sequence;
-      } else {
-        const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
-        const url = new URL("/run/records", base);
-        url.searchParams.set("after", String(runAfter));
-        const response = await fetch(url, { signal });
-        if (!response.ok) throw new StationConnectionError("Run replay failed");
-        const replay: unknown = await response.json();
-        if (!Array.isArray(replay))
-          throw new StationConnectionError("Invalid run replay");
-        for (const record of replay) receive(JSON.stringify(record));
-      }
-      for (const item of payload.items) receive(JSON.stringify(item));
-    } else if (event.kind === "station") {
-      receive(event.data);
+      runAfter ??= incoming.runSequence;
+      for (const record of replay) receive(record);
+      for (const message of incoming.messages) receive(message);
     } else {
-      return;
+      receive(incoming);
     }
     eventCursor = event.id || eventCursor;
     lastError = null;
     if (!ready) setReady(true);
     else if (stateFrameCount !== previousStateFrameCount) notify();
+  }
+
+  async function replayRunRecords(
+    streamUrl: URL,
+    after: number,
+    signal: AbortSignal,
+  ) {
+    const url = new URL("/run/records", streamUrl);
+    url.searchParams.set("after", String(after));
+    try {
+      const payload = await stationRequest(url, { signal });
+      return parseRunReplay(payload);
+    } catch (error) {
+      throw new StationConnectionError("Run replay failed", { cause: error });
+    }
   }
 
   async function consumeEventStream(
@@ -547,7 +548,7 @@ export function createStationConnection(
       try {
         await readStationEvents(
           response,
-          (event) => applyStationEvent(event, signal),
+          (event) => applyStationEvent(event, url, signal),
           {
             milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
             abort: () =>
@@ -581,10 +582,8 @@ export function createStationConnection(
             const attempt = new AbortController();
             const signal = AbortSignal.any([lifetime.signal, attempt.signal]);
             try {
-              const base =
-                typeof stationUrl === "string" ? stationUrl : stationUrl();
               await consumeEventStream(
-                new URL("/events", base),
+                new URL("/events", baseUrl()),
                 attempt,
                 signal,
               );
@@ -632,9 +631,7 @@ export function createStationConnection(
   }
 
   function noConnection(): StationConnectionError {
-    return new StationConnectionError(
-      `No connection to ${typeof stationUrl === "string" ? stationUrl : stationUrl()}`,
-    );
+    return new StationConnectionError(`No connection to ${baseUrl()}`);
   }
 
   async function waitUntilConnected(): Promise<void> {
@@ -915,10 +912,9 @@ export function createStationConnection(
   }
 
   async function getActionSequence(
-    action_sequenceId: string,
+    actionSequenceId: string,
   ): Promise<ActionSequenceRecord> {
-    const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
-    return createStationApi(base, base).getActionSequence(action_sequenceId);
+    return stationApi().getActionSequence(actionSequenceId);
   }
 
   async function state(): Promise<StationState> {
@@ -970,8 +966,7 @@ export function createStationConnection(
     }
     try {
       if (keepalive) {
-        const base = typeof stationUrl === "string" ? stationUrl : stationUrl();
-        await stationFetch(new URL("/leases/release", base), {
+        await stationFetch(new URL("/leases/release", baseUrl()), {
           ...jsonRequestInit("POST", { lease_token: token }),
           keepalive: true,
         });
@@ -1381,19 +1376,19 @@ export function createStationConnection(
         throw error;
       }
     },
-    async cancelActionSequence(action_sequenceId) {
+    async cancelActionSequence(actionSequenceId) {
       try {
-        await stationApi().cancelActionSequenceHttp(action_sequenceId);
+        await stationApi().cancelActionSequenceHttp(actionSequenceId);
       } catch (error) {
         if (!(error instanceof StationHttpError && error.status === 404))
           throw error;
       }
     },
     onActionSequence(listener) {
-      action_sequenceListeners.add(listener);
+      actionSequenceListeners.add(listener);
       if (latestActionSequence !== undefined) listener(latestActionSequence);
       return () => {
-        action_sequenceListeners.delete(listener);
+        actionSequenceListeners.delete(listener);
       };
     },
     async preview(arm, pose) {

@@ -1046,5 +1046,29 @@
         }
       ]
     }
+  },
+  {
+    "name": "sequence report with unavailable step lists",
+    "keep_station_context": false,
+    "input": {
+      "arms": ["follower"],
+      "phase": { "state": "interrupted" },
+      "requested_steps": null,
+      "steps": null
+    },
+    "concise": {
+      "arms": ["follower"],
+      "phase": { "state": "interrupted" },
+      "requested_step_count": 0,
+      "recorded_step_count": 0,
+      "steps": []
+    },
+    "expected": {
+      "arms": ["follower"],
+      "phase": { "state": "interrupted" },
+      "requested_step_count": 0,
+      "recorded_step_count": 0,
+      "steps": []
+    }
   }
 ]
