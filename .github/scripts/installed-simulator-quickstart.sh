@@ -37,7 +37,7 @@ media_port="$(python -I -c 'import socket; listener = socket.socket(); listener.
 rua serve --local-only-no-remote-cameras \
   --profile "$repository/examples/mujoco_sim/profiles/single.toml" \
   --work-directory "$quickstart_directory" --http-address 127.0.0.1:0 \
-  --media-address "127.0.0.1:$media_port" --simulator-connect-seconds 120 --simulator-reply-seconds 0.2 >station.log 2>&1 &
+  --media-address "127.0.0.1:$media_port" --simulator-connect-seconds 120 --simulator-reply-seconds 15 >station.log 2>&1 &
 station_pid=$!
 
 wait_until() {
@@ -65,5 +65,7 @@ wait_until station_announced
 export HEBBIAN_STATION_URL
 wait_until station_reporting
 timeout 90 python -I "$repository/examples/python/hello_robot.py"
+wait_until curl --fail --silent --max-time 8 \
+  "${HEBBIAN_STATION_URL}/cameras/sim_overview" --output overview.jpg
 cd "$repository"
 RUA_PACKAGE_CHECK_STATION="$HEBBIAN_STATION_URL" pnpm test:package "$tarball"
