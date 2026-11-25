@@ -512,18 +512,29 @@ async function startLeaseStation(
   };
 }
 
-test("aborting an accepted leased command cancels the original submission", async () => {
+test("aborting an accepted command cancels it after a completion request fails", async () => {
   const controller = new AbortController();
   let receiveCancellation: (body: unknown) => void = () => {};
   const cancelling = new Promise<unknown>((resolve) => {
     receiveCancellation = resolve;
   });
   let acceptedRequest: unknown;
+  let completionFailed = false;
+  let notifyCompletionRetry: () => void = () => {};
+  const retriedCompletion = new Promise<void>((resolve) => {
+    notifyCompletionRetry = resolve;
+  });
   const { connection, close } = await startLeaseStation(
     15,
     (request, response) => {
       if (request.url?.endsWith("/completion")) {
         request.resume();
+        if (completionFailed) {
+          notifyCompletionRetry();
+        } else {
+          completionFailed = true;
+          response.writeHead(503).end();
+        }
         return;
       }
       if (request.url === "/commands" || request.url?.endsWith("/cancel")) {
@@ -564,6 +575,7 @@ test("aborting an accepted leased command cancels the original submission", asyn
       "operation_id" in acceptedRequest &&
         "station_instance_id" in acceptedRequest,
     );
+    await retriedCompletion;
     controller.abort();
     await expect(cancelling).resolves.toEqual({
       path: `/operations/${acceptedRequest.operation_id}/cancel`,

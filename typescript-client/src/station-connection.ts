@@ -851,7 +851,22 @@ export function createStationConnection(
           answer.records.some(({ record }) => record.phase.kind === "pending")
         ) {
           retainedCancellation = true;
-          void completion()
+          // INVARIANT: Failure to read completion leaves the command cancellable.
+          void pRetry(
+            () =>
+              completion().catch((cause: unknown) => {
+                throw new StationConnectionError(
+                  "Could not confirm command completion",
+                  { cause },
+                );
+              }),
+            {
+              signal: requestSignal,
+              retries: Number.POSITIVE_INFINITY,
+              maxTimeout: RECONNECT_CAP_MILLISECONDS,
+              unref: true,
+            },
+          )
             .catch(() => {})
             .finally(() => signal.removeEventListener("abort", cancel));
         }
