@@ -68,10 +68,19 @@ current plan and notes in observations for that run.
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add
 named cameras to the station. Repeat `--camera NAME` for each required camera.
 Use `--optional-camera NAME` for views the agent can proceed without if they
-are unavailable. Use the names from `hebbian-rua camera list`. On the station host,
-get the room URL and token with `curl --fail http://127.0.0.1:8792/media/access-token`,
-then enter them in the [hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/)
-to watch while the agent runs.
+are unavailable.
+
+To add a remote phone camera, configure LiveKit on the station and create an
+invite from **Workspace → Camera setup → Remote camera** in the viewer, or run
+`uv run hebbian-rua phone-invite overhead` on the station host. Open the invite
+on the phone and start streaming. The label `overhead` appears as
+`phone_overhead` in `hebbian-rua camera list`. Pass `--optional-camera phone_overhead`
+to the Python example, or use `--camera phone_overhead` if the run requires it.
+See [Add a phone](../../docs/cameras.md#add-a-phone) for setup details.
+
+To watch while the agent runs, get the room URL and token on the station host
+with `curl --fail http://127.0.0.1:8792/media/access-token`, then enter them in the
+[hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/).
 
 [Options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable)
 

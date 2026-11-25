@@ -40,7 +40,8 @@ Set a model-provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY or GEMINI_API_KEY).
 Connect to a station with a real arm whenever available. Reserve simulation
 for testing without hardware.
 Select required cameras with --camera wrist and optional cameras with
---optional-camera overhead. Configure LiveKit on the station to watch in Room
+--optional-camera phone_overhead. A station phone invite labeled overhead
+publishes as phone_overhead. Configure LiveKit on the station to watch in Room
 viewer at https://hebbian-robotics.github.io/livekit-cameras/.
 If LiveKit Cloud is unavailable, run a local LiveKit server or restart the
 station with --local-only-no-remote-cameras, then open the RUA example viewer.
