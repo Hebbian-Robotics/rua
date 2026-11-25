@@ -301,6 +301,36 @@ async fn preview_poses_answers_every_pose_in_order() -> TestResult {
     .await;
     assert_eq!(native.code(), Some(0));
     assert_eq!(native.stdout_json()[0]["label"], "native");
+
+    for station_orientation in [
+        serde_json::json!({"kind": "grasp", "approach": "down", "jaw_yaw_degrees": 90}),
+        serde_json::json!({
+            "kind": "grasp",
+            "approach": "down",
+            "jaw_yaw_radians": std::f64::consts::FRAC_PI_2,
+            "jaw_yaw_degrees": 0
+        }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!([{
+                "position": [0.2, 0.0, 0.1],
+                "orientation": station_orientation,
+            }])
+            .to_string(),
+        )?;
+        let rejected = cli(
+            &station.url,
+            &["preview-poses", ARM, "--input-station", &path],
+        )
+        .await;
+        assert_eq!(rejected.code(), Some(2));
+        assert!(
+            rejected.stderr_json()["error"]["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("jaw_yaw_degrees"))
+        );
+    }
     std::fs::remove_file(file)?;
     Ok(())
 }

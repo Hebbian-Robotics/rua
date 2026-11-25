@@ -81,6 +81,7 @@ export const robotToolSpecifications = [
                         description: "A tool orientation as a client gives it.",
                         oneOf: [
                           {
+                            additionalProperties: false,
                             description:
                               "The approach direction and the jaw yaw about it.",
                             properties: {
@@ -124,6 +125,7 @@ export const robotToolSpecifications = [
                             type: "object",
                           },
                           {
+                            additionalProperties: false,
                             description: "A raw quaternion, `[x, y, z, w]`.",
                             properties: {
                               quaternion: {
@@ -232,6 +234,7 @@ export const robotToolSpecifications = [
                                 "A tool orientation as a client gives it.",
                               oneOf: [
                                 {
+                                  additionalProperties: false,
                                   description:
                                     "The approach direction and the jaw yaw about it.",
                                   properties: {
@@ -276,6 +279,7 @@ export const robotToolSpecifications = [
                                   type: "object",
                                 },
                                 {
+                                  additionalProperties: false,
                                   description:
                                     "A raw quaternion, `[x, y, z, w]`.",
                                   properties: {
@@ -394,6 +398,7 @@ export const robotToolSpecifications = [
           description: "A tool orientation as a client gives it.",
           oneOf: [
             {
+              additionalProperties: false,
               description: "The approach direction and the jaw yaw about it.",
               properties: {
                 approach: {
@@ -409,6 +414,7 @@ export const robotToolSpecifications = [
               type: "object",
             },
             {
+              additionalProperties: false,
               description: "A raw quaternion, `[x, y, z, w]`.",
               properties: {
                 quaternion: {
@@ -554,6 +560,7 @@ export const robotToolSpecifications = [
           description: "A tool orientation as a client gives it.",
           oneOf: [
             {
+              additionalProperties: false,
               description: "The approach direction and the jaw yaw about it.",
               properties: {
                 approach: {
@@ -569,6 +576,7 @@ export const robotToolSpecifications = [
               type: "object",
             },
             {
+              additionalProperties: false,
               description: "A raw quaternion, `[x, y, z, w]`.",
               properties: {
                 quaternion: {

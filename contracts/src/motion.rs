@@ -392,7 +392,7 @@ pub enum Approach {
 
 /// A tool orientation as a client gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PoseOrientation {
     /// The approach direction and the jaw yaw about it.
     #[schemars(title = "GraspOrientation")]

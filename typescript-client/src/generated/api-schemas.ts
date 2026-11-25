@@ -132,6 +132,7 @@ export const apiSchemas = z.object({
                             .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
+                        .strict()
                         .describe(
                           "The approach direction and the jaw yaw about it.",
                         ),
@@ -140,6 +141,7 @@ export const apiSchemas = z.object({
                           kind: z.literal("quaternion"),
                           quaternion: z.array(z.number()).min(4).max(4),
                         })
+                        .strict()
                         .describe("A raw quaternion, `[x, y, z, w]`."),
                     ])
                     .describe("A tool orientation as a client gives it."),
@@ -242,6 +244,7 @@ export const apiSchemas = z.object({
                                   .describe("Jaw yaw in radians."),
                                 kind: z.literal("grasp"),
                               })
+                              .strict()
                               .describe(
                                 "The approach direction and the jaw yaw about it.",
                               ),
@@ -250,6 +253,7 @@ export const apiSchemas = z.object({
                                 kind: z.literal("quaternion"),
                                 quaternion: z.array(z.number()).min(4).max(4),
                               })
+                              .strict()
                               .describe("A raw quaternion, `[x, y, z, w]`."),
                           ])
                           .describe("A tool orientation as a client gives it."),
@@ -337,12 +341,14 @@ export const apiSchemas = z.object({
                   jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                   kind: z.literal("grasp"),
                 })
+                .strict()
                 .describe("The approach direction and the jaw yaw about it."),
               z
                 .object({
                   kind: z.literal("quaternion"),
                   quaternion: z.array(z.number()).min(4).max(4),
                 })
+                .strict()
                 .describe("A raw quaternion, `[x, y, z, w]`."),
             ])
             .describe("A tool orientation as a client gives it."),
@@ -588,6 +594,7 @@ export const apiSchemas = z.object({
                                           .describe("Jaw yaw in radians."),
                                         kind: z.literal("grasp"),
                                       })
+                                      .strict()
                                       .describe(
                                         "The approach direction and the jaw yaw about it.",
                                       ),
@@ -599,6 +606,7 @@ export const apiSchemas = z.object({
                                           .min(4)
                                           .max(4),
                                       })
+                                      .strict()
                                       .describe(
                                         "A raw quaternion, `[x, y, z, w]`.",
                                       ),
@@ -716,6 +724,7 @@ export const apiSchemas = z.object({
                                                 ),
                                               kind: z.literal("grasp"),
                                             })
+                                            .strict()
                                             .describe(
                                               "The approach direction and the jaw yaw about it.",
                                             ),
@@ -727,6 +736,7 @@ export const apiSchemas = z.object({
                                                 .min(4)
                                                 .max(4),
                                             })
+                                            .strict()
                                             .describe(
                                               "A raw quaternion, `[x, y, z, w]`.",
                                             ),
@@ -1307,6 +1317,7 @@ export const apiSchemas = z.object({
                                         .describe("Jaw yaw in radians."),
                                       kind: z.literal("grasp"),
                                     })
+                                    .strict()
                                     .describe(
                                       "The approach direction and the jaw yaw about it.",
                                     ),
@@ -1318,6 +1329,7 @@ export const apiSchemas = z.object({
                                         .min(4)
                                         .max(4),
                                     })
+                                    .strict()
                                     .describe(
                                       "A raw quaternion, `[x, y, z, w]`.",
                                     ),
@@ -1433,6 +1445,7 @@ export const apiSchemas = z.object({
                                               .describe("Jaw yaw in radians."),
                                             kind: z.literal("grasp"),
                                           })
+                                          .strict()
                                           .describe(
                                             "The approach direction and the jaw yaw about it.",
                                           ),
@@ -1444,6 +1457,7 @@ export const apiSchemas = z.object({
                                               .min(4)
                                               .max(4),
                                           })
+                                          .strict()
                                           .describe(
                                             "A raw quaternion, `[x, y, z, w]`.",
                                           ),
@@ -1576,6 +1590,7 @@ export const apiSchemas = z.object({
                                             .describe("Jaw yaw in radians."),
                                           kind: z.literal("grasp"),
                                         })
+                                        .strict()
                                         .describe(
                                           "The approach direction and the jaw yaw about it.",
                                         ),
@@ -1587,6 +1602,7 @@ export const apiSchemas = z.object({
                                             .min(4)
                                             .max(4),
                                         })
+                                        .strict()
                                         .describe(
                                           "A raw quaternion, `[x, y, z, w]`.",
                                         ),
@@ -1708,6 +1724,7 @@ export const apiSchemas = z.object({
                                                   ),
                                                 kind: z.literal("grasp"),
                                               })
+                                              .strict()
                                               .describe(
                                                 "The approach direction and the jaw yaw about it.",
                                               ),
@@ -1719,6 +1736,7 @@ export const apiSchemas = z.object({
                                                   .min(4)
                                                   .max(4),
                                               })
+                                              .strict()
                                               .describe(
                                                 "A raw quaternion, `[x, y, z, w]`.",
                                               ),
@@ -1847,6 +1865,7 @@ export const apiSchemas = z.object({
                                   .describe("Jaw yaw in radians."),
                                 kind: z.literal("grasp"),
                               })
+                              .strict()
                               .describe(
                                 "The approach direction and the jaw yaw about it.",
                               ),
@@ -1855,6 +1874,7 @@ export const apiSchemas = z.object({
                                 kind: z.literal("quaternion"),
                                 quaternion: z.array(z.number()).min(4).max(4),
                               })
+                              .strict()
                               .describe("A raw quaternion, `[x, y, z, w]`."),
                           ])
                           .describe("A tool orientation as a client gives it."),
@@ -1963,6 +1983,7 @@ export const apiSchemas = z.object({
                                         .describe("Jaw yaw in radians."),
                                       kind: z.literal("grasp"),
                                     })
+                                    .strict()
                                     .describe(
                                       "The approach direction and the jaw yaw about it.",
                                     ),
@@ -1974,6 +1995,7 @@ export const apiSchemas = z.object({
                                         .min(4)
                                         .max(4),
                                     })
+                                    .strict()
                                     .describe(
                                       "A raw quaternion, `[x, y, z, w]`.",
                                     ),
@@ -2067,12 +2089,14 @@ export const apiSchemas = z.object({
                     jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                     kind: z.literal("grasp"),
                   })
+                  .strict()
                   .describe("The approach direction and the jaw yaw about it."),
                 z
                   .object({
                     kind: z.literal("quaternion"),
                     quaternion: z.array(z.number()).min(4).max(4),
                   })
+                  .strict()
                   .describe("A raw quaternion, `[x, y, z, w]`."),
               ])
               .describe("A tool orientation as a client gives it."),
@@ -3831,6 +3855,7 @@ export const apiSchemas = z.object({
                                                 ),
                                               kind: z.literal("grasp"),
                                             })
+                                            .strict()
                                             .describe(
                                               "The approach direction and the jaw yaw about it.",
                                             ),
@@ -3842,6 +3867,7 @@ export const apiSchemas = z.object({
                                                 .min(4)
                                                 .max(4),
                                             })
+                                            .strict()
                                             .describe(
                                               "A raw quaternion, `[x, y, z, w]`.",
                                             ),
@@ -3968,6 +3994,7 @@ export const apiSchemas = z.object({
                                                       ),
                                                     kind: z.literal("grasp"),
                                                   })
+                                                  .strict()
                                                   .describe(
                                                     "The approach direction and the jaw yaw about it.",
                                                   ),
@@ -3981,6 +4008,7 @@ export const apiSchemas = z.object({
                                                       .min(4)
                                                       .max(4),
                                                   })
+                                                  .strict()
                                                   .describe(
                                                     "A raw quaternion, `[x, y, z, w]`.",
                                                   ),
@@ -4369,6 +4397,7 @@ export const apiSchemas = z.object({
                             .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
+                        .strict()
                         .describe(
                           "The approach direction and the jaw yaw about it.",
                         ),
@@ -4377,6 +4406,7 @@ export const apiSchemas = z.object({
                           kind: z.literal("quaternion"),
                           quaternion: z.array(z.number()).min(4).max(4),
                         })
+                        .strict()
                         .describe("A raw quaternion, `[x, y, z, w]`."),
                     ])
                     .describe("A tool orientation as a client gives it."),
@@ -4552,6 +4582,7 @@ export const apiSchemas = z.object({
                                 .describe("Jaw yaw in radians."),
                               kind: z.literal("grasp"),
                             })
+                            .strict()
                             .describe(
                               "The approach direction and the jaw yaw about it.",
                             ),
@@ -4560,6 +4591,7 @@ export const apiSchemas = z.object({
                               kind: z.literal("quaternion"),
                               quaternion: z.array(z.number()).min(4).max(4),
                             })
+                            .strict()
                             .describe("A raw quaternion, `[x, y, z, w]`."),
                         ])
                         .describe("A tool orientation as a client gives it."),
@@ -4683,6 +4715,7 @@ export const apiSchemas = z.object({
                             .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
+                        .strict()
                         .describe(
                           "The approach direction and the jaw yaw about it.",
                         ),
@@ -4691,6 +4724,7 @@ export const apiSchemas = z.object({
                           kind: z.literal("quaternion"),
                           quaternion: z.array(z.number()).min(4).max(4),
                         })
+                        .strict()
                         .describe("A raw quaternion, `[x, y, z, w]`."),
                     ])
                     .describe("A tool orientation as a client gives it."),
@@ -6137,6 +6171,7 @@ export const apiSchemas = z.object({
                         .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
+                    .strict()
                     .describe(
                       "The approach direction and the jaw yaw about it.",
                     ),
@@ -6145,6 +6180,7 @@ export const apiSchemas = z.object({
                       kind: z.literal("quaternion"),
                       quaternion: z.array(z.number()).min(4).max(4),
                     })
+                    .strict()
                     .describe("A raw quaternion, `[x, y, z, w]`."),
                 ])
                 .describe("A tool orientation as a client gives it."),
@@ -6312,6 +6348,7 @@ export const apiSchemas = z.object({
                                       .describe("Jaw yaw in radians."),
                                     kind: z.literal("grasp"),
                                   })
+                                  .strict()
                                   .describe(
                                     "The approach direction and the jaw yaw about it.",
                                   ),
@@ -6323,6 +6360,7 @@ export const apiSchemas = z.object({
                                       .min(4)
                                       .max(4),
                                   })
+                                  .strict()
                                   .describe(
                                     "A raw quaternion, `[x, y, z, w]`.",
                                   ),
@@ -6422,6 +6460,7 @@ export const apiSchemas = z.object({
                                               .describe("Jaw yaw in radians."),
                                             kind: z.literal("grasp"),
                                           })
+                                          .strict()
                                           .describe(
                                             "The approach direction and the jaw yaw about it.",
                                           ),
@@ -6433,6 +6472,7 @@ export const apiSchemas = z.object({
                                               .min(4)
                                               .max(4),
                                           })
+                                          .strict()
                                           .describe(
                                             "A raw quaternion, `[x, y, z, w]`.",
                                           ),
@@ -6566,6 +6606,7 @@ export const apiSchemas = z.object({
                                             .describe("Jaw yaw in radians."),
                                           kind: z.literal("grasp"),
                                         })
+                                        .strict()
                                         .describe(
                                           "The approach direction and the jaw yaw about it.",
                                         ),
@@ -6577,6 +6618,7 @@ export const apiSchemas = z.object({
                                             .min(4)
                                             .max(4),
                                         })
+                                        .strict()
                                         .describe(
                                           "A raw quaternion, `[x, y, z, w]`.",
                                         ),
@@ -6698,6 +6740,7 @@ export const apiSchemas = z.object({
                                                   ),
                                                 kind: z.literal("grasp"),
                                               })
+                                              .strict()
                                               .describe(
                                                 "The approach direction and the jaw yaw about it.",
                                               ),
@@ -6709,6 +6752,7 @@ export const apiSchemas = z.object({
                                                   .min(4)
                                                   .max(4),
                                               })
+                                              .strict()
                                               .describe(
                                                 "A raw quaternion, `[x, y, z, w]`.",
                                               ),
@@ -6863,6 +6907,7 @@ export const apiSchemas = z.object({
                                             .describe("Jaw yaw in radians."),
                                           kind: z.literal("grasp"),
                                         })
+                                        .strict()
                                         .describe(
                                           "The approach direction and the jaw yaw about it.",
                                         ),
@@ -6874,6 +6919,7 @@ export const apiSchemas = z.object({
                                             .min(4)
                                             .max(4),
                                         })
+                                        .strict()
                                         .describe(
                                           "A raw quaternion, `[x, y, z, w]`.",
                                         ),
@@ -6979,6 +7025,7 @@ export const apiSchemas = z.object({
                                                     ),
                                                   kind: z.literal("grasp"),
                                                 })
+                                                .strict()
                                                 .describe(
                                                   "The approach direction and the jaw yaw about it.",
                                                 ),
@@ -6990,6 +7037,7 @@ export const apiSchemas = z.object({
                                                     .min(4)
                                                     .max(4),
                                                 })
+                                                .strict()
                                                 .describe(
                                                   "A raw quaternion, `[x, y, z, w]`.",
                                                 ),
@@ -7137,6 +7185,7 @@ export const apiSchemas = z.object({
                                                   ),
                                                 kind: z.literal("grasp"),
                                               })
+                                              .strict()
                                               .describe(
                                                 "The approach direction and the jaw yaw about it.",
                                               ),
@@ -7148,6 +7197,7 @@ export const apiSchemas = z.object({
                                                   .min(4)
                                                   .max(4),
                                               })
+                                              .strict()
                                               .describe(
                                                 "A raw quaternion, `[x, y, z, w]`.",
                                               ),
@@ -7274,6 +7324,7 @@ export const apiSchemas = z.object({
                                                         ),
                                                       kind: z.literal("grasp"),
                                                     })
+                                                    .strict()
                                                     .describe(
                                                       "The approach direction and the jaw yaw about it.",
                                                     ),
@@ -7287,6 +7338,7 @@ export const apiSchemas = z.object({
                                                         .min(4)
                                                         .max(4),
                                                     })
+                                                    .strict()
                                                     .describe(
                                                       "A raw quaternion, `[x, y, z, w]`.",
                                                     ),
@@ -7445,6 +7497,7 @@ export const apiSchemas = z.object({
                         .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
+                    .strict()
                     .describe(
                       "The approach direction and the jaw yaw about it.",
                     ),
@@ -7453,6 +7506,7 @@ export const apiSchemas = z.object({
                       kind: z.literal("quaternion"),
                       quaternion: z.array(z.number()).min(4).max(4),
                     })
+                    .strict()
                     .describe("A raw quaternion, `[x, y, z, w]`."),
                 ])
                 .describe("A tool orientation as a client gives it."),
@@ -7537,6 +7591,7 @@ export const apiSchemas = z.object({
                                 .describe("Jaw yaw in radians."),
                               kind: z.literal("grasp"),
                             })
+                            .strict()
                             .describe(
                               "The approach direction and the jaw yaw about it.",
                             ),
@@ -7545,6 +7600,7 @@ export const apiSchemas = z.object({
                               kind: z.literal("quaternion"),
                               quaternion: z.array(z.number()).min(4).max(4),
                             })
+                            .strict()
                             .describe("A raw quaternion, `[x, y, z, w]`."),
                         ])
                         .describe("A tool orientation as a client gives it."),
@@ -7618,12 +7674,14 @@ export const apiSchemas = z.object({
                 jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                 kind: z.literal("grasp"),
               })
+              .strict()
               .describe("The approach direction and the jaw yaw about it."),
             z
               .object({
                 kind: z.literal("quaternion"),
                 quaternion: z.array(z.number()).min(4).max(4),
               })
+              .strict()
               .describe("A raw quaternion, `[x, y, z, w]`."),
           ])
           .describe("A tool orientation as a client gives it."),
@@ -7668,6 +7726,7 @@ export const apiSchemas = z.object({
                             .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
+                        .strict()
                         .describe(
                           "The approach direction and the jaw yaw about it.",
                         ),
@@ -7676,6 +7735,7 @@ export const apiSchemas = z.object({
                           kind: z.literal("quaternion"),
                           quaternion: z.array(z.number()).min(4).max(4),
                         })
+                        .strict()
                         .describe("A raw quaternion, `[x, y, z, w]`."),
                     ])
                     .describe("A tool orientation as a client gives it."),
@@ -7766,6 +7826,7 @@ export const apiSchemas = z.object({
                                     .describe("Jaw yaw in radians."),
                                   kind: z.literal("grasp"),
                                 })
+                                .strict()
                                 .describe(
                                   "The approach direction and the jaw yaw about it.",
                                 ),
@@ -7774,6 +7835,7 @@ export const apiSchemas = z.object({
                                   kind: z.literal("quaternion"),
                                   quaternion: z.array(z.number()).min(4).max(4),
                                 })
+                                .strict()
                                 .describe("A raw quaternion, `[x, y, z, w]`."),
                             ])
                             .describe(
@@ -7872,6 +7934,7 @@ export const apiSchemas = z.object({
                                   .describe("Jaw yaw in radians."),
                                 kind: z.literal("grasp"),
                               })
+                              .strict()
                               .describe(
                                 "The approach direction and the jaw yaw about it.",
                               ),
@@ -7880,6 +7943,7 @@ export const apiSchemas = z.object({
                                 kind: z.literal("quaternion"),
                                 quaternion: z.array(z.number()).min(4).max(4),
                               })
+                              .strict()
                               .describe("A raw quaternion, `[x, y, z, w]`."),
                           ])
                           .describe("A tool orientation as a client gives it."),
@@ -7972,6 +8036,7 @@ export const apiSchemas = z.object({
                                           .describe("Jaw yaw in radians."),
                                         kind: z.literal("grasp"),
                                       })
+                                      .strict()
                                       .describe(
                                         "The approach direction and the jaw yaw about it.",
                                       ),
@@ -7983,6 +8048,7 @@ export const apiSchemas = z.object({
                                           .min(4)
                                           .max(4),
                                       })
+                                      .strict()
                                       .describe(
                                         "A raw quaternion, `[x, y, z, w]`.",
                                       ),
@@ -11076,6 +11142,7 @@ export const apiSchemas = z.object({
                             .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
+                        .strict()
                         .describe(
                           "The approach direction and the jaw yaw about it.",
                         ),
@@ -11084,6 +11151,7 @@ export const apiSchemas = z.object({
                           kind: z.literal("quaternion"),
                           quaternion: z.array(z.number()).min(4).max(4),
                         })
+                        .strict()
                         .describe("A raw quaternion, `[x, y, z, w]`."),
                     ])
                     .describe("A tool orientation as a client gives it."),
@@ -11803,6 +11871,7 @@ export const apiSchemas = z.object({
                         .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
+                    .strict()
                     .describe(
                       "The approach direction and the jaw yaw about it.",
                     ),
@@ -11811,6 +11880,7 @@ export const apiSchemas = z.object({
                       kind: z.literal("quaternion"),
                       quaternion: z.array(z.number()).min(4).max(4),
                     })
+                    .strict()
                     .describe("A raw quaternion, `[x, y, z, w]`."),
                 ])
                 .describe("A tool orientation as a client gives it."),
@@ -14905,12 +14975,14 @@ export const apiSchemas = z.object({
           jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
           kind: z.literal("grasp"),
         })
+        .strict()
         .describe("The approach direction and the jaw yaw about it."),
       z
         .object({
           kind: z.literal("quaternion"),
           quaternion: z.array(z.number()).min(4).max(4),
         })
+        .strict()
         .describe("A raw quaternion, `[x, y, z, w]`."),
     ])
     .describe("A tool orientation as a client gives it."),
@@ -15017,6 +15089,7 @@ export const apiSchemas = z.object({
                                 .describe("Jaw yaw in radians."),
                               kind: z.literal("grasp"),
                             })
+                            .strict()
                             .describe(
                               "The approach direction and the jaw yaw about it.",
                             ),
@@ -15025,6 +15098,7 @@ export const apiSchemas = z.object({
                               kind: z.literal("quaternion"),
                               quaternion: z.array(z.number()).min(4).max(4),
                             })
+                            .strict()
                             .describe("A raw quaternion, `[x, y, z, w]`."),
                         ])
                         .describe("A tool orientation as a client gives it."),
@@ -15318,6 +15392,7 @@ export const apiSchemas = z.object({
                         .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
+                    .strict()
                     .describe(
                       "The approach direction and the jaw yaw about it.",
                     ),
@@ -15326,6 +15401,7 @@ export const apiSchemas = z.object({
                       kind: z.literal("quaternion"),
                       quaternion: z.array(z.number()).min(4).max(4),
                     })
+                    .strict()
                     .describe("A raw quaternion, `[x, y, z, w]`."),
                 ])
                 .describe("A tool orientation as a client gives it."),
@@ -15861,12 +15937,14 @@ export const apiSchemas = z.object({
                   jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                   kind: z.literal("grasp"),
                 })
+                .strict()
                 .describe("The approach direction and the jaw yaw about it."),
               z
                 .object({
                   kind: z.literal("quaternion"),
                   quaternion: z.array(z.number()).min(4).max(4),
                 })
+                .strict()
                 .describe("A raw quaternion, `[x, y, z, w]`."),
             ])
             .describe("A tool orientation as a client gives it."),
@@ -20288,6 +20366,7 @@ export const apiSchemas = z.object({
                                                     ),
                                                   kind: z.literal("grasp"),
                                                 })
+                                                .strict()
                                                 .describe(
                                                   "The approach direction and the jaw yaw about it.",
                                                 ),
@@ -20299,6 +20378,7 @@ export const apiSchemas = z.object({
                                                     .min(4)
                                                     .max(4),
                                                 })
+                                                .strict()
                                                 .describe(
                                                   "A raw quaternion, `[x, y, z, w]`.",
                                                 ),
@@ -20429,6 +20509,7 @@ export const apiSchemas = z.object({
                                                           "grasp",
                                                         ),
                                                       })
+                                                      .strict()
                                                       .describe(
                                                         "The approach direction and the jaw yaw about it.",
                                                       ),
@@ -20442,6 +20523,7 @@ export const apiSchemas = z.object({
                                                           .min(4)
                                                           .max(4),
                                                       })
+                                                      .strict()
                                                       .describe(
                                                         "A raw quaternion, `[x, y, z, w]`.",
                                                       ),
@@ -21359,12 +21441,14 @@ export const apiSchemas = z.object({
                   jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                   kind: z.literal("grasp"),
                 })
+                .strict()
                 .describe("The approach direction and the jaw yaw about it."),
               z
                 .object({
                   kind: z.literal("quaternion"),
                   quaternion: z.array(z.number()).min(4).max(4),
                 })
+                .strict()
                 .describe("A raw quaternion, `[x, y, z, w]`."),
             ])
             .describe("A tool orientation as a client gives it."),
@@ -22753,12 +22837,14 @@ export const apiSchemas = z.object({
                 jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                 kind: z.literal("grasp"),
               })
+              .strict()
               .describe("The approach direction and the jaw yaw about it."),
             z
               .object({
                 kind: z.literal("quaternion"),
                 quaternion: z.array(z.number()).min(4).max(4),
               })
+              .strict()
               .describe("A raw quaternion, `[x, y, z, w]`."),
           ])
           .describe("A tool orientation as a client gives it."),
