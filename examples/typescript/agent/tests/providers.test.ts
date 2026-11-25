@@ -1,6 +1,6 @@
 import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages";
 import type { Response } from "openai/resources/responses/responses";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { claudeTurn, claudeUsage } from "../src/providers/claude.js";
 import {
   GeminiInteractionError,
@@ -13,6 +13,7 @@ import {
   geminiUsage,
 } from "../src/providers/gemini.js";
 import { openaiTurn, openaiUsage } from "../src/providers/openai.js";
+import { estimateModelCost } from "../src/usage.js";
 
 function claudeMessage(overrides: Record<string, unknown>): BetaMessage {
   return {
@@ -96,6 +97,62 @@ test("OpenAI usage reports cache reads, cache writes and reasoning tokens", () =
     cacheWriteTokens: 15,
   });
   expect(openaiUsage(openaiResponse({ usage: undefined }))).toBeNull();
+});
+
+test("OpenAI cost follows the served tier, including a downgrade", async () => {
+  const estimate = (serviceTier?: string) => {
+    const usage = openaiUsage(
+      openaiResponse({ model: "gpt-6.2-astra", service_tier: serviceTier }),
+    );
+    if (!usage) throw new Error("Expected usage");
+    return estimateModelCost("openai", usage, "fast");
+  };
+  const [standard, fast, ultrafast, unreported] = await Promise.all([
+    estimate("default"),
+    estimate("fast"),
+    estimate("ultrafast"),
+    estimate(),
+  ]);
+  expect(standard).toBeGreaterThan(0);
+  expect(fast).toBeGreaterThan(standard ?? Number.POSITIVE_INFINITY);
+  expect(ultrafast).toBeGreaterThan(fast ?? Number.POSITIVE_INFINITY);
+  expect(unreported).toBe(fast);
+});
+
+test("Claude fast usage is billed at fast rates", async () => {
+  const message = claudeMessage({ model: "claude-fable-5-2" });
+  const standard = await estimateModelCost("anthropic", claudeUsage(message));
+  const fast = await estimateModelCost(
+    "anthropic",
+    claudeUsage({ ...message, usage: { ...message.usage, speed: "fast" } }),
+  );
+  expect(standard).toBeGreaterThan(0);
+  expect(fast).toBeGreaterThan(standard ?? Number.POSITIVE_INFINITY);
+});
+
+test("a Gemini Priority turn with no available tier rate is unpriced", async () => {
+  vi.stubGlobal("fetch", async () => new Response(null, { status: 503 }));
+  try {
+    const interaction: GeminiInteraction = {
+      id: "i1",
+      status: "completed",
+      model: "gemini-3.1-pro-preview",
+      usage: { total_input_tokens: 100, total_output_tokens: 20 },
+    };
+    const standard = geminiUsage("fallback", {
+      ...interaction,
+      service_tier: "standard",
+    });
+    const priority = geminiUsage("fallback", {
+      ...interaction,
+      service_tier: "priority",
+    });
+    if (!standard || !priority) throw new Error("Expected usage");
+    expect(await estimateModelCost("gemini", standard)).toBeGreaterThan(0);
+    expect(await estimateModelCost("gemini", priority)).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test("an OpenAI response becomes calls, summaries or a refusal; a failed one throws", () => {

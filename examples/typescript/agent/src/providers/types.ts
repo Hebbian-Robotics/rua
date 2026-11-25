@@ -117,6 +117,8 @@ export function observationImages(observation: Observation) {
   return images;
 }
 
+export type TokenPriceContext = { service_tier: string } | { speed: string };
+
 export interface TokenUsage {
   model: string;
   // CONSTRAINT: Prompt token counts include cached tokens.
@@ -127,6 +129,7 @@ export interface TokenUsage {
 
   reasoningTokens: number;
   cacheWriteTokens: number;
+  priceContext?: TokenPriceContext;
 }
 
 export interface ModelTurn {

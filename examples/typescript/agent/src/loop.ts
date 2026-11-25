@@ -392,6 +392,7 @@ async function setTurnAttributes(
   span: Span,
   turn: ModelTurn | ModelRefusal,
   provider: Provider,
+  inferenceMode: InferenceMode | undefined,
 ): Promise<void> {
   if (turn.kind === "turn") {
     span.setAttribute(
@@ -405,7 +406,11 @@ async function setTurnAttributes(
     markSpanError(span, "The model declined the task");
   }
   if (turn.usage) {
-    const estimatedCost = await estimateModelCost(provider, turn.usage);
+    const estimatedCost = await estimateModelCost(
+      provider,
+      turn.usage,
+      inferenceMode,
+    );
     if (estimatedCost !== null)
       span.setAttribute("hebbian.estimated_cost_usd", estimatedCost);
     span.setAttributes({
@@ -466,7 +471,12 @@ async function runTurns(
       },
       async (span) => {
         const modelTurn = await awaitModelTurn(conversation, signal);
-        await setTurnAttributes(span, modelTurn, config.provider);
+        await setTurnAttributes(
+          span,
+          modelTurn,
+          config.provider,
+          config.inferenceMode,
+        );
         return modelTurn;
       },
     );

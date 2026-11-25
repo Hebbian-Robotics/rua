@@ -470,18 +470,26 @@ test("cancellation returns the lease while a model request is still pending", as
   }
 });
 
-test("a priced model response records an estimate on its trace", async () => {
-  const response = turn(["finish", { reason: "done" }]);
-  if (response.usage === null) throw new Error("Expected token usage");
-  response.usage.model = "claude-fable-5-1";
-  await runLoop([response]);
-  const modelSpan = station
-    .finishedSpans()
-    .find((span) => span.name === "chat anthropic");
-  expect(modelSpan?.attributes["hebbian.estimated_cost_usd"]).toBeCloseTo(
-    0.000271,
-  );
-});
+test.each([
+  ["standard", 0.00028],
+  ["fast", 0.00056],
+] as const)(
+  "records the requested %s estimate when Claude omits speed",
+  async (inferenceMode, estimate) => {
+    const response = turn(["finish", { reason: "done" }]);
+    if (response.usage === null) throw new Error("Expected token usage");
+    response.usage.model = "claude-fable-5-2";
+    response.usage.cachedInputTokens = 0;
+    await runLoop([response], { inferenceMode });
+    const modelSpan = station
+      .finishedSpans()
+      .find((span) => span.name === "chat anthropic");
+    expect(modelSpan?.attributes["hebbian.estimated_cost_usd"]).toBeCloseTo(
+      estimate,
+      10,
+    );
+  },
+);
 
 test("a history-only observe returns its result without another live capture", async () => {
   const { conversation } = await runLoop([

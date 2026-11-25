@@ -1,27 +1,74 @@
+import { isDeepStrictEqual } from "node:util";
 import { calcPrice, updatePrices } from "@pydantic/genai-prices";
 import type { LiveRun } from "hebbian-rua";
-import type { Provider, TokenUsage } from "./providers/types.js";
+import {
+  DEFAULT_INFERENCE_MODE,
+  type InferenceMode,
+  type Provider,
+  type TokenPriceContext,
+  type TokenUsage,
+} from "./providers/types.js";
 
 const PRICING_REFRESH_INTERVAL_MILLISECONDS = 60 * 60 * 1000;
 let lastPricingRefresh = 0;
 let pricingRefresh: Promise<void> | undefined;
 
+function requestedPriceContext(
+  provider: Provider,
+  inferenceMode: InferenceMode,
+): TokenPriceContext | undefined {
+  if (inferenceMode === "standard") return undefined;
+  switch (provider) {
+    case "openai":
+      return { service_tier: inferenceMode };
+    case "anthropic":
+      return { speed: inferenceMode };
+    case "gemini":
+      return { service_tier: "priority" };
+  }
+}
+
 export async function estimateModelCost(
   provider: Provider,
   usage: TokenUsage,
+  inferenceMode: InferenceMode = DEFAULT_INFERENCE_MODE,
 ): Promise<number | null> {
+  const priceContext =
+    usage.priceContext ?? requestedPriceContext(provider, inferenceMode);
+  const billedTier =
+    priceContext &&
+    ("speed" in priceContext ? priceContext.speed : priceContext.service_tier);
+  const needsTierPrice =
+    billedTier !== undefined &&
+    billedTier !== "standard" &&
+    billedTier !== "default";
+  const tokens = {
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
+    cache_read_tokens: usage.cachedInputTokens,
+    cache_write_tokens: usage.cacheWriteTokens,
+  };
+  const options = {
+    providerId: provider === "gemini" ? "google" : provider,
+    timestamp: new Date(),
+  };
   const calculate = (): number | null => {
     try {
-      const result = calcPrice(
-        {
-          input_tokens: usage.inputTokens,
-          output_tokens: usage.outputTokens,
-          cache_read_tokens: usage.cachedInputTokens,
-          cache_write_tokens: usage.cacheWriteTokens,
-        },
-        usage.model,
-        { providerId: provider === "gemini" ? "google" : provider },
-      );
+      const result = calcPrice(tokens, usage.model, {
+        ...options,
+        priceContext,
+      });
+      // CONSTRAINT: The catalog silently uses standard rates when a tier has no
+      // applicable rates. Compare the rates themselves so zero tokens can still be priced.
+      if (
+        needsTierPrice &&
+        isDeepStrictEqual(
+          result?.model_price,
+          calcPrice(tokens, usage.model, options)?.model_price,
+        )
+      ) {
+        return null;
+      }
       return result &&
         Number.isFinite(result.total_price) &&
         result.total_price >= 0

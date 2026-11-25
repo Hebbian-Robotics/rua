@@ -17,14 +17,14 @@ import {
 
 export type GeminiInteraction = Pick<
   Interactions.Interaction,
-  "id" | "status" | "model" | "errors" | "usage" | "steps"
+  "id" | "status" | "model" | "errors" | "usage" | "steps" | "service_tier"
 >;
 
 export function geminiUsage(
   model: string,
   response: GeminiInteraction,
 ): TokenUsage | null {
-  const { usage } = response;
+  const { usage, service_tier: serviceTier } = response;
   if (!usage) return null;
   const thought = usage.total_thought_tokens ?? 0;
   return {
@@ -34,6 +34,7 @@ export function geminiUsage(
     outputTokens: (usage.total_output_tokens ?? 0) + thought,
     reasoningTokens: thought,
     cacheWriteTokens: 0,
+    ...(serviceTier ? { priceContext: { service_tier: serviceTier } } : {}),
   };
 }
 
