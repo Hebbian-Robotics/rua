@@ -284,13 +284,12 @@ impl Planner {
     pub fn describe(&self, joints: &[f64]) -> Result<PoseDescription, String> {
         self.require_joint_shape(joints)
             .map_err(|refused| refused.detail)?;
-        let chain = self.solver.chain();
-        let tool = chain.tool_pose(joints);
+        let (tool, model_points) = self.solver.tool_pose_and_model_points(joints);
         Ok(PoseDescription {
             position: tool.translation.vector.into(),
             quaternion: xyzw(&tool.rotation),
             orientation: orientation_summary(&tool.rotation, self.jaw_axis, None),
-            model_points: chain.model_points(joints),
+            model_points,
         })
     }
 
@@ -424,7 +423,7 @@ impl Planner {
     }
 
     fn tool_rotation(&self, joints: &[f64]) -> UnitQuaternion<f64> {
-        self.solver.chain().tool_pose(joints).rotation
+        self.solver.tool_pose(joints).rotation
     }
 
     fn projected(
@@ -433,7 +432,7 @@ impl Planner {
         goal_position: [f64; 3],
         requested: Option<&UnitQuaternion<f64>>,
     ) -> ProjectedPose {
-        let tool = self.solver.chain().tool_pose(&joints);
+        let tool = self.solver.tool_pose(&joints);
         ProjectedPose {
             position: tool.translation.vector.into(),
             quaternion: xyzw(&tool.rotation),

@@ -378,7 +378,7 @@ impl OnlineSection {
     }
 }
 
-struct CornerPathTracker {
+pub struct MotionSupervisor {
     plan: ValidatedPlan,
     limits: MotionLimits,
     stage: Stage,
@@ -392,15 +392,26 @@ struct CornerPathTracker {
     section: Option<OnlineSection>,
     checkpoints: Vec<Checkpoint>,
     end: Option<MotionEnd>,
+    settled_seconds: f64,
+    settling_seconds: f64,
 }
 
-impl CornerPathTracker {
-    fn new(
+impl MotionSupervisor {
+    pub fn new(
+        plan: CornerPlan,
+        limits: &MotionLimits,
+        joint_count: usize,
+    ) -> anyhow::Result<Self> {
+        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits, 0.0, 0.0)
+    }
+
+    pub(crate) fn from_validated(
         plan: ValidatedPlan,
-        mut limits: MotionLimits,
+        limits: &MotionLimits,
         waypoint_feedback_lag_seconds: f64,
         maximum_step_seconds: f64,
     ) -> anyhow::Result<Self> {
+        let mut limits = limits.clone();
         if let Some(trajectory_limits) = plan.trajectory_limits {
             limits.acceleration_limit = trajectory_limits.acceleration_limit;
             limits.jerk_limit = trajectory_limits.jerk_limit;
@@ -440,14 +451,17 @@ impl CornerPathTracker {
             section: None,
             checkpoints: Vec::new(),
             end: None,
+            settled_seconds: 0.0,
+            settling_seconds: 0.0,
         })
     }
 
-    fn segment_label(&self) -> Option<&str> {
+    #[must_use]
+    pub(crate) fn segment_label(&self) -> Option<&str> {
         (self.stage != Stage::Done).then(|| self.plan.segments[self.segment_index].label.as_str())
     }
 
-    fn advance(
+    fn advance_path(
         &mut self,
         measured: &[f64],
         interval: f64,
@@ -621,42 +635,6 @@ impl CornerPathTracker {
         self.section_elapsed = 0.0;
         Ok(())
     }
-}
-
-pub struct MotionSupervisor {
-    tracker: CornerPathTracker,
-    limits: MotionLimits,
-    settled_seconds: f64,
-    settling_seconds: f64,
-}
-
-impl MotionSupervisor {
-    pub fn new(
-        plan: CornerPlan,
-        limits: &MotionLimits,
-        joint_count: usize,
-    ) -> anyhow::Result<Self> {
-        Self::from_validated(ValidatedPlan::new(plan, joint_count)?, limits, 0.0, 0.0)
-    }
-
-    pub(crate) fn from_validated(
-        plan: ValidatedPlan,
-        limits: &MotionLimits,
-        waypoint_feedback_lag_seconds: f64,
-        maximum_step_seconds: f64,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
-            tracker: CornerPathTracker::new(
-                plan,
-                limits.clone(),
-                waypoint_feedback_lag_seconds,
-                maximum_step_seconds,
-            )?,
-            limits: limits.clone(),
-            settled_seconds: 0.0,
-            settling_seconds: 0.0,
-        })
-    }
 
     #[must_use]
     pub fn done(&self) -> bool {
@@ -669,58 +647,70 @@ impl MotionSupervisor {
     }
 
     pub(crate) fn end(&self) -> Option<MotionEnd> {
-        self.tracker.end
+        self.end
     }
 
     #[must_use]
     pub fn settling_at_end(&self) -> bool {
-        let tracker = &self.tracker;
-        tracker.stage == Stage::Settling && tracker.segment_index + 1 == tracker.plan.segments.len()
+        self.stage == Stage::Settling && self.segment_index + 1 == self.plan.segments.len()
     }
 
     #[must_use]
     pub fn stage(&self) -> Stage {
-        self.tracker.stage
-    }
-
-    #[must_use]
-    pub(crate) fn segment_label(&self) -> Option<&str> {
-        self.tracker.segment_label()
+        self.stage
     }
 
     #[must_use]
     pub(crate) fn requested_joint_speed(&self) -> f64 {
-        self.tracker.plan.peak_speed
+        self.plan.peak_speed
     }
 
     #[must_use]
     pub(crate) fn planned_peak_joint_speed(&self) -> f64 {
-        self.tracker
-            .continuous_path
+        self.continuous_path
             .as_ref()
-            .map_or(self.tracker.plan.peak_speed, |path| path.peak_joint_speed)
+            .map_or(self.plan.peak_speed, |path| path.peak_joint_speed)
     }
 
     #[must_use]
     pub fn reference(&self) -> &Reference {
-        &self.tracker.reference
+        &self.reference
+    }
+
+    pub(crate) fn copy_reference_to(&self, destination: &mut Reference) {
+        destination.copy_from(&self.reference);
+    }
+
+    pub(crate) fn copy_joint_reference_to(
+        &self,
+        joints: std::ops::Range<usize>,
+        destination: &mut Reference,
+    ) {
+        destination
+            .positions
+            .copy_from_slice(&self.reference.positions[joints.clone()]);
+        destination
+            .velocities
+            .copy_from_slice(&self.reference.velocities[joints.clone()]);
+        destination
+            .accelerations
+            .copy_from_slice(&self.reference.accelerations[joints]);
     }
 
     #[must_use]
     pub(crate) fn final_pose(&self) -> &[f64] {
-        self.tracker.plan.final_corner()
+        self.plan.final_corner()
     }
 
     pub(crate) fn final_gripper_angle(&self) -> Option<hebbian_contracts::JawAngle> {
-        self.tracker.plan.final_segment().final_gripper_angle
+        self.plan.final_segment().final_gripper_angle
     }
 
     pub(crate) fn waypoint_gripper(
         &self,
         checkpoint: usize,
     ) -> Option<hebbian_contracts::JawAngle> {
-        self.tracker
-            .plan
+        self.plan
             .segments
             .get(checkpoint)?
             .pass_through?
@@ -728,7 +718,7 @@ impl MotionSupervisor {
     }
 
     pub(crate) fn new_checkpoints(&self, already_taken: usize) -> &[Checkpoint] {
-        &self.tracker.checkpoints[already_taken.min(self.tracker.checkpoints.len())..]
+        &self.checkpoints[already_taken.min(self.checkpoints.len())..]
     }
 
     fn restart_stage(&mut self) {
@@ -743,7 +733,7 @@ impl MotionSupervisor {
     // SAFETY: Tracking remains the control loop’s per-cycle check regardless of which trajectory is running.
     pub fn step(&mut self, measured: &[f64], interval: f64) -> Result<Reference, Trip> {
         self.advance(measured, interval)?;
-        Ok(self.tracker.reference.clone())
+        Ok(self.reference.clone())
     }
 
     // WHY: Reuse the retained reference and caller buffers rather than allocating a snapshot every cycle.
@@ -757,8 +747,8 @@ impl MotionSupervisor {
         interval: f64,
         speed_fraction: f64,
     ) -> Result<(), Trip> {
-        if self.tracker.stage == Stage::Settling {
-            let endpoint_error = max_joint_deviation(measured, &self.tracker.reference.positions);
+        if self.stage == Stage::Settling {
+            let endpoint_error = max_joint_deviation(measured, &self.reference.positions);
             self.settled_seconds = if endpoint_error <= self.limits.settled_error_radians {
                 self.settled_seconds + interval
             } else {
@@ -768,18 +758,16 @@ impl MotionSupervisor {
             self.settling_seconds += interval;
             let settled = self.settled_seconds >= self.limits.settle_dwell_seconds;
             if settled || self.settling_seconds >= self.limits.settle_timeout_seconds {
-                self.tracker
-                    .settled(measured, !settled)
+                self.settled(measured, !settled)
                     .map_err(|e| Self::internal(&e))?;
                 self.restart_stage();
             }
         }
-        if self.tracker.stage == Stage::Moving {
-            let previous_corner = self.tracker.corner_index;
-            self.tracker
-                .advance(measured, interval, speed_fraction)
+        if self.stage == Stage::Moving {
+            let previous_corner = self.corner_index;
+            self.advance_path(measured, interval, speed_fraction)
                 .map_err(|e| Self::internal(&e))?;
-            if self.tracker.stage != Stage::Moving || self.tracker.corner_index != previous_corner {
+            if self.stage != Stage::Moving || self.corner_index != previous_corner {
                 self.restart_stage();
             }
         }
