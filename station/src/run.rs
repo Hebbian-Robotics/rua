@@ -168,7 +168,7 @@ pub(crate) fn run_supervised(
     directory: &Path,
     plant: PlantSelection,
     http_address: &str,
-    web: WebSettings,
+    (web, capabilities): (WebSettings, web::MediaCapabilities),
     media: &crate::media::MediaPlan,
 ) -> anyhow::Result<()> {
     validate_arms(arms)?;
@@ -206,7 +206,7 @@ pub(crate) fn run_supervised(
     );
     let mut mounted = None;
     let media_status = web.media_status.clone();
-    let local_cameras_only = web.local_cameras_only;
+    let remote_cameras = capabilities.remote_cameras();
     let live_run = Arc::new(LiveRunStore::default());
     let server = HttpServer::start(
         http_address,
@@ -214,8 +214,13 @@ pub(crate) fn run_supervised(
         live_run.clone(),
         Arc::clone(&shutdown_requested),
         |runtime, bound| {
-            let (routes, mounted_routes) =
-                web::mount(runtime, bound, web, supervisor.availability_reader());
+            let (routes, mounted_routes) = web::mount(
+                runtime,
+                bound,
+                web,
+                capabilities,
+                supervisor.availability_reader(),
+            );
             supervisor.attach_recording(mounted_routes.recording.clone());
             mounted = Some(mounted_routes);
             Ok(routes
@@ -245,7 +250,7 @@ pub(crate) fn run_supervised(
         media,
         &web::local_http_url(server.local_address()),
         &media_status,
-        local_cameras_only,
+        remote_cameras,
     );
     // CONSTRAINT: Launchers read the bound address from this startup announcement.
     eprintln!("HTTP on http://{}", server.local_address());

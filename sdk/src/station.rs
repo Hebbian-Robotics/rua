@@ -1144,6 +1144,27 @@ impl LeaseGuard {
             .await;
     }
 
+    /// Wait for a revision-stamped observation under this lease.
+    ///
+    /// # Errors
+    /// As [`LeaseGuard::report_camera`].
+    pub async fn wait_for_observation(
+        &self,
+        mut selection: hebbian_contracts::ObservationRequest,
+        arm: &str,
+        timeout_milliseconds: u32,
+    ) -> Result<hebbian_contracts::ObservationAnswer> {
+        selection.wait = Some(hebbian_contracts::ObservationWait {
+            arm: arm.to_owned(),
+            lease_token: self.lease_token.clone(),
+            timeout_milliseconds,
+        });
+        self.station
+            .capture_observation_http(&selection)
+            .await
+            .map_err(lease_checked_http_error)
+    }
+
     /// Report whether a camera the lease requires gives frames; a fresh frame
     /// clears its interlock.
     ///

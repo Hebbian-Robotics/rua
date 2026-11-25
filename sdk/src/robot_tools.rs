@@ -375,6 +375,7 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
         let (state, frames) = match station
             .capture_observation_http(&ObservationRequest {
                 arms: Vec::new(),
+                wait: None,
                 required_cameras: self
                     .cameras
                     .iter()
@@ -400,6 +401,14 @@ impl<Guard: std::ops::Deref<Target = LeaseGuard>> RobotTools<Guard> {
                     reason: hebbian_contracts::RejectionReason::StaleRevision,
                     detail: format!("Arm {arm} changed during observation"),
                 });
+            }
+            ObservationAnswer::ObservationRecoveryEnded { arm, mode } => {
+                return Err(crate::Error::Connection(format!("Arm {arm} is {mode:?}")));
+            }
+            ObservationAnswer::ObservationWaitTimedOut => {
+                return Err(crate::Error::Connection(
+                    "Observation wait timed out".into(),
+                ));
             }
             ObservationAnswer::ObservationRequiredCameraUnavailable { camera } => {
                 return Err(crate::Error::CameraUnavailable {

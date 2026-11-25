@@ -7,9 +7,9 @@ or the [simulator interface](simulators.md) for other engines.
 ## Prepare the checkout
 
 Follow the [source setup guide](install-from-source.md#prepare-the-checkout).
-The station built from this checkout and the published Python SDK pinned by
-the examples both use version 0.1.7. From the repository root, install the
-example dependencies:
+The Python example builds the SDK from this checkout. The simulator fixture
+uses the released SDK for its plant adapter. From the repository root,
+install the example dependencies:
 
 ```sh
 uv sync --project examples/mujoco_sim --locked
@@ -50,6 +50,10 @@ uv run --project examples/python --locked python examples/python/hello_robot.py
 
 The example enables the arm, previews a target 160 mm above the table, moves
 to it, and opens the gripper after the move completes.
+
+The integration check runs this single-arm quickstart under the candidate wheel.
+It then connects the packed TypeScript SDK to the same station and verifies
+that it can capture the simulator overview camera while holding a lease.
 
 For two arms, restart the station with
 [`bimanual.toml`](../examples/mujoco_sim/profiles/bimanual.toml) in place of

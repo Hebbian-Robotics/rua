@@ -8,7 +8,7 @@ use hebbian_contracts::{
     KnownRunEvent, LiveRun, MAX_RUN_REPLAY_RECORDS, RunEvent, RunMemory, RunUsage, ServerMessage,
     TraceSpan, UnixNanos,
 };
-use hebbian_rua_core::station_api::{RunTelemetry, RunUpdates};
+use hebbian_rua_core::station_api::{RunReplayWindow, RunTelemetry, RunUpdates};
 
 const KEPT_SPANS: usize = 1000;
 
@@ -23,12 +23,6 @@ struct RunRecord {
     seq: u64,
     received_unix_nano: UnixNanos,
     kind: RunRecordKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RunGap {
-    oldest_retained: u64,
-    newest: u64,
 }
 
 #[derive(Debug, Default)]
@@ -46,6 +40,13 @@ impl RunBuffer {
         self.next_seq.saturating_sub(1)
     }
 
+    fn replay_window(&self) -> RunReplayWindow {
+        RunReplayWindow {
+            oldest_retained: self.records.front().map_or(1, |record| record.seq),
+            newest: self.newest_seq(),
+        }
+    }
+
     fn log(&mut self, kind: RunRecordKind) {
         self.next_seq = self.next_seq.max(1);
         if self.records.len() >= MAX_RUN_REPLAY_RECORDS {
@@ -61,17 +62,10 @@ impl RunBuffer {
 
     // INVARIANT: A cursor outside the retained range requires resynchronization, including a
     // cursor ahead of the newest record after a restart.
-    fn since(&self, after: u64) -> Result<Vec<RunRecord>, RunGap> {
-        let newest = self.newest_seq();
-        let oldest_retained = self
-            .records
-            .front()
-            .map_or(self.next_seq.max(1), |record| record.seq);
-        if after > newest || after + 1 < oldest_retained {
-            return Err(RunGap {
-                oldest_retained,
-                newest,
-            });
+    fn since(&self, after: u64) -> Result<Vec<RunRecord>, RunReplayWindow> {
+        let window = self.replay_window();
+        if after > window.newest || after.saturating_add(1) < window.oldest_retained {
+            return Err(window);
         }
         Ok(self
             .records
@@ -210,8 +204,8 @@ impl RunTelemetry for LiveRunStore {
         }
     }
 
-    fn newest_seq(&self) -> u64 {
-        self.lock().newest_seq()
+    fn replay_window(&self) -> RunReplayWindow {
+        self.lock().replay_window()
     }
 
     fn updates(&self, cursor: &mut u64, revision_sent: &mut Option<u64>) -> RunUpdates {
@@ -289,7 +283,7 @@ mod tests {
         store.record_event(event(
             serde_json::json!({"type": "notes_update", "notes": ["a"]}),
         ));
-        let seen = store.newest_seq();
+        let seen = store.replay_window().newest;
         store.record_spans(vec![span("s", &serde_json::json!({}))]);
 
         let mut cursor = seen;

@@ -11,7 +11,7 @@ import {
   positionMetres,
 } from "../src/index.js";
 import { parseRobotToolCall } from "../src/robot-tool-input.js";
-import { fakeLease, stateMessage } from "./station-fakes.js";
+import { fakeLease } from "./station-fakes.js";
 
 const connection = createStationConnection("http://localhost", "agent");
 const robot = createRobotTools({
@@ -165,111 +165,6 @@ test("model tools return invalid inputs as errors to the model", async () => {
     expect(result.text).toContain("Invalid input");
   }
 });
-
-test.each([false, true])(
-  "required camera recovery returns a fresh observation (already interlocked: %s)",
-  async (alreadyInterlocked) => {
-    const { vi } = await import("vitest");
-    const { createRobotTools, createStationConnection } = await import(
-      "../src/index.js"
-    );
-    const connection = createStationConnection("http://station", "agent");
-    let revision = 0;
-    let interlocks: { kind: string; camera: string }[] = alreadyInterlocked
-      ? [{ kind: "required_camera_unavailable", camera: "front" }]
-      : [];
-    let cameraAvailable = alreadyInterlocked;
-    const state = () =>
-      apiSchemas.shape.StationState.parse({
-        ...stateMessage([{ revision }]).state,
-        robot: "sim",
-        arms: stateMessage([{ revision }]).state.arms.map((arm) => ({
-          ...arm,
-          interlocks: interlocks.map((interlock) => ({
-            ...interlock,
-            detail: "missing",
-          })),
-        })),
-      });
-    vi.spyOn(connection, "getState").mockImplementation(state);
-    vi.spyOn(connection, "waitForState").mockImplementation(async () => {
-      const current = state();
-      if (current === null) throw new Error("Expected station state");
-      return current;
-    });
-    const reports: unknown[] = [];
-    const lease = fakeLease({
-      reportCamera: async (_camera, available) => {
-        reports.push({ available });
-        if (available) interlocks = [];
-        else {
-          interlocks = [
-            { kind: "required_camera_unavailable", camera: "front" },
-          ];
-          revision++;
-          cameraAvailable = true;
-        }
-      },
-    });
-    vi.stubGlobal("fetch", async (input: URL | string) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/observations")
-        return Response.json(
-          cameraAvailable
-            ? {
-                status: "observation_captured",
-                state: state(),
-                cameras: {
-                  front: {
-                    jpeg_base64: "AQID",
-                    captured_at_unix_ns: null,
-                    retrieved_between_unix_seconds: [0, 0],
-                  },
-                },
-                missing_optional_cameras: [],
-              }
-            : {
-                status: "observation_required_camera_unavailable",
-                camera: "front",
-              },
-        );
-      throw new Error(`Unexpected URL ${url}`);
-    });
-    const robot = createRobotTools({
-      tools: [
-        "action_sequence",
-        "preview_pose",
-        "move_arms",
-        "set_arm_gripper",
-        "rehome",
-        "stop",
-        "observe",
-      ],
-      connection,
-      lease,
-      mediaUrl: "http://media",
-      arm: "follower",
-      cameras: ["front"],
-    });
-    try {
-      const observation = await robot.observeWhenReady();
-      expect(observation.revisions).toEqual({
-        follower: alreadyInterlocked ? 0 : 1,
-      });
-      expect(observation.cameras["front"]).toEqual(new Uint8Array([1, 2, 3]));
-      expect(reports).toEqual(
-        alreadyInterlocked
-          ? [{ available: true }]
-          : [{ available: false }, { available: true }],
-      );
-      expect(interlocks).toEqual([]);
-    } finally {
-      robot.close();
-      vi.unstubAllGlobals();
-      vi.restoreAllMocks();
-    }
-  },
-);
 
 test.each([
   { reason: "stale_revision", halt: false, interrupted: true },

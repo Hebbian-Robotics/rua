@@ -438,6 +438,19 @@ def test_observation_reports_revision_changed_during_camera_capture(
                     assert (
                         pending.result().root.status == "observation_revision_changed"
                     )
+                    recovered = (
+                        await lease.wait_for_observation(selection, ARM, 5000)
+                    ).root
+                    assert recovered.status == "observation_captured"
+                    assert not recovered.state.arms[0].interlocks
+                    recovered_revision = recovered.state.arms[0].revision
+                    await client.wait_for_state(
+                        lambda state: (
+                            state.arms[0].revision == recovered_revision
+                            and not state.arms[0].interlocks
+                        )
+                    )
+                    assert recovered.cameras["front"].jpeg_base64
 
     asyncio.run(asyncio.wait_for(exercise(), timeout=10))
 

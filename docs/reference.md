@@ -16,7 +16,10 @@ and defaults.
 
 The station supervises the controller and the media companion. A media
 restart interrupts snapshots and live publishing while control and state
-remain available. `GET /media/status` reports service and camera errors. After a controller failure, use explicit recovery before resuming control.
+remain available. `GET /media/status` reports service and camera errors. The
+station resolves LiveKit and recording requirements at startup. See
+[configuration](cameras.md#rua-configuration) for local-only mode and FFmpeg.
+After a controller failure, use explicit recovery before resuming control.
 
 Support and disable the arm before restarting the station to apply code,
 profile or environment changes. A graceful shutdown can attempt to return to
@@ -54,14 +57,25 @@ The [station route table](../station/src/openapi.rs) owns those descriptions.
 - Resume the event stream with the last event ID. HTTP 409 means the cursor
   is no longer available. Open a fresh stream to get a snapshot. See
   [event replay](../server-core/src/station_api/events.rs).
+- Add `X-RUA-Run-Cursor` to subscribe to run records on the same HTTP stream.
+  Use `latest` to begin with the current run snapshot or
+  `<station-instance>:<sequence>` to resume after a delivered run record. The
+  response echoes the current instance in this header. Run events are sent
+  as SSE events named `run`. An expired run cursor or a station restart
+  produces `run_resync` and a fresh run snapshot while state replay uses
+  its own cursor.
 - Request [observations](../station/src/openapi.rs) to read arm state and camera
   snapshots together. Required cameras must return an image. The returned arm
-  revisions let you reject motion based on a stale observation.
+  revisions let you reject motion based on a stale observation. A lease holder
+  can add a `wait` with the selected arm, lease token and a deadline of up to
+  five seconds. The station waits for arm recovery and fresh required
+  camera frames and reports a timeout, an arm that became disabled or faulted,
+  or HTTP 403 if the lease was lost.
 
 ### SDK recovery behavior
 
-The SDKs resume telemetry with the event cursor and request a fresh snapshot
-when replay is unavailable. See [control leases](control-model.md#control-leases)
+The SDKs resume station state and run telemetry with independent cursors and
+refresh the affected snapshot when its history expires. See [control leases](control-model.md#control-leases)
 for what to verify before resuming motion after an interruption.
 
 The SDKs retry transient submission failures for commands and action

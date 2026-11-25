@@ -65,7 +65,7 @@ def test_sdk_recovers_the_original_operation_after_losing_its_reply(
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 headers = {
                     name: self.headers[name]
-                    for name in ("Content-Type", "Last-Event-ID")
+                    for name in ("Content-Type", "Last-Event-ID", "X-RUA-Run-Cursor")
                     if name in self.headers
                 }
                 upstream = HTTPConnection(
@@ -105,8 +105,9 @@ def test_sdk_recovers_the_original_operation_after_losing_its_reply(
                         return
 
                     self.send_response(response.status)
-                    if content_type := response.getheader("Content-Type"):
-                        self.send_header("Content-Type", content_type)
+                    for name in ("Content-Type", "X-RUA-Run-Cursor"):
+                        if value := response.getheader(name):
+                            self.send_header(name, value)
                     self.end_headers()
                     while chunk := response.read1(64 * 1024):
                         self.wfile.write(chunk)

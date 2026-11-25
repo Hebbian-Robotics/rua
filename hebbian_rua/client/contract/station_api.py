@@ -883,6 +883,24 @@ class ObservationAnswer4(BaseModel):
     )
 
 
+class ObservationAnswer5(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arm: str
+    mode: ArmMode
+    status: Literal["observation_recovery_ended"] = "observation_recovery_ended"
+
+
+class ObservationAnswer6(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    status: Literal["observation_wait_timed_out"] = "observation_wait_timed_out"
+
+
 class ObservationFrame(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -913,16 +931,21 @@ class OptionalCamera(RootModel[str]):
     ]
 
 
-class ObservationRequest(BaseModel):
+class ObservationWait(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
     )
-    arms: Annotated[
-        list[str], Field(description="With no arm selection, include every arm.")
-    ] = []
-    optional_cameras: Annotated[list[OptionalCamera], Field(validate_default=True)] = []
-    required_cameras: Annotated[list[RequiredCamera], Field(validate_default=True)] = []
+    arm: str
+    lease_token: str
+    timeout_milliseconds: Annotated[
+        int,
+        Field(
+            description="The maximum total wait, including camera capture.",
+            ge=1,
+            le=5000,
+        ),
+    ]
 
 
 class OnInterruption(StrEnum):
@@ -1750,6 +1773,24 @@ class LeaseStatus(BaseModel):
         list[RequiredCamera],
         Field(description="Cameras the holder cannot work without."),
     ]
+
+
+class ObservationRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+    )
+    arms: Annotated[
+        list[str], Field(description="With no arm selection, include every arm.")
+    ] = []
+    optional_cameras: Annotated[list[OptionalCamera], Field(validate_default=True)] = []
+    required_cameras: Annotated[list[RequiredCamera], Field(validate_default=True)] = []
+    wait: Annotated[
+        ObservationWait | None,
+        Field(
+            description="Wait for a selected arm to recover under the current lease."
+        ),
+    ] = None
 
 
 class OperationStatus5(BaseModel):
@@ -2971,6 +3012,8 @@ class ObservationAnswer(
         | ObservationAnswer2
         | ObservationAnswer3
         | ObservationAnswer4
+        | ObservationAnswer5
+        | ObservationAnswer6
     ]
 ):
     model_config = ConfigDict(
@@ -2981,6 +3024,8 @@ class ObservationAnswer(
         | ObservationAnswer2
         | ObservationAnswer3
         | ObservationAnswer4
+        | ObservationAnswer5
+        | ObservationAnswer6
     )
 
 

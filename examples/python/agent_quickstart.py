@@ -359,9 +359,17 @@ class AgentRobotTools(RobotTools):
         return lines
 
     async def capture(
-        self, note: str = "", extra_lines: Sequence[str] = ()
+        self,
+        note: str = "",
+        extra_lines: Sequence[str] = (),
+        *,
+        wait_milliseconds: int | None = None,
     ) -> CapturedObservation:
-        return await super().capture(note, (*self.memory_lines(), *extra_lines))
+        return await super().capture(
+            note,
+            (*self.memory_lines(), *extra_lines),
+            wait_milliseconds=wait_milliseconds,
+        )
 
     async def observation_is_stale(self, revisions: Mapping[str, int]) -> bool:
         if self.station.lease_lost.is_set():

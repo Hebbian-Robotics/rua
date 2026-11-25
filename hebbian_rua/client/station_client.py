@@ -107,9 +107,11 @@ def _command_options(
     }
 
 
-async def _lease_operation(operation: Awaitable[None]) -> None:
+async def _lease_operation[LeaseOperationResult](
+    operation: Awaitable[LeaseOperationResult],
+) -> LeaseOperationResult:
     try:
-        await operation
+        return await operation
     except _native.CommandRefused as error:
         if error.reason == RejectionReason.lease_held_elsewhere:
             raise LeaseLost from error
@@ -354,6 +356,20 @@ class Lease:
     async def cancel_operation(self, operation_id: uuid.UUID) -> None:
         await self._guard.cancel_operation(str(operation_id))
 
+    async def wait_for_observation(
+        self, selection: ObservationRequest, arm: str, timeout_milliseconds: int
+    ) -> ObservationAnswer:
+        """Wait for an observation stamped with the current arm revisions."""
+        return ObservationAnswer.model_validate(
+            await _lease_operation(
+                self._guard.wait_for_observation(
+                    selection.model_dump(mode="json", exclude_none=True),
+                    arm,
+                    timeout_milliseconds,
+                )
+            )
+        )
+
     async def report_camera(self, camera: str, available: bool) -> None:
         await _lease_operation(self._guard.report_camera(camera, available))
 
@@ -461,7 +477,7 @@ class StationClient:
         """Capture selected arm state and camera frames through the station."""
         return ObservationAnswer.model_validate(
             await self._native.capture_observation_http(
-                selection.model_dump(mode="json")
+                selection.model_dump(mode="json", exclude_none=True)
             )
         )
 

@@ -166,6 +166,14 @@ export interface Lease {
   ): Promise<string>;
   /** Stop an arm only while this lease is current; throws `LeaseLostError` once it is not. */
   stopArm(arm: string): Promise<void>;
+  waitForObservation(
+    selection: import("./generated/api-schemas.js").ApiSchemas["ObservationRequest"],
+    arm: string,
+    timeoutMilliseconds: number,
+    signal?: AbortSignal,
+  ): Promise<
+    import("./generated/api-schemas.js").ApiSchemas["ObservationAnswer"]
+  >;
   /** Report whether a camera the lease requires gives frames; a fresh frame clears its interlock. */
   reportCamera(camera: string, available: boolean): Promise<void>;
   /** Stop the recording only while this lease is current; does nothing once it is not. */
@@ -325,6 +333,7 @@ export function createStationConnection(
   const changeListeners = new Set<() => void>();
   let operationLifetime = new AbortController();
   let runAfter = options.runAfter;
+  let runInstance: string | undefined;
   let connectionLoop: AbortController | null = null;
   let eventCursor: string | null = null;
   let closed = false;
@@ -473,6 +482,7 @@ export function createStationConnection(
     event: StationEvent,
     streamUrl: URL,
     signal: AbortSignal,
+    runStreamInstance: string | null,
   ): Promise<void> {
     const incoming = parseStationEvent(event);
     if (incoming.kind === "resync_required")
@@ -481,16 +491,22 @@ export function createStationConnection(
       console.warn("Ignoring unknown station stream event", incoming.wireKind);
       return;
     }
+    if (event.kind === "run" && incoming.kind !== "snapshot") {
+      receive(incoming);
+      runInstance = runStreamInstance ?? runInstance;
+      return;
+    }
     const previousStateFrameCount = stateFrameCount;
     if (incoming.kind === "snapshot") {
       const replay =
-        runAfter === undefined
+        runStreamInstance !== null || runAfter === undefined
           ? []
           : await replayRunRecords(streamUrl, runAfter, signal);
       signal.throwIfAborted();
       // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
       latestState = null;
       runAfter ??= incoming.runSequence;
+      runInstance ??= incoming.stationInstanceId;
       for (const record of replay) receive(record);
       for (const message of incoming.messages) receive(message);
     } else {
@@ -533,7 +549,15 @@ export function createStationConnection(
       );
       const response = await fetch(url, {
         signal,
-        headers: cursor === null ? {} : { "Last-Event-ID": cursor },
+        headers: {
+          ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
+          "X-RUA-Run-Cursor":
+            runAfter === undefined
+              ? "latest"
+              : runInstance === undefined
+                ? String(runAfter)
+                : `${runInstance}:${runAfter}`,
+        },
       }).finally(() => clearTimeout(handshake));
       signal.throwIfAborted();
       if (response.status === 409 && cursor !== null) {
@@ -548,7 +572,13 @@ export function createStationConnection(
       try {
         await readStationEvents(
           response,
-          (event) => applyStationEvent(event, url, signal),
+          (event) =>
+            applyStationEvent(
+              event,
+              url,
+              signal,
+              response.headers.get("X-RUA-Run-Cursor"),
+            ),
           {
             milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
             abort: () =>
@@ -1283,6 +1313,29 @@ export function createStationConnection(
           await stationApi().stopLeasedArmHttp(arm, { lease_token: token });
         } catch (error) {
           if (error instanceof StationHttpError && error.status === 403)
+            throw new LeaseLostError();
+          throw error;
+        }
+      },
+      async waitForObservation(selection, arm, timeoutMilliseconds, signal) {
+        requireCurrentLease();
+        const requestSignal = signal
+          ? AbortSignal.any([signal, operationLifetime.signal])
+          : operationLifetime.signal;
+        try {
+          return await stationApi(requestSignal).captureObservationHttp({
+            ...selection,
+            wait: {
+              arm,
+              lease_token: token,
+              timeout_milliseconds: timeoutMilliseconds,
+            },
+          });
+        } catch (error) {
+          if (
+            !isHeld() ||
+            (error instanceof StationHttpError && error.status === 403)
+          )
             throw new LeaseLostError();
           throw error;
         }

@@ -12,6 +12,7 @@ export interface StationEvent {
 
 const stationMessageEnvelope = z.object({ kind: z.string() });
 const snapshotEnvelope = z.object({
+  station_instance_id: z.string().optional(),
   run_sequence: z.int().nonnegative(),
   items: z.array(z.unknown()),
 });
@@ -46,6 +47,7 @@ export function parseStationEvent(event: StationEvent) {
   switch (event.kind) {
     case "resync_required":
       return { kind: "resync_required" } as const;
+    case "run":
     case "station":
       return parseStationMessage(JSON.parse(event.data));
     case "snapshot": {
@@ -53,6 +55,7 @@ export function parseStationEvent(event: StationEvent) {
       return {
         kind: "snapshot",
         runSequence: snapshot.run_sequence,
+        stationInstanceId: snapshot.station_instance_id,
         messages: snapshot.items.map(parseStationMessage),
       } as const;
     }

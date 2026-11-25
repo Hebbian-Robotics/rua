@@ -56,7 +56,7 @@ fn the_openapi_document_matches_the_routers() {
     let scratch = std::env::temp_dir().join(format!("hebbian-openapi-{}", std::process::id()));
     std::fs::create_dir_all(&scratch).unwrap();
     let settings = WebSettings {
-        local_cameras_only: false,
+        local_cameras_only: true,
         recordings_directory: scratch.join("recordings"),
         enable_recording: false,
         media_address: None,
@@ -73,7 +73,13 @@ fn the_openapi_document_matches_the_routers() {
         live_run.clone(),
         Arc::default(),
         |runtime, bound| {
-            let (routes, _manager) = web::mount(runtime, bound, settings, || true);
+            let (routes, _manager) = web::mount(
+                runtime,
+                bound,
+                settings,
+                web::MediaCapabilities::LocalOnly,
+                || true,
+            );
             Ok(routes
                 .merge(hebbian_rua_server::run_telemetry::routes(live_run))
                 .merge(hebbian_rua_server::controller_supervisor::router(

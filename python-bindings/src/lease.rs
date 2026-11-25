@@ -66,6 +66,21 @@ impl NativeLease {
             Ok(())
         })
     }
+    fn wait_for_observation<'py>(
+        &self,
+        py: Python<'py>,
+        selection: &Bound<'_, PyAny>,
+        arm: String,
+        timeout_milliseconds: u32,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let selection = depythonize(selection)?;
+        self.operation(py, move |guard| async move {
+            guard
+                .wait_for_observation(selection, &arm, timeout_milliseconds)
+                .await
+        })
+    }
+
     fn run_command<'py>(
         &self,
         py: Python<'py>,
