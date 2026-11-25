@@ -66,16 +66,7 @@
   :where(button:not(:disabled), select:not(:disabled)) {
     cursor: pointer;
   }
-  :where([data-slot="sidebar-menu"]) {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
   :where(
-    [data-slot="sidebar-container"],
-    [data-slot="sidebar"][data-mobile],
-    [data-slot="sidebar-footer"],
-    [data-slot="sidebar-wrapper"] > header,
     button,
     [data-slot="badge"],
     [data-slot="alert"],
