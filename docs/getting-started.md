@@ -1,10 +1,9 @@
 # Get started with an SO-101
 
 Use the browser viewer to verify manual control and run your first agent.
-Use the [v0.1.7 checkout](https://github.com/Hebbian-Robotics/rua/tree/v0.1.7)
-to run these steps with the published station and SDKs. The development
-checkout's viewer uses the current station schema. For development, follow
-[Install from source](install-from-source.md).
+Use the examples from [RUA's main branch](https://github.com/Hebbian-Robotics/rua/tree/main)
+with the published station and SDKs. This guide uses 0.1.7. For development,
+follow [Install from source](install-from-source.md).
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).
 

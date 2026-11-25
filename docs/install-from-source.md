@@ -54,9 +54,10 @@ pnpm build
 Configure a model-provider key before running `pnpm start:viewer` to serve
 the built viewer and run the example agent backend. See the
 [viewer setup](../examples/typescript/viewer/README.md).
-The viewer uses the TypeScript SDK from this checkout. Use a matching
-[station built from source](#start-the-station). For the published setup,
-see [Getting started](getting-started.md). Camera builds have
+The viewer and TypeScript agent install the published SDK pinned in the
+lockfile. To test unpublished station or SDK changes with the viewer,
+[pack and use the SDK from the same checkout](../typescript-client/README.md#package-builds).
+For the published setup, see [Getting started](getting-started.md). Camera builds have
 additional [native prerequisites](cameras.md#rua-configuration); recording needs
 [FFmpeg](recording.md). Building the Rust server alone needs neither frontend
 nor media build tools.
