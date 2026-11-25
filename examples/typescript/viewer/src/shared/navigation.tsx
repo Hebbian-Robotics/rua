@@ -163,12 +163,12 @@ function ViewerNavigation({
         <a
           className="viewer-nav-link"
           href="./#workspace"
-          aria-label="Hebbian Robot Use workspace"
-          title="Hebbian Robot Use workspace"
+          aria-label="Hebbian RUA workspace"
+          title="Hebbian RUA workspace"
         >
           <img src="./hebbian-logo.svg" alt="" width="16" height="16" />
           <span className="viewer-nav-label">
-            Hebbian <strong>Robot Use</strong>
+            Hebbian <strong>RUA</strong>
           </span>
         </a>
         <Button

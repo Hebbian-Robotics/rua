@@ -250,7 +250,7 @@ export function AgentControl({
           </p>
         </div>
         <fieldset
-          className="grid gap-4 sm:grid-cols-2"
+          className="grid gap-4 border-0 sm:grid-cols-2"
           disabled={settingsLocked}
         >
           <legend className="sr-only">Model selection</legend>
@@ -342,7 +342,7 @@ export function AgentControl({
         </fieldset>
         <details className="control-options">
           <summary>Run options</summary>
-          <fieldset className="grid gap-3" disabled={settingsLocked}>
+          <fieldset className="grid gap-3 border-0" disabled={settingsLocked}>
             <legend className="sr-only">Run options</legend>
             <div className="grid gap-4 sm:grid-cols-2">
               <label htmlFor="agent-reasoning">
@@ -383,7 +383,7 @@ export function AgentControl({
                 </NativeSelect>
               </label>
             </div>
-            <fieldset className="grid gap-2">
+            <fieldset className="grid gap-2 border-0">
               <legend className="font-medium">Cameras for the agent</legend>
               {cameraNames.length === 0 && (
                 <p>No live feeds. See Cameras in Workspace.</p>

@@ -59,6 +59,10 @@ or Gemini Interactions. Each provider holds the conversation history. Subsequent
 turns send the new tool results and observations. The Claude SDK can replay
 the conversation to restore an expired or interrupted thread.
 
+The model can use `update_plan` and `update_notes` to keep track of the task.
+Each update replaces the previous plan or notes. The example includes the
+current plan and notes in observations for that run.
+
 ## Watch live cameras
 
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add

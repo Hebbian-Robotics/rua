@@ -5,6 +5,8 @@ import sys
 from base64 import b64decode
 from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict, cast
 from uuid import uuid4
@@ -16,7 +18,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from hebbian_rua import (
     RobotToolCall,
@@ -28,7 +30,7 @@ from hebbian_rua import (
 )
 from hebbian_rua.client.contract.station_api import ArmMode
 from hebbian_rua.client.environment import load_environment
-from hebbian_rua.client.llm.robot_tools import CallWrapper
+from hebbian_rua.client.llm.robot_tools import CallWrapper, CapturedObservation
 from hebbian_rua.client.station_client import commands_parented_to
 
 CLI_HELP = """Build a robot-use agent with OpenAI, Anthropic or Gemini.
@@ -191,8 +193,38 @@ class FinishArguments(BaseModel):
     reason: str
 
 
+UPDATE_PLAN_TOOL = "update_plan"
+UPDATE_NOTES_TOOL = "update_notes"
+MEMORY_TOOLS = frozenset({UPDATE_PLAN_TOOL, UPDATE_NOTES_TOOL})
+
+
+class PlanStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str
+    status: Literal["pending", "active", "done", "failed"]
+
+
+class UpdatePlanArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    steps: list[PlanStep]
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def limit_active_steps(self) -> "UpdatePlanArguments":
+        if sum(step.status == "active" for step in self.steps) > 1:
+            raise ValueError("A plan may have at most one active step")
+        return self
+
+
+class UpdateNotesArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    notes: list[str]
+
+
 class AgentRobotTools(RobotTools):
     finish_reason: str | None = None
+    plan: UpdatePlanArguments | None = None
+    notes: tuple[str, ...] = ()
     model_inputs: ModelInputCapture | None = None
     tracer_provider: trace.TracerProvider = trace.NoOpTracerProvider()
 
@@ -205,11 +237,57 @@ class AgentRobotTools(RobotTools):
         return [
             *super().tools,
             RobotToolSpec(
+                name=UPDATE_PLAN_TOOL,
+                description=(
+                    "Replace the current task plan. Each step has text and status "
+                    "(pending, active, done, failed). The plan appears in observations."
+                ),
+                parameters_schema=UpdatePlanArguments.model_json_schema(),
+            ),
+            RobotToolSpec(
+                name=UPDATE_NOTES_TOOL,
+                description=(
+                    "Replace this run's notes. Pass the complete list to keep. "
+                    "The notes appear with the plan in observations."
+                ),
+                parameters_schema=UpdateNotesArguments.model_json_schema(),
+            ),
+            RobotToolSpec(
                 name="finish",
                 description="End the run and report the task outcome. Call alone.",
                 parameters_schema=FinishArguments.model_json_schema(),
             ),
         ]
+
+    def memory_lines(self) -> list[str]:
+        lines: list[str] = []
+        if self.plan is not None:
+            lines.append("Current plan:")
+            lines.extend(
+                f"{index}. [{step.status}] {' '.join(step.text.splitlines())}"
+                for index, step in enumerate(self.plan.steps, start=1)
+            )
+        if self.notes:
+            lines.append("Notes:")
+            lines.extend(f"- {' '.join(note.splitlines())}" for note in self.notes)
+        return lines
+
+    async def capture(
+        self, note: str = "", extra_lines: Sequence[str] = ()
+    ) -> CapturedObservation:
+        return await super().capture(note, (*self.memory_lines(), *extra_lines))
+
+    async def apply_memory_update(self, call: RobotToolCall) -> RobotToolResult:
+        try:
+            if call.name == UPDATE_PLAN_TOOL:
+                self.plan = UpdatePlanArguments.model_validate(call.arguments)
+            else:
+                self.notes = tuple(
+                    UpdateNotesArguments.model_validate(call.arguments).notes
+                )
+        except ValidationError as error:
+            return RobotToolResult(call, str(error), is_error=True, data=str(error))
+        return RobotToolResult(call, "ok", is_error=False, data="ok")
 
     async def trace_tool_call(
         self, call: RobotToolCall, execute: Callable[[], Awaitable[RobotToolResult]]
@@ -240,12 +318,31 @@ class AgentRobotTools(RobotTools):
         expected_revisions: Mapping[str, int] | None = None,
     ) -> list[RobotToolResult]:
         if not any(call.name == "finish" for call in calls):
-            return await super().execute(
-                calls,
-                wrap or self.trace_tool_call,
+            wrap_call = wrap or self.trace_tool_call
+            results_by_index: dict[int, RobotToolResult] = {}
+            robot_calls: list[tuple[int, RobotToolCall]] = []
+            # INVARIANT: Apply memory updates in call order before the robot batch.
+            for index, call in enumerate(calls):
+                if call.name in MEMORY_TOOLS:
+                    results_by_index[index] = await wrap_call(
+                        call, partial(self.apply_memory_update, call)
+                    )
+                else:
+                    robot_calls.append((index, call))
+            robot_results = await super().execute(
+                [call for _, call in robot_calls],
+                wrap_call,
                 expected_revision=expected_revision,
                 expected_revisions=expected_revisions,
             )
+            memory_lines = self.memory_lines()
+            for (index, _), result in zip(robot_calls, robot_results, strict=True):
+                if memory_lines and result.observed_revisions is not None:
+                    result = replace(
+                        result, text="\n".join((*memory_lines, result.text))
+                    )
+                results_by_index[index] = result
+            return [results_by_index[index] for index in range(len(calls))]
         with agent_span(
             self.tracer, "execute_tool finish", {"gen_ai.tool.name": "finish"}
         ) as span:
@@ -468,7 +565,9 @@ async def run_task(
             "A stopped_short move settled outside tolerance. Its completion detail "
             "describes the remaining error, which does not identify the cause on its "
             "own. Use the outcome and observations to decide whether to revise the "
-            "target or finish. Call finish alone to report the task outcome. "
+            "target or finish. Use update_plan to replace the task plan and update_notes "
+            "to replace the run's notes. Both may accompany robot tools in the same turn. "
+            "Call finish alone to report the task outcome. "
             "Robot context: " + json.dumps(await robot.context())
         )
         arm = station.arm(arm_name)
