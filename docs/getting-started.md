@@ -18,7 +18,7 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and
 Support the arm before disabling it. Verify clearance from objects and other
 arms, supervise the first motions, and keep a physical power cutoff accessible.
 
-Before starting the viewer, [add your LiveKit credentials to the station’s `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
+Before starting the viewer, [configure LiveKit on the station using `lk cloud auth` or `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
 
 ```sh
 uvx --from hebbian-rua==0.1.7 rua serve

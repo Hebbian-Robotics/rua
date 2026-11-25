@@ -114,11 +114,11 @@ fn credentials_report_all_missing_values_and_distinguish_cameras_off() {
     );
     assert!(matches!(error, AccessError::MissingCredentials(missing) if missing == VARIABLES));
     assert!(matches!(
-        CameraConfiguration::from_values([None, None, None]),
+        CameraConfiguration::from_credentials(Credentials::from_values([None, None, None])),
         Ok(CameraConfiguration::Off { .. })
     ));
     assert!(
-        matches!(CameraConfiguration::from_values([Some("url".into()),None,None]), Err(AccessError::MissingCredentials(missing)) if missing == ["LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"])
+        matches!(CameraConfiguration::from_credentials(Credentials::from_values([Some("url".into()),None,None])), Err(AccessError::MissingCredentials(missing)) if missing == ["LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"])
     );
 }
 
@@ -171,5 +171,28 @@ fn invite_fragment_carries_the_server_url_and_token() -> Result<(), Box<dyn std:
             .contains(token)
     );
     assert_eq!(claims(token)?["sub"], "phone_front");
+    Ok(())
+}
+
+#[test]
+fn environment_overrides_saved_project_as_a_complete_set() -> Result<(), Box<dyn std::error::Error>>
+{
+    let home = tempfile::tempdir()?;
+    let configuration_directory = home.path().join(".livekit");
+    std::fs::create_dir(&configuration_directory)?;
+    std::fs::write(
+        configuration_directory.join("cli-config.yaml"),
+        "projects:\n  - {name: cloud, url: 'wss://cloud.example', api_key: saved, api_secret: secret}\n",
+    )?;
+    let home = Some(home.path());
+    let blank = ["", " ", ""].map(|value| Some(value.to_owned()));
+    assert_eq!(Credentials::resolve(blank, home)?.api_key, "saved");
+    let explicit =
+        ["ws://localhost", "explicit", "local-secret"].map(|value| Some(value.to_owned()));
+    assert_eq!(Credentials::resolve(explicit, home)?.api_key, "explicit");
+    assert!(
+        matches!(Credentials::resolve([None, Some("explicit".into()), None], home),
+        Err(AccessError::MissingCredentials(missing)) if missing == ["LIVEKIT_URL", "LIVEKIT_API_SECRET"])
+    );
     Ok(())
 }

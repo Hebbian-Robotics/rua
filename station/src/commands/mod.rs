@@ -139,7 +139,7 @@ pub(crate) enum Command {
 
 /// What the HTTP server serves beside control: recordings and `LiveKit` access. The
 /// `LiveKit` credentials come from `LIVEKIT_URL`, `LIVEKIT_API_KEY` and
-/// `LIVEKIT_API_SECRET`; without them `LiveKit` cameras are unavailable.
+/// `LIVEKIT_API_SECRET`, or the project saved by `lk cloud auth`.
 #[derive(clap::Args)]
 pub(crate) struct WebArguments {
     /// Stream and capture snapshots from local cameras only. Disables remote cameras and recording.
@@ -147,7 +147,7 @@ pub(crate) struct WebArguments {
     /// Use this fallback when `LiveKit` is unavailable and you cannot run a local
     /// `livekit-server`. Open the RUA example viewer to watch local USB cameras. For
     /// remote cameras, configure `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
-    /// in the environment or `.env`.
+    /// in the environment or `.env`, or run `lk cloud auth` on the station.
     #[arg(
         long = "local-only-no-remote-cameras",
         aliases = ["local-cameras-only", "local-cameras-only-no-stream-preview"]

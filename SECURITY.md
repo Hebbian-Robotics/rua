@@ -17,8 +17,9 @@ enable, move and stop the arms and read camera frames. Therefore:
   Treat remote viewer users as
   robot operators, not anonymous observers.
 - Keep a physical power cutoff within reach whenever an arm is powered.
-- Keep API keys and LiveKit credentials in `.env` or the environment; `.env` is
-  git-ignored.
+- Store LiveKit credentials in the station user’s LiveKit CLI configuration,
+  the environment, or the git-ignored `.env` file. Keep other API keys in the
+  environment or `.env` as well.
 
 ## Reporting a vulnerability
 

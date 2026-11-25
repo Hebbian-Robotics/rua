@@ -1,3 +1,5 @@
+mod cli_credentials;
+
 use std::time::Duration;
 
 use hebbian_contracts::{PhoneInvite, RoomAccess};
@@ -12,6 +14,12 @@ const VARIABLES: [&str; 3] = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SEC
 pub enum AccessError {
     #[error("Set LiveKit credentials: {}", .0.join(", "))]
     MissingCredentials(Vec<&'static str>),
+    #[error("Cannot read LiveKit CLI configuration: {0}")]
+    CliConfigurationRead(#[from] std::io::Error),
+    #[error("Invalid LiveKit CLI configuration. Run lk cloud auth to configure a project.")]
+    InvalidCliConfiguration,
+    #[error("Select a default LiveKit CLI project with lk project set-default PROJECT.")]
+    MissingDefaultProject,
     #[error("invalid camera configuration: {0}")]
     Camera(#[from] hebbian_contracts::InvalidCameraName),
     #[error("LiveKit token: {0}")]
@@ -79,11 +87,12 @@ pub enum CameraConfiguration {
 
 impl CameraConfiguration {
     pub fn from_environment() -> Result<Self, AccessError> {
-        Self::from_values(VARIABLES.map(|name| std::env::var(name).ok()))
+        Self::from_credentials(Credentials::from_environment())
     }
 
-    fn from_values(values: [Option<String>; 3]) -> Result<Self, AccessError> {
-        let credentials = Credentials::from_values(values);
+    fn from_credentials(
+        credentials: Result<Credentials, AccessError>,
+    ) -> Result<Self, AccessError> {
         match credentials {
             Err(AccessError::MissingCredentials(missing)) if missing.len() == VARIABLES.len() => {
                 Ok(Self::Off {
@@ -141,7 +150,25 @@ pub fn new_room_name() -> String {
 
 impl Credentials {
     pub fn from_environment() -> Result<Self, AccessError> {
-        Self::from_values(VARIABLES.map(|name| std::env::var(name).ok()))
+        Self::resolve(
+            VARIABLES.map(|name| std::env::var(name).ok()),
+            std::env::home_dir().as_deref(),
+        )
+    }
+
+    fn resolve(
+        values: [Option<String>; 3],
+        home: Option<&std::path::Path>,
+    ) -> Result<Self, AccessError> {
+        if values
+            .iter()
+            .flatten()
+            .any(|value| !value.trim().is_empty())
+        {
+            return Self::from_values(values);
+        }
+        cli_credentials::load(home)?
+            .ok_or_else(|| AccessError::MissingCredentials(VARIABLES.to_vec()))
     }
 
     pub fn from_values(values: [Option<String>; 3]) -> Result<Self, AccessError> {
