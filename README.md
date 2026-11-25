@@ -39,44 +39,29 @@ Build your own agent with the [Python](hebbian_rua/client/README.md),
 RUA supplies robot tools, camera observations and execution. You bring the model
 and the loop.
 
-Here's an agent loop using the Python SDK. The
-[complete Python example](examples/python/agent_quickstart.py) includes the
-connection, lease and arm setup, plus loops for Claude and Gemini.
+The [Python agent example](examples/python/agent_quickstart.py) runs this model turn.
 
 ```python
 from hebbian_rua.client.llm.openai import OpenAIRobotTools
 
 robot_tools = OpenAIRobotTools(robot)
-pending_input = [{"role": "user", "content": "Wave hello"}]
-previous_response_id = None
-for _ in range(20):
-    observation = await robot_tools.observe(wait_for_recovery=True)
-    pending_input.append(observation.message)
-    response = await client.responses.create(
-        model=model,
-        instructions=instructions,
-        tools=robot_tools.tools,
-        input=pending_input,
-        previous_response_id=previous_response_id,
-        store=True,
-    )
-    turn = await robot_tools.execute(
-        response,
-        expected_revisions=observation.revisions,
-        include_model_output=False,
-    )
-    if turn.should_stop or not turn.results:
-        break
-    previous_response_id = response.id
-    pending_input = turn.messages
+observation = await robot_tools.observe(wait_for_recovery=True)
+response = await client.responses.create(
+    model=model,
+    instructions=instructions,
+    tools=robot_tools.tools,
+    input=[{"role": "user", "content": "Wave hello"}, observation.message],
+    store=True,
+)
+turn = await robot_tools.execute(
+    response, expected_revisions=observation.revisions, include_model_output=False
+)
 ```
 
-The model chooses tools, RUA executes them, and fresh camera frames and robot
-state come back for the next turn. You can change the prompt, model and loop.
-Use `AnthropicThreadRobotTools` from `hebbian_rua.client.llm.anthropic` with
-Claude Message Threads or `GeminiInteractionRobotTools` from
-`hebbian_rua.client.llm.gemini` with Gemini Interactions. See the
-[Python examples](examples/python/README.md).
+The next turn sends `turn.messages` and a fresh observation with
+`previous_response_id=response.id`. The
+[Python examples](examples/python/README.md) cover setup and continuous loops
+for OpenAI, Claude and Gemini.
 Choose what reaches the model with [output formatters](docs/model-output.md).
 
 RUA compiles action sequences automatically. The Robot Use Compiler checks and
@@ -100,9 +85,6 @@ observations and execution.
 
 See the [documentation index](docs/README.md) for the guides, or
 [architecture](docs/architecture.md) for component boundaries.
-
-See [SO-101 setup](docs/so101-calibration.md) for hardware and
-[LiveKit Cameras](docs/cameras.md#watch-a-usb-camera) to watch live video in your browser.
 
 ## Python package
 

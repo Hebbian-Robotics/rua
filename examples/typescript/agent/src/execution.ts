@@ -248,18 +248,20 @@ export async function runToolBatch(
     });
   const needsObservation =
     plan.kind === "run" &&
-    plan.robotCalls.some(({ call }) => {
-      if (call.name === "preview_pose") return false;
-      const argumentsValue = call.arguments;
-      const historyOnly =
-        call.name === "observe" &&
-        typeof argumentsValue === "object" &&
-        argumentsValue !== null &&
-        "source" in argumentsValue &&
-        argumentsValue.source === "last_sequence";
-      return !historyOnly;
-    });
+    plan.robotCalls.some(({ call }) => needsObservationAfter(call));
   return { results, finishReason: finish, needsObservation };
+}
+
+function needsObservationAfter(call: RobotToolCall): boolean {
+  if (call.name === "preview_pose") return false;
+  const argumentsValue = call.arguments;
+  const historyOnly =
+    call.name === "observe" &&
+    typeof argumentsValue === "object" &&
+    argumentsValue !== null &&
+    "source" in argumentsValue &&
+    argumentsValue.source === "last_sequence";
+  return !historyOnly;
 }
 
 function wireResult(result: RobotToolResult) {

@@ -139,6 +139,26 @@ impl Snapshots {
             })
             .max_by_key(|frame| frame.received_at)
     }
+    fn camera_frame_availability(&self, now: Instant) -> BTreeMap<String, bool> {
+        let mut cameras: BTreeMap<_, _> = self
+            .local_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .keys()
+            .map(|name| (name.to_string(), false))
+            .collect();
+        for track in self.frames.tracks() {
+            if cameras::validate_camera_name(&track.participant).is_ok() {
+                let fresh = matches!(
+                    self.frames.latest(&track.track_sid),
+                    LatestFrame::Available(frame) if frame_is_fresh(frame.received_at, now)
+                );
+                *cameras.entry(track.participant).or_default() |= fresh;
+            }
+        }
+        cameras
+    }
+
     async fn subscribe(&self, room_name: &str) {
         let mut backoff = hebbian_contracts::Backoff::new(Duration::from_secs(3));
         loop {
@@ -208,24 +228,7 @@ async fn camera_status(State(state): State<Snapshots>) -> Json<MediaStatusReport
 }
 
 async fn list(State(state): State<Snapshots>) -> Json<Vec<hebbian_contracts::CameraListing>> {
-    let mut names = BTreeMap::new();
-    for name in state
-        .local_status
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .keys()
-    {
-        names.insert(name.to_string(), false);
-    }
-    let now = Instant::now();
-    for track in state.frames.tracks() {
-        if cameras::validate_camera_name(&track.participant).is_ok() {
-            let available = state
-                .latest(&track.participant)
-                .is_some_and(|frame| frame_is_fresh(frame.received_at, now));
-            names.insert(track.participant, available);
-        }
-    }
+    let mut names = state.camera_frame_availability(Instant::now());
     if let Some(path) = &state.socket
         && let Some((reply, _)) = ask_socket(path, serde_json::json!({"list":true})).await
     {
@@ -345,28 +348,35 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn an_expected_camera_that_never_publishes_is_listed_unavailable()
-    -> Result<(), Box<dyn std::error::Error>> {
+    #[test]
+    fn camera_availability_includes_unpublished_cameras_and_uses_any_fresh_track() {
         let snapshots = Snapshots::start(
-            vec![hebbian_contracts::CameraName::try_from("wrist").unwrap()],
+            vec![hebbian_contracts::CameraName::try_from("unpublished").unwrap()],
             None,
             None,
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-        let address = listener.local_addr()?;
-        let router = snapshots.router();
-        let server = tokio::spawn(async move { axum::serve(listener, router).await });
-        let listing: serde_json::Value = reqwest::get(format!("http://{address}/cameras"))
-            .await?
-            .json()
-            .await?;
+        let stale = Instant::now();
+        let now = stale.checked_add(Duration::from_secs(4)).unwrap();
+        for (track_sid, received_at) in [("fresh", now), ("stale", stale)] {
+            snapshots.frames.register(TrackIdentity {
+                participant: "wrist".into(),
+                track_sid: track_sid.into(),
+            });
+            snapshots.frames.insert(
+                track_sid,
+                CameraFrame {
+                    jpeg: Arc::from([1_u8, 2, 3]),
+                    width: 1,
+                    height: 1,
+                    captured_at_unix_ns: 12345,
+                    received_at,
+                },
+            );
+        }
         assert_eq!(
-            listing,
-            serde_json::json!([{"name":"wrist","available":false}])
+            snapshots.camera_frame_availability(now),
+            BTreeMap::from([("unpublished".into(), false), ("wrist".into(), true)])
         );
-        server.abort();
-        Ok(())
     }
 
     #[tokio::test]

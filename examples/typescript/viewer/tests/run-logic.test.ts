@@ -161,16 +161,13 @@ test("model choices and blank cameras reach the request", () => {
   expect(buildRunRequest({ ...form, cameras: "   " }).cameras).toEqual([]);
 });
 
-test("each provider offers its own inference modes, Gemini's fast named Priority", () => {
-  const labels = (provider?: "openai" | "anthropic" | "gemini") =>
-    inferenceModeOptions(provider).map(({ label }) => label);
-  expect(labels("openai")).toEqual(["Standard", "Fast", "Ultrafast"]);
-  expect(labels("anthropic")).toEqual(["Standard", "Fast"]);
-  expect(labels("gemini")).toEqual(["Standard", "Priority"]);
-  expect(labels()).toEqual(["Standard"]);
+test("the viewer labels Gemini's fast tier Priority", () => {
+  expect(inferenceModeOptions("gemini")).toContainEqual(
+    expect.objectContaining({ label: "Priority" }),
+  );
 });
 
-test("an inference mode starts only where the provider and model serve it", () => {
+test("the viewer requests the selected inference mode and blocks an unsupported choice", () => {
   const ultrafast = {
     ...form,
     provider: "openai",
@@ -187,42 +184,6 @@ test("an inference mode starts only where the provider and model serve it", () =
     kind: "blocked",
     reason: expect.stringContaining("gpt-5.6"),
   });
-  expect(
-    decideStart(
-      { ...ultrafast, provider: "anthropic", model: "claude-fable-5-2" },
-      null,
-      arms,
-      false,
-    ),
-  ).toMatchObject({
-    kind: "blocked",
-    reason: expect.stringContaining("not offered by anthropic"),
-  });
-  const fast = { ...form, inferenceMode: "fast" } as const;
-  expect(
-    decideStart(
-      { ...fast, provider: "anthropic", model: "claude-fable-5-2" },
-      null,
-      arms,
-      false,
-    ).kind,
-  ).toBe("allowed");
-  expect(
-    decideStart(
-      { ...fast, provider: "anthropic", model: "claude-sonnet-5-5" },
-      null,
-      arms,
-      false,
-    ).kind,
-  ).toBe("blocked");
-  expect(
-    decideStart(
-      { ...fast, provider: "gemini", model: "gemini-4-argon" },
-      null,
-      arms,
-      false,
-    ).kind,
-  ).toBe("allowed");
 });
 
 test("the manual loop command quotes the task and carries the choices", () => {

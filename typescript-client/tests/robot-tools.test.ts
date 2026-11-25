@@ -206,48 +206,60 @@ test.each([false, true])(
   },
 );
 
-test("a stale revision refusal is returned to the model", async () => {
-  const connection = createStationConnection("http://station", "agent");
-  const lease = fakeLease({
-    runCommand: vi.fn(async () => ({
-      status: "refused" as const,
-      reason: "stale_revision" as const,
-      detail: "moved on",
-    })),
-  });
-  const robot = createRobotTools({
-    tools: [
-      "action_sequence",
-      "preview_pose",
-      "move_arms",
-      "set_arm_gripper",
-      "rehome",
-      "stop",
-      "observe",
-    ],
-    connection,
-    lease,
-    arm: "follower",
-  });
-  try {
-    const [stopped] = await robot.execute(
-      [
-        {
-          id: "1",
-          name: "set_arm_gripper",
-          arguments: { arm: "follower", opening: 1 },
-        },
+test.each([
+  { reason: "stale_revision", halt: false, interrupted: true },
+  { reason: "interlocked", halt: false, interrupted: true },
+  { reason: "lease_held_elsewhere", halt: false, interrupted: true },
+  { reason: "faulted", halt: true, interrupted: false },
+  { reason: "malformed", halt: false, interrupted: false },
+] as const)(
+  "classifies a $reason refusal for the model",
+  async ({ reason, halt, interrupted }) => {
+    const connection = createStationConnection("http://station", "agent");
+    const lease = fakeLease({
+      runCommand: async () => ({
+        status: "refused",
+        reason,
+        detail: "The station refused the command",
+      }),
+    });
+    const robot = createRobotTools({
+      tools: [
+        "action_sequence",
+        "preview_pose",
+        "move_arms",
+        "set_arm_gripper",
+        "rehome",
+        "stop",
+        "observe",
       ],
-      { follower: 3 },
-    );
-    expect(stopped?.isError).toBe(true);
-    expect(stopped?.data).toMatchObject({ reason: "stale_revision" });
-    expect(vi.mocked(lease.runCommand).mock.calls[0]?.[2]).toBe(3);
-  } finally {
-    robot.close();
-    vi.restoreAllMocks();
-  }
-});
+      connection,
+      lease,
+      arm: "follower",
+    });
+    try {
+      const [stopped] = await robot.execute(
+        [
+          {
+            id: "1",
+            name: "set_arm_gripper",
+            arguments: { arm: "follower", opening: 1 },
+          },
+        ],
+        { follower: 3 },
+      );
+      expect(stopped).toMatchObject({
+        isError: true,
+        halt,
+        interrupted,
+        data: { reason },
+      });
+    } finally {
+      robot.close();
+      vi.restoreAllMocks();
+    }
+  },
+);
 
 test("model responses show readable units and preserve copyable orientations", async () => {
   const { modelResponse } = await import("../src/index.js");

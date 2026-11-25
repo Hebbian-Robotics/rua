@@ -8,6 +8,7 @@ import {
   REASONING_EFFORTS,
 } from "../../agent/src/providers/types.js";
 
+export const RUN_OUTPUT_LINE_LIMIT = 200;
 export const RUN_STREAM_HEARTBEAT_EVENT = "heartbeat";
 export const MAX_PROMPT_IMAGE_BASE64_LENGTH =
   4 * Math.ceil((2 * 1024 * 1024) / 3);

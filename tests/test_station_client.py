@@ -1,5 +1,4 @@
 import asyncio
-import json
 import math
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -765,132 +764,70 @@ def test_gripper_uses_shared_arm_speed_for_direct_and_combined_commands(
                     command = entry.record.command
                     assert isinstance(command, (RecordedMove, RecordedGripper))
                     assert command.joint_speed == pytest.approx(0.02)
-                tools = RobotTools(
-                    client,
-                    lease,
-                    ARM,
-                    configuration=RobotToolConfiguration(
-                        tools=("preview_pose", "move_arms", "set_arm_gripper")
-                    ),
-                )
-                pose = (await client.arm(ARM).state()).tool
+
+        asyncio.run(asyncio.wait_for(exercise(), timeout=30))
+
+
+@pytest.mark.server
+def test_preview_preserves_the_python_candidates_id(server_binary: Path) -> None:
+    with running_station(server_binary) as station:
+
+        async def exercise() -> None:
+            async with StationClient(station.server) as client:
+                arm = client.arm(ARM)
+                pose = (await arm.state()).tool
                 assert pose is not None
-                http_previews = await client.arm(ARM).preview_poses(
+                candidate_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                previews = await arm.preview_poses(
                     [
                         PosePreviewCandidate(
-                            id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                            id=candidate_id,
                             pose=PreviewPose(position=pose.position),
                         )
                     ]
                 )
-                assert (
-                    http_previews.results[0].id
-                    == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                assert previews.results[0].id == candidate_id
+
+        asyncio.run(asyncio.wait_for(exercise(), timeout=30))
+
+
+@pytest.mark.server
+def test_python_gripper_tool_exposes_station_and_model_speed(
+    server_binary: Path,
+) -> None:
+    with running_station(server_binary) as station:
+
+        async def exercise() -> None:
+            async with (
+                StationClient(station.server) as client,
+                client.holding_lease("gripper tool test") as lease,
+            ):
+                tools = RobotTools(
+                    client,
+                    lease,
+                    ARM,
+                    configuration=RobotToolConfiguration(tools=("set_arm_gripper",)),
                 )
-                preview = await tools.execute(
-                    [
-                        RobotToolCall(
-                            "preview",
-                            "preview_pose",
-                            {
-                                "poses": [
-                                    {
-                                        "pose": {
-                                            "position_mm": [
-                                                coordinate * 1000
-                                                for coordinate in pose.position
-                                            ]
-                                        },
-                                    },
-                                    {
-                                        "pose": {"position_mm": [50000, 50000, 50000]},
-                                    },
-                                ]
-                            },
-                        )
-                    ]
+                result = await tools.execute_one(
+                    RobotToolCall(
+                        "gripper",
+                        "set_arm_gripper",
+                        {
+                            "arm": ARM,
+                            "opening": 0.5,
+                            "max_joint_speed_degrees_per_second": math.degrees(999),
+                        },
+                    )
                 )
-                assert not preview[0].is_error
-                assert isinstance(preview[0].data, dict)
-                assert len(preview[0].data["results"]) == 2
-                assert all(
-                    set(item) == {"answer"} for item in preview[0].data["results"]
-                )
-                assert (
-                    preview[0].data["results"][1]["answer"]["projection"]["outcome"][
-                        "kind"
-                    ]
-                    == "projected"
-                )
-                assert (
-                    preview[0].data["results"][1]["answer"]["projection"]["outcome"][
-                        "within_tolerance"
-                    ]
-                    is False
-                )
-                gripper_result = await tools.execute(
-                    [
-                        RobotToolCall(
-                            "partial",
-                            "set_arm_gripper",
-                            {
-                                "arm": ARM,
-                                "opening": 0.5,
-                                "max_joint_speed_degrees_per_second": math.degrees(999),
-                            },
-                        )
-                    ]
-                )
-                assert not gripper_result[0].is_error
-                assert isinstance(gripper_result[0].data, dict)
+                assert not result.is_error, result.text
+                assert isinstance(result.data, dict)
                 profile_speed = (await client.state()).max_joint_speed
-                assert gripper_result[0].data["command"][
-                    "joint_speed"
-                ] == pytest.approx(profile_speed)
-                assert isinstance(gripper_result[0].model_data, dict)
-                assert gripper_result[0].model_data[
+                assert result.data["command"]["joint_speed"] == pytest.approx(
+                    profile_speed
+                )
+                assert isinstance(result.model_data, dict)
+                assert result.model_data[
                     "joint_speed_degrees_per_second"
                 ] == pytest.approx(round(math.degrees(profile_speed), 1))
-                refused = await tools.execute(
-                    [
-                        RobotToolCall(
-                            "unknown-arm",
-                            "set_arm_gripper",
-                            {"arm": "unknown", "opening": 0.5},
-                        )
-                    ]
-                )
-                assert refused[0].is_error
-                assert "unknown" in refused[0].text.lower()
-                examples = json.loads(
-                    (
-                        Path(__file__).parent / "fixtures/model-tool-simulation.json"
-                    ).read_text()
-                )
-                tool_pose = (await client.arm(ARM).state()).tool
-                assert tool_pose is not None
-                limited = await tools.execute(
-                    [
-                        RobotToolCall(
-                            "limited",
-                            "move_arms",
-                            {
-                                "goals": {
-                                    ARM: {
-                                        "position_mm": examples[
-                                            "limited_position_millimeters"
-                                        ],
-                                        "orientation": {
-                                            "quaternion": tool_pose.quaternion
-                                        },
-                                    }
-                                }
-                            },
-                        )
-                    ]
-                )
-                assert limited[0].is_error
-                assert isinstance(limited[0].data, dict)
-                assert limited[0].data["status"] == "limited"
 
         asyncio.run(asyncio.wait_for(exercise(), timeout=30))

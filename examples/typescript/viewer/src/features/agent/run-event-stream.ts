@@ -1,5 +1,8 @@
+import { match } from "ts-pattern";
 import {
+  RUN_OUTPUT_LINE_LIMIT,
   RUN_STREAM_HEARTBEAT_EVENT,
+  type Run,
   type RunEvent,
   runEventSchema,
 } from "../../../shared/run-api.js";
@@ -18,6 +21,29 @@ export function runStreamId(
   recovery: RunStreamRecovery,
 ): string | null {
   return recovery === "ready" ? activeRunId : null;
+}
+
+export function applyRunEvent(
+  previous: Run | null,
+  event: RunEvent,
+): Run | null {
+  return match(event)
+    .with({ type: "snapshot" }, ({ run }) => run)
+    .with({ type: "phase" }, ({ phase }) => previous && { ...previous, phase })
+    .with(
+      { type: "persistence_error" },
+      ({ detail }) =>
+        previous && { ...previous, persistenceError: detail ?? undefined },
+    )
+    .with(
+      { type: "output" },
+      ({ line }) =>
+        previous && {
+          ...previous,
+          output: [...previous.output, line].slice(-RUN_OUTPUT_LINE_LIMIT),
+        },
+    )
+    .exhaustive();
 }
 
 export function openRunEventStream(

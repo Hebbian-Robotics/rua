@@ -11,10 +11,16 @@ In Python, use `station.holding_lease(...)` and send motion through the returned
 lease. Power, stop and state access are available through `station.arm(...)`.
 Commands return outcomes; check them before proceeding to another action.
 
+## Control leases
+
 A control lease expires if the holding client stops renewing it. The station
 stops the arms and releases the expired lease after they confirm the stop.
 If the stop cannot be confirmed, control stays fenced for explicit recovery.
 Changing the holder of an active lease requires an explicit handoff.
+
+After losing a lease, inspect the command outcome and reacquire control before
+sending motion. If the connection drops before the station confirms
+cancellation, check the command and arm state when the connection returns.
 
 The station enforces configured joint limits and protective stops. These checks
 require per-arm calibration and do not establish physical workspace clearance.
@@ -215,8 +221,9 @@ work. A prior execution must be finished or canceled, and at least one step must
 remain. Continued execution records contain only their newly attempted steps and
 link the prior execution and starting index.
 
-Explicit compile and import requests save a manifest. Executions of these
-compilations save records and per-step preparation and timing snapshots under the
+Explicit compile and import requests save a `compilation.json` inspection file.
+Executions of these compilations save records and per-step preparation and
+timing snapshots under the
 [temporary workspace](../server-core/src/station_api/artifact_workspace.rs).
 Preparation snapshots identify the planned source operations. Check the
 execution record for admission and completion. Export the inspection JSON or

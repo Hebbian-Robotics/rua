@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hebbian_contracts::ActionSequencePhase;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use crate::Station;
 
@@ -144,7 +145,11 @@ impl SequenceImages {
             .filter(|retained| retained.session == session)
         {
             retained.updated_at = Instant::now();
-            retained.expiry = Some(tokio::spawn(expire_history(weak, session.to_owned())));
+            retained.expiry = Some(tokio::spawn(expire_history(
+                weak,
+                session.to_owned(),
+                retained.updated_at + RETENTION,
+            )));
         }
     }
 
@@ -185,8 +190,12 @@ impl SequenceImages {
     }
 }
 
-async fn expire_history(retained: Weak<Mutex<Option<RetainedImages>>>, session: String) {
-    tokio::time::sleep(RETENTION).await;
+async fn expire_history(
+    retained: Weak<Mutex<Option<RetainedImages>>>,
+    session: String,
+    deadline: Instant,
+) {
+    tokio::time::sleep_until(deadline).await;
     if let Some(retained) = retained.upgrade() {
         let mut retained = retained
             .lock()
@@ -349,6 +358,19 @@ fn unix_seconds() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn history_expires_five_minutes_after_the_sequence_finishes() {
+        let store = SequenceImages::default();
+        let session = store.begin("move".into());
+        tokio::time::advance(Duration::from_secs(20)).await;
+        store.finish(&session);
+
+        tokio::time::advance(Duration::from_secs(299)).await;
+        assert_eq!(store.snapshot().unwrap().call_id, "move");
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(store.snapshot().is_none());
+    }
 
     #[tokio::test]
     async fn retention_and_model_budgets_keep_recent_evidence() {

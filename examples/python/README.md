@@ -68,10 +68,6 @@ get the room URL and token with `curl --fail http://127.0.0.1:8792/media/access-
 then enter them in the [hosted room viewer](https://hebbian-robotics.github.io/livekit-cameras/)
 to watch while the agent runs.
 
-If LiveKit Cloud is unavailable, run a local LiveKit server or restart
-`rua serve` with `--local-only-no-remote-cameras`, then use the normal
-TypeScript viewer to watch while the Python agent runs. Run the agent with the
-same camera names. The agent still requires a model-provider key.
 [Options when LiveKit Cloud is unavailable](../../docs/cameras.md#when-livekit-cloud-is-unavailable)
 
 ## Inspect a run in Jaeger
