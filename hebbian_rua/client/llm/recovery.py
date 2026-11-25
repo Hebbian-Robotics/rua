@@ -7,28 +7,20 @@ docs/control-model.md.
 """
 
 import asyncio
-import logging
 
-from hebbian_rua.bindings._native import CommandRefused as NativeCommandRefused
-from hebbian_rua.bindings._native import HttpError
 from hebbian_rua.client.contract.station_api import ArmMode, ArmState
 from hebbian_rua.client.llm.robot_tools import (
-    ArmCommunicationInterrupted,
+    ArmRecoveryEnded as ArmRecoveryEnded,
+)
+from hebbian_rua.client.llm.robot_tools import (
     CapturedObservation,
-    RequiredCameraUnavailable,
+    ObservationWaitTimedOut,
     RobotTools,
 )
-from hebbian_rua.client.station_client import Lease, StationClient
+from hebbian_rua.client.station_client import StationClient
 from hebbian_rua.client.station_types import LeaseLost
 
-log = logging.getLogger(__name__)
-INITIAL_CAMERA_RETRY_SECONDS = 0.1
-MAX_CAMERA_RETRY_SECONDS = 1.0
 ARM_INTERLOCKS = frozenset({"arm_disconnected", "recovery_approval_required"})
-
-
-class ArmRecoveryEnded(Exception):
-    """The arm was disabled or faulted before it recovered."""
 
 
 async def _wait_for_change_or_lease_loss(
@@ -56,13 +48,6 @@ async def _arm_state(client: StationClient, arm: str) -> ArmState | None:
 
 def _arm_interlocked(arm_state: ArmState) -> bool:
     return any(interlock.kind in ARM_INTERLOCKS for interlock in arm_state.interlocks)
-
-
-async def _report_camera(lease: Lease, camera: str, *, available: bool) -> None:
-    try:
-        await lease.report_camera(camera, available)
-    except (NativeCommandRefused, HttpError, ConnectionError, TimeoutError) as error:
-        log.warning("Could not report camera %s availability: %s", camera, error)
 
 
 async def wait_for_arm_recovery(client: StationClient, arm: str) -> bool:
@@ -94,50 +79,19 @@ async def capture_when_ready(
 ) -> tuple[CapturedObservation, int]:
     """Wait for required resources and capture a fresh observation, returning it
     with the arm's revision it is valid for; send that as `expected_revision`."""
-    missing_cameras: set[str] = set()
-    camera_retry_seconds = INITIAL_CAMERA_RETRY_SECONDS
     while True:
         if robot.station.lease_lost.is_set():
             raise LeaseLost
         try:
-            before = await _arm_state(robot.station, robot.arm)
-            if before is None or before.mode in {ArmMode.faulted, ArmMode.disabled}:
-                raise ArmRecoveryEnded
-            if _arm_interlocked(before):
-                if not await wait_for_arm_recovery(robot.station, robot.arm):
-                    raise ArmRecoveryEnded
-                continue
-            captured = await robot.capture(note, extra_lines)
-            after = await _arm_state(robot.station, robot.arm)
-            if robot.station.lease_lost.is_set():
-                raise LeaseLost
-            if after is None or after.mode in {ArmMode.faulted, ArmMode.disabled}:
-                raise ArmRecoveryEnded
-            captured_revision = captured.observation.revisions[robot.arm]
-            if not before.revision == captured_revision == after.revision:
-                continue
-            break
-        except RequiredCameraUnavailable as error:
-            if error.camera not in missing_cameras:
-                missing_cameras.add(error.camera)
-                log.info("Waiting for required camera: %s", error.camera)
-                await _report_camera(robot.lease, error.camera, available=False)
-            await asyncio.sleep(camera_retry_seconds)
-            camera_retry_seconds = min(
-                camera_retry_seconds * 2, MAX_CAMERA_RETRY_SECONDS
-            )
-        except ArmCommunicationInterrupted:
-            if not await wait_for_arm_recovery(robot.station, robot.arm):
-                raise ArmRecoveryEnded from None
-    missing_cameras.update(
-        interlock.camera
-        for interlock in after.interlocks
-        if interlock.kind == "required_camera_unavailable"
-        and interlock.camera in robot.cameras
-    )
-    # WHY: A capture just succeeded, so every required camera gave a fresh frame.
-    for camera in missing_cameras:
-        await _report_camera(robot.lease, camera, available=True)
-    if robot.station.lease_lost.is_set():
-        raise LeaseLost
-    return captured, captured_revision
+            captured = await robot.capture(note, extra_lines, wait_milliseconds=5000)
+        except ObservationWaitTimedOut:
+            continue
+        if robot.station.lease_lost.is_set():
+            raise LeaseLost
+        captured_revision = captured.observation.revisions[robot.arm]
+        latest = await _arm_state(robot.station, robot.arm)
+        if robot.station.lease_lost.is_set():
+            raise LeaseLost
+        # INVARIANT: Ignore captures already superseded by the live state feed.
+        if latest is None or latest.revision <= captured_revision:
+            return captured, captured_revision

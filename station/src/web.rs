@@ -7,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use anyhow::{Context, ensure};
 use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -17,7 +18,7 @@ use crate::lease_routes::{Refusal, ServedArms, refusal};
 use crate::recording::{RecordingConfiguration, RecordingManager};
 use hebbian_contracts::{PhoneInvite, PhoneInviteRequest};
 use hebbian_rua_core::control_link::LinkHandle;
-use station_access::{CameraConfiguration, Credentials, WatcherRole, new_room_name};
+use station_access::{Credentials, WatcherRole, new_room_name};
 
 pub const DEFAULT_PHONE_PAGE_URL: &str = "https://hebbian-robotics.github.io/livekit-cameras/";
 
@@ -54,28 +55,56 @@ pub struct WebSettings {
     pub media_status: crate::media_status::MediaStatus,
 }
 
-enum Cameras {
+pub enum MediaCapabilities {
     LocalOnly,
-    Off(String),
-    On(Credentials),
+    LiveKit {
+        credentials: Credentials,
+        recording: bool,
+    },
+}
+
+impl MediaCapabilities {
+    // INVARIANT: Resolve startup requirements once for the station and media companion.
+    pub fn resolve(settings: &WebSettings) -> anyhow::Result<Self> {
+        if settings.local_cameras_only {
+            return Ok(Self::LocalOnly);
+        }
+        let credentials = Credentials::from_environment().context(
+            "LiveKit is required for station startup. For local cameras only, pass --local-only-no-remote-cameras",
+        )?;
+        if settings.enable_recording {
+            let requirement =
+                "Recording requires FFmpeg on PATH. Install FFmpeg or pass --no-recording";
+            let version = std::process::Command::new("ffmpeg")
+                .arg("-version")
+                .output()
+                .context(requirement)?;
+            ensure!(version.status.success(), "{requirement}");
+        }
+        Ok(Self::LiveKit {
+            credentials,
+            recording: settings.enable_recording,
+        })
+    }
+
+    #[must_use]
+    pub fn remote_cameras(&self) -> bool {
+        matches!(self, Self::LiveKit { .. })
+    }
 }
 
 struct Access {
-    cameras: Cameras,
+    cameras: MediaCapabilities,
     room: String,
     phone_page_url: String,
 }
 
 fn credentials(access: &Access) -> Result<&Credentials, Refusal> {
     match &access.cameras {
-        Cameras::On(credentials) => Ok(credentials),
-        Cameras::LocalOnly => Err(refusal(
+        MediaCapabilities::LiveKit { credentials, .. } => Ok(credentials),
+        MediaCapabilities::LocalOnly => Err(refusal(
             StatusCode::CONFLICT,
             "Local cameras only. Remote cameras require LiveKit.",
-        )),
-        Cameras::Off(reason) => Err(refusal(
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("Cameras are off: {reason}"),
         )),
     }
 }
@@ -116,17 +145,6 @@ async fn create_phone_invite(
         Json(invite),
     )
         .into_response())
-}
-
-fn camera_access() -> Cameras {
-    match CameraConfiguration::from_environment() {
-        Ok(CameraConfiguration::Enabled(credentials)) => Cameras::On(credentials),
-        Ok(CameraConfiguration::Off { reason }) => Cameras::Off(reason.to_string()),
-        Err(error) => {
-            tracing::warn!(%error, "LiveKit is not fully configured; cameras are off");
-            Cameras::Off(error.to_string())
-        }
-    }
 }
 
 pub struct Mounted {
@@ -188,28 +206,24 @@ pub fn mount(
     runtime: &tokio::runtime::Handle,
     address: SocketAddr,
     settings: WebSettings,
+    capabilities: MediaCapabilities,
     controller_available: impl Fn() -> bool + Send + Sync + 'static,
 ) -> (Router, Mounted) {
     let room = settings.room.unwrap_or_else(new_room_name);
     let recording_library =
         recordings::RecordingLibrary::new(settings.recordings_directory.clone());
-    let credentials = if settings.enable_recording {
-        match Credentials::from_environment() {
-            Ok(credentials) => Some(credentials),
-            Err(error) => {
-                tracing::warn!(%error, "Recording disabled: LiveKit credentials are unavailable");
-                None
-            }
-        }
-    } else {
-        None
+    let recording = match &capabilities {
+        MediaCapabilities::LiveKit {
+            credentials,
+            recording: true,
+        } => Some(RecordingConfiguration {
+            credentials: credentials.clone(),
+            room: room.clone(),
+            directory: settings.recordings_directory,
+            executable: settings.media_executable,
+        }),
+        _ => None,
     };
-    let recording = credentials.map(|credentials| RecordingConfiguration {
-        credentials,
-        room: room.clone(),
-        directory: settings.recordings_directory,
-        executable: settings.media_executable,
-    });
     let recording_enabled = recording.is_some();
     let station_url = local_http_url(address);
     let media_connect_address = settings.media_address.map(connectable_local_address);
@@ -221,11 +235,7 @@ pub fn mount(
     let recording_library =
         recording_library.with_active_recording(move || recording_manager.active_recording());
     let access = Arc::new(Access {
-        cameras: if settings.local_cameras_only {
-            Cameras::LocalOnly
-        } else {
-            camera_access()
-        },
+        cameras: capabilities,
         room,
         phone_page_url: settings.phone_page_url,
     });

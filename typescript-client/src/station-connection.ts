@@ -53,6 +53,7 @@ const CONNECT_TIMEOUT_MILLISECONDS = 10_000;
 const EVENT_READ_TIMEOUT_MILLISECONDS = 30_000;
 /** How long a request, or an awaited state, waits before it is given up on. */
 const REPLY_TIMEOUT_MILLISECONDS = 30_000;
+
 class StationReplayGap extends StationConnectionError {}
 
 /** A model loop's run telemetry, in order, each record once. */
@@ -94,6 +95,17 @@ export interface ArmCommandOptions {
  * is here, so a command without the lease cannot be written. The lease token is
  * kept inside; the SDK renews the lease while it is held.
  */
+export interface SequenceExecution {
+  readonly id: string;
+  readonly stationInstanceId: string;
+  status(): Promise<ActionSequenceRecord>;
+  wait(options?: {
+    signal?: AbortSignal;
+    timeoutMilliseconds?: number;
+  }): Promise<ActionSequenceRecord>;
+  cancel(): Promise<void>;
+}
+
 export interface Lease {
   readonly status: LeaseStatus;
   readonly leaseSeconds: number;
@@ -164,8 +176,27 @@ export interface Lease {
     expectedRevisions?: Record<string, number>,
     continuation?: import("./generated/api-schemas.js").ApiSchemas["ProgramContinuation"],
   ): Promise<string>;
+  /** Start an ordered action_sequence and return its station-bound handle. */
+  startSequenceExecution(
+    action_sequence: ActionSequenceRequest,
+    captureCameras?: readonly string[],
+  ): Promise<SequenceExecution>;
+  /** Submit a retained compilation with fresh lease and admission checks. */
+  startCompiledExecution(
+    compilationId: string,
+    expectedRevisions?: Record<string, number>,
+    continuation?: import("./generated/api-schemas.js").ApiSchemas["ProgramContinuation"],
+  ): Promise<SequenceExecution>;
   /** Stop an arm only while this lease is current; throws `LeaseLostError` once it is not. */
   stopArm(arm: string): Promise<void>;
+  waitForObservation(
+    selection: import("./generated/api-schemas.js").ApiSchemas["ObservationRequest"],
+    arm: string,
+    timeoutMilliseconds: number,
+    signal?: AbortSignal,
+  ): Promise<
+    import("./generated/api-schemas.js").ApiSchemas["ObservationAnswer"]
+  >;
   /** Report whether a camera the lease requires gives frames; a fresh frame clears its interlock. */
   reportCamera(camera: string, available: boolean): Promise<void>;
   /** Stop the recording only while this lease is current; does nothing once it is not. */
@@ -175,7 +206,7 @@ export interface Lease {
 }
 
 export interface StationConnection {
-  /** The current station HTTP base URL, including when the URL is supplied dynamically. */
+  /** The station HTTP base URL captured when the connection was created. */
   baseUrl?(): string;
   /** Connect, and keep reconnecting while the page is open. */
   start(): void;
@@ -320,11 +351,14 @@ export function createStationConnection(
     (actionSequence: ActionSequenceRecord | null) => void
   >();
   let latestActionSequence: ActionSequenceRecord | null | undefined;
+  const stationAddress =
+    typeof stationUrl === "string" ? stationUrl : stationUrl();
   const connectionListeners = new Set<(connected: boolean) => void>();
   const leaseLostListeners = new Set<() => void>();
   const changeListeners = new Set<() => void>();
   let operationLifetime = new AbortController();
   let runAfter = options.runAfter;
+  let runInstance: string | undefined;
   let connectionLoop: AbortController | null = null;
   let eventCursor: string | null = null;
   let closed = false;
@@ -473,6 +507,7 @@ export function createStationConnection(
     event: StationEvent,
     streamUrl: URL,
     signal: AbortSignal,
+    runStreamInstance: string | null,
   ): Promise<void> {
     const incoming = parseStationEvent(event);
     if (incoming.kind === "resync_required")
@@ -481,16 +516,22 @@ export function createStationConnection(
       console.warn("Ignoring unknown station stream event", incoming.wireKind);
       return;
     }
+    if (event.kind === "run" && incoming.kind !== "snapshot") {
+      receive(incoming);
+      runInstance = runStreamInstance ?? runInstance;
+      return;
+    }
     const previousStateFrameCount = stateFrameCount;
     if (incoming.kind === "snapshot") {
       const replay =
-        runAfter === undefined
+        runStreamInstance !== null || runAfter === undefined
           ? []
           : await replayRunRecords(streamUrl, runAfter, signal);
       signal.throwIfAborted();
       // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
       latestState = null;
       runAfter ??= incoming.runSequence;
+      runInstance ??= incoming.stationInstanceId;
       for (const record of replay) receive(record);
       for (const message of incoming.messages) receive(message);
     } else {
@@ -533,7 +574,15 @@ export function createStationConnection(
       );
       const response = await fetch(url, {
         signal,
-        headers: cursor === null ? {} : { "Last-Event-ID": cursor },
+        headers: {
+          ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
+          "X-RUA-Run-Cursor":
+            runAfter === undefined
+              ? "latest"
+              : runInstance === undefined
+                ? String(runAfter)
+                : `${runInstance}:${runAfter}`,
+        },
       }).finally(() => clearTimeout(handshake));
       signal.throwIfAborted();
       if (response.status === 409 && cursor !== null) {
@@ -548,7 +597,13 @@ export function createStationConnection(
       try {
         await readStationEvents(
           response,
-          (event) => applyStationEvent(event, url, signal),
+          (event) =>
+            applyStationEvent(
+              event,
+              url,
+              signal,
+              response.headers.get("X-RUA-Run-Cursor"),
+            ),
           {
             milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
             abort: () =>
@@ -1082,7 +1137,7 @@ export function createStationConnection(
   }
 
   function baseUrl(): string {
-    return typeof stationUrl === "string" ? stationUrl : stationUrl();
+    return stationAddress;
   }
 
   function stationApi(
@@ -1148,20 +1203,53 @@ export function createStationConnection(
     );
   }
 
+  async function submitSequence<Payload extends object>(
+    request: Payload,
+    submit: (
+      api: ReturnType<typeof createStationApi>,
+      submission: Payload & { request_id: string; station_instance_id: string },
+    ) => Promise<string>,
+  ): Promise<SequenceExecution> {
+    const base = baseUrl();
+    const payload = structuredClone(request);
+    const lifetime = operationLifetime.signal;
+    const request_id = newOperationId();
+    const { id: station_instance_id } = await createStationApi(
+      base,
+      base,
+      lifetime,
+    ).getStationInstance();
+    const submission = { ...payload, request_id, station_instance_id };
+    const executionId = await retryOperationRequest(
+      (signal) => submit(createStationApi(base, base, signal), submission),
+      lifetime,
+    );
+    const reference = `${station_instance_id}~${executionId}`;
+    return {
+      id: executionId,
+      stationInstanceId: station_instance_id,
+      status: () => connection.getActionSequence(reference),
+      wait: (options) => connection.waitForActionSequence(reference, options),
+      cancel: () => stationApi().cancelActionSequenceHttp(reference),
+    };
+  }
+
   async function startActionSequence(
     action_sequence: ActionSequenceRequest,
     captureCameras?: readonly string[],
-  ): Promise<string> {
+  ): Promise<SequenceExecution> {
     const token = heldLeaseToken();
     if (token === null) throw new LeaseLostError();
-    return stationApi().startActionSequenceHttp(
-      apiSchemas.shape.ActionSequenceStartRequest.parse({
-        request_id: newOperationId(),
-        station_instance_id: (await stationApi().getStationInstance()).id,
+    return submitSequence(
+      {
         lease_token: token,
         action_sequence,
         ...(captureCameras?.length ? { capture_cameras: captureCameras } : {}),
-      }),
+      },
+      (api, submission) =>
+        api.startActionSequenceHttp(
+          apiSchemas.shape.ActionSequenceStartRequest.parse(submission),
+        ),
     );
   }
 
@@ -1177,7 +1265,7 @@ export function createStationConnection(
     const requireCurrentLease = () => {
       if (!isHeld()) throw new LeaseLostError();
     };
-    return {
+    const lease: Lease = {
       status: answer.status,
       leaseSeconds: answer.lease_seconds,
       isHeld,
@@ -1254,20 +1342,41 @@ export function createStationConnection(
       },
       async startCompiledSequence(
         compilationId,
+        expectedRevisions,
+        continuation,
+      ) {
+        return (
+          await lease.startCompiledExecution(
+            compilationId,
+            expectedRevisions,
+            continuation,
+          )
+        ).id;
+      },
+      async startCompiledExecution(
+        compilationId,
         expectedRevisions = {},
         continuation,
       ) {
         if (!isHeld()) throw new LeaseLostError();
-        return stationApi().runCompiledSequenceHttp({
-          request_id: newOperationId(),
-          station_instance_id: (await stationApi().getStationInstance()).id,
-          compilation_id: compilationId,
-          continuation: continuation ?? null,
-          lease_token: token,
-          expected_revisions: expectedRevisions,
-        });
+        return submitSequence(
+          {
+            compilation_id: compilationId,
+            continuation: continuation ?? null,
+            lease_token: token,
+            expected_revisions: expectedRevisions,
+          },
+          (api, submission) =>
+            api.runCompiledSequenceHttp(
+              apiSchemas.shape.RunCompiledProgramRequest.parse(submission),
+            ),
+        );
       },
-      startActionSequence(actionSequence, captureCameras) {
+      async startActionSequence(actionSequence, captureCameras) {
+        requireCurrentLease();
+        return (await startActionSequence(actionSequence, captureCameras)).id;
+      },
+      startSequenceExecution(actionSequence, captureCameras) {
         requireCurrentLease();
         return startActionSequence(actionSequence, captureCameras);
       },
@@ -1277,6 +1386,29 @@ export function createStationConnection(
           await stationApi().stopLeasedArmHttp(arm, { lease_token: token });
         } catch (error) {
           if (error instanceof StationHttpError && error.status === 403)
+            throw new LeaseLostError();
+          throw error;
+        }
+      },
+      async waitForObservation(selection, arm, timeoutMilliseconds, signal) {
+        requireCurrentLease();
+        const requestSignal = signal
+          ? AbortSignal.any([signal, operationLifetime.signal])
+          : operationLifetime.signal;
+        try {
+          return await stationApi(requestSignal).captureObservationHttp({
+            ...selection,
+            wait: {
+              arm,
+              lease_token: token,
+              timeout_milliseconds: timeoutMilliseconds,
+            },
+          });
+        } catch (error) {
+          if (
+            !isHeld() ||
+            (error instanceof StationHttpError && error.status === 403)
+          )
             throw new LeaseLostError();
           throw error;
         }
@@ -1307,6 +1439,7 @@ export function createStationConnection(
         if (isHeld()) await returnLease();
       },
     };
+    return lease;
   }
 
   const previewPoses: StationConnection["previewPoses"] = (body) =>
@@ -1314,7 +1447,7 @@ export function createStationConnection(
       apiSchemas.shape.PosePreviewBatchRequest.parse(body),
     );
 
-  return {
+  const connection: StationConnection = {
     baseUrl,
     start() {
       if (closed) operationLifetime = new AbortController();
@@ -1355,13 +1488,16 @@ export function createStationConnection(
         ...(signal ? [signal] : []),
         ...(timeout ? [timeout] : []),
       ]);
+      const base = baseUrl();
       try {
         while (true) {
           const record = await retryOperationRequest(
             (attempt) =>
-              stationApi(attempt).waitActionSequenceCompletion(
-                actionSequenceId,
-              ),
+              createStationApi(
+                base,
+                base,
+                attempt,
+              ).waitActionSequenceCompletion(actionSequenceId),
             requestSignal,
           );
           if (record !== null)
@@ -1490,4 +1626,5 @@ export function createStationConnection(
       };
     },
   };
+  return connection;
 }

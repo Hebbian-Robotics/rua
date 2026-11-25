@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use hebbian_contracts::{ActionSequencePhase, ActionSequenceRecord};
 use tokio::sync::watch;
@@ -83,13 +83,6 @@ impl ExecutionRegistry {
             .find_map(|active| active.record_for_id(id))
     }
 
-    pub(super) fn progress_for(&self, id: &str) -> Option<watch::Receiver<ActionSequenceRecord>> {
-        self.sequences
-            .iter()
-            .find(|active| active.has_id(id))
-            .map(ActiveExecution::subscribe)
-    }
-
     #[must_use]
     pub fn current(&self) -> Option<watch::Receiver<ActionSequenceRecord>> {
         self.sequences.back().map(ActiveExecution::subscribe)
@@ -139,17 +132,16 @@ impl ActiveExecution {
         self.progress.subscribe()
     }
 
-    #[must_use]
-    pub fn new(record: ActionSequenceRecord, owner: String) -> (Self, watch::Receiver<bool>) {
-        let (cancellation, receiver) = watch::channel(false);
-        (
-            Self {
-                progress: ExecutionProgress::new(record),
-                cancellation,
-                owner,
-            },
-            receiver,
-        )
+    pub fn new(
+        record: ActionSequenceRecord,
+        owner: String,
+        cancellation: watch::Sender<bool>,
+    ) -> Self {
+        Self {
+            progress: ExecutionProgress::new(record),
+            cancellation,
+            owner,
+        }
     }
 
     pub(super) fn progress(&self) -> ExecutionProgress {
@@ -179,6 +171,10 @@ impl ExecutionProgress {
     #[must_use]
     pub fn subscribe(&self) -> watch::Receiver<ActionSequenceRecord> {
         self.updates.subscribe()
+    }
+
+    pub fn downgrade(&self) -> Weak<watch::Sender<ActionSequenceRecord>> {
+        Arc::downgrade(&self.updates)
     }
 
     pub fn update(&self, update: impl FnOnce(&mut ActionSequenceRecord)) {

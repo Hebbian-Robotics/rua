@@ -447,14 +447,41 @@ wheels = [
 [[package]]
 name = "hebbian-rua"
 version = "0.1.7"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../../" }
 dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
 ]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/06/bf7908f6e9950918442f175ec2fe4c08f0bc7e263fbc26c598071f55d070/hebbian_rua-0.1.7-cp312-abi3-macosx_14_0_arm64.whl", hash = "sha256:dd45d376eb4ed87fcb4cd7d943b07289c09c3e2c0fa869cac27e5805db22a279", size = 30238495, upload-time = "2026-11-25T08:13:35.391Z" },
-    { url = "https://files.pythonhosted.org/packages/58/57/cbecf28e08669b401c26a6574f389d940c0d5d4398c058983cdaf4c1acf3/hebbian_rua-0.1.7-cp312-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:0a30dd145dc8f5119aff0ed78d20b21a2b85ddd6079475cf7e1e65fea0ee87bb", size = 34190366, upload-time = "2026-11-25T08:13:38.84Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=2.8.0" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=3.1.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=3.49.0" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
+]
+provides-extras = ["openai", "anthropic", "gemini"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "anthropic", specifier = ">=2.8.0" },
+    { name = "datamodel-code-generator", specifier = ">=0.89.0" },
+    { name = "google-genai", specifier = ">=3.1.0" },
+    { name = "httpx2", specifier = ">=2.16.0" },
+    { name = "import-linter", specifier = ">=2.15" },
+    { name = "mujoco", specifier = ">=3.17.0" },
+    { name = "numpy", specifier = ">=2" },
+    { name = "openai", specifier = ">=3.49.0" },
+    { name = "opentelemetry-api", specifier = ">=1.39" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39" },
+    { name = "opentelemetry-sdk", specifier = ">=1.39" },
+    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "psutil", specifier = ">=7.2.2" },
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "rua-dev", editable = "../../tooling" },
+    { name = "ruff" },
+    { name = "ty" },
 ]
 
 [[package]]
@@ -1002,7 +1029,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=2.8.0" },
     { name = "cyclopts", specifier = ">=5.3.2" },
     { name = "google-genai", specifier = ">=3.1.0" },
-    { name = "hebbian-rua", specifier = "==0.1.7" },
+    { name = "hebbian-rua", editable = "../../" },
     { name = "openai", specifier = ">=3.49.0" },
     { name = "opentelemetry-api", specifier = ">=1.39" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39" },

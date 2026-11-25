@@ -257,6 +257,10 @@ async fn read_action_sequence_by_id(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Response {
+    let id = match station_state.execution_id(id) {
+        Ok(id) => id,
+        Err(error) => return error.into_response(),
+    };
     match station_state
         .admission
         .decide(move |state| state.executions.lookup(&id))
@@ -268,7 +272,7 @@ async fn read_action_sequence_by_id(
     }
 }
 
-fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> {
+pub(super) fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> {
     OperationId::parse(value).ok_or((
         StatusCode::BAD_REQUEST,
         "Expected a UUID v4 operation ID".to_owned(),
@@ -279,9 +283,10 @@ async fn wait_action_sequence_completion(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let id = OperationId::parse(&station_state.execution_id(id)?);
     let mut progress = station_state
         .admission
-        .decide(move |state| state.executions.progress_for(&id))
+        .decide(move |state| id.and_then(|id| state.operations.program_completion(id)))
         .await
         .map_err(admission_unavailable)?
         .ok_or((
@@ -416,6 +421,7 @@ async fn cancel_action_sequence(
     State(station_state): State<Arc<StationHttpState>>,
     UrlPath(id): UrlPath<String>,
 ) -> Result<axum::http::StatusCode, (axum::http::StatusCode, String)> {
+    let id = station_state.execution_id(id)?;
     if station_state
         .admission
         .decide(move |state| state.executions.cancel(&id))
@@ -577,7 +583,9 @@ async fn cancel_operation(
             .await
             .map_err(admission_unavailable)??
         {
-            CancellationResult::AlreadyStopped => return Ok(StatusCode::NO_CONTENT),
+            CancellationResult::AlreadyStopped | CancellationResult::ProgramSignalled => {
+                return Ok(StatusCode::NO_CONTENT);
+            }
             CancellationResult::Expired => {
                 return Err((
                     StatusCode::GONE,
@@ -1124,18 +1132,145 @@ fn encode_station_event(
         .json_data(event.payload.as_ref())
 }
 
+const RUN_CURSOR_HEADER: &str = "x-rua-run-cursor";
+
+enum RunReplayStart {
+    Latest,
+    Resume(u64),
+    Restarted,
+}
+
+fn parse_run_cursor(
+    cursor: Option<&axum::http::HeaderValue>,
+    station_instance: &str,
+) -> Result<RunReplayStart, (StatusCode, String)> {
+    let Some(cursor) = cursor else {
+        return Ok(RunReplayStart::Latest);
+    };
+    let invalid = || (StatusCode::BAD_REQUEST, "Invalid run cursor".to_owned());
+    let value = cursor.to_str().map_err(|_| invalid())?;
+    if value == "latest" {
+        return Ok(RunReplayStart::Latest);
+    }
+    let (instance, sequence) = value.rsplit_once(':').unwrap_or(("", value));
+    let sequence = sequence.parse::<u64>().map_err(|_| invalid())?;
+    Ok(if instance.is_empty() || instance == station_instance {
+        RunReplayStart::Resume(sequence)
+    } else {
+        RunReplayStart::Restarted
+    })
+}
+
+type EventSender = tokio::sync::mpsc::Sender<Result<axum::response::sse::Event, axum::Error>>;
+
+async fn forward_state_events(
+    sender: &EventSender,
+    instance: &str,
+    mut updates: tokio::sync::broadcast::Receiver<super::events::StationEvent>,
+) {
+    use axum::response::sse::Event;
+    loop {
+        match updates.recv().await {
+            Ok(event) => {
+                if sender
+                    .send(encode_station_event(instance, &event))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                let _ = sender
+                    .send(Ok(Event::default()
+                        .event("resync_required")
+                        .data("Event stream fell behind")))
+                    .await;
+                return;
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+        }
+    }
+}
+
+async fn forward_run_events(
+    sender: &EventSender,
+    station: &StationHttpState,
+    mut changes: tokio::sync::watch::Receiver<()>,
+    start: RunReplayStart,
+    window: super::RunReplayWindow,
+    event_kind: &'static str,
+) {
+    use axum::response::sse::Event;
+    let mut sequence = match start {
+        RunReplayStart::Resume(sequence) => sequence,
+        RunReplayStart::Latest | RunReplayStart::Restarted => window.newest,
+    };
+    if matches!(start, RunReplayStart::Restarted)
+        && sender
+            .send(
+                Event::default()
+                    .event(event_kind)
+                    .json_data(ServerMessage::RunResync {
+                        oldest_retained: window.oldest_retained,
+                        newest: window.newest,
+                    }),
+            )
+            .await
+            .is_err()
+    {
+        return;
+    }
+    let mut revision = None;
+    loop {
+        changes.borrow_and_update();
+        let batch = station.run_updates(&mut sequence, &mut revision);
+        let messages = batch.records.into_iter().chain(
+            batch
+                .snapshot
+                .map(|run| ServerMessage::Run { run: Box::new(run) }),
+        );
+        for message in messages {
+            if sender
+                .send(Event::default().event(event_kind).json_data(message))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+        if changes.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
 async fn stream_events(
     State(station_state): State<Arc<StationHttpState>>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
     use crate::station_api::events::EventSubscription;
+    use axum::response::IntoResponse;
     use axum::response::sse::Event;
     let cursor = parse_event_cursor(&headers)?;
-    let (initial, mut updates) = match cursor {
+    let run_cursor = headers.get(RUN_CURSOR_HEADER);
+    let run_changes = station_state.subscribe_run();
+    let run_window = station_state.run_replay_window();
+    let run_start = if run_cursor.is_none() && cursor.is_some() {
+        // WHY: Legacy SDKs resume with only a state cursor and deduplicate run records themselves.
+        RunReplayStart::Resume(run_window.oldest_retained.saturating_sub(1))
+    } else {
+        parse_run_cursor(run_cursor, &station_state.instance_id)?
+    };
+    let run_event_kind = if run_cursor.is_some() {
+        "run"
+    } else {
+        "station"
+    };
+    let (initial, updates) = match cursor {
         None => {
             let SnapshotSubscription {
                 sequence,
-                run_sequence,
                 items,
                 updates,
             } = station_state.subscribe_with_snapshot().ok_or_else(|| {
@@ -1150,7 +1285,7 @@ async fn stream_events(
                 .json_data(hebbian_contracts::StationEventSnapshot {
                     station_instance_id: station_state.instance_id.clone(),
                     sequence,
-                    run_sequence,
+                    run_sequence: run_window.newest,
                     items: items.iter().map(AsRef::as_ref).collect(),
                 })
                 .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
@@ -1181,45 +1316,31 @@ async fn stream_events(
             ));
         }
     };
-    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Event, axum::Error>>(64);
-    let instance_id = station_state.instance_id.clone();
+    let (sender, receiver) = tokio::sync::mpsc::channel(64);
+    let station_instance = axum::http::HeaderValue::from_str(&station_state.instance_id)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     tokio::spawn(async move {
         for event in initial {
             if sender.send(Ok(event)).await.is_err() {
                 return;
             }
         }
-        loop {
-            let update = tokio::select! {
-                () = sender.closed() => return,
-                update = updates.recv() => update,
-            };
-            match update {
-                Ok(event) => {
-                    if sender
-                        .send(encode_station_event(&instance_id, &event))
-                        .await
-                        .is_err()
-                    {
-                        return;
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    let _ = sender
-                        .send(Ok(Event::default()
-                            .event("resync_required")
-                            .data("Event stream fell behind")))
-                        .await;
-                    return;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-            }
+        tokio::select! {
+            () = sender.closed() => {}
+            () = forward_state_events(&sender, &station_state.instance_id, updates) => {}
+            () = forward_run_events(&sender, &station_state, run_changes, run_start, run_window, run_event_kind) => {}
         }
     });
-    Ok(
+    let mut response =
         axum::response::sse::Sse::new(tokio_stream::wrappers::ReceiverStream::new(receiver))
-            .keep_alive(axum::response::sse::KeepAlive::default()),
-    )
+            .keep_alive(axum::response::sse::KeepAlive::default())
+            .into_response();
+    if run_cursor.is_some() {
+        response
+            .headers_mut()
+            .insert(RUN_CURSOR_HEADER, station_instance);
+    }
+    Ok(response)
 }
 
 async fn station_instance(

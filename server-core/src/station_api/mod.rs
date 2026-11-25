@@ -18,4 +18,4 @@ mod telemetry;
 pub use http::{HttpServer, trace_directories};
 pub use sequence_images::SequenceCameraSource;
 pub use state::station_state;
-pub use telemetry::{DiscardTelemetry, RunTelemetry, RunUpdates};
+pub use telemetry::{DiscardTelemetry, RunReplayWindow, RunTelemetry, RunUpdates};

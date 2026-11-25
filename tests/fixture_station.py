@@ -123,6 +123,7 @@ def station_process(
     executable: Path,
     *extra_arguments: str,
     profile: Path = MUJOCO_PROFILE,
+    http_address: str = "127.0.0.1:0",
     work_directory: Path | None = None,
     local_cameras_only: bool = True,
 ) -> Generator[StationProcess]:
@@ -134,7 +135,7 @@ def station_process(
                 "--no-physics-stand-in",
                 *(("--local-only-no-remote-cameras",) if local_cameras_only else ()),
                 "--http-address",
-                "127.0.0.1:0",
+                http_address,
                 *(
                     ("--media-address", "127.0.0.1:0")
                     if "--media-address" not in extra_arguments

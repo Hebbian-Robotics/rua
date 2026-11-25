@@ -5,12 +5,12 @@ Install a released version with `pnpm add hebbian-rua`.
 Use the [motion unit converters](../docs/write-your-own-loop.md#choose-motion-units-in-the-sdk)
 to prepare direct SDK requests in your preferred units.
 
-## Try the published SDK
+## Read station state
 
 Use Node.js 24 and the pnpm version pinned in the root `package.json`.
 From the checkout root, install dependencies with `pnpm install --frozen-lockfile`.
-The runnable examples and the snippet below use the published SDK pinned in
-the root lockfile. To try SDK changes from source, see [Package builds](#package-builds).
+The snippet and runnable TypeScript examples use the SDK from this checkout.
+See [Package builds](#package-builds) to try SDK changes outside the workspace.
 
 To read state without moving the robot, start a station
 ([MuJoCo quickstart](../docs/simulation.md) or [hardware setup](../docs/getting-started.md)).
@@ -49,12 +49,12 @@ let lease: Awaited<ReturnType<typeof connection.acquireLease>> | undefined;
 try {
   // Motion exists only on the lease; throws LeaseHeldElsewhereError when someone else holds it.
   lease = await connection.acquireLease("my program");
-  const actionSequenceId = await lease.startActionSequence({
+  const execution = await lease.startSequenceExecution({
     steps: [
       { arms: { arm: { goal: { kind: "joints", joints: [0, 0, 0, 0, 0] }, gripper_opening: 1 } } },
     ],
   });
-  const result = await connection.waitForActionSequence(actionSequenceId);
+  const result = await execution.wait();
   console.log(result.phase, result.steps);
 } finally {
   try {
@@ -70,9 +70,8 @@ reached its planned targets; a stopped result explains why it ended. A dropped
 connection stops the action sequence by default. See the
 [control model](../docs/control-model.md) for lease and interruption behavior.
 
-Pass `signal` or `timeoutMilliseconds` to `waitForActionSequence` to bound the
-client's wait. To stop a running sequence, call `cancelActionSequence` with its
-ID and wait for a terminal result before submitting another move.
+Pass `signal` or `timeoutMilliseconds` to `execution.wait()` to bound the
+client's wait. To stop a running sequence, call `execution.cancel()` and wait for a terminal result before submitting another move.
 
 ## Compile before running
 
@@ -82,10 +81,10 @@ Ordinary sequences compile automatically. Advanced callers can inspect first:
 const outcome = await connection.compileActionSequence(source);
 if (outcome.kind === "compiled") {
   console.log(outcome.artifact.compiled);
-  const executionId = await lease.startCompiledSequence(
+  const execution = await lease.startCompiledExecution(
     outcome.artifact.compilation_id,
   );
-  const result = await connection.waitForActionSequence(executionId);
+  const result = await execution.wait();
   console.log(result.compilation_id, result.phase);
 } else {
   console.log(outcome.diagnostics);
@@ -231,13 +230,13 @@ console.log(definitions, context, results[0]?.data);
 robot.close();
 ```
 
-Acquire the lease on the connection before using `observeWhenReady()`, which
-reports required cameras with its token. Call `robot.close()` when finished to
+Acquire the lease before using `observeWhenReady()`. The station waits for arm
+recovery and fresh required camera frames under that lease. Call `robot.close()` when finished to
 remove its lease-loss listener. Interrupted commands do not resume; the next model
 turn receives a fresh observation and decides what to do.
 
 Helpers for a loop: `observeWhenReady({ note, extraLines })` puts lines above the state text and
-throws `ArmRecoveryEndedError` (arm faulted) or `LeaseLostError`;
+throws `ArmRecoveryEndedError` (arm disabled or faulted) or `LeaseLostError`;
 `waitForArmRecovery()` waits for a recovered hold with no interlock and returns false when
 the arm faulted; `execute(calls, revisions, wrap)` sends each arm's observed revision as
 `expected_revision`, and lets `wrap(call, run)` surround each call

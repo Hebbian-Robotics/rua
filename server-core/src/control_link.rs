@@ -326,7 +326,8 @@ impl LinkHandle {
         *self.shared.changes.borrow()
     }
 
-    pub(crate) fn authority_changes(&self) -> tokio::sync::watch::Receiver<()> {
+    #[must_use]
+    pub fn authority_changes(&self) -> tokio::sync::watch::Receiver<()> {
         self.shared.lease.authority_changes()
     }
 

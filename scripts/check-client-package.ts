@@ -53,6 +53,35 @@ import { createStationConnection, apiSchemas } from "hebbian-rua";
 assert.ok(import.meta.resolve("hebbian-rua").endsWith("/dist/index.js"));
 assert.equal(typeof createStationConnection, "function");
 assert.ok(apiSchemas.shape.StationState);
+const stationUrl = process.env.RUA_PACKAGE_CHECK_STATION;
+if (stationUrl) {
+  const connection = createStationConnection(stationUrl, "agent");
+  try {
+    connection.start();
+    const state = await connection.state();
+    assert.equal(state.arms.length, 1);
+    assert.equal(state.arms[0].mode, "holding");
+    const lease = await connection.acquireLease("installed SDK quickstart", {
+      requiredCameras: ["sim_overview"],
+    });
+    try {
+      const observation = await lease.waitForObservation(
+        { required_cameras: ["sim_overview"] }, state.arms[0].arm, 5000,
+      );
+      assert.equal(observation.status, "observation_captured");
+      assert.equal(observation.state.arms[0].mode, "holding");
+      assert.deepEqual(observation.state.arms[0].interlocks, []);
+      const jpeg = Buffer.from(observation.cameras.sim_overview.jpeg_base64, "base64");
+      assert.equal(jpeg.readUInt16BE(0), 0xffd8);
+    } finally {
+      await lease.return();
+    }
+    const recording = await fetch(new URL("/recording/enabled", stationUrl));
+    assert.equal(await recording.json(), false);
+  } finally {
+    connection.close();
+  }
+}
 `,
   );
   execFileSync(process.execPath, ["consumer.mjs"], {

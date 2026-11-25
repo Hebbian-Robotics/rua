@@ -188,9 +188,11 @@ def test_canceled_sequence_releases_the_arm_for_the_next_sequence(
                         ]
                     )
 
-                canceled_id = await lease.start_action_sequence(sequence(target_joints))
-                await client.cancel_action_sequence(canceled_id)
-                canceled = await client.wait_for_action_sequence(canceled_id)
+                execution = await lease.start_sequence_execution(
+                    sequence(target_joints)
+                )
+                await execution.cancel()
+                canceled = await execution.wait()
                 assert canceled.phase.state == "stopped"
                 assert canceled.phase.failure.stage == "cancellation"
 
@@ -438,6 +440,19 @@ def test_observation_reports_revision_changed_during_camera_capture(
                     assert (
                         pending.result().root.status == "observation_revision_changed"
                     )
+                    recovered = (
+                        await lease.wait_for_observation(selection, ARM, 5000)
+                    ).root
+                    assert recovered.status == "observation_captured"
+                    assert not recovered.state.arms[0].interlocks
+                    recovered_revision = recovered.state.arms[0].revision
+                    await client.wait_for_state(
+                        lambda state: (
+                            state.arms[0].revision == recovered_revision
+                            and not state.arms[0].interlocks
+                        )
+                    )
+                    assert recovered.cameras["front"].jpeg_base64
 
     asyncio.run(asyncio.wait_for(exercise(), timeout=10))
 

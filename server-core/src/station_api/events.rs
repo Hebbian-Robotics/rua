@@ -43,7 +43,6 @@ enum SnapshotKey {
     ArmState(String),
     ArmSnapshot(String),
     StationState,
-    Run,
     ActionSequence(Vec<String>),
 }
 
@@ -235,7 +234,6 @@ impl JournalState {
             let key = match message {
                 ServerMessage::Frame { arm, frame } => self.retain_arm_frame(arm, frame, &event),
                 ServerMessage::State { .. } => Some(SnapshotKey::StationState),
-                ServerMessage::Run { .. } => Some(SnapshotKey::Run),
                 ServerMessage::ActionSequenceState {
                     action_sequence: Some(record),
                 } => Some(SnapshotKey::ActionSequence(record.arms.clone())),
@@ -246,6 +244,7 @@ impl JournalState {
                 | ServerMessage::PreviewAnswer { .. }
                 | ServerMessage::LeaseLost { .. }
                 | ServerMessage::ActionSequenceState { .. }
+                | ServerMessage::Run { .. }
                 | ServerMessage::RunEvent { .. }
                 | ServerMessage::RunSpan { .. }
                 | ServerMessage::RunResync { .. }

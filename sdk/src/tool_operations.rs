@@ -39,7 +39,7 @@ pub(crate) enum ToolOperationAnswer {
         results: Vec<PosePreviewCandidateResult>,
     },
     ActionSequence {
-        action_sequence_id: String,
+        execution: crate::SequenceExecution,
     },
     Observation {
         state: Box<StationState>,

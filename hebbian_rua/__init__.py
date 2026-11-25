@@ -33,7 +33,7 @@ from hebbian_rua.client.llm.types import (
     SequenceImage,
     SequenceImageHistory,
 )
-from hebbian_rua.client.station_client import StationClient
+from hebbian_rua.client.station_client import SequenceExecution, StationClient
 from hebbian_rua.client.station_types import ActionSequenceUnavailable
 from hebbian_rua.client.units import (
     AngleUnit,
@@ -61,6 +61,7 @@ __all__ = [
     "RobotToolSpec",
     "RobotToolTurn",
     "RobotTools",
+    "SequenceExecution",
     "SequenceImage",
     "SequenceImageHistory",
     "SingleArmSequence",

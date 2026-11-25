@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use hebbian_contracts::{
     ActionSequenceRequest, CompilationTarget, RunEvent, ServerMessage, TraceSpan,
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
 use crate::control_link::LinkHandle;
@@ -18,14 +18,13 @@ use super::events::{EventJournal, EventSubscription, StationEvent, StreamPayload
 use super::programs::{
     ArtifactLookup, CompilationRetention, ProgramArtifact, ProgramCompilation, ProgramStore,
 };
-use super::submissions::{LeaseSubmissions, ProgramSubmissionError, ProgramSubmissions};
+use super::submissions::{LeaseSubmissions, ProgramSubmissionError};
 use super::telemetry::RunTelemetry;
 
 pub(super) const SHUTTING_DOWN: &str = "Station is shutting down";
 
 pub(super) struct SnapshotSubscription {
     pub(super) sequence: u64,
-    pub(super) run_sequence: u64,
     pub(super) items: Vec<Arc<StreamPayload>>,
     pub(super) updates: broadcast::Receiver<StationEvent>,
 }
@@ -34,12 +33,12 @@ pub(super) struct StationHttpState {
     shutdown_requested: Arc<AtomicBool>,
     pub(super) sequence_cameras: OnceLock<super::SequenceCameraSource>,
     pub(super) sequence_images: super::sequence_images::SequenceImages,
-    pub(super) program_submissions: ProgramSubmissions,
     programs: ProgramStore,
     compilation_targets: OnceLock<Result<BTreeMap<String, CompilationTarget>, String>>,
     pub(super) trace_directories: Vec<PathBuf>,
     arms: OnceLock<BTreeMap<String, LinkHandle>>,
     telemetry: Arc<dyn RunTelemetry>,
+    run_changes: watch::Sender<()>,
     pub(super) admission: AdmissionOwner,
     pub(super) instance_id: String,
     pub(super) lease_submissions: LeaseSubmissions,
@@ -60,12 +59,12 @@ impl StationHttpState {
             shutdown_requested,
             sequence_cameras: OnceLock::new(),
             sequence_images,
-            program_submissions: ProgramSubmissions::default(),
             programs: ProgramStore::default(),
             compilation_targets: OnceLock::new(),
             trace_directories,
             arms: OnceLock::new(),
             telemetry,
+            run_changes: watch::Sender::new(()),
             admission: AdmissionOwner::start(runtime, Arc::clone(&events)),
             instance_id: Uuid::new_v4().to_string(),
             lease_submissions: LeaseSubmissions::default(),
@@ -110,22 +109,6 @@ impl StationHttpState {
                     });
                 } else {
                     snapshot_state.invalidate_station_state();
-                }
-            }
-        });
-        let run_state = Arc::clone(self);
-        runtime.spawn(async move {
-            let mut cursor = run_state.telemetry.newest_seq();
-            let mut revision = None;
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            loop {
-                interval.tick().await;
-                let updates = run_state.telemetry.updates(&mut cursor, &mut revision);
-                for record in updates.records {
-                    run_state.publish_event(record);
-                }
-                if let Some(run) = updates.snapshot {
-                    run_state.publish_event(ServerMessage::Run { run: Box::new(run) });
                 }
             }
         });
@@ -190,7 +173,6 @@ impl StationHttpState {
         }
         Some(SnapshotSubscription {
             sequence,
-            run_sequence: self.telemetry.newest_seq(),
             items,
             updates,
         })
@@ -202,10 +184,28 @@ impl StationHttpState {
 
     pub(super) fn record_run_event(&self, event: RunEvent) {
         self.telemetry.record_event(event);
+        self.run_changes.send_replace(());
     }
 
     pub(super) fn record_run_spans(&self, spans: Vec<TraceSpan>) {
         self.telemetry.record_spans(spans);
+        self.run_changes.send_replace(());
+    }
+
+    pub(super) fn subscribe_run(&self) -> watch::Receiver<()> {
+        self.run_changes.subscribe()
+    }
+
+    pub(super) fn run_replay_window(&self) -> super::RunReplayWindow {
+        self.telemetry.replay_window()
+    }
+
+    pub(super) fn run_updates(
+        &self,
+        sequence: &mut u64,
+        revision: &mut Option<u64>,
+    ) -> super::telemetry::RunUpdates {
+        self.telemetry.updates(sequence, revision)
     }
 
     pub(super) fn replay_run_records(&self, mut after: u64) -> Vec<ServerMessage> {
@@ -269,6 +269,14 @@ impl StationHttpState {
             ));
         }
         Ok(())
+    }
+
+    pub(super) fn execution_id(&self, reference: String) -> Result<String, (StatusCode, String)> {
+        if let Some((instance, execution_id)) = reference.split_once('~') {
+            self.require_station_instance(instance)?;
+            return Ok(execution_id.to_owned());
+        }
+        Ok(reference)
     }
 
     pub(super) fn validate_submission_id(

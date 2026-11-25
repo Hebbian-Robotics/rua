@@ -13729,6 +13729,35 @@ export const apiSchemas = z.object({
       camera: z.string(),
       status: z.literal("observation_required_camera_unavailable"),
     }),
+    z.object({
+      arm: z.string(),
+      mode: z
+        .union([
+          z
+            .literal("disabled")
+            .describe("Torque off; only `enable` is accepted."),
+          z.literal("holding").describe("Torque on, holding between commands."),
+          z.literal("moving").describe("Following a motion or a stream."),
+          z
+            .literal("faulted")
+            .describe(
+              "Powered off after a hard fault; refuses everything until `clear_fault`.",
+            ),
+          z
+            .literal("disconnected")
+            .describe(
+              "The bus stopped answering: torque is off as far as the bus allowed, and\nthe port is opened again every second. Refuses everything meanwhile.",
+            ),
+          z
+            .literal("reconnected")
+            .describe(
+              "The bus answers again, set up as at startup, with torque off. Nothing\nresumes on its own: as when disabled, only `enable` is accepted.",
+            ),
+        ])
+        .describe("Where the arm stands."),
+      status: z.literal("observation_recovery_ended"),
+    }),
+    z.object({ status: z.literal("observation_wait_timed_out") }),
   ]),
   ObservationFrame: z
     .object({
@@ -13781,9 +13810,39 @@ export const apiSchemas = z.object({
             ),
         )
         .default([]),
+      wait: z
+        .union([
+          z
+            .object({
+              arm: z.string(),
+              lease_token: z.string(),
+              timeout_milliseconds: z
+                .number()
+                .int()
+                .gte(1)
+                .lte(5000)
+                .describe("The maximum total wait, including camera capture."),
+            })
+            .strict(),
+          z.null(),
+        ])
+        .describe("Wait for a selected arm to recover under the current lease.")
+        .optional(),
     })
     .strict()
     .describe("Select robot state and camera snapshots for one observation."),
+  ObservationWait: z
+    .object({
+      arm: z.string(),
+      lease_token: z.string(),
+      timeout_milliseconds: z
+        .number()
+        .int()
+        .gte(1)
+        .lte(5000)
+        .describe("The maximum total wait, including camera capture."),
+    })
+    .strict(),
   OnInterruption: z
     .union([
       z

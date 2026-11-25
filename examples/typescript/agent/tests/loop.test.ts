@@ -446,7 +446,7 @@ test("an observation that went stale gets error results and a fresh observation,
 test("an arm that faulted ends the run during recovery", async () => {
   station.armMode = "faulted";
   const { result } = await runLoop([]);
-  expect(result).toBe("The arm faulted while waiting for recovery");
+  expect(result).toBe("Arm follower is faulted");
 });
 
 test("losing the lease ends the run without stopping the recording", async () => {

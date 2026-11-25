@@ -57,6 +57,14 @@ class RequiredCameraUnavailable(Exception):
         super().__init__(f"Required camera {camera} is unavailable")
 
 
+class ArmRecoveryEnded(Exception):
+    """The arm was disabled or faulted before it recovered."""
+
+
+class ObservationWaitTimedOut(Exception):
+    """The station reached the deadline before the observation was ready."""
+
+
 class ArmCommunicationInterrupted(Exception):
     """An arm observation is unavailable until communication recovers."""
 
@@ -153,9 +161,15 @@ class RobotTools:
         return (await self.capture(note)).observation
 
     async def capture(
-        self, note: str = "", extra_lines: Sequence[str] = ()
+        self,
+        note: str = "",
+        extra_lines: Sequence[str] = (),
+        *,
+        wait_milliseconds: int | None = None,
     ) -> CapturedObservation:
-        output, captures, revisions = await self._capture_output(note, extra_lines)
+        output, captures, revisions = await self._capture_output(
+            note, extra_lines, wait_milliseconds=wait_milliseconds
+        )
         content = self._output_formatter(deepcopy(output))
         return CapturedObservation(
             RobotObservation(
@@ -165,19 +179,31 @@ class RobotTools:
         )
 
     async def _capture_output(
-        self, note: str = "", extra_lines: Sequence[str] = ()
+        self,
+        note: str = "",
+        extra_lines: Sequence[str] = (),
+        *,
+        wait_milliseconds: int | None = None,
     ) -> tuple[RobotOutput, dict[str, CameraJpeg], dict[str, int]]:
-        capture = (
-            await self.station.capture_observation(
-                ObservationRequest(
-                    required_cameras=list(self.cameras),
-                    optional_cameras=list(self.optional_cameras),
-                )
+        selection = ObservationRequest(
+            required_cameras=list(self.cameras),
+            optional_cameras=list(self.optional_cameras),
+        )
+        answer = (
+            await self.station.capture_observation(selection)
+            if wait_milliseconds is None
+            else await self.lease.wait_for_observation(
+                selection, self.arm, wait_milliseconds
             )
-        ).root
+        )
+        capture = answer.root
         if not isinstance(capture, ObservationAnswer1):
             if capture.status == "observation_required_camera_unavailable":
                 raise RequiredCameraUnavailable(capture.camera)
+            if capture.status == "observation_wait_timed_out":
+                raise ObservationWaitTimedOut
+            if capture.status == "observation_recovery_ended":
+                raise ArmRecoveryEnded
             raise ArmCommunicationInterrupted(
                 f"Arm {capture.arm} changed or disconnected during observation"
             )

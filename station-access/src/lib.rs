@@ -73,6 +73,7 @@ fn phone_reachability(server_url: &str) -> Result<(), PhoneUnreachableServer> {
 }
 
 // INVARIANT: Secrets deliberately do not implement `Debug`, `Serialize` or `JsonSchema`.
+#[derive(Clone)]
 pub struct Credentials {
     pub url: String,
     api_key: String,

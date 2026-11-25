@@ -35,7 +35,7 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
                 runtime,
                 address,
                 WebSettings {
-                    local_cameras_only: false,
+                    local_cameras_only: true,
                     recordings_directory: std::env::temp_dir(),
                     enable_recording: false,
                     media_address: Some(media_address),
@@ -45,6 +45,7 @@ fn station(media_address: SocketAddr, camera_forwarding: CameraForwarding) -> Ht
                     phone_page_url: web::DEFAULT_PHONE_PAGE_URL.into(),
                     media_status,
                 },
+                web::MediaCapabilities::LocalOnly,
                 || true,
             );
             Ok(router)
