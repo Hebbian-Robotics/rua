@@ -73,6 +73,13 @@ impl StationHttpState {
         }
     }
 
+    pub(super) async fn state_reflecting(
+        &self,
+        records: &[hebbian_contracts::ArmRecord],
+    ) -> Option<u64> {
+        self.events.state_reflecting(records).await
+    }
+
     pub(super) fn is_shutting_down(&self) -> bool {
         self.shutdown_requested.load(Ordering::Acquire)
     }
