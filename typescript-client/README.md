@@ -204,8 +204,9 @@ results with structured `data`, `text`, and outcome flags. Calls use `{ id, name
 arguments }` with parsed JSON arguments. Model inputs use `position_mm`,
 `joints_degrees`, and `max_joint_speed_degrees_per_second`. `data` retains full SI
 payloads; `text` and `modelData` provide the selected model view. Preview candidates contain only a `pose`; results follow input order
-without IDs or labels. The adapter generates transport IDs internally. The station admits calls as one batch
-and rejects the whole batch if two calls command the same arm resource. An
+without IDs or labels. The adapter generates transport IDs internally. The SDK
+executes calls concurrently and returns results in input order. The station
+evaluates each submitted action against current control and admission state. An
 `observe` defaults to current state in `data` and labelled JPEGs in `cameras`.
 Call it with `{ source: "last_sequence" }` to retrieve retained sequence images
 and timing metadata instead. Automatic `await robot.observe()` calls always
