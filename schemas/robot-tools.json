@@ -82,7 +82,7 @@
                         "description": "A tool orientation as a client gives it.",
                         "oneOf": [
                           {
-                            "description": "The approach direction and the jaw yaw about it, in degrees.",
+                            "description": "The approach direction and the jaw yaw about it.",
                             "properties": {
                               "approach": {
                                 "anyOf": [
@@ -114,6 +114,7 @@
                                 "description": "The direction the jaws point along: a named one, or a nonzero world direction."
                               },
                               "jaw_yaw_degrees": {
+                                "description": "Jaw yaw in degrees.",
                                 "type": "number"
                               }
                             },
@@ -234,7 +235,7 @@
                               "description": "A tool orientation as a client gives it.",
                               "oneOf": [
                                 {
-                                  "description": "The approach direction and the jaw yaw about it, in degrees.",
+                                  "description": "The approach direction and the jaw yaw about it.",
                                   "properties": {
                                     "approach": {
                                       "anyOf": [
@@ -266,6 +267,7 @@
                                       "description": "The direction the jaws point along: a named one, or a nonzero world direction."
                                     },
                                     "jaw_yaw_degrees": {
+                                      "description": "Jaw yaw in degrees.",
                                       "type": "number"
                                     }
                                   },
@@ -402,12 +404,13 @@
           "description": "A tool orientation as a client gives it.",
           "oneOf": [
             {
-              "description": "The approach direction and the jaw yaw about it, in degrees.",
+              "description": "The approach direction and the jaw yaw about it.",
               "properties": {
                 "approach": {
                   "$ref": "#/$defs/Approach"
                 },
                 "jaw_yaw_degrees": {
+                  "description": "Jaw yaw in degrees.",
                   "type": "number"
                 }
               },
@@ -564,12 +567,13 @@
           "description": "A tool orientation as a client gives it.",
           "oneOf": [
             {
-              "description": "The approach direction and the jaw yaw about it, in degrees.",
+              "description": "The approach direction and the jaw yaw about it.",
               "properties": {
                 "approach": {
                   "$ref": "#/$defs/Approach"
                 },
                 "jaw_yaw_degrees": {
+                  "description": "Jaw yaw in degrees.",
                   "type": "number"
                 }
               },

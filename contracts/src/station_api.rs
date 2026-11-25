@@ -5,7 +5,7 @@
 //!
 //! Units are SI (metres, radians, seconds); poses are in the station's world
 //! frame. A pose takes a position and an orientation: an approach direction with
-//! a jaw yaw in degrees, or a raw `[x, y, z, w]` quaternion. To keep the tool's
+//! a jaw yaw in radians, or a raw `[x, y, z, w]` quaternion. To keep the tool's
 //! orientation, send its current quaternion from the state.
 
 use std::collections::BTreeMap;

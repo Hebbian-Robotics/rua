@@ -322,7 +322,7 @@ impl PoseArgs {
         }
         Some(PoseOrientation::Grasp {
             approach: self.approach?,
-            jaw_yaw_degrees: self.jaw_yaw_degrees?,
+            jaw_yaw_radians: self.jaw_yaw_degrees?.to_radians(),
         })
     }
 
@@ -556,7 +556,7 @@ mod tests {
             pose.orientation(),
             Some(PoseOrientation::Grasp {
                 approach: Approach::Direction([0.0, -1.0, 0.0]),
-                jaw_yaw_degrees: -45.0
+                jaw_yaw_radians: -std::f64::consts::FRAC_PI_4
             })
         );
     }

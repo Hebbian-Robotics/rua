@@ -70,8 +70,8 @@ test("preview move", async () => {
         quaternion: [0, 0, 0, 1],
         orientation: {
           approach: [0, 0, -1],
-          degrees_from_down: 0,
-          jaw_yaw_degrees: 0,
+          radians_from_down: 0,
+          jaw_yaw_radians: 0,
           jaw_yaw_reference: "world_x",
           goal: null,
         },
@@ -101,28 +101,33 @@ test("preview move", async () => {
 
   const ranges = [
     {
-      from_degrees: 0,
-      to_degrees: 20,
+      from_radians: 0,
+      to_radians: (20 * Math.PI) / 180,
       reachable: false,
       reason: "Wrist limit",
     },
-    { from_degrees: 20, to_degrees: 340, reachable: true, reason: null },
     {
-      from_degrees: 340,
-      to_degrees: 360,
+      from_radians: (20 * Math.PI) / 180,
+      to_radians: (340 * Math.PI) / 180,
+      reachable: true,
+      reason: null,
+    },
+    {
+      from_radians: (340 * Math.PI) / 180,
+      to_radians: (360 * Math.PI) / 180,
       reachable: false,
       reason: "Wrist limit",
     },
   ];
   assert(
-    jawYawReachable(ranges, 10) === false &&
-      jawYawReachable(ranges, 90) === true &&
-      jawYawReachable(ranges, -10) === false &&
-      jawYawReachable(ranges, 370) === false,
+    jawYawReachable(ranges, (10 * Math.PI) / 180) === false &&
+      jawYawReachable(ranges, (90 * Math.PI) / 180) === true &&
+      jawYawReachable(ranges, (-10 * Math.PI) / 180) === false &&
+      jawYawReachable(ranges, (370 * Math.PI) / 180) === false,
     "A yaw is judged against the station's ranges, wrapping full turns",
   );
   assert(
-    jawYawReachable([], 90) === null,
+    jawYawReachable([], (90 * Math.PI) / 180) === null,
     "Without ranges the yaw is not judged",
   );
   assert(

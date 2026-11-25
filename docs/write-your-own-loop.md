@@ -35,7 +35,7 @@ Use `station.holding_lease(...)` to acquire a lease and send motion through
 
 | Call | Does |
 | --- | --- |
-| `lease.arm(name).move_to_pose(position, orientation=None, *, max_joint_speed=None)` | Tool position in metres, world frame. A `GraspOrientation(approach, jaw_yaw_degrees)` is an approach (`"down"`, `"forward"` or a vector) plus jaw yaw in degrees. Without one, the tool keeps its current orientation. |
+| `lease.arm(name).move_to_pose(position, orientation=None, *, max_joint_speed=None)` | Tool position in metres, world frame. A `GraspOrientation(approach, jaw_yaw_radians)` is an approach (`"down"`, `"forward"` or a vector) plus jaw yaw in radians. Without one, the tool keeps its current orientation. |
 | `station.arm(name).preview_pose(position, orientation=None)` | Moves nothing. Returns a `PoseProjection` whose outcome is `projected` with a pose, `within_tolerance`, pose errors and any constraint reason, or `unavailable` with a reason and no pose. It also includes the available jaw yaws. A request refusal returns `PreviewRefused`. Without an orientation the solver chooses one. |
 | `lease.arm(name).move_to_joints(joints, *, max_joint_speed=None)` | Joint targets in radians. |
 | `lease.arm(name).rehome()` | Return to the joint pose and gripper opening saved at enable time. |
@@ -64,7 +64,7 @@ snapshot.mode  # ArmMode: disabled, holding, moving, faulted
 snapshot.measured_joints  # radians
 snapshot.tool.position  # [x, y, z] metres; `tool` is None before a pose exists
 snapshot.tool.quaternion  # [x, y, z, w]
-snapshot.tool.orientation  # approach, degrees_from_down, jaw_yaw_degrees
+snapshot.tool.orientation  # approach, radians_from_down, jaw_yaw_radians
 snapshot.gripper_opening  # 0 closed to 1 open; None without a gripper
 snapshot.fault  # str or None
 ```

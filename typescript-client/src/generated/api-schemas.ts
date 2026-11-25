@@ -20,19 +20,24 @@ export const apiSchemas = z.object({
           z
             .object({
               approach: z.array(z.number()).min(3).max(3),
-              degrees_from_down: z.number().gte(0).lte(180),
               goal: z
                 .union([
                   z
                     .object({
-                      approach_error_degrees: z.number().gte(0).lte(180),
-                      jaw_yaw_degrees: z.number().gte(0).lt(360),
+                      approach_error_radians: z
+                        .number()
+                        .gte(0)
+                        .lte(3.141592653589793),
+                      jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
                       jaw_yaw_reference: z
                         .enum(["world_x", "world_y"])
                         .describe(
                           "The world axis jaw yaw zero is projected from.",
                         ),
-                      orientation_error_degrees: z.number().gte(0).lte(180),
+                      orientation_error_radians: z
+                        .number()
+                        .gte(0)
+                        .lte(3.141592653589793),
                     })
                     .describe(
                       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -40,13 +45,14 @@ export const apiSchemas = z.object({
                   z.null(),
                 ])
                 .optional(),
-              jaw_yaw_degrees: z.number().gte(0).lt(360),
+              jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
               jaw_yaw_reference: z
                 .enum(["world_x", "world_y"])
                 .describe("The world axis jaw yaw zero is projected from."),
+              radians_from_down: z.number().gte(0).lte(3.141592653589793),
             })
             .describe(
-              "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+              "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
             ),
           z.null(),
         ])
@@ -121,11 +127,13 @@ export const apiSchemas = z.object({
                             .describe(
                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                             ),
-                          jaw_yaw_degrees: z.number(),
+                          jaw_yaw_radians: z
+                            .number()
+                            .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
                         .describe(
-                          "The approach direction and the jaw yaw about it, in degrees.",
+                          "The approach direction and the jaw yaw about it.",
                         ),
                       z
                         .object({
@@ -229,11 +237,13 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                                   ),
-                                jaw_yaw_degrees: z.number(),
+                                jaw_yaw_radians: z
+                                  .number()
+                                  .describe("Jaw yaw in radians."),
                                 kind: z.literal("grasp"),
                               })
                               .describe(
-                                "The approach direction and the jaw yaw about it, in degrees.",
+                                "The approach direction and the jaw yaw about it.",
                               ),
                             z
                               .object({
@@ -324,12 +334,10 @@ export const apiSchemas = z.object({
                     .describe(
                       "The direction the jaws point along: a named one, or a nonzero world direction.",
                     ),
-                  jaw_yaw_degrees: z.number(),
+                  jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                   kind: z.literal("grasp"),
                 })
-                .describe(
-                  "The approach direction and the jaw yaw about it, in degrees.",
-                ),
+                .describe("The approach direction and the jaw yaw about it."),
               z
                 .object({
                   kind: z.literal("quaternion"),
@@ -575,11 +583,13 @@ export const apiSchemas = z.object({
                                           .describe(
                                             "The direction the jaws point along: a named one, or a nonzero world direction.",
                                           ),
-                                        jaw_yaw_degrees: z.number(),
+                                        jaw_yaw_radians: z
+                                          .number()
+                                          .describe("Jaw yaw in radians."),
                                         kind: z.literal("grasp"),
                                       })
                                       .describe(
-                                        "The approach direction and the jaw yaw about it, in degrees.",
+                                        "The approach direction and the jaw yaw about it.",
                                       ),
                                     z
                                       .object({
@@ -699,11 +709,15 @@ export const apiSchemas = z.object({
                                                 .describe(
                                                   "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                 ),
-                                              jaw_yaw_degrees: z.number(),
+                                              jaw_yaw_radians: z
+                                                .number()
+                                                .describe(
+                                                  "Jaw yaw in radians.",
+                                                ),
                                               kind: z.literal("grasp"),
                                             })
                                             .describe(
-                                              "The approach direction and the jaw yaw about it, in degrees.",
+                                              "The approach direction and the jaw yaw about it.",
                                             ),
                                           z
                                             .object({
@@ -1048,48 +1062,48 @@ export const apiSchemas = z.object({
                                             .array(z.number())
                                             .min(3)
                                             .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
                                           goal: z.union([
                                             z
                                               .object({
-                                                approach_error_degrees: z
+                                                approach_error_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lte(180),
-                                                jaw_yaw_degrees: z
+                                                  .lte(3.141592653589793),
+                                                jaw_yaw_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lt(360),
+                                                  .lt(6.283185307179586),
                                                 jaw_yaw_reference: z
                                                   .enum(["world_x", "world_y"])
                                                   .describe(
                                                     "The world axis jaw yaw zero is projected from.",
                                                   ),
-                                                orientation_error_degrees: z
+                                                orientation_error_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lte(180),
+                                                  .lte(3.141592653589793),
                                               })
                                               .describe(
                                                 "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                               ),
                                             z.null(),
                                           ]),
-                                          jaw_yaw_degrees: z
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
+                                          radians_from_down: z
+                                            .number()
+                                            .gte(0)
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                         ),
                                       z.null(),
                                     ])
@@ -1288,11 +1302,13 @@ export const apiSchemas = z.object({
                                         .describe(
                                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                                         ),
-                                      jaw_yaw_degrees: z.number(),
+                                      jaw_yaw_radians: z
+                                        .number()
+                                        .describe("Jaw yaw in radians."),
                                       kind: z.literal("grasp"),
                                     })
                                     .describe(
-                                      "The approach direction and the jaw yaw about it, in degrees.",
+                                      "The approach direction and the jaw yaw about it.",
                                     ),
                                   z
                                     .object({
@@ -1412,11 +1428,13 @@ export const apiSchemas = z.object({
                                               .describe(
                                                 "The direction the jaws point along: a named one, or a nonzero world direction.",
                                               ),
-                                            jaw_yaw_degrees: z.number(),
+                                            jaw_yaw_radians: z
+                                              .number()
+                                              .describe("Jaw yaw in radians."),
                                             kind: z.literal("grasp"),
                                           })
                                           .describe(
-                                            "The approach direction and the jaw yaw about it, in degrees.",
+                                            "The approach direction and the jaw yaw about it.",
                                           ),
                                         z
                                           .object({
@@ -1553,11 +1571,13 @@ export const apiSchemas = z.object({
                                             .describe(
                                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                                             ),
-                                          jaw_yaw_degrees: z.number(),
+                                          jaw_yaw_radians: z
+                                            .number()
+                                            .describe("Jaw yaw in radians."),
                                           kind: z.literal("grasp"),
                                         })
                                         .describe(
-                                          "The approach direction and the jaw yaw about it, in degrees.",
+                                          "The approach direction and the jaw yaw about it.",
                                         ),
                                       z
                                         .object({
@@ -1681,11 +1701,15 @@ export const apiSchemas = z.object({
                                                   .describe(
                                                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                   ),
-                                                jaw_yaw_degrees: z.number(),
+                                                jaw_yaw_radians: z
+                                                  .number()
+                                                  .describe(
+                                                    "Jaw yaw in radians.",
+                                                  ),
                                                 kind: z.literal("grasp"),
                                               })
                                               .describe(
-                                                "The approach direction and the jaw yaw about it, in degrees.",
+                                                "The approach direction and the jaw yaw about it.",
                                               ),
                                             z
                                               .object({
@@ -1818,11 +1842,13 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                                   ),
-                                jaw_yaw_degrees: z.number(),
+                                jaw_yaw_radians: z
+                                  .number()
+                                  .describe("Jaw yaw in radians."),
                                 kind: z.literal("grasp"),
                               })
                               .describe(
-                                "The approach direction and the jaw yaw about it, in degrees.",
+                                "The approach direction and the jaw yaw about it.",
                               ),
                             z
                               .object({
@@ -1932,11 +1958,13 @@ export const apiSchemas = z.object({
                                         .describe(
                                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                                         ),
-                                      jaw_yaw_degrees: z.number(),
+                                      jaw_yaw_radians: z
+                                        .number()
+                                        .describe("Jaw yaw in radians."),
                                       kind: z.literal("grasp"),
                                     })
                                     .describe(
-                                      "The approach direction and the jaw yaw about it, in degrees.",
+                                      "The approach direction and the jaw yaw about it.",
                                     ),
                                   z
                                     .object({
@@ -2036,12 +2064,10 @@ export const apiSchemas = z.object({
                       .describe(
                         "The direction the jaws point along: a named one, or a nonzero world direction.",
                       ),
-                    jaw_yaw_degrees: z.number(),
+                    jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                     kind: z.literal("grasp"),
                   })
-                  .describe(
-                    "The approach direction and the jaw yaw about it, in degrees.",
-                  ),
+                  .describe("The approach direction and the jaw yaw about it."),
                 z
                   .object({
                     kind: z.literal("quaternion"),
@@ -2363,28 +2389,27 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   approach: z.array(z.number()).min(3).max(3),
-                                  degrees_from_down: z.number().gte(0).lte(180),
                                   goal: z
                                     .union([
                                       z
                                         .object({
-                                          approach_error_degrees: z
+                                          approach_error_radians: z
                                             .number()
                                             .gte(0)
-                                            .lte(180),
-                                          jaw_yaw_degrees: z
+                                            .lte(3.141592653589793),
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
-                                          orientation_error_degrees: z
+                                          orientation_error_radians: z
                                             .number()
                                             .gte(0)
-                                            .lte(180),
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
                                           "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -2392,15 +2417,22 @@ export const apiSchemas = z.object({
                                       z.null(),
                                     ])
                                     .optional(),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                  jaw_yaw_radians: z
+                                    .number()
+                                    .gte(0)
+                                    .lt(6.283185307179586),
                                   jaw_yaw_reference: z
                                     .enum(["world_x", "world_y"])
                                     .describe(
                                       "The world axis jaw yaw zero is projected from.",
                                     ),
+                                  radians_from_down: z
+                                    .number()
+                                    .gte(0)
+                                    .lte(3.141592653589793),
                                 })
                                 .describe(
-                                  "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                  "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                 ),
                               z.null(),
                             ])
@@ -2807,31 +2839,27 @@ export const apiSchemas = z.object({
                                         .array(z.number())
                                         .min(3)
                                         .max(3),
-                                      degrees_from_down: z
-                                        .number()
-                                        .gte(0)
-                                        .lte(180),
                                       goal: z
                                         .union([
                                           z
                                             .object({
-                                              approach_error_degrees: z
+                                              approach_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
-                                              jaw_yaw_degrees: z
+                                                .lte(3.141592653589793),
+                                              jaw_yaw_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lt(360),
+                                                .lt(6.283185307179586),
                                               jaw_yaw_reference: z
                                                 .enum(["world_x", "world_y"])
                                                 .describe(
                                                   "The world axis jaw yaw zero is projected from.",
                                                 ),
-                                              orientation_error_degrees: z
+                                              orientation_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
+                                                .lte(3.141592653589793),
                                             })
                                             .describe(
                                               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -2839,18 +2867,22 @@ export const apiSchemas = z.object({
                                           z.null(),
                                         ])
                                         .optional(),
-                                      jaw_yaw_degrees: z
+                                      jaw_yaw_radians: z
                                         .number()
                                         .gte(0)
-                                        .lt(360),
+                                        .lt(6.283185307179586),
                                       jaw_yaw_reference: z
                                         .enum(["world_x", "world_y"])
                                         .describe(
                                           "The world axis jaw yaw zero is projected from.",
                                         ),
+                                      radians_from_down: z
+                                        .number()
+                                        .gte(0)
+                                        .lte(3.141592653589793),
                                     })
                                     .describe(
-                                      "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                      "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                     ),
                                   z.null(),
                                 ])
@@ -3342,31 +3374,27 @@ export const apiSchemas = z.object({
                                         .array(z.number())
                                         .min(3)
                                         .max(3),
-                                      degrees_from_down: z
-                                        .number()
-                                        .gte(0)
-                                        .lte(180),
                                       goal: z
                                         .union([
                                           z
                                             .object({
-                                              approach_error_degrees: z
+                                              approach_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
-                                              jaw_yaw_degrees: z
+                                                .lte(3.141592653589793),
+                                              jaw_yaw_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lt(360),
+                                                .lt(6.283185307179586),
                                               jaw_yaw_reference: z
                                                 .enum(["world_x", "world_y"])
                                                 .describe(
                                                   "The world axis jaw yaw zero is projected from.",
                                                 ),
-                                              orientation_error_degrees: z
+                                              orientation_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
+                                                .lte(3.141592653589793),
                                             })
                                             .describe(
                                               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -3374,18 +3402,22 @@ export const apiSchemas = z.object({
                                           z.null(),
                                         ])
                                         .optional(),
-                                      jaw_yaw_degrees: z
+                                      jaw_yaw_radians: z
                                         .number()
                                         .gte(0)
-                                        .lt(360),
+                                        .lt(6.283185307179586),
                                       jaw_yaw_reference: z
                                         .enum(["world_x", "world_y"])
                                         .describe(
                                           "The world axis jaw yaw zero is projected from.",
                                         ),
+                                      radians_from_down: z
+                                        .number()
+                                        .gte(0)
+                                        .lte(3.141592653589793),
                                     })
                                     .describe(
-                                      "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                      "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                     ),
                                   z.null(),
                                 ])
@@ -3612,19 +3644,27 @@ export const apiSchemas = z.object({
               orientation: z
                 .object({
                   approach: z.array(z.number()).min(3).max(3),
-                  degrees_from_down: z.number().gte(0).lte(180),
                   goal: z
                     .union([
                       z
                         .object({
-                          approach_error_degrees: z.number().gte(0).lte(180),
-                          jaw_yaw_degrees: z.number().gte(0).lt(360),
+                          approach_error_radians: z
+                            .number()
+                            .gte(0)
+                            .lte(3.141592653589793),
+                          jaw_yaw_radians: z
+                            .number()
+                            .gte(0)
+                            .lt(6.283185307179586),
                           jaw_yaw_reference: z
                             .enum(["world_x", "world_y"])
                             .describe(
                               "The world axis jaw yaw zero is projected from.",
                             ),
-                          orientation_error_degrees: z.number().gte(0).lte(180),
+                          orientation_error_radians: z
+                            .number()
+                            .gte(0)
+                            .lte(3.141592653589793),
                         })
                         .describe(
                           "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -3632,13 +3672,14 @@ export const apiSchemas = z.object({
                       z.null(),
                     ])
                     .optional(),
-                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                  jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
                   jaw_yaw_reference: z
                     .enum(["world_x", "world_y"])
                     .describe("The world axis jaw yaw zero is projected from."),
+                  radians_from_down: z.number().gte(0).lte(3.141592653589793),
                 })
                 .describe(
-                  "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                  "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                 ),
               position: z.array(z.number()).min(3).max(3),
               quaternion: z.array(z.number()).min(4).max(4),
@@ -3783,11 +3824,15 @@ export const apiSchemas = z.object({
                                                 .describe(
                                                   "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                 ),
-                                              jaw_yaw_degrees: z.number(),
+                                              jaw_yaw_radians: z
+                                                .number()
+                                                .describe(
+                                                  "Jaw yaw in radians.",
+                                                ),
                                               kind: z.literal("grasp"),
                                             })
                                             .describe(
-                                              "The approach direction and the jaw yaw about it, in degrees.",
+                                              "The approach direction and the jaw yaw about it.",
                                             ),
                                           z
                                             .object({
@@ -3916,11 +3961,15 @@ export const apiSchemas = z.object({
                                                       .describe(
                                                         "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                       ),
-                                                    jaw_yaw_degrees: z.number(),
+                                                    jaw_yaw_radians: z
+                                                      .number()
+                                                      .describe(
+                                                        "Jaw yaw in radians.",
+                                                      ),
                                                     kind: z.literal("grasp"),
                                                   })
                                                   .describe(
-                                                    "The approach direction and the jaw yaw about it, in degrees.",
+                                                    "The approach direction and the jaw yaw about it.",
                                                   ),
                                                 z
                                                   .object({
@@ -4315,11 +4364,13 @@ export const apiSchemas = z.object({
                             .describe(
                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                             ),
-                          jaw_yaw_degrees: z.number(),
+                          jaw_yaw_radians: z
+                            .number()
+                            .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
                         .describe(
-                          "The approach direction and the jaw yaw about it, in degrees.",
+                          "The approach direction and the jaw yaw about it.",
                         ),
                       z
                         .object({
@@ -4496,11 +4547,13 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The direction the jaws point along: a named one, or a nonzero world direction.",
                                 ),
-                              jaw_yaw_degrees: z.number(),
+                              jaw_yaw_radians: z
+                                .number()
+                                .describe("Jaw yaw in radians."),
                               kind: z.literal("grasp"),
                             })
                             .describe(
-                              "The approach direction and the jaw yaw about it, in degrees.",
+                              "The approach direction and the jaw yaw about it.",
                             ),
                           z
                             .object({
@@ -4625,11 +4678,13 @@ export const apiSchemas = z.object({
                             .describe(
                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                             ),
-                          jaw_yaw_degrees: z.number(),
+                          jaw_yaw_radians: z
+                            .number()
+                            .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
                         .describe(
-                          "The approach direction and the jaw yaw about it, in degrees.",
+                          "The approach direction and the jaw yaw about it.",
                         ),
                       z
                         .object({
@@ -5016,22 +5071,18 @@ export const apiSchemas = z.object({
                                             .array(z.number())
                                             .min(3)
                                             .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
                                           goal: z
                                             .union([
                                               z
                                                 .object({
-                                                  approach_error_degrees: z
+                                                  approach_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
+                                                    .lte(3.141592653589793),
+                                                  jaw_yaw_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lt(360),
+                                                    .lt(6.283185307179586),
                                                   jaw_yaw_reference: z
                                                     .enum([
                                                       "world_x",
@@ -5040,10 +5091,10 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The world axis jaw yaw zero is projected from.",
                                                     ),
-                                                  orientation_error_degrees: z
+                                                  orientation_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
+                                                    .lte(3.141592653589793),
                                                 })
                                                 .describe(
                                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -5051,18 +5102,22 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
-                                          jaw_yaw_degrees: z
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
+                                          radians_from_down: z
+                                            .number()
+                                            .gte(0)
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                         ),
                                       z.null(),
                                     ])
@@ -5342,25 +5397,27 @@ export const apiSchemas = z.object({
                       z
                         .object({
                           approach: z.array(z.number()).min(3).max(3),
-                          degrees_from_down: z.number().gte(0).lte(180),
                           goal: z
                             .union([
                               z
                                 .object({
-                                  approach_error_degrees: z
+                                  approach_error_radians: z
                                     .number()
                                     .gte(0)
-                                    .lte(180),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                    .lte(3.141592653589793),
+                                  jaw_yaw_radians: z
+                                    .number()
+                                    .gte(0)
+                                    .lt(6.283185307179586),
                                   jaw_yaw_reference: z
                                     .enum(["world_x", "world_y"])
                                     .describe(
                                       "The world axis jaw yaw zero is projected from.",
                                     ),
-                                  orientation_error_degrees: z
+                                  orientation_error_radians: z
                                     .number()
                                     .gte(0)
-                                    .lte(180),
+                                    .lte(3.141592653589793),
                                 })
                                 .describe(
                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -5368,15 +5425,22 @@ export const apiSchemas = z.object({
                               z.null(),
                             ])
                             .optional(),
-                          jaw_yaw_degrees: z.number().gte(0).lt(360),
+                          jaw_yaw_radians: z
+                            .number()
+                            .gte(0)
+                            .lt(6.283185307179586),
                           jaw_yaw_reference: z
                             .enum(["world_x", "world_y"])
                             .describe(
                               "The world axis jaw yaw zero is projected from.",
                             ),
+                          radians_from_down: z
+                            .number()
+                            .gte(0)
+                            .lte(3.141592653589793),
                         })
                         .describe(
-                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                         ),
                       z.null(),
                     ])
@@ -5739,39 +5803,48 @@ export const apiSchemas = z.object({
                         z
                           .object({
                             approach: z.array(z.number()).min(3).max(3),
-                            degrees_from_down: z.number().gte(0).lte(180),
                             goal: z.union([
                               z
                                 .object({
-                                  approach_error_degrees: z
+                                  approach_error_radians: z
                                     .number()
                                     .gte(0)
-                                    .lte(180),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                    .lte(3.141592653589793),
+                                  jaw_yaw_radians: z
+                                    .number()
+                                    .gte(0)
+                                    .lt(6.283185307179586),
                                   jaw_yaw_reference: z
                                     .enum(["world_x", "world_y"])
                                     .describe(
                                       "The world axis jaw yaw zero is projected from.",
                                     ),
-                                  orientation_error_degrees: z
+                                  orientation_error_radians: z
                                     .number()
                                     .gte(0)
-                                    .lte(180),
+                                    .lte(3.141592653589793),
                                 })
                                 .describe(
                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                 ),
                               z.null(),
                             ]),
-                            jaw_yaw_degrees: z.number().gte(0).lt(360),
+                            jaw_yaw_radians: z
+                              .number()
+                              .gte(0)
+                              .lt(6.283185307179586),
                             jaw_yaw_reference: z
                               .enum(["world_x", "world_y"])
                               .describe(
                                 "The world axis jaw yaw zero is projected from.",
                               ),
+                            radians_from_down: z
+                              .number()
+                              .gte(0)
+                              .lte(3.141592653589793),
                           })
                           .describe(
-                            "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                            "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                           ),
                         z.null(),
                       ])
@@ -6059,11 +6132,13 @@ export const apiSchemas = z.object({
                         .describe(
                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                         ),
-                      jaw_yaw_degrees: z.number(),
+                      jaw_yaw_radians: z
+                        .number()
+                        .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
                     .describe(
-                      "The approach direction and the jaw yaw about it, in degrees.",
+                      "The approach direction and the jaw yaw about it.",
                     ),
                   z
                     .object({
@@ -6232,11 +6307,13 @@ export const apiSchemas = z.object({
                                       .describe(
                                         "The direction the jaws point along: a named one, or a nonzero world direction.",
                                       ),
-                                    jaw_yaw_degrees: z.number(),
+                                    jaw_yaw_radians: z
+                                      .number()
+                                      .describe("Jaw yaw in radians."),
                                     kind: z.literal("grasp"),
                                   })
                                   .describe(
-                                    "The approach direction and the jaw yaw about it, in degrees.",
+                                    "The approach direction and the jaw yaw about it.",
                                   ),
                                 z
                                   .object({
@@ -6340,11 +6417,13 @@ export const apiSchemas = z.object({
                                               .describe(
                                                 "The direction the jaws point along: a named one, or a nonzero world direction.",
                                               ),
-                                            jaw_yaw_degrees: z.number(),
+                                            jaw_yaw_radians: z
+                                              .number()
+                                              .describe("Jaw yaw in radians."),
                                             kind: z.literal("grasp"),
                                           })
                                           .describe(
-                                            "The approach direction and the jaw yaw about it, in degrees.",
+                                            "The approach direction and the jaw yaw about it.",
                                           ),
                                         z
                                           .object({
@@ -6482,11 +6561,13 @@ export const apiSchemas = z.object({
                                             .describe(
                                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                                             ),
-                                          jaw_yaw_degrees: z.number(),
+                                          jaw_yaw_radians: z
+                                            .number()
+                                            .describe("Jaw yaw in radians."),
                                           kind: z.literal("grasp"),
                                         })
                                         .describe(
-                                          "The approach direction and the jaw yaw about it, in degrees.",
+                                          "The approach direction and the jaw yaw about it.",
                                         ),
                                       z
                                         .object({
@@ -6610,11 +6691,15 @@ export const apiSchemas = z.object({
                                                   .describe(
                                                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                   ),
-                                                jaw_yaw_degrees: z.number(),
+                                                jaw_yaw_radians: z
+                                                  .number()
+                                                  .describe(
+                                                    "Jaw yaw in radians.",
+                                                  ),
                                                 kind: z.literal("grasp"),
                                               })
                                               .describe(
-                                                "The approach direction and the jaw yaw about it, in degrees.",
+                                                "The approach direction and the jaw yaw about it.",
                                               ),
                                             z
                                               .object({
@@ -6773,11 +6858,13 @@ export const apiSchemas = z.object({
                                             .describe(
                                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                                             ),
-                                          jaw_yaw_degrees: z.number(),
+                                          jaw_yaw_radians: z
+                                            .number()
+                                            .describe("Jaw yaw in radians."),
                                           kind: z.literal("grasp"),
                                         })
                                         .describe(
-                                          "The approach direction and the jaw yaw about it, in degrees.",
+                                          "The approach direction and the jaw yaw about it.",
                                         ),
                                       z
                                         .object({
@@ -6885,11 +6972,15 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                     ),
-                                                  jaw_yaw_degrees: z.number(),
+                                                  jaw_yaw_radians: z
+                                                    .number()
+                                                    .describe(
+                                                      "Jaw yaw in radians.",
+                                                    ),
                                                   kind: z.literal("grasp"),
                                                 })
                                                 .describe(
-                                                  "The approach direction and the jaw yaw about it, in degrees.",
+                                                  "The approach direction and the jaw yaw about it.",
                                                 ),
                                               z
                                                 .object({
@@ -7039,11 +7130,15 @@ export const apiSchemas = z.object({
                                                   .describe(
                                                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                   ),
-                                                jaw_yaw_degrees: z.number(),
+                                                jaw_yaw_radians: z
+                                                  .number()
+                                                  .describe(
+                                                    "Jaw yaw in radians.",
+                                                  ),
                                                 kind: z.literal("grasp"),
                                               })
                                               .describe(
-                                                "The approach direction and the jaw yaw about it, in degrees.",
+                                                "The approach direction and the jaw yaw about it.",
                                               ),
                                             z
                                               .object({
@@ -7172,12 +7267,15 @@ export const apiSchemas = z.object({
                                                         .describe(
                                                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                         ),
-                                                      jaw_yaw_degrees:
-                                                        z.number(),
+                                                      jaw_yaw_radians: z
+                                                        .number()
+                                                        .describe(
+                                                          "Jaw yaw in radians.",
+                                                        ),
                                                       kind: z.literal("grasp"),
                                                     })
                                                     .describe(
-                                                      "The approach direction and the jaw yaw about it, in degrees.",
+                                                      "The approach direction and the jaw yaw about it.",
                                                     ),
                                                   z
                                                     .object({
@@ -7342,11 +7440,13 @@ export const apiSchemas = z.object({
                         .describe(
                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                         ),
-                      jaw_yaw_degrees: z.number(),
+                      jaw_yaw_radians: z
+                        .number()
+                        .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
                     .describe(
-                      "The approach direction and the jaw yaw about it, in degrees.",
+                      "The approach direction and the jaw yaw about it.",
                     ),
                   z
                     .object({
@@ -7432,11 +7532,13 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The direction the jaws point along: a named one, or a nonzero world direction.",
                                 ),
-                              jaw_yaw_degrees: z.number(),
+                              jaw_yaw_radians: z
+                                .number()
+                                .describe("Jaw yaw in radians."),
                               kind: z.literal("grasp"),
                             })
                             .describe(
-                              "The approach direction and the jaw yaw about it, in degrees.",
+                              "The approach direction and the jaw yaw about it.",
                             ),
                           z
                             .object({
@@ -7513,12 +7615,10 @@ export const apiSchemas = z.object({
                   .describe(
                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                   ),
-                jaw_yaw_degrees: z.number(),
+                jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                 kind: z.literal("grasp"),
               })
-              .describe(
-                "The approach direction and the jaw yaw about it, in degrees.",
-              ),
+              .describe("The approach direction and the jaw yaw about it."),
             z
               .object({
                 kind: z.literal("quaternion"),
@@ -7563,11 +7663,13 @@ export const apiSchemas = z.object({
                             .describe(
                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                             ),
-                          jaw_yaw_degrees: z.number(),
+                          jaw_yaw_radians: z
+                            .number()
+                            .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
                         .describe(
-                          "The approach direction and the jaw yaw about it, in degrees.",
+                          "The approach direction and the jaw yaw about it.",
                         ),
                       z
                         .object({
@@ -7659,11 +7761,13 @@ export const apiSchemas = z.object({
                                     .describe(
                                       "The direction the jaws point along: a named one, or a nonzero world direction.",
                                     ),
-                                  jaw_yaw_degrees: z.number(),
+                                  jaw_yaw_radians: z
+                                    .number()
+                                    .describe("Jaw yaw in radians."),
                                   kind: z.literal("grasp"),
                                 })
                                 .describe(
-                                  "The approach direction and the jaw yaw about it, in degrees.",
+                                  "The approach direction and the jaw yaw about it.",
                                 ),
                               z
                                 .object({
@@ -7763,11 +7867,13 @@ export const apiSchemas = z.object({
                                   .describe(
                                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                                   ),
-                                jaw_yaw_degrees: z.number(),
+                                jaw_yaw_radians: z
+                                  .number()
+                                  .describe("Jaw yaw in radians."),
                                 kind: z.literal("grasp"),
                               })
                               .describe(
-                                "The approach direction and the jaw yaw about it, in degrees.",
+                                "The approach direction and the jaw yaw about it.",
                               ),
                             z
                               .object({
@@ -7861,11 +7967,13 @@ export const apiSchemas = z.object({
                                           .describe(
                                             "The direction the jaws point along: a named one, or a nonzero world direction.",
                                           ),
-                                        jaw_yaw_degrees: z.number(),
+                                        jaw_yaw_radians: z
+                                          .number()
+                                          .describe("Jaw yaw in radians."),
                                         kind: z.literal("grasp"),
                                       })
                                       .describe(
-                                        "The approach direction and the jaw yaw about it, in degrees.",
+                                        "The approach direction and the jaw yaw about it.",
                                       ),
                                     z
                                       .object({
@@ -8488,22 +8596,18 @@ export const apiSchemas = z.object({
                                             .array(z.number())
                                             .min(3)
                                             .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
                                           goal: z
                                             .union([
                                               z
                                                 .object({
-                                                  approach_error_degrees: z
+                                                  approach_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
+                                                    .lte(3.141592653589793),
+                                                  jaw_yaw_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lt(360),
+                                                    .lt(6.283185307179586),
                                                   jaw_yaw_reference: z
                                                     .enum([
                                                       "world_x",
@@ -8512,10 +8616,10 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The world axis jaw yaw zero is projected from.",
                                                     ),
-                                                  orientation_error_degrees: z
+                                                  orientation_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
+                                                    .lte(3.141592653589793),
                                                 })
                                                 .describe(
                                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -8523,18 +8627,22 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
-                                          jaw_yaw_degrees: z
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
+                                          radians_from_down: z
+                                            .number()
+                                            .gte(0)
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                         ),
                                       z.null(),
                                     ])
@@ -9145,28 +9253,27 @@ export const apiSchemas = z.object({
                               z
                                 .object({
                                   approach: z.array(z.number()).min(3).max(3),
-                                  degrees_from_down: z.number().gte(0).lte(180),
                                   goal: z
                                     .union([
                                       z
                                         .object({
-                                          approach_error_degrees: z
+                                          approach_error_radians: z
                                             .number()
                                             .gte(0)
-                                            .lte(180),
-                                          jaw_yaw_degrees: z
+                                            .lte(3.141592653589793),
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
-                                          orientation_error_degrees: z
+                                          orientation_error_radians: z
                                             .number()
                                             .gte(0)
-                                            .lte(180),
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
                                           "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -9174,15 +9281,22 @@ export const apiSchemas = z.object({
                                       z.null(),
                                     ])
                                     .optional(),
-                                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                  jaw_yaw_radians: z
+                                    .number()
+                                    .gte(0)
+                                    .lt(6.283185307179586),
                                   jaw_yaw_reference: z
                                     .enum(["world_x", "world_y"])
                                     .describe(
                                       "The world axis jaw yaw zero is projected from.",
                                     ),
+                                  radians_from_down: z
+                                    .number()
+                                    .gte(0)
+                                    .lte(3.141592653589793),
                                 })
                                 .describe(
-                                  "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                  "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                 ),
                               z.null(),
                             ])
@@ -9956,22 +10070,18 @@ export const apiSchemas = z.object({
                                                 .array(z.number())
                                                 .min(3)
                                                 .max(3),
-                                              degrees_from_down: z
-                                                .number()
-                                                .gte(0)
-                                                .lte(180),
                                               goal: z
                                                 .union([
                                                   z
                                                     .object({
-                                                      approach_error_degrees: z
+                                                      approach_error_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lte(180),
-                                                      jaw_yaw_degrees: z
+                                                        .lte(3.141592653589793),
+                                                      jaw_yaw_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lt(360),
+                                                        .lt(6.283185307179586),
                                                       jaw_yaw_reference: z
                                                         .enum([
                                                           "world_x",
@@ -9980,11 +10090,13 @@ export const apiSchemas = z.object({
                                                         .describe(
                                                           "The world axis jaw yaw zero is projected from.",
                                                         ),
-                                                      orientation_error_degrees:
+                                                      orientation_error_radians:
                                                         z
                                                           .number()
                                                           .gte(0)
-                                                          .lte(180),
+                                                          .lte(
+                                                            3.141592653589793,
+                                                          ),
                                                     })
                                                     .describe(
                                                       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -9992,18 +10104,22 @@ export const apiSchemas = z.object({
                                                   z.null(),
                                                 ])
                                                 .optional(),
-                                              jaw_yaw_degrees: z
+                                              jaw_yaw_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lt(360),
+                                                .lt(6.283185307179586),
                                               jaw_yaw_reference: z
                                                 .enum(["world_x", "world_y"])
                                                 .describe(
                                                   "The world axis jaw yaw zero is projected from.",
                                                 ),
+                                              radians_from_down: z
+                                                .number()
+                                                .gte(0)
+                                                .lte(3.141592653589793),
                                             })
                                             .describe(
-                                              "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                              "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                             ),
                                           z.null(),
                                         ])
@@ -10625,31 +10741,27 @@ export const apiSchemas = z.object({
                                         .array(z.number())
                                         .min(3)
                                         .max(3),
-                                      degrees_from_down: z
-                                        .number()
-                                        .gte(0)
-                                        .lte(180),
                                       goal: z
                                         .union([
                                           z
                                             .object({
-                                              approach_error_degrees: z
+                                              approach_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
-                                              jaw_yaw_degrees: z
+                                                .lte(3.141592653589793),
+                                              jaw_yaw_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lt(360),
+                                                .lt(6.283185307179586),
                                               jaw_yaw_reference: z
                                                 .enum(["world_x", "world_y"])
                                                 .describe(
                                                   "The world axis jaw yaw zero is projected from.",
                                                 ),
-                                              orientation_error_degrees: z
+                                              orientation_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
+                                                .lte(3.141592653589793),
                                             })
                                             .describe(
                                               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -10657,18 +10769,22 @@ export const apiSchemas = z.object({
                                           z.null(),
                                         ])
                                         .optional(),
-                                      jaw_yaw_degrees: z
+                                      jaw_yaw_radians: z
                                         .number()
                                         .gte(0)
-                                        .lt(360),
+                                        .lt(6.283185307179586),
                                       jaw_yaw_reference: z
                                         .enum(["world_x", "world_y"])
                                         .describe(
                                           "The world axis jaw yaw zero is projected from.",
                                         ),
+                                      radians_from_down: z
+                                        .number()
+                                        .gte(0)
+                                        .lte(3.141592653589793),
                                     })
                                     .describe(
-                                      "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                      "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                     ),
                                   z.null(),
                                 ])
@@ -10893,12 +11009,12 @@ export const apiSchemas = z.object({
     ),
   GoalComparison: z
     .object({
-      approach_error_degrees: z.number().gte(0).lte(180),
-      jaw_yaw_degrees: z.number().gte(0).lt(360),
+      approach_error_radians: z.number().gte(0).lte(3.141592653589793),
+      jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
       jaw_yaw_reference: z
         .enum(["world_x", "world_y"])
         .describe("The world axis jaw yaw zero is projected from."),
-      orientation_error_degrees: z.number().gte(0).lte(180),
+      orientation_error_radians: z.number().gte(0).lte(3.141592653589793),
     })
     .describe(
       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -10955,11 +11071,13 @@ export const apiSchemas = z.object({
                             .describe(
                               "The direction the jaws point along: a named one, or a nonzero world direction.",
                             ),
-                          jaw_yaw_degrees: z.number(),
+                          jaw_yaw_radians: z
+                            .number()
+                            .describe("Jaw yaw in radians."),
                           kind: z.literal("grasp"),
                         })
                         .describe(
-                          "The approach direction and the jaw yaw about it, in degrees.",
+                          "The approach direction and the jaw yaw about it.",
                         ),
                       z
                         .object({
@@ -11064,13 +11182,13 @@ export const apiSchemas = z.object({
     .describe("The tool-frame axis the gripper's jaws close along."),
   JawYawRange: z
     .object({
-      from_degrees: z.number().gte(0).lte(360),
+      from_radians: z.number().gte(0).lte(6.283185307179586),
       reachable: z.boolean(),
       reason: z.union([z.string(), z.null()]).optional(),
-      to_degrees: z.number().gte(0).lte(360),
+      to_radians: z.number().gte(0).lte(6.283185307179586),
     })
     .describe(
-      "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+      "A run of jaw yaws the arm can or cannot take at a position and approach.\nRadians follow the jaw yaw convention, from 0 up to 2π, in order.",
     ),
   JawYawReference: z
     .enum(["world_x", "world_y"])
@@ -11680,11 +11798,13 @@ export const apiSchemas = z.object({
                         .describe(
                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                         ),
-                      jaw_yaw_degrees: z.number(),
+                      jaw_yaw_radians: z
+                        .number()
+                        .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
                     .describe(
-                      "The approach direction and the jaw yaw about it, in degrees.",
+                      "The approach direction and the jaw yaw about it.",
                     ),
                   z
                     .object({
@@ -12044,23 +12164,23 @@ export const apiSchemas = z.object({
                                                   .array(z.number())
                                                   .min(3)
                                                   .max(3),
-                                                degrees_from_down: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lte(180),
                                                 goal: z
                                                   .union([
                                                     z
                                                       .object({
-                                                        approach_error_degrees:
+                                                        approach_error_radians:
                                                           z
                                                             .number()
                                                             .gte(0)
-                                                            .lte(180),
-                                                        jaw_yaw_degrees: z
+                                                            .lte(
+                                                              3.141592653589793,
+                                                            ),
+                                                        jaw_yaw_radians: z
                                                           .number()
                                                           .gte(0)
-                                                          .lt(360),
+                                                          .lt(
+                                                            6.283185307179586,
+                                                          ),
                                                         jaw_yaw_reference: z
                                                           .enum([
                                                             "world_x",
@@ -12069,11 +12189,13 @@ export const apiSchemas = z.object({
                                                           .describe(
                                                             "The world axis jaw yaw zero is projected from.",
                                                           ),
-                                                        orientation_error_degrees:
+                                                        orientation_error_radians:
                                                           z
                                                             .number()
                                                             .gte(0)
-                                                            .lte(180),
+                                                            .lte(
+                                                              3.141592653589793,
+                                                            ),
                                                       })
                                                       .describe(
                                                         "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -12081,18 +12203,22 @@ export const apiSchemas = z.object({
                                                     z.null(),
                                                   ])
                                                   .optional(),
-                                                jaw_yaw_degrees: z
+                                                jaw_yaw_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lt(360),
+                                                  .lt(6.283185307179586),
                                                 jaw_yaw_reference: z
                                                   .enum(["world_x", "world_y"])
                                                   .describe(
                                                     "The world axis jaw yaw zero is projected from.",
                                                   ),
+                                                radians_from_down: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lte(3.141592653589793),
                                               })
                                               .describe(
-                                                "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                               ),
                                             z.null(),
                                           ])
@@ -12639,23 +12765,23 @@ export const apiSchemas = z.object({
                                                   .array(z.number())
                                                   .min(3)
                                                   .max(3),
-                                                degrees_from_down: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lte(180),
                                                 goal: z
                                                   .union([
                                                     z
                                                       .object({
-                                                        approach_error_degrees:
+                                                        approach_error_radians:
                                                           z
                                                             .number()
                                                             .gte(0)
-                                                            .lte(180),
-                                                        jaw_yaw_degrees: z
+                                                            .lte(
+                                                              3.141592653589793,
+                                                            ),
+                                                        jaw_yaw_radians: z
                                                           .number()
                                                           .gte(0)
-                                                          .lt(360),
+                                                          .lt(
+                                                            6.283185307179586,
+                                                          ),
                                                         jaw_yaw_reference: z
                                                           .enum([
                                                             "world_x",
@@ -12664,11 +12790,13 @@ export const apiSchemas = z.object({
                                                           .describe(
                                                             "The world axis jaw yaw zero is projected from.",
                                                           ),
-                                                        orientation_error_degrees:
+                                                        orientation_error_radians:
                                                           z
                                                             .number()
                                                             .gte(0)
-                                                            .lte(180),
+                                                            .lte(
+                                                              3.141592653589793,
+                                                            ),
                                                       })
                                                       .describe(
                                                         "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -12676,18 +12804,22 @@ export const apiSchemas = z.object({
                                                     z.null(),
                                                   ])
                                                   .optional(),
-                                                jaw_yaw_degrees: z
+                                                jaw_yaw_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lt(360),
+                                                  .lt(6.283185307179586),
                                                 jaw_yaw_reference: z
                                                   .enum(["world_x", "world_y"])
                                                   .describe(
                                                     "The world axis jaw yaw zero is projected from.",
                                                   ),
+                                                radians_from_down: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lte(3.141592653589793),
                                               })
                                               .describe(
-                                                "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                               ),
                                             z.null(),
                                           ])
@@ -12939,25 +13071,27 @@ export const apiSchemas = z.object({
                         orientation: z
                           .object({
                             approach: z.array(z.number()).min(3).max(3),
-                            degrees_from_down: z.number().gte(0).lte(180),
                             goal: z
                               .union([
                                 z
                                   .object({
-                                    approach_error_degrees: z
+                                    approach_error_radians: z
                                       .number()
                                       .gte(0)
-                                      .lte(180),
-                                    jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                      .lte(3.141592653589793),
+                                    jaw_yaw_radians: z
+                                      .number()
+                                      .gte(0)
+                                      .lt(6.283185307179586),
                                     jaw_yaw_reference: z
                                       .enum(["world_x", "world_y"])
                                       .describe(
                                         "The world axis jaw yaw zero is projected from.",
                                       ),
-                                    orientation_error_degrees: z
+                                    orientation_error_radians: z
                                       .number()
                                       .gte(0)
-                                      .lte(180),
+                                      .lte(3.141592653589793),
                                   })
                                   .describe(
                                     "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -12965,15 +13099,22 @@ export const apiSchemas = z.object({
                                 z.null(),
                               ])
                               .optional(),
-                            jaw_yaw_degrees: z.number().gte(0).lt(360),
+                            jaw_yaw_radians: z
+                              .number()
+                              .gte(0)
+                              .lt(6.283185307179586),
                             jaw_yaw_reference: z
                               .enum(["world_x", "world_y"])
                               .describe(
                                 "The world axis jaw yaw zero is projected from.",
                               ),
+                            radians_from_down: z
+                              .number()
+                              .gte(0)
+                              .lte(3.141592653589793),
                           })
                           .describe(
-                            "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                            "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                           ),
                         position: z.array(z.number()).min(3).max(3),
                         quaternion: z.array(z.number()).min(4).max(4),
@@ -13454,22 +13595,18 @@ export const apiSchemas = z.object({
                                             .array(z.number())
                                             .min(3)
                                             .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
                                           goal: z
                                             .union([
                                               z
                                                 .object({
-                                                  approach_error_degrees: z
+                                                  approach_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
+                                                    .lte(3.141592653589793),
+                                                  jaw_yaw_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lt(360),
+                                                    .lt(6.283185307179586),
                                                   jaw_yaw_reference: z
                                                     .enum([
                                                       "world_x",
@@ -13478,10 +13615,10 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The world axis jaw yaw zero is projected from.",
                                                     ),
-                                                  orientation_error_degrees: z
+                                                  orientation_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
+                                                    .lte(3.141592653589793),
                                                 })
                                                 .describe(
                                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -13489,18 +13626,22 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
-                                          jaw_yaw_degrees: z
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
+                                          radians_from_down: z
+                                            .number()
+                                            .gte(0)
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                         ),
                                       z.null(),
                                     ])
@@ -13917,22 +14058,18 @@ export const apiSchemas = z.object({
                                             .array(z.number())
                                             .min(3)
                                             .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
                                           goal: z
                                             .union([
                                               z
                                                 .object({
-                                                  approach_error_degrees: z
+                                                  approach_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
+                                                    .lte(3.141592653589793),
+                                                  jaw_yaw_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lt(360),
+                                                    .lt(6.283185307179586),
                                                   jaw_yaw_reference: z
                                                     .enum([
                                                       "world_x",
@@ -13941,10 +14078,10 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The world axis jaw yaw zero is projected from.",
                                                     ),
-                                                  orientation_error_degrees: z
+                                                  orientation_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
+                                                    .lte(3.141592653589793),
                                                 })
                                                 .describe(
                                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -13952,18 +14089,22 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
-                                          jaw_yaw_degrees: z
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
+                                          radians_from_down: z
+                                            .number()
+                                            .gte(0)
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                         ),
                                       z.null(),
                                     ])
@@ -14380,22 +14521,18 @@ export const apiSchemas = z.object({
                                             .array(z.number())
                                             .min(3)
                                             .max(3),
-                                          degrees_from_down: z
-                                            .number()
-                                            .gte(0)
-                                            .lte(180),
                                           goal: z
                                             .union([
                                               z
                                                 .object({
-                                                  approach_error_degrees: z
+                                                  approach_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
+                                                    .lte(3.141592653589793),
+                                                  jaw_yaw_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lt(360),
+                                                    .lt(6.283185307179586),
                                                   jaw_yaw_reference: z
                                                     .enum([
                                                       "world_x",
@@ -14404,10 +14541,10 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The world axis jaw yaw zero is projected from.",
                                                     ),
-                                                  orientation_error_degrees: z
+                                                  orientation_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
+                                                    .lte(3.141592653589793),
                                                 })
                                                 .describe(
                                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -14415,18 +14552,22 @@ export const apiSchemas = z.object({
                                               z.null(),
                                             ])
                                             .optional(),
-                                          jaw_yaw_degrees: z
+                                          jaw_yaw_radians: z
                                             .number()
                                             .gte(0)
-                                            .lt(360),
+                                            .lt(6.283185307179586),
                                           jaw_yaw_reference: z
                                             .enum(["world_x", "world_y"])
                                             .describe(
                                               "The world axis jaw yaw zero is projected from.",
                                             ),
+                                          radians_from_down: z
+                                            .number()
+                                            .gte(0)
+                                            .lte(3.141592653589793),
                                         })
                                         .describe(
-                                          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                         ),
                                       z.null(),
                                     ])
@@ -14595,17 +14736,19 @@ export const apiSchemas = z.object({
   OrientationSummary: z
     .object({
       approach: z.array(z.number()).min(3).max(3),
-      degrees_from_down: z.number().gte(0).lte(180),
       goal: z
         .union([
           z
             .object({
-              approach_error_degrees: z.number().gte(0).lte(180),
-              jaw_yaw_degrees: z.number().gte(0).lt(360),
+              approach_error_radians: z.number().gte(0).lte(3.141592653589793),
+              jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
               jaw_yaw_reference: z
                 .enum(["world_x", "world_y"])
                 .describe("The world axis jaw yaw zero is projected from."),
-              orientation_error_degrees: z.number().gte(0).lte(180),
+              orientation_error_radians: z
+                .number()
+                .gte(0)
+                .lte(3.141592653589793),
             })
             .describe(
               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -14613,13 +14756,14 @@ export const apiSchemas = z.object({
           z.null(),
         ])
         .optional(),
-      jaw_yaw_degrees: z.number().gte(0).lt(360),
+      jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
       jaw_yaw_reference: z
         .enum(["world_x", "world_y"])
         .describe("The world axis jaw yaw zero is projected from."),
+      radians_from_down: z.number().gte(0).lte(3.141592653589793),
     })
     .describe(
-      "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+      "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
     ),
   PathLimited: z
     .object({ reason: z.string() })
@@ -14655,17 +14799,22 @@ export const apiSchemas = z.object({
       orientation: z
         .object({
           approach: z.array(z.number()).min(3).max(3),
-          degrees_from_down: z.number().gte(0).lte(180),
           goal: z
             .union([
               z
                 .object({
-                  approach_error_degrees: z.number().gte(0).lte(180),
-                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                  approach_error_radians: z
+                    .number()
+                    .gte(0)
+                    .lte(3.141592653589793),
+                  jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
                   jaw_yaw_reference: z
                     .enum(["world_x", "world_y"])
                     .describe("The world axis jaw yaw zero is projected from."),
-                  orientation_error_degrees: z.number().gte(0).lte(180),
+                  orientation_error_radians: z
+                    .number()
+                    .gte(0)
+                    .lte(3.141592653589793),
                 })
                 .describe(
                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
@@ -14673,13 +14822,14 @@ export const apiSchemas = z.object({
               z.null(),
             ])
             .optional(),
-          jaw_yaw_degrees: z.number().gte(0).lt(360),
+          jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
           jaw_yaw_reference: z
             .enum(["world_x", "world_y"])
             .describe("The world axis jaw yaw zero is projected from."),
+          radians_from_down: z.number().gte(0).lte(3.141592653589793),
         })
         .describe(
-          "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+          "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
         ),
       position: z.array(z.number()).min(3).max(3),
       quaternion: z.array(z.number()).min(4).max(4),
@@ -14752,12 +14902,10 @@ export const apiSchemas = z.object({
             .describe(
               "The direction the jaws point along: a named one, or a nonzero world direction.",
             ),
-          jaw_yaw_degrees: z.number(),
+          jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
           kind: z.literal("grasp"),
         })
-        .describe(
-          "The approach direction and the jaw yaw about it, in degrees.",
-        ),
+        .describe("The approach direction and the jaw yaw about it."),
       z
         .object({
           kind: z.literal("quaternion"),
@@ -14864,11 +15012,13 @@ export const apiSchemas = z.object({
                                 .describe(
                                   "The direction the jaws point along: a named one, or a nonzero world direction.",
                                 ),
-                              jaw_yaw_degrees: z.number(),
+                              jaw_yaw_radians: z
+                                .number()
+                                .describe("Jaw yaw in radians."),
                               kind: z.literal("grasp"),
                             })
                             .describe(
-                              "The approach direction and the jaw yaw about it, in degrees.",
+                              "The approach direction and the jaw yaw about it.",
                             ),
                           z
                             .object({
@@ -14927,13 +15077,19 @@ export const apiSchemas = z.object({
                       .array(
                         z
                           .object({
-                            from_degrees: z.number().gte(0).lte(360),
+                            from_radians: z
+                              .number()
+                              .gte(0)
+                              .lte(6.283185307179586),
                             reachable: z.boolean(),
                             reason: z.union([z.string(), z.null()]).optional(),
-                            to_degrees: z.number().gte(0).lte(360),
+                            to_radians: z
+                              .number()
+                              .gte(0)
+                              .lte(6.283185307179586),
                           })
                           .describe(
-                            "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+                            "A run of jaw yaws the arm can or cannot take at a position and approach.\nRadians follow the jaw yaw convention, from 0 up to 2π, in order.",
                           ),
                       )
                       .describe(
@@ -14950,10 +15106,13 @@ export const apiSchemas = z.object({
                                 orientation: z
                                   .object({
                                     approach: z.array(z.number()).min(3).max(3),
-                                    jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                    jaw_yaw_radians: z
+                                      .number()
+                                      .gte(0)
+                                      .lt(6.283185307179586),
                                   })
                                   .describe(
-                                    "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                                    "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                                   ),
                                 orientation_error_radians: z
                                   .union([
@@ -15023,10 +15182,13 @@ export const apiSchemas = z.object({
                             orientation: z
                               .object({
                                 approach: z.array(z.number()).min(3).max(3),
-                                jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                jaw_yaw_radians: z
+                                  .number()
+                                  .gte(0)
+                                  .lt(6.283185307179586),
                               })
                               .describe(
-                                "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                                "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                               ),
                             quaternion: z.array(z.number()).min(4).max(4),
                           })
@@ -15151,11 +15313,13 @@ export const apiSchemas = z.object({
                         .describe(
                           "The direction the jaws point along: a named one, or a nonzero world direction.",
                         ),
-                      jaw_yaw_degrees: z.number(),
+                      jaw_yaw_radians: z
+                        .number()
+                        .describe("Jaw yaw in radians."),
                       kind: z.literal("grasp"),
                     })
                     .describe(
-                      "The approach direction and the jaw yaw about it, in degrees.",
+                      "The approach direction and the jaw yaw about it.",
                     ),
                   z
                     .object({
@@ -15201,13 +15365,13 @@ export const apiSchemas = z.object({
                 .array(
                   z
                     .object({
-                      from_degrees: z.number().gte(0).lte(360),
+                      from_radians: z.number().gte(0).lte(6.283185307179586),
                       reachable: z.boolean(),
                       reason: z.union([z.string(), z.null()]).optional(),
-                      to_degrees: z.number().gte(0).lte(360),
+                      to_radians: z.number().gte(0).lte(6.283185307179586),
                     })
                     .describe(
-                      "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+                      "A run of jaw yaws the arm can or cannot take at a position and approach.\nRadians follow the jaw yaw convention, from 0 up to 2π, in order.",
                     ),
                 )
                 .describe(
@@ -15224,10 +15388,13 @@ export const apiSchemas = z.object({
                           orientation: z
                             .object({
                               approach: z.array(z.number()).min(3).max(3),
-                              jaw_yaw_degrees: z.number().gte(0).lt(360),
+                              jaw_yaw_radians: z
+                                .number()
+                                .gte(0)
+                                .lt(6.283185307179586),
                             })
                             .describe(
-                              "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                              "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                             ),
                           orientation_error_radians: z
                             .union([
@@ -15295,10 +15462,13 @@ export const apiSchemas = z.object({
                       orientation: z
                         .object({
                           approach: z.array(z.number()).min(3).max(3),
-                          jaw_yaw_degrees: z.number().gte(0).lt(360),
+                          jaw_yaw_radians: z
+                            .number()
+                            .gte(0)
+                            .lt(6.283185307179586),
                         })
                         .describe(
-                          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                         ),
                       quaternion: z.array(z.number()).min(4).max(4),
                     })
@@ -15358,13 +15528,13 @@ export const apiSchemas = z.object({
         .array(
           z
             .object({
-              from_degrees: z.number().gte(0).lte(360),
+              from_radians: z.number().gte(0).lte(6.283185307179586),
               reachable: z.boolean(),
               reason: z.union([z.string(), z.null()]).optional(),
-              to_degrees: z.number().gte(0).lte(360),
+              to_radians: z.number().gte(0).lte(6.283185307179586),
             })
             .describe(
-              "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+              "A run of jaw yaws the arm can or cannot take at a position and approach.\nRadians follow the jaw yaw convention, from 0 up to 2π, in order.",
             ),
         )
         .describe(
@@ -15381,10 +15551,10 @@ export const apiSchemas = z.object({
                   orientation: z
                     .object({
                       approach: z.array(z.number()).min(3).max(3),
-                      jaw_yaw_degrees: z.number().gte(0).lt(360),
+                      jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
                     })
                     .describe(
-                      "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                      "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                     ),
                   orientation_error_radians: z
                     .union([
@@ -15449,10 +15619,10 @@ export const apiSchemas = z.object({
               orientation: z
                 .object({
                   approach: z.array(z.number()).min(3).max(3),
-                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                  jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
                 })
                 .describe(
-                  "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                  "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                 ),
               quaternion: z.array(z.number()).min(4).max(4),
             })
@@ -15490,13 +15660,13 @@ export const apiSchemas = z.object({
               .array(
                 z
                   .object({
-                    from_degrees: z.number().gte(0).lte(360),
+                    from_radians: z.number().gte(0).lte(6.283185307179586),
                     reachable: z.boolean(),
                     reason: z.union([z.string(), z.null()]).optional(),
-                    to_degrees: z.number().gte(0).lte(360),
+                    to_radians: z.number().gte(0).lte(6.283185307179586),
                   })
                   .describe(
-                    "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+                    "A run of jaw yaws the arm can or cannot take at a position and approach.\nRadians follow the jaw yaw convention, from 0 up to 2π, in order.",
                   ),
               )
               .describe(
@@ -15513,10 +15683,13 @@ export const apiSchemas = z.object({
                         orientation: z
                           .object({
                             approach: z.array(z.number()).min(3).max(3),
-                            jaw_yaw_degrees: z.number().gte(0).lt(360),
+                            jaw_yaw_radians: z
+                              .number()
+                              .gte(0)
+                              .lt(6.283185307179586),
                           })
                           .describe(
-                            "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                            "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                           ),
                         orientation_error_radians: z
                           .union([
@@ -15584,10 +15757,13 @@ export const apiSchemas = z.object({
                     orientation: z
                       .object({
                         approach: z.array(z.number()).min(3).max(3),
-                        jaw_yaw_degrees: z.number().gte(0).lt(360),
+                        jaw_yaw_radians: z
+                          .number()
+                          .gte(0)
+                          .lt(6.283185307179586),
                       })
                       .describe(
-                        "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                        "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                       ),
                     quaternion: z.array(z.number()).min(4).max(4),
                   })
@@ -15682,12 +15858,10 @@ export const apiSchemas = z.object({
                     .describe(
                       "The direction the jaws point along: a named one, or a nonzero world direction.",
                     ),
-                  jaw_yaw_degrees: z.number(),
+                  jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                   kind: z.literal("grasp"),
                 })
-                .describe(
-                  "The approach direction and the jaw yaw about it, in degrees.",
-                ),
+                .describe("The approach direction and the jaw yaw about it."),
               z
                 .object({
                   kind: z.literal("quaternion"),
@@ -15721,10 +15895,10 @@ export const apiSchemas = z.object({
       orientation: z
         .object({
           approach: z.array(z.number()).min(3).max(3),
-          jaw_yaw_degrees: z.number().gte(0).lt(360),
+          jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
         })
         .describe(
-          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
         ),
       orientation_error_radians: z
         .union([
@@ -15760,10 +15934,10 @@ export const apiSchemas = z.object({
               orientation: z
                 .object({
                   approach: z.array(z.number()).min(3).max(3),
-                  jaw_yaw_degrees: z.number().gte(0).lt(360),
+                  jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
                 })
                 .describe(
-                  "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                  "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                 ),
               orientation_error_radians: z
                 .union([
@@ -16060,10 +16234,10 @@ export const apiSchemas = z.object({
       orientation: z
         .object({
           approach: z.array(z.number()).min(3).max(3),
-          jaw_yaw_degrees: z.number().gte(0).lt(360),
+          jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
         })
         .describe(
-          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+          "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
         ),
       quaternion: z.array(z.number()).min(4).max(4),
     })
@@ -16877,22 +17051,22 @@ export const apiSchemas = z.object({
                                                       .array(z.number())
                                                       .min(3)
                                                       .max(3),
-                                                    degrees_from_down: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lte(180),
                                                     goal: z.union([
                                                       z
                                                         .object({
-                                                          approach_error_degrees:
+                                                          approach_error_radians:
                                                             z
                                                               .number()
                                                               .gte(0)
-                                                              .lte(180),
-                                                          jaw_yaw_degrees: z
+                                                              .lte(
+                                                                3.141592653589793,
+                                                              ),
+                                                          jaw_yaw_radians: z
                                                             .number()
                                                             .gte(0)
-                                                            .lt(360),
+                                                            .lt(
+                                                              6.283185307179586,
+                                                            ),
                                                           jaw_yaw_reference: z
                                                             .enum([
                                                               "world_x",
@@ -16901,21 +17075,23 @@ export const apiSchemas = z.object({
                                                             .describe(
                                                               "The world axis jaw yaw zero is projected from.",
                                                             ),
-                                                          orientation_error_degrees:
+                                                          orientation_error_radians:
                                                             z
                                                               .number()
                                                               .gte(0)
-                                                              .lte(180),
+                                                              .lte(
+                                                                3.141592653589793,
+                                                              ),
                                                         })
                                                         .describe(
                                                           "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                                         ),
                                                       z.null(),
                                                     ]),
-                                                    jaw_yaw_degrees: z
+                                                    jaw_yaw_radians: z
                                                       .number()
                                                       .gte(0)
-                                                      .lt(360),
+                                                      .lt(6.283185307179586),
                                                     jaw_yaw_reference: z
                                                       .enum([
                                                         "world_x",
@@ -16924,9 +17100,13 @@ export const apiSchemas = z.object({
                                                       .describe(
                                                         "The world axis jaw yaw zero is projected from.",
                                                       ),
+                                                    radians_from_down: z
+                                                      .number()
+                                                      .gte(0)
+                                                      .lte(3.141592653589793),
                                                   })
                                                   .describe(
-                                                    "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                    "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                                   ),
                                                 z.null(),
                                               ])
@@ -17550,21 +17730,17 @@ export const apiSchemas = z.object({
                                               .array(z.number())
                                               .min(3)
                                               .max(3),
-                                            degrees_from_down: z
-                                              .number()
-                                              .gte(0)
-                                              .lte(180),
                                             goal: z.union([
                                               z
                                                 .object({
-                                                  approach_error_degrees: z
+                                                  approach_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
-                                                  jaw_yaw_degrees: z
+                                                    .lte(3.141592653589793),
+                                                  jaw_yaw_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lt(360),
+                                                    .lt(6.283185307179586),
                                                   jaw_yaw_reference: z
                                                     .enum([
                                                       "world_x",
@@ -17573,28 +17749,32 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The world axis jaw yaw zero is projected from.",
                                                     ),
-                                                  orientation_error_degrees: z
+                                                  orientation_error_radians: z
                                                     .number()
                                                     .gte(0)
-                                                    .lte(180),
+                                                    .lte(3.141592653589793),
                                                 })
                                                 .describe(
                                                   "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                                 ),
                                               z.null(),
                                             ]),
-                                            jaw_yaw_degrees: z
+                                            jaw_yaw_radians: z
                                               .number()
                                               .gte(0)
-                                              .lt(360),
+                                              .lt(6.283185307179586),
                                             jaw_yaw_reference: z
                                               .enum(["world_x", "world_y"])
                                               .describe(
                                                 "The world axis jaw yaw zero is projected from.",
                                               ),
+                                            radians_from_down: z
+                                              .number()
+                                              .gte(0)
+                                              .lte(3.141592653589793),
                                           })
                                           .describe(
-                                            "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                            "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                           ),
                                         z.null(),
                                       ])
@@ -18230,21 +18410,17 @@ export const apiSchemas = z.object({
                                                   .array(z.number())
                                                   .min(3)
                                                   .max(3),
-                                                degrees_from_down: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lte(180),
                                                 goal: z.union([
                                                   z
                                                     .object({
-                                                      approach_error_degrees: z
+                                                      approach_error_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lte(180),
-                                                      jaw_yaw_degrees: z
+                                                        .lte(3.141592653589793),
+                                                      jaw_yaw_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lt(360),
+                                                        .lt(6.283185307179586),
                                                       jaw_yaw_reference: z
                                                         .enum([
                                                           "world_x",
@@ -18253,29 +18429,35 @@ export const apiSchemas = z.object({
                                                         .describe(
                                                           "The world axis jaw yaw zero is projected from.",
                                                         ),
-                                                      orientation_error_degrees:
+                                                      orientation_error_radians:
                                                         z
                                                           .number()
                                                           .gte(0)
-                                                          .lte(180),
+                                                          .lte(
+                                                            3.141592653589793,
+                                                          ),
                                                     })
                                                     .describe(
                                                       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                                     ),
                                                   z.null(),
                                                 ]),
-                                                jaw_yaw_degrees: z
+                                                jaw_yaw_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lt(360),
+                                                  .lt(6.283185307179586),
                                                 jaw_yaw_reference: z
                                                   .enum(["world_x", "world_y"])
                                                   .describe(
                                                     "The world axis jaw yaw zero is projected from.",
                                                   ),
+                                                radians_from_down: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lte(3.141592653589793),
                                               })
                                               .describe(
-                                                "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                               ),
                                             z.null(),
                                           ])
@@ -18475,13 +18657,19 @@ export const apiSchemas = z.object({
                       .array(
                         z
                           .object({
-                            from_degrees: z.number().gte(0).lte(360),
+                            from_radians: z
+                              .number()
+                              .gte(0)
+                              .lte(6.283185307179586),
                             reachable: z.boolean(),
                             reason: z.union([z.string(), z.null()]),
-                            to_degrees: z.number().gte(0).lte(360),
+                            to_radians: z
+                              .number()
+                              .gte(0)
+                              .lte(6.283185307179586),
                           })
                           .describe(
-                            "A run of jaw yaws the arm can or cannot take at a position and approach.\nDegrees follow the jaw yaw convention, from 0 up to 360, in order.",
+                            "A run of jaw yaws the arm can or cannot take at a position and approach.\nRadians follow the jaw yaw convention, from 0 up to 2π, in order.",
                           ),
                       )
                       .describe(
@@ -18498,10 +18686,13 @@ export const apiSchemas = z.object({
                                 orientation: z
                                   .object({
                                     approach: z.array(z.number()).min(3).max(3),
-                                    jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                    jaw_yaw_radians: z
+                                      .number()
+                                      .gte(0)
+                                      .lt(6.283185307179586),
                                   })
                                   .describe(
-                                    "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                                    "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                                   ),
                                 orientation_error_radians: z
                                   .union([
@@ -18569,10 +18760,13 @@ export const apiSchemas = z.object({
                             orientation: z
                               .object({
                                 approach: z.array(z.number()).min(3).max(3),
-                                jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                jaw_yaw_radians: z
+                                  .number()
+                                  .gte(0)
+                                  .lt(6.283185307179586),
                               })
                               .describe(
-                                "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+                                "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
                               ),
                             quaternion: z.array(z.number()).min(4).max(4),
                           })
@@ -18904,21 +19098,17 @@ export const apiSchemas = z.object({
                                                   .array(z.number())
                                                   .min(3)
                                                   .max(3),
-                                                degrees_from_down: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lte(180),
                                                 goal: z.union([
                                                   z
                                                     .object({
-                                                      approach_error_degrees: z
+                                                      approach_error_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lte(180),
-                                                      jaw_yaw_degrees: z
+                                                        .lte(3.141592653589793),
+                                                      jaw_yaw_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lt(360),
+                                                        .lt(6.283185307179586),
                                                       jaw_yaw_reference: z
                                                         .enum([
                                                           "world_x",
@@ -18927,29 +19117,35 @@ export const apiSchemas = z.object({
                                                         .describe(
                                                           "The world axis jaw yaw zero is projected from.",
                                                         ),
-                                                      orientation_error_degrees:
+                                                      orientation_error_radians:
                                                         z
                                                           .number()
                                                           .gte(0)
-                                                          .lte(180),
+                                                          .lte(
+                                                            3.141592653589793,
+                                                          ),
                                                     })
                                                     .describe(
                                                       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                                     ),
                                                   z.null(),
                                                 ]),
-                                                jaw_yaw_degrees: z
+                                                jaw_yaw_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lt(360),
+                                                  .lt(6.283185307179586),
                                                 jaw_yaw_reference: z
                                                   .enum(["world_x", "world_y"])
                                                   .describe(
                                                     "The world axis jaw yaw zero is projected from.",
                                                   ),
+                                                radians_from_down: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lte(3.141592653589793),
                                               })
                                               .describe(
-                                                "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                               ),
                                             z.null(),
                                           ])
@@ -19474,21 +19670,17 @@ export const apiSchemas = z.object({
                                                   .array(z.number())
                                                   .min(3)
                                                   .max(3),
-                                                degrees_from_down: z
-                                                  .number()
-                                                  .gte(0)
-                                                  .lte(180),
                                                 goal: z.union([
                                                   z
                                                     .object({
-                                                      approach_error_degrees: z
+                                                      approach_error_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lte(180),
-                                                      jaw_yaw_degrees: z
+                                                        .lte(3.141592653589793),
+                                                      jaw_yaw_radians: z
                                                         .number()
                                                         .gte(0)
-                                                        .lt(360),
+                                                        .lt(6.283185307179586),
                                                       jaw_yaw_reference: z
                                                         .enum([
                                                           "world_x",
@@ -19497,29 +19689,35 @@ export const apiSchemas = z.object({
                                                         .describe(
                                                           "The world axis jaw yaw zero is projected from.",
                                                         ),
-                                                      orientation_error_degrees:
+                                                      orientation_error_radians:
                                                         z
                                                           .number()
                                                           .gte(0)
-                                                          .lte(180),
+                                                          .lte(
+                                                            3.141592653589793,
+                                                          ),
                                                     })
                                                     .describe(
                                                       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                                     ),
                                                   z.null(),
                                                 ]),
-                                                jaw_yaw_degrees: z
+                                                jaw_yaw_radians: z
                                                   .number()
                                                   .gte(0)
-                                                  .lt(360),
+                                                  .lt(6.283185307179586),
                                                 jaw_yaw_reference: z
                                                   .enum(["world_x", "world_y"])
                                                   .describe(
                                                     "The world axis jaw yaw zero is projected from.",
                                                   ),
+                                                radians_from_down: z
+                                                  .number()
+                                                  .gte(0)
+                                                  .lte(3.141592653589793),
                                               })
                                               .describe(
-                                                "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                               ),
                                             z.null(),
                                           ])
@@ -19756,42 +19954,48 @@ export const apiSchemas = z.object({
                             orientation: z
                               .object({
                                 approach: z.array(z.number()).min(3).max(3),
-                                degrees_from_down: z.number().gte(0).lte(180),
                                 goal: z.union([
                                   z
                                     .object({
-                                      approach_error_degrees: z
+                                      approach_error_radians: z
                                         .number()
                                         .gte(0)
-                                        .lte(180),
-                                      jaw_yaw_degrees: z
+                                        .lte(3.141592653589793),
+                                      jaw_yaw_radians: z
                                         .number()
                                         .gte(0)
-                                        .lt(360),
+                                        .lt(6.283185307179586),
                                       jaw_yaw_reference: z
                                         .enum(["world_x", "world_y"])
                                         .describe(
                                           "The world axis jaw yaw zero is projected from.",
                                         ),
-                                      orientation_error_degrees: z
+                                      orientation_error_radians: z
                                         .number()
                                         .gte(0)
-                                        .lte(180),
+                                        .lte(3.141592653589793),
                                     })
                                     .describe(
                                       "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                     ),
                                   z.null(),
                                 ]),
-                                jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                jaw_yaw_radians: z
+                                  .number()
+                                  .gte(0)
+                                  .lt(6.283185307179586),
                                 jaw_yaw_reference: z
                                   .enum(["world_x", "world_y"])
                                   .describe(
                                     "The world axis jaw yaw zero is projected from.",
                                   ),
+                                radians_from_down: z
+                                  .number()
+                                  .gte(0)
+                                  .lte(3.141592653589793),
                               })
                               .describe(
-                                "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                               ),
                             position: z.array(z.number()).min(3).max(3),
                             quaternion: z.array(z.number()).min(4).max(4),
@@ -20077,11 +20281,15 @@ export const apiSchemas = z.object({
                                                     .describe(
                                                       "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                     ),
-                                                  jaw_yaw_degrees: z.number(),
+                                                  jaw_yaw_radians: z
+                                                    .number()
+                                                    .describe(
+                                                      "Jaw yaw in radians.",
+                                                    ),
                                                   kind: z.literal("grasp"),
                                                 })
                                                 .describe(
-                                                  "The approach direction and the jaw yaw about it, in degrees.",
+                                                  "The approach direction and the jaw yaw about it.",
                                                 ),
                                               z
                                                 .object({
@@ -20212,14 +20420,17 @@ export const apiSchemas = z.object({
                                                           .describe(
                                                             "The direction the jaws point along: a named one, or a nonzero world direction.",
                                                           ),
-                                                        jaw_yaw_degrees:
-                                                          z.number(),
+                                                        jaw_yaw_radians: z
+                                                          .number()
+                                                          .describe(
+                                                            "Jaw yaw in radians.",
+                                                          ),
                                                         kind: z.literal(
                                                           "grasp",
                                                         ),
                                                       })
                                                       .describe(
-                                                        "The approach direction and the jaw yaw about it, in degrees.",
+                                                        "The approach direction and the jaw yaw about it.",
                                                       ),
                                                     z
                                                       .object({
@@ -20591,22 +20802,22 @@ export const apiSchemas = z.object({
                                                       .array(z.number())
                                                       .min(3)
                                                       .max(3),
-                                                    degrees_from_down: z
-                                                      .number()
-                                                      .gte(0)
-                                                      .lte(180),
                                                     goal: z.union([
                                                       z
                                                         .object({
-                                                          approach_error_degrees:
+                                                          approach_error_radians:
                                                             z
                                                               .number()
                                                               .gte(0)
-                                                              .lte(180),
-                                                          jaw_yaw_degrees: z
+                                                              .lte(
+                                                                3.141592653589793,
+                                                              ),
+                                                          jaw_yaw_radians: z
                                                             .number()
                                                             .gte(0)
-                                                            .lt(360),
+                                                            .lt(
+                                                              6.283185307179586,
+                                                            ),
                                                           jaw_yaw_reference: z
                                                             .enum([
                                                               "world_x",
@@ -20615,21 +20826,23 @@ export const apiSchemas = z.object({
                                                             .describe(
                                                               "The world axis jaw yaw zero is projected from.",
                                                             ),
-                                                          orientation_error_degrees:
+                                                          orientation_error_radians:
                                                             z
                                                               .number()
                                                               .gte(0)
-                                                              .lte(180),
+                                                              .lte(
+                                                                3.141592653589793,
+                                                              ),
                                                         })
                                                         .describe(
                                                           "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                                         ),
                                                       z.null(),
                                                     ]),
-                                                    jaw_yaw_degrees: z
+                                                    jaw_yaw_radians: z
                                                       .number()
                                                       .gte(0)
-                                                      .lt(360),
+                                                      .lt(6.283185307179586),
                                                     jaw_yaw_reference: z
                                                       .enum([
                                                         "world_x",
@@ -20638,9 +20851,13 @@ export const apiSchemas = z.object({
                                                       .describe(
                                                         "The world axis jaw yaw zero is projected from.",
                                                       ),
+                                                    radians_from_down: z
+                                                      .number()
+                                                      .gte(0)
+                                                      .lte(3.141592653589793),
                                                   })
                                                   .describe(
-                                                    "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                                    "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                                   ),
                                                 z.null(),
                                               ])
@@ -21139,12 +21356,10 @@ export const apiSchemas = z.object({
                     .describe(
                       "The direction the jaws point along: a named one, or a nonzero world direction.",
                     ),
-                  jaw_yaw_degrees: z.number(),
+                  jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                   kind: z.literal("grasp"),
                 })
-                .describe(
-                  "The approach direction and the jaw yaw about it, in degrees.",
-                ),
+                .describe("The approach direction and the jaw yaw about it."),
               z
                 .object({
                   kind: z.literal("quaternion"),
@@ -21486,48 +21701,48 @@ export const apiSchemas = z.object({
                                           .array(z.number())
                                           .min(3)
                                           .max(3),
-                                        degrees_from_down: z
-                                          .number()
-                                          .gte(0)
-                                          .lte(180),
                                         goal: z.union([
                                           z
                                             .object({
-                                              approach_error_degrees: z
+                                              approach_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
-                                              jaw_yaw_degrees: z
+                                                .lte(3.141592653589793),
+                                              jaw_yaw_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lt(360),
+                                                .lt(6.283185307179586),
                                               jaw_yaw_reference: z
                                                 .enum(["world_x", "world_y"])
                                                 .describe(
                                                   "The world axis jaw yaw zero is projected from.",
                                                 ),
-                                              orientation_error_degrees: z
+                                              orientation_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
+                                                .lte(3.141592653589793),
                                             })
                                             .describe(
                                               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                             ),
                                           z.null(),
                                         ]),
-                                        jaw_yaw_degrees: z
+                                        jaw_yaw_radians: z
                                           .number()
                                           .gte(0)
-                                          .lt(360),
+                                          .lt(6.283185307179586),
                                         jaw_yaw_reference: z
                                           .enum(["world_x", "world_y"])
                                           .describe(
                                             "The world axis jaw yaw zero is projected from.",
                                           ),
+                                        radians_from_down: z
+                                          .number()
+                                          .gte(0)
+                                          .lte(3.141592653589793),
                                       })
                                       .describe(
-                                        "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                        "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                       ),
                                     z.null(),
                                   ])
@@ -22019,48 +22234,48 @@ export const apiSchemas = z.object({
                                           .array(z.number())
                                           .min(3)
                                           .max(3),
-                                        degrees_from_down: z
-                                          .number()
-                                          .gte(0)
-                                          .lte(180),
                                         goal: z.union([
                                           z
                                             .object({
-                                              approach_error_degrees: z
+                                              approach_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
-                                              jaw_yaw_degrees: z
+                                                .lte(3.141592653589793),
+                                              jaw_yaw_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lt(360),
+                                                .lt(6.283185307179586),
                                               jaw_yaw_reference: z
                                                 .enum(["world_x", "world_y"])
                                                 .describe(
                                                   "The world axis jaw yaw zero is projected from.",
                                                 ),
-                                              orientation_error_degrees: z
+                                              orientation_error_radians: z
                                                 .number()
                                                 .gte(0)
-                                                .lte(180),
+                                                .lte(3.141592653589793),
                                             })
                                             .describe(
                                               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                                             ),
                                           z.null(),
                                         ]),
-                                        jaw_yaw_degrees: z
+                                        jaw_yaw_radians: z
                                           .number()
                                           .gte(0)
-                                          .lt(360),
+                                          .lt(6.283185307179586),
                                         jaw_yaw_reference: z
                                           .enum(["world_x", "world_y"])
                                           .describe(
                                             "The world axis jaw yaw zero is projected from.",
                                           ),
+                                        radians_from_down: z
+                                          .number()
+                                          .gte(0)
+                                          .lte(3.141592653589793),
                                       })
                                       .describe(
-                                        "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                                        "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                                       ),
                                     z.null(),
                                   ])
@@ -22284,39 +22499,48 @@ export const apiSchemas = z.object({
                     orientation: z
                       .object({
                         approach: z.array(z.number()).min(3).max(3),
-                        degrees_from_down: z.number().gte(0).lte(180),
                         goal: z.union([
                           z
                             .object({
-                              approach_error_degrees: z
+                              approach_error_radians: z
                                 .number()
                                 .gte(0)
-                                .lte(180),
-                              jaw_yaw_degrees: z.number().gte(0).lt(360),
+                                .lte(3.141592653589793),
+                              jaw_yaw_radians: z
+                                .number()
+                                .gte(0)
+                                .lt(6.283185307179586),
                               jaw_yaw_reference: z
                                 .enum(["world_x", "world_y"])
                                 .describe(
                                   "The world axis jaw yaw zero is projected from.",
                                 ),
-                              orientation_error_degrees: z
+                              orientation_error_radians: z
                                 .number()
                                 .gte(0)
-                                .lte(180),
+                                .lte(3.141592653589793),
                             })
                             .describe(
                               "How an orientation compares with the one it was sent toward. Each jaw yaw\nnames its own reference: a change of reference near the switch is not a\nphysical error.",
                             ),
                           z.null(),
                         ]),
-                        jaw_yaw_degrees: z.number().gte(0).lt(360),
+                        jaw_yaw_radians: z
+                          .number()
+                          .gte(0)
+                          .lt(6.283185307179586),
                         jaw_yaw_reference: z
                           .enum(["world_x", "world_y"])
                           .describe(
                             "The world axis jaw yaw zero is projected from.",
                           ),
+                        radians_from_down: z
+                          .number()
+                          .gte(0)
+                          .lte(3.141592653589793),
                       })
                       .describe(
-                        "A tool orientation in grasp terms, rounded for people to read: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
+                        "A tool orientation in grasp terms: where the jaws\npoint, how far that is from straight down, and the jaw yaw about it. With a\ntarget, also how far the orientation is from it.",
                       ),
                     position: z.array(z.number()).min(3).max(3),
                     quaternion: z.array(z.number()).min(4).max(4),
@@ -22462,10 +22686,10 @@ export const apiSchemas = z.object({
   ToolOrientation: z
     .object({
       approach: z.array(z.number()).min(3).max(3),
-      jaw_yaw_degrees: z.number().gte(0).lt(360),
+      jaw_yaw_radians: z.number().gte(0).lt(6.283185307179586),
     })
     .describe(
-      "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in degrees from 0 up to but excluding 360, so\nsending them back reproduces the rotation.",
+      "An orientation in the terms a pose takes it: the approach and the jaw yaw\nabout it, at full precision, in radians from 0 up to but excluding 2π, so\nsending them back reproduces the rotation.",
     ),
   TraceContext: z
     .object({
@@ -22526,12 +22750,10 @@ export const apiSchemas = z.object({
                   .describe(
                     "The direction the jaws point along: a named one, or a nonzero world direction.",
                   ),
-                jaw_yaw_degrees: z.number(),
+                jaw_yaw_radians: z.number().describe("Jaw yaw in radians."),
                 kind: z.literal("grasp"),
               })
-              .describe(
-                "The approach direction and the jaw yaw about it, in degrees.",
-              ),
+              .describe("The approach direction and the jaw yaw about it."),
             z
               .object({
                 kind: z.literal("quaternion"),

@@ -221,6 +221,7 @@ async fn preview_pose_projects_without_moving() -> TestResult {
     let run = cli(
         &station.url,
         &[
+            "--raw",
             "preview-pose",
             ARM,
             "--position-mm",
@@ -228,7 +229,7 @@ async fn preview_pose_projects_without_moving() -> TestResult {
             "--approach",
             "down",
             "--jaw-yaw-degrees",
-            "0",
+            "90",
         ],
     )
     .await;
@@ -238,7 +239,11 @@ async fn preview_pose_projects_without_moving() -> TestResult {
         "{}",
         String::from_utf8_lossy(&run.output.stderr)
     );
-    assert!(run.stdout_json().is_object());
+    let preview = run.stdout_json();
+    let yaw = preview["requested"]["orientation"]["jaw_yaw_radians"]
+        .as_f64()
+        .expect("native preview includes the requested jaw yaw");
+    assert!((yaw - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     Ok(())
 }
 

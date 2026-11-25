@@ -394,11 +394,12 @@ pub enum Approach {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PoseOrientation {
-    /// The approach direction and the jaw yaw about it, in degrees.
+    /// The approach direction and the jaw yaw about it.
     #[schemars(title = "GraspOrientation")]
     Grasp {
         approach: Approach,
-        jaw_yaw_degrees: f64,
+        /// Jaw yaw in radians.
+        jaw_yaw_radians: f64,
     },
     /// A raw quaternion, `[x, y, z, w]`.
     #[schemars(title = "QuaternionOrientation")]
@@ -406,23 +407,23 @@ pub enum PoseOrientation {
 }
 
 /// An orientation in the terms a pose takes it: the approach and the jaw yaw
-/// about it, at full precision, in degrees from 0 up to but excluding 360, so
+/// about it, at full precision, in radians from 0 up to but excluding 2π, so
 /// sending them back reproduces the rotation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ToolOrientation {
     pub approach: [f64; 3],
-    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = 360.0))]
-    pub jaw_yaw_degrees: f64,
+    #[schemars(range(min = 0.0), extend("exclusiveMaximum" = std::f64::consts::TAU))]
+    pub jaw_yaw_radians: f64,
 }
 
 /// A run of jaw yaws the arm can or cannot take at a position and approach.
-/// Degrees follow the jaw yaw convention, from 0 up to 360, in order.
+/// Radians follow the jaw yaw convention, from 0 up to 2π, in order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct JawYawRange {
-    #[schemars(range(min = 0.0, max = 360.0))]
-    pub from_degrees: f64,
-    #[schemars(range(min = 0.0, max = 360.0))]
-    pub to_degrees: f64,
+    #[schemars(range(min = 0.0, max = std::f64::consts::TAU))]
+    pub from_radians: f64,
+    #[schemars(range(min = 0.0, max = std::f64::consts::TAU))]
+    pub to_radians: f64,
     pub reachable: bool,
     pub reason: Option<String>,
 }

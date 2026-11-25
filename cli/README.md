@@ -41,7 +41,8 @@ and `--jerk`) must be migrated before using this CLI.
 
 The CLI emits the concise model view with millimetres and degrees. Use
 `--raw` for full station output in native units. Gripper opening runs from
-0 (closed) to 1 (open), and jaw yaw is in degrees in both formats.
+0 (closed) to 1 (open). Jaw yaw uses degrees in CLI flags and model JSON,
+and radians in native station JSON.
 
 For `move-arms`, `preview-poses`, and `action-sequence run`, use the SDK model
 fields `position_mm`, `joints_degrees`, and

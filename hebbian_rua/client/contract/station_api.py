@@ -731,10 +731,10 @@ class JawYawRange(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    from_degrees: Annotated[StrictFloat, Field(ge=0.0, le=360.0)]
+    from_radians: Annotated[StrictFloat, Field(ge=0.0, le=6.283185307179586)]
     reachable: bool
     reason: str | None = None
-    to_degrees: Annotated[StrictFloat, Field(ge=0.0, le=360.0)]
+    to_radians: Annotated[StrictFloat, Field(ge=0.0, le=6.283185307179586)]
 
 
 class JawYawReference(StrEnum):
@@ -1527,7 +1527,7 @@ class ToolOrientation(BaseModel):
         frozen=True,
     )
     approach: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
+    jaw_yaw_radians: Annotated[StrictFloat, Field(ge=0.0, lt=6.283185307179586)]
 
 
 class TraceContext(BaseModel):
@@ -1691,10 +1691,12 @@ class GoalComparison(BaseModel):
         extra="forbid",
         frozen=True,
     )
-    approach_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
-    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
+    approach_error_radians: Annotated[StrictFloat, Field(ge=0.0, le=3.141592653589793)]
+    jaw_yaw_radians: Annotated[StrictFloat, Field(ge=0.0, lt=6.283185307179586)]
     jaw_yaw_reference: JawYawReference
-    orientation_error_degrees: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
+    orientation_error_radians: Annotated[
+        StrictFloat, Field(ge=0.0, le=3.141592653589793)
+    ]
 
 
 class UsageUpdateEvent(BaseModel):
@@ -1753,10 +1755,10 @@ class OrientationSummary(BaseModel):
         frozen=True,
     )
     approach: Annotated[list[StrictFloat], Field(max_length=3, min_length=3)]
-    degrees_from_down: Annotated[StrictFloat, Field(ge=0.0, le=180.0)]
     goal: GoalComparison | None = None
-    jaw_yaw_degrees: Annotated[StrictFloat, Field(ge=0.0, lt=360.0)]
+    jaw_yaw_radians: Annotated[StrictFloat, Field(ge=0.0, lt=6.283185307179586)]
     jaw_yaw_reference: JawYawReference
+    radians_from_down: Annotated[StrictFloat, Field(ge=0.0, le=3.141592653589793)]
 
 
 class PlanStep(BaseModel):
@@ -1795,7 +1797,7 @@ class GraspOrientation(BaseModel):
             description="The direction the jaws point along: a named one, or a nonzero world direction."
         ),
     ]
-    jaw_yaw_degrees: StrictFloat
+    jaw_yaw_radians: Annotated[StrictFloat, Field(description="Jaw yaw in radians.")]
     kind: Literal["grasp"] = "grasp"
 
 

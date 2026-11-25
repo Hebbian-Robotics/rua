@@ -200,8 +200,8 @@ importers:
         specifier: ^0.1.1
         version: 0.1.1
       hebbian-rua:
-        specifier: 0.1.6
-        version: 0.1.6
+        specifier: workspace:*
+        version: link:typescript-client
       hono:
         specifier: 4.13.19
         version: 4.13.19
@@ -321,8 +321,8 @@ importers:
         specifier: 15.1.0
         version: 15.1.0
       hebbian-rua:
-        specifier: 0.1.6
-        version: 0.1.6
+        specifier: workspace:*
+        version: link:../../../typescript-client
       openai:
         specifier: 7.62.0
         version: 7.62.0(google-auth-library@10.9.1)(undici@7.30.2)(ws@8.23.0)(zod@4.6.7)
@@ -2189,9 +2189,6 @@ packages:
   heap-js@2.7.1:
     resolution: {integrity: sha512-EQfezRg0NCZGNlhlDR3Evrw1FVL2G3LhU7EgPoxufQKruNBSYA8MiRPHeWbU+36o+Fhel0wMwM+sLEiBAlNLJA==}
     engines: {node: '>=10.0.0'}
-
-  hebbian-rua@0.1.6:
-    resolution: {integrity: sha512-1xx0kEPmUsDQgY5eR0oqX5WinXxWfanXxGipzIJLEg1AXxmsM8SrfcyptFPisAVZ+mXcRi0HNch/WwhqQa1bJA==}
 
   hls.js@1.7.4:
     resolution: {integrity: sha512-3GlxGdPvT2YHvQYOt+yOzT/DEior/qJVNIylHA77kgeoBTdQQqi70GwefNEUmHQeNGyjC8U62+bruqW/Tpm+tg==}
@@ -5010,13 +5007,6 @@ snapshots:
   graceful-fs@4.2.12: {}
 
   heap-js@2.7.1: {}
-
-  hebbian-rua@0.1.6:
-    dependencies:
-      eventsource-parser: 4.1.3
-      p-retry: 9.0.0
-      ts-pattern: 5.9.2
-      zod: 4.6.7
 
   hls.js@1.7.4: {}
 

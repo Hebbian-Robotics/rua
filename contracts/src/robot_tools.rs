@@ -318,6 +318,23 @@ pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
     ("model_points", "model_points_mm", 1000.0),
     ("position_error_meters", "position_error_mm", 1000.0),
     ("position_shortfall_meters", "position_shortfall_mm", 1000.0),
+    (
+        "jaw_yaw_radians",
+        "jaw_yaw_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "radians_from_down",
+        "degrees_from_down",
+        180.0 / std::f64::consts::PI,
+    ),
+    (
+        "approach_error_radians",
+        "approach_error_degrees",
+        180.0 / std::f64::consts::PI,
+    ),
+    ("from_radians", "from_degrees", 180.0 / std::f64::consts::PI),
+    ("to_radians", "to_degrees", 180.0 / std::f64::consts::PI),
     ("joints", "joints_degrees", 180.0 / std::f64::consts::PI),
     (
         "measured_joints",
@@ -410,11 +427,16 @@ pub struct ModelInputUnit {
 }
 
 /// Unit conversions shared by the model tool schema and all SDK adapters.
-pub const MODEL_INPUT_UNITS: [ModelInputUnit; 5] = [
+pub const MODEL_INPUT_UNITS: [ModelInputUnit; 6] = [
     ModelInputUnit {
         model_field: "position_mm",
         station_field: "position",
         scale_to_station: 0.001,
+    },
+    ModelInputUnit {
+        model_field: "jaw_yaw_degrees",
+        station_field: "jaw_yaw_radians",
+        scale_to_station: std::f64::consts::PI / 180.0,
     },
     ModelInputUnit {
         model_field: "joints_degrees",
@@ -505,6 +527,7 @@ fn adapt(value: &mut Value) {
                     && let Some(mut property) = properties.remove(station_field)
                 {
                     let description = match station_field {
+                        "jaw_yaw_radians" => Some("Jaw yaw in degrees."),
                         "max_joint_speed" => Some(
                             "Peak speed in degrees per second; clamped to the profile maximum.",
                         ),

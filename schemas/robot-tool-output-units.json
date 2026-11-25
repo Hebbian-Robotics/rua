@@ -45,6 +45,31 @@
     1000.0
   ],
   [
+    "jaw_yaw_radians",
+    "jaw_yaw_degrees",
+    57.29577951308232
+  ],
+  [
+    "radians_from_down",
+    "degrees_from_down",
+    57.29577951308232
+  ],
+  [
+    "approach_error_radians",
+    "approach_error_degrees",
+    57.29577951308232
+  ],
+  [
+    "from_radians",
+    "from_degrees",
+    57.29577951308232
+  ],
+  [
+    "to_radians",
+    "to_degrees",
+    57.29577951308232
+  ],
+  [
     "joints",
     "joints_degrees",
     57.29577951308232

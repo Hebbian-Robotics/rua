@@ -233,16 +233,16 @@ fn turning_the_so101_wrist_roll_turns_the_jaw_yaw_by_as_much_and_nothing_else() 
         .map(|(a, b)| (a - b).abs())
         .sum();
     assert!(approach_turn < 1e-3, "{approach_turn}");
-    let yaw_turn =
-        (after.orientation.jaw_yaw_degrees - before.orientation.jaw_yaw_degrees).rem_euclid(360.0);
-    assert!((yaw_turn - 0.3_f64.to_degrees()).abs() < 0.2, "{yaw_turn}");
+    let yaw_turn = (after.orientation.jaw_yaw_radians - before.orientation.jaw_yaw_radians)
+        .rem_euclid(std::f64::consts::TAU);
+    assert!((yaw_turn - 0.3).abs() < 0.2_f64.to_radians(), "{yaw_turn}");
 }
 
 #[test]
 fn the_so101_zero_pose_points_the_jaws_level_and_closing_vertically() {
     let home = planner_home();
-    assert!((home.degrees_from_down - 90.0).abs() < 0.2);
-    assert!((home.jaw_yaw_degrees - 90.0).abs() < 3.0);
+    assert!((home.radians_from_down - std::f64::consts::FRAC_PI_2).abs() < 0.2_f64.to_radians());
+    assert!((home.jaw_yaw_radians - std::f64::consts::FRAC_PI_2).abs() < 3_f64.to_radians());
 }
 
 fn planner_home() -> hebbian_contracts::OrientationSummary {
@@ -279,15 +279,15 @@ fn the_ghost_of_a_reachable_pose_lists_the_jaw_yaws_the_wrist_can_take() {
     // CONSTRAINT: The wrist roll's range is under a full turn, so some yaws are out of reach.
     assert!(ranges.iter().any(|span| !span.reachable));
     for span in ranges {
-        assert!(span.from_degrees < span.to_degrees);
+        assert!(span.from_radians < span.to_radians);
         assert_eq!(span.reason.is_none(), span.reachable);
     }
-    assert!(ranges[0].from_degrees.abs() < 1e-9);
-    assert!((ranges.last().unwrap().to_degrees - 360.0).abs() < 1e-9);
+    assert!(ranges[0].from_radians.abs() < 1e-9);
+    assert!((ranges.last().unwrap().to_radians - std::f64::consts::TAU).abs() < 1e-9);
     let requested = projection.requested.unwrap();
     let again = grasp_rotation(
         Approach::Direction(requested.orientation.approach),
-        requested.orientation.jaw_yaw_degrees,
+        requested.orientation.jaw_yaw_radians,
         hebbian_contracts::JawClosingAxis::X,
     )
     .unwrap();
@@ -324,7 +324,7 @@ fn leaving_the_orientation_free_reaches_a_position_a_fixed_one_cannot() {
     let position = [0.2, 0.0, 0.15];
     let down = Some(PoseOrientation::Grasp {
         approach: Approach::Named(NamedApproach::Down),
-        jaw_yaw_degrees: 180.0,
+        jaw_yaw_radians: std::f64::consts::PI,
     });
     let fixed = planner.project(&OVER_THE_TABLE, position, down, None);
     assert!(!matches!(
@@ -349,7 +349,7 @@ fn leaving_the_orientation_free_reaches_a_position_a_fixed_one_cannot() {
     assert_ne!(free.jaw_yaw_ranges.len(), 0);
     let chosen = grasp_rotation(
         Approach::Direction(pose.orientation.approach),
-        pose.orientation.jaw_yaw_degrees,
+        pose.orientation.jaw_yaw_radians,
         hebbian_contracts::JawClosingAxis::X,
     )
     .unwrap();
@@ -367,7 +367,7 @@ fn a_yaw_the_wrist_cannot_take_runs_to_the_ghosts_pose_and_advises_one_that_work
     let position = [0.2, 0.0, 0.05];
     let orientation = PoseOrientation::Grasp {
         approach: Approach::Named(NamedApproach::Down),
-        jaw_yaw_degrees: 0.0,
+        jaw_yaw_radians: 0.0,
     };
     let motion = planner
         .plan(
@@ -421,7 +421,7 @@ fn a_yaw_the_wrist_cannot_take_runs_to_the_ghosts_pose_and_advises_one_that_work
                 position,
                 orientation: PoseOrientation::Grasp {
                     approach: Approach::Direction([0.0, 0.0, -1.0]),
-                    jaw_yaw_degrees: yaw,
+                    jaw_yaw_radians: yaw.to_radians(),
                 },
             }],
             None,
@@ -496,7 +496,7 @@ fn the_policy_is_given_the_goal_a_move_would_send() {
     let mut asked = Vec::new();
     let down = PoseOrientation::Grasp {
         approach: Approach::Named(NamedApproach::Down),
-        jaw_yaw_degrees: 90.0,
+        jaw_yaw_radians: std::f64::consts::FRAC_PI_2,
     };
     let ghost = planner.project_by_policy(&OVER_THE_TABLE, [0.2, 0.0, 0.1], Some(down), |p, q| {
         asked.push((p, q));
@@ -509,7 +509,7 @@ fn the_policy_is_given_the_goal_a_move_would_send() {
     let wanted = pose_orientation_quaternion(down, JawClosingAxis::X).unwrap();
     assert!(close(quaternion, &wanted));
     let requested = ghost.requested.unwrap().orientation;
-    assert!((requested.jaw_yaw_degrees - 90.0).abs() < 1e-9);
+    assert!((requested.jaw_yaw_radians - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     assert_ne!(ghost.jaw_yaw_ranges.len(), 0);
 
     // WHY: Position alone: the goal takes the orientation position-only solving chose,
