@@ -529,6 +529,12 @@ async def main(
         str | None, Parameter(help="Media URL. Overrides HEBBIAN_MEDIA_SERVER.")
     ] = None,
 ) -> int | None:
+    print(
+        "Example agent. This script runs a simple agent loop. Extend the example "
+        "or use it as a reference for building your own app with the RUA SDK.",
+        file=sys.stderr,
+        flush=True,
+    )
     load_environment()
     model = model.strip()
     if not model:

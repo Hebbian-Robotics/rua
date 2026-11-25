@@ -340,6 +340,22 @@ export function WorkspaceApp({
         <h1 id="workspace" className="workspace-jump-target" tabIndex={-1}>
           Workspace
         </h1>
+        <aside
+          aria-label="Viewer example"
+          className="mb-4 rounded-lg border bg-card px-4 py-3 text-sm text-card-foreground"
+        >
+          <p className="m-0">
+            <strong>Example viewer.</strong> This viewer runs a simple agent
+            loop. Extend the viewer or see how the{" "}
+            <a
+              className="underline"
+              href="https://github.com/Hebbian-Robotics/rua/tree/main/examples/typescript/agent"
+            >
+              TypeScript example uses the RUA SDK
+            </a>{" "}
+            to build your own app.
+          </p>
+        </aside>
         <nav
           className="workspace-section-links"
           aria-label="Workspace sections"
