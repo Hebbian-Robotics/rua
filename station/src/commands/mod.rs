@@ -148,10 +148,7 @@ pub(crate) struct WebArguments {
     /// `livekit-server`. Open the RUA example viewer to watch local USB cameras. For
     /// remote cameras, configure `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
     /// in the environment or `.env`, or run `lk cloud auth` on the station.
-    #[arg(
-        long = "local-only-no-remote-cameras",
-        aliases = ["local-cameras-only", "local-cameras-only-no-stream-preview"]
-    )]
+    #[arg(long = "local-only-no-remote-cameras")]
     local_cameras_only: bool,
     /// Where `hebbian-rua-media` writes recordings, one directory per recording.
     #[arg(
