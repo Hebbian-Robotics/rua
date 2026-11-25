@@ -137,6 +137,16 @@ impl IkSolver {
         &self.chain
     }
 
+    #[must_use]
+    pub fn tool_pose(&self, joints: &[f64]) -> Isometry3<f64> {
+        self.chain.tool_pose(joints)
+    }
+
+    #[must_use]
+    pub fn tool_pose_and_model_points(&self, joints: &[f64]) -> (Isometry3<f64>, Vec<[f64; 3]>) {
+        self.chain.tool_pose_and_model_points(joints)
+    }
+
     pub fn solve(
         &self,
         position: [f64; 3],

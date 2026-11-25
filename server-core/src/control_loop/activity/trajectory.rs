@@ -220,7 +220,7 @@ impl Loop<'_> {
             speed_fraction,
         )?;
         active.speed_fraction = speed_fraction;
-        self.reference.copy_from(active.supervisor.reference());
+        active.supervisor.copy_reference_to(&mut self.reference);
         let settling_at_end = active.supervisor.settling_at_end();
         let new = active
             .supervisor
