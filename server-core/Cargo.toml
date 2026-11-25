@@ -11,7 +11,7 @@ publish = false
 [dependencies]
 tracing.workspace = true
 hebbian-robot-geometry = { path = "../robot-geometry" }
-hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "e49063958d104bea803023e9afa67366eb281251", features = ["schema"] }
+hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "a7478478939af31cedfc3eccf13ec3be46da6e28", features = ["schema"] }
 hebbian-contracts = { package = "hebbian-rua-contracts", path = "../contracts" }
 anyhow = "1.0.105"
 async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }

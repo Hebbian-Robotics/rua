@@ -315,7 +315,7 @@ importers:
         specifier: 2.12.0
         version: 2.12.0(@opentelemetry/api@1.9.0)
       '@pydantic/genai-prices':
-        specifier: ^0.2.3
+        specifier: ^0.2.5
         version: 0.2.5
       commander:
         specifier: 15.1.0
@@ -3216,8 +3216,8 @@ packages:
   uc.micro@3.0.0:
     resolution: {integrity: sha512-U3PppEkleoTnIfi8BozMx3yju3qc/L6SwqWo2Sw+54PX+PX0q9I+r1Um5HCmqD7n9VDX5/v3vQH/AjA6deDdtw==}
 
-  unbash@6.0.4:
-    resolution: {integrity: sha512-t3OptUArewg9OpYGDskTSlxhyLDahfmZ4d36hE44Efb1y3HRLLpzsVqwH+AwBVymP4t7pP71xN+nnduudn2awA==}
+  unbash@6.0.5:
+    resolution: {integrity: sha512-5P8o+nYRueKpHxmemofYqZRZCSWAi+Tqy31MQS8l/sT54Z+Axn55N9CnWPo19BxxJD4wYYf6RqlcURhWkrFXew==}
     engines: {node: '>=14'}
 
   undici-types@8.9.0:
@@ -5215,7 +5215,7 @@ snapshots:
       smol-toml: 1.9.1
       strip-json-comments: 5.0.3
       tinyglobby: 0.2.17
-      unbash: 6.0.4
+      unbash: 6.0.5
       yaml: 2.9.1
 
   lie@3.3.0:
@@ -6150,7 +6150,7 @@ snapshots:
 
   uc.micro@3.0.0: {}
 
-  unbash@6.0.4: {}
+  unbash@6.0.5: {}
 
   undici-types@8.9.0: {}
 
