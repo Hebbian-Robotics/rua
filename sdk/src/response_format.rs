@@ -108,7 +108,7 @@ fn model_command_record(mut record: Map<String, Value>) -> Map<String, Value> {
     record
 }
 
-// Earlier steps retain the command outcome and limitation; the final step
+// INVARIANT: Earlier steps retain the command outcome and limitation; the final step
 // includes full concise details for the model's next decision.
 fn compact_earlier_step(value: Value) -> Value {
     let Value::Array(entries) = value else {

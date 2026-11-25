@@ -1,5 +1,3 @@
-// Motion unit conversions backed by the shared station contract.
-
 import { robotToolInputUnits } from "./generated/robot-tools.js";
 
 export type LengthUnit = "m" | "mm";

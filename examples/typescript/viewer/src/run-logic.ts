@@ -1,6 +1,3 @@
-// What the run panel may do and say, given the last run the agent server reported.
-// Pure: no DOM, no network, tested directly.
-
 import { match } from "ts-pattern";
 import {
   type InferenceMode,
@@ -29,7 +26,7 @@ type RunState =
   | "interrupted";
 
 const MILLISECONDS_PER_SECOND = 1000;
-// Output follows new lines unless the reader scrolled up by more than this.
+// WHY: Output follows new lines unless the reader scrolled up by more than this.
 const FOLLOW_OUTPUT_SLACK_PIXELS = 24;
 
 function runState(run: Run): RunState {
@@ -57,7 +54,6 @@ const INFERENCE_MODE_LABELS: Record<InferenceMode, string> = {
   ultrafast: "Ultrafast",
 };
 
-// The modes a provider offers, named as that provider names them.
 export function inferenceModeOptions(
   provider: Provider | undefined,
 ): { value: InferenceMode; label: string }[] {

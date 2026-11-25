@@ -293,23 +293,23 @@ impl ArmMode {
 #[serde(rename_all = "snake_case")]
 pub enum CommandOutcome {
     Completed,
-    // The client asked it to stop, or the arm was disabled.
+    // INVARIANT: The client asked it to stop, or the arm was disabled.
     Stopped,
-    // A safety limit tripped; the arm stopped and holds where it was.
+    // INVARIANT: A safety limit tripped; the arm stopped and holds where it was.
     Tripped,
-    // It ran past its budget; the arm holds where it is.
+    // INVARIANT: It ran past its budget; the arm holds where it is.
     TimedOut,
-    // A planned motion came to rest short of its target, outside the settled
+    // INVARIANT: A planned motion came to rest short of its target, outside the settled
     // tolerance, and was no longer closing on it; `achieved` has each joint's error.
     StoppedShort,
-    // A new command replaced it while it was only settling; `achieved` has the
+    // INVARIANT: A new command replaced it while it was only settling; `achieved` has the
     // error at that moment.
     Superseded,
-    // A hard fault: the motors were powered off at once.
+    // INVARIANT: A hard fault: the motors were powered off at once.
     Faulted,
-    // Communication was lost; the arm may have continued toward its last goal.
+    // INVARIANT: Communication was lost; the arm may have continued toward its last goal.
     Interrupted,
-    // A command failed. Its phase records whether it ran.
+    // INVARIANT: A command failed. Its phase records whether it ran.
     Failed,
 }
 
@@ -346,7 +346,7 @@ pub enum GoalStatus {
     Reached,
     /// The arm reached an adjusted pose or path target.
     Limited,
-    // Rest outside the settled tolerance, no longer closing on the target.
+    // INVARIANT: Rest outside the settled tolerance, no longer closing on the target.
     StoppedShort,
     Partial,
     NotStarted,
@@ -832,7 +832,8 @@ pub struct ArmState {
     #[serde(default)]
     pub active_trip: Option<String>,
     pub recovery_issue: Option<ArmRecoveryIssue>,
-    /// 0 closed to 1 open; none without a gripper.
+    /// Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).
+    /// Feedback beyond either endpoint can fall outside that range.
     pub gripper_opening: Option<f64>,
     /// Conditions refusing motion on this arm until they clear.
     pub interlocks: Vec<Interlock>,

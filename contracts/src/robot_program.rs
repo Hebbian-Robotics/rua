@@ -41,6 +41,7 @@ pub struct ActionSequenceWaypoint {
 }
 
 /// An arm action must name a goal or gripper opening. When both are present they start together.
+/// The compiler validates the opening and motion limits with step and arm context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum ActionSequenceArmAction {

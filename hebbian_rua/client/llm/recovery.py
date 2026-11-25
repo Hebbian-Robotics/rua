@@ -24,7 +24,6 @@ from hebbian_rua.client.station_types import LeaseLost
 log = logging.getLogger(__name__)
 INITIAL_CAMERA_RETRY_SECONDS = 0.1
 MAX_CAMERA_RETRY_SECONDS = 1.0
-# The interlocks that clear only when the arm itself recovers.
 ARM_INTERLOCKS = frozenset({"arm_disconnected", "recovery_approval_required"})
 
 
@@ -133,7 +132,7 @@ async def capture_when_ready(
         if interlock.kind == "required_camera_unavailable"
         and interlock.camera in robot.cameras
     )
-    # A capture just succeeded, so every required camera gave a fresh frame.
+    # WHY: A capture just succeeded, so every required camera gave a fresh frame.
     for camera in missing_cameras:
         try:
             await robot.lease.report_camera(camera, True)

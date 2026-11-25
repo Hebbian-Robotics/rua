@@ -63,7 +63,7 @@ try {
     httpPreviews.results[0]?.id,
     "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   );
-  // Reorder real station answers to exercise the adapter's ID-based correlation.
+  // WHY: Reorder real station answers to exercise the adapter's ID-based correlation.
   const stationPreviewPoses = connection.previewPoses.bind(connection);
   connection.previewPoses = async (request) => {
     assert.equal(

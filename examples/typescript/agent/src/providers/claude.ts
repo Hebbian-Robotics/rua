@@ -25,11 +25,11 @@ export function claudeUsage(response: BetaMessage): TokenUsage {
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   return {
     model: response.model,
-    // Claude's input_tokens excludes cache reads and writes.
+    // CONSTRAINT: Claude's input_tokens excludes cache reads and writes.
     inputTokens: usage.input_tokens + cacheRead + cacheWrite,
     cachedInputTokens: cacheRead,
     outputTokens: usage.output_tokens,
-    // Thinking is billed as output; the usage does not split it out.
+    // CONSTRAINT: Thinking is billed as output; the usage does not split it out.
     reasoningTokens: 0,
     cacheWriteTokens: cacheWrite,
   };
@@ -102,9 +102,9 @@ export class ClaudeConversation implements ModelConversation {
       output_config: { effort: settings.reasoningEffort },
       thinking: { type: "adaptive", display: "summarized" },
       ...(settings.inferenceMode === "fast" ? { speed: "fast" as const } : {}),
-      // Let the API advance the cache breakpoint as the thread grows.
+      // CONSTRAINT: Let the API advance the cache breakpoint as the thread grows.
       cache_control: { type: "ephemeral" },
-      // If the API cannot thread a request, send each turn's full history instead.
+      // WHY: If the API cannot thread a request, send each turn's full history instead.
       unsupportedRequestBehavior: "continue_unthreaded",
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
@@ -114,7 +114,7 @@ export class ClaudeConversation implements ModelConversation {
 
   async nextTurn(signal?: AbortSignal): Promise<ModelTurn | ModelRefusal> {
     await this.modelInputs.save();
-    // Streamed: a high-effort turn with a large max_tokens can outlast a buffered
+    // CONSTRAINT: Streamed: a high-effort turn with a large max_tokens can outlast a buffered
     // request's timeout. Aborting the signal ends the stream.
     const stream = this.thread.stream(undefined, undefined, { signal });
     return claudeTurn(await stream.finalMessage());

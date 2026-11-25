@@ -126,7 +126,7 @@ impl Inner {
 
     pub(crate) fn keep_record(&mut self, arm_record: ArmRecord) {
         let record = &arm_record.record;
-        // A late, unfinished revision never replaces the finished one.
+        // INVARIANT: A late, unfinished revision never replaces the finished one.
         if let Some(previous) = self.records.get(&record.command_id)
             && !previous.record.is_pending()
             && record.is_pending()
@@ -206,7 +206,7 @@ impl Shared {
                 ..Inner::default()
             }),
             changed: watch::channel(0).0,
-            // Leave room for live events that arrive while the caller finishes connecting.
+            // WHY: Leave room for live events that arrive while the caller finishes connecting.
             run_updates: broadcast::channel(MAX_RUN_REPLAY_RECORDS * 2).0,
             action_sequence_updates: watch::channel(None).0,
             lease_lost: watch::channel(false).0,

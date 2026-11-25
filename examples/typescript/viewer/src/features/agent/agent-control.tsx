@@ -97,7 +97,7 @@ export function AgentControl({
     ? (modelSelection.model ?? "")
     : presetModel;
   const inferenceModes = inferenceModeOptions(currentProvider?.provider);
-  // A mode the current provider lacks, such as ultrafast after leaving OpenAI, falls back to standard.
+  // WHY: A mode the current provider lacks, such as ultrafast after leaving OpenAI, falls back to standard.
   const inferenceMode = inferenceModes.some(
     ({ value }) => value === preferredInferenceMode,
   )
@@ -196,7 +196,7 @@ export function AgentControl({
               try {
                 localStorage.setItem("hebbian-agent-task:v1", taskDraft);
               } catch {
-                // Keep editing usable when storage is blocked or full.
+                // WHY: Keep editing usable when storage is blocked or full.
               }
             }}
             placeholder="Describe what the robot should do"

@@ -1,3 +1,4 @@
+// CONSTRAINT: Vitest reads the environment directive to provide browser globals.
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

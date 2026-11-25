@@ -179,7 +179,7 @@ impl<P: Plant> Runner<'_, P> {
         self.state.arm().released(&cleanup_errors, now);
     }
 
-    // SAFETY: On shutdown, with nothing left to carry out: return to where the arm
+    // ROBOT-SAFETY: On shutdown, with nothing left to carry out: return to where the arm
     // rested unpowered, then release.
     pub(super) fn shutdown_step(&mut self, now: Now) -> bool {
         if !self.state.arm().shutdown_requested() || !self.state.powered() {

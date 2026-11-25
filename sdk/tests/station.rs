@@ -197,12 +197,10 @@ async fn the_lease_is_exclusive_revoked_and_returned() -> TestResult {
     };
     assert_eq!(holder.label, "first");
 
-    // The operator override takes control and tells the previous holder.
     within(second.revoke_lease()).await??;
     within(guard.lost()).await?;
     within(lease_lost.wait_for(|lost| *lost)).await??;
 
-    // An awaited return permits an immediate claim by another connection.
     let new_guard = within(first.acquire_lease(agent("again"))).await??;
     assert!(!*lease_lost.borrow());
     within(guard.lost()).await?;
@@ -231,7 +229,6 @@ async fn the_lease_is_exclusive_revoked_and_returned() -> TestResult {
     let guard = within(second.acquire_lease(agent("returned"))).await??;
     within(guard.return_lease()).await??;
 
-    // Dropping a guard also attempts a background release.
     let guard = within(first.acquire_lease(agent("drop"))).await??;
     drop(guard);
     within(async {
@@ -271,7 +268,7 @@ async fn refused_commands_surface_their_reason() -> TestResult {
     let holder = station.connect().await?;
     let other = station.connect().await?;
 
-    // The lease does not need the arm powered; a move on a disabled arm is refused with the way on.
+    // WHY: The lease does not need the arm powered; a move on a disabled arm is refused with the way on.
     let lease = within(holder.acquire_lease(agent("holder"))).await??;
     let Err(Error::Refused { reason, detail }) =
         within(lease.move_to_joints(ARM, vec![0.1, -0.5, 0.5, 0.0, 0.0], None)).await?
@@ -281,13 +278,11 @@ async fn refused_commands_surface_their_reason() -> TestResult {
     assert_eq!(reason, RejectionReason::NotEnabled);
     assert!(detail.contains("enable"), "{detail}");
 
-    // Another connection cannot take the lease without taking it over.
     assert!(matches!(
         within(other.acquire_lease(agent("other"))).await?,
         Err(Error::LeaseHeldElsewhere(_))
     ));
 
-    // The wrong number of joints never moves the arm.
     within(holder.enable(ARM)).await??;
     let Err(Error::Refused { reason, .. }) =
         within(lease.move_to_joints(ARM, vec![0.1], None)).await?
@@ -306,11 +301,9 @@ async fn a_stopped_move_is_an_incomplete_error() -> TestResult {
     let lease = within(client.acquire_lease(agent("test"))).await??;
     within(client.enable(ARM)).await??;
 
-    // A slow move that a stop from another connection cuts short.
     let stopper = station.connect().await?;
     let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05.try_into()?));
     let stopping = async {
-        // Stop once the move is the arm's active command.
         loop {
             let state = stopper.state().await?;
             if state.arms[0].active_command.is_some() {
@@ -339,20 +332,20 @@ async fn a_refused_command_does_not_stop_the_holders_motion() -> TestResult {
     within(former.enable(ARM)).await??;
     let lease = within(holder.take_lease(agent("holder"))).await??;
 
-    // The holder starts a slow move that is still under way when the former holder's
+    // WHY: The holder starts a slow move that is still under way when the former holder's
     // guard, whose lease was taken, probes.
     let moving = lease.move_to_joints(ARM, vec![1.0, -0.5, 0.5, 0.0, 0.0], Some(0.05.try_into()?));
     let probing = async {
         former
             .wait_for_state(|state| state.arms[0].active_command.is_some())
             .await?;
-        // A refused command moved nothing, so it must not send the stop a dropped command
+        // WHY: A refused command moved nothing, so it must not send the stop a dropped command
         // sends: a stop is accepted from anyone and would cut short the holder's motion.
         let probe = former_lease
             .move_to_joints(ARM, vec![0.1, -0.5, 0.5, 0.0, 0.0], None)
             .await;
         assert!(matches!(probe, Err(Error::Refused { .. })), "{probe:?}");
-        // The server handles one connection's messages in order, so once this answer is
+        // CONSTRAINT: The server handles one connection's messages in order, so once this answer is
         // back any stop sent before it has been handled.
         let tool = former.state().await?.arms[0]
             .tool
@@ -685,7 +678,6 @@ async fn a_preview_answers_without_moving_the_arm() -> TestResult {
 
     assert_http_pose_preview_batch(&client, reachable).await?;
 
-    // An unreachable pose is still a projection; an unknown arm is a refusal.
     within(client.preview_pose(
         ARM,
         PreviewPose {
@@ -900,7 +892,6 @@ async fn run_telemetry_resumes_after_the_last_action_sequence_number() -> TestRe
     producer.record_run_event(note("third")?).await?;
     let (third_seq, _) = within(next_event(&mut updates)).await??;
 
-    // A new connection resuming after the second sees only the third.
     let (resumed_station, mut resumed_updates) =
         Station::connect_with(options(Some(second_seq))).await?;
     let (resumed_seq, resumed_event) = within(next_event(&mut resumed_updates)).await??;
@@ -909,8 +900,6 @@ async fn run_telemetry_resumes_after_the_last_action_sequence_number() -> TestRe
     drop((producer, watcher, resumed_station));
     Ok(())
 }
-
-// ---- the lease and recording routes, stubbed ------------------------------------------
 
 type StubRequests = Arc<std::sync::Mutex<Vec<(String, String, serde_json::Value)>>>;
 
@@ -1180,7 +1169,7 @@ async fn assert_model_tool_batches(tools: &RobotTools<&hebbian_rua::LeaseGuard>)
     let RobotToolOutcome::Returned(stop) = &traced_stop[0].outcome else {
         return Err("traced stop did not complete".into());
     };
-    // The trace context reaches the station (see the command-level test); the model view omits it.
+    // CONSTRAINT: The trace context reaches the station (see the command-level test); the model view omits it.
     assert!(stop.get("trace_context").is_some());
     assert!(traced_stop[0].model_data().get("trace_context").is_none());
     Ok(())
@@ -1824,7 +1813,7 @@ async fn timed_waypoint_opens_the_jaw_and_each_move_uses_its_own_clock() -> Test
     let first_move = &result.steps[0][0].record;
     let return_move = &result.steps[1][0].record;
     let waypoint_observed = after_waypoint.arms[0].sampled_unix_nano.unwrap();
-    // Allow 100 ms around the clock boundary for the controller and station samples.
+    // CONSTRAINT: Allow 100 ms around the clock boundary for the controller and station samples.
     assert!(waypoint_observed.0 - first_move.accepted_unix_nano.0 >= 1_400_000_000);
     for (movement, minimum_nanos) in [(first_move, 2_900_000_000), (return_move, 1_900_000_000)] {
         let hebbian_contracts::CommandPhase::Finished { completion, .. } = &movement.phase else {

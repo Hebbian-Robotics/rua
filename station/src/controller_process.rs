@@ -180,7 +180,7 @@ impl ControllerProcess {
             .context("Cannot inspect the controller process")
     }
 
-    // SAFETY: Stopping the controller does not stop its independent guard; the guard remains
+    // WHY: Stopping the controller does not stop its independent guard; the guard remains
     // responsible for the arm until release is verified.
     pub fn stop_controller(&mut self) -> anyhow::Result<()> {
         if !matches!(self.child.try_wait(), Ok(Some(_))) {
@@ -191,7 +191,7 @@ impl ControllerProcess {
         Ok(())
     }
 
-    // SAFETY: A closed stderr pipe confirms controller/guard process release, not motor torque.
+    // WHY: A closed stderr pipe confirms controller/guard process release, not motor torque.
     #[must_use]
     pub fn report_pipe_closed(&self) -> bool {
         self.reports
@@ -201,7 +201,7 @@ impl ControllerProcess {
             == ReportPipe::Eof
     }
 
-    // SAFETY: A failed reader proves nothing about the inherited writer.
+    // WHY: A failed reader proves nothing about the inherited writer.
     // Only a gone process group permits reconnect in that case.
     pub(crate) fn guard_released(&mut self) -> bool {
         if !matches!(self.try_wait(), Ok(Some(_))) {

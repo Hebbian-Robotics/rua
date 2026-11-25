@@ -63,7 +63,7 @@ export function useControlRecording(recordWithControl: boolean) {
     const request = change
       .mutateAsync(action)
       .catch(() => {
-        // The mutation exposes the failure in the recording controls.
+        // WHY: The mutation exposes the failure in the recording controls.
       })
       .finally(() => {
         pendingChange.current = null;

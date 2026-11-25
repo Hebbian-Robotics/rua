@@ -1,5 +1,3 @@
-// What the model sees each turn, traced and recorded for the viewer.
-
 import {
   apiSchemas,
   type RobotObservation,

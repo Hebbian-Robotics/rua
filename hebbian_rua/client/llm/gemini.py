@@ -88,7 +88,7 @@ class GeminiRobotTools:
             ):
                 raise ValueError("Expected a complete, named Gemini function call")
             provider_calls.append(function_call)
-            # Gemini can omit IDs. The local correlation key is never sent to Google.
+            # CONSTRAINT: Gemini can omit IDs. The local correlation key is never sent to Google.
             calls.append(
                 RobotToolCall(
                     call_id=function_call.id or f"robot-call-{len(calls)}",
@@ -97,7 +97,7 @@ class GeminiRobotTools:
                 )
             )
         results = await self.robot.execute(calls, expected_revisions=expected_revisions)
-        # Return the original content intact: thought signatures may be on any part.
+        # CONSTRAINT: Return the original content intact: thought signatures may be on any part.
         messages = [candidate.content]
         if results:
             messages.append(

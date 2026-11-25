@@ -1,4 +1,4 @@
-// SAFETY: Expired feedback must be presented as unavailable or faulted, never as a live arm.
+// INVARIANT: Expired feedback must be presented as unavailable or faulted, never as a live arm.
 
 use std::collections::BTreeMap;
 use std::time::Duration;

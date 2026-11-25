@@ -1,5 +1,3 @@
-// What a provider raises once its retries are spent: the loop ends cleanly.
-
 import Anthropic from "@anthropic-ai/sdk";
 import { ApiError as GeminiApiError } from "@google/genai";
 import OpenAI from "openai";

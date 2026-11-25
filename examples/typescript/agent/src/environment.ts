@@ -1,5 +1,3 @@
-// What a running loop shares between its modules.
-
 import type { TracerProvider } from "@opentelemetry/api";
 import type { createRobotTools, Lease, StationConnection } from "hebbian-rua";
 import { StationConnectionError } from "hebbian-rua";

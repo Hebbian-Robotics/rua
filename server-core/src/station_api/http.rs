@@ -311,8 +311,7 @@ async fn wait_operation(
             }
         };
         let sequence = station_state
-            .events
-            .state_reflecting(&records)
+            .state_sequence_reflecting(&records)
             .await
             .ok_or((
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -1367,7 +1366,7 @@ async fn list_traces(State(station_state): State<Arc<StationHttpState>>) -> Resp
     }
 }
 
-// SAFETY: Resolve trace names from the directory listing, never by joining untrusted names to a path.
+// INVARIANT: Resolve trace names from the directory listing, never by joining untrusted names to a path.
 fn find_trace(directories: &[PathBuf], name: &str) -> Option<PathBuf> {
     trace_files(directories)
         .into_iter()

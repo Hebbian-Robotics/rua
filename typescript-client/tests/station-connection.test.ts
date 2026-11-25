@@ -357,7 +357,6 @@ test("HTTP completion waits for the station's state cursor to reach the cache", 
   }
 });
 
-// A reconnect must not make an earlier in-flight acquisition appear current.
 test.each(["reconnection", "close"] as const)(
   "a lease granted after %s is released",
   async (interruption) => {

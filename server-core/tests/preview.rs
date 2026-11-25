@@ -10,7 +10,7 @@
     reason = "This integration-test target may abort on failed setup or unexpected outcomes."
 )]
 
-// SAFETY: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
+// INVARIANT: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -253,11 +253,8 @@ fn an_arm_without_a_policy_refuses_to_rehearse() {
     assert!(Preview::new(&without_policy).unwrap().is_none());
 }
 
-// WHY: Not a regression test: prints how the policy treats a goal rotated about the
-// tool axis, for deciding how the viewer's wrist-roll slider reaches it.
-// `cargo test --test preview orientation_study -- --ignored --nocapture`
 #[test]
-#[ignore = "a study, run by hand"]
+#[ignore = "prints policy responses to roll goals for viewer control design"]
 fn orientation_study() {
     use nalgebra::UnitQuaternion;
     let Some(assets) = assets() else { return };
@@ -313,11 +310,8 @@ fn orientation_study() {
     }
 }
 
-// WHY: Not a regression test: prints how the policy treats a goal whose orientation
-// the arm cannot take, with orientation not counted toward settling.
-// `cargo test --test preview orientation_ignored_study -- --ignored --nocapture`
 #[test]
-#[ignore = "a study, run by hand"]
+#[ignore = "prints policy responses to unreachable orientations excluded from settling"]
 fn orientation_ignored_study() {
     use nalgebra::{UnitQuaternion, Vector3};
     let Some(assets) = assets() else { return };

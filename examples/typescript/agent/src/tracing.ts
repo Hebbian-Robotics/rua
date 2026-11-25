@@ -72,7 +72,7 @@ function stationSpanProcessor(connection: StationConnection): SpanProcessor {
   }
 
   return {
-    // The viewer uses the start update to show work while the span is open.
+    // WHY: The viewer uses the start update to show work while the span is open.
     onStart: (span) => reportSpan(span, true),
     onEnd: (span) => reportSpan(span, false),
     forceFlush: () => Promise.resolve(),

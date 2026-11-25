@@ -26,7 +26,7 @@ async function agentJson<T>(
   try {
     body = JSON.parse(text);
   } catch {
-    // Preserve a non-JSON error response below.
+    // WHY: Preserve a non-JSON error response below.
   }
   if (!response.ok) {
     const error = errorBodySchema.safeParse(body);

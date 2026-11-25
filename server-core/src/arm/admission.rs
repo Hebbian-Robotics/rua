@@ -17,7 +17,7 @@ use hebbian_contracts::{
 };
 
 pub(super) const RETAINED_RECORDS: usize = 200;
-// SAFETY: A fault is cleared only on feedback this fresh, taken after the fault.
+// ROBOT-SAFETY: A fault is cleared only on feedback this fresh, taken after the fault.
 const FAULT_RECOVERY_FEEDBACK_MAX_AGE_SECONDS: f64 = 1.0;
 
 // WHY: Joint errors alone do not tell a model why a move stalled or where to aim next;

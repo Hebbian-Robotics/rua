@@ -109,7 +109,7 @@ export async function captureSequenceImages<Result>(
       controller.signal,
       AbortSignal.timeout(500),
     ]);
-    // Sequential reads bound the number of in-flight JPEGs regardless of camera count.
+    // WHY: Sequential reads bound the number of in-flight JPEGs regardless of camera count.
     const orderedCameras = [
       ...cameras.slice(cameraOffset),
       ...cameras.slice(0, cameraOffset),

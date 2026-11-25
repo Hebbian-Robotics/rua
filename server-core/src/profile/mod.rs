@@ -19,7 +19,7 @@ pub use controller_config::{
     JointLimitSource, controller_config, controller_config_input, urdf_joint_limits,
 };
 
-// SAFETY: A descriptive per-joint reference; it never commands motion or proves support.
+// CONSTRAINT: A descriptive per-joint reference; it never commands motion or proves support.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestReference {
@@ -28,7 +28,7 @@ pub struct RestReference {
 }
 
 impl RestReference {
-    // SAFETY: Compare joint feedback only; this cannot establish physical support.
+    // CONSTRAINT: Compare joint feedback only; this cannot establish physical support.
     #[must_use]
     pub fn matches(&self, positions: &[f64]) -> bool {
         positions.len() == self.joint_positions_radians.len()

@@ -1,10 +1,4 @@
 #!/usr/bin/env -S pnpm exec tsx --conditions=development
-// Let a model perform a task with the station's arm.
-//
-//   pnpm --filter @hebbian/agent start --provider openai --model gpt-6.2-astra -- "Describe the robot state."
-//
-// A thin wrapper over runAgent for terminal use; the agent server calls runAgent in-process.
-// API keys come from the environment or a .env file in the directory the command was run from.
 
 import { realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -168,10 +162,10 @@ export function parseCommandLine(
 function loadDotEnvironment(): void {
   const invocationDirectory = process.env["INIT_CWD"] ?? process.cwd();
   try {
-    // Does not replace variables that are already exported.
+    // INVARIANT: Does not replace variables that are already exported.
     process.loadEnvFile(join(invocationDirectory, ".env"));
   } catch {
-    // No .env file in the directory the command was run from.
+    // WHY: The dotenv file is optional when credentials come from the environment.
   }
 }
 
@@ -188,7 +182,7 @@ async function main(): Promise<number> {
   for (const signal of ["SIGINT", "SIGTERM"] as const)
     process.once(signal, () => {
       cancellation.abort();
-      // A second signal ends the process without waiting.
+      // INVARIANT: A second signal ends the process without waiting.
       process.once(signal, () => process.exit(1));
     });
   const outcome = await runAgent(

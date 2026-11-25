@@ -1,4 +1,4 @@
-# SAFETY: If the training and station meshes drift apart, the table guard could
+# WHY: If the training and station meshes drift apart, the table guard could
 # reject safe reaches or allow reaches that the policy assumes are unsafe. Compare
 # both models' lowest moving points at the same joints, excluding the base.
 

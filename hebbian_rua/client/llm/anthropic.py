@@ -76,7 +76,7 @@ class AnthropicRobotTools:
             for block in response.content
             if block.type == "tool_use"
         ]
-        # Materialize SDK Iterable fields so history can be reused on later turns.
+        # CONSTRAINT: Materialize SDK Iterable fields so history can be reused on later turns.
         content: list[ContentBlockParam] = _ASSISTANT_CONTENT.dump_python(
             _ASSISTANT_CONTENT.validate_python(
                 [block.model_dump(exclude_none=True) for block in response.content]

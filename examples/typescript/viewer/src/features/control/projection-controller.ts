@@ -11,7 +11,7 @@ export interface SolvedProjection {
   requestedPosition: number[];
 }
 
-// SAFETY: A stale target's preview may animate the ghost but cannot authorize a move;
+// ROBOT-SAFETY: A stale target's preview may animate the ghost but cannot authorize a move;
 // clearing the target invalidates all outstanding answers.
 export function createProjectionController(dependencies: {
   currentRequest: () => ProjectionRequest | null;

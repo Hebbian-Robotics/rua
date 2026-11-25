@@ -79,7 +79,7 @@ class OpenAIRobotTools:
         ]
         messages: list[ResponseInputItemParam] = []
         if include_model_output:
-            # Materialize SDK Iterable fields before motion so the client can replay the response.
+            # CONSTRAINT: Materialize SDK Iterable fields before motion so the client can replay the response.
             messages = _RESPONSE_INPUT.dump_python(
                 _RESPONSE_INPUT.validate_python(
                     [output.model_dump(exclude_none=True) for output in response.output]

@@ -1,5 +1,4 @@
-// The run API of the agent server, shared by the server and the viewer.
-// Times are Unix milliseconds.
+// CONSTRAINT: Run API timestamps are Unix milliseconds.
 
 import { z } from "zod";
 import {
@@ -43,7 +42,7 @@ export const runRequestSchema = z.object({
     provider: providerSchema,
     model: z.string().trim().min(1),
     reasoningEffort: reasoningEffortSchema.nullable().default(null),
-    // Runs saved before inference modes read as standard.
+    // CONSTRAINT: Runs saved before inference modes read as standard.
     inferenceMode: inferenceModeSchema.nullable().default(null),
   }),
 });

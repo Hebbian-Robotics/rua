@@ -853,7 +853,7 @@ impl Hub {
                 }
             }
         }
-        // INVARIANT: Release the writer slot after publishing and recycling.
+        // INVARIANT: The backlog limit includes the sample being published.
         pending_samples.fetch_sub(1, Ordering::Release);
         if changed {
             self.announce_change();

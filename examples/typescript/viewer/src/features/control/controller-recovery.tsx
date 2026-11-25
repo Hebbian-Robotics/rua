@@ -20,7 +20,7 @@ function lastReport(reports: string[]): string | null {
   }
 }
 
-// SAFETY: Recovery controls must remain available when the controller no longer supplies state.
+// WHY: Recovery controls must remain available when the controller no longer supplies state.
 export function ControllerRecovery() {
   const queryClient = useQueryClient();
   const controllerQuery = useQuery({

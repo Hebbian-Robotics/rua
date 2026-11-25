@@ -1,5 +1,3 @@
-// The loop's own tools, beside the robot's: finishing, and the run's plan and notes.
-
 import { z } from "zod";
 import type { ToolSpec } from "./providers/types.js";
 

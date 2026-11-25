@@ -1,4 +1,4 @@
-// SAFETY: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
+// INVARIANT: Preview uses a separate model and controller state: it commands no physical arm and writes no command records.
 
 use std::time::{Duration, Instant};
 

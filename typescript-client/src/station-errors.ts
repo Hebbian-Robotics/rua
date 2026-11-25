@@ -1,11 +1,11 @@
-// The failures a caller branches on, matching the Python and Rust clients.
-
 import type { LeaseAnswer } from "./station-types.js";
 
 /**
  * The station could not be reached, the connection was lost before an answer
  * arrived, or the station sent something unreadable. A command that failed this
- * way may or may not have been accepted; the client never retries it.
+ * way may have been accepted. Supply an operation ID from `newOperationId()`
+ * when submitting the command so you can look up its outcome with `getOperation()`
+ * after reconnecting.
  */
 export class StationConnectionError extends Error {
   override name = "StationConnectionError";

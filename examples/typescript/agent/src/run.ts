@@ -1,4 +1,4 @@
-// The agent loop as a library: one typed config in, one typed outcome out. The CLI (cli.ts)
+// WHY: The agent loop as a library: one typed config in, one typed outcome out. The CLI (cli.ts)
 // and the agent server (examples/typescript/viewer/server) both call runAgent.
 
 import { createStationConnection } from "hebbian-rua";

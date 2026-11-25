@@ -214,13 +214,11 @@ test("a plan, a motion and a finish run end to end and are reported to the stati
     "2 model calls, 20 input (8 cached) and 10 output tokens",
   );
 
-  // Results came back in call order, with the plan at the top of the observation.
   const first = resultsOf(conversation.received[0]);
   expect(first.calls.map((call) => call.name)).toEqual(["stop", "update_plan"]);
   expect(first.observation?.text).toContain("Current plan:\n1. [active] touch");
   expect(Object.keys(first.observation?.cameras ?? {})).toEqual(["cam"]);
 
-  // The station command is parented to the stop call's execute_tool span.
   const finished = station.finishedSpans();
   const stopSpan = finished.find((span) => span.name === "execute_tool stop");
   const traceparent = station.commands[0]?.trace_context?.traceparent;
@@ -285,7 +283,6 @@ test("planning and previews return results without fresh images; observe refresh
   );
   expect(refresh.observation?.text).toContain("block is left");
   expect(Object.keys(refresh.observation?.cameras ?? {})).toEqual(["cam"]);
-  // Initial capture, then explicit observe; no captures for planning or preview.
   expect(
     station.requests.filter((request) => request.includes("/observations")),
   ).toHaveLength(2);
@@ -464,7 +461,7 @@ test("cancellation returns the lease while a model request is still pending", as
     expect(station.leaseStops).toContain("follower");
     const result = await station.run(running);
     expect(result.cancelled).toBe(true);
-    // A late provider response must not execute any of its proposed tools.
+    // INVARIANT: A late provider response must not execute any of its proposed tools.
     completeModelTurn();
     await Promise.resolve();
     expect(station.commands).toHaveLength(0);

@@ -1,6 +1,4 @@
 import type { TracerProvider } from "@opentelemetry/api";
-// What the loop and the three providers share: the conversation interface and
-// the provider-neutral turn, usage and observation shapes.
 
 import type {
   RobotObservation,
@@ -34,7 +32,7 @@ export function unsupportedReasoningEffort(
   return `Reasoning effort xhigh is not supported by ${model}; use high, or a Gemini model that supports it (${GEMINI_XHIGH_MODELS.join(", ")})`;
 }
 
-// Faster, pricier serving of the same model. OpenAI has fast and ultrafast
+// CONSTRAINT: Faster, pricier serving of the same model. OpenAI has fast and ultrafast
 // (service_tier); Anthropic has fast (speed); Gemini's nearest is its Priority
 // tier (service_tier: "priority"), offered here as fast.
 export const INFERENCE_MODES = ["standard", "fast", "ultrafast"] as const;
@@ -82,12 +80,12 @@ export function unsupportedInferenceMode(
   return `Inference mode ${mode} is not supported by ${model}; use standard, or a model that supports it (${models.join(", ")})`;
 }
 
-// Anthropic requires an explicit output limit; the other providers do not.
+// CONSTRAINT: Anthropic requires an explicit output limit; the other providers do not.
 export const ANTHROPIC_MAX_OUTPUT_TOKENS = 128_000;
-// Every SDK retries rate limits, overloads and dropped connections with backoff;
+// CONSTRAINT: Every SDK retries rate limits, overloads and dropped connections with backoff;
 // set here rather than left to each SDK's default, so all three agree.
 export const PROVIDER_MAX_RETRIES = 4;
-// A high-effort turn with many frames can take minutes before the first byte.
+// CONSTRAINT: A high-effort turn with many frames can take minutes before the first byte.
 export const PROVIDER_TIMEOUT_MILLISECONDS = 600_000;
 
 export const API_KEY_VARIABLES: Record<Provider, string> = {
@@ -157,7 +155,6 @@ export interface ConversationSettings {
   tools: ToolSpec[];
   firstObservation: Observation;
   reasoningEffort: ReasoningEffort;
-  // Standard when absent.
   inferenceMode?: InferenceMode;
 
   apiKey?: string;

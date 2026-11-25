@@ -30,7 +30,7 @@ export function manualSessions(stationUrl: string) {
         lastHeartbeat: Date.now(),
       };
       sessions.set(id, session);
-      // Coalesce snapshots when the tab reads more slowly than the station produces them.
+      // WHY: Coalesce snapshots when the tab reads more slowly than the station produces them.
       const pending = new Map<ViewerEvent["kind"], ViewerEvent>();
       let wake = () => {};
       let closed = false;

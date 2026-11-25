@@ -92,7 +92,6 @@ test("formatting views retain full history and measured progress from a failed m
       halt: false,
     });
 
-    // Each view receives the full payload, even after another formatter was selected.
     const custom: OutputFormatter = (output) => {
       const content = defaultFormatter(output);
       if (typeof output.data === "object" && output.data !== null)

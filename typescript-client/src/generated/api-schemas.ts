@@ -342,7 +342,7 @@ export const apiSchemas = z.object({
         .strict(),
     ])
     .describe(
-      "An arm action must name a goal or gripper opening. When both are present they start together.",
+      "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
     ),
   ActionSequenceGoal: z
     .union([
@@ -868,7 +868,7 @@ export const apiSchemas = z.object({
                       .strict(),
                   ])
                   .describe(
-                    "An arm action must name a goal or gripper opening. When both are present they start together.",
+                    "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                   ),
               ),
             })
@@ -1622,7 +1622,7 @@ export const apiSchemas = z.object({
                     .strict(),
                 ])
                 .describe(
-                  "An arm action must name a goal or gripper opening. When both are present they start together.",
+                  "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                 ),
             ),
           })
@@ -1940,7 +1940,7 @@ export const apiSchemas = z.object({
                         .strict(),
                     ])
                     .describe(
-                      "An arm action must name a goal or gripper opening. When both are present they start together.",
+                      "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                     ),
                 ),
               })
@@ -2232,7 +2232,7 @@ export const apiSchemas = z.object({
               .strict(),
           ])
           .describe(
-            "An arm action must name a goal or gripper opening. When both are present they start together.",
+            "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
           ),
       ),
     })
@@ -3298,10 +3298,20 @@ export const apiSchemas = z.object({
       fault: z.union([z.string(), z.null()]).optional(),
       gripper_opening: z
         .union([
-          z.number().describe("0 closed to 1 open; none without a gripper."),
-          z.null().describe("0 closed to 1 open; none without a gripper."),
+          z
+            .number()
+            .describe(
+              "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+            ),
+          z
+            .null()
+            .describe(
+              "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+            ),
         ])
-        .describe("0 closed to 1 open; none without a gripper.")
+        .describe(
+          "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+        )
         .optional(),
       interlocks: z
         .array(
@@ -4304,7 +4314,7 @@ export const apiSchemas = z.object({
                             .strict(),
                         ])
                         .describe(
-                          "An arm action must name a goal or gripper opening. When both are present they start together.",
+                          "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                         ),
                     ),
                   })
@@ -7087,7 +7097,7 @@ export const apiSchemas = z.object({
                         .strict(),
                     ])
                     .describe(
-                      "An arm action must name a goal or gripper opening. When both are present they start together.",
+                      "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                     ),
                 ),
               })
@@ -7721,7 +7731,7 @@ export const apiSchemas = z.object({
                               .strict(),
                           ])
                           .describe(
-                            "An arm action must name a goal or gripper opening. When both are present they start together.",
+                            "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                           ),
                       ),
                     })
@@ -12890,12 +12900,18 @@ export const apiSchemas = z.object({
                   .union([
                     z
                       .number()
-                      .describe("0 closed to 1 open; none without a gripper."),
+                      .describe(
+                        "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+                      ),
                     z
                       .null()
-                      .describe("0 closed to 1 open; none without a gripper."),
+                      .describe(
+                        "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+                      ),
                   ])
-                  .describe("0 closed to 1 open; none without a gripper.")
+                  .describe(
+                    "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+                  )
                   .optional(),
                 interlocks: z
                   .array(
@@ -20270,15 +20286,17 @@ export const apiSchemas = z.object({
                         z
                           .number()
                           .describe(
-                            "0 closed to 1 open; none without a gripper.",
+                            "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
                           ),
                         z
                           .null()
                           .describe(
-                            "0 closed to 1 open; none without a gripper.",
+                            "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
                           ),
                       ])
-                      .describe("0 closed to 1 open; none without a gripper."),
+                      .describe(
+                        "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+                      ),
                     interlocks: z
                       .array(
                         z
@@ -21466,7 +21484,7 @@ export const apiSchemas = z.object({
                                 .strict(),
                             ])
                             .describe(
-                              "An arm action must name a goal or gripper opening. When both are present they start together.",
+                              "An arm action must name a goal or gripper opening. When both are present they start together.\nThe compiler validates the opening and motion limits with step and arm context.",
                             ),
                         ),
                       })
@@ -22916,12 +22934,18 @@ export const apiSchemas = z.object({
               .union([
                 z
                   .number()
-                  .describe("0 closed to 1 open; none without a gripper."),
+                  .describe(
+                    "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+                  ),
                 z
                   .null()
-                  .describe("0 closed to 1 open; none without a gripper."),
+                  .describe(
+                    "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+                  ),
               ])
-              .describe("0 closed to 1 open; none without a gripper."),
+              .describe(
+                "Measured jaw opening relative to the calibrated endpoints (0 closed, 1 open).\nFeedback beyond either endpoint can fall outside that range.",
+              ),
             interlocks: z
               .array(
                 z

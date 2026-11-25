@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 FiniteFloat = Annotated[float, Field(strict=True, allow_inf_nan=False)]
-# Which tool-frame axis a gripper's jaws close along.
 type JawClosingAxis = Literal["x", "y"]
 
 
@@ -25,7 +24,7 @@ class CamelCaseModel(BaseModel):
         validate_by_alias=True,
         validate_by_name=True,
         serialize_by_alias=True,
-        # Serialized output always includes defaulted fields, so consumers of
+        # CONSTRAINT: Serialized output always includes defaulted fields, so consumers of
         # the exported schemas can rely on them being present.
         json_schema_serialization_defaults_required=True,
     )

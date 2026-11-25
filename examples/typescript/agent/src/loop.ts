@@ -55,7 +55,6 @@ export interface LoopConfig {
   maxModelTurns?: number;
   motionLimits?: RobotToolsOptions["motionLimits"];
   reasoningEffort: ReasoningEffort;
-  // Standard when absent.
   inferenceMode?: InferenceMode;
 
   onInterruption: OnInterruption;
@@ -188,7 +187,7 @@ export async function drive(
   }).mapTools(filterSequenceActions((action) => action !== "joints"));
   let cancellationStop: Promise<void> | undefined;
   const stopOnAbort = (): void => {
-    // Return the lease even if another operation is still waiting to finish.
+    // INVARIANT: Return the lease even if another operation is still waiting to finish.
     cancellationStop = lease
       .stopArm(config.arm)
       .catch(() => undefined)
@@ -334,7 +333,7 @@ async function runLoop(
     }
     if (!isProviderError(error)) throw error;
     if (environment.leaseLost()) throw new LeaseLostError();
-    // Stop the arm rather than leave a motion queued after a provider error.
+    // ROBOT-SAFETY: Stop the arm rather than leave a motion queued after a provider error.
     await lease.stopArm(config.arm);
     ending = incompleteEnding(
       `Model provider error; loop stopped: ${error instanceof Error ? error.message : String(error)}`,

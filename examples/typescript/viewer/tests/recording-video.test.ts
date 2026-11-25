@@ -12,7 +12,7 @@ import {
   loadRecording,
 } from "../src/recording-timeline.js";
 
-// Written by the recorder's production writer: camera "chest", three segments
+// CONSTRAINT: Written by the recorder's production writer: camera "chest", three segments
 // of 3, 1 and 1 frames at irregular times, the second one rotated.
 const bytes = new Uint8Array(
   readFileSync(new URL("fixtures/with-video.mcap", import.meta.url)),
@@ -55,7 +55,7 @@ test("a clip's packets become an MP4 with the recorded timestamps", async () => 
   const timestamps: number[] = [];
   for await (const packet of new EncodedPacketSink(track).packets())
     timestamps.push(packet.timestamp);
-  // The MP4 clock ticks in whole units of its timescale, so allow a few microseconds.
+  // CONSTRAINT: The MP4 clock ticks in whole units of its timescale, so allow a few microseconds.
   const expected = [0, 66_667, 175_111];
   expect(timestamps).toHaveLength(3);
   for (const [index, time] of timestamps.entries())

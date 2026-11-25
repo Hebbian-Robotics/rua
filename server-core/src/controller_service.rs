@@ -173,7 +173,7 @@ impl ReadyController {
     }
 }
 
-// SAFETY: The controller must exclusively own the bus and complete startup checks before admitting commands. Fence handoffs before invalidating the station lease on disconnect.
+// ROBOT-SAFETY: The controller must exclusively own the bus and complete startup checks before admitting commands. Fence handoffs before invalidating the station lease on disconnect.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "This session owns and shuts down the connected socket on return."
@@ -400,7 +400,7 @@ fn write_controller_messages(
     Ok(())
 }
 
-// SAFETY: Stop the control loop when the controller transport returns, including on protocol failure.
+// ROBOT-SAFETY: Stop the control loop when the controller transport returns, including on protocol failure.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "This session owns and shuts down the connected socket on return."

@@ -77,7 +77,7 @@ impl RecordingLibrary {
             .find(|recording| recording.name == name)
             .ok_or(Error::NotFound)
     }
-    // SAFETY: Only visible recording files resolve; symlinks and traversal are refused.
+    // INVARIANT: Only visible recording files resolve; symlinks and traversal are refused.
     pub fn recording_file(&self, relative: &str) -> Result<PathBuf, Error> {
         self.safe_file(relative)
     }

@@ -24,7 +24,7 @@ function settings(inferenceMode: InferenceMode): ConversationSettings {
   };
 }
 
-// Each fake client records the request body and stops before a reply is needed.
+// WHY: Each fake client records the request body and stops before a reply is needed.
 async function openaiRequest(mode: InferenceMode) {
   let body: Record<string, unknown> = {};
   const client = {

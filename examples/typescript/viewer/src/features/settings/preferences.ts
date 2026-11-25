@@ -42,7 +42,7 @@ export function readViewerPreferences(
       if (result.success) return result.data;
     }
   } catch {
-    // Blocked storage or corrupt JSON falls back to defaults.
+    // WHY: Blocked storage or corrupt JSON falls back to defaults.
   }
   return defaultViewerPreferences();
 }
@@ -55,6 +55,6 @@ export function writeViewerPreferences(
   try {
     storage.setItem(VIEWER_PREFERENCES_KEY, JSON.stringify(preferences));
   } catch {
-    // Private browsing or a full storage quota need not prevent using the viewer.
+    // WHY: Private browsing or a full storage quota need not prevent using the viewer.
   }
 }

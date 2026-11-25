@@ -48,7 +48,7 @@ impl ContinuousPath {
                 .iter()
                 .any(|segment| segment.minimum_duration_seconds.is_some())
         {
-            // SAFETY: Every section must last longer than a capped motor step.
+            // CONSTRAINT: Every section must last longer than a capped motor step.
             // Leave a nanosecond for rounding cumulative section times.
             let control_cycle_floor = maximum_step_seconds + 1e-9;
             input.per_section_minimum_duration = Some(
@@ -134,7 +134,7 @@ impl ContinuousPath {
         for (section, profiles) in self.trajectory.get_profiles().iter().enumerate() {
             for (joint, profile) in profiles.iter().enumerate() {
                 let (mut minimum, mut maximum) = (lower[joint], upper[joint]);
-                // SAFETY: An already out-of-range joint can only recover inward from its
+                // ROBOT-SAFETY: An already out-of-range joint can only recover inward from its
                 // checked initial position. Later sections use the calibrated limits.
                 if section == 0 {
                     minimum = minimum.min(start[joint]);
@@ -254,7 +254,7 @@ fn profile_peak_speed(profile: &Profile, duration: f64) -> f64 {
             profile.j[index],
         ));
     }
-    // SAFETY: Ruckig extrapolates the final state on any remaining section time.
+    // CONSTRAINT: Ruckig extrapolates the final state on any remaining section time.
     let tail_duration = (duration - profile.brake.duration - profile.t_sum[6]).max(0.0);
     peak.max(phase_peak_speed(
         tail_duration,
@@ -270,7 +270,7 @@ fn phase_peak_speed(duration: f64, velocity: f64, acceleration: f64, jerk: f64) 
         velocity_at_time.abs()
     };
     let mut peak = velocity.abs().max(speed_at(duration));
-    // SAFETY: With constant jerk, a velocity extremum is at an endpoint or
+    // WHY: With constant jerk, a velocity extremum is at an endpoint or
     // where acceleration crosses zero.
     if jerk != 0.0 {
         let stationary_time = -acceleration / jerk;

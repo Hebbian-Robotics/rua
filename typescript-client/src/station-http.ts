@@ -1,6 +1,3 @@
-// Camera snapshots, phone invites and the station's traces, over the
-// generated routes.
-
 import type { z } from "zod";
 import { apiSchemas } from "./generated/api-schemas.js";
 import { createStationApi } from "./generated/http-routes.js";

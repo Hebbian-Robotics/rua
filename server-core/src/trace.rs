@@ -1,4 +1,4 @@
-// CONSTRAINT: Never block the motor loop on disk: push to a bounded writer queue and count dropped records. Each record pairs feedback read before this cycle’s command with the later write; motion appears in subsequent feedback.
+// CONSTRAINT: The motor loop drops records when the writer queue is full so disk I/O cannot stall it.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -40,8 +40,8 @@ pub(crate) struct TraceRecord {
     pub cycle: u64,
     pub timings: CycleTimings,
     pub seconds: f64,
-    // CONSTRAINT: This is the capped integration step used to generate setpoints.
-    pub cycle_seconds: f64,
+    #[serde(rename = "cycleSeconds")]
+    pub integration_step_seconds: f64,
     pub command: Vec<f64>,
     pub positions: Vec<f64>,
     pub velocities: Vec<f64>,
@@ -73,7 +73,7 @@ pub(crate) struct TraceWriter {
 }
 
 impl TraceWriter {
-    // SAFETY: Do not start a run if its trace file cannot be created.
+    // INVARIANT: Do not start a run if its trace file cannot be created.
     pub fn open(directory: &Path) -> anyhow::Result<Self> {
         std::fs::create_dir_all(directory).with_context(|| {
             format!("Cannot create the trace directory {}", directory.display())
@@ -172,7 +172,7 @@ mod tests {
             cycle,
             timings: CycleTimings::default(),
             seconds: 0.02 * f64::from(u32::try_from(cycle).unwrap()),
-            cycle_seconds: 0.02,
+            integration_step_seconds: 0.02,
             command: vec![0.1],
             positions: vec![0.0],
             velocities: vec![0.0],

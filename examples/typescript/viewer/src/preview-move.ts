@@ -7,7 +7,7 @@ import {
 import { MathUtils } from "three";
 import type { Approach, JawYawRange, ProposedPose } from "./pose-projection.js";
 
-// SAFETY: A one-shot move must use the previewed gripper only after its arm command is accepted.
+// ROBOT-SAFETY: A one-shot move must use the previewed gripper only after its arm command is accepted.
 export async function movePreviewedGripper(
   sendArmMove: () => Promise<boolean>,
   isCurrent: () => boolean,

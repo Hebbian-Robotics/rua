@@ -57,7 +57,7 @@ impl<Pending> LeasePhase<Pending> {
     ) -> LeaseEffect<'_, Pending> {
         match self {
             Self::Active if expires_at <= now => {
-                // SAFETY: Revoke authority even when the controller cannot accept a stop.
+                // INVARIANT: Revoke authority even when the controller cannot accept a stop.
                 *self = Self::Interrupted;
                 LeaseEffect::StopExpired(match holder {
                     LeaseHolder::Agent => ExpiryPolicy::KeepFenced,

@@ -62,7 +62,6 @@ impl From<hardware::RecoveryObservation> for RecoveryObservation {
 impl<B: ServoBus> Plant for Servos<B> {
     fn read_feedback_into(&mut self, feedback: &mut Feedback) -> anyhow::Result<()> {
         // INVARIANT: Move buffers across the boundary and return them even when a read fails.
-        // No telemetry cloning or additional per-cycle allocation is introduced.
         let mut hardware_feedback = std::mem::take(feedback).into();
         let result =
             Servos::read_feedback_into(self, &mut hardware_feedback).map_err(station_error);

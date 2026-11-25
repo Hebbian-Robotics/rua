@@ -60,7 +60,7 @@ export function recordedRunTelemetry(timeline: RecordingTimeline) {
         memory = { ...memory, notes: event.notes };
         break;
       case "usage_update": {
-        // Each run reports cumulative counts. Add only the change in that run
+        // CONSTRAINT: Each run reports cumulative counts. Add only the change in that run
         // so replacing a snapshot or starting a continuation keeps the total.
         const usage = event.usage;
         const previous = latestByRun.get(usage.run_id);

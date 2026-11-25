@@ -17,9 +17,8 @@ from hebbian_rua.client.contract.station_api import (
     TraceContext,
 )
 
-# The station's HTTP API, event stream and traces.
 DEFAULT_SERVER = "http://127.0.0.1:8792"
-# The media service (`hebbian-rua-server serve --media-address`): camera snapshots.
+# CONSTRAINT: The media service (`hebbian-rua-server serve --media-address`): camera snapshots.
 DEFAULT_MEDIA_SERVER = "http://127.0.0.1:8781"
 CAMERA_TIMEOUT_SECONDS = 30
 RUNS_TIMEOUT_SECONDS = 30
@@ -28,7 +27,7 @@ WorldPositionMeters = NewType("WorldPositionMeters", list[float])
 JointSpeedRadiansPerSecond = NewType("JointSpeedRadiansPerSecond", float)
 
 
-# The W3C trace context commands sent from this context carry, so each command's
+# WHY: The W3C trace context commands sent from this context carry, so each command's
 # record names the tool call that sent it. The client does not depend on a
 # tracing library: whoever opens the span (a tool call) sets this for its block.
 trace_context_for_commands: ContextVar[TraceContext | None] = ContextVar(
@@ -58,7 +57,7 @@ class ResultOutcome(StrEnum):
 
     COMPLETED = CommandOutcome.completed.value
     STOPPED = CommandOutcome.stopped.value
-    # A safety limit stopped the arm.
+    # INVARIANT: A safety limit stopped the arm.
     TRIPPED = CommandOutcome.tripped.value
     TIMED_OUT = CommandOutcome.timed_out.value
     STOPPED_SHORT = CommandOutcome.stopped_short.value
@@ -66,9 +65,9 @@ class ResultOutcome(StrEnum):
     FAULTED = CommandOutcome.faulted.value
     FAILED = CommandOutcome.failed.value
     INTERRUPTED = CommandOutcome.interrupted.value
-    # The station refused the command: the arm never moved.
+    # INVARIANT: The station refused the command: the arm never moved.
     REJECTED = "rejected"
-    # The station has not reported an outcome.
+    # INVARIANT: The station has not reported an outcome.
     UNFINISHED = "unfinished"
 
     @classmethod
@@ -189,7 +188,7 @@ class CameraJpeg:
 
     jpeg: bytes
     retrieved_between_unix_seconds: tuple[float, float]
-    # None when the station did not say; frames from LiveKit cameras carry it.
+    # INVARIANT: None when the station did not say; frames from LiveKit cameras carry it.
     captured_at_unix_ns: int | None
 
 

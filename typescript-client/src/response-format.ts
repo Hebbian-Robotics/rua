@@ -128,7 +128,7 @@ function keepFields(
   );
 }
 
-// Earlier steps retain their command outcome and any limitation; the last step
+// INVARIANT: Earlier steps retain their command outcome and any limitation; the last step
 // keeps full concise detail for the model's next decision.
 function compactEarlierStep(value: unknown): unknown {
   if (!Array.isArray(value)) return conciseOutput(value);

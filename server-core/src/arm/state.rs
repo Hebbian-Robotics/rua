@@ -162,7 +162,7 @@ impl ArmCore {
         rejection(RejectionReason::ArmBusy, "The controller is shutting down")
     }
 
-    // SAFETY: A stop record completes at acceptance, before motion or the jaw necessarily reaches its hold target. Handoff must also check physical readiness.
+    // ROBOT-SAFETY: A stop record completes at acceptance, before motion or the jaw necessarily reaches its hold target. Handoff must also check physical readiness.
     pub(crate) fn ready_for_control_handoff(&self) -> Result<bool, Rejection> {
         if self.mode().refuses_everything() {
             return Err(self.faulted_rejection());

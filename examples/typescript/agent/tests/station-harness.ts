@@ -1,5 +1,3 @@
-// A scripted HTTP station and event stream for loop lifecycle tests.
-
 import type { RobotToolCall, RobotToolResult } from "hebbian-rua";
 import { vi } from "vitest";
 import {
@@ -130,7 +128,7 @@ export class ScriptedStation {
           try {
             this.stream?.close();
           } catch {
-            /* already closed */
+            /* WHY: already closed */
           }
           this.stream = null;
         },

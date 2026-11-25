@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use axum::http::StatusCode;
 use hebbian_contracts::{
-    ActionSequenceRequest, CompilationTarget, RunEvent, ServerMessage, TraceSpan,
+    ActionSequenceRequest, ArmRecord, CompilationTarget, RunEvent, ServerMessage, TraceSpan,
 };
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -185,6 +185,10 @@ impl StationHttpState {
 
     pub(super) fn subscribe_after(&self, sequence: u64) -> EventSubscription {
         self.events.subscribe_after(sequence)
+    }
+
+    pub(super) async fn state_sequence_reflecting(&self, records: &[ArmRecord]) -> Option<u64> {
+        self.events.state_reflecting(records).await
     }
 
     pub(super) fn record_run_event(&self, event: RunEvent) {
