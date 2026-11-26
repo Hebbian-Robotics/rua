@@ -10,11 +10,13 @@ The [Check workflow](../.github/workflows/check.yml) runs on Namespace. Pull
 requests select checks by changed path. Pushes to `main` and manual runs execute
 the full suite. Pull requests can reuse
 [Cache Volumes](https://namespace.so/docs/solutions/github-actions/caching), and
-only `main` can persist cache updates. The required `integration` check waits
-for the station tests and the installed simulator quickstart, which run in
-parallel with separate cache volumes. The quickstart installs the assembled wheel
-and TypeScript tarball. Its native build disables link-time optimization to
-shorten PR feedback. The publish workflow uses the production profiles.
+only `main` can persist cache updates. The required `integration` check waits for the station tests and a clean-wheel
+installation check, which run in parallel with separate cache volumes. The wheel
+check builds the assembled distribution and verifies its installed commands,
+assets, SDK and simulator socket. Station tests also exercise the packed
+TypeScript SDK against a deterministic station and camera. The CI wheel build
+disables link-time optimization to shorten PR feedback; publishing uses the
+production profiles.
 
 For a control-loop or station HTTP edit inside `server-core`, use
 `cargo check --locked -p hebbian-rua-core` for compiler feedback. To measure
