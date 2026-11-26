@@ -6,6 +6,26 @@ from pathlib import Path
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "so101":
+        executable = Path(sysconfig.get_path("scripts")) / "so101"
+        if not executable.is_file():
+            executable_on_path = shutil.which("so101")
+            if executable_on_path:
+                executable = Path(executable_on_path)
+        if not executable.is_file():
+            raise SystemExit(
+                "SO101 CLI is missing. Install a RUA release wheel that includes it."
+            )
+        environment = os.environ.copy()
+        if not environment.get("SO101_SETUP_DIRECTORY"):
+            config_home = environment.get("XDG_CONFIG_HOME") or str(
+                Path.home() / ".config"
+            )
+            environment["SO101_SETUP_DIRECTORY"] = environment.get(
+                "HEBBIAN_SO101_CONFIG_DIRECTORY"
+            ) or str(Path(config_home) / "rua/so101-arm-configs")
+        os.execve(str(executable), ["so101", *sys.argv[2:]], environment)
+
     executable_name = "hebbian-rua-server"
     installed_executable = Path(sysconfig.get_path("scripts")) / executable_name
     override = os.environ.get("HEBBIAN_RUA_SERVER")

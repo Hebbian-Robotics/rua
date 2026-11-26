@@ -1,0 +1,5 @@
+version = "0.1.7"
+
+[archives]
+"so101-linux-x64.tar.gz" = "21db2586605e6bd7ee1d90ab3bcece7a8c21f73967b591580eedd39ffed600f1"
+"so101-macos-arm64.tar.gz" = "40565f7dc4f0ac4181b3a505baef1fe8fd49caf0d5bfccda34c3ccca3508894a"

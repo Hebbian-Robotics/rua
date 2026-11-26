@@ -1,7 +1,7 @@
 # Release RUA
 
 A release ties the Python distribution and both SDKs to one version and one
-source commit. The Python wheels include the station, media companion and `hebbian-rua` CLI.
+source commit. The Python wheels include the station, media companion, `hebbian-rua` CLI and the pinned SO-101 setup CLI. The SO-101 release version and archive checksums are recorded in [the CLI manifest](../robots/so101-cli.toml). Update those pins when adopting a new SO-101 release, and verify the installed command on both wheel platforms.
 
 | Registry | Package | Purpose |
 | --- | --- | --- |
