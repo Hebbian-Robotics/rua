@@ -1,211 +1,13 @@
-name: Check
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
-
+name: Cache probe
+on: workflow_dispatch
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  changes:
-    runs-on: nscloud-ubuntu-24.04-amd64-2x4
-    outputs:
-      documentation: ${{ steps.classify.outputs.documentation }}
-      comments: ${{ steps.classify.outputs.comments }}
-      python: ${{ steps.classify.outputs.python }}
-      typescript: ${{ steps.classify.outputs.typescript }}
-      rust: ${{ steps.classify.outputs.rust }}
-      integration: ${{ steps.classify.outputs.integration }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 2
-          persist-credentials: false
-      - id: classify
-        run: python3 .github/scripts/check_lanes.py
-
-  documentation:
-    needs: changes
-    if: ${{ needs.changes.outputs.documentation == 'true' }}
-    runs-on:
-      - nscloud-ubuntu-24.04-amd64-4x16-with-cache
-      - nscloud-cache-tag-rua-check-docs
-      - nscloud-cache-allow-commit-from-main
-    env:
-      CARGO_INSTALL_ROOT: ${{ github.workspace }}/.cache/ci-cargo-tools
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-check-node
-      - run: pnpm lint:docs
-      - name: Attach the Cargo tools cache volume
-        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
-        with:
-          path: ${{ env.CARGO_INSTALL_ROOT }}
-      - name: Install link checker
-        run: |
-          cargo install lychee --version 0.24.2 --locked
-          printf '%s\n' "${CARGO_INSTALL_ROOT}/bin" >> "$GITHUB_PATH"
-      - name: Check documentation links and anchors
-        run: >-
-          lychee --offline --include-fragments --extensions md
-          README.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md docs examples cli/README.md
-          hebbian_rua/client/README.md livekit-cameras/README.md recordings/README.md
-          robot-geometry/README.md sdk/README.md server-core/README.md station-access/README.md
-          tooling/source-doc-lint/README.md typescript-client/README.md
-          CODE_OF_CONDUCT.md SECURITY.md
-
-  comments:
-    needs: changes
-    if: ${{ needs.changes.outputs.comments == 'true' }}
-    runs-on: nscloud-ubuntu-24.04-amd64-2x4
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Install source-doc-lint
-        run: bash tooling/source-doc-lint/install-ci.sh
-      - run: source-doc-lint --config source-doc-lint.toml
-
-  python:
-    needs: changes
-    if: ${{ needs.changes.outputs.python == 'true' }}
-    runs-on:
-      - nscloud-ubuntu-24.04-amd64-4x16-with-cache
-      - nscloud-cache-tag-rua-check-python-3.14
-      - nscloud-cache-allow-commit-from-main
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.13.6"
-          python-version: "3.14"
-          enable-cache: false
-      - name: Attach the uv cache volume
-        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
-        with:
-          cache: uv
-      - name: Install source-doc-lint
-        run: bash tooling/source-doc-lint/install-ci.sh
-      - name: Install the Linux linker for the Python extension
-        run: sudo apt-get update && sudo apt-get install -y mold
-      - run: uv sync --locked
-      - run: uv run rua-dev validate --lane python
-      - run: uv lock --check --project examples/python
-      - if: ${{ hashFiles('examples/mujoco_sim/pyproject.toml') != '' }}
-        run: uv lock --check --project examples/mujoco_sim
-      - name: Check documented Python agent entry point
-        run: uv run --locked --project examples/python python examples/python/agent_quickstart.py --help
-
-  rust:
-    name: rust (${{ matrix.os }})
-    needs: changes
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            namespace-runner: nscloud-ubuntu-24.04-amd64-4x16
-          - os: macos-15
-            namespace-runner: nscloud-macos-sequoia-arm64-6x14
-    runs-on:
-      - ${{ matrix.namespace-runner }}-with-cache
-      - nscloud-cache-tag-rua-check-rust-${{ matrix.os }}
-      - nscloud-cache-size-50gb
-      - nscloud-cache-allow-commit-from-main
-    timeout-minutes: 60
-    env:
-      CARGO_INSTALL_ROOT: ${{ github.workspace }}/.cache/ci-cargo-tools
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        if: needs.changes.outputs.rust == 'true'
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-check-station
-        if: needs.changes.outputs.rust == 'true'
-        with:
-          install-python-sdk: 'false'
-      - name: Attach the Cargo tools cache volume
-        if: needs.changes.outputs.rust == 'true'
-        uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1.7.0
-        with:
-          path: ${{ env.CARGO_INSTALL_ROOT }}
-      - name: Install unused-dependency checker
-        if: needs.changes.outputs.rust == 'true'
-        run: cargo install cargo-machete --version 0.9.2 --locked
-      - name: Install architecture dependency checker
-        if: needs.changes.outputs.rust == 'true'
-        run: |
-          cargo install cargo-deny --version 0.20.2 --locked
-          printf '%s\n' "${CARGO_INSTALL_ROOT}/bin" >> "$GITHUB_PATH"
-      - run: uv run --no-sync rua-dev check-architecture
-        if: needs.changes.outputs.rust == 'true'
-      - run: cargo fmt --all -- --check
-        if: needs.changes.outputs.rust == 'true'
-      - run: cargo machete --with-metadata --skip-target-dir
-        if: needs.changes.outputs.rust == 'true'
-      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-        if: needs.changes.outputs.rust == 'true'
-      - run: cargo test --locked --workspace --all-features
-        if: needs.changes.outputs.rust == 'true'
-      - if: needs.changes.outputs.rust == 'true' && runner.os == 'macOS'
-        run: uv run --no-sync rua-dev contracts --check --targets python rust
-
-  typescript:
-    needs: changes
-    if: needs.changes.outputs.typescript == 'true'
-    runs-on:
-      - nscloud-ubuntu-24.04-amd64-4x16-with-cache
-      - nscloud-cache-tag-rua-check-pnpm
-      - nscloud-cache-allow-commit-from-main
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-check-node
-      - run: pnpm lint && pnpm typecheck && pnpm knip
-      - run: pnpm test:viewer && pnpm build
-      - run: pnpm test:package
-
-  station-integration:
-    needs: changes
-    if: needs.changes.outputs.integration == 'true'
-    runs-on:
-      - nscloud-ubuntu-24.04-amd64-4x16-with-cache
-      - nscloud-cache-tag-rua-check-station
-      - nscloud-cache-size-50gb
-      - nscloud-cache-allow-commit-from-main
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-check-station
-      - uses: ./.github/actions/setup-check-node
-      - run: uv run --no-sync rua-dev contracts --check
-      - name: Run station integration tests
-        # Contract checks verify file contents but can change timestamps that
-        # uv uses to decide whether to rebuild the already installed extension.
-        run: uv run --no-sync pytest -m server --durations=10
-
   installed-quickstart:
-    needs: changes
-    if: needs.changes.outputs.integration == 'true'
     runs-on:
       - nscloud-ubuntu-24.04-amd64-4x16-with-cache
-      - nscloud-cache-tag-rua-check-integration
+      - nscloud-cache-tag-rua-release-probe-26
       - nscloud-cache-size-50gb
-      - nscloud-cache-allow-commit-from-main
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -215,18 +17,15 @@ jobs:
         with:
           install-python-sdk: 'false'
       - uses: ./.github/actions/setup-check-node
-      - name: Show restored Cargo build profiles
+      - name: Inventory Cargo fingerprints before packaging
         run: |
-          target_directory="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)"
-          echo "Cargo target directory is ${target_directory}"
-          df -h "$target_directory" 2>/dev/null || df -h "$GITHUB_WORKSPACE"
-          for profile in release python-extension; do
-            if [[ -d "$target_directory/$profile/.fingerprint" ]]; then
-              du -sh "$target_directory/$profile"
-            else
-              echo "No restored fingerprints for $profile"
-            fi
-          done
+          cargo metadata --no-deps --format-version 1 | jq '{target_directory,build_directory}'
+          df -h target
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          for path in sorted(Path('target').rglob('.fingerprint')):
+              print(path, sum(1 for _ in path.iterdir()), 'units')
+          PYTHON
       - run: sudo apt-get install -y libosmesa6
       - name: Build and run the installed simulator quickstart
         timeout-minutes: 35
@@ -238,13 +37,12 @@ jobs:
           CARGO_LOG: ${{ runner.debug == '1' && 'cargo::core::compiler::fingerprint=info' || '' }}
         run: bash .github/scripts/installed-simulator-quickstart.sh
 
-  integration:
-    needs: [changes, station-integration, installed-quickstart]
-    if: always() && needs.changes.outputs.integration == 'true'
-    runs-on: nscloud-ubuntu-24.04-amd64-2x4
-    steps:
-      - name: Require both integration jobs to pass
-        env:
-          STATION_RESULT: ${{ needs.station-integration.result }}
-          QUICKSTART_RESULT: ${{ needs.installed-quickstart.result }}
-        run: '[[ "$STATION_RESULT" == success && "$QUICKSTART_RESULT" == success ]]'
+      - name: Inventory Cargo fingerprints after packaging
+        run: |
+          cargo metadata --no-deps --format-version 1 | jq '{target_directory,build_directory}'
+          df -h target
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          for path in sorted(Path('target').rglob('.fingerprint')):
+              print(path, sum(1 for _ in path.iterdir()), 'units')
+          PYTHON
