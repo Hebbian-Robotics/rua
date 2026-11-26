@@ -67,6 +67,14 @@ p {
   max-width: 1900px;
   margin: 0 auto;
 }
+.workspace-example-banner {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 10;
+}
+.workspace-page :is(.workspace-jump-target, :focus) {
+  scroll-margin-block-start: calc(12px + var(--example-banner-height, 0px));
+}
 .viewer-footer {
   display: flex;
   justify-content: center;
@@ -532,7 +540,7 @@ pre {
   }
   .control-panel {
     position: sticky;
-    top: 12px;
+    inset-block-start: calc(12px + var(--example-banner-height, 0px));
   }
   .workspace-section-links {
     display: none;
