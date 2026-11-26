@@ -217,14 +217,13 @@ jobs:
       - uses: ./.github/actions/setup-check-node
       - name: Show restored Cargo build profiles
         run: |
-          target_directory="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)"
-          echo "Cargo target directory is ${target_directory}"
-          df -h "$target_directory" 2>/dev/null || df -h "$GITHUB_WORKSPACE"
+          build_directory="$(cargo metadata --format-version 1 --no-deps | jq -er .build_directory)"
+          echo "Cargo build directory is ${build_directory}"
           for profile in release python-extension; do
-            if [[ -d "$target_directory/$profile/.fingerprint" ]]; then
-              du -sh "$target_directory/$profile"
+            if [[ -d "$build_directory/$profile" ]]; then
+              du -sh "$build_directory/$profile"
             else
-              echo "No restored fingerprints for $profile"
+              echo "No restored build directory for $profile"
             fi
           done
       - run: sudo apt-get install -y libosmesa6
