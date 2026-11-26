@@ -70,7 +70,7 @@ impl MediaCapabilities {
             return Ok(Self::LocalOnly);
         }
         let credentials = Credentials::from_environment().context(
-            "LiveKit is required for station startup. For local cameras only, pass --local-only-no-remote-cameras",
+            "LiveKit is required for station startup. Run lk cloud auth or configure the LiveKit environment variables. For local cameras only, pass --local-only-no-remote-cameras",
         )?;
         if settings.enable_recording {
             let requirement =
