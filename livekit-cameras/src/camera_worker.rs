@@ -1,4 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    cell::Cell,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use hebbian_contracts::{Backoff, CameraPublication, CameraStatus};
 use livekit_camera_publisher::{
@@ -142,16 +146,15 @@ async fn publish(
     updates: mpsc::UnboundedSender<CameraPublication>,
     stopped: &CancellationToken,
 ) {
-    let mut backoff = Backoff::new(Duration::from_secs(30));
+    let mut retry_policy = PublicationRetryPolicy::new();
     while !stopped.is_cancelled() {
-        let mut publishing_since = std::cell::Cell::new(None::<std::time::Instant>);
         let result = async {
             let access = room.credentials.camera_access(
                 &room.room,
                 camera.name(),
                 CameraLifetime::Station,
             )?;
-            let publishing_since = &mut publishing_since;
+            let retry_policy = &mut retry_policy;
             let updates = &updates;
             publisher::publish_camera_frames(
                 camera,
@@ -162,11 +165,11 @@ async fn publish(
                 move |event| {
                     let _ = updates.send(match event {
                         PublicationEvent::Publishing => {
-                            publishing_since.set(Some(std::time::Instant::now()));
+                            retry_policy.started_publishing(Instant::now());
                             CameraPublication::Publishing
                         }
                         PublicationEvent::Reconnecting => {
-                            publishing_since.set(None);
+                            retry_policy.interrupted_publication();
                             CameraPublication::Reconnecting { detail: None }
                         }
                     });
@@ -180,13 +183,7 @@ async fn publish(
             PublicationDecision::End => break,
             PublicationDecision::Retry(status) => status,
         };
-        if publishing_since
-            .get()
-            .is_some_and(|started| started.elapsed() >= Duration::from_secs(30))
-        {
-            backoff.reset();
-        }
-        let retry_delay = backoff.next_delay().max(Duration::from_secs(1));
+        let retry_delay = retry_policy.delay_after_failure(Instant::now());
         if let CameraPublication::Reconnecting {
             detail: Some(error),
         } = &status
@@ -198,5 +195,93 @@ async fn publish(
             () = stopped.cancelled() => break,
             () = tokio::time::sleep(retry_delay) => {},
         }
+    }
+}
+
+struct PublicationRetryPolicy {
+    backoff: Backoff,
+    publishing_since: Cell<Option<Instant>>,
+}
+
+impl PublicationRetryPolicy {
+    fn new() -> Self {
+        Self {
+            backoff: Backoff::new(Duration::from_secs(30)),
+            publishing_since: Cell::new(None),
+        }
+    }
+
+    fn started_publishing(&self, now: Instant) {
+        self.publishing_since.set(Some(now));
+    }
+
+    fn interrupted_publication(&self) {
+        self.publishing_since.set(None);
+    }
+
+    fn delay_after_failure(&mut self, now: Instant) -> Duration {
+        if self
+            .publishing_since
+            .take()
+            .is_some_and(|started| now.duration_since(started) >= Duration::from_secs(30))
+        {
+            self.backoff.reset();
+        }
+        self.backoff.next_delay().max(Duration::from_secs(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn exhaust_publication_retries(policy: &mut PublicationRetryPolicy, now: Instant) {
+        for _ in 0..32 {
+            policy.delay_after_failure(now);
+        }
+    }
+
+    #[test]
+    fn repeated_publication_failures_back_off_within_limits() {
+        let mut policy = PublicationRetryPolicy::new();
+        let now = Instant::now();
+
+        assert_eq!(policy.delay_after_failure(now), Duration::from_secs(1));
+        for _ in 0..32 {
+            assert!(
+                (Duration::from_secs(1)..=Duration::from_secs(30))
+                    .contains(&policy.delay_after_failure(now))
+            );
+        }
+        assert_eq!(policy.delay_after_failure(now), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn continuous_publication_resets_the_retry_delay() {
+        let mut policy = PublicationRetryPolicy::new();
+        let now = Instant::now();
+        exhaust_publication_retries(&mut policy, now);
+
+        policy.started_publishing(now);
+
+        assert_eq!(
+            policy.delay_after_failure(now + Duration::from_secs(30)),
+            Duration::from_secs(1)
+        );
+    }
+
+    #[test]
+    fn reconnecting_breaks_the_continuous_publication_window() {
+        let mut policy = PublicationRetryPolicy::new();
+        let now = Instant::now();
+        exhaust_publication_retries(&mut policy, now);
+
+        policy.started_publishing(now);
+        policy.interrupted_publication();
+
+        assert_eq!(
+            policy.delay_after_failure(now + Duration::from_secs(39)),
+            Duration::from_secs(30)
+        );
     }
 }
