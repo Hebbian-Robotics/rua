@@ -17,6 +17,15 @@ releases its manual lease when the session ends. The browser renders the robot
 model, connects directly to LiveKit for live video, and decodes recordings
 served through the example backend. The station owns capture and storage.
 
+## Example scope
+
+The viewer accepts one user prompt per run. The model can take multiple
+tool-calling turns to complete that prompt, and you can stop the run from
+the viewer. Multi-turn user prompting, steering an active run with additional
+instructions, and memory between runs are outside the example's scope. Saved
+run history and recordings are available for review. Each new run starts with
+a fresh model conversation.
+
 ## Use the viewer
 
 In a narrow side pane, use the links at the top to switch between

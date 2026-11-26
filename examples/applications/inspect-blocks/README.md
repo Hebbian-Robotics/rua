@@ -4,6 +4,14 @@ Arrange blocks in front of the arm and ask a yes/no question, such as “Are the
 blocks stacked?” The model moves the arm to inspect the scene with the wrist
 camera. The arm nods for yes or shakes its head for no.
 
+## Example scope
+
+The application uses arm motion to inspect the blocks and gestures to answer
+yes/no questions. Rearranging blocks to satisfy a request is outside its
+scope. Each question starts a fresh model conversation, even when you ask
+several questions in one terminal session. Follow-ups that depend on earlier
+answers are outside the example's scope.
+
 ## Run
 
 [Set up the arm](../../../docs/getting-started.md), start the station with a

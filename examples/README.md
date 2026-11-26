@@ -12,6 +12,9 @@ Reserve [MuJoCo simulation](../docs/simulation.md) for testing without hardware.
 | [Example applications](applications/README.md) | Inspect blocks or answer questions about an image using the wrist camera. |
 | [MuJoCo](mujoco_sim/README.md) | Run a simulated station with one or two SO-101 arms. |
 
+Each example guide describes its scope, including behavior you would need to
+add when adapting the example.
+
 See [Write your own loop](../docs/write-your-own-loop.md) and the
 [Python](../hebbian_rua/client/README.md), [Rust](../sdk/README.md), and
 [TypeScript](../typescript-client/README.md) SDK guides when you’re ready to

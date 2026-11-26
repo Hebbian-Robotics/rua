@@ -72,6 +72,16 @@ station refuses a command because of a stale revision or interlock, the agent
 waits for a fresh observation before continuing. A fault or uncertain command
 outcome ends the run.
 
+## Example scope
+
+- The arm state snippet reads a single snapshot. Continuous monitoring and
+  robot control are outside its scope.
+- `hello_robot.py` previews and executes a scripted move. Camera-based target
+  selection and model-driven decisions are outside its scope.
+- `agent_quickstart.py` accepts one task per invocation. Model tool turns,
+  plans, and notes are scoped to that run. Interactive follow-up prompts,
+  in-flight steering, and memory between invocations are outside its scope.
+
 ## Watch live cameras
 
 Follow the [camera setup](../../docs/cameras.md#connect-a-usb-camera) to add

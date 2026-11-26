@@ -6,6 +6,13 @@ the LLM uses robot observations and tools to decide what to do.
 The example uses the SDK from this checkout and supports Anthropic, OpenAI,
 and Gemini. Run it against a station built from the same checkout.
 
+## Example scope
+
+The terminal command takes one task per invocation. A task can span multiple
+model turns as the agent calls tools and incorporates observations. Interactive
+follow-up prompts, in-flight steering, and memory across invocations are
+outside the example's scope.
+
 ## Run the agent
 
 Start a station with [a real arm connected](../../../docs/getting-started.md)
