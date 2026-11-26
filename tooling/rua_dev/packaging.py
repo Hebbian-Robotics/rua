@@ -10,6 +10,7 @@ from pathlib import Path
 from rua_dev.licenses.rust import collect_rust_licenses
 from rua_dev.licenses.webrtc import collect_webrtc_license
 from rua_dev.robot_assets import prepare_robot_assets
+from rua_dev.so101_cli import stage_so101_cli
 from rua_dev.versions import check_release_versions
 
 
@@ -97,6 +98,7 @@ def build_component_wheels(repository: Path, output_directory: Path) -> None:
         fresh_staging_directory(repository / "cli/wheel-data") as cli_staging,
     ):
         stage_server_assets(repository, server_staging, target)
+        stage_so101_cli(repository, server_staging)
         media_assets = media_staging / "data/share/hebbian-rua-media"
         media_assets.mkdir(parents=True, exist_ok=True)
         shutil.copy2(repository / "LICENSE", media_assets / "LICENSE")

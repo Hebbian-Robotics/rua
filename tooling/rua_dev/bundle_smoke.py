@@ -156,6 +156,10 @@ def main() -> None:
         raise RuntimeError("The installed wheel is missing its commands")
     for executable in (command, media, station_cli):
         subprocess.run([executable, "--help"], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run([command, "so101", "--version"], check=True)
+    subprocess.run(
+        [command, "so101", "setup", "--help"], check=True, stdout=subprocess.DEVNULL
+    )
     shared_assets = Path(sysconfig.get_path("data")) / "share/hebbian-rua"
     asset_pin = tomllib.loads((shared_assets / "robots/so101-assets.toml").read_text())
     model_directory = shared_assets / "robots/so101"

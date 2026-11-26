@@ -5,16 +5,16 @@ to set up a physical SO-101 arm for RUA. It saves `setup.toml` and
 `calibration.json` together under `arms/<USB-serial>/` and writes the standard
 servo registers. RUA uses both files when `serve` automatically selects the arm.
 
-Download the `so101` archive for your platform from
-[GitHub Releases](https://github.com/Hebbian-Robotics/so101/releases), extract it
-and put the executable on your PATH; `so101 update` keeps it current.
-
-With the arm supported, torque off and the station stopped, run it against RUA's
-default arm configuration directory:
+With the arm supported, torque off and the station stopped, run the SO-101
+CLI included in the RUA release wheel from your uv project:
 
 ```sh
-SO101_SETUP_DIRECTORY="${XDG_CONFIG_HOME:-$HOME/.config}/rua/so101-arm-configs" so101 setup
+uv run rua so101 setup
 ```
+
+For older RUA releases or source checkouts, download the `so101` archive from
+[GitHub Releases](https://github.com/Hebbian-Robotics/so101/releases), put it on
+your PATH, and run `SO101_SETUP_DIRECTORY="${XDG_CONFIG_HOME:-$HOME/.config}/rua/so101-arm-configs" so101 setup`.
 
 New arms default to the soft gripper with wrist camera; add
 `--model-variant stock` for stock gripper geometry. Existing entries retain
@@ -41,7 +41,7 @@ Recorded travel follows each physical motor when the mapping changes.
 ## Custom setup directory
 
 If you keep arm configs in another directory,
-pass its path to `so101 setup` as `SO101_SETUP_DIRECTORY` and to RUA's
+pass its path to `uv run rua so101 setup --setup-directory` and to RUA's
 `--so101-config-directory`, or set `HEBBIAN_SO101_CONFIG_DIRECTORY` for RUA.
 Keep both files together when backing up or sharing an arm's setup with your team.
 
