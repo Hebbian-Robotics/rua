@@ -17,6 +17,7 @@ def test_so101_launcher_finds_executable_on_path(tmp_path: Path) -> None:
         [
             sys.executable,
             "-c",
+            "import sysconfig; sysconfig.get_path = lambda name: '/nonexistent'; "
             "from hebbian_rua.cli import main; main()",
             "so101",
             "setup",
