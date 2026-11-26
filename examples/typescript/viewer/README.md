@@ -23,6 +23,8 @@ In a narrow side pane, use the links at the top to switch between
 **Workspace**, **Recordings**, and **Settings**. The **Workspace** shortcuts
 jump to **Cameras**, **Control**, **Joint telemetry**, or **Run activity**.
 **Stop arms** stays visible as you scroll.
+The **Example viewer** banner also stays visible as you scroll. Use **Dismiss**
+to hide it until you reload or reopen the viewer.
 
 The viewer offers **Manual** and **Agent** with a normal startup. See
 [arm controls](../../../docs/so101-manual-control.md#controls) for manual
