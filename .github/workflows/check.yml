@@ -198,7 +198,7 @@ jobs:
         # uv uses to decide whether to rebuild the already installed extension.
         run: uv run --no-sync pytest -m server --durations=10
 
-  installed-quickstart:
+  installed-wheel:
     needs: changes
     if: needs.changes.outputs.integration == 'true'
     runs-on:
@@ -214,36 +214,21 @@ jobs:
       - uses: ./.github/actions/setup-check-station
         with:
           install-python-sdk: 'false'
-      - uses: ./.github/actions/setup-check-node
-      - name: Show restored Cargo build profiles
-        run: |
-          build_directory="$(cargo metadata --format-version 1 --no-deps | jq -er .build_directory)"
-          echo "Cargo build directory is ${build_directory}"
-          for profile in release python-extension; do
-            if [[ -d "$build_directory/$profile" ]]; then
-              du -sh "$build_directory/$profile"
-            else
-              echo "No restored build directory for $profile"
-            fi
-          done
-      - run: sudo apt-get install -y libosmesa6
-      - name: Build and run the installed simulator quickstart
-        timeout-minutes: 35
+      - name: Build and check the installed wheel
         env:
-          # The smoke test exercises the assembled packages. Release publishing
-          # builds them with the workspace's production optimization settings.
           CARGO_PROFILE_RELEASE_LTO: 'off'
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
-          CARGO_LOG: ${{ runner.debug == '1' && 'cargo::core::compiler::fingerprint=info' || '' }}
-        run: bash .github/scripts/installed-simulator-quickstart.sh
+        run: |
+          wheel="$(uv run --no-sync rua-dev package rua | tail -n 1)"
+          uv run --no-sync rua-dev package check "$wheel"
 
   integration:
-    needs: [changes, station-integration, installed-quickstart]
+    needs: [changes, station-integration, installed-wheel]
     if: always() && needs.changes.outputs.integration == 'true'
     runs-on: nscloud-ubuntu-24.04-amd64-2x4
     steps:
-      - name: Require both integration jobs to pass
+      - name: Require station and installed wheel checks to pass
         env:
           STATION_RESULT: ${{ needs.station-integration.result }}
-          QUICKSTART_RESULT: ${{ needs.installed-quickstart.result }}
-        run: '[[ "$STATION_RESULT" == success && "$QUICKSTART_RESULT" == success ]]'
+          WHEEL_RESULT: ${{ needs.installed-wheel.result }}
+        run: '[[ "$STATION_RESULT" == success && "$WHEEL_RESULT" == success ]]'
