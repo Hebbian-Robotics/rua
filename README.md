@@ -89,7 +89,8 @@ See the [documentation index](docs/README.md) for the guides, or
 ## Python package
 
 The `hebbian-rua` wheel includes the Python SDK, model adapters, station, media
-companion, [`hebbian-rua` CLI](cli/README.md), SO-101 setup CLI, profiles and geometry. Install only the model SDK extras you need.
+companion, [`hebbian-rua` CLI](cli/README.md), and SO-101 profiles and geometry.
+Releases after 0.1.7 also include the SO-101 setup CLI. Install only the model SDK extras you need.
 Prebuilt wheels support Linux x86-64
 (glibc 2.39+) and macOS 14+ on Apple Silicon; Windows uses
 [WSL2](docs/windows-wsl.md). Add RUA to your agent project
