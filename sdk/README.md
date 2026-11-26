@@ -39,10 +39,10 @@ For explicit compilation, call `station.compile_action_sequence(&source).await?`
 Match `contracts::CompilationOutcome::Compiled { artifact }` or
 `Rejected { diagnostics }`. `station.inspect_compilation(&artifact.compilation_id)`
 retrieves the retained artifact; `lease.run_compiled_sequence(id, revisions)`
-runs it and waits for the outcome. `start_compiled_sequence` returns the execution
-ID immediately. Python and TypeScript expose the start method and use their
-existing sequence-wait methods. `continue_compiled_sequence` takes an explicit
-`ProgramContinuation` and returns its new execution ID. `Station::import_compilation`
+runs it and waits for the outcome. `start_compiled_execution` returns a
+station-bound `SequenceExecution` handle with a `wait` method. Python and
+TypeScript also expose this handle. Pass an explicit `ProgramContinuation` to
+continue a finished execution. `Station::import_compilation`
 recompiles a serialized inspection artifact against current configuration.
 See [compilation and artifact semantics](../docs/control-model.md#compile-before-running).
 
@@ -56,7 +56,7 @@ See [compilation and artifact semantics](../docs/control-model.md#compile-before
   half-open gripper target in a direct command or stream update, and
   `JointSpeed::new(0.5)?` for a speed of 0.5 rad/s.
 - Requests use HTTP; an event-stream task reconnects using the station cursor.
-  Each command submission has a request ID that the station uses to avoid
+  Each command submission has an operation ID that the station uses to avoid
   executing a repeated submission twice. The station's completion endpoint
   returns terminal records and the event sequence of a state that reflects
   the result. While the event stream is connected, the SDK waits for that

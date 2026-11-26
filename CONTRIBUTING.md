@@ -148,4 +148,6 @@ keep RUA integration instructions in this repository.
 `so101-sim-only-no-real-arm` for the simulator socket. Use incomplete TOML
 fragments for settings shared across scenarios. Keep runnable combinations in
 the owning examples and keep per-station calibration and ports in local profiles.
-The controller's profile test checks the two bundled entry points.
+The [server-core profile test](server-core/src/profile/tests.rs)
+`bundled_profiles_offer_only_hardware_and_simulator_presets` checks the two
+bundled entry points.

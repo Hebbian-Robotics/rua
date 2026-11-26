@@ -79,3 +79,8 @@ project and verify the SDK imports, station startup, and a simulator connection.
 Update the Python and TypeScript example dependency pins and lockfiles once the
 new version is available on PyPI and npm. Keep release-age exemptions limited to
 the RUA SDK so the usual delay still applies to third-party dependencies.
+
+When bumping the pinned wheel past 0.1.7, update the startup prerequisites in
+[Getting started](getting-started.md) and [Windows with WSL2](windows-wsl.md)
+in the same PR. Cover FFmpeg or `--no-recording` and document `lk cloud auth`
+as an alternative to setting the three LiveKit variables.

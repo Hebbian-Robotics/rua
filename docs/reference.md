@@ -132,8 +132,9 @@ See [commands and outcomes](write-your-own-loop.md#commands-and-outcomes).
 
 ## Cameras
 
-[Camera setup](cameras.md) covers USB, phone and LiveKit feeds. Local USB and
-simulator snapshots can serve SDK clients without LiveKit. See
+[Camera setup](cameras.md) covers USB, phone and LiveKit feeds. Start the station
+with `--local-only-no-remote-cameras` to serve local USB and simulator snapshots
+to SDK clients without LiveKit. See
 [simulator integration](simulators.md) for other engines.
 
 ## Guard process and stop behaviour

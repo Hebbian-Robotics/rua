@@ -30,11 +30,15 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
    LIVEKIT_API_SECRET=your-api-secret
    ```
 
-3. Connect the cameras and start the station. For a registered arm whose
-   config includes a wrist-camera selector, RUA finds the capture device by
-   USB vendor, product and serial. It waits if the camera is disconnected
-   or if several physical devices match. A replug can be picked up while
-   the station and viewer are running.
+3. For a source checkout, [install FFmpeg](recording.md#install-ffmpeg) or pass
+   `--no-recording` to keep LiveKit streaming without recording. Connect the
+   cameras and start the station using the
+   [source start command](install-from-source.md#start-the-station) or the
+   [published wheel command](getting-started.md#2-verify-manual-control).
+   For a registered arm whose config includes a wrist-camera selector, RUA
+   finds the capture device by USB vendor, product and serial. It waits if
+   the camera is disconnected or if several physical devices match. A replug
+   can be picked up while the station and viewer are running.
 
 If an active capture stops delivering frames for five seconds, RUA releases
 the stale capture process and looks up the USB camera again. LiveKit retries
@@ -57,8 +61,9 @@ turn off an automatic camera. The station publishes each configured USB camera
 to the same LiveKit room.
 
 From a source checkout with the media companion built, use
-`cargo run -p hebbian-rua-server -- camera-devices`. With the arm disabled,
-briefly cover the wrist lens and confirm that the `wrist` feed darkens.
+`uv run cargo run -p hebbian-rua-server -- camera-devices` and append the
+`--camera` options to the source start command. With the arm disabled, briefly
+cover the wrist lens and confirm that the `wrist` feed darkens.
 
 ### Registered arm camera selectors
 
@@ -148,8 +153,8 @@ Use the [hosted room viewer](#watch-a-usb-camera) for live playback.
 Use LiveKit Cloud for normal operation. If the station cannot reach it, the
 viewer loses live video and agents lose USB and phone camera snapshots, because
 both are read from the LiveKit room. A lease that requires a camera stops the
-arms within a few seconds and refuses motion until frames return. Choose one of
-these to continue:
+arms within a few seconds and refuses motion until frames return. The options
+below apply to the station from this checkout.
 
 | | Local LiveKit server | Local camera fallback |
 | --- | --- | --- |
@@ -157,7 +162,7 @@ these to continue:
 | Live video in the example viewer | Yes, through LiveKit | Yes, as a JPEG preview |
 | USB camera snapshots for agents and the CLI | Yes | Yes |
 | Phone cameras | No | No |
-| Recording | Not covered here | No |
+| Recording | Available by default with FFmpeg | No |
 
 Prefer the local LiveKit server when you can install it, since the station and
 viewer run their normal LiveKit path.
@@ -223,7 +228,8 @@ snapshots from an older station's companion.
 ## RUA configuration
 
 For source builds, install the [native prerequisites](https://github.com/Hebbian-Robotics/livekit-cameras/blob/main/CONTRIBUTING.md#native-rust)
-and build the companion. RUA finds it beside the station binary.
+and build `hebbian-rua-media` from the checkout root. RUA finds the companion
+beside the station binary.
 
 ```sh
 # Linux

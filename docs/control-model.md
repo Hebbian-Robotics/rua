@@ -205,14 +205,17 @@ outcome = await station.compile_action_sequence(source)
 if isinstance(outcome, ProgramCompiled):
     print(outcome.artifact.compiled)
     async with station.holding_lease("inspected sequence") as lease:
-        execution_id = await lease.start_compiled_sequence(
+        execution = await lease.start_compiled_execution(
             outcome.artifact.compilation_id
         )
-        result = await station.wait_for_action_sequence(execution_id)
+        result = await execution.wait()
         print(result.phase)
 else:
     print(outcome.diagnostics)
 ```
+
+The `SequenceExecution` handle binds status, wait and cancel requests to the
+station instance that accepted the sequence.
 
 Enable the arm with `station.arm("arm").enable()` and check its outcome
 before running. Compilation can succeed
@@ -256,9 +259,9 @@ configuration identities and compiler versions grant no authority. The imported
 result has a new compilation ID and still requires explicit execution.
 
 To continue a finished execution, compile the revised full action sequence and pass an
-explicit `ProgramContinuation(prior_execution_id=execution_id, next_step=N)` to
-`lease.start_compiled_sequence(..., continuation=...)`. `next_step` is zero-based;
-the preceding source prefix must match the prior execution. The runtime rejects
+explicit `ProgramContinuation(prior_execution_id=execution.id, next_step=N)` to
+`lease.start_compiled_execution(..., continuation=...)`. `next_step` is zero-based,
+and the preceding source prefix must match the prior execution. The runtime rejects
 starts that repeat an attempted step, including a partially executed coordinated
 step. Inspect those partial outcomes and express any deliberate recovery as new
 work. A prior execution must be finished or canceled, and at least one step must

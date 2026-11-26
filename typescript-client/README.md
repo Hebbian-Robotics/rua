@@ -66,8 +66,9 @@ try {
 ```
 
 Use targets appropriate for your arm and workspace. A completed action sequence
-reached its planned targets; a stopped result explains why it ended. A dropped
-connection stops the action sequence by default. See the
+reached its planned targets; a stopped result explains why it ended. If a
+dropped connection prevents lease renewal, the station stops the sequence
+when the lease expires. See the
 [control model](../docs/control-model.md) for lease and interruption behavior.
 
 Pass `signal` or `timeoutMilliseconds` to `execution.wait()` to bound the
@@ -96,7 +97,7 @@ is a current lease handle. Compilation needs no lease; running still requires an
 enabled arm and live admission checks. `connection.inspectCompilation(id)` retrieves
 a retained artifact; save its JSON for portable export and load it with
 `connection.importCompilation(artifact)`. An optional third argument to
-`lease.startCompiledSequence` supplies `{ prior_execution_id, next_step }` for
+`lease.startCompiledExecution` supplies `{ prior_execution_id, next_step }` for
 explicit continuation. See [compilation and artifact semantics](../docs/control-model.md#compile-before-running).
 
 ## Model-facing tools
@@ -135,7 +136,7 @@ receives state through the station's event stream. It reconnects immediately,
 then backs off from 100 ms to a 1 s cap, using the last station event cursor. If
 that cursor is outside retained history, the client resynchronizes from a snapshot;
 it cannot recover every missed event. Command submissions retry transport failures
-for up to 30 seconds with the same request ID and station instance ID, so the
+for up to 30 seconds with the same operation ID and station instance ID, so the
 station can recognize a repeated submission. A failed request does not by itself
 establish whether the station acted; inspect the resulting state before deciding
 what to do next. `waitUntilConnected()` rejects when the station refuses the connection.

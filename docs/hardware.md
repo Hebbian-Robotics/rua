@@ -73,13 +73,17 @@ and keep a physical power cutoff accessible.
    using your hardware setup tools. The pinned so101 runtime defines the gains
    by joint, not the station profile. Station startup verifies the gains
    but does not write them. Recheck them after calibration.
-4. From a source checkout, start the current station code:
+4. For a source checkout, build the media companion and choose the camera and
+   recording options in the [source station setup](install-from-source.md#start-the-station).
+   Start the station with your profile.
 
    ```sh
    uv run cargo run -p hebbian-rua-server -- serve --profile "$HOME/.config/rua/so101.toml"
    ```
 
-   With an installed wheel, use `uv run rua serve` with the same profile argument.
+   With an installed wheel, follow the
+   [published station setup](getting-started.md#2-verify-manual-control) and use
+   `uv run rua serve` with the same `--profile` argument.
    Before enabling, move each joint gently with
    torque off and compare SDK measured joints and tool poses to the physical
    arm and bundled model. Verify signs, offsets, calibrated endpoints and gripper
