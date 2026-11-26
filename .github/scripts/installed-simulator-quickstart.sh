@@ -64,7 +64,29 @@ station_reporting() {
 wait_until station_announced
 export HEBBIAN_STATION_URL
 wait_until station_reporting
-timeout 90 python -I "$repository/examples/python/hello_robot.py"
+# Exercise the installed Python SDK and enable the simulator before the packaged
+# TypeScript client checks its lease and observation.
+timeout 90 python -I - <<'PYTHON'
+import asyncio
+
+from hebbian_rua import StationClient
+
+
+async def check_installed_client() -> None:
+    async with StationClient() as station:
+        arm_name = await station.resolve_arm_name(None)
+        arm = station.arm(arm_name)
+        state = await arm.state()
+        if not state.measured_joints:
+            raise RuntimeError("Installed Python SDK did not receive simulator feedback")
+        enabled = await arm.enable()
+        if not enabled.completed:
+            raise RuntimeError(f"Installed Python SDK could not enable the arm: {enabled}")
+        print("Installed Python SDK received feedback and enabled the simulator")
+
+
+asyncio.run(check_installed_client())
+PYTHON
 wait_until curl --fail --silent --max-time 8 \
   "${HEBBIAN_STATION_URL}/cameras/sim_overview" --output overview.jpg
 cd "$repository"
