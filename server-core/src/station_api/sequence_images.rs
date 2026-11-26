@@ -4,18 +4,12 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::Json;
-use axum::extract::{Path, State};
-use axum::http::header;
-use axum::response::IntoResponse;
 use hebbian_contracts::{
     ActionSequencePhase, ActionSequenceRecord, ObservationFrame, SequenceCameraHistory,
     SequenceCameraImage, SequenceImageBoundary, SnapshotName,
 };
 use tokio::sync::watch;
 use tokio::time::Instant;
-
-use super::http_state::StationHttpState;
 
 const MAXIMUM_BYTES: usize = 16 * 1024 * 1024;
 const MAXIMUM_IMAGES: usize = 64;
@@ -97,7 +91,7 @@ impl SequenceImages {
         });
     }
 
-    async fn read(&self, id: &str) -> Option<SequenceCameraHistory> {
+    pub(super) async fn read(&self, id: &str) -> Option<SequenceCameraHistory> {
         let mut outcome = self
             .0
             .lock()
@@ -121,16 +115,6 @@ impl SequenceImages {
             ..retained.history.clone()
         })
     }
-}
-
-pub(super) async fn read_images(
-    State(station): State<Arc<StationHttpState>>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    (
-        [(header::CACHE_CONTROL, "no-store")],
-        Json(station.sequence_images.read(&id).await),
-    )
 }
 
 struct ImageBuffer {

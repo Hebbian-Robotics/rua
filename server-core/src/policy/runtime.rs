@@ -53,9 +53,21 @@ impl PolicyRuntime {
         feedback: &Feedback,
         target: &Isometry3<f64>,
     ) -> anyhow::Result<[f64; JOINT_COUNT]> {
-        let mut joint_target =
-            self.policy
-                .joint_goal(feedback, &self.robot, &self.tool_link, target)?;
+        let positions: [f64; JOINT_COUNT] = feedback
+            .positions
+            .as_slice()
+            .try_into()
+            .context("The policy needs five measured joints")?;
+        let velocities: [f64; JOINT_COUNT] = feedback
+            .velocities
+            .as_slice()
+            .try_into()
+            .context("The policy needs five measured velocities")?;
+        let tool_pose = self.tool_pose(feedback)?;
+        let mut joint_target = self
+            .policy
+            .step(&positions, &velocities, &tool_pose, target)?
+            .joint_target;
         for ((target, lower), upper) in joint_target
             .iter_mut()
             .zip(&config.lower_limits)

@@ -147,7 +147,7 @@ async fn submit_program(
 ) -> Result<Json<String>, HttpFailure> {
     let (instance_id, request_id) = request.submission_identity();
     station_state.require_station_instance(instance_id)?;
-    let id = super::http::parse_operation_id(request_id)?;
+    let id = super::parse_operation_id(request_id)?;
     // INVARIANT: Start the worker in the reservation decision so a lost HTTP caller
     // cannot leave the reserved operation without a worker.
     let response = station_state

@@ -166,29 +166,6 @@ pub struct Policy {
 }
 
 impl Policy {
-    pub(crate) fn joint_goal(
-        &mut self,
-        feedback: &crate::plant::Feedback,
-        robot: &crate::robot::Robot,
-        tool_link: &str,
-        target: &Isometry3<f64>,
-    ) -> anyhow::Result<[f64; JOINT_COUNT]> {
-        let positions: [f64; JOINT_COUNT] = feedback
-            .positions
-            .as_slice()
-            .try_into()
-            .context("The policy needs five measured joints")?;
-        let velocities: [f64; JOINT_COUNT] = feedback
-            .velocities
-            .as_slice()
-            .try_into()
-            .context("The policy needs five measured velocities")?;
-        let tool = robot.pose_at(tool_link, &feedback.positions, feedback.gripper_angle)?;
-        Ok(self
-            .step(&positions, &velocities, &tool, target)?
-            .joint_target)
-    }
-
     pub fn load(onnx_path: &Path, arm_urdf: &Path) -> anyhow::Result<Self> {
         let environment = runtime_environment()?;
         let session = Session::builder(&environment)
