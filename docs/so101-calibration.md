@@ -42,10 +42,12 @@ Recorded travel follows each physical motor when the mapping changes.
 
 ## Custom setup directory
 
-If you keep arm configs in another directory,
-pass its path to `uv run rua so101 setup --setup-directory` and to RUA's
-`--so101-config-directory`, or set `HEBBIAN_SO101_CONFIG_DIRECTORY` for RUA.
-Keep both files together when backing up or sharing an arm's setup with your team.
+If you keep arm configs in another directory, set
+`HEBBIAN_SO101_CONFIG_DIRECTORY` to its path in the environment for both
+`rua so101 setup` and the station. The launcher uses this path unless
+`SO101_SETUP_DIRECTORY` is already set. If running the standalone `so101`
+command, set `SO101_SETUP_DIRECTORY` to the same path instead. Keep both files
+together when backing up or sharing an arm's setup with your team.
 
 To reuse a calibration you already created with LeRobot, see
 [Use an existing LeRobot calibration](hardware.md).

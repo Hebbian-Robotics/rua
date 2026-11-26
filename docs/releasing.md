@@ -83,4 +83,6 @@ the RUA SDK so the usual delay still applies to third-party dependencies.
 When bumping the pinned wheel past 0.1.7, update the startup prerequisites in
 [Getting started](getting-started.md) and [Windows with WSL2](windows-wsl.md)
 in the same PR. Cover FFmpeg or `--no-recording` and document `lk cloud auth`
-as an alternative to setting the three LiveKit variables.
+as an alternative to setting the three LiveKit variables. Also simplify the
+post-0.1.7 SO-101 CLI wording and download fallback in the [README](../README.md)
+and [SO-101 calibration guide](so101-calibration.md).
