@@ -173,10 +173,12 @@ loop. For a client-managed transcript, append `turn.messages` to your history.
 Stop on `turn.should_stop` or empty `turn.results`.
 For other SDKs or mixed toolsets, use the provider-neutral types above and route
 calls yourself. Stop on a result's `halt` or `interrupted` flag.
-For interruptions, `capture_when_ready(robot)` waits for arm and required-camera
-recovery and returns a fresh capture with the arm's revision. Pass that revision
-as `expected_revision` when executing tools; a command whose arm was interrupted
-since is refused as `stale_revision`. `station.ensure_recording()`
+For interruptions, import `capture_when_ready` from
+`hebbian_rua.client.llm.recovery`. Call `await capture_when_ready(robot)` to wait
+for arm and required-camera recovery and get a fresh capture with the arm's
+revision. Pass that revision as `expected_revision` when executing tools.
+The station refuses commands with `stale_revision` if the arm was interrupted
+since the capture. `station.ensure_recording()`
 starts or joins a recording; use `lease.stop_recording()` when the task
 ends so a handover cannot stop the new holder's recording. In TypeScript,
 `robot.observeWhenReady()` returns the capture and each arm's revision, the recording

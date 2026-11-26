@@ -20,8 +20,8 @@ Use the [SO-101 calibration tool](so101-calibration.md) to save
 `arms/<USB-serial>/setup.toml` and `calibration.json` in the local arm
 configuration directory. RUA looks in `$XDG_CONFIG_HOME/rua/so101-arm-configs`
 (defaulting to `~/.config/rua/so101-arm-configs`). If you use another directory,
-set `HEBBIAN_SO101_CONFIG_DIRECTORY` to its absolute path. Startup reads the
-local files and works offline.
+set `HEBBIAN_SO101_CONFIG_DIRECTORY` to its absolute path. The arm registry
+lookup uses local files.
 
 List connected USB adapters and their registry matches without opening any
 serial device:
@@ -30,7 +30,10 @@ serial device:
 uv run cargo run -p hebbian-rua-server -- so101-discover
 ```
 
-For a previously calibrated arm whose servo settings already match its profile:
+For a previously calibrated arm whose servo settings already match its profile,
+follow the [source station startup steps](install-from-source.md#start-the-station)
+to build the media companion and choose the camera and recording options. Then
+start the station from the checkout root.
 
 ```sh
 uv run cargo run -p hebbian-rua-server -- serve

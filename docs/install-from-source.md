@@ -26,17 +26,27 @@ when you want to run those examples.
 
 ## Start the station
 
-For a physical SO-101, [calibrate your arm](so101-calibration.md). Configure
-[LiveKit](cameras.md#connect-a-usb-camera) and [install FFmpeg](recording.md#install-ffmpeg),
-then start the station from the checkout root:
+For a physical SO-101, [calibrate your arm](so101-calibration.md).
+[Install the native dependencies and build the media companion](cameras.md#rua-configuration)
+from the checkout root. The station starts `hebbian-rua-media` from beside its
+own binary. The server command below builds the station binary separately.
+
+For the default setup, [configure LiveKit credentials](cameras.md#connect-a-usb-camera)
+and [install FFmpeg](recording.md#install-ffmpeg). Then run this command from
+the checkout root.
 
 ```sh
 uv run cargo run -p hebbian-rua-server -- serve
 ```
 
+Add `--no-recording` after `serve` to use LiveKit without FFmpeg. Add
+`--local-only-no-remote-cameras` to serve local snapshots without LiveKit
+credentials or FFmpeg. This mode disables remote cameras and recording and
+still uses the media companion for snapshots.
+
 This source command checks and rebuilds the station before starting it.
-`uv run rua serve` launches an existing binary and does not rebuild it; reserve
-that command for installed wheels or explicitly selected builds.
+`uv run rua serve` launches an existing binary. Use it for installed wheels
+or explicitly selected builds.
 
 See [simulator integration](simulators.md) and
 [cameras](cameras.md) for the RUA connection steps. `uv run rua-dev --help` lists
@@ -58,10 +68,7 @@ the built viewer and run the example agent backend. See the
 The viewer and TypeScript agent install the published SDK pinned in the
 lockfile. To test unpublished station or SDK changes with the viewer,
 [pack and use the SDK from the same checkout](../typescript-client/README.md#package-builds).
-For the published setup, see [Getting started](getting-started.md). Camera builds have
-additional [native prerequisites](cameras.md#rua-configuration); recording needs
-[FFmpeg](recording.md). Building the Rust server alone needs neither frontend
-nor media build tools.
+For the published setup, see [Getting started](getting-started.md).
 
 ## Updating a checkout
 
@@ -71,6 +78,7 @@ Run commands from the repository root. After pulling dependency changes, run
 | What changed | Command | When the change takes effect |
 | --- | --- | --- |
 | Rust station or hardware profile | `uv run cargo run -p hebbian-rua-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
+| Media companion | [Build the companion for your OS](cameras.md#rua-configuration) | Restart the station to run the new companion. |
 | Rust CLI | `cargo run --locked -p hebbian-rua-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-rua` stays at its installed version. |
 | Viewer and agent backend | `pnpm start:viewer` | Restart the viewer backend to load example changes. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |

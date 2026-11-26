@@ -9,9 +9,9 @@ See [camera setup](../docs/cameras.md) for the web preview.
 See [camera setup](../docs/cameras.md#rua-configuration) for prerequisites and
 build instructions. Recording additionally needs [FFmpeg](../docs/recording.md).
 
-The station starts one media service. With a LiveKit room configured, the
-service publishes native cameras and reads snapshot frames from the room.
-Without a room, it serves snapshots directly from the native cameras.
+The station starts one media service. By default the service publishes native
+cameras and reads snapshot frames from the LiveKit room. Start the station with
+`--local-only-no-remote-cameras` to serve local snapshots without LiveKit.
 
 Run `cargo test --locked -p livekit-cameras` to exercise synthetic video and telemetry
 against a simulated station. Verify device access, encoding, reconnects, and live

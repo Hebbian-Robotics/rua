@@ -37,7 +37,9 @@ or require a model provider.
 
 Advanced clients can compile action sequences before acquiring control with
 `StationClient.compile_action_sequence(source)`, inspect retained artifacts with
-`inspect_compilation(id)`, and submit them with `Lease.start_compiled_sequence(id)`.
+`inspect_compilation(id)`, and submit them with `Lease.start_compiled_execution(id)`.
+The returned `SequenceExecution` handle binds follow-up requests to the admitting
+station instance. Call `await execution.wait()` for the terminal result.
 Compilation returns a `ProgramCompiled` or `ProgramRejected` value.
 Save the inspection artifact's JSON for export and load it with
 `import_compilation(artifact)`, which recompiles its source. An optional

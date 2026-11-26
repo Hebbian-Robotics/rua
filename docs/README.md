@@ -37,7 +37,7 @@ reports what happened for the model’s next turn.
 
 - [Connect cameras](cameras.md): use USB or phone cameras
   with LiveKit and run multiple stations.
-- [Record](recording.md): install FFmpeg, enable recording and play
+- [Record](recording.md): install FFmpeg, start a recording and play
   back saved recordings.
 - [Simulation](simulation.md) and [simulator integration](simulators.md).
 
