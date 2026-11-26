@@ -16,6 +16,13 @@ parallel with separate cache volumes. The quickstart installs the assembled whee
 and TypeScript tarball. Its native build disables link-time optimization to
 shorten PR feedback. The publish workflow uses the production profiles.
 
+For a control-loop or station HTTP edit inside `server-core`, use
+`cargo check --locked -p hebbian-rua-core` for compiler feedback. To measure
+the edit-to-runnable-station cycle, warm the build, make a representative edit,
+and run `cargo build --locked -p hebbian-rua-server --timings`. Open
+`target/cargo-timings/cargo-timing.html` to see which crates recompiled and
+where their compilation overlapped.
+
 For station integration tests, install JavaScript dependencies with
 `pnpm install --frozen-lockfile`, then run `uv run pytest -m server`. Keep these
 tests serial so simulated stations can meet control-loop deadlines. Pytest
