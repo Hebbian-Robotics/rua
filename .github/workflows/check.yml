@@ -35,7 +35,7 @@ jobs:
           CARGO_PROFILE_RELEASE_LTO: 'off'
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
           CARGO_LOG: ${{ runner.debug == '1' && 'cargo::core::compiler::fingerprint=info' || '' }}
-        run: bash .github/scripts/installed-simulator-quickstart.sh
+        run: uv run --no-sync rua-dev package rua
 
       - name: Inventory Cargo fingerprints after packaging
         run: |
