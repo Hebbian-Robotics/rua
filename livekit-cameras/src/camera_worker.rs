@@ -142,25 +142,31 @@ async fn publish(
     updates: mpsc::UnboundedSender<CameraPublication>,
     stopped: &CancellationToken,
 ) {
-    let mut backoff = Backoff::new(Duration::from_secs(3));
+    let mut backoff = Backoff::new(Duration::from_secs(30));
     while !stopped.is_cancelled() {
-        let started = std::time::Instant::now();
+        let mut publishing_since = std::cell::Cell::new(None::<std::time::Instant>);
         let result = async {
             let access = room.credentials.camera_access(
                 &room.room,
                 camera.name(),
                 CameraLifetime::Station,
             )?;
+            let publishing_since = &mut publishing_since;
+            let updates = &updates;
             publisher::publish_camera_frames(
                 camera,
                 &access.server_url,
                 &access.token,
                 worker.frames.clone(),
                 stopped.clone(),
-                |event| {
+                move |event| {
                     let _ = updates.send(match event {
-                        PublicationEvent::Publishing => CameraPublication::Publishing,
+                        PublicationEvent::Publishing => {
+                            publishing_since.set(Some(std::time::Instant::now()));
+                            CameraPublication::Publishing
+                        }
                         PublicationEvent::Reconnecting => {
+                            publishing_since.set(None);
                             CameraPublication::Reconnecting { detail: None }
                         }
                     });
@@ -174,13 +180,23 @@ async fn publish(
             PublicationDecision::End => break,
             PublicationDecision::Retry(status) => status,
         };
-        let _ = updates.send(status);
-        if started.elapsed() >= Duration::from_secs(3) {
+        if publishing_since
+            .get()
+            .is_some_and(|started| started.elapsed() >= Duration::from_secs(30))
+        {
             backoff.reset();
         }
+        let retry_delay = backoff.next_delay().max(Duration::from_secs(1));
+        if let CameraPublication::Reconnecting {
+            detail: Some(error),
+        } = &status
+        {
+            tracing::warn!(camera = camera.name(), room = %room.room, %error, ?retry_delay, "Camera publication failed; retrying");
+        }
+        let _ = updates.send(status);
         tokio::select! {
             () = stopped.cancelled() => break,
-            () = tokio::time::sleep(backoff.next_delay()) => {},
+            () = tokio::time::sleep(retry_delay) => {},
         }
     }
 }
