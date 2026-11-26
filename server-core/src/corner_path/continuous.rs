@@ -133,6 +133,8 @@ impl ContinuousPath {
         upper: &[f64],
     ) -> Result<()> {
         for (section, profiles) in self.trajectory.get_profiles().iter().enumerate() {
+            let (section_start, section_end) = self.section_bounds(section);
+            let section_duration = section_end - section_start;
             for (joint, profile) in profiles.iter().enumerate() {
                 let (mut minimum, mut maximum) = (lower[joint], upper[joint]);
                 // ROBOT-SAFETY: An already out-of-range joint can only recover inward from its
@@ -141,7 +143,7 @@ impl ContinuousPath {
                     minimum = minimum.min(start[joint]);
                     maximum = maximum.max(start[joint]);
                 }
-                let extrema = profile.get_position_extrema();
+                let extrema = profile.get_position_extrema_until(section_duration);
                 ensure!(
                     extrema.min >= minimum - CONTINUITY_RADIANS
                         && extrema.max <= maximum + CONTINUITY_RADIANS,
@@ -252,6 +254,43 @@ mod tests {
 
     use super::*;
     use crate::config::{ControllerConfig, TEST_CONFIG};
+
+    #[test]
+    fn joint_bounds_include_motion_after_an_axis_finishes() {
+        use rsruckig::prelude::Synchronization;
+
+        let mut input = InputParameter::<0>::new(Some(2));
+        input.synchronization = Synchronization::None;
+        input.target_position[0] = 0.5;
+        input.target_position[1] = 10.0;
+        input.target_velocity[0] = 0.5;
+        input.max_velocity.fill(1.0);
+        input.max_acceleration.fill(1.0);
+        input.max_jerk.fill(1.0);
+        let mut trajectory = Trajectory::<0>::new(Some(2));
+        let result = Ruckig::<0, ThrowErrorHandler>::new(Some(2), 0.01)
+            .calculate(&input, &mut trajectory)
+            .unwrap();
+        assert!(matches!(
+            result,
+            RuckigResult::Working | RuckigResult::Finished
+        ));
+        let path = ContinuousPath {
+            trajectory,
+            peak_joint_speed: 1.0,
+            positions: DataArrayOrVec::new(Some(2), 0.0),
+            velocities: DataArrayOrVec::new(Some(2), 0.0),
+            accelerations: DataArrayOrVec::new(Some(2), 0.0),
+        };
+        assert!(
+            path.check_joint_bounds(&[0.0, 0.0], &[-1.0, -1.0], &[6.0, 11.0])
+                .is_ok()
+        );
+        assert!(
+            path.check_joint_bounds(&[0.0, 0.0], &[-1.0, -1.0], &[1.5, 11.0])
+                .is_err()
+        );
+    }
 
     #[test]
     fn circular_waypoints_do_not_reverse_inside_a_section() {
