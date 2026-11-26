@@ -3,27 +3,12 @@ use anyhow::{Context, bail, ensure};
 pub use hebbian_so101::discovery::{
     ControllerMatch, ControllerSerial, UsbController, discover, match_controllers,
 };
+pub use hebbian_so101::setup::default_arm_config_directory;
 use hebbian_so101::setup::{ArmSetup, ModelVariant};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
-
-pub fn default_config_directory() -> anyhow::Result<PathBuf> {
-    if let Some(directory) =
-        std::env::var_os("HEBBIAN_SO101_CONFIG_DIRECTORY").filter(|value| !value.is_empty())
-    {
-        return Ok(PathBuf::from(directory));
-    }
-    let config_home = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map_or_else(
-            || std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")),
-            |directory| Some(PathBuf::from(directory)),
-        )
-        .context("Set HEBBIAN_SO101_CONFIG_DIRECTORY or HOME")?;
-    Ok(config_home.join("rua").join("so101-arm-configs"))
-}
 
 #[derive(Debug)]
 pub struct RegisteredController {

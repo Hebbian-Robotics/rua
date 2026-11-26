@@ -16,15 +16,7 @@ def main() -> None:
             raise SystemExit(
                 "SO101 CLI is missing. Install a RUA release wheel that includes it."
             )
-        environment = os.environ.copy()
-        if not environment.get("SO101_SETUP_DIRECTORY"):
-            config_home = environment.get("XDG_CONFIG_HOME") or str(
-                Path.home() / ".config"
-            )
-            environment["SO101_SETUP_DIRECTORY"] = environment.get(
-                "HEBBIAN_SO101_CONFIG_DIRECTORY"
-            ) or str(Path(config_home) / "rua/so101-arm-configs")
-        os.execve(str(executable), ["so101", *sys.argv[2:]], environment)
+        os.execve(str(executable), ["so101", *sys.argv[2:]], os.environ.copy())
 
     executable_name = "hebbian-rua-server"
     installed_executable = Path(sysconfig.get_path("scripts")) / executable_name

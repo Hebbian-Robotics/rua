@@ -10,8 +10,7 @@ def test_so101_launcher_finds_executable_on_path(tmp_path: Path) -> None:
     executable.chmod(0o755)
     environment = os.environ | {
         "PATH": f"{tmp_path}:/usr/bin:/bin",
-        "HEBBIAN_SO101_CONFIG_DIRECTORY": str(tmp_path / "arm-configs"),
-        "SO101_SETUP_DIRECTORY": "",
+        "SO101_SETUP_DIRECTORY": str(tmp_path / "arm-configs"),
     }
     result = subprocess.run(
         [
