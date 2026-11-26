@@ -9,6 +9,10 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "so101":
         executable = Path(sysconfig.get_path("scripts")) / "so101"
         if not executable.is_file():
+            executable_on_path = shutil.which("so101")
+            if executable_on_path:
+                executable = Path(executable_on_path)
+        if not executable.is_file():
             raise SystemExit(
                 "SO101 CLI is missing. Install a RUA release wheel that includes it."
             )
