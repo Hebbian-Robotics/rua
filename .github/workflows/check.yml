@@ -23,8 +23,8 @@ jobs:
           df -h target
           python3 - <<'PYTHON'
           from pathlib import Path
-          for path in sorted(Path('target').rglob('.fingerprint')):
-              print(path, sum(1 for _ in path.iterdir()), 'units')
+          for path in sorted(Path('target').glob('*')):
+              if path.is_dir(): print(path, sum(1 for _ in path.glob('build/*/*/fingerprint')), 'per-unit fingerprints', (path / '.fingerprint').is_dir(), 'legacy directory')
           PYTHON
       - run: sudo apt-get install -y libosmesa6
       - name: Build and run the installed simulator quickstart
@@ -43,6 +43,6 @@ jobs:
           df -h target
           python3 - <<'PYTHON'
           from pathlib import Path
-          for path in sorted(Path('target').rglob('.fingerprint')):
-              print(path, sum(1 for _ in path.iterdir()), 'units')
+          for path in sorted(Path('target').glob('*')):
+              if path.is_dir(): print(path, sum(1 for _ in path.glob('build/*/*/fingerprint')), 'per-unit fingerprints', (path / '.fingerprint').is_dir(), 'legacy directory')
           PYTHON
