@@ -4,6 +4,14 @@ Show an image on a display and ask a yes/no question such as “Is this a Siberi
 Husky?” The arm moves to a viewing pose, sends a wrist-camera frame to the model
 for web research, and nods or shakes its head.
 
+## Example scope
+
+The application captures one wrist-camera frame per question from a preset
+viewing pose. Searching the scene with additional arm movements is outside its
+scope. The arm communicates a yes/no answer, and the saved reply is available
+for review. Each question starts a fresh model request. Follow-ups that depend
+on earlier answers are outside the example's scope.
+
 ## Run
 
 [Set up the arm](../../../docs/getting-started.md), start the station with a

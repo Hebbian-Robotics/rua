@@ -10,4 +10,11 @@ environment installs the published Python SDK.
 - [`sim_plant.py`](sim_plant.py) connects the MuJoCo plant to the station.
 - [`camera_server.py`](camera_server.py) serves overview and wrist snapshots.
 
+## Example scope
+
+The fixture supplies simulated arm state, motion, and camera snapshots to a
+station. Bring a separate client or agent to send commands. Physical hardware
+validation is outside the fixture's scope, including real camera behavior
+and motion clearance on your station.
+
 For another simulator, see the [simulator adapter contract](../../docs/simulators.md).
