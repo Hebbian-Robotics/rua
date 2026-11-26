@@ -1,9 +1,8 @@
 use anyhow::{Context, Result, ensure};
 use hebbian_contracts::{CornerPlan, MotionLimits};
 use rsruckig::prelude::{
-    DataArrayOrVec, InputParameter, Profile, Ruckig, RuckigResult, ThrowErrorHandler, Trajectory,
+    DataArrayOrVec, InputParameter, Ruckig, RuckigResult, ThrowErrorHandler, Trajectory,
 };
-use rsruckig::util::integrate;
 
 use super::{CONTINUITY_RADIANS, INITIAL_PERIOD_SECONDS, plan_initial_corner, validate_plan};
 use crate::reference_filter::Reference;
@@ -78,8 +77,9 @@ impl ContinuousPath {
                 end.is_finite() && end - start > maximum_step_seconds,
                 "Continuous section {index} is too short for the control rate"
             );
-            for profile in trajectory.get_profiles()[index].iter() {
-                peak_joint_speed = peak_joint_speed.max(profile_peak_speed(profile, end - start));
+            for joint in 0..joint_count {
+                peak_joint_speed =
+                    peak_joint_speed.max(section_peak_speed(&trajectory, index, joint)?);
             }
         }
         for (index, end) in section_ends[..intermediate.len()]
@@ -116,12 +116,13 @@ impl ContinuousPath {
         (start, ends[index])
     }
 
-    pub(crate) fn section_joint_travel_bounds(&self, index: usize) -> Vec<f64> {
+    pub(crate) fn section_joint_travel_bounds(&self, index: usize) -> Result<Vec<f64>> {
         let (start, end) = self.section_bounds(index);
         let duration = end - start;
-        self.trajectory.get_profiles()[index]
-            .iter()
-            .map(|profile| profile_peak_speed(profile, duration) * duration)
+        (0..self.positions.len())
+            .map(|joint| {
+                section_peak_speed(&self.trajectory, index, joint).map(|speed| speed * duration)
+            })
             .collect()
     }
 
@@ -236,49 +237,13 @@ fn waypoint_velocity_limits(
     (directional_limits(-1.0), directional_limits(1.0))
 }
 
-fn profile_peak_speed(profile: &Profile, duration: f64) -> f64 {
-    let mut peak: f64 = 0.0;
-    for (index, &phase_duration) in profile.brake.t.iter().enumerate() {
-        peak = peak.max(phase_peak_speed(
-            phase_duration,
-            profile.brake.v[index],
-            profile.brake.a[index],
-            profile.brake.j[index],
-        ));
-    }
-    for (index, &phase_duration) in profile.t.iter().enumerate() {
-        peak = peak.max(phase_peak_speed(
-            phase_duration,
-            profile.v[index],
-            profile.a[index],
-            profile.j[index],
-        ));
-    }
-    // CONSTRAINT: Ruckig extrapolates the final state on any remaining section time.
-    let tail_duration = (duration - profile.brake.duration - profile.t_sum[6]).max(0.0);
-    peak.max(phase_peak_speed(
-        tail_duration,
-        profile.v[7],
-        profile.a[7],
-        0.0,
-    ))
-}
-
-fn phase_peak_speed(duration: f64, velocity: f64, acceleration: f64, jerk: f64) -> f64 {
-    let speed_at = |time: f64| {
-        let (_, velocity_at_time, _) = integrate(time, 0.0, velocity, acceleration, jerk);
-        velocity_at_time.abs()
-    };
-    let mut peak = velocity.abs().max(speed_at(duration));
-    // WHY: With constant jerk, a velocity extremum is at an endpoint or
-    // where acceleration crosses zero.
-    if jerk != 0.0 {
-        let stationary_time = -acceleration / jerk;
-        if (0.0..duration).contains(&stationary_time) {
-            peak = peak.max(speed_at(stationary_time));
-        }
-    }
-    peak
+fn section_peak_speed(trajectory: &Trajectory<0>, section: usize, joint: usize) -> Result<f64> {
+    let extrema = trajectory
+        .get_velocity_extrema(section, joint)
+        .with_context(|| {
+            format!("Missing velocity extrema for section {section}, joint {joint}")
+        })?;
+    Ok(extrema.min.abs().max(extrema.max.abs()))
 }
 
 #[cfg(test)]
@@ -324,12 +289,15 @@ mod tests {
         assert!((0.0..0.30).contains(&path.peak_joint_speed));
         for (section, pair) in knots.windows(2).enumerate() {
             let (start, end) = path.section_bounds(section);
+            let travel_bounds = path.section_joint_travel_bounds(section).unwrap();
             for sample in 0..=100 {
                 let state = path
                     .trajectory
                     .state_at(start + (end - start) * f64::from(sample) / 100.0);
                 for (joint, &velocity) in state.velocity.iter().enumerate() {
                     let delta = pair[1][joint] - pair[0][joint];
+                    assert!(velocity.abs() <= path.peak_joint_speed + 1e-9);
+                    assert!(velocity.abs() * (end - start) <= travel_bounds[joint] + 1e-9);
                     assert!(
                         velocity.abs() < 1e-8 || (delta.abs() > 1e-12 && velocity * delta > 0.0),
                         "Section {section}, joint {joint}: velocity {velocity} for displacement {delta}"
