@@ -25,6 +25,7 @@ use crate::control_link::{LinkHandle, SubmissionAuthority};
 
 use super::admission::{AdmissionClosed, AdmissionState};
 use super::http_state::{SHUTTING_DOWN, SnapshotSubscription, StationHttpState};
+use super::parse_operation_id;
 use super::submissions::{
     Admission, CommandOutcomeUnknown, OperationId, PendingAdmission, SubmissionCompletion,
     TerminalMotion, wait_for_outcome,
@@ -210,10 +211,7 @@ fn router(station_state: Arc<StationHttpState>) -> Router {
             "/action_sequence/{id}/completion",
             get(wait_action_sequence_completion),
         )
-        .route(
-            "/action_sequence/{id}/images",
-            get(super::sequence_images::read_images),
-        )
+        .route("/action_sequence/{id}/images", get(read_sequence_images))
         .route("/operations/{id}", get(read_operation))
         .route("/operations/{id}/completion", post(wait_operation))
         .with_state(station_state)
@@ -272,11 +270,14 @@ async fn read_action_sequence_by_id(
     }
 }
 
-pub(super) fn parse_operation_id(value: &str) -> Result<OperationId, (StatusCode, String)> {
-    OperationId::parse(value).ok_or((
-        StatusCode::BAD_REQUEST,
-        "Expected a UUID v4 operation ID".to_owned(),
-    ))
+async fn read_sequence_images(
+    State(station): State<Arc<StationHttpState>>,
+    UrlPath(id): UrlPath<String>,
+) -> impl IntoResponse {
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(station.sequence_images.read(&id).await),
+    )
 }
 
 async fn wait_action_sequence_completion(
