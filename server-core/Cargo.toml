@@ -26,7 +26,8 @@ ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "
 rsruckig = "3.1.2"
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# WHY: Motion targets must retain their exact joint-limit values across JSON boundaries.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 serialport = { version = "4.10.1", default-features = false }
 sha2 = "0.10.9"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "fs", "sync", "io-util", "time", "macros"] }

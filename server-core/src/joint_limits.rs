@@ -84,3 +84,37 @@ impl std::fmt::Display for JointTargetError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{JointTarget, JointTargetError};
+    use hebbian_contracts::StationCommand;
+
+    #[test]
+    fn a_wire_target_at_the_joint_limit_is_admitted() {
+        let upper_limit = 1.709_203_884_727_313_9_f64;
+        for (target, should_be_admitted) in [(upper_limit, true), (upper_limit.next_up(), false)] {
+            let command = StationCommand::StreamJoints {
+                joints: vec![target],
+                max_joint_speed: None,
+                gripper_opening: None,
+            };
+            let encoded = serde_json::to_vec(&command).unwrap();
+            let StationCommand::StreamJoints { joints, .. } =
+                serde_json::from_slice(&encoded).unwrap()
+            else {
+                panic!("Expected a joint stream command");
+            };
+
+            let result = JointTarget::parse(joints, 1, &[-2.0], &[upper_limit]);
+            if should_be_admitted {
+                assert_eq!(result.unwrap().as_slice(), &[upper_limit]);
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(JointTargetError::OutsideLimits { .. })
+                ));
+            }
+        }
+    }
+}
