@@ -218,7 +218,7 @@ impl Planner {
                 *minimum = minimum.min(angle);
                 *maximum = maximum.max(angle);
             }
-            let joint_travel_bounds = path.section_joint_travel_bounds(index);
+            let joint_travel_bounds = path.section_joint_travel_bounds(index)?;
             let mut check = |jaw| {
                 self.check_continuous_section(
                     &mut path,

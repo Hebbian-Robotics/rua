@@ -455,10 +455,10 @@
   },
   {
     "name": "rsruckig",
-    "version": "3.1.3",
+    "version": "3.2.0",
     "repository": "https://github.com/petrikosk/rsruckig",
-    "commit": "60902f452d09fad21003d8b278f7ff097f0cb154",
-    "directory": "sources/rsruckig-60902f452d09",
+    "commit": "f2eb145fc3f1cf4bb7c9a0954b4a259a15baad60",
+    "directory": "sources/rsruckig-f2eb145fc3f1",
     "files": [
       "LICENSE.txt"
     ]
