@@ -61,35 +61,6 @@ async function waitForStationState(
   });
 }
 
-async function stopAndWaitForArms(armNames: string[]): Promise<void> {
-  for (const armName of armNames) {
-    const answer = await armControl(armName).stop();
-    if (answer.status === "refused")
-      throw new Error(`${armName}: ${answer.detail}`);
-    const stopRecord = answer.records.find(
-      (item) => item.arm === armName,
-    )?.record;
-    if (!stopRecord)
-      throw new Error(`${armName}: no stop command record returned.`);
-    const completion = commandResult(stopRecord);
-    if (completion?.outcome !== "completed")
-      throw new Error(
-        `${armName}: ${completion?.detail ?? "Stop was not accepted."}`,
-      );
-    await waitForStationState((state) =>
-      state.arms.some(
-        (arm) =>
-          arm.arm === armName &&
-          arm.mode === "holding" &&
-          arm.active_command === null &&
-          arm.sampled_unix_nano !== null &&
-          BigInt(arm.sampled_unix_nano) >=
-            BigInt(stopRecord.accepted_unix_nano),
-      ),
-    );
-  }
-}
-
 export function ArmControl({
   stationState,
   armName,
@@ -99,6 +70,7 @@ export function ArmControl({
   onManualControlStarted,
   onStopFollowing,
   onPowerTransition,
+  stopRehomeRef,
 }: {
   stationState: StationState | null;
   armName: string;
@@ -108,12 +80,20 @@ export function ArmControl({
   onManualControlStarted?: () => Promise<void>;
   onStopFollowing: () => void;
   onPowerTransition: (changing: boolean) => void;
+  stopRehomeRef: React.RefObject<(() => void) | null>;
 }) {
   const [pending, setPending] = useState(false);
+  const [rehomeBeforeDisable, setRehomeBeforeDisable] = useState(true);
   const [message, setMessage] = useState("");
   const [rehoming, setRehoming] = useState(false);
   const rehomeCancellation = useRef<AbortController | null>(null);
-  useEffect(() => () => rehomeCancellation.current?.abort(), []);
+  useEffect(() => {
+    stopRehomeRef.current = () => rehomeCancellation.current?.abort();
+    return () => {
+      stopRehomeRef.current = null;
+      rehomeCancellation.current?.abort();
+    };
+  }, [stopRehomeRef]);
   const busy = pending || rehoming;
   const arm = stationState?.arms.find((candidate) => candidate.arm === armName);
   const lastOutcome = arm?.last_command
@@ -141,6 +121,9 @@ export function ArmControl({
     !busy &&
     !runActive &&
     leaseView.kind !== "elsewhere";
+  const showDisable =
+    arm !== undefined &&
+    !["disabled", "reconnected", "disconnected"].includes(arm.mode);
   const canDisableInPlace =
     arm !== undefined &&
     !busy &&
@@ -264,20 +247,6 @@ export function ArmControl({
       setPending(false);
     }
   }
-  async function stopArm(): Promise<void> {
-    if (!arm || pending) return;
-    rehomeCancellation.current?.abort();
-    onStopFollowing();
-    setPending(true);
-    try {
-      await stopAndWaitForArms([arm.arm]);
-      setMessage("Arm stopped and holding.");
-    } catch (error: unknown) {
-      setMessage(`Could not stop the arm: ${errorMessage(error)}`);
-    } finally {
-      setPending(false);
-    }
-  }
   return (
     <section className="arm-control" aria-label="Arm status and power">
       <div className="arm-control-heading">
@@ -307,11 +276,32 @@ export function ArmControl({
           commandResult(arm?.last_command)?.outcome === "stopped_short") &&
         !arm?.fault &&
         !arm?.active_trip && <p>{lastOutcome.text}</p>}
-      {powerOff && (
+      {showDisable ? (
+        rehomeBeforeDisable ? (
+          <Button disabled={!canRehome} onClick={() => void rehomeArm(true)}>
+            {rehoming ? "Rehoming…" : "Disable arm"}
+          </Button>
+        ) : (
+          <ConfirmationDialog
+            trigger={
+              <Button variant="outline" disabled={!canDisableInPlace}>
+                Disable arm…
+              </Button>
+            }
+            title={`Disable ${armName} in place?`}
+            description="This can make it drop. Support the arm before continuing."
+            actionLabel="Disable arm"
+            actionDisabled={!canDisableInPlace}
+            onConfirm={() => {
+              if (canDisableInPlace) void changePower("disable");
+            }}
+          />
+        )
+      ) : (
         <Button
           id="enable-arm"
-          className="w-fit"
           disabled={
+            !powerOff ||
             busy ||
             runActive ||
             (manualSelected && leaseView.kind === "elsewhere")
@@ -321,68 +311,36 @@ export function ArmControl({
           Enable arm
         </Button>
       )}
+      <label htmlFor="rehome-before-disable">
+        <input
+          id="rehome-before-disable"
+          type="checkbox"
+          checked={rehomeBeforeDisable}
+          disabled={busy || runActive}
+          onChange={(event) =>
+            setRehomeBeforeDisable(event.currentTarget.checked)
+          }
+        />
+        Rehome first
+      </label>
+      {showDisable && rehomeBeforeDisable && arm?.rest_pose === null && (
+        <p>
+          No home pose is configured. Turn off Rehome first to disable in place.
+        </p>
+      )}
       {manualSelected && leaseView.kind === "elsewhere" && (
         <p role="status">{describeHolder(leaseView.heldBy)} holds control.</p>
       )}
-      {arm &&
-        !["disabled", "reconnected", "disconnected"].includes(arm.mode) && (
-          <>
-            <div className="control-actions">
-              <Button
-                variant="stop"
-                disabled={pending || !["holding", "moving"].includes(arm.mode)}
-                onClick={() => void stopArm()}
-              >
-                Stop and hold
-              </Button>
-              <Button
-                disabled={!canRehome}
-                onClick={() => void rehomeArm(true)}
-              >
-                Rehome and disable
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!canRehome}
-                onClick={() => void rehomeArm(false)}
-              >
-                Rehome
-              </Button>
-            </div>
-            {canReconnectManual && (
-              <Button
-                variant="outline"
-                className="w-fit"
-                disabled={busy || runActive}
-                onClick={() => void reconnectManual()}
-              >
-                Reconnect manual control
-              </Button>
-            )}
-            <div className="arm-control-direct-disable">
-              <ConfirmationDialog
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!canDisableInPlace}
-                    aria-describedby="disable-in-place-note"
-                  >
-                    Disable in place…
-                  </Button>
-                }
-                title={`Disable ${armName} in place?`}
-                description="This can make it drop. Support the arm before continuing."
-                actionLabel="Disable arm"
-                actionDisabled={!canDisableInPlace}
-                onConfirm={() => {
-                  if (canDisableInPlace) void changePower("disable");
-                }}
-              />
-              <p id="disable-in-place-note">This can make it drop.</p>
-            </div>
-          </>
-        )}
+      {canReconnectManual && (
+        <Button
+          variant="outline"
+          className="w-fit"
+          disabled={busy || runActive}
+          onClick={() => void reconnectManual()}
+        >
+          Reconnect manual control
+        </Button>
+      )}
       <p className="empty:hidden" role="status">
         {formatMotionDetail(message)}
       </p>

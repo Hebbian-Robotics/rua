@@ -118,6 +118,7 @@
   }
   .viewer-station-status {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     margin-block-start: auto;
     padding-block-start: 8px;
@@ -164,5 +165,51 @@
 @container viewer (max-width: 26rem) {
   .viewer-page-links svg {
     display: none;
+  }
+}
+
+.viewer-arm-controls {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+.viewer-arm-controls .arm-control {
+  padding: 6px 0;
+}
+.viewer-arm-controls .control-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.viewer-arm-controls .control-actions button,
+.viewer-arm-controls .arm-control > button,
+.viewer-arm-controls .arm-control-direct-disable button {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+@container viewer (max-width: 56rem) {
+  .viewer-arm-controls {
+    max-height: 35dvh;
+    overflow-y: auto;
+  }
+  .viewer-arm-controls .arm-control > button {
+    width: fit-content;
+    max-width: 100%;
+    justify-self: end;
+  }
+}
+
+.viewer-stop-tooltip {
+  display: inline-flex;
+  margin-inline-start: auto;
+}
+@container viewer (min-width: 56rem) {
+  .viewer-stop-tooltip {
+    display: flex;
+    margin-inline-start: 0;
+  }
+  .viewer-stop-tooltip .viewer-stop-button {
+    width: 100%;
   }
 }

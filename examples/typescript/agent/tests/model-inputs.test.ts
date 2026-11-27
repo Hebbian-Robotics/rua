@@ -161,7 +161,7 @@ test.each(PROVIDERS)(
         systemPrompt: "Inspect the station",
         firstObservation: {
           ...observation({ wrist: [1, 2] }),
-          referenceImageJpeg: Buffer.from([13, 14]),
+          referenceImagesJpeg: [Buffer.from([13, 14])],
         },
         tools: [],
         reasoningEffort: "high",

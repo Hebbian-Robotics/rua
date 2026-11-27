@@ -9,13 +9,13 @@ import {
 
 export const RUN_OUTPUT_LINE_LIMIT = 200;
 export const RUN_STREAM_HEARTBEAT_EVENT = "heartbeat";
-export const MAX_PROMPT_IMAGE_BASE64_LENGTH =
-  4 * Math.ceil((2 * 1024 * 1024) / 3);
+export const MAX_RUN_REQUEST_BYTES =
+  4 * 4 * Math.ceil((2 * 1024 * 1024) / 3) + 64 * 1024;
 
 const attachmentNameSchema = z.string().trim().min(1).max(255);
 const promptImageSchema = z.object({
   filename: attachmentNameSchema,
-  jpegBase64: z.base64().max(MAX_PROMPT_IMAGE_BASE64_LENGTH).startsWith("/9j/"),
+  jpegBase64: z.base64().startsWith("/9j/"),
 });
 export type PromptImage = z.infer<typeof promptImageSchema>;
 
@@ -37,7 +37,7 @@ export const runRequestSchema = z.object({
   task: z.string().min(1),
   cameras: z.array(z.string().min(1)).default([]),
   optionalCameras: z.array(z.string().min(1)).default([]),
-  promptImage: promptImageSchema.optional(),
+  promptImages: z.array(promptImageSchema).optional(),
   settings: z.object({
     provider: providerSchema,
     model: z.string().trim().min(1),
@@ -49,9 +49,9 @@ export type RunRequest = z.input<typeof runRequestSchema>;
 export type ParsedRunRequest = z.output<typeof runRequestSchema>;
 
 const storedRunRequestSchema = runRequestSchema
-  .omit({ promptImage: true })
+  .omit({ promptImages: true })
   .extend({
-    attachmentFilename: attachmentNameSchema.optional(),
+    attachmentFilenames: z.array(attachmentNameSchema).optional(),
     settings: runRequestSchema.shape.settings.extend({
       reasoningEffort: reasoningEffortSchema,
       inferenceMode: inferenceModeSchema,

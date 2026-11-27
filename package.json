@@ -28,6 +28,7 @@
     "test:package": "tsx scripts/check-client-package.ts"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.15.38",
     "@base-ui/react": "^1.9.0",
     "@hebbian/mcap-tools": "github:Hebbian-Robotics/mcap-tools#9a9d57c10cd8adb5d4b5afe27bc2dadb9923b0a1",
     "@hebbian/so101-model": "github:Hebbian-Robotics/so101#37db91fad4a5f16e1d88bf791ef55a00af1d81b2",

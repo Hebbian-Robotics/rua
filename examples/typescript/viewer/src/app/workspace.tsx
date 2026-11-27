@@ -1,6 +1,6 @@
 import type { LiveRun, StationState } from "hebbian-rua";
 import { commandPlan, commandWasLimited } from "hebbian-rua";
-import { BotIcon, HandIcon, TriangleAlertIcon } from "lucide-react";
+import { BotIcon, HandIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -143,6 +143,7 @@ export function WorkspaceApp({
   onManualControlStarted,
 }: WorkspaceAppProps) {
   const [route, setRoute] = useState(() => location.hash);
+  const navigatedWithinViewer = useRef(false);
   const [routePage, settingsSection] = route.split("/");
   const page = routePage === "#settings" ? "settings" : "workspace";
   const [exampleBannerDismissed, setExampleBannerDismissed] = useState(false);
@@ -189,7 +190,11 @@ export function WorkspaceApp({
   const [dragging, setDragging] = useState(false);
   const [runError, setRunError] = useState("");
   const globalStopHandler = useRef<(() => void) | null>(null);
+  const stopRehomeRef = useRef<(() => void) | null>(null);
   const [startingRun, setStartingRun] = useState(false);
+  const [clearedActivityRunId, setClearedActivityRunId] = useState<
+    string | null
+  >(null);
   const [changingArmPower, setChangingArmPower] = useState(false);
   const [stoppingRun, setStoppingRun] = useState(false);
   const { preferences, updatePreferences, colorScheme } = viewerPreferences;
@@ -245,6 +250,7 @@ export function WorkspaceApp({
     stationConnection.start();
     const interval = setInterval(() => setCurrentTime(Date.now() / 1000), 1000);
     const onHashChange = () => {
+      navigatedWithinViewer.current = true;
       const nextRoute = location.hash;
       if (nextRoute.split("/")[0] === "#settings") stopFollowing();
       setRoute(nextRoute);
@@ -258,6 +264,7 @@ export function WorkspaceApp({
   }, [stopFollowing]);
   useEffect(() => {
     if (!route.startsWith("#workspace")) return;
+    if (!navigatedWithinViewer.current && route === "#workspace") return;
     const fragmentTarget = document.getElementById(route.slice(1));
     if (
       fragmentTarget?.classList.contains("workspace-jump-target") &&
@@ -300,8 +307,8 @@ export function WorkspaceApp({
     }
   }
 
-  async function startRun(request: RunRequest): Promise<void> {
-    if (startingRun || runActive) return;
+  async function startRun(request: RunRequest): Promise<boolean> {
+    if (startingRun || runActive) return false;
     setStartingRun(true);
     setRunError("");
     try {
@@ -323,8 +330,10 @@ export function WorkspaceApp({
           agent.browserKey(request.settings.provider),
         ),
       );
+      return true;
     } catch (error: unknown) {
       setRunError(`Could not start the run: ${errorMessage(error)}`);
+      return false;
     } finally {
       setStartingRun(false);
     }
@@ -349,9 +358,38 @@ export function WorkspaceApp({
   return (
     <ViewerShell
       current={page}
-      onStop={stopFollowing}
+      onStop={() => {
+        stopFollowing();
+        stopRehomeRef.current?.();
+      }}
       navigationLinks={navigationLinks}
       statusIndicator={statusIndicator}
+      armControls={
+        <ArmControl
+          stationState={connected ? stationState : null}
+          armName={armName}
+          onSelectArm={(name) => {
+            stopFollowing();
+            setTarget(null);
+            setProjection(null);
+            setSelectedArm(name);
+          }}
+          runActive={
+            startingRun ||
+            (runActive &&
+              !(
+                run?.phase.state === "stopping" &&
+                connected &&
+                stationState?.lease === null
+              ))
+          }
+          manualSelected={controlMode === "manual"}
+          onManualControlStarted={onManualControlStarted}
+          onStopFollowing={stopFollowing}
+          onPowerTransition={setChangingArmPower}
+          stopRehomeRef={stopRehomeRef}
+        />
+      }
     >
       <ControllerRecovery />
       <RecoveryControls state={connected ? stationState : null} />
@@ -371,19 +409,21 @@ export function WorkspaceApp({
             className="workspace-example-banner mb-4 flex items-start gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-card-foreground"
           >
             <p className="m-0">
-              <strong>Example viewer.</strong> This viewer runs a simple agent
-              loop. Extend the viewer or see how the{" "}
+              <strong>Example viewer.</strong> This only runs a simple agent
+              loop. Runs are recorded by default and use disk space; change in{" "}
+              <a href="#settings/recording">Settings</a>. See how the{" "}
               <a
                 className="underline"
                 href="https://github.com/Hebbian-Robotics/rua/tree/main/examples/typescript/agent"
               >
-                TypeScript example uses the RUA SDK
+                example uses the RUA SDK
               </a>{" "}
-              to build your own app.
+              to extend it or build your own.
             </p>
             <Button
               type="button"
               variant="ghost"
+              size="icon"
               className="ms-auto"
               aria-label="Dismiss example viewer banner"
               onClick={() => {
@@ -391,7 +431,7 @@ export function WorkspaceApp({
                 setExampleBannerDismissed(true);
               }}
             >
-              Dismiss
+              <XIcon aria-hidden="true" />
             </Button>
           </aside>
         )}
@@ -402,7 +442,7 @@ export function WorkspaceApp({
           <a href="#workspace-cameras">Cameras</a>
           <a href="#workspace-control">Control</a>
           <a href="#workspace-telemetry">Joint telemetry</a>
-          <a href="#workspace-activity">Run activity</a>
+          <a href="#workspace-activity">Run details</a>
         </nav>
         <div className="workspace-layout">
           <div className="workspace-visuals">
@@ -543,29 +583,6 @@ export function WorkspaceApp({
                   "Choose a control mode, then enable the arm."}
               </p>
             </div>
-            <ArmControl
-              stationState={connected ? stationState : null}
-              armName={armName}
-              onSelectArm={(name) => {
-                stopFollowing();
-                setTarget(null);
-                setProjection(null);
-                setSelectedArm(name);
-              }}
-              runActive={
-                startingRun ||
-                (runActive &&
-                  !(
-                    run?.phase.state === "stopping" &&
-                    connected &&
-                    stationState?.lease === null
-                  ))
-              }
-              manualSelected={controlMode === "manual"}
-              onManualControlStarted={onManualControlStarted}
-              onStopFollowing={stopFollowing}
-              onPowerTransition={setChangingArmPower}
-            />
             <div hidden={controlMode !== "agent"}>
               <AgentControl
                 agent={agent}
@@ -579,13 +596,21 @@ export function WorkspaceApp({
                 }
                 onStopRun={stopRun}
                 stoppingRun={stoppingRun}
-                onViewRunActivity={() => {
-                  const activity =
-                    document.getElementById("workspace-activity");
-                  if (activity?.parentElement instanceof HTMLDetailsElement) {
-                    activity.parentElement.open = true;
-                    activity.focus();
-                    activity.scrollIntoView({ block: "start" });
+                showRunActivity={
+                  !!run && !startingRun && run.id !== clearedActivityRunId
+                }
+                runSpans={
+                  run && liveRun?.usage?.run_id === run.id
+                    ? liveRun.spans
+                    : EMPTY_SPANS
+                }
+                onClearActivity={() => setClearedActivityRunId(run?.id ?? null)}
+                onViewRunDetails={() => {
+                  const heading = document.getElementById("workspace-activity");
+                  if (heading?.parentElement instanceof HTMLDetailsElement) {
+                    heading.parentElement.open = true;
+                    heading.focus();
+                    heading.scrollIntoView({ block: "start" });
                   }
                 }}
                 stationState={connected ? stationState : null}
@@ -638,9 +663,11 @@ export function WorkspaceApp({
         </details>
         <details className="run-diagnostics">
           <summary id="workspace-activity" className="workspace-jump-target">
-            Run activity <span>Prompt, settings, memory and traces</span>
+            Run details <span>Plan, notes, arm actions and trace</span>
           </summary>
           <RunPanels
+            traceOnly
+            showRunDetails
             agentRun={run}
             spans={liveRun?.spans ?? EMPTY_SPANS}
             memory={liveRun?.memory ?? null}
@@ -653,6 +680,7 @@ export function WorkspaceApp({
       </main>
       {page === "settings" && (
         <SettingsPage
+          focusOnMount={navigatedWithinViewer.current}
           preferences={preferences}
           update={updatePreferences}
           arms={connected ? (stationState?.arms ?? null) : null}

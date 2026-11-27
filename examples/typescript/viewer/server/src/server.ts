@@ -7,7 +7,7 @@ import { streamSSE } from "hono/streaming";
 import type { ZodType } from "zod";
 import { PROVIDERS } from "../../../agent/src/providers/types.js";
 import {
-  MAX_PROMPT_IMAGE_BASE64_LENGTH,
+  MAX_RUN_REQUEST_BYTES,
   type Provider,
   RUN_STREAM_HEARTBEAT_EVENT,
   type RunEvent,
@@ -74,7 +74,7 @@ export function createApp({
   app.post(
     "/api/runs",
     bodyLimit({
-      maxSize: MAX_PROMPT_IMAGE_BASE64_LENGTH + 64 * 1024,
+      maxSize: MAX_RUN_REQUEST_BYTES,
       onError: (context) =>
         context.json({ detail: "Run request is too large." }, 413),
     }),

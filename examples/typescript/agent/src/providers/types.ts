@@ -101,7 +101,7 @@ export interface ToolSpec {
 }
 
 export type Observation = Pick<RobotObservation, "text" | "cameras"> & {
-  referenceImageJpeg?: Uint8Array;
+  referenceImagesJpeg?: Uint8Array[];
 };
 
 export function observationImages(observation: Observation) {
@@ -109,11 +109,8 @@ export function observationImages(observation: Observation) {
     label: `Camera: ${name}`,
     jpeg,
   }));
-  if (observation.referenceImageJpeg)
-    images.push({
-      label: "User-provided reference image",
-      jpeg: observation.referenceImageJpeg,
-    });
+  for (const [index, jpeg] of (observation.referenceImagesJpeg ?? []).entries())
+    images.push({ label: `User-provided reference image ${index + 1}`, jpeg });
   return images;
 }
 

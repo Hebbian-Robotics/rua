@@ -19,7 +19,7 @@ const preferencesSchema = z.object({
     .catch(null)
     .default(null),
   motionLimits: motionLimitsSchema.catch({}).default({}),
-  recordWithControl: z.boolean().catch(false).default(false),
+  recordWithControl: z.boolean().catch(true).default(true),
 });
 
 export type ViewerPreferences = z.output<typeof preferencesSchema>;

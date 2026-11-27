@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { ScriptedStation } from "../../../agent/tests/station-harness.js";
 import {
-  MAX_PROMPT_IMAGE_BASE64_LENGTH,
+  MAX_RUN_REQUEST_BYTES,
   modelProvidersSchema,
   runSchema,
 } from "../../shared/run-api.js";
@@ -148,13 +148,13 @@ test("invalid image content and oversized run uploads are rejected before a run 
     ...post,
     body: JSON.stringify({
       ...JSON.parse(body),
-      promptImage: { filename: "reference.jpg", jpegBase64: "aGVsbG8=" },
+      promptImages: [{ filename: "reference.jpg", jpegBase64: "aGVsbG8=" }],
     }),
   });
   expect(invalid.status).toBe(400);
   const oversized = await server.request("/api/runs", {
     ...post,
-    body: " ".repeat(MAX_PROMPT_IMAGE_BASE64_LENGTH + 128 * 1024),
+    body: " ".repeat(MAX_RUN_REQUEST_BYTES + 128 * 1024),
   });
   expect(oversized.status).toBe(413);
   expect(await (await server.request("/api/runs/current")).json()).toBeNull();

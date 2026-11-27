@@ -531,204 +531,205 @@ export function ManualControl({
           )}
         </p>
       )}
-      {held && armCanBeManuallyControlled && (
-        <>
-          <h3>Goal</h3>
-          <div className="control-actions">
+      <fieldset
+        className="grid gap-3 border-0 p-0"
+        disabled={!held || !armCanBeManuallyControlled || changingArmPower}
+      >
+        <legend className="sr-only">Manual controls</legend>
+        <h3>Goal</h3>
+        <div className="control-actions">
+          <Button
+            variant="outline"
+            disabled={!arm?.tool || blockedReason !== null}
+            onClick={setCurrentTarget}
+          >
+            Use current position
+          </Button>
+          {target && (
             <Button
               variant="outline"
-              disabled={!arm?.tool || blockedReason !== null}
-              onClick={setCurrentTarget}
+              onClick={() => {
+                stopFollowing();
+                setTarget(null);
+                setProjection(null);
+              }}
             >
-              Use current position
+              Clear goal
             </Button>
-            {target && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  stopFollowing();
-                  setTarget(null);
-                  setProjection(null);
-                }}
-              >
-                Clear goal
-              </Button>
-            )}
-          </div>
-          {arm?.gripper_opening != null && (
+          )}
+        </div>
+        {arm?.gripper_opening != null && (
+          <label>
+            Gripper {Math.round(opening * 100)}% open
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={Math.round(opening * 100)}
+              disabled={blockedReason !== null}
+              onChange={(event) => {
+                const next = Number(event.currentTarget.value) / 100;
+                setOpening(next);
+                if (projection) {
+                  pendingGripper.current = followEnabled ? next : null;
+                  setProjection({ ...projection, opening: next });
+                } else if (followEnabled) {
+                  gripper.current?.setOpening(next);
+                }
+              }}
+            />
+          </label>
+        )}
+        <details className="control-options">
+          <summary>Motion options</summary>
+          <form
+            className="target-coordinates"
+            aria-label="Goal coordinates"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (blockedReason !== null) return;
+              if (positionDraft.some((value) => value.trim() === "")) {
+                setMessage("Enter all three goal coordinates.");
+                return;
+              }
+              const [x, y, z] = positionDraft;
+              const coordinates: Position = [
+                millimetersToMeters(Number(x)),
+                millimetersToMeters(Number(y)),
+                millimetersToMeters(Number(z)),
+              ];
+              if (!coordinates.every(Number.isFinite)) {
+                setMessage("Goal coordinates must be finite numbers.");
+                return;
+              }
+              setTarget(coordinates);
+            }}
+          >
+            <div className="coordinate-fields">
+              {(["X", "Y", "Z"] as const).map((axis, index) => (
+                <label key={axis} htmlFor={`target-coordinate-${axis}`}>
+                  {axis} (mm)
+                  <Input
+                    id={`target-coordinate-${axis}`}
+                    type="number"
+                    step="any"
+                    value={positionDraft[index]}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      setPositionDraft((previous) => {
+                        const next: [string, string, string] = [...previous];
+                        next[index] = value;
+                        return next;
+                      });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+            <Button
+              type="submit"
+              variant="outline"
+              className="w-fit"
+              disabled={blockedReason !== null}
+            >
+              Preview coordinates
+            </Button>
+          </form>
+          <label htmlFor="manual-approach">
+            Approach
+            <NativeSelect
+              id="manual-approach"
+              value={approach}
+              onChange={(event) =>
+                void changeApproach(event.currentTarget.value)
+              }
+            >
+              <NativeSelectOption value="solver">
+                Solver chooses
+              </NativeSelectOption>
+              <NativeSelectOption value="down">Down</NativeSelectOption>
+              <NativeSelectOption value="forward">Forward</NativeSelectOption>
+              <NativeSelectOption value="current">
+                Current pose
+              </NativeSelectOption>
+            </NativeSelect>
+          </label>
+          {displayedOrientation && (
             <label>
-              Gripper {Math.round(opening * 100)}% open
+              Jaw yaw {displayedYawDegrees}°
               <input
                 type="range"
                 min="0"
-                max="100"
+                max="360"
                 step="1"
-                value={Math.round(opening * 100)}
-                disabled={blockedReason !== null}
+                value={displayedYawDegrees}
                 onChange={(event) => {
-                  const next = Number(event.currentTarget.value) / 100;
-                  setOpening(next);
-                  if (projection) {
-                    pendingGripper.current = followEnabled ? next : null;
-                    setProjection({ ...projection, opening: next });
-                  } else if (followEnabled) {
-                    gripper.current?.setOpening(next);
-                  }
+                  orientationEpoch.current += 1;
+                  follow.current?.setDragging(true);
+                  if (yawTimer.current !== null) clearTimeout(yawTimer.current);
+                  yawTimer.current = setTimeout(
+                    () => follow.current?.setDragging(false),
+                    1000,
+                  );
+                  setOrientation({
+                    kind: "grasp",
+                    approach: displayedOrientation.approach,
+                    jaw_yaw_radians: angularRadians(
+                      Number(event.currentTarget.value) % 360,
+                      "deg",
+                    ),
+                  });
                 }}
               />
             </label>
           )}
-          <details className="control-options">
-            <summary>Motion options</summary>
-            <form
-              className="target-coordinates"
-              aria-label="Goal coordinates"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (blockedReason !== null) return;
-                if (positionDraft.some((value) => value.trim() === "")) {
-                  setMessage("Enter all three goal coordinates.");
-                  return;
-                }
-                const [x, y, z] = positionDraft;
-                const coordinates: Position = [
-                  millimetersToMeters(Number(x)),
-                  millimetersToMeters(Number(y)),
-                  millimetersToMeters(Number(z)),
-                ];
-                if (!coordinates.every(Number.isFinite)) {
-                  setMessage("Goal coordinates must be finite numbers.");
-                  return;
-                }
-                setTarget(coordinates);
-              }}
-            >
-              <div className="coordinate-fields">
-                {(["X", "Y", "Z"] as const).map((axis, index) => (
-                  <label key={axis} htmlFor={`target-coordinate-${axis}`}>
-                    {axis} (mm)
-                    <Input
-                      id={`target-coordinate-${axis}`}
-                      type="number"
-                      step="any"
-                      value={positionDraft[index]}
-                      onChange={(event) => {
-                        const value = event.currentTarget.value;
-                        setPositionDraft((previous) => {
-                          const next: [string, string, string] = [...previous];
-                          next[index] = value;
-                          return next;
-                        });
-                      }}
-                    />
-                  </label>
-                ))}
-              </div>
-              <Button
-                type="submit"
-                variant="outline"
-                className="w-fit"
-                disabled={blockedReason !== null}
-              >
-                Preview coordinates
-              </Button>
-            </form>
-            <label htmlFor="manual-approach">
-              Approach
-              <NativeSelect
-                id="manual-approach"
-                value={approach}
-                onChange={(event) =>
-                  void changeApproach(event.currentTarget.value)
-                }
-              >
-                <NativeSelectOption value="solver">
-                  Solver chooses
-                </NativeSelectOption>
-                <NativeSelectOption value="down">Down</NativeSelectOption>
-                <NativeSelectOption value="forward">Forward</NativeSelectOption>
-                <NativeSelectOption value="current">
-                  Current pose
-                </NativeSelectOption>
-              </NativeSelect>
-            </label>
-            {displayedOrientation && (
-              <label>
-                Jaw yaw {displayedYawDegrees}°
-                <input
-                  type="range"
-                  min="0"
-                  max="360"
-                  step="1"
-                  value={displayedYawDegrees}
-                  onChange={(event) => {
-                    orientationEpoch.current += 1;
-                    follow.current?.setDragging(true);
-                    if (yawTimer.current !== null)
-                      clearTimeout(yawTimer.current);
-                    yawTimer.current = setTimeout(
-                      () => follow.current?.setDragging(false),
-                      1000,
-                    );
-                    setOrientation({
-                      kind: "grasp",
-                      approach: displayedOrientation.approach,
-                      jaw_yaw_radians: angularRadians(
-                        Number(event.currentTarget.value) % 360,
-                        "deg",
-                      ),
-                    });
-                  }}
-                />
-              </label>
-            )}
-            {displayedOrientation && (
-              <p>
-                {describeApproach(displayedOrientation.approach)} ·{" "}
-                {unreachableYawLines(jawRanges).join(" · ")}
-              </p>
-            )}
-          </details>
-          <div className="control-actions">
-            <Button disabled={moveBlocked !== null || pending} onClick={move}>
-              {pending ? "Sending move…" : "Move to goal"}
-            </Button>
-          </div>
-          <p className="manual-target-status">
-            {formatMotionDetail(
-              previewUnavailable
-                ? previewStatus
-                : dragging
-                  ? "Release the goal to check the preview."
-                  : target
-                    ? projectionValidity === false ||
-                      arm?.mode !== "holding" ||
-                      (confirmedForSelection && projectionValidity === null)
-                      ? (moveBlocked ?? previewStatus)
-                      : previewStatus
-                    : "Drag a goal in the robot view or use the current pose.",
-            )}
-          </p>
-          <label className="flex items-center gap-2" htmlFor="follow-target">
-            <Switch
-              id="follow-target"
-              checked={followEnabled}
-              disabled={
-                !arm ||
-                arm.controller === "policy" ||
-                blockedReason !== null ||
-                !["holding", "moving"].includes(arm.mode)
-              }
-              onCheckedChange={(enabled) => {
-                setFollowEnabled(enabled);
-                gripper.current?.hold();
-                follow.current?.setEnabled(enabled);
-              }}
-            />
-            Follow goal while dragging
-          </label>
-        </>
-      )}
+          {displayedOrientation && (
+            <p>
+              {describeApproach(displayedOrientation.approach)} ·{" "}
+              {unreachableYawLines(jawRanges).join(" · ")}
+            </p>
+          )}
+        </details>
+        <div className="control-actions">
+          <Button disabled={moveBlocked !== null || pending} onClick={move}>
+            {pending ? "Sending move…" : "Move to goal"}
+          </Button>
+        </div>
+        <p className="manual-target-status">
+          {formatMotionDetail(
+            previewUnavailable
+              ? previewStatus
+              : dragging
+                ? "Release the goal to check the preview."
+                : target
+                  ? projectionValidity === false ||
+                    arm?.mode !== "holding" ||
+                    (confirmedForSelection && projectionValidity === null)
+                    ? (moveBlocked ?? previewStatus)
+                    : previewStatus
+                  : "Drag a goal in the robot view or use the current pose.",
+          )}
+        </p>
+        <label className="flex items-center gap-2" htmlFor="follow-target">
+          <Switch
+            id="follow-target"
+            checked={followEnabled}
+            disabled={
+              !arm ||
+              arm.controller === "policy" ||
+              blockedReason !== null ||
+              !["holding", "moving"].includes(arm.mode)
+            }
+            onCheckedChange={(enabled) => {
+              setFollowEnabled(enabled);
+              gripper.current?.hold();
+              follow.current?.setEnabled(enabled);
+            }}
+          />
+          Follow goal while dragging
+        </label>
+      </fieldset>
       <div className="empty:hidden" role="status">
         {message && <p>{formatMotionDetail(message)}</p>}
         {followStatus && <p>{formatMotionDetail(followStatus)}</p>}

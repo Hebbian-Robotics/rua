@@ -21,12 +21,14 @@ const motionFields = [
 
 export function SettingsPage({
   preferences,
+  focusOnMount,
   update,
   arms,
   agent,
   section,
 }: {
   preferences: ViewerPreferences;
+  focusOnMount: boolean;
   update: (next: ViewerPreferences) => void;
   arms: ArmState[] | null;
   agent: ReturnType<typeof useAgentRun>;
@@ -36,15 +38,18 @@ export function SettingsPage({
   const { status, connectionError } = agent;
   const [motionLimitsSaved, setMotionLimitsSaved] = useState(false);
   useEffect(() => {
+    if (!focusOnMount) return;
     const heading = document.getElementById(
       section?.startsWith("key-")
         ? section
         : section === "agent"
           ? "settings-agent"
-          : "settings-heading",
+          : section === "recording"
+            ? "settings-recording"
+            : "settings-heading",
     );
     heading?.focus();
-  }, [section]);
+  }, [section, focusOnMount]);
   return (
     <main className="settings-page">
       <header>
@@ -156,6 +161,27 @@ export function SettingsPage({
         </details>
       </Card>
       <Card className="my-4 gap-2 p-5">
+        <h2 id="settings-recording" tabIndex={-1}>
+          Recording
+        </h2>
+        <label className="setting-switch" htmlFor="record-with-control">
+          <span>Auto-record when control starts</span>
+          <Switch
+            id="record-with-control"
+            checked={preferences.recordWithControl}
+            aria-describedby="auto-record-description"
+            onCheckedChange={(checked) =>
+              update({ ...preferences, recordWithControl: checked })
+            }
+          />
+        </label>
+        <p id="auto-record-description">
+          When recording is available, it starts when you run a task or enable
+          the arm in Manual. A completed task stops the recording; if you stop
+          the run early or use Manual, stop the recording yourself.
+        </p>
+      </Card>
+      <Card className="my-4 gap-2 p-5">
         <h2>Robot view and camera labels</h2>
         <p>
           These overlays appear in the 3D scene in Workspace and recording
@@ -213,7 +239,7 @@ export function SettingsPage({
           if (available)
             return (
               <p key={provider} id={id} tabIndex={-1}>
-                {label} · Set in viewer environment
+                {label} · Was set in viewer environment
               </p>
             );
           function save(value: string) {

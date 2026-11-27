@@ -10,6 +10,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
+import { Tooltip } from "@/components/ui/tooltip.js";
 import { errorMessage } from "../errors.js";
 import { armControl } from "../manual-lease.js";
 import { useStationState } from "../use-station-state.js";
@@ -68,6 +69,7 @@ type ViewerShellProps = {
   onStop?: () => void;
   navigationLinks?: readonly ViewerNavigationLink[];
   statusIndicator?: ReactNode;
+  armControls?: ReactNode;
   children: ReactNode;
 };
 
@@ -76,6 +78,7 @@ export function ViewerShell({
   onStop,
   navigationLinks = workspaceNavigationLinks,
   statusIndicator,
+  armControls,
   children,
 }: ViewerShellProps) {
   return (
@@ -86,6 +89,7 @@ export function ViewerShell({
           onStop={onStop}
           navigationLinks={navigationLinks}
           statusIndicator={statusIndicator}
+          armControls={armControls}
         />
         <div className="viewer-content flex min-w-0 flex-1 flex-col">
           <div className="flex-1">{children}</div>
@@ -101,7 +105,11 @@ function ViewerNavigation({
   onStop,
   navigationLinks,
   statusIndicator,
-}: Pick<ViewerShellProps, "current" | "onStop" | "statusIndicator"> & {
+  armControls,
+}: Pick<
+  ViewerShellProps,
+  "current" | "onStop" | "statusIndicator" | "armControls"
+> & {
   navigationLinks: readonly ViewerNavigationLink[];
 }) {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -220,17 +228,41 @@ function ViewerNavigation({
           </Badge>
         </div>
         {statusIndicator}
-        <Button
-          variant="stop"
-          aria-label="Stop arms"
-          title="Stop arms"
-          className="viewer-stop-button"
+        {armControls && (
+          <>
+            <div className="viewer-arm-controls" hidden={!sidebarExpanded}>
+              {armControls}
+            </div>
+            {!sidebarExpanded && (
+              <Button
+                type="button"
+                variant="outline"
+                className="viewer-arm-expand"
+                aria-label="Expand arm controls"
+                title="Expand arm controls"
+                onClick={() => setSidebarExpanded(true)}
+              >
+                <span aria-hidden="true">Arm</span>
+              </Button>
+            )}
+          </>
+        )}
+        <Tooltip
+          text="Stop all connected arms"
           disabled={stopDisabled}
-          onClick={() => void stopArms()}
+          className="viewer-stop-tooltip"
         >
-          <SquareIcon aria-hidden="true" className="fill-current" />
-          <span className="viewer-nav-label">Stop arms</span>
-        </Button>
+          <Button
+            variant="stop"
+            aria-label="Stop arms"
+            className="viewer-stop-button"
+            disabled={stopDisabled}
+            onClick={() => void stopArms()}
+          >
+            <SquareIcon aria-hidden="true" className="fill-current" />
+            <span className="viewer-nav-label">Stop arms</span>
+          </Button>
+        </Tooltip>
       </div>
       <StopFeedback message={stopMessage} failed={stopFailed} />
     </header>

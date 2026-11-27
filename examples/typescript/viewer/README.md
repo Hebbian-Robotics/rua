@@ -53,8 +53,7 @@ anyone using the same browser profile can use its saved keys.
 
 To supply a key for all users of the viewer, set `OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` in the viewer environment or
-repository’s `.env`. Settings shows **Set in viewer environment** for these
-providers. Change the value there and restart the viewer. Manual controls
+repository’s `.env`. Change the value there and restart the viewer. Manual controls
 and camera previews work without a model key.
 
 Run history requires the saved provider, model, reasoning effort, and inference mode.

@@ -36,7 +36,7 @@ function Viewer() {
 
 function FullViewer() {
   const viewerPreferences = useViewerPreferences();
-  const { preferences, updatePreferences } = viewerPreferences;
+  const { preferences } = viewerPreferences;
   const cameras = useCameraRoom();
   const recording = useControlRecording(preferences.recordWithControl);
 
@@ -55,14 +55,7 @@ function FullViewer() {
       onManualControlStarted={recording.startWithControl}
       renderAdditionalControls={(run) => (
         <div className="border-t border-border p-4">
-          <RecordingControls
-            recording={recording}
-            run={run}
-            autoRecord={preferences.recordWithControl}
-            onAutoRecordChange={(recordWithControl) =>
-              updatePreferences({ ...preferences, recordWithControl })
-            }
-          />
+          <RecordingControls recording={recording} run={run} />
         </div>
       )}
     />
