@@ -1,8 +1,9 @@
 # Get started with an SO-101
 
 Use the browser viewer to verify manual control and run your first agent.
-Use the examples from [RUA's main branch](https://github.com/Hebbian-Robotics/rua/tree/main)
-with the published station and SDKs. This guide uses 0.1.8. For development,
+Use the examples from the [RUA 0.1.8 release](https://github.com/Hebbian-Robotics/rua/tree/v0.1.8)
+with the published station. The viewer uses the SDK from the checkout, so use
+the checkout matching the station release. For development,
 follow [Install from source](install-from-source.md).
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).
@@ -10,7 +11,8 @@ If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-c
 ## 1. Install RUA
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and
-[build the viewer](install-from-source.md#optional-viewer) from a checkout. See
+[build the viewer](install-from-source.md#optional-viewer) from a checkout of
+the matching release tag (`v0.1.8`). See
 [Windows with WSL2](windows-wsl.md) for Windows setup considerations.
 
 ## 2. Verify manual control

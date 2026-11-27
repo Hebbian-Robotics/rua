@@ -79,7 +79,7 @@ Run commands from the repository root. After pulling dependency changes, run
 | --- | --- | --- |
 | Rust station or hardware profile | `uv run cargo run -p hebbian-rua-server -- serve` | Support and disable the arm, then stop the station. This builds and starts the current source. To use a custom profile, add `--profile` with its path. |
 | Media companion | [Build the companion for your OS](cameras.md#rua-configuration) | Restart the station to run the new companion. |
-| Rust CLI | `cargo run --locked -p hebbian-rua-cli -- status` | Each invocation checks and builds the current source. An installed `hebbian-rua` stays at its installed version. |
+| Rust CLI | `cargo run --locked -p hebbian-rua-cli -- state` | Each invocation checks and builds the current source. An installed `hebbian-rua` stays at its installed version. |
 | Viewer and agent backend | `pnpm start:viewer` | Restart the viewer backend to load example changes. |
 | TypeScript agent during development | `pnpm dev:agent` | Watches the agent and restarts on changes. |
 | Viewer served by the example backend | `pnpm build` | Refresh the browser; no station restart is needed. |
