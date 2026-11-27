@@ -18,9 +18,9 @@ The commands below use a source checkout. Follow
 
 Use the [SO-101 calibration tool](so101-calibration.md) to save
 `arms/<USB-serial>/setup.toml` and `calibration.json` in the local arm
-configuration directory. RUA looks in `$XDG_CONFIG_HOME/rua/so101-arm-configs`
-(defaulting to `~/.config/rua/so101-arm-configs`). If you use another directory,
-set `HEBBIAN_SO101_CONFIG_DIRECTORY` to its absolute path. The arm registry
+configuration directory. RUA looks in `$XDG_CONFIG_HOME/so101-setup`
+(defaulting to `~/.config/so101-setup`). If you use another directory,
+set `SO101_SETUP_DIRECTORY` to its absolute path. The arm registry
 lookup uses local files.
 
 List connected USB adapters and their registry matches without opening any

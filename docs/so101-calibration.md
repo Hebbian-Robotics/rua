@@ -14,9 +14,10 @@ uv run rua so101 setup
 
 Outside a uv project, use `uvx --from hebbian-rua rua so101 setup` with a release that includes the SO-101 CLI.
 
-For RUA 0.1.7, older releases, or source checkouts, download the `so101` archive from
+For source checkouts, download the `so101` archive from
 [GitHub Releases](https://github.com/Hebbian-Robotics/so101/releases), put it on
-your PATH, and run `SO101_SETUP_DIRECTORY="${XDG_CONFIG_HOME:-$HOME/.config}/rua/so101-arm-configs" so101 setup`.
+your PATH, and run `so101 setup`. RUA 0.1.7 and older releases use a different
+arm configuration directory; consult the documentation for that release.
 
 New arms default to the soft gripper with wrist camera; add
 `--model-variant stock` for stock gripper geometry. Existing entries retain
@@ -43,11 +44,9 @@ Recorded travel follows each physical motor when the mapping changes.
 ## Custom setup directory
 
 If you keep arm configs in another directory, set
-`HEBBIAN_SO101_CONFIG_DIRECTORY` to its path in the environment for both
-`rua so101 setup` and the station. The launcher uses this path unless
-`SO101_SETUP_DIRECTORY` is already set. If running the standalone `so101`
-command, set `SO101_SETUP_DIRECTORY` to the same path instead. Keep both files
-together when backing up or sharing an arm's setup with your team.
+`SO101_SETUP_DIRECTORY` to its path in the environment for the setup tool
+and the station. Keep both files together when backing up or sharing an arm's
+setup with your team.
 
 To reuse a calibration you already created with LeRobot, see
 [Use an existing LeRobot calibration](hardware.md).

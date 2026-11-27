@@ -10,7 +10,7 @@ use hebbian_rua_core::so101::registry::{CalibrationInstallation, install_calibra
 pub(crate) struct SelectionArguments {
     #[arg(
         long,
-        help = "Local SO-101 config checkout containing arms/<USB-serial>/{setup.toml,calibration.json}. Default: `$HEBBIAN_SO101_CONFIG_DIRECTORY`, else `$XDG_CONFIG_HOME/rua/so101-arm-configs`"
+        help = "Local SO-101 config checkout containing arms/<USB-serial>/{setup.toml,calibration.json}. Default: `$SO101_SETUP_DIRECTORY`, else `$XDG_CONFIG_HOME/so101-setup`"
     )]
     pub(crate) so101_config_directory: Option<PathBuf>,
     #[arg(
@@ -24,7 +24,7 @@ impl SelectionArguments {
     fn directory(&self) -> anyhow::Result<PathBuf> {
         self.so101_config_directory
             .clone()
-            .map_or_else(discovery::default_config_directory, Ok)
+            .map_or_else(discovery::default_arm_config_directory, Ok)
     }
 
     fn require_explicit_profile(&self) -> anyhow::Result<()> {
@@ -154,7 +154,7 @@ impl SelectionArguments {
 pub(crate) fn print_discovered(config_directory: Option<&Path>) -> anyhow::Result<()> {
     let directory = config_directory
         .map(Path::to_owned)
-        .map_or_else(discovery::default_config_directory, Ok)?;
+        .map_or_else(discovery::default_arm_config_directory, Ok)?;
     let matches = discovery::discover(&directory)?;
     println!("{}", serde_json::to_string_pretty(&matches)?);
     Ok(())
