@@ -10,7 +10,9 @@ Installing usbipd and sharing a device require administrator access on Windows;
 attaching it does not. Attach again after unplugging or restarting WSL, or use
 usbipd's auto-attach functionality. An attached device is unavailable to Windows.
 
-Before starting RUA:
+Before starting RUA, configure LiveKit with `lk cloud auth` or the [environment variables](cameras.md#connect-a-usb-camera), and [install FFmpeg](recording.md#install-ffmpeg) or use `--no-recording`.
+
+Also:
 
 - Confirm the arm appears inside Ubuntu and your user can access its serial port.
   USB forwarding does not install missing kernel drivers or grant device permissions.

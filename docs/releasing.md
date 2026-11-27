@@ -16,7 +16,7 @@ Choose a new version across all three registries. Update the release package
 manifests, the contracts dependency version in `sdk/Cargo.toml`, and the
 lockfiles. Run the version check with the planned tag, substituting the
 version you are preparing, for example
-`uv run --locked rua-dev check-release-versions --tag v0.1.7`. Regenerate and
+`uv run --locked rua-dev check-release-versions --tag v0.1.8`. Regenerate and
 verify affected contracts with `uv run --locked rua-dev contracts --check` after
 committing the generated files.
 
@@ -79,10 +79,3 @@ project and verify the SDK imports, station startup, and a simulator connection.
 Update the Python and TypeScript example dependency pins and lockfiles once the
 new version is available on PyPI and npm. Keep release-age exemptions limited to
 the RUA SDK so the usual delay still applies to third-party dependencies.
-
-When bumping the pinned wheel past 0.1.7, update the startup prerequisites in
-[Getting started](getting-started.md) and [Windows with WSL2](windows-wsl.md)
-in the same PR. Cover FFmpeg or `--no-recording` and document `lk cloud auth`
-as an alternative to setting the three LiveKit variables. Also simplify the
-post-0.1.7 SO-101 CLI wording and download fallback in the [README](../README.md)
-and [SO-101 calibration guide](so101-calibration.md).
