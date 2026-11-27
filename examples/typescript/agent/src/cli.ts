@@ -118,6 +118,8 @@ export function parseCommandLine(
     throw new Error("Choose the arm either with --arm or before the task");
   const arm =
     values.arm ?? (taskForNamedArm === undefined ? undefined : armOrTask);
+  const task = taskForNamedArm ?? armOrTask;
+  if (!task.trim()) throw new Error("Pass a nonempty task");
   const required = cameraNames(values.camera);
   const optional = cameraNames(values.optionalCamera);
   if (required.some((name) => optional.includes(name)))
@@ -136,7 +138,7 @@ export function parseCommandLine(
     server,
     config: {
       ...(arm === undefined ? {} : { arm }),
-      task: taskForNamedArm ?? armOrTask,
+      task,
       cameras: required,
       optionalCameras: optional,
       provider,
@@ -156,8 +158,11 @@ function loadDotEnvironment(): void {
   try {
     // INVARIANT: Does not replace variables that are already exported.
     process.loadEnvFile(join(invocationDirectory, ".env"));
-  } catch {
+  } catch (error) {
     // WHY: The dotenv file is optional when credentials come from the environment.
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return;
+    throw error;
   }
 }
 
