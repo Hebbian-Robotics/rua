@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "hebbian-so101"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/so101?rev=ffa84f2de4f1b079972a3f8663c61d33f87bc4ff#ffa84f2de4f1b079972a3f8663c61d33f87bc4ff"
+source = "git+https://github.com/Hebbian-Robotics/so101?rev=085102141021118480958f835227b46c9062af7f#085102141021118480958f835227b46c9062af7f"
 dependencies = [
  "anyhow",
  "directories-next",
@@ -3801,9 +3801,9 @@ checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
 
 [[package]]
 name = "rsruckig"
-version = "3.2.0"
+version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82ee4f4021cfe91a5607a0a4ff23c699e0578c2ec8cbdec0869a18e8f1db96b9"
+checksum = "f4725da8468effd266a879656e275b8a7543ac74f6980b3953f3c79f7767a06e"
 dependencies = [
  "arrayvec",
  "num-traits",
@@ -3957,9 +3957,9 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rustypot"
-version = "1.15.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fb2adba47b3de53e175b3c9cb1cfdaa0abe6b59013159a445e35dc6dbf84b0b"
+checksum = "eec60d3eccd5af117ab1dad8978c7185619898af37e18c3f654f086d1ff69a43"
 dependencies = [
  "clap",
  "env_logger",
