@@ -189,25 +189,22 @@ impl SmoothTrajectory {
                 waypoints.push(pair[1].clone());
             }
         }
-        let mut generator =
-            Ruckig::<0, ThrowErrorHandler>::new(Some(joint_count), INITIAL_PERIOD_SECONDS);
-        // WHY: Each section is computed once here so a plan Ruckig cannot follow is
-        // refused before it starts.
+        // WHY: Use the same scalar trajectory as execution when setting deadlines.
+        // A multidimensional phase request can fall back to a different path.
         let mut section_durations = Vec::with_capacity(waypoints.len() - 1);
         for pair in waypoints.windows(2) {
-            let mut input = InputParameter::<0>::new(Some(joint_count));
-            for (joint, (start, end)) in pair[0].iter().zip(&pair[1]).enumerate() {
-                input.current_position[joint] = *start;
-                input.target_position[joint] = *end;
-                input.max_velocity[joint] = speed;
-                input.max_acceleration[joint] = acceleration;
-                input.max_jerk[joint] = jerk;
-            }
-            // WHY: Phase synchronization keeps every joint on the straight line.
-            input.synchronization = Synchronization::Phase;
+            let distance = max_joint_deviation(&pair[0], &pair[1]);
+            let mut input = InputParameter::<1>::new(None);
+            input.target_position[0] = distance;
+            input.max_velocity[0] = speed;
+            input.max_acceleration[0] = acceleration;
+            input.max_jerk[0] = jerk;
+            input.synchronization = Synchronization::Time;
             input.minimum_duration = minimum_duration;
-            let mut trajectory = Trajectory::<0>::new(Some(joint_count));
-            match generator.calculate(&input, &mut trajectory) {
+            let mut trajectory = Trajectory::<1>::new(None);
+            match Ruckig::<1, ThrowErrorHandler>::new(None, INITIAL_PERIOD_SECONDS)
+                .calculate(&input, &mut trajectory)
+            {
                 Ok(RuckigResult::Working | RuckigResult::Finished) => {}
                 Ok(other) => bail!("Ruckig trajectory failed: {other:?}"),
                 Err(error) => bail!("Ruckig rejected the trajectory: {error}"),

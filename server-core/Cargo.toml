@@ -11,7 +11,7 @@ publish = false
 [dependencies]
 tracing.workspace = true
 hebbian-robot-geometry = { path = "../robot-geometry" }
-hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "ffa84f2de4f1b079972a3f8663c61d33f87bc4ff", features = ["schema"] }
+hebbian-so101 = { git = "https://github.com/Hebbian-Robotics/so101", rev = "351b476de965efe61c572a2e37e6e74db00e6fde", features = ["schema"] }
 hebbian-contracts = { package = "hebbian-rua-contracts", path = "../contracts" }
 anyhow = "1.0.105"
 async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }
@@ -23,7 +23,7 @@ nalgebra = "0.35.0"
 # The experimental policy loads its ONNX runtime only when selected. Ordinary
 # servers do not need the runtime or its platform-specific native libraries.
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "tracing", "load-dynamic", "api-31"] }
-rsruckig = "3.2.0"
+rsruckig = "3.3.0"
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 # WHY: Motion targets must retain their exact joint-limit values across JSON boundaries.
