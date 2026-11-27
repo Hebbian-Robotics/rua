@@ -521,7 +521,15 @@ export function ManualControl({
   return (
     <section className="manual-control" aria-label="Manual control">
       {!held && !armCanBeManuallyControlled && !changingArmPower && (
-        <p>Enable the arm to use manual control.</p>
+        <p>
+          {arm?.mode === "disabled" || arm?.mode === "reconnected" ? (
+            <>
+              <a href="#enable-arm">Enable the arm</a> to use manual control.
+            </>
+          ) : (
+            "Connect the arm to use manual control."
+          )}
+        </p>
       )}
       {held && armCanBeManuallyControlled && (
         <>

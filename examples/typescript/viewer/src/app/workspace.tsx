@@ -579,6 +579,15 @@ export function WorkspaceApp({
                 }
                 onStopRun={stopRun}
                 stoppingRun={stoppingRun}
+                onViewRunActivity={() => {
+                  const activity =
+                    document.getElementById("workspace-activity");
+                  if (activity?.parentElement instanceof HTMLDetailsElement) {
+                    activity.parentElement.open = true;
+                    activity.focus();
+                    activity.scrollIntoView({ block: "start" });
+                  }
+                }}
                 stationState={connected ? stationState : null}
                 cameraNames={cameraNames}
               />

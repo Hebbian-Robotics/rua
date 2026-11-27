@@ -309,6 +309,7 @@ export function ArmControl({
         !arm?.active_trip && <p>{lastOutcome.text}</p>}
       {powerOff && (
         <Button
+          id="enable-arm"
           className="w-fit"
           disabled={
             busy ||

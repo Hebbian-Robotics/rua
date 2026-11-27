@@ -85,6 +85,7 @@ function AgentControlWithPreferences({
       updatePreferences({ ...preferences, agentModelSelection }),
     onStopRun: async () => {},
     stoppingRun: false,
+    onViewRunActivity: () => {},
   });
 }
 

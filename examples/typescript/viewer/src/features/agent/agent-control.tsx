@@ -53,6 +53,7 @@ export function AgentControl({
   onModelSelectionChange,
   onStopRun,
   stoppingRun,
+  onViewRunActivity,
 }: {
   stationState: StationState | null;
   cameraNames: string[];
@@ -65,6 +66,7 @@ export function AgentControl({
   onModelSelectionChange: (selection: AgentModelSelection) => void;
   onStopRun: () => Promise<void>;
   stoppingRun: boolean;
+  onViewRunActivity: () => void;
 }) {
   const [task, setTask] = useState(() => {
     try {
@@ -421,6 +423,11 @@ export function AgentControl({
           </fieldset>
         </details>
         <div className="control-actions">
+          {active && (
+            <Button type="button" variant="outline" onClick={onViewRunActivity}>
+              View run activity
+            </Button>
+          )}
           {active ? (
             <Button
               type="button"
@@ -445,14 +452,23 @@ export function AgentControl({
           )}
         </div>
       </form>
-      {!settingsLocked && unavailable && (
-        <p>
-          {unavailable}{" "}
-          {status === "unreachable" && (
-            <a href="#settings/agent">Agent connection status</a>
-          )}
-        </p>
-      )}
+      {!settingsLocked &&
+        (selectedArmState?.mode === "disabled" ||
+          selectedArmState?.mode === "reconnected") && (
+          <p>
+            <a href="#enable-arm">Enable the arm</a> before starting a task.
+          </p>
+        )}
+      {!settingsLocked &&
+        unavailable &&
+        unavailable !== "Enable the arm to start a task." && (
+          <p>
+            {unavailable}{" "}
+            {status === "unreachable" && (
+              <a href="#settings/agent">Agent connection status</a>
+            )}
+          </p>
+        )}
       <p className="empty:hidden" role="status">
         {runError}
       </p>
