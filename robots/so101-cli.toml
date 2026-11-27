@@ -1,5 +1,5 @@
-version = "0.1.7"
+version = "0.1.8"
 
 [archives]
-"so101-linux-x64.tar.gz" = "21db2586605e6bd7ee1d90ab3bcece7a8c21f73967b591580eedd39ffed600f1"
-"so101-macos-arm64.tar.gz" = "40565f7dc4f0ac4181b3a505baef1fe8fd49caf0d5bfccda34c3ccca3508894a"
+"so101-linux-x64.tar.gz" = "4a92c9796c66ee449c4f0221b267b8ee13685219e4829dcf7ebfc43c2ee8d7d3"
+"so101-macos-arm64.tar.gz" = "adfd5ab8f4c09eaa47a5924c97ddee48e3650436359d40f7604c5e48340110b8"
