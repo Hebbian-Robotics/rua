@@ -65,9 +65,9 @@ pnpm build
 Run `pnpm start:viewer` to serve
 the built viewer and run the example agent backend. See the
 [viewer setup](../examples/typescript/viewer/README.md).
-The viewer and TypeScript agent install the published SDK pinned in the
-lockfile. To test unpublished station or SDK changes with the viewer,
-[pack and use the SDK from the same checkout](../typescript-client/README.md#package-builds).
+The viewer and TypeScript agent use the SDK from this checkout through the
+pnpm workspace. See [package builds](../typescript-client/README.md#package-builds)
+to validate the distributable SDK.
 For the published setup, see [Getting started](getting-started.md).
 
 ## Updating a checkout
@@ -87,7 +87,8 @@ Run commands from the repository root. After pulling dependency changes, run
 | Rust SDK or PyO3 bindings | Run `uv sync` and restart the Python process to load the rebuilt extension. | The next Python process imports the new native module. |
 | Python examples | Rerun the example command | Example changes load on the next process start. |
 
-The Python examples pin the published SDK. Run `pnpm test:package` to
+The Python examples use the SDK from this checkout; the MuJoCo fixture pins the
+published SDK. Run `pnpm test:package` to
 build and validate the TypeScript SDK from your checkout.
 `pnpm build` builds the static viewer in
 `dist/viewer` without building Rust binaries or restarting services.
