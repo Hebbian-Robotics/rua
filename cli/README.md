@@ -5,6 +5,23 @@ Coding agents can chain these commands in the shell. Each invocation opens a
 connection and runs one command. Commands print JSON to stdout, with plain-text
 output for the phone invite URL.
 
+## Agent skill
+
+Install the `rua-cli` skill for your coding agent with:
+
+```sh
+npx skills add Hebbian-Robotics/rua --skill rua-cli
+```
+
+Choose the agent and installation scope when prompted. Add `--global` to install
+for your user instead of the current project. To refresh an installed skill,
+run `npx skills update rua-cli` (add `--global` for a global installation).
+The skill provides operating guidance; install the `hebbian-rua` CLI separately
+as described below. Its guidance follows the repository's current version, so
+check the installed CLI's `--help` if your station uses an older release.
+
+## Install and run the CLI
+
 The published `hebbian-rua` wheel provides the command alongside `rua`. Run it
 from the agent project that serves the station, so the CLI and station come from
 the same locked version. The motion flags below describe the CLI in this

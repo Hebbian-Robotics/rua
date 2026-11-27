@@ -27,8 +27,9 @@ lease from its holder and needs the user's authorization. Output is the concise
 model view (millimetres as `*_mm`, degrees as `*_degrees`, nulls, checkpoints, trace metadata and
 render geometry omitted; sequences show progress and the last step; `state` keeps the robot
 `description` and lease holder); `--raw` gives the full station records in native units, including everything left out. Each invocation connects,
-executes one command and exits. Successful commands print one JSON value;
-failures use stderr and a nonzero exit code. Motion waits for its outcome.
+executes one command and exits. Successful commands print one JSON value, except
+`phone-invite` prints a plain-text URL unless `--raw` is set. Failures use stderr
+and a nonzero exit code. Motion waits for its outcome.
 
 ## Commands
 
@@ -78,5 +79,7 @@ holds the current pose. `rehome` returns to the pose saved at enable time.
 
 Exit codes: 1 refused or incomplete, 2 usage, 3 connection error or timeout,
 4 lease held elsewhere. After a timeout, the command’s outcome may be unknown.
+Inspect the error and current state before retrying a failed command, especially
+before resending motion. Inspect the cause before clearing a fault.
 `lease revoke` is an operator override and requires user authorization.
 The station’s interlocks and motion limits apply to CLI commands.
