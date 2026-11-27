@@ -3,6 +3,7 @@ import { BotIcon, SunIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button.js";
 import { Card } from "@/components/ui/card.js";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field.js";
 import { Input } from "@/components/ui/input.js";
 import {
   NativeSelect,
@@ -62,8 +63,8 @@ export function SettingsPage({
         <h2>
           <SunIcon aria-hidden="true" /> Appearance
         </h2>
-        <label htmlFor="appearance-theme">
-          Theme
+        <Field>
+          <FieldLabel htmlFor="appearance-theme">Theme</FieldLabel>
           <NativeSelect
             id="appearance-theme"
             value={preferences.theme}
@@ -77,7 +78,7 @@ export function SettingsPage({
             <NativeSelectOption value="light">Light</NativeSelectOption>
             <NativeSelectOption value="dark">Dark</NativeSelectOption>
           </NativeSelect>
-        </label>
+        </Field>
       </Card>
       <Card className="my-4 gap-2 p-5">
         <h2>
@@ -133,8 +134,8 @@ export function SettingsPage({
             <fieldset className="grid gap-2">
               <legend className="sr-only">Per-move caps</legend>
               {motionFields.map(([name, label]) => (
-                <label key={name} className="grid gap-1" htmlFor={name}>
-                  {label}
+                <Field key={name} className="gap-1">
+                  <FieldLabel htmlFor={name}>{label}</FieldLabel>
                   <Input
                     id={name}
                     name={name}
@@ -148,7 +149,7 @@ export function SettingsPage({
                       setMotionLimitsSaved(false);
                     }}
                   />
-                </label>
+                </Field>
               ))}
             </fieldset>
             <Button type="submit" variant="outline" className="w-fit">
@@ -270,19 +271,23 @@ export function SettingsPage({
                   form.reset();
               }}
             >
-              <label htmlFor={id}>{label} API key</label>
-              <Input
-                type="password"
-                id={id}
-                name="apiKey"
-                required
-                pattern=".*\S.*"
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-              <p role="status">
-                {saved ? "Saved in this browser" : "No key set"}
-              </p>
+              <Field>
+                <FieldLabel htmlFor={id}>{label} API key</FieldLabel>
+                <Input
+                  type="password"
+                  id={id}
+                  name="apiKey"
+                  aria-describedby={`${id}-status`}
+                  placeholder={saved ? "••••••••" : undefined}
+                  required
+                  pattern=".*\S.*"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+                <FieldDescription id={`${id}-status`} role="status">
+                  {saved ? "Saved in this browser" : "No key set"}
+                </FieldDescription>
+              </Field>
               <div>
                 <Button type="submit">
                   {saved ? "Replace key" : "Save in this browser"}
