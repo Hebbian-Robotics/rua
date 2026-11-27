@@ -6,13 +6,13 @@ to set up a physical SO-101 arm for RUA. It saves `setup.toml` and
 servo registers. RUA uses both files when `serve` automatically selects the arm.
 
 With the arm supported, torque off and the station stopped, run the SO-101
-CLI included in the RUA release wheel from your uv project. This command is available in the release after RUA 0.1.7:
+CLI included in the RUA release wheel from your uv project:
 
 ```sh
 uv run rua so101 setup
 ```
 
-Outside a uv project, use `uvx --from hebbian-rua rua so101 setup` with a release that includes the SO-101 CLI.
+Outside a uv project, use `uvx --from hebbian-rua rua so101 setup`.
 
 For source checkouts, download the `so101` archive from
 [GitHub Releases](https://github.com/Hebbian-Robotics/so101/releases), put it on

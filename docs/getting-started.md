@@ -2,7 +2,7 @@
 
 Use the browser viewer to verify manual control and run your first agent.
 Use the examples from [RUA's main branch](https://github.com/Hebbian-Robotics/rua/tree/main)
-with the published station and SDKs. This guide uses 0.1.7. For development,
+with the published station and SDKs. This guide uses 0.1.8. For development,
 follow [Install from source](install-from-source.md).
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).
@@ -18,10 +18,10 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and
 Support the arm before disabling it. Verify clearance from objects and other
 arms, supervise the first motions, and keep a physical power cutoff accessible.
 
-For the pinned 0.1.7 station, set all three [LiveKit variables in the station’s environment or `.env`](cameras.md#connect-a-usb-camera). Then run the station from the repository root:
+Configure LiveKit with `lk cloud auth` or set the three [LiveKit variables](cameras.md#connect-a-usb-camera). [Install FFmpeg](recording.md#install-ffmpeg) for recording, or add `--no-recording` to the command below. Then run the station from the repository root:
 
 ```sh
-uvx --from hebbian-rua==0.1.7 rua serve
+uvx --from hebbian-rua==0.1.8 rua serve
 ```
 
 Start the viewer in a second terminal with `pnpm start:viewer`. Manual control needs no model key.

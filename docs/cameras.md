@@ -8,14 +8,14 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
 
 1. If you run RUA from source, [build the media companion](#rua-configuration)
    once. The Python wheel includes it.
-2. For a station built from this checkout, we recommend installing the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/).
+2. We recommend installing the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/).
    Run `lk cloud auth` as the OS user who runs the station
    and choose your project in the browser. Restart the station after setup.
    RUA reads the default project's credentials from `~/.livekit/cli-config.yaml`.
    If you have several projects, select one with `lk project set-default PROJECT`.
    See [LiveKit CLI authentication](https://docs.livekit.io/reference/developer-tools/livekit-cli/auth/).
 
-   For the published 0.1.7 station or manual setup, open your project in the [LiveKit Cloud dashboard](https://cloud.livekit.io/),
+   For manual setup, open your project in the [LiveKit Cloud dashboard](https://cloud.livekit.io/),
    copy its WebSocket URL, and open the project’s **API keys** page for the key and secret.
    If you missed the secret when creating your account or key, you may need to
    create a new API key. Save its secret when it is shown.
@@ -30,7 +30,7 @@ configured USB cameras to its LiveKit room and serves JPEG snapshots by name.
    LIVEKIT_API_SECRET=your-api-secret
    ```
 
-3. For a source checkout, [install FFmpeg](recording.md#install-ffmpeg) or pass
+3. [Install FFmpeg](recording.md#install-ffmpeg) or pass
    `--no-recording` to keep LiveKit streaming without recording. Connect the
    cameras and start the station using the
    [source start command](install-from-source.md#start-the-station) or the
