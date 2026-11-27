@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "hebbian-so101"
 version = "0.1.0"
-source = "git+https://github.com/Hebbian-Robotics/so101?rev=351b476de965efe61c572a2e37e6e74db00e6fde#351b476de965efe61c572a2e37e6e74db00e6fde"
+source = "git+https://github.com/Hebbian-Robotics/so101?rev=085102141021118480958f835227b46c9062af7f#085102141021118480958f835227b46c9062af7f"
 dependencies = [
  "anyhow",
  "directories-next",
