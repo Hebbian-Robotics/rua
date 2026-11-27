@@ -52,11 +52,20 @@ const storedRunRequestSchema = runRequestSchema
   .omit({ promptImages: true })
   .extend({
     attachmentFilenames: z.array(attachmentNameSchema).optional(),
+    attachmentFilename: attachmentNameSchema.optional(),
     settings: runRequestSchema.shape.settings.extend({
       reasoningEffort: reasoningEffortSchema,
       inferenceMode: inferenceModeSchema,
     }),
-  });
+  })
+  .transform(({ attachmentFilename, attachmentFilenames, ...request }) => ({
+    ...request,
+    ...(attachmentFilenames
+      ? { attachmentFilenames }
+      : attachmentFilename
+        ? { attachmentFilenames: [attachmentFilename] }
+        : {}),
+  }));
 
 const runOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("completed") }),

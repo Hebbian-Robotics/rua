@@ -465,6 +465,12 @@ export const RunPanels = memo(function RunPanels({
         </div>
         {usage && <Usage usage={usage} spans={spans} time={time} />}
       </header>
+      {traceOnly && agentRun && (
+        <div className="run-content">
+          <RunRequestDetails run={agentRun} />
+          {visibleRun && <RunCompletion run={visibleRun} />}
+        </div>
+      )}
       {showRunDetails && (
         <div className="run-content">
           <section aria-label="Plan and arm actions">

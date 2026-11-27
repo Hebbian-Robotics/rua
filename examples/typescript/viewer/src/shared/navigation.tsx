@@ -115,6 +115,19 @@ function ViewerNavigation({
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   useEffect(() => {
+    function revealArmControls(event: MouseEvent) {
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest('a[href="#enable-arm"]');
+      if (!link) return;
+      setSidebarExpanded(true);
+      requestAnimationFrame(() =>
+        document.getElementById("enable-arm")?.focus(),
+      );
+    }
+    document.addEventListener("click", revealArmControls);
+    return () => document.removeEventListener("click", revealArmControls);
+  }, []);
+  useEffect(() => {
     function handleSidebarShortcut(event: KeyboardEvent) {
       if (
         event.key === "b" &&
