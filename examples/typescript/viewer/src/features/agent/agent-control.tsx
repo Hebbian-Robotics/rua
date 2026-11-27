@@ -475,14 +475,6 @@ export function AgentControl({
                   ))}
                 </NativeSelect>
               </label>
-              {keyMissing && (
-                <p role="status">
-                  Add a {currentProvider.label} API key to run this agent.{" "}
-                  <a href={`#settings/key-${currentProvider.provider}`}>
-                    Set key
-                  </a>
-                </p>
-              )}
               <label htmlFor="agent-model">
                 Model
                 <NativeSelect
@@ -517,6 +509,14 @@ export function AgentControl({
                   </NativeSelectOption>
                 </NativeSelect>
               </label>
+              {keyMissing && (
+                <p className="sm:col-span-2" role="status">
+                  Add a {currentProvider.label} API key to run this agent.{" "}
+                  <a href={`#settings/key-${currentProvider.provider}`}>
+                    Set key
+                  </a>
+                </p>
+              )}
               {customModelSelected && (
                 <label className="sm:col-span-2" htmlFor="agent-custom-model">
                   Model ID
