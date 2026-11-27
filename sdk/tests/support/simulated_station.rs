@@ -83,8 +83,8 @@ impl SimulatedStation {
                     });
                 }
                 let config = hebbian_rua_core::config::ControllerConfig::try_from(config)?;
-                let link = Link::new(&config, Arc::clone(&shared_lease))?;
-                Ok(((*name).to_owned(), config, link))
+                let (link, endpoint) = Link::new(&config, Arc::clone(&shared_lease))?;
+                Ok(((*name).to_owned(), config, link, endpoint))
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
         let (server, mounted) = tokio::task::spawn_blocking(move || {
@@ -121,7 +121,7 @@ impl SimulatedStation {
         .await??;
         let handles = links
             .iter()
-            .map(|(name, _, link)| (name.clone(), link.handle()))
+            .map(|(name, _, link, _)| (name.clone(), link.handle()))
             .collect();
         if let Some(mounted) = mounted {
             mounted.attach_sequence_cameras(&server);
@@ -131,13 +131,15 @@ impl SimulatedStation {
         let shutdown = Arc::new(AtomicBool::new(false));
         let loop_shutdown = Arc::clone(&shutdown);
         let loop_thread = std::thread::spawn(move || {
-            let mut setups = links
+            let (mut setups, links): (Vec<_>, Vec<_>) = links
                 .into_iter()
-                .map(|(name, config, link)| ArmSetup::new(name, config, create_plant(), link))
-                .collect::<Vec<_>>();
+                .map(|(name, config, link, endpoint)| {
+                    (ArmSetup::new(name, config, create_plant(), endpoint), link)
+                })
+                .unzip();
             run_arms(&mut setups, Some(Duration::from_secs(120)), &loop_shutdown);
-            for setup in setups {
-                setup.link.close();
+            for link in links {
+                link.close();
             }
         });
         let url = format!("http://{}", server.local_address());

@@ -133,7 +133,8 @@ impl Plant for OverloadedPlant {
 #[test]
 fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
     let config = ControllerConfig::parse(CONFIG).unwrap();
-    let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let (link, link_endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let handle = link.handle();
     let mut client = LinkClient::connect(&handle);
     let server = HttpServer::start(
@@ -146,13 +147,16 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
     .unwrap();
     server.attach_arms(BTreeMap::from([("arm".into(), handle)]));
     let overloaded = Arc::new(AtomicBool::new(false));
-    let _arms = RunningArms::start(vec![ArmSetup::new(
-        "arm".into(),
-        config,
-        OverloadedPlant {
-            inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
-            overloaded: Arc::clone(&overloaded),
-        },
+    let _arms = RunningArms::start(vec![(
+        ArmSetup::new(
+            "arm".into(),
+            config,
+            OverloadedPlant {
+                inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
+                overloaded: Arc::clone(&overloaded),
+            },
+            link_endpoint.take().unwrap(),
+        ),
         link,
     )]);
     client.command(hebbian_contracts::Command::Enable);
@@ -180,8 +184,10 @@ fn station_state_reports_and_clears_a_non_hardware_protective_trip() {
 fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
     let config = ControllerConfig::parse(CONFIG).unwrap();
     let control = Arc::new(Lease::new(LEASE));
-    let first = Link::new(&config, Arc::clone(&control)).unwrap();
-    let second = Link::new(&config, control).unwrap();
+    let (first, first_endpoint) = Link::new(&config, Arc::clone(&control)).unwrap();
+    let mut first_endpoint = Some(first_endpoint);
+    let (second, second_endpoint) = Link::new(&config, control).unwrap();
+    let mut second_endpoint = Some(second_endpoint);
     let server = HttpServer::start(
         "127.0.0.1:0",
         vec![],
@@ -195,16 +201,22 @@ fn taking_control_stops_both_arms_before_grant_and_fences_the_old_holder() {
         ("second".into(), second.handle()),
     ]));
     let _arms = RunningArms::start(vec![
-        ArmSetup::new(
-            "first".into(),
-            config.clone(),
-            NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
+        (
+            ArmSetup::new(
+                "first".into(),
+                config.clone(),
+                NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
+                first_endpoint.take().unwrap(),
+            ),
             first,
         ),
-        ArmSetup::new(
-            "second".into(),
-            config,
-            NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
+        (
+            ArmSetup::new(
+                "second".into(),
+                config,
+                NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
+                second_endpoint.take().unwrap(),
+            ),
             second,
         ),
     ]);

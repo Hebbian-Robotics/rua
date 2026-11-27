@@ -67,9 +67,12 @@ fn arm_setup<P: Plant>(
     config: ControllerConfig,
     plant: P,
     control: &Arc<Lease>,
-) -> ArmSetup<P> {
-    let link = Link::for_controller(&config, Arc::clone(control));
-    ArmSetup::new(name.to_owned(), config, plant, link)
+) -> (ArmSetup<P>, Link) {
+    let (link, endpoint) = Link::for_controller(&config, Arc::clone(control));
+    (
+        ArmSetup::new(name.to_owned(), config, plant, endpoint),
+        link,
+    )
 }
 
 fn simulator_setups(
@@ -77,7 +80,7 @@ fn simulator_setups(
     directory: &Path,
     should_stop: impl Fn() -> bool,
     control: &Arc<Lease>,
-) -> anyhow::Result<Vec<ArmSetup<SocketPlant>>> {
+) -> anyhow::Result<Vec<(ArmSetup<SocketPlant>, Link)>> {
     // INVARIANT: Every arm's plant socket exists before the first accept, so a
     // simulator serving several arms can connect to all of them at once.
     let mut listeners = Vec::new();
@@ -109,18 +112,14 @@ fn simulator_setups(
     Ok(setups)
 }
 
+type HardwarePlant = GuardedPlant<
+    hebbian_rua_core::so101::driver::Servos<hebbian_rua_core::so101::driver::SerialBus>,
+>;
+
 fn hardware_setups(
     arms: &[ConfiguredArm],
     control: &Arc<Lease>,
-) -> anyhow::Result<
-    Vec<
-        ArmSetup<
-            GuardedPlant<
-                hebbian_rua_core::so101::driver::Servos<hebbian_rua_core::so101::driver::SerialBus>,
-            >,
-        >,
-    >,
-> {
+) -> anyhow::Result<Vec<(ArmSetup<HardwarePlant>, Link)>> {
     let mut setups = Vec::new();
     for arm in arms {
         let name = arm.name.as_str();
@@ -137,7 +136,7 @@ fn no_physics_setups(
     arms: &[ConfiguredArm],
     plant_lag_seconds: f64,
     control: &Arc<Lease>,
-) -> Vec<ArmSetup<NoPhysicsStandIn>> {
+) -> Vec<(ArmSetup<NoPhysicsStandIn>, Link)> {
     let mut setups = Vec::new();
     for arm in arms {
         let name = arm.name.as_str();
@@ -178,10 +177,8 @@ pub(crate) fn run_supervised(
     let mut handoffs = BTreeMap::new();
     let mut controller_arms = Vec::new();
     for arm in arms {
-        let link = Arc::new(Link::new(&arm.config, Arc::clone(&lease))?);
-        let handoff = link
-            .take_controller_station_arm()
-            .context("The station handoff was already taken")?;
+        let (link, handoff) = Link::for_station(&arm.config, Arc::clone(&lease))?;
+        let link = Arc::new(link);
         handoffs.insert(arm.name.as_str().to_owned(), handoff);
         links.insert(arm.name.as_str().to_owned(), link);
         controller_arms.push((arm.name.as_str().to_owned(), arm.config_path.clone()));
@@ -273,6 +270,7 @@ pub(crate) fn run_supervised(
 
 fn run_connected<P: Plant>(
     setups: &mut [ArmSetup<P>],
+    links: &[Link],
     socket_path: &Path,
     instance: uuid::Uuid,
     shutdown_requested: &Arc<AtomicBool>,
@@ -286,7 +284,8 @@ fn run_connected<P: Plant>(
     let stop_socket = socket.try_clone()?;
     let arms: BTreeMap<String, LinkHandle> = setups
         .iter()
-        .map(|setup| (setup.name.clone(), setup.link.handle()))
+        .zip(links)
+        .map(|(setup, link)| (setup.name.clone(), link.handle()))
         .collect();
     let shutting_down = Arc::new(AtomicBool::new(false));
     let service_shutting_down = Arc::clone(&shutting_down);
@@ -315,23 +314,25 @@ fn run_connected<P: Plant>(
 }
 
 fn run_setups<P: Plant>(
-    mut setups: Vec<ArmSetup<P>>,
+    setups_and_links: Vec<(ArmSetup<P>, Link)>,
     station_socket: &Path,
     instance: uuid::Uuid,
     shutdown_requested: &Arc<AtomicBool>,
     hardware: bool,
     bus_timing: impl Fn(&P) -> Option<&BusTiming>,
 ) -> anyhow::Result<()> {
+    let (mut setups, links): (Vec<_>, Vec<_>) = setups_and_links.into_iter().unzip();
     let reports = run_connected(
         &mut setups,
+        &links,
         station_socket,
         instance,
         shutdown_requested,
         hardware,
     )?;
-    for (setup, (name, report)) in setups.into_iter().zip(&reports) {
+    for ((setup, link), (name, report)) in setups.into_iter().zip(links).zip(&reports) {
         print_timing(name, report, bus_timing(setup.plant()));
-        setup.link.close();
+        link.close();
     }
     Ok(())
 }

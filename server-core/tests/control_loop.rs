@@ -99,7 +99,8 @@ impl Plant for FaultingPlant {
 #[test]
 fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
     let config = test_config();
-    let link = Link::new(&config, control()).unwrap();
+    let (link, link_endpoint) = Link::new(&config, control()).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let handle = link.handle();
     let mut client = LinkClient::connect(&handle);
     let shutdown_requested = Arc::new(AtomicBool::new(false));
@@ -114,7 +115,7 @@ fn a_tripped_loop_trips_once_and_keeps_reporting_the_fault() {
         };
         let report = run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(10)),
             &loop_shutdown_requested,
@@ -179,11 +180,18 @@ fn the_loop_runs_until_shutdown_is_requested() {
     let config = test_config();
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let loop_shutdown_requested = Arc::clone(&shutdown_requested);
-    let link = Link::new(&config, control()).unwrap();
+    let (link, link_endpoint) = Link::new(&config, control()).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let mut client = LinkClient::connect(&link.handle());
     let loop_thread = std::thread::spawn(move || {
         let mut plant = NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
-        let report = run(&mut plant, &link, &config, None, &loop_shutdown_requested);
+        let report = run(
+            &mut plant,
+            &mut link_endpoint,
+            &config,
+            None,
+            &loop_shutdown_requested,
+        );
         link.close();
         report
     });
@@ -197,7 +205,8 @@ fn the_loop_runs_until_shutdown_is_requested() {
 #[test]
 fn a_simulated_arm_recovers_from_just_outside_a_joint_limit() {
     let config = test_config();
-    let link = Link::new(&config, control()).unwrap();
+    let (link, link_endpoint) = Link::new(&config, control()).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let handle = link.handle();
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let loop_shutdown_requested = Arc::clone(&shutdown_requested);
@@ -205,7 +214,7 @@ fn a_simulated_arm_recovers_from_just_outside_a_joint_limit() {
         let mut plant = NoPhysicsStandIn::at(vec![2.02, 0.0], 0.02);
         let report = run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(4)),
             &loop_shutdown_requested,
@@ -291,7 +300,7 @@ fn two_arms() -> TwoArms {
         Arc::new(AtomicBool::new(false)),
     ];
     let control = control();
-    let setups: Vec<ArmSetup<SwitchedFaultPlant>> = ["left", "right"]
+    let setups: Vec<(ArmSetup<SwitchedFaultPlant>, Link)> = ["left", "right"]
         .iter()
         .zip(&faults)
         .map(|(name, fault)| {
@@ -307,19 +316,23 @@ fn two_arms() -> TwoArms {
                 allowed_collision_pairs: Vec::new(),
             });
             let config = ControllerConfig::try_from(config).unwrap();
-            let link = Link::new(&config, Arc::clone(&control)).unwrap();
-            ArmSetup::new(
-                (*name).to_owned(),
-                config,
-                SwitchedFaultPlant {
-                    inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
-                    fault: Arc::clone(fault),
-                },
+            let (link, link_endpoint) = Link::new(&config, Arc::clone(&control)).unwrap();
+            let mut link_endpoint = Some(link_endpoint);
+            (
+                ArmSetup::new(
+                    (*name).to_owned(),
+                    config,
+                    SwitchedFaultPlant {
+                        inner: NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
+                        fault: Arc::clone(fault),
+                    },
+                    link_endpoint.take().unwrap(),
+                ),
                 link,
             )
         })
         .collect();
-    let handles: Vec<_> = setups.iter().map(|setup| setup.link.handle()).collect();
+    let handles: Vec<_> = setups.iter().map(|(_, link)| link.handle()).collect();
     let running_arms = RunningArms::start(setups);
     let mut left = LinkClient::connect(&handles[0]);
     let mut right = LinkClient::connect(&handles[1]);
@@ -515,7 +528,7 @@ fn sim_config(reply_timeout_seconds: f64) -> ControllerConfig {
 fn sim_setups(
     directory: &Path,
     reply_timeout_seconds: f64,
-) -> Vec<ArmSetup<hebbian_rua_core::sim_plant::SocketPlant>> {
+) -> Vec<(ArmSetup<hebbian_rua_core::sim_plant::SocketPlant>, Link)> {
     use hebbian_rua_core::sim_plant::{SimTimeouts, SocketPlant};
     let control = control();
     let listeners: Vec<_> = ["left", "right"]
@@ -541,8 +554,13 @@ fn sim_setups(
                 || false,
             )
             .unwrap();
-            let link = Link::new(&config, Arc::clone(&control)).unwrap();
-            ArmSetup::new(name.to_owned(), config, plant, link)
+            let (link, link_endpoint) = Link::new(&config, Arc::clone(&control)).unwrap();
+            let mut link_endpoint = Some(link_endpoint);
+            let endpoint = link_endpoint.take().unwrap();
+            (
+                ArmSetup::new(name.to_owned(), config, plant, endpoint),
+                link,
+            )
         })
         .collect()
 }
@@ -551,21 +569,22 @@ fn sim_setups(
 fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
     let directory = tempfile::tempdir().unwrap();
     let (simulator_shutdown, simulator) = fake_simulator(directory.path(), 100_000);
-    let mut setups = sim_setups(directory.path(), 2.0);
+    let (mut setups, links): (Vec<_>, Vec<_>) =
+        sim_setups(directory.path(), 2.0).into_iter().unzip();
     let mut left_config = setups[0].config.clone().into_input();
     left_config.enable_checks = Some(hebbian_contracts::EnableChecks {
         preflight_drift_limit_radians: 0.02,
         enable_drift_limit_radians: 0.05,
     });
     setups[0].config = ControllerConfig::try_from(left_config).unwrap();
-    let left_handle = setups[0].link.handle();
+    let left_handle = links[0].handle();
     let shutdown = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&shutdown);
     let loop_thread = std::thread::spawn(move || {
         let reports = run_arms(&mut setups, None, &stop);
-        for setup in setups {
+        for (setup, link) in setups.into_iter().zip(links) {
             assert_eq!(setup.config.trace_directory, test_config().trace_directory);
-            setup.link.close();
+            link.close();
         }
         reports
     });
@@ -600,7 +619,8 @@ fn arms_in_one_simulator_follow_commands_with_time_driven_by_its_replies() {
 fn a_simulator_that_stops_answering_trips_the_arms_instead_of_hanging_the_loop() {
     let directory = tempfile::tempdir().unwrap();
     let (simulator_shutdown, simulator) = fake_simulator(directory.path(), 20);
-    let mut setups = sim_setups(directory.path(), 0.3);
+    let (mut setups, links): (Vec<_>, Vec<_>) =
+        sim_setups(directory.path(), 0.3).into_iter().unzip();
     let started = Instant::now();
     let reports = run_arms(
         &mut setups,
@@ -611,8 +631,8 @@ fn a_simulator_that_stops_answering_trips_the_arms_instead_of_hanging_the_loop()
         started.elapsed() < Duration::from_secs(5),
         "the loop must not wait out its run time"
     );
-    for setup in setups {
-        setup.link.close();
+    for link in links {
+        link.close();
     }
     assert!(reports.iter().all(|(_, report)| {
         report
@@ -672,7 +692,8 @@ fn bus_outages_do_not_release_torque() {
     // the race on a shared CI runner. Production profiles are unchanged.
     configuration.loop_deadline_seconds = 5.0;
     let config = ControllerConfig::try_from(configuration).unwrap();
-    let link = Link::new(&config, control()).unwrap();
+    let (link, link_endpoint) = Link::new(&config, control()).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let handle = link.handle();
     let bus_down = Arc::new(AtomicBool::new(false));
     let released = Arc::new(AtomicBool::new(false));
@@ -686,7 +707,7 @@ fn bus_outages_do_not_release_torque() {
     let loop_thread = std::thread::spawn(move || {
         let report = run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(30)),
             &loop_shutdown_requested,
@@ -725,7 +746,8 @@ fn bus_outages_do_not_release_torque() {
 #[test]
 fn a_signal_returns_the_arm_to_rest_and_releases_it_before_the_run_ends() {
     let config = test_config();
-    let link = Link::new(&config, control()).unwrap();
+    let (link, link_endpoint) = Link::new(&config, control()).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let handle = link.handle();
     let released = Arc::new(AtomicBool::new(false));
     let signalled = Arc::new(AtomicBool::new(false));
@@ -738,7 +760,7 @@ fn a_signal_returns_the_arm_to_rest_and_releases_it_before_the_run_ends() {
     let loop_thread = std::thread::spawn(move || {
         let report = run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(30)),
             &signal,

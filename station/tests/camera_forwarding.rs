@@ -66,14 +66,15 @@ fn stalled_snapshots_shed_load_and_leave_control_responsive() {
         "../../server-core/tests/support/two_joint_config.json"
     ))
     .unwrap();
-    let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let (link, link_endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     forwarding.attach_arms(BTreeMap::from([("follower".into(), link.handle())]));
     let shutdown = Arc::new(AtomicBool::new(false));
     let controller_shutdown = shutdown.clone();
     let controller = std::thread::spawn(move || {
         hebbian_rua_core::control_loop::run(
             &mut NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02),
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(5)),
             &controller_shutdown,

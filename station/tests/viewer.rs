@@ -241,7 +241,8 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
         .to_string_lossy()
         .into_owned();
     let config = ControllerConfig::try_from(config).unwrap();
-    let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let (link, link_endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let scratch = scratch_directory("station");
     let media_status = hebbian_rua_server::media_status::MediaStatus::default();
     let settings = WebSettings {
@@ -297,7 +298,7 @@ fn station_control_and_recording_never_wait_on_an_unreachable_livekit() {
         };
         run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(20)),
             &loop_shutdown_requested,

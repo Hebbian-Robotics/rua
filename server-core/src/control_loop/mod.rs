@@ -22,7 +22,7 @@ use hdrhistogram::Histogram;
 
 use crate::arm::{ArmCore, Now};
 use crate::config::ControllerConfig;
-use crate::control_link::Link;
+use crate::controller_endpoint::ControllerEndpoint;
 use crate::cycle::CycleTimer;
 use crate::handoff::{ArmRequest, MAXIMUM_REQUESTS_PER_CYCLE};
 use crate::plant::{Pacing, Plant};
@@ -84,7 +84,7 @@ fn deadline_missed_message(cycle: Duration, load: Option<[f64; 3]>) -> String {
 )]
 pub fn run(
     plant: &mut impl Plant,
-    link: &Link,
+    endpoint: &mut Option<ControllerEndpoint>,
     config: &ControllerConfig,
     run_for: Option<Duration>,
     shutdown_requested: &AtomicBool,
@@ -92,7 +92,7 @@ pub fn run(
     match runner_for(
         "arm",
         plant,
-        link,
+        endpoint,
         config,
         Path::new(&config.trace_directory),
     ) {
@@ -107,16 +107,21 @@ pub struct ArmSetup<P: Plant> {
     pub name: String,
     pub config: ControllerConfig,
     plant: P,
-    pub link: Link,
+    endpoint: Option<ControllerEndpoint>,
 }
 
 impl<P: Plant> ArmSetup<P> {
-    pub fn new(name: String, config: ControllerConfig, plant: P, link: Link) -> Self {
+    pub fn new(
+        name: String,
+        config: ControllerConfig,
+        plant: P,
+        endpoint: ControllerEndpoint,
+    ) -> Self {
         Self {
             name,
             config,
             plant,
-            link,
+            endpoint: Some(endpoint),
         }
     }
 
@@ -198,7 +203,7 @@ pub fn run_arms<P: Plant>(
         match runner_for(
             &arm.name,
             &mut arm.plant,
-            &arm.link,
+            &mut arm.endpoint,
             &arm.config,
             &trace_directory,
         ) {

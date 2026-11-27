@@ -13,7 +13,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use hebbian_contracts::{Command, CommandRecord, Event, Frame};
-use hebbian_rua_core::control_link::LinkHandle;
+use hebbian_rua_core::control_link::{Link, LinkHandle};
 use hebbian_rua_core::control_loop::{ArmSetup, run_arms};
 use hebbian_rua_core::controller_transport::{ControllerAnswer, ControllerRequest};
 use hebbian_rua_core::plant::Plant;
@@ -101,7 +101,10 @@ pub struct RunningArms {
 }
 
 impl RunningArms {
-    pub fn start<ArmPlant: Plant + Send + 'static>(mut arms: Vec<ArmSetup<ArmPlant>>) -> Self {
+    pub fn start<ArmPlant: Plant + Send + 'static>(
+        arms_and_links: Vec<(ArmSetup<ArmPlant>, Link)>,
+    ) -> Self {
+        let (mut arms, links): (Vec<_>, Vec<_>) = arms_and_links.into_iter().unzip();
         let shutdown_requested = Arc::new(AtomicBool::new(false));
         let loop_shutdown_requested = Arc::clone(&shutdown_requested);
         let loop_thread = std::thread::spawn(move || {
@@ -110,8 +113,8 @@ impl RunningArms {
                 Some(Duration::from_secs(30)),
                 &loop_shutdown_requested,
             );
-            for arm in arms {
-                arm.link.close();
+            for link in links {
+                link.close();
             }
         });
         Self {

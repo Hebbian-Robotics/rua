@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use crate::arm::{PoseGoalSettings, ReachGoal};
 use crate::config::ControllerConfig;
-use crate::handoff::{ArmHandle, ArmInbox, arm_channel};
+use crate::controller_endpoint::{ControllerEndpoint, SampleRecycler};
+use crate::handoff::{ArmHandle, arm_channel};
 use crate::lease::{
     AcquireError, AcquireMode, ArmGate, CommandAuthority, GenerationTicket, Lease, LeaseAdmission,
     LeaseRequest, MotionClaim, SharedInterlocks,
@@ -62,22 +63,6 @@ struct SampleRequest {
 
 // CONSTRAINT: Disconnect clients whose output queue is full so one slow reader cannot stall other clients.
 type ClientSink = tokio::sync::mpsc::Sender<Frame>;
-
-// WHY: Recycle sample buffers after the writer sends them to avoid allocations in the control loop.
-pub(crate) struct SampleRecycler {
-    returned: Receiver<Sample>,
-}
-
-impl SampleRecycler {
-    pub(crate) fn checkout(&self) -> Sample {
-        self.returned.try_recv().unwrap_or_else(|_| Sample::blank())
-    }
-}
-
-pub(crate) struct LoopEnd {
-    pub(crate) inbox: ArmInbox,
-    pub(crate) samples: SampleRecycler,
-}
 
 #[derive(Clone)]
 struct Shared {
@@ -574,7 +559,6 @@ pub struct Link {
     pending_samples: Arc<AtomicUsize>,
     closing: Arc<AtomicBool>,
     writer: Option<JoinHandle<()>>,
-    loop_end: Mutex<Option<LoopEnd>>,
 }
 
 impl Link {
@@ -588,24 +572,42 @@ impl Link {
     }
 
     #[must_use]
-    pub fn take_controller_station_arm(&self) -> Option<crate::controller_bridge::StationArm> {
-        self.take_loop_end()
-            .map(|end| crate::controller_bridge::StationArm::new(end.inbox))
-    }
-
-    #[must_use]
     pub fn controller_loop_arm(&self) -> crate::controller_bridge::LoopArm {
         crate::controller_bridge::LoopArm::new(self.shared.arm.clone())
     }
 
-    pub fn new(config: &ControllerConfig, lease: Arc<Lease>) -> anyhow::Result<Self> {
+    pub fn new(
+        config: &ControllerConfig,
+        lease: Arc<Lease>,
+    ) -> anyhow::Result<(Self, ControllerEndpoint)> {
+        Self::with_planning(config, lease)
+    }
+
+    pub fn for_station(
+        config: &ControllerConfig,
+        lease: Arc<Lease>,
+    ) -> anyhow::Result<(Self, crate::controller_bridge::StationArm)> {
+        let (link, endpoint) = Self::with_planning(config, lease)?;
+        Ok((
+            link,
+            crate::controller_bridge::StationArm::new(endpoint.inbox),
+        ))
+    }
+
+    pub fn for_controller(
+        config: &ControllerConfig,
+        lease: Arc<Lease>,
+    ) -> (Self, ControllerEndpoint) {
+        Self::with_handoff(config, lease, None, None)
+    }
+
+    fn with_planning(
+        config: &ControllerConfig,
+        lease: Arc<Lease>,
+    ) -> anyhow::Result<(Self, ControllerEndpoint)> {
         let preview = Preview::new(config)?.map(|preview| Arc::new(Mutex::new(preview)));
         let planner = Planner::for_arm(config)?.map(Arc::new);
         Ok(Self::with_handoff(config, lease, planner, preview))
-    }
-
-    pub fn for_controller(config: &ControllerConfig, lease: Arc<Lease>) -> Self {
-        Self::with_handoff(config, lease, None, None)
     }
 
     fn with_handoff(
@@ -613,7 +615,7 @@ impl Link {
         lease: Arc<Lease>,
         planner: Option<Arc<Planner>>,
         preview: Option<Arc<Mutex<Preview>>>,
-    ) -> Self {
+    ) -> (Self, ControllerEndpoint) {
         let (outgoing, queue) = channel::<Outgoing>();
         let pending_samples = Arc::new(AtomicUsize::new(0));
         let closing = Arc::new(AtomicBool::new(false));
@@ -665,18 +667,32 @@ impl Link {
             Arc::clone(&shared.generation),
             Arc::clone(&shared.interlocks),
         );
-        Self {
-            shared,
-            pending_samples,
-            closing,
-            writer: Some(writer),
-            loop_end: Mutex::new(Some(LoopEnd {
-                inbox,
-                samples: SampleRecycler {
-                    returned: returned_samples,
-                },
-            })),
-        }
+        let endpoint = ControllerEndpoint {
+            inbox,
+            samples: SampleRecycler {
+                returned: returned_samples,
+            },
+            publish_sample: {
+                let sender = shared.outgoing.clone();
+                let pending = Arc::clone(&pending_samples);
+                Box::new(move |sample| publish_sample(&sender, &pending, sample))
+            },
+            publish_log: {
+                let sender = shared.outgoing.clone();
+                Arc::new(move |event| {
+                    let _ = sender.send(Outgoing::Log(event));
+                })
+            },
+        };
+        (
+            Self {
+                shared,
+                pending_samples,
+                closing,
+                writer: Some(writer),
+            },
+            endpoint,
+        )
     }
 
     #[must_use]
@@ -686,22 +702,8 @@ impl Link {
         }
     }
 
-    pub(crate) fn take_loop_end(&self) -> Option<LoopEnd> {
-        self.loop_end.lock_unpoisoned().take()
-    }
-
-    pub(crate) fn log_publisher(&self) -> impl Fn(LoggedEvent) + Send + 'static + use<> {
-        let log_sender = self.shared.outgoing.clone();
-        move |event| {
-            let _ = log_sender.send(Outgoing::Log(event));
-        }
-    }
-
     pub fn publish_sample(&self, sample: Sample) {
-        if self.pending_samples.load(Ordering::Relaxed) < MAXIMUM_PENDING_SAMPLES {
-            self.pending_samples.fetch_add(1, Ordering::Relaxed);
-            let _ = self.shared.outgoing.send(Outgoing::Sample(sample));
-        }
+        publish_sample(&self.shared.outgoing, &self.pending_samples, sample);
     }
 
     pub fn publish_log(&self, event: LoggedEvent) {
@@ -713,6 +715,13 @@ impl Link {
         if let Some(writer) = self.writer.take() {
             let _ = writer.join();
         }
+    }
+}
+
+fn publish_sample(sender: &Sender<Outgoing>, pending_samples: &AtomicUsize, sample: Sample) {
+    if pending_samples.load(Ordering::Relaxed) < MAXIMUM_PENDING_SAMPLES {
+        pending_samples.fetch_add(1, Ordering::Relaxed);
+        let _ = sender.send(Outgoing::Sample(sample));
     }
 }
 
@@ -1012,7 +1021,8 @@ mod tests {
     #[test]
     fn a_feedback_request_made_before_publication_receives_the_first_sample() {
         let config = ControllerConfig::parse(crate::config::TEST_CONFIG).unwrap();
-        let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
+        let (link, _link_endpoint) =
+            Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let handle = link.handle();
         let (answer, received) = sync_channel(1);
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -1039,7 +1049,8 @@ mod tests {
         let config =
             ControllerConfig::parse(include_str!("../tests/support/two_joint_config.json"))
                 .unwrap();
-        let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
+        let (link, _link_endpoint) =
+            Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let links = BTreeMap::from([("arm".to_owned(), link.handle())]);
         link.publish_sample(Sample::blank());
         let first = station_state(&links).await.unwrap();
@@ -1059,7 +1070,8 @@ mod tests {
         let config =
             ControllerConfig::parse(include_str!("../tests/support/two_joint_config.json"))
                 .unwrap();
-        let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
+        let (link, _link_endpoint) =
+            Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let handle = link.handle();
         let lease = handle
             .acquire_lease(
@@ -1099,7 +1111,8 @@ mod tests {
         let config =
             ControllerConfig::parse(include_str!("../tests/support/two_joint_config.json"))
                 .unwrap();
-        let link = Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
+        let (link, _link_endpoint) =
+            Link::new(&config, Arc::new(Lease::new(crate::lease::LEASE))).unwrap();
         let handle = link.handle();
         let mut reply = handle
             .submit_command_async(

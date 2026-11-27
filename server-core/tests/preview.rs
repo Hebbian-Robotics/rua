@@ -184,7 +184,7 @@ fn a_wrong_joint_count_is_refused() {
 #[ignore = "requires a private SO-101 policy checkpoint and ORT_DYLIB_PATH"]
 fn a_rehearsal_over_the_link_leaves_the_arm_and_its_records_alone() {
     let assets = policy_assets();
-    let link = Link::new(&config(&assets), control()).unwrap();
+    let (link, _endpoint) = Link::new(&config(&assets), control()).unwrap();
     let handle = link.handle();
     let mut client = LinkClient::connect(&handle);
     let goal = goal_near_start([0.06, 0.0, 0.0]);
@@ -238,7 +238,8 @@ fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation()
     use std::sync::atomic::AtomicBool;
     let assets = policy_assets();
     let config = config(&assets);
-    let link = Link::new(&config, control()).unwrap();
+    let (link, link_endpoint) = Link::new(&config, control()).unwrap();
+    let mut link_endpoint = Some(link_endpoint);
     let handle = link.handle();
     let stop = Arc::new(AtomicBool::new(false));
     let shutdown = Arc::clone(&stop);
@@ -246,7 +247,7 @@ fn a_live_policy_reach_uses_direct_bounded_actions_and_completes_in_simulation()
         let mut plant = NoPhysicsStandIn::at(START.to_vec(), 0.05).with_gripper(0.0);
         let report = run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(5)),
             &shutdown,
