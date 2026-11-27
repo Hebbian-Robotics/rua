@@ -364,8 +364,10 @@ export function WorkspaceApp({
       }}
       navigationLinks={navigationLinks}
       statusIndicator={statusIndicator}
-      armControls={
+      armControls={(stopControl, stopFeedback) => (
         <ArmControl
+          stopControl={stopControl}
+          stopFeedback={stopFeedback}
           stationState={connected ? stationState : null}
           armName={armName}
           onSelectArm={(name) => {
@@ -389,7 +391,7 @@ export function WorkspaceApp({
           onPowerTransition={setChangingArmPower}
           stopRehomeRef={stopRehomeRef}
         />
-      }
+      )}
     >
       <ControllerRecovery />
       <RecoveryControls state={connected ? stationState : null} />
