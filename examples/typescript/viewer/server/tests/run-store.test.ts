@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -35,6 +35,38 @@ test("run output survives restart separately from metadata", async () => {
         await readFile(join(directory, "run-1", "metadata.json"), "utf8"),
       ).output,
     ).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("loads attachment names from runs saved before multiple images were supported", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "agent-runs-"));
+  try {
+    const runDirectory = join(directory, "legacy-run");
+    await mkdir(runDirectory);
+    await writeFile(
+      join(runDirectory, "metadata.json"),
+      JSON.stringify({
+        id: "legacy-run",
+        createdAt: 1,
+        request: {
+          arm: "arm",
+          task: "task",
+          attachmentFilename: "reference.jpg",
+          settings: {
+            provider: "openai",
+            model: "example-model",
+            reasoningEffort: "high",
+            inferenceMode: "standard",
+          },
+        },
+        phase: { state: "running", startedAt: 1 },
+        output: [],
+      }),
+    );
+    const loaded = await fileRunStore(directory).loadAll();
+    expect(loaded[0]?.request.attachmentFilenames).toEqual(["reference.jpg"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

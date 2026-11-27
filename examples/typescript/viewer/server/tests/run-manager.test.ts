@@ -93,19 +93,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("an attached reference reaches the first model turn and history keeps only its filename", async () => {
+test("attached references reach the first model turn and history keeps only filenames", async () => {
   const imageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
   const jpegBase64 = imageBytes.toString("base64");
+  const imageNames = [
+    "first.png",
+    "second.png",
+    "third.png",
+    "fourth.png",
+    "fifth.png",
+  ];
   const runs = manager({
     openConversation: (firstObservation) => {
-      expect(firstObservation.referenceImageJpeg).toEqual(imageBytes);
+      expect(firstObservation.referenceImagesJpeg).toEqual(
+        imageNames.map(() => imageBytes),
+      );
       return new ScriptedConversation([turn(["finish", { reason: "seen" }])]);
     },
   });
   const started = runs.start(
     runRequestSchema.parse({
       ...request,
-      promptImage: { filename: "reference.png", jpegBase64 },
+      promptImages: imageNames.map((filename) => ({ filename, jpegBase64 })),
     }),
   );
   const ended = await untilEnded(runs, started.id);
@@ -114,7 +123,7 @@ test("an attached reference reaches the first model turn and history keeps only 
     outcome: { kind: "completed" },
   });
   expect(store.saved.get(started.id)?.request).toMatchObject({
-    attachmentFilename: "reference.png",
+    attachmentFilenames: imageNames,
   });
   expect(JSON.stringify(store.saved.get(started.id))).not.toContain(jpegBase64);
 });

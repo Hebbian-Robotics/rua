@@ -211,9 +211,9 @@ function RunRequestDetails({ run }: { run: Run }) {
   return (
     <article aria-label="Run prompt and settings" className="run-overview">
       <p className="run-prompt">{request.task}</p>
-      {request.attachmentFilename && (
-        <p>Attached image: {request.attachmentFilename}</p>
-      )}
+      {request.attachmentFilenames?.length ? (
+        <p>Attached images: {request.attachmentFilenames.join(", ")}</p>
+      ) : null}
       <details className="run-settings">
         <summary>
           Run settings <span>{request.settings.model}</span>
@@ -351,6 +351,8 @@ export const RunPanels = memo(function RunPanels({
   time,
   onSeek,
   live,
+  traceOnly = false,
+  showRunDetails = false,
 }: {
   agentRun?: Run | null;
   spans: TraceSpan[];
@@ -359,9 +361,13 @@ export const RunPanels = memo(function RunPanels({
   time: number;
   onSeek: (time: number) => void;
   live: boolean;
+  traceOnly?: boolean;
+  showRunDetails?: boolean;
 }) {
   const traceWindowId = useId();
-  const [tab, setTab] = useState<"activity" | "trace">("activity");
+  const [tab, setTab] = useState<"activity" | "trace">(
+    traceOnly ? "trace" : "activity",
+  );
   const [zoom, setZoom] = useState(30);
   const [selectedSpan, setSelectedSpan] = useState<string | null>(null);
   const [clearedRun, setClearedRun] = useState<ClearedRun | null>(null);
@@ -454,94 +460,113 @@ export const RunPanels = memo(function RunPanels({
               setFollowing(true);
             }}
           >
-            Clear activity
+            {traceOnly ? "Clear trace" : "Clear activity"}
           </Button>
         </div>
         {usage && <Usage usage={usage} spans={spans} time={time} />}
       </header>
+      {traceOnly && agentRun && (
+        <div className="run-content">
+          <RunRequestDetails run={agentRun} />
+          {visibleRun && <RunCompletion run={visibleRun} />}
+        </div>
+      )}
+      {showRunDetails && (
+        <div className="run-content">
+          <section aria-label="Plan and arm actions">
+            {live && hasRunContents && <LiveActionSequence />}
+            {memory && <RunMemory memory={memory} showTask={false} />}
+          </section>
+        </div>
+      )}
       <Tabs
         value={tab}
         onValueChange={(value) => {
           if (value === "activity" || value === "trace") setTab(value);
         }}
       >
-        <TabsList
-          aria-label="Run details"
-          activateOnFocus
-          variant="line"
-          className="mx-4"
-        >
-          <TabsTrigger value="activity" className="px-4">
-            Agent activity
-          </TabsTrigger>
-          <TabsTrigger value="trace" className="px-4">
-            Trace
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="activity" className="run-content">
-          <section aria-label="Agent activity">
-            {agentRun && <RunRequestDetails run={agentRun} />}
-            {live && hasRunContents && <LiveActionSequence />}
-            {memory && <RunMemory memory={memory} showTask={!agentRun} />}
-            <div className="agent-feed">
-              <h3>Activity</h3>
-              {agentActivity.length === 0 && visibleRun === null ? (
-                <p>No agent activity yet.</p>
-              ) : (
-                agentActivity.map((span) =>
-                  span.attributes["hebbian.kind"] === "tool" ? (
-                    <AgentToolEntry
-                      key={span.span_id}
-                      span={span}
-                      onInspect={() => {
-                        inspect(spanStart(span), span);
-                        setTab("trace");
-                      }}
-                    />
-                  ) : (
-                    <details className="reasoning-entry" key={span.span_id}>
-                      <summary>
-                        <strong>Reasoning</strong>
-                        <ActivityTiming span={span} />
-                        <span className="reasoning-preview">
-                          {
-                            stringList(
-                              span.attributes["hebbian.reasoning_summaries"],
-                            )[0]
-                          }
-                        </span>
-                        {span.attributes["hebbian.active"] === true && (
-                          <span>Running</span>
-                        )}
-                        {span.status.code.includes("ERROR") && (
-                          <span className="activity-error">Failed</span>
-                        )}
-                      </summary>
-                      <div className="activity-details">
-                        {stringList(
-                          span.attributes["hebbian.reasoning_summaries"],
-                        ).map((summary, index) => (
-                          // biome-ignore lint/suspicious/noArrayIndexKey: Summaries have no IDs and carry no local state.
-                          <p key={`${index}-${summary}`}>{summary}</p>
-                        ))}
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            inspect(spanStart(span), span);
-                            setTab("trace");
-                          }}
-                        >
-                          Inspect at {(spanStart(span) - runStart).toFixed(1)} s
-                        </Button>
-                      </div>
-                    </details>
-                  ),
-                )
-              )}
-              {visibleRun && <RunCompletion run={visibleRun} />}
-            </div>
-          </section>
-        </TabsContent>
+        {!traceOnly && (
+          <TabsList
+            aria-label="Run details"
+            activateOnFocus
+            variant="line"
+            className="mx-4"
+          >
+            <TabsTrigger value="activity" className="px-4">
+              Agent activity
+            </TabsTrigger>
+            <TabsTrigger value="trace" className="px-4">
+              Trace
+            </TabsTrigger>
+          </TabsList>
+        )}
+        {!traceOnly && (
+          <TabsContent value="activity" className="run-content">
+            <section aria-label="Agent activity">
+              {agentRun && <RunRequestDetails run={agentRun} />}
+              {live && hasRunContents && <LiveActionSequence />}
+              {memory && <RunMemory memory={memory} showTask={!agentRun} />}
+              <div className="agent-feed">
+                <h3>Activity</h3>
+                {agentActivity.length === 0 && visibleRun === null ? (
+                  <p>No agent activity yet.</p>
+                ) : (
+                  agentActivity.map((span) =>
+                    span.attributes["hebbian.kind"] === "tool" ? (
+                      <AgentToolEntry
+                        key={span.span_id}
+                        span={span}
+                        onInspect={() => {
+                          inspect(spanStart(span), span);
+                          setTab("trace");
+                        }}
+                      />
+                    ) : (
+                      <details className="reasoning-entry" key={span.span_id}>
+                        <summary>
+                          <strong>Reasoning</strong>
+                          <ActivityTiming span={span} />
+                          <span className="reasoning-preview">
+                            {
+                              stringList(
+                                span.attributes["hebbian.reasoning_summaries"],
+                              )[0]
+                            }
+                          </span>
+                          {span.attributes["hebbian.active"] === true && (
+                            <span>Running</span>
+                          )}
+                          {span.status.code.includes("ERROR") && (
+                            <span className="activity-error">Failed</span>
+                          )}
+                        </summary>
+                        <div className="activity-details">
+                          {stringList(
+                            span.attributes["hebbian.reasoning_summaries"],
+                          ).map((summary, index) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: Summaries have no IDs and carry no local state.
+                            <p key={`${index}-${summary}`}>{summary}</p>
+                          ))}
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              inspect(spanStart(span), span);
+                              setTab("trace");
+                            }}
+                          >
+                            Inspect at {(spanStart(span) - runStart).toFixed(1)}{" "}
+                            s
+                          </Button>
+                        </div>
+                      </details>
+                    ),
+                  )
+                )}
+                {visibleRun && <RunCompletion run={visibleRun} />}
+              </div>
+            </section>
+          </TabsContent>
+        )}
         <TabsContent value="trace" className="run-content">
           <section aria-label="Trace">
             <div className="trace-controls">

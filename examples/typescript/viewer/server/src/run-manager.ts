@@ -103,7 +103,7 @@ export class RunManager {
   start(request: ParsedRunRequest, browserApiKey?: string): Run {
     if (this.activeRun() !== null)
       throw new RunConflictError("A run is already active");
-    const { promptImage, ...historyRequest } = request;
+    const { promptImages, ...historyRequest } = request;
     const settings = resolveSettings(request.settings);
     const { provider, model, reasoningEffort, inferenceMode } = settings;
     const settingsProblem =
@@ -123,7 +123,11 @@ export class RunManager {
       createdAt: now,
       request: {
         ...historyRequest,
-        ...(promptImage ? { attachmentFilename: promptImage.filename } : {}),
+        ...(promptImages?.length
+          ? {
+              attachmentFilenames: promptImages.map(({ filename }) => filename),
+            }
+          : {}),
         settings,
       },
       phase: { state: "running", startedAt: now },
@@ -258,11 +262,10 @@ export class RunManager {
           runId: entry.run.id,
           arm: request.arm,
           task: request.task,
-          ...(request.promptImage
+          ...(request.promptImages?.length
             ? {
-                referenceImageJpeg: Buffer.from(
-                  request.promptImage.jpegBase64,
-                  "base64",
+                referenceImagesJpeg: request.promptImages.map(
+                  ({ jpegBase64 }) => Buffer.from(jpegBase64, "base64"),
                 ),
               }
             : {}),

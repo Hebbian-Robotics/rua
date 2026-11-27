@@ -1,7 +1,4 @@
-import {
-  MAX_PROMPT_IMAGE_BASE64_LENGTH,
-  type PromptImage,
-} from "../../../shared/run-api.js";
+import type { PromptImage } from "../../../shared/run-api.js";
 
 export const PROMPT_IMAGE_TYPES = "image/jpeg,image/png,image/webp";
 export const JPEG_DATA_URL_PREFIX = "data:image/jpeg;base64,";
@@ -35,10 +32,6 @@ export async function preparePromptImage(file: File): Promise<PromptImage> {
     if (!dataUrl.startsWith(JPEG_DATA_URL_PREFIX))
       throw new Error("Could not encode the image as JPEG.");
     const jpegBase64 = dataUrl.slice(JPEG_DATA_URL_PREFIX.length);
-    if (jpegBase64.length > MAX_PROMPT_IMAGE_BASE64_LENGTH)
-      throw new Error(
-        "The processed image is too large. Choose a smaller image.",
-      );
     return { filename: file.name.trim().slice(0, 255) || "image", jpegBase64 };
   } finally {
     bitmap.close();

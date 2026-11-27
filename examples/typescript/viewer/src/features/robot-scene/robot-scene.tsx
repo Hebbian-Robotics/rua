@@ -442,10 +442,6 @@ export function RobotScene(props: RobotSceneProps) {
               Gray: measured. Purple: commanded. Green: destination. Teal:
               preview (amber if approximate, gray if stale).
             </p>
-            <p className="robot-scene-note">
-              Simplified geometry; the table, camera mounts and objects are not
-              modeled. Gripper opening is approximate.
-            </p>
             {props.arms.map((arm) => (
               <div key={arm.arm}>
                 <strong>{arm.arm}</strong>

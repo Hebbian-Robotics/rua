@@ -25,7 +25,7 @@ test("viewer preferences follow the system theme and hide commanded joints by de
     showCommandedJoints: false,
     showCameraLabels: true,
     agentModelSelection: null,
-    recordWithControl: false,
+    recordWithControl: true,
   });
 });
 
@@ -58,7 +58,7 @@ test("saved preferences are shared and invalid or missing values get safe defaul
     showTargetJoints: true,
     showCommandedJoints: false,
     agentModelSelection: null,
-    recordWithControl: false,
+    recordWithControl: true,
   });
 });
 

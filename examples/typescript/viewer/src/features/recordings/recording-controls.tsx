@@ -5,7 +5,6 @@ import { z } from "zod";
 import { Alert } from "@/components/ui/alert.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
-import { Switch } from "@/components/ui/switch.js";
 import {
   recordingStatusSchema,
   type RecordingStatus as StationRecordingStatus,
@@ -101,13 +100,9 @@ export function useControlRecording(recordWithControl: boolean) {
 export function RecordingControls({
   recording,
   run,
-  autoRecord,
-  onAutoRecordChange,
 }: {
   recording: ReturnType<typeof useControlRecording>;
   run: Run | null;
-  autoRecord: boolean;
-  onAutoRecordChange: (enabled: boolean) => void;
 }) {
   const runFailure = run?.output.find((line) =>
     /recording .* failed:/i.test(line),
@@ -130,24 +125,6 @@ export function RecordingControls({
           )
         )}
       </div>
-      <label className="setting-switch" htmlFor="record-with-control">
-        <span>Auto-record when control starts</span>
-        <Switch
-          id="record-with-control"
-          checked={autoRecord}
-          disabled={!recording.enabled}
-          aria-describedby="auto-record-description"
-          onCheckedChange={onAutoRecordChange}
-        />
-      </label>
-      <p
-        id="auto-record-description"
-        className="m-0 text-sm text-muted-foreground"
-      >
-        {recording.enabled
-          ? "Starts when you run a task or enable the arm in Manual."
-          : "Recording is unavailable on this station."}
-      </p>
       {recording.enabled && (
         <Button
           className="w-fit"

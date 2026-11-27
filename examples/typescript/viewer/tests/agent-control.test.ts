@@ -85,7 +85,8 @@ function AgentControlWithPreferences({
       updatePreferences({ ...preferences, agentModelSelection }),
     onStopRun: async () => {},
     stoppingRun: false,
-    onViewRunActivity: () => {},
+    showRunActivity: false,
+    runSpans: [],
   });
 }
 
@@ -120,6 +121,7 @@ async function mountAgentControl(requests: RunRequest[]) {
       createElement(AgentControlWithPreferences, {
         onStartRun: async (request) => {
           requests.push(request);
+          return true;
         },
       }),
     );
@@ -245,4 +247,30 @@ test("changing providers clears a custom model and requires a fresh selection", 
       }),
     }),
   ]);
+});
+
+test("Enter starts one task and Shift+Enter leaves it unsent", async () => {
+  const requests: RunRequest[] = [];
+  await mountAgentControl(requests);
+  const taskInput = requireControl<HTMLTextAreaElement>("textarea");
+  await enterText(taskInput, "Inspect the work area");
+  await selectOption(providerSelect(), "OpenAI");
+  await selectOption(modelSelect(), "GPT-6 Sol");
+  await act(async () => {
+    taskInput.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        shiftKey: true,
+        bubbles: true,
+      }),
+    );
+  });
+  expect(requests).toHaveLength(0);
+  await act(async () => {
+    taskInput.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.task).toBe("Inspect the work area");
 });

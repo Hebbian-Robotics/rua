@@ -221,6 +221,10 @@ details summary {
   padding: 18px;
   font-size: 14px;
 }
+/* The composer container provides the focus indicator for its text input. */
+.agent-control #agent-task:focus-visible {
+  outline: none;
+}
 .agent-control p,
 .manual-control p {
   margin: 0;
@@ -720,5 +724,17 @@ pre {
   .run-diagnostics > summary span {
     display: block;
     margin: 6px 0 0;
+  }
+}
+
+.agent-thread-viewport {
+  max-height: min(30dvh, 260px);
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+  margin-block-end: 12px;
+}
+@container viewer-content (max-width: 40rem) {
+  .agent-thread-viewport {
+    margin-inline-end: 24px;
   }
 }
