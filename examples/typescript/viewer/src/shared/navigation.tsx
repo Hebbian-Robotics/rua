@@ -69,7 +69,7 @@ type ViewerShellProps = {
   onStop?: () => void;
   navigationLinks?: readonly ViewerNavigationLink[];
   statusIndicator?: ReactNode;
-  armControls?: ReactNode;
+  armControls?: (stopControl: ReactNode, stopFeedback: ReactNode) => ReactNode;
   children: ReactNode;
 };
 
@@ -115,17 +115,47 @@ function ViewerNavigation({
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const sidebarToggle = useRef<HTMLButtonElement>(null);
   useEffect(() => {
+    let highlightTimeout: number | undefined;
+    let highlightedButton: HTMLElement | null = null;
     function revealArmControls(event: MouseEvent) {
       if (!(event.target instanceof Element)) return;
       const link = event.target.closest('a[href="#enable-arm"]');
       if (!link) return;
+      event.preventDefault();
       setSidebarExpanded(true);
-      requestAnimationFrame(() =>
-        document.getElementById("enable-arm")?.focus(),
-      );
+      requestAnimationFrame(() => {
+        const enableButton = document.getElementById("enable-arm");
+        if (!enableButton) return;
+        highlightedButton?.removeAttribute("data-highlighted");
+        window.clearTimeout(highlightTimeout);
+        highlightedButton = enableButton;
+        enableButton.setAttribute("data-highlighted", "");
+        for (const container of [
+          enableButton.closest(".viewer-arm-controls"),
+          enableButton.closest(".viewer-navigation"),
+        ]) {
+          if (!(container instanceof HTMLElement)) continue;
+          const buttonBounds = enableButton.getBoundingClientRect();
+          const containerBounds = container.getBoundingClientRect();
+          if (buttonBounds.top < containerBounds.top + 8) {
+            container.scrollTop += buttonBounds.top - containerBounds.top - 8;
+          } else if (buttonBounds.bottom > containerBounds.bottom - 8) {
+            container.scrollTop +=
+              buttonBounds.bottom - containerBounds.bottom + 8;
+          }
+        }
+        enableButton.focus({ preventScroll: true });
+        highlightTimeout = window.setTimeout(() => {
+          enableButton.removeAttribute("data-highlighted");
+        }, 4000);
+      });
     }
     document.addEventListener("click", revealArmControls);
-    return () => document.removeEventListener("click", revealArmControls);
+    return () => {
+      document.removeEventListener("click", revealArmControls);
+      window.clearTimeout(highlightTimeout);
+      highlightedButton?.removeAttribute("data-highlighted");
+    };
   }, []);
   useEffect(() => {
     function handleSidebarShortcut(event: KeyboardEvent) {
@@ -175,6 +205,24 @@ function ViewerNavigation({
     setStopMessage(failures.length ? failures.join(" · ") : "Stop requested.");
   }
   const stopDisabled = stopPending || !connected || !stationState?.arms.length;
+  const stopControl = (
+    <Tooltip
+      text="Stop all connected arms"
+      disabled={stopDisabled}
+      className="viewer-stop-tooltip"
+    >
+      <Button
+        variant="stop"
+        aria-label="Stop arms"
+        className="viewer-stop-button"
+        disabled={stopDisabled}
+        onClick={() => void stopArms()}
+      >
+        <SquareIcon aria-hidden="true" className="fill-current" />
+        <span className="viewer-nav-label">Stop arms</span>
+      </Button>
+    </Tooltip>
+  );
   return (
     <header
       className="viewer-navigation"
@@ -244,7 +292,10 @@ function ViewerNavigation({
         {armControls && (
           <>
             <div className="viewer-arm-controls" hidden={!sidebarExpanded}>
-              {armControls}
+              {armControls(
+                stopControl,
+                <StopFeedback message={stopMessage} failed={stopFailed} />,
+              )}
             </div>
             {!sidebarExpanded && (
               <Button
@@ -260,24 +311,11 @@ function ViewerNavigation({
             )}
           </>
         )}
-        <Tooltip
-          text="Stop all connected arms"
-          disabled={stopDisabled}
-          className="viewer-stop-tooltip"
-        >
-          <Button
-            variant="stop"
-            aria-label="Stop arms"
-            className="viewer-stop-button"
-            disabled={stopDisabled}
-            onClick={() => void stopArms()}
-          >
-            <SquareIcon aria-hidden="true" className="fill-current" />
-            <span className="viewer-nav-label">Stop arms</span>
-          </Button>
-        </Tooltip>
+        {(!armControls || !sidebarExpanded) && stopControl}
       </div>
-      <StopFeedback message={stopMessage} failed={stopFailed} />
+      {(!armControls || !sidebarExpanded) && (
+        <StopFeedback message={stopMessage} failed={stopFailed} floating />
+      )}
     </header>
   );
 }
@@ -285,12 +323,17 @@ function ViewerNavigation({
 function StopFeedback({
   message,
   failed,
+  floating = false,
 }: {
   message: string;
   failed: boolean;
+  floating?: boolean;
 }) {
   return (
-    <div className="viewer-stop-feedback" role="status">
+    <div
+      className={floating ? "viewer-stop-feedback" : "arm-stop-feedback"}
+      role="status"
+    >
       {message && (
         <Alert
           role="presentation"

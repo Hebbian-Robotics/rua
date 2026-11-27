@@ -71,6 +71,8 @@ export function ArmControl({
   onStopFollowing,
   onPowerTransition,
   stopRehomeRef,
+  stopControl,
+  stopFeedback,
 }: {
   stationState: StationState | null;
   armName: string;
@@ -81,6 +83,8 @@ export function ArmControl({
   onStopFollowing: () => void;
   onPowerTransition: (changing: boolean) => void;
   stopRehomeRef: React.RefObject<(() => void) | null>;
+  stopControl: React.ReactNode;
+  stopFeedback: React.ReactNode;
 }) {
   const [pending, setPending] = useState(false);
   const [rehomeBeforeDisable, setRehomeBeforeDisable] = useState(true);
@@ -270,80 +274,94 @@ export function ArmControl({
           </NativeSelect>
         </label>
       )}
-      {arm && <InterlockStatus arm={arm} onMessage={setMessage} />}
-      {lastOutcome?.text &&
-        (lastOutcome.isError ||
-          commandResult(arm?.last_command)?.outcome === "stopped_short") &&
-        !arm?.fault &&
-        !arm?.active_trip && <p>{lastOutcome.text}</p>}
-      {showDisable ? (
-        rehomeBeforeDisable ? (
-          <Button disabled={!canRehome} onClick={() => void rehomeArm(true)}>
-            {rehoming ? "Rehoming…" : "Disable arm"}
-          </Button>
-        ) : (
-          <ConfirmationDialog
-            trigger={
-              <Button variant="outline" disabled={!canDisableInPlace}>
-                Disable arm…
+      <div className="arm-power-actions">
+        <div className="arm-power-control">
+          {showDisable ? (
+            rehomeBeforeDisable ? (
+              <Button
+                disabled={!canRehome}
+                onClick={() => void rehomeArm(true)}
+              >
+                {rehoming ? "Rehoming…" : "Disable arm"}
               </Button>
-            }
-            title={`Disable ${armName} in place?`}
-            description="This can make it drop. Support the arm before continuing."
-            actionLabel="Disable arm"
-            actionDisabled={!canDisableInPlace}
-            onConfirm={() => {
-              if (canDisableInPlace) void changePower("disable");
-            }}
-          />
-        )
-      ) : (
-        <Button
-          id="enable-arm"
-          disabled={
-            !powerOff ||
-            busy ||
-            runActive ||
-            (manualSelected && leaseView.kind === "elsewhere")
-          }
-          onClick={() => void changePower("enable")}
-        >
-          Enable arm
-        </Button>
-      )}
-      <label htmlFor="rehome-before-disable">
-        <input
-          id="rehome-before-disable"
-          type="checkbox"
-          checked={rehomeBeforeDisable}
-          disabled={busy || runActive}
-          onChange={(event) =>
-            setRehomeBeforeDisable(event.currentTarget.checked)
-          }
-        />
-        Rehome first
-      </label>
-      {showDisable && rehomeBeforeDisable && arm?.rest_pose === null && (
-        <p>
-          No home pose is configured. Turn off Rehome first to disable in place.
+            ) : (
+              <ConfirmationDialog
+                trigger={
+                  <Button variant="outline" disabled={!canDisableInPlace}>
+                    Disable arm…
+                  </Button>
+                }
+                title={`Disable ${armName} in place?`}
+                description="This can make it drop. Support the arm before continuing."
+                actionLabel="Disable arm"
+                actionDisabled={!canDisableInPlace}
+                onConfirm={() => {
+                  if (canDisableInPlace) void changePower("disable");
+                }}
+              />
+            )
+          ) : (
+            <Button
+              id="enable-arm"
+              disabled={
+                !powerOff ||
+                busy ||
+                runActive ||
+                (manualSelected && leaseView.kind === "elsewhere")
+              }
+              onClick={() => void changePower("enable")}
+            >
+              Enable arm
+            </Button>
+          )}
+          {showDisable && (
+            <label htmlFor="rehome-before-disable">
+              <input
+                id="rehome-before-disable"
+                type="checkbox"
+                checked={rehomeBeforeDisable}
+                disabled={busy || runActive}
+                onChange={(event) =>
+                  setRehomeBeforeDisable(event.currentTarget.checked)
+                }
+              />
+              Rehome first
+            </label>
+          )}
+        </div>
+        {stopControl}
+      </div>
+      <div className="arm-feedback">
+        {arm && <InterlockStatus arm={arm} onMessage={setMessage} />}
+        {lastOutcome?.text &&
+          (lastOutcome.isError ||
+            commandResult(arm?.last_command)?.outcome === "stopped_short") &&
+          !arm?.fault &&
+          !arm?.active_trip && <p>{lastOutcome.text}</p>}
+        {stopFeedback}
+        {showDisable && rehomeBeforeDisable && arm?.rest_pose === null && (
+          <p>
+            No home pose is configured. Turn off Rehome first to disable in
+            place.
+          </p>
+        )}
+        {manualSelected && leaseView.kind === "elsewhere" && (
+          <p role="status">{describeHolder(leaseView.heldBy)} holds control.</p>
+        )}
+        {canReconnectManual && (
+          <Button
+            variant="outline"
+            className="w-fit"
+            disabled={busy || runActive}
+            onClick={() => void reconnectManual()}
+          >
+            Reconnect manual control
+          </Button>
+        )}
+        <p className="empty:hidden" role="status">
+          {formatMotionDetail(message)}
         </p>
-      )}
-      {manualSelected && leaseView.kind === "elsewhere" && (
-        <p role="status">{describeHolder(leaseView.heldBy)} holds control.</p>
-      )}
-      {canReconnectManual && (
-        <Button
-          variant="outline"
-          className="w-fit"
-          disabled={busy || runActive}
-          onClick={() => void reconnectManual()}
-        >
-          Reconnect manual control
-        </Button>
-      )}
-      <p className="empty:hidden" role="status">
-        {formatMotionDetail(message)}
-      </p>
+      </div>
     </section>
   );
 }

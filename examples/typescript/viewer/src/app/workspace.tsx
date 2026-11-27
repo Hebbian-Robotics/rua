@@ -364,8 +364,10 @@ export function WorkspaceApp({
       }}
       navigationLinks={navigationLinks}
       statusIndicator={statusIndicator}
-      armControls={
+      armControls={(stopControl, stopFeedback) => (
         <ArmControl
+          stopControl={stopControl}
+          stopFeedback={stopFeedback}
           stationState={connected ? stationState : null}
           armName={armName}
           onSelectArm={(name) => {
@@ -389,7 +391,7 @@ export function WorkspaceApp({
           onPowerTransition={setChangingArmPower}
           stopRehomeRef={stopRehomeRef}
         />
-      }
+      )}
     >
       <ControllerRecovery />
       <RecoveryControls state={connected ? stationState : null} />
@@ -411,14 +413,14 @@ export function WorkspaceApp({
             <p className="m-0">
               <strong>Example viewer.</strong> This only runs a simple agent
               loop. Runs are recorded by default and use disk space; change in{" "}
-              <a href="#settings/recording">Settings</a>. See how the{" "}
+              <a href="#settings/recording">Settings</a>. See the{" "}
               <a
                 className="underline"
                 href="https://github.com/Hebbian-Robotics/rua/tree/main/examples/typescript/agent"
               >
-                example uses the RUA SDK
+                example SDK usage
               </a>{" "}
-              to extend it or build your own.
+              to extend or build your own.
             </p>
             <Button
               type="button"

@@ -68,6 +68,10 @@
 .viewer-stop-button {
   margin-inline-start: auto;
 }
+.viewer-stop-tooltip {
+  display: inline-flex;
+  margin-inline-start: auto;
+}
 .viewer-stop-feedback {
   position: fixed;
   inset-block-end: 12px;
@@ -77,6 +81,9 @@
 }
 
 .viewer-stop-feedback:empty {
+  position: absolute;
+}
+.arm-stop-feedback:empty {
   position: absolute;
 }
 
@@ -173,8 +180,36 @@
   width: 100%;
   min-width: 0;
 }
+.viewer-arm-controls #enable-arm[data-highlighted] {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  scroll-margin: 8px;
+}
 .viewer-arm-controls .arm-control {
   padding: 6px 0;
+}
+.arm-power-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.arm-power-control {
+  display: grid;
+  gap: 6px;
+}
+.arm-feedback {
+  display: contents;
+}
+.arm-feedback:has(> :not(:empty)) {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.arm-power-control > button,
+.arm-power-actions .viewer-stop-tooltip,
+.arm-power-actions .viewer-stop-button {
+  width: 100%;
+  margin-inline-start: 0;
 }
 .viewer-arm-controls .control-actions {
   display: grid;
@@ -189,21 +224,39 @@
   white-space: normal;
 }
 @container viewer (max-width: 56rem) {
+  .viewer-navigation .viewer-stop-tooltip,
+  .viewer-stop-button {
+    margin-inline-start: 0;
+  }
   .viewer-arm-controls {
     max-height: 35dvh;
     overflow-y: auto;
   }
+  .viewer-arm-controls .arm-control-heading {
+    justify-content: flex-start;
+  }
+  .arm-power-actions {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding-block: 4px;
+    background: var(--surface);
+  }
+  .arm-power-control > button,
+  .arm-power-actions .viewer-stop-tooltip,
+  .arm-power-actions .viewer-stop-button {
+    width: auto;
+  }
   .viewer-arm-controls .arm-control > button {
     width: fit-content;
     max-width: 100%;
-    justify-self: end;
+    justify-self: start;
   }
 }
 
-.viewer-stop-tooltip {
-  display: inline-flex;
-  margin-inline-start: auto;
-}
 @container viewer (min-width: 56rem) {
   .viewer-stop-tooltip {
     display: flex;
