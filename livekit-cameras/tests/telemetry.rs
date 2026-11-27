@@ -107,7 +107,7 @@ async fn controller_loss_keeps_recording_and_marks_the_finished_archive_incomple
     let config = ControllerConfig::parse(include_str!(
         "../../server-core/tests/support/two_joint_config.json"
     ))?;
-    let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
+    let (link, _endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
     link.publish_log(hebbian_contracts::LoggedEvent::controller_available());
     let server = start_station("127.0.0.1:0".into()).await?;
     server.attach_arms(BTreeMap::from([("left".into(), link.handle())]));
@@ -207,7 +207,8 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         .to_string_lossy()
         .into_owned();
     let config = ControllerConfig::try_from(config)?;
-    let link = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
+    let (link, link_endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE)))?;
+    let mut link_endpoint = Some(link_endpoint);
     let server = start_station("127.0.0.1:0".into()).await?;
     let arm_links = BTreeMap::from([("left".into(), link.handle())]);
     server.attach_arms(arm_links.clone());
@@ -217,7 +218,7 @@ async fn unreachable_livekit_and_station_reconnect_preserve_recording()
         let mut plant = hebbian_rua_core::plant::NoPhysicsStandIn::at(vec![0.0, 0.0], 0.02);
         hebbian_rua_core::control_loop::run(
             &mut plant,
-            &link,
+            &mut link_endpoint,
             &config,
             Some(Duration::from_secs(30)),
             &loop_shutdown_requested,

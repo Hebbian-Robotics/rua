@@ -10,7 +10,7 @@ use super::recovery::{RecoveryHold, assess_recovery_hold, recovery_positions};
 use super::{LONGEST_RECORDED_CYCLE_MICROSECONDS, Report};
 use crate::arm::{ArmCore, Job, Now};
 use crate::config::ControllerConfig;
-use crate::control_link::{Link, SampleRecycler};
+use crate::controller_endpoint::{ControllerEndpoint, SampleRecycler};
 use crate::handoff::ArmInbox;
 use crate::limits::Trip;
 use crate::plant::{Feedback, Pacing, Plant, Reconnection};
@@ -86,7 +86,8 @@ pub(super) enum Flow {
 pub(super) struct Runner<'a, P: Plant> {
     pub(super) name: String,
     plant: &'a mut P,
-    pub(super) link: &'a Link,
+    pub(super) publish_sample: Box<dyn Fn(hebbian_contracts::Sample) + Send>,
+    pub(super) publish_log: std::sync::Arc<dyn Fn(LoggedEvent) + Send + Sync>,
     pub(super) inbox: ArmInbox,
     pub(super) samples: SampleRecycler,
     pub(super) feedback: Feedback,
@@ -109,7 +110,7 @@ pub(super) struct Runner<'a, P: Plant> {
 pub(super) fn runner_for<'a, P: Plant>(
     name: &str,
     plant: &'a mut P,
-    link: &'a Link,
+    endpoint: &mut Option<ControllerEndpoint>,
     config: &'a ControllerConfig,
     trace_directory: &Path,
 ) -> Result<Runner<'a, P>, Box<Report>> {
@@ -121,7 +122,18 @@ pub(super) fn runner_for<'a, P: Plant>(
             return Err(Box::new(report));
         }
     };
-    let core = ArmCore::new(crate::arm::Limits::from(config), link.log_publisher());
+    let Some(publish_log) = endpoint
+        .as_ref()
+        .map(|endpoint| endpoint.publish_log.clone())
+    else {
+        report.trip = Some(format!(
+            "The controller endpoint for {name} is already in use"
+        ));
+        return Err(Box::new(report));
+    };
+    let core = ArmCore::new(crate::arm::Limits::from(config), move |event| {
+        publish_log(event);
+    });
     let initialized = plant.read_feedback().and_then(|feedback| {
         feedback.validate_for_cycle(config)?;
         let state = initialize_loop(config, core, &feedback)?;
@@ -134,14 +146,15 @@ pub(super) fn runner_for<'a, P: Plant>(
             return Err(Box::new(report));
         }
     };
-    let Some(loop_end) = link.take_loop_end() else {
+    let Some(loop_end) = endpoint.take() else {
         report.trip = Some(format!("The control link for {name} is already in use"));
         return Err(Box::new(report));
     };
     Ok(Runner {
         name: name.to_owned(),
         plant,
-        link,
+        publish_sample: loop_end.publish_sample,
+        publish_log: loop_end.publish_log,
         inbox: loop_end.inbox,
         samples: loop_end.samples,
         feedback,
@@ -922,7 +935,7 @@ impl<P: Plant> Runner<'_, P> {
     fn publish_trip(&mut self, trip: Option<String>, feedback: &Feedback, now: Now) {
         let Some(reason) = trip else { return };
         self.report.trip.get_or_insert_with(|| reason.clone());
-        self.link.publish_log(LoggedEvent::tripped(reason.clone()));
+        (self.publish_log)(LoggedEvent::tripped(reason.clone()));
         self.state.arm().motion_ended(
             CommandOutcome::Tripped,
             Some(reason),
@@ -971,7 +984,7 @@ impl<P: Plant> Runner<'_, P> {
             | BusRecovery::VerifyingHold { .. } => None,
         };
         sample.cycle_seconds = interval;
-        self.link.publish_sample(sample);
+        (self.publish_sample)(sample);
         self.cycle_number += 1;
     }
 }

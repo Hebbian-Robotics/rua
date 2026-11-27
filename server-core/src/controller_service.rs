@@ -543,7 +543,8 @@ mod tests {
     #[test]
     fn readiness_waits_for_fresh_disabled_loop_feedback() {
         let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
-        let link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
+        let (link, _endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+        let link = Arc::new(link);
         let arms = BTreeMap::from([("arm".to_owned(), link.handle())]);
         let (station_socket, controller_socket) = UnixStream::pair().unwrap();
         station_socket
@@ -574,8 +575,9 @@ mod tests {
     #[test]
     fn a_controller_executes_a_request_once_and_rejects_a_repeated_id() {
         let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
-        let link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
-        let inbox = link.take_loop_end().unwrap().inbox;
+        let (link, endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+        let link = Arc::new(link);
+        let inbox = endpoint.inbox;
         let arms = BTreeMap::from([("arm".to_owned(), link.handle())]);
         let (station_socket, controller_socket) = UnixStream::pair().unwrap();
         station_socket
@@ -662,10 +664,12 @@ mod tests {
         let config = ControllerConfig::parse(TEST_CONFIG).unwrap();
         let station_lease = Arc::new(Lease::new(LEASE));
         station_lease.controller_lost();
-        let station_link = Arc::new(Link::new(&config, Arc::clone(&station_lease)).unwrap());
-        let controller_link = Arc::new(Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap());
-        let controller_inbox = controller_link.take_loop_end().unwrap().inbox;
-        let station_arm = station_link.take_controller_station_arm().unwrap();
+        let (station_link, station_arm) =
+            Link::for_station(&config, Arc::clone(&station_lease)).unwrap();
+        let station_link = Arc::new(station_link);
+        let (controller_link, controller_endpoint) =
+            Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+        let controller_link = Arc::new(controller_link);
         let mut session = StationSession::new(BTreeMap::from([("arm".into(), station_arm)]));
         let station_links = BTreeMap::from([("arm".into(), Arc::clone(&station_link))]);
         let controller_links = BTreeMap::from([("arm".into(), controller_link.handle())]);
@@ -718,7 +722,7 @@ mod tests {
             thread::sleep(Duration::from_millis(1));
         };
         let admitted = loop {
-            if let Some(request) = controller_inbox.next() {
+            if let Some(request) = controller_endpoint.inbox.next() {
                 break request;
             }
             assert!(Instant::now() < deadline);

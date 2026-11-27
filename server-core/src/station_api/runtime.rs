@@ -778,7 +778,8 @@ mod tests {
         ))
         .unwrap();
         let lease = Arc::new(crate::lease::Lease::new(crate::lease::LEASE));
-        let link = crate::control_link::Link::new(&config, Arc::clone(&lease)).unwrap();
+        let (link, _endpoint) =
+            crate::control_link::Link::new(&config, Arc::clone(&lease)).unwrap();
         let handle = link.handle();
         let grant = handle
             .acquire_lease(
@@ -835,7 +836,8 @@ mod tests {
         ))
         .unwrap();
         let lease = Arc::new(crate::lease::Lease::new(crate::lease::LEASE));
-        let link = crate::control_link::Link::new(&config, Arc::clone(&lease)).unwrap();
+        let (link, _endpoint) =
+            crate::control_link::Link::new(&config, Arc::clone(&lease)).unwrap();
         let handle = link.handle();
         let grant = handle
             .acquire_lease(

@@ -115,7 +115,7 @@ mod tests {
         let config =
             ControllerConfig::parse(include_str!("../../tests/support/two_joint_config.json"))
                 .unwrap();
-        let link = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
+        let (link, _link_endpoint) = Link::new(&config, Arc::new(Lease::new(LEASE))).unwrap();
         let handle = link.handle();
         let admission = super::super::admission::AdmissionOwner::start(
             &tokio::runtime::Handle::current(),

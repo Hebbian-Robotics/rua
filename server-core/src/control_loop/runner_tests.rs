@@ -182,22 +182,37 @@ fn config(test_name: &str) -> ControllerConfig {
     ControllerConfig::try_from(config).unwrap()
 }
 
-fn test_link(config: &ControllerConfig) -> Link {
-    Link::for_controller(
+struct TestLink {
+    link: Link,
+    endpoint: std::cell::RefCell<Option<crate::controller_endpoint::ControllerEndpoint>>,
+}
+impl std::ops::Deref for TestLink {
+    type Target = Link;
+    fn deref(&self) -> &Link {
+        &self.link
+    }
+}
+fn test_link(config: &ControllerConfig) -> TestLink {
+    let (link, endpoint) = Link::new(
         config,
         std::sync::Arc::new(crate::lease::Lease::new(Duration::from_secs(1))),
     )
+    .unwrap();
+    TestLink {
+        link,
+        endpoint: std::cell::RefCell::new(Some(endpoint)),
+    }
 }
 
 fn runner<'a>(
     plant: &'a mut ScriptedPlant,
     config: &'a ControllerConfig,
-    link: &'a Link,
+    link: &'a TestLink,
 ) -> Runner<'a, ScriptedPlant> {
     let Ok(runner) = runner_for(
         "arm",
         plant,
-        link,
+        &mut link.endpoint.borrow_mut(),
         config,
         std::path::Path::new(&config.trace_directory),
     ) else {
@@ -366,7 +381,7 @@ fn a_clean_enable_turns_torque_on_once_and_powers_the_loop_up() {
 fn powered_runner<'a>(
     plant: &'a mut ScriptedPlant,
     config: &'a ControllerConfig,
-    link: &'a Link,
+    link: &'a TestLink,
 ) -> Runner<'a, ScriptedPlant> {
     let mut runner = runner(plant, config, link);
     runner.state.power_up(&[0.0, 0.0], None);
@@ -1195,7 +1210,7 @@ fn startup_refuses_missing_required_gripper_feedback() {
     let Err(report) = runner_for(
         "arm",
         &mut plant,
-        &link,
+        &mut link.endpoint.borrow_mut(),
         &config,
         std::path::Path::new(&config.trace_directory),
     ) else {
@@ -1208,6 +1223,18 @@ fn startup_refuses_missing_required_gripper_feedback() {
     );
     assert_eq!(count(&calls.position_writes), 0);
     assert_eq!(count(&calls.gripper_writes), 0);
+
+    let mut feedback = at([0.0, 0.0]);
+    feedback.gripper_angle = Some(0.0);
+    let mut recovered_plant = ScriptedPlant::new(vec![feedback], &calls);
+    let recovered = runner_for(
+        "arm",
+        &mut recovered_plant,
+        &mut link.endpoint.borrow_mut(),
+        &config,
+        std::path::Path::new(&config.trace_directory),
+    );
+    assert!(recovered.is_ok(), "corrected feedback must permit a retry");
 }
 
 #[test]

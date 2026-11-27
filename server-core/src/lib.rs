@@ -6,6 +6,7 @@ pub mod config;
 pub mod control_link;
 pub mod control_loop;
 pub mod controller_bridge;
+pub mod controller_endpoint;
 pub mod controller_service;
 pub mod controller_transport;
 pub mod corner_path;

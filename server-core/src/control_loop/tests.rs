@@ -186,11 +186,12 @@ fn complete_combined_motion_and_opening() -> (std::time::Duration, std::time::Du
         )
         .unwrap();
     let mut plant = NoPhysicsStandIn::at(initial.clone(), 0.0).with_gripper(0.0);
-    let link = test_link(&config);
+    let (_link, endpoint) = test_link(&config);
+    let mut endpoint = Some(endpoint);
     let mut runner = super::runner_for(
         "arm",
         &mut plant,
-        &link,
+        &mut endpoint,
         &config,
         std::path::Path::new(&config.trace_directory),
     )
@@ -289,13 +290,15 @@ fn admission_yields_at_its_budget_and_resumes_with_the_next_arm() {
     let config = ControllerConfig::try_from(config).unwrap();
     let mut left_plant = NoPhysicsStandIn::at(vec![0.0; 2], 0.0);
     let mut right_plant = NoPhysicsStandIn::at(vec![0.0; 2], 0.0);
-    let left_link = test_link(&config);
-    let right_link = test_link(&config);
+    let (_left_link, left_endpoint) = test_link(&config);
+    let mut left_endpoint = Some(left_endpoint);
+    let (_right_link, right_endpoint) = test_link(&config);
+    let mut right_endpoint = Some(right_endpoint);
     let mut runners = vec![
         super::runner_for(
             "left",
             &mut left_plant,
-            &left_link,
+            &mut left_endpoint,
             &config,
             std::path::Path::new(&config.trace_directory),
         )
@@ -304,7 +307,7 @@ fn admission_yields_at_its_budget_and_resumes_with_the_next_arm() {
         super::runner_for(
             "right",
             &mut right_plant,
-            &right_link,
+            &mut right_endpoint,
             &config,
             std::path::Path::new(&config.trace_directory),
         )
@@ -412,9 +415,15 @@ fn grouped_arms_share_progress_and_complete_on_the_same_step() {
     panic!("the grouped motion did not complete in 10 simulated seconds");
 }
 
-fn test_link(config: &ControllerConfig) -> crate::control_link::Link {
-    crate::control_link::Link::for_controller(
+fn test_link(
+    config: &ControllerConfig,
+) -> (
+    crate::control_link::Link,
+    crate::controller_endpoint::ControllerEndpoint,
+) {
+    crate::control_link::Link::new(
         config,
         std::sync::Arc::new(crate::lease::Lease::new(std::time::Duration::from_secs(1))),
     )
+    .unwrap()
 }
