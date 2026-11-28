@@ -342,11 +342,15 @@ fn parse_expected_revision(text: &str) -> Result<(String, u64), String> {
     let (arm, revision) = text
         .split_once('=')
         .ok_or_else(|| "expected ARM=REVISION, such as arm=3".to_owned())?;
+    let arm = arm.trim();
+    if arm.is_empty() {
+        return Err("expected ARM=REVISION with a non-empty arm name, such as arm=3".to_owned());
+    }
     let revision = revision
         .trim()
         .parse::<u64>()
         .map_err(|error| format!("revision {revision:?}: {error}"))?;
-    Ok((arm.trim().to_owned(), revision))
+    Ok((arm.to_owned(), revision))
 }
 
 /// Exactly `N` comma-separated numbers.
@@ -639,6 +643,8 @@ mod tests {
         );
         assert!(parse(&["--expected-revision", "follower", "state"]).is_err());
         assert!(parse(&["--expected-revision", "follower=-1", "state"]).is_err());
+        assert!(parse(&["--expected-revision", "=3", "state"]).is_err());
+        assert!(parse(&["--expected-revision", "   =3", "state"]).is_err());
     }
 
     #[test]
