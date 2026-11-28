@@ -1,5 +1,5 @@
 import { Clock, Duration, Effect, Schedule } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
+import { FetchHttpClient, HttpClient } from "effect/http";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
 import { apiSchemas } from "./generated/api-schemas.js";
@@ -22,7 +22,11 @@ import {
   readStationEvents,
   type StationEvent,
 } from "./station-events.js";
-import { jsonRequestInit, stationFetch } from "./station-request.js";
+import {
+  jsonRequestInit,
+  stationFetch,
+  stationJsonEffect,
+} from "./station-request.js";
 import {
   type ActionSequenceRecord,
   type ActionSequenceRequest,
@@ -578,18 +582,13 @@ export function createStationConnection(
   > {
     const url = new URL("/run/records", streamUrl);
     url.searchParams.set("after", String(after));
-    return Effect.gen(function* () {
-      const client = HttpClient.withScope(yield* HttpClient.HttpClient);
-      const response = yield* client
-        .get(url)
-        .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk));
-      const payload = yield* response.json;
-      return yield* Effect.try({
-        try: () => parseRunReplay(payload),
-        catch: (error) => error,
-      });
-    }).pipe(
-      Effect.scoped,
+    return stationJsonEffect(url).pipe(
+      Effect.flatMap((payload) =>
+        Effect.try({
+          try: () => parseRunReplay(payload),
+          catch: (error) => error,
+        }),
+      ),
       Effect.timeoutOrElse({
         duration: REPLY_TIMEOUT_MILLISECONDS,
         orElse: () =>

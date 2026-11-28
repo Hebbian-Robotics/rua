@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+import { HttpClient } from "effect/http";
 import { z } from "zod";
 
 import { StationHttpError } from "./station-errors.js";
@@ -16,6 +18,44 @@ function parseJsonOrNull(text: string): unknown {
   }
 }
 
+function stationHttpError(
+  status: number,
+  body: string,
+  contentType: string | undefined,
+): StationHttpError {
+  const detail = errorBodySchema.safeParse(parseJsonOrNull(body));
+  const plainText =
+    contentType?.split(";")[0] === "text/plain"
+      ? body.trim().slice(0, MAX_PLAIN_TEXT_ERROR_LENGTH)
+      : "";
+  return new StationHttpError(
+    status,
+    body,
+    detail.success ? detail.data.detail : plainText || `HTTP ${status}`,
+  );
+}
+
+/** Fetch and decode a JSON response within the current Effect HTTP scope. */
+export function stationJsonEffect(
+  url: URL,
+): Effect.Effect<unknown, unknown, HttpClient.HttpClient> {
+  return Effect.gen(function* () {
+    const client = HttpClient.withScope(yield* HttpClient.HttpClient);
+    const response = yield* client.get(url);
+    if (response.status < 200 || response.status >= 300) {
+      const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
+      return yield* Effect.fail(
+        stationHttpError(
+          response.status,
+          body,
+          response.headers["content-type"],
+        ),
+      );
+    }
+    return yield* response.json;
+  }).pipe(Effect.scoped);
+}
+
 /** Fetch from the station, throwing `StationHttpError` for an error status. */
 export async function stationFetch(
   url: string | URL,
@@ -28,18 +68,10 @@ export async function stationFetch(
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    const detail = errorBodySchema.safeParse(parseJsonOrNull(body));
-    const contentType = response.headers.get("content-type")?.split(";")[0];
-    const plainText =
-      contentType === "text/plain"
-        ? body.trim().slice(0, MAX_PLAIN_TEXT_ERROR_LENGTH)
-        : "";
-    throw new StationHttpError(
+    throw stationHttpError(
       response.status,
       body,
-      detail.success
-        ? detail.data.detail
-        : plainText || `HTTP ${response.status}`,
+      response.headers.get("content-type") ?? undefined,
     );
   }
   return response;
