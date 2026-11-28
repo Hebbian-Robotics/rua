@@ -1070,5 +1070,247 @@
       "recorded_step_count": 0,
       "steps": []
     }
+  },
+  {
+    "name": "reversal failure suggests splitting waypoint steps",
+    "keep_station_context": false,
+    "input": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_steps": [
+        {},
+        {}
+      ],
+      "steps": []
+    },
+    "concise": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 requires a stop or reversal; use a separate step",
+          "hint": "Waypoint index is zero-based. Split this move into two steps at that waypoint; each step can still have waypoints."
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    },
+    "expected": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 requires a stop or reversal; use a separate step",
+          "hint": "Waypoint index is zero-based. Split this move into two steps at that waypoint; each step can still have waypoints."
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    }
+  },
+  {
+    "name": "unrelated preparation error",
+    "keep_station_context": false,
+    "input": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 is unreachable"
+        }
+      },
+      "requested_steps": [
+        {},
+        {}
+      ],
+      "steps": []
+    },
+    "concise": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 is unreachable"
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    },
+    "expected": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 is unreachable"
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    }
+  },
+  {
+    "name": "reversal words from another failure stage",
+    "keep_station_context": false,
+    "input": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "execution",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_steps": [
+        {},
+        {}
+      ],
+      "steps": []
+    },
+    "concise": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "execution",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    },
+    "expected": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "execution",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint 15 requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    }
+  },
+  {
+    "name": "malformed waypoint identifier",
+    "keep_station_context": false,
+    "input": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint x requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_steps": [
+        {},
+        {}
+      ],
+      "steps": []
+    },
+    "concise": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint x requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    },
+    "expected": {
+      "arms": [
+        "arm"
+      ],
+      "phase": {
+        "state": "stopped",
+        "failure": {
+          "stage": "preparation",
+          "step": 1,
+          "arm": "arm",
+          "reason": "invalid_target",
+          "detail": "Waypoint x requires a stop or reversal; use a separate step"
+        }
+      },
+      "requested_step_count": 2,
+      "recorded_step_count": 0,
+      "steps": []
+    }
   }
 ]

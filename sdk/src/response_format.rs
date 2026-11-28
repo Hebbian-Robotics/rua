@@ -138,6 +138,34 @@ fn compact_earlier_step(value: Value) -> Value {
     )
 }
 
+fn add_waypoint_reversal_hint(summary: &mut Map<String, Value>) {
+    let Some(failure) = summary
+        .get_mut("phase")
+        .and_then(|phase| phase.get_mut("failure"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    // WHY: The station reports this as text, so match the known error exactly.
+    let is_reversal = failure.get("stage").and_then(Value::as_str) == Some("preparation")
+        && failure.get("reason").and_then(Value::as_str) == Some("invalid_target")
+        && failure
+            .get("detail")
+            .and_then(Value::as_str)
+            .and_then(|detail| detail.strip_prefix("Waypoint "))
+            .and_then(|detail| {
+                detail.strip_suffix(" requires a stop or reversal; use a separate step")
+            })
+            .is_some_and(|index| {
+                !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+            });
+    if is_reversal {
+        failure.insert("hint".into(), Value::String(
+            "Waypoint index is zero-based. Split this move into two steps at that waypoint; each step can still have waypoints.".into(),
+        ));
+    }
+}
+
 /// Keep outcomes and actionable state; omit history and rendering geometry. The shared
 /// specification is `tests/fixtures/model-concise.json`, also run by Python and TypeScript.
 #[must_use]
@@ -177,6 +205,7 @@ pub fn concise_output(value: Value, options: ConciseOptions) -> Value {
         {
             let steps = object["steps"].as_array().cloned().unwrap_or_default();
             let mut summary = keep_fields(&object, &["arms", "phase"]);
+            add_waypoint_reversal_hint(&mut summary);
             summary.insert(
                 "requested_step_count".to_owned(),
                 object["requested_steps"]

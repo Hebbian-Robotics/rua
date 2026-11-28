@@ -35,6 +35,25 @@ function schemaObject(value: JsonValue | undefined): JsonObject {
   return value;
 }
 
+function sequenceDescription(
+  actions: ReadonlySet<SequenceAction>,
+  scope: SequenceScope,
+): string {
+  const hasMotion = actions.has("pose") || actions.has("joints");
+  const hasGripper = actions.has("gripper");
+  let description = "Run steps in order, waiting for each to finish. ";
+  if (!hasMotion)
+    return `${description}A refusal or incomplete action ends the sequence; earlier steps may already have run. Contact does not confirm a grasp.`;
+  description +=
+    "A move passes through waypoints and settles at its goal. Waypoints must pass through without stopping; make a required stop a goal in a separate step. ";
+  if (scope.kind === "named")
+    description +=
+      "Waypoints, timing, and per-move acceleration or jerk require a single-arm step. ";
+  if (hasGripper)
+    description += "A waypoint gripper_opening starts at that crossing. ";
+  return `${description}A refusal, incomplete move, or limited goal ends the sequence; earlier steps may already have run.`;
+}
+
 /** The Rust catalog owns field definitions; composition selects their availability. */
 export function createRobotToolCatalog(
   configuration: RobotToolCatalogConfiguration = {},
@@ -155,6 +174,10 @@ export function createRobotToolCatalog(
     }
     return {
       ...tool,
+      description:
+        tool.name === "action_sequence"
+          ? sequenceDescription(sequenceActions, sequenceScope)
+          : tool.description,
       name,
       parameters,
     };

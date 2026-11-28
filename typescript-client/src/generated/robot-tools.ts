@@ -2,7 +2,7 @@
 export const robotToolSpecifications = [
   {
     description:
-      "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.",
+      "Run steps in order, waiting for each to finish. A move passes through waypoints and settles at its goal. Waypoints must pass through without stopping; make a required stop a goal in a separate step. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence; earlier steps may already have run.",
     name: "action_sequence",
     operation: "start_action_sequence",
     parameters: {
@@ -372,7 +372,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.",
+      "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Omitting orientation lets the solver choose one. Preview does not check clearance from workspace objects.",
     name: "preview_pose",
     operation: "preview",
     parameters: {
@@ -544,7 +544,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+      "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. If one arm fails during motion, the others stop. Grouped moves check modeled inter-arm clearance, not workspace objects.",
     name: "move_arms",
     operation: "move_arms",
     parameters: {
@@ -691,7 +691,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.",
+      "Set a named arm's gripper opening from 0 (closed) to 1 (fully open). Contact may stop closing but does not confirm a grasp.",
     name: "set_arm_gripper",
     operation: "set_gripper",
     parameters: {
@@ -740,7 +740,8 @@ export const robotToolSpecifications = [
     },
   },
   {
-    description: "Stop this arm's motion; it holds where it stops.",
+    description:
+      "Stop this arm's motion and hold position; this does not disable the motors or end the agent run.",
     name: "stop",
     operation: "stop",
     parameters: {

@@ -618,6 +618,28 @@ pub fn robot_tool_catalog() -> Vec<RobotToolDefinition> {
         .collect()
 }
 
+fn action_sequence_description(configuration: &SequenceToolConfiguration) -> String {
+    let has_motion = configuration.actions.contains(&SequenceAction::Pose)
+        || configuration.actions.contains(&SequenceAction::Joints);
+    let has_gripper = configuration.actions.contains(&SequenceAction::Gripper);
+    let mut description = String::from("Run steps in order, waiting for each to finish. ");
+    if has_motion {
+        description.push_str("A move passes through waypoints and settles at its goal. Waypoints must pass through without stopping; make a required stop a goal in a separate step. ");
+        if matches!(configuration.scope, SequenceScope::NamedArms(_)) {
+            description.push_str(
+                "Waypoints, timing, and per-move acceleration or jerk require a single-arm step. ",
+            );
+        }
+        if has_gripper {
+            description.push_str("A waypoint gripper_opening starts at that crossing. ");
+        }
+        description.push_str("A refusal, incomplete move, or limited goal ends the sequence; earlier steps may already have run.");
+    } else {
+        description.push_str("A refusal or incomplete action ends the sequence; earlier steps may already have run. Contact does not confirm a grasp.");
+    }
+    description
+}
+
 impl RobotToolCapability {
     /// The model-facing name, independent of the arguments schema.
     #[must_use]
@@ -640,37 +662,37 @@ impl RobotToolCapability {
     pub fn definition(&self) -> Result<RobotToolDefinition, String> {
         let (description, parameters) = match self {
             Self::ActionSequence(configuration) => (
-                "Run steps in order, waiting for each to finish. During a move, pass through optional waypoints and settle at the goal. A waypoint gripper_opening starts at that crossing. A refusal, incomplete move, or limited goal ends the sequence.",
+                action_sequence_description(configuration),
                 action_sequence_tool_schema(configuration)?,
             ),
             Self::PreviewPose => (
-                "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Execution also checks feasibility; preview is useful when the projection or orientation choice changes your next action. Omitting orientation lets the solver choose one.",
+                "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Omitting orientation lets the solver choose one. Preview does not check clearance from workspace objects.".into(),
                 model_arguments::<PreviewPoseArguments>(),
             ),
             Self::MoveArms => (
-                "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. Grouped moves check modeled inter-arm clearance. Workspace objects require separate constraints.",
+                "Move named arms together. Pose goals use a world position and orientation; joint goals use degrees. If one arm fails during motion, the others stop. Grouped moves check modeled inter-arm clearance, not workspace objects.".into(),
                 model_arguments::<MoveArmsCommand>(),
             ),
             Self::SetArmGripper => (
-                "Set a named arm's gripper opening from 0 (closed) to 1 (fully open); intermediate values request partial openings.",
+                "Set a named arm's gripper opening from 0 (closed) to 1 (fully open). Contact may stop closing but does not confirm a grasp.".into(),
                 gripper_arguments_schema()?,
             ),
             Self::Rehome => (
-                "Return this arm to the joint pose and gripper opening recorded when it was enabled.",
+                "Return this arm to the joint pose and gripper opening recorded when it was enabled.".into(),
                 model_arguments::<StopArguments>(),
             ),
             Self::Stop => (
-                "Stop this arm's motion; it holds where it stops.",
+                "Stop this arm's motion and hold position; this does not disable the motors or end the agent run.".into(),
                 model_arguments::<StopArguments>(),
             ),
             Self::Observe => (
-                "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.",
+                "Observe without moving. source=current (default) gets fresh state and camera images; source=last_sequence retrieves sampled images from the latest action sequence to investigate what happened during motion. History is only returned when requested and may be unavailable or incomplete. Optionally wait up to 10 seconds before observing.".into(),
                 model_arguments::<ObserveArguments>(),
             ),
         };
         Ok(RobotToolDefinition {
             name: self.name(),
-            description: description.into(),
+            description,
             parameters,
             operation: self.operation(),
         })
@@ -899,6 +921,41 @@ pub fn parse_sequence_tool_arguments(
 #[cfg(test)]
 mod sequence_configuration_tests {
     use super::*;
+
+    #[test]
+    fn sequence_description_matches_available_actions_and_scope() {
+        let single = RobotToolCapability::ActionSequence(SequenceToolConfiguration {
+            scope: SequenceScope::SingleArm,
+            actions: BTreeSet::from([SequenceAction::Pose]),
+        })
+        .definition()
+        .unwrap();
+        assert!(single.description.contains("without stopping"));
+        assert!(!single.description.contains("gripper_opening"));
+        assert!(!single.description.contains("single-arm step"));
+
+        let named = RobotToolCapability::ActionSequence(SequenceToolConfiguration {
+            scope: SequenceScope::NamedArms(vec!["left".into(), "right".into()]),
+            actions: BTreeSet::from([SequenceAction::Joints, SequenceAction::Gripper]),
+        })
+        .definition()
+        .unwrap();
+        assert!(named.description.contains("single-arm step"));
+        assert!(named.description.contains("gripper_opening"));
+
+        let gripper_only = RobotToolCapability::ActionSequence(SequenceToolConfiguration {
+            scope: SequenceScope::SingleArm,
+            actions: BTreeSet::from([SequenceAction::Gripper]),
+        })
+        .definition()
+        .unwrap();
+        assert!(!gripper_only.description.contains("waypoint"));
+        assert!(
+            gripper_only
+                .description
+                .contains("does not confirm a grasp")
+        );
+    }
 
     #[test]
     fn the_wire_rejects_an_arm_action_without_a_target() {

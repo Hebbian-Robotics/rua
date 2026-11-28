@@ -160,6 +160,29 @@ function compactEarlierStep(value: unknown): unknown {
   });
 }
 
+function withWaypointReversalHint(phase: unknown): unknown {
+  if (!isRecord(phase) || !isRecord(phase["failure"])) return phase;
+  const failure = phase["failure"];
+  const detail = failure["detail"];
+  // WHY: The station reports this as text, so match the known error exactly.
+  if (
+    failure["stage"] !== "preparation" ||
+    failure["reason"] !== "invalid_target" ||
+    typeof detail !== "string" ||
+    !/^Waypoint \d+ requires a stop or reversal; use a separate step$/.test(
+      detail,
+    )
+  )
+    return phase;
+  return {
+    ...phase,
+    failure: {
+      ...failure,
+      hint: "Waypoint index is zero-based. Split this move into two steps at that waypoint; each step can still have waypoints.",
+    },
+  };
+}
+
 /**
  * Keep outcomes and actionable state; omit history and rendering geometry. The shared
  * specification is `tests/fixtures/model-concise.json`, also run by Python and Rust.
@@ -192,7 +215,10 @@ export function conciseOutput(
     const requested = arrayOrEmpty(record["requested_steps"]);
     const steps = arrayOrEmpty(record["steps"]);
     return {
-      ...keepFields(record, ["arms", "phase"]),
+      ...keepFields(record, ["arms"]),
+      ...(record["phase"] === undefined
+        ? {}
+        : { phase: withWaypointReversalHint(record["phase"]) }),
       requested_step_count: requested.length,
       recorded_step_count: steps.length,
       steps: steps.map((step, index) =>
