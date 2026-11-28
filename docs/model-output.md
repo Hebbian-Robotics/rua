@@ -16,6 +16,12 @@ CLI exposes state and camera snapshots as separate commands. The example
 agent loops can attach observations to tool results and retain sequence
 images across calls.
 
+For a preparation failure whose station detail identifies a waypoint requiring
+a stop or reversal, the concise view adds a short hint to split the move into
+steps. The waypoint index is zero-based. The SDK recognizes the current
+station detail text; it leaves other failures and the full station payload
+unchanged.
+
 
 ## Images during action sequences
 

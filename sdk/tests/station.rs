@@ -1499,6 +1499,42 @@ async fn model_tools_execute_against_the_simulated_station() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn waypoint_reversal_hint_reaches_the_model_without_changing_raw_failure() -> TestResult {
+    let station = TestStation::start().await?;
+    let client = station.connect().await?;
+    let lease = within(client.acquire_lease(agent("waypoint hint"))).await??;
+    within(client.enable(ARM)).await??;
+    let tools = RobotTools::new(&lease, ARM);
+    let mut waypoint = REST.map(f64::to_degrees);
+    waypoint[0] += 15.0;
+    let result = within(tools.execute(
+        RobotToolCall {
+            id: "reversal".into(),
+            name: "action_sequence".into(),
+            arguments: json!({"steps": [{
+                "waypoints": [{"at": {"joints_degrees": waypoint}}],
+                "goal": {"joints_degrees": REST.map(f64::to_degrees)}
+            }]}),
+        },
+        CommandOptions::default(),
+    ))
+    .await??;
+    let raw = result.data();
+    assert_eq!(raw["phase"]["state"], "stopped");
+    assert_eq!(
+        raw["phase"]["failure"]["detail"],
+        "Waypoint 0 requires a stop or reversal; use a separate step"
+    );
+    assert!(raw["phase"]["failure"].get("hint").is_none());
+    let model = result.model_data();
+    assert_eq!(
+        model["phase"]["failure"]["hint"],
+        "Waypoint index is zero-based. Split this move into two steps at that waypoint; each step can still have waypoints."
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rehome_reports_failure_when_the_saved_gripper_opening_is_blocked() -> TestResult {
     let station = TestStation::start().await?;
     let client = station.connect().await?;
