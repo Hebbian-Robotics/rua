@@ -385,6 +385,7 @@ pub struct MotionSupervisor {
     continuous_path: Option<ContinuousPath>,
     waypoint_feedback_lag_seconds: f64,
     section_elapsed: f64,
+    pending_waypoint_seconds: f64,
     corner_index: usize,
     section: Option<OnlineSection>,
     checkpoints: Vec<Checkpoint>,
@@ -444,6 +445,7 @@ impl MotionSupervisor {
             continuous_path,
             waypoint_feedback_lag_seconds,
             section_elapsed: 0.0,
+            pending_waypoint_seconds: 0.0,
             corner_index: 1,
             section: None,
             checkpoints: Vec::new(),
@@ -527,22 +529,17 @@ impl MotionSupervisor {
         interval: f64,
         speed_fraction: f64,
     ) -> anyhow::Result<()> {
-        // CONSTRAINT: A changing velocity cap needs a new time parameterization.
-        ensure!(
-            speed_fraction >= 1.0,
-            "Continuous motion exceeded its tracking margin"
-        );
         let path = self
             .continuous_path
-            .as_ref()
+            .as_mut()
             .context("Missing continuous path")?;
+        let trajectory_seconds = path.advance_clock(interval, speed_fraction)?;
         let (section_start, section_end) = path.section_bounds(self.segment_index);
         let duration = section_end - section_start;
         ensure!(
             interval.is_finite() && interval > 0.0 && interval < duration,
             "Controller interval exceeds the continuous section duration"
         );
-        let trajectory_seconds = section_start + self.section_elapsed + interval;
         let crossing = trajectory_seconds >= section_end;
         if crossing && self.segment_index + 1 < self.plan.segments.len() {
             let (_, next_end) = path.section_bounds(self.segment_index + 1);
@@ -557,14 +554,15 @@ impl MotionSupervisor {
         let unconfirmed = self.checkpoints.len();
         let had_pending_crossing = unconfirmed < self.segment_index;
         if had_pending_crossing {
+            self.pending_waypoint_seconds += interval;
             ensure!(
-                self.section_elapsed <= self.waypoint_feedback_lag_seconds
+                self.pending_waypoint_seconds <= self.waypoint_feedback_lag_seconds
                     && (self.confirm_waypoint(unconfirmed, measured) || !crossing),
                 "Arm missed pass-through waypoint {unconfirmed}"
             );
         }
 
-        self.section_elapsed += interval;
+        self.section_elapsed = trajectory_seconds - section_start;
         if crossing {
             let index = self.segment_index;
             if index + 1 == self.plan.segments.len() {
@@ -582,6 +580,7 @@ impl MotionSupervisor {
             }
             self.segment_index += 1;
             self.section_elapsed -= duration;
+            self.pending_waypoint_seconds = 0.0;
         }
         self.continuous_path
             .as_mut()
@@ -890,6 +889,162 @@ mod tests {
     #[test]
     fn pass_through_move_samples_respect_acceleration_and_jerk_caps() {
         assert_motion_caps_slow_the_move(&STANDARD_KNOTS);
+    }
+
+    #[test]
+    fn continuous_move_smoothly_slows_and_recovers_without_missing_waypoints() {
+        let mut motion = planned_move(&STANDARD_KNOTS, None);
+        let limits = ControllerConfig::parse(TEST_CONFIG)
+            .unwrap()
+            .motion
+            .trajectory_limits();
+        let mut measured = [0.0];
+        let mut previous_acceleration = 0.0;
+        let mut slowed_samples = 0;
+        for sample in 0..2_000 {
+            let speed_fraction = if (25..65).contains(&sample) { 0.3 } else { 1.0 };
+            motion
+                .advance_with_speed_fraction(&measured, 0.01, speed_fraction)
+                .unwrap();
+            let reference = motion.reference();
+            let jerk = (reference.accelerations[0] - previous_acceleration) / 0.01;
+            assert!(reference.accelerations[0].abs() <= limits.acceleration_limit + 1e-6);
+            assert!(
+                jerk.abs() <= limits.jerk_limit + 1e-6,
+                "sample {sample}, jerk {jerk}"
+            );
+            previous_acceleration = reference.accelerations[0];
+            measured[0] = reference.positions[0];
+            if speed_fraction < 1.0 {
+                slowed_samples += 1;
+            }
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(slowed_samples > 0);
+        assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
+        let labels: Vec<&str> = motion
+            .new_checkpoints(0)
+            .iter()
+            .map(|point| point.label.as_str())
+            .collect();
+        assert_eq!(labels, ["waypoint", "goal"]);
+    }
+
+    #[test]
+    fn changing_tracking_requests_preserves_continuous_motion_limits() {
+        let mut motion = planned_move(&STANDARD_KNOTS, None);
+        let limits = ControllerConfig::parse(TEST_CONFIG)
+            .unwrap()
+            .motion
+            .trajectory_limits();
+        let mut measured = [0.0];
+        let mut previous_acceleration = 0.0;
+        for sample in 0..2_000 {
+            let speed_fraction = if sample % 8 < 4 { 0.3 } else { 1.0 };
+            motion
+                .advance_with_speed_fraction(&measured, 0.01, speed_fraction)
+                .unwrap();
+            let reference = motion.reference();
+            let jerk = (reference.accelerations[0] - previous_acceleration) / 0.01;
+            assert!(reference.accelerations[0].abs() <= limits.acceleration_limit + 1e-6);
+            assert!(
+                jerk.abs() <= limits.jerk_limit + 1e-6,
+                "sample {sample}, jerk {jerk}"
+            );
+            previous_acceleration = reference.accelerations[0];
+            measured[0] = reference.positions[0];
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
+    }
+
+    #[test]
+    fn so101_circle_remains_smooth_when_tracking_requests_slowdown() {
+        let knots: Vec<Vec<f64>> =
+            serde_json::from_str(include_str!("../tests/support/so101_circle_waypoints.json"))
+                .unwrap();
+        let segments = knots
+            .windows(2)
+            .enumerate()
+            .map(|(index, pair)| Segment {
+                label: format!("waypoint_{index}"),
+                corners: pair.to_vec(),
+                pass_through: (index + 2 < knots.len()).then_some(hebbian_contracts::PassThrough {
+                    gripper_angle: None,
+                }),
+                minimum_duration_seconds: None,
+                final_gripper_angle: None,
+                destination_position: None,
+                destination_quaternion: None,
+            })
+            .collect();
+        let limits = ControllerConfig::parse(TEST_CONFIG).unwrap().motion.clone();
+        let mut motion = MotionSupervisor::new(
+            CornerPlan {
+                segments,
+                peak_speed: 2.5,
+                trajectory_limits: None,
+            },
+            &limits,
+            knots[0].len(),
+        )
+        .unwrap();
+        let mut measured = knots[0].clone();
+        let mut previous_accelerations = vec![0.0; measured.len()];
+        for sample in 0..5_000 {
+            let speed_fraction = if (80..180).contains(&sample) {
+                0.3
+            } else {
+                1.0
+            };
+            motion
+                .advance_with_speed_fraction(&measured, 0.01, speed_fraction)
+                .unwrap();
+            let reference = motion.reference();
+            for (joint, previous) in previous_accelerations.iter_mut().enumerate() {
+                let acceleration = reference.accelerations[joint];
+                let jerk = (acceleration - *previous) / 0.01;
+                assert!(acceleration.abs() <= limits.acceleration_limit + 1e-6);
+                assert!(
+                    jerk.abs() <= limits.jerk_limit + 1e-6,
+                    "sample {sample}, joint {joint}, jerk {jerk}"
+                );
+                *previous = acceleration;
+            }
+            measured.clone_from(&reference.positions);
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
+        assert_eq!(motion.new_checkpoints(0).len(), knots.len() - 1);
+    }
+
+    #[test]
+    fn slowing_down_preserves_waypoint_confirmation_with_delayed_feedback() {
+        let mut motion = planned_move(&STANDARD_KNOTS, None);
+        let mut feedback_history = VecDeque::from([[0.0]; 7]);
+        for sample in 0..2_000 {
+            let measured = feedback_history.pop_front().unwrap();
+            let fraction = if (25..100).contains(&sample) {
+                0.5
+            } else {
+                1.0
+            };
+            motion
+                .advance_with_speed_fraction(&measured, 0.01, fraction)
+                .unwrap();
+            feedback_history.push_back([motion.reference().positions[0]]);
+            if motion.done() {
+                break;
+            }
+        }
+        assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
+        assert_eq!(motion.new_checkpoints(0).len(), 2);
     }
 
     #[test]
