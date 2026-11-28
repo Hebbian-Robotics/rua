@@ -17,4 +17,7 @@ station. Bring a separate client or agent to send commands. Physical hardware
 validation is outside the fixture's scope, including real camera behavior
 and motion clearance on your station.
 
+The fixture caps simulated actuator effort below the station's configured
+effort limit. It therefore cannot reproduce effort-limit trips from motor load.
+
 For another simulator, see the [simulator adapter contract](../../docs/simulators.md).

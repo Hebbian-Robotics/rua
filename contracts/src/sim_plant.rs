@@ -40,8 +40,8 @@ pub struct SimStep {
     pub gripper_angle: Option<f64>,
     /// How much simulated time this step lasts.
     pub seconds: f64,
-    /// Whether the arm has torque. When it does not, the targets are the arm's
-    /// own positions and the simulator should let it rest where it is.
+    /// Whether the arm's actuators have torque. When unpowered, the arm moves
+    /// under gravity, passive forces and contacts without actuator torque.
     pub powered: bool,
 }
 
