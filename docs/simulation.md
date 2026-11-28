@@ -7,7 +7,7 @@ or the [simulator interface](simulators.md) for other engines.
 ## Prepare the checkout
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use a
-checkout of the matching release tag (`v0.1.9`). The station, the simulator
+checkout of the matching release tag (`v0.1.10`). The station, the simulator
 fixture and the Python example all use the published `hebbian-rua` package, so
 nothing is built from source. From the repository root, install the example
 dependencies:

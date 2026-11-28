@@ -15,7 +15,7 @@ uv run cargo run --locked -p hebbian-rua-server -- serve --local-only-no-remote-
   --profile so101-sim-only-no-real-arm --work-directory /tmp/rua-station
 ```
 
-With the published wheel, use `uvx --from hebbian-rua==0.1.9 rua serve`
+With the published wheel, use `uvx --from hebbian-rua==0.1.10 rua serve`
 with the same arguments.
 
 Then start your simulator integration before the station's connection timeout,
