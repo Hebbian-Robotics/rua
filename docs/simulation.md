@@ -6,10 +6,11 @@ or the [simulator interface](simulators.md) for other engines.
 
 ## Prepare the checkout
 
-Follow the [source setup guide](install-from-source.md#prepare-the-checkout).
-The Python example builds the SDK from this checkout. The simulator fixture
-uses the released SDK for its plant adapter. From the repository root,
-install the example dependencies:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use a
+checkout of the matching release tag (`v0.1.9`). The station, the simulator
+fixture and the Python example all use the published `hebbian-rua` package, so
+nothing is built from source. From the repository root, install the example
+dependencies:
 
 ```sh
 uv sync --project examples/mujoco_sim --locked
@@ -21,7 +22,7 @@ uv sync --project examples/python --locked
 Start the station from the repository root:
 
 ```sh
-uv run cargo run --locked -p hebbian-rua-server -- serve --local-only-no-remote-cameras \
+uv run --project examples/mujoco_sim --locked rua serve --local-only-no-remote-cameras \
   --profile "$PWD/examples/mujoco_sim/profiles/single.toml" \
   --work-directory /tmp/hebbian-station
 ```
@@ -41,7 +42,7 @@ station command.
 ## 2. Run hello_robot
 
 Wait for populated `measured_joints` in [station state](http://127.0.0.1:8792/state)
-or run `cargo run --locked -p hebbian-rua-cli -- --raw state`. Then run the
+or run `uv run --project examples/mujoco_sim --locked hebbian-rua --raw state`. Then run the
 [Python example](../examples/python/hello_robot.py) in a third terminal:
 
 ```sh
@@ -77,9 +78,8 @@ onnx = "/absolute/path/to/policy.onnx"
 EOF
 
 ORT_DYLIB_PATH=/absolute/path/to/libonnxruntime.so \
-  uv run cargo run --locked -p hebbian-rua-server -- serve --local-only-no-remote-cameras \
+  uv run --project examples/mujoco_sim --locked rua serve --local-only-no-remote-cameras \
   --profile "$policy_directory/policy.toml" \
-  --profile-directory "$PWD/profiles" \
   --work-directory /tmp/hebbian-station
 ```
 
@@ -90,13 +90,13 @@ model.
 
 ## Camera snapshots
 
-Build the [media companion](cameras.md#rua-configuration) before starting the
-station. For headless rendering on Linux, install OSMesa (`libosmesa6` on
+The published wheel includes the [media companion](cameras.md#rua-configuration).
+For headless rendering on Linux, install OSMesa (`libosmesa6` on
 Ubuntu) or set `MUJOCO_GL` to a backend supported by your system.
 
 ```sh
-cargo run --locked -p hebbian-rua-cli -- camera list
-cargo run --locked -p hebbian-rua-cli -- camera snapshot sim_overview --out overview.jpg
+uv run --project examples/mujoco_sim --locked hebbian-rua camera list
+uv run --project examples/mujoco_sim --locked hebbian-rua camera snapshot sim_overview --out overview.jpg
 ```
 
 Use `sim_wrist` for a single-arm wrist view or `sim_left_wrist` and
