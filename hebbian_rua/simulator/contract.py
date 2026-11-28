@@ -44,7 +44,7 @@ class SimStep(BaseModel):
     powered: Annotated[
         bool,
         Field(
-            description="Whether the arm has torque. When it does not, the targets are the arm's\nown positions and the simulator should let it rest where it is."
+            description="Whether the arm's actuators have torque. When unpowered, the arm moves\nunder gravity, passive forces and contacts without actuator torque."
         ),
     ]
     seconds: Annotated[

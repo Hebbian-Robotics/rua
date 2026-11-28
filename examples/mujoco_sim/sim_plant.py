@@ -32,9 +32,11 @@ class PlantArm:
 @dataclass
 class _Connection:
     transport: PlantConnection
+    model: mujoco.MjModel
     joint_addresses: list[int]
     velocity_addresses: list[int]
     actuator_ids: list[int]
+    actuator_parameters: list[tuple[int, list[float], list[float]]]
     gripper_address: int | None
     gripper_actuator_id: int | None
     effort_per_newton_metre: float
@@ -81,16 +83,28 @@ def _open(
         if arm.gripper_actuator is None
         else int(model.actuator(arm.gripper_actuator).id)
     )
+    actuator_ids = [int(model.actuator(actuator).id) for actuator in arm.actuator_names]
+    all_actuator_ids = [
+        *actuator_ids,
+        *([] if gripper_actuator_id is None else [gripper_actuator_id]),
+    ]
     connection = _Connection(
         transport=transport,
+        model=model,
         joint_addresses=[
             int(model.joint(joint).qposadr[0]) for joint in arm.joint_names
         ],
         velocity_addresses=[
             int(model.joint(joint).dofadr[0]) for joint in arm.joint_names
         ],
-        actuator_ids=[
-            int(model.actuator(actuator).id) for actuator in arm.actuator_names
+        actuator_ids=actuator_ids,
+        actuator_parameters=[
+            (
+                actuator,
+                model.actuator_gainprm[actuator].tolist(),
+                model.actuator_biasprm[actuator].tolist(),
+            )
+            for actuator in all_actuator_ids
         ],
         gripper_address=gripper_address,
         gripper_actuator_id=gripper_actuator_id,
@@ -167,11 +181,9 @@ def _apply(
         connection.pending.append((now + connection.command_delay_seconds, step))
     else:
         connection.pending.clear()
-        for actuator, address in zip(
-            connection.actuator_ids, connection.joint_addresses, strict=True
-        ):
-            data.ctrl[actuator] = data.qpos[address]
-        _set_gripper(data, connection, None)
+        for actuator, _, _ in connection.actuator_parameters:
+            connection.model.actuator_gainprm[actuator] = 0
+            connection.model.actuator_biasprm[actuator] = 0
 
 
 def _set_gripper(
@@ -188,6 +200,9 @@ def _deliver(data: mujoco.MjData, connection: _Connection, now: float) -> None:
     # WHY: A nanosecond of slack keeps float rounding in the clock from holding a due target back.
     while connection.pending and connection.pending[0][0] <= now + 1e-9:
         _, step = connection.pending.popleft()
+        for actuator, gain, bias in connection.actuator_parameters:
+            connection.model.actuator_gainprm[actuator] = gain
+            connection.model.actuator_biasprm[actuator] = bias
         for actuator, target in zip(
             connection.actuator_ids, step.positions, strict=True
         ):

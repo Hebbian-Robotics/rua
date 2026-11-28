@@ -60,7 +60,8 @@ The schema is also included under `schemas/` in the source checkout and as
    `wrist_flex`, `wrist_roll`, `gripper`.
 2. Read a step containing arm target `positions`, `gripper_angle`, `seconds`
    and `powered`. Apply these targets to your actuators and advance your engine
-   by `seconds`. With `powered: false`, do not hold the commanded targets.
+   by `seconds`. With `powered: false`, disable actuator torque and let gravity,
+   passive forces and contacts move the arm.
 3. Reply with measured `positions`, `velocities`, `efforts` and `gripper_angle`.
    Repeat for each step. Arm vectors exclude the gripper, whose angle is separate.
 

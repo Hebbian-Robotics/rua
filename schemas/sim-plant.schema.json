@@ -115,7 +115,7 @@
           }
         },
         "powered": {
-          "description": "Whether the arm has torque. When it does not, the targets are the arm's\nown positions and the simulator should let it rest where it is.",
+          "description": "Whether the arm's actuators have torque. When unpowered, the arm moves\nunder gravity, passive forces and contacts without actuator torque.",
           "type": "boolean"
         },
         "seconds": {
