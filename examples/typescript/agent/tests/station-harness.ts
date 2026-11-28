@@ -300,10 +300,8 @@ export class ScriptedConversation implements ModelConversation {
 
 const MODEL_TURN_EVENT_LOOP_TURNS = 20;
 
-/**
- * WHY: A real model turn takes seconds, so station events emitted during it reach
- * the connection before the turn ends. Yield to the event loop to model that.
- */
+// WHY: A real model turn takes seconds, so station events emitted during it reach
+// the connection before the turn ends. Yield to the event loop to model that.
 async function letStationEventsArrive(): Promise<void> {
   for (let turns = 0; turns < MODEL_TURN_EVENT_LOOP_TURNS; turns += 1)
     await new Promise<void>((resolve) => setImmediate(resolve));
