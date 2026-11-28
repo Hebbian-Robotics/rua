@@ -43,7 +43,7 @@ impl ContinuousPath {
             .iter()
             .map(|segment| DataArrayOrVec::Heap(segment.corners[1].clone()))
             .collect();
-        // Reserve half the acceleration and jerk for smoothly changing the path clock.
+        // WHY: Reserve half the acceleration and jerk for smoothly changing the path clock.
         input.max_acceleration.fill(limits.acceleration_limit * 0.5);
         input.max_jerk.fill(limits.jerk_limit * 0.5);
         if maximum_step_seconds > 0.0
@@ -110,7 +110,7 @@ impl ContinuousPath {
         clock_input.control_interface = ControlInterface::Velocity;
         clock_input.current_velocity[0] = 1.0;
         clock_input.target_velocity[0] = 1.0;
-        // Chain rule: q'' = q_tt * clock_velocity² + q_t * clock_acceleration,
+        // WHY: The chain rule bounds q'' = q_tt * clock_velocity² + q_t * clock_acceleration,
         // q''' = q_ttt * clock_velocity³ + 3*q_tt*clock_velocity*clock_acceleration
         //          + q_t*clock_jerk. Allocate the remaining limit to those terms.
         clock_input.max_acceleration[0] = (0.5 * limits.acceleration_limit / peak_joint_speed)
