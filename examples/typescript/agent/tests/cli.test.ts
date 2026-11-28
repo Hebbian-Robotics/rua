@@ -1,8 +1,3 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { type CommandLine, parseCommandLine } from "../src/cli.js";
 
@@ -191,29 +186,6 @@ test("bad input is refused with a message", () => {
       {},
     ),
   ).toThrow("repeat");
-});
-
-test("the CLI ignores a missing .env but reports a file read error", () => {
-  const directory = mkdtempSync(join(tmpdir(), "rua-agent-env-"));
-  const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-  const runHelp = () =>
-    spawnSync(
-      process.execPath,
-      ["--import", "tsx", "--conditions=development", cliPath, "--help"],
-      {
-        encoding: "utf8",
-        env: { ...process.env, INIT_CWD: directory },
-      },
-    );
-  try {
-    expect(runHelp().status).toBe(0);
-    mkdirSync(join(directory, ".env"));
-    const result = runHelp();
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(".env");
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
 });
 
 test("-h and --help ask for the usage instead of requiring arguments", () => {

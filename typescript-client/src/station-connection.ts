@@ -1,4 +1,5 @@
-import pRetry from "p-retry";
+import { Clock, Duration, Effect, Schedule } from "effect";
+import { HttpClient } from "effect/http";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
 import { apiSchemas } from "./generated/api-schemas.js";
@@ -6,7 +7,10 @@ import {
   armMotionCommands,
   armPowerCommands,
 } from "./generated/arm-commands.js";
-import { createStationApi } from "./generated/http-routes.js";
+import {
+  createStationApi,
+  createStationEffectApi,
+} from "./generated/http-routes.js";
 import {
   LeaseHeldElsewhereError,
   LeaseLostError,
@@ -23,8 +27,9 @@ import {
 } from "./station-events.js";
 import {
   jsonRequestInit,
+  provideStationHttpClient,
   stationFetch,
-  stationRequest,
+  stationJsonEffect,
 } from "./station-request.js";
 import {
   type ActionSequenceRecord,
@@ -369,7 +374,7 @@ export function createStationConnection(
     | { kind: "idle" }
     | { kind: "acquiring" }
     | { kind: "held"; token: string } = { kind: "idle" };
-  let leaseRenewalTimer: ReturnType<typeof setTimeout> | null = null;
+  let leaseRenewal: AbortController | null = null;
   const heldLeaseToken = (): string | null =>
     leaseState.kind === "held" ? leaseState.token : null;
   let latestState: StationState | null = null;
@@ -397,59 +402,67 @@ export function createStationConnection(
    * Wait until `check` returns a value; it runs again after every change. A
    * check that throws rejects the wait, and so does closing the connection.
    */
-  function waitFor<Result>(
+  function waitForEffect<Result>(
     check: () => Result | undefined,
-    wait: Wait = {},
-  ): Promise<Result> {
-    return new Promise((resolve, reject) => {
-      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-      const finish = () => {
+    timeout?: Wait["timeout"],
+  ): Effect.Effect<Result, Error> {
+    const changes = Effect.callback<Result, Error>((resume) => {
+      function finish(result: Effect.Effect<Result, Error>): void {
         changeListeners.delete(evaluate);
-        wait.signal?.removeEventListener("abort", abort);
-        clearTimeout(timeoutTimer);
-      };
-      const fail = (error: Error) => {
-        finish();
-        reject(error);
-      };
-      const abort = () => fail(asError(wait.signal?.reason));
-      if (wait.signal?.aborted) {
-        abort();
-        return;
+        resume(result);
       }
-      wait.signal?.addEventListener("abort", abort, { once: true });
       function evaluate(): void {
         if (closed) {
-          fail(new StationConnectionError("The station connection is closed"));
+          finish(
+            Effect.fail(
+              new StationConnectionError("The station connection is closed"),
+            ),
+          );
           return;
         }
-        let value: Result | undefined;
         try {
-          value = check();
+          const value = check();
+          if (value !== undefined) finish(Effect.succeed(value));
         } catch (error) {
-          fail(asError(error));
-          return;
+          finish(Effect.fail(asError(error)));
         }
-        if (value !== undefined) {
-          finish();
-          resolve(value);
-          return;
-        }
-      }
-      if (wait.timeout) {
-        const { milliseconds, error } = wait.timeout;
-        timeoutTimer = setTimeout(() => fail(error()), milliseconds);
       }
       changeListeners.add(evaluate);
       evaluate();
+      return Effect.sync(() => {
+        changeListeners.delete(evaluate);
+      });
     });
+    return timeout === undefined
+      ? changes
+      : changes.pipe(
+          Effect.timeoutOrElse({
+            duration: timeout.milliseconds,
+            orElse: () => Effect.fail(timeout.error()),
+          }),
+        );
+  }
+
+  async function waitFor<Result>(
+    check: () => Result | undefined,
+    wait: Wait = {},
+  ): Promise<Result> {
+    try {
+      return await runOperationEffect(
+        waitForEffect(check, wait.timeout),
+        wait.signal,
+      );
+    } catch (error) {
+      if (wait.signal?.aborted) throw asError(wait.signal.reason);
+      throw error;
+    }
   }
 
   function loseLease(): void {
     if (leaseState.kind !== "held") return;
     leaseState = { kind: "idle" };
-    if (leaseRenewalTimer !== null) clearTimeout(leaseRenewalTimer);
-    leaseRenewalTimer = null;
+    leaseRenewal?.abort();
+    leaseRenewal = null;
     for (const listener of leaseLostListeners) listener();
   }
 
@@ -503,173 +516,219 @@ export function createStationConnection(
       .exhaustive();
   }
 
-  async function applyStationEvent(
+  function applyStationEvent(
     event: StationEvent,
     streamUrl: URL,
-    signal: AbortSignal,
     runStreamInstance: string | null,
-  ): Promise<void> {
-    const incoming = parseStationEvent(event);
-    if (incoming.kind === "resync_required")
-      throw new StationReplayGap("Station event replay requires a snapshot");
-    if (incoming.kind === "ignored_event") {
-      console.warn("Ignoring unknown station stream event", incoming.wireKind);
-      return;
-    }
-    if (event.kind === "run" && incoming.kind !== "snapshot") {
-      receive(incoming);
-      runInstance = runStreamInstance ?? runInstance;
-      return;
-    }
-    const previousStateFrameCount = stateFrameCount;
-    if (incoming.kind === "snapshot") {
+  ): Effect.Effect<void, unknown, HttpClient.HttpClient> {
+    return Effect.gen(function* () {
+      const incoming = yield* Effect.try({
+        try: () => parseStationEvent(event),
+        catch: (error) => error,
+      });
+      if (incoming.kind === "resync_required")
+        return yield* Effect.fail(
+          new StationReplayGap("Station event replay requires a snapshot"),
+        );
+      if (incoming.kind === "ignored_event") {
+        console.warn(
+          "Ignoring unknown station stream event",
+          incoming.wireKind,
+        );
+        return;
+      }
+      if (event.kind === "run" && incoming.kind !== "snapshot") {
+        yield* Effect.try({
+          try: () => {
+            receive(incoming);
+            runInstance = runStreamInstance ?? runInstance;
+          },
+          catch: (error) => error,
+        });
+        return;
+      }
+      const previousStateFrameCount = stateFrameCount;
       const replay =
-        runStreamInstance !== null || runAfter === undefined
-          ? []
-          : await replayRunRecords(streamUrl, runAfter, signal);
-      signal.throwIfAborted();
-      // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
-      latestState = null;
-      runAfter ??= incoming.runSequence;
-      runInstance ??= incoming.stationInstanceId;
-      for (const record of replay) receive(record);
-      for (const message of incoming.messages) receive(message);
-    } else {
-      receive(incoming);
-    }
-    eventCursor = event.id || eventCursor;
-    lastError = null;
-    if (!ready) setReady(true);
-    else if (stateFrameCount !== previousStateFrameCount) notify();
+        incoming.kind === "snapshot" &&
+        runStreamInstance === null &&
+        runAfter !== undefined
+          ? yield* replayRunRecords(streamUrl, runAfter)
+          : [];
+      yield* Effect.try({
+        try: () => {
+          if (incoming.kind === "snapshot") {
+            // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
+            latestState = null;
+            runAfter ??= incoming.runSequence;
+            runInstance ??= incoming.stationInstanceId;
+            for (const record of replay) receive(record);
+            for (const message of incoming.messages) receive(message);
+          } else {
+            receive(incoming);
+          }
+          eventCursor = event.id || eventCursor;
+          lastError = null;
+          if (!ready) setReady(true);
+          else if (stateFrameCount !== previousStateFrameCount) notify();
+        },
+        catch: (error) => error,
+      });
+    });
   }
 
-  async function replayRunRecords(
+  function replayRunRecords(
     streamUrl: URL,
     after: number,
-    signal: AbortSignal,
-  ) {
+  ): Effect.Effect<
+    IncomingStationMessage[],
+    StationConnectionError,
+    HttpClient.HttpClient
+  > {
     const url = new URL("/run/records", streamUrl);
     url.searchParams.set("after", String(after));
-    try {
-      const payload = await stationRequest(url, { signal });
-      return parseRunReplay(payload);
-    } catch (error) {
-      throw new StationConnectionError("Run replay failed", { cause: error });
-    }
+    return stationJsonEffect(url).pipe(
+      Effect.flatMap((payload) =>
+        Effect.try({
+          try: () => parseRunReplay(payload),
+          catch: (error) => error,
+        }),
+      ),
+      Effect.timeoutOrElse({
+        duration: REPLY_TIMEOUT_MILLISECONDS,
+        orElse: () =>
+          Effect.fail(new StationTimeoutError("Run replay timed out")),
+      }),
+      Effect.mapError(
+        (error) =>
+          new StationConnectionError("Run replay failed", { cause: error }),
+      ),
+    );
   }
 
-  async function consumeEventStream(
-    url: URL,
-    attempt: AbortController,
-    signal: AbortSignal,
-  ): Promise<never> {
-    while (true) {
-      const cursor = eventCursor;
-      const handshake = setTimeout(
-        () =>
-          attempt.abort(
-            new StationTimeoutError("Station event handshake timed out"),
-          ),
-        CONNECT_TIMEOUT_MILLISECONDS,
-      );
-      const response = await fetch(url, {
-        signal,
-        headers: {
-          ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
-          "X-RUA-Run-Cursor":
-            runAfter === undefined
-              ? "latest"
-              : runInstance === undefined
-                ? String(runAfter)
-                : `${runInstance}:${runAfter}`,
-        },
-      }).finally(() => clearTimeout(handshake));
-      signal.throwIfAborted();
-      if (response.status === 409 && cursor !== null) {
-        eventCursor = null;
-        await response.body?.cancel();
-        continue;
-      }
-      if (!response.ok)
-        throw new StationConnectionError(
-          `Station event stream returned ${response.status}`,
-        );
-      try {
-        await readStationEvents(
-          response,
-          (event) =>
-            applyStationEvent(
-              event,
-              url,
-              signal,
-              response.headers.get("X-RUA-Run-Cursor"),
-            ),
-          {
-            milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
-            abort: () =>
-              attempt.abort(
-                new StationTimeoutError("Station event stream went silent"),
+  function consumeEventStream(url: URL): Effect.Effect<void, unknown> {
+    return Effect.gen(function* () {
+      const client = HttpClient.withScope(yield* HttpClient.HttpClient);
+      while (true) {
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const cursor = eventCursor;
+            const response = yield* client
+              .get(url, {
+                headers: {
+                  ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
+                  "X-RUA-Run-Cursor":
+                    runAfter === undefined
+                      ? "latest"
+                      : runInstance === undefined
+                        ? String(runAfter)
+                        : `${runInstance}:${runAfter}`,
+                },
+              })
+              .pipe(
+                Effect.timeoutOrElse({
+                  duration: CONNECT_TIMEOUT_MILLISECONDS,
+                  orElse: () =>
+                    Effect.fail(
+                      new StationTimeoutError(
+                        "Station event handshake timed out",
+                      ),
+                    ),
+                }),
+              );
+            if (response.status === 409 && cursor !== null) {
+              eventCursor = null;
+              return;
+            }
+            if (response.status < 200 || response.status >= 300)
+              return yield* Effect.fail(
+                new StationConnectionError(
+                  `Station event stream returned ${response.status}`,
+                ),
+              );
+            const replayGap = yield* readStationEvents(
+              response.stream,
+              (event) =>
+                applyStationEvent(
+                  event,
+                  url,
+                  response.headers["x-rua-run-cursor"] ?? null,
+                ),
+              EVENT_READ_TIMEOUT_MILLISECONDS,
+            ).pipe(
+              Effect.as(false),
+              Effect.catch((error) =>
+                error instanceof StationReplayGap
+                  ? Effect.succeed(true)
+                  : Effect.fail(error),
               ),
-          },
+            );
+            if (!replayGap)
+              return yield* Effect.fail(
+                new StationConnectionError("Station event stream ended"),
+              );
+            const retry = eventCursor !== null && !ready;
+            eventCursor = null;
+            if (!retry)
+              return yield* Effect.fail(
+                new StationReplayGap(
+                  "Station event replay requires a snapshot",
+                ),
+              );
+          }),
         );
-        throw new StationConnectionError("Station event stream ended");
-      } catch (error) {
-        signal.throwIfAborted();
-        if (!(error instanceof StationReplayGap)) throw error;
-        const retryWithoutCursor = eventCursor !== null && !ready;
-        eventCursor = null;
-        if (!retryWithoutCursor) throw error;
-        await response.body?.cancel();
       }
-    }
+    }).pipe(
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      provideStationHttpClient,
+    );
   }
 
   function connect(): void {
     if (connectionLoop !== null || closed) return;
     const lifetime = new AbortController();
     connectionLoop = lifetime;
-    void (async () => {
-      // WHY: Ending a healthy session starts a fresh retry budget. Opening HTTP
-      // successfully is insufficient until we have applied a station event.
-      while (!lifetime.signal.aborted) {
-        await pRetry(
-          async () => {
-            const attempt = new AbortController();
-            const signal = AbortSignal.any([lifetime.signal, attempt.signal]);
-            try {
-              await consumeEventStream(
-                new URL("/events", baseUrl()),
-                attempt,
-                signal,
-              );
-            } catch (error) {
-              lifetime.signal.throwIfAborted();
-              if (!attempt.signal.aborted)
-                console.warn("Station event stream ended", error);
-              const wasReady = ready;
-              latestState = null;
-              if (!wasReady) lastError = "The station refused the connection";
-              loseLease();
-              setReady(false);
-              if (!wasReady)
-                throw new StationConnectionError(
-                  "The station refused the connection",
-                  { cause: error },
+    // WHY: Ending a healthy session starts a fresh retry budget. Opening HTTP
+    // successfully is insufficient until we have applied a station event.
+    void Effect.runPromise(
+      consumeEventStream(new URL("/events", baseUrl())).pipe(
+        Effect.catch((error) =>
+          Effect.suspend(() => {
+            console.warn("Station event stream ended", error);
+            const wasReady = ready;
+            latestState = null;
+            if (!wasReady) lastError = "The station refused the connection";
+            loseLease();
+            setReady(false);
+            return wasReady
+              ? Effect.void
+              : Effect.fail(
+                  new StationConnectionError(
+                    "The station refused the connection",
+                    { cause: error },
+                  ),
                 );
-            } finally {
-              attempt.abort();
-            }
-          },
-          {
-            signal: lifetime.signal,
-            retries: Number.POSITIVE_INFINITY,
-            minTimeout: RECONNECT_FIRST_BACKOFF_MILLISECONDS,
-            maxTimeout: RECONNECT_CAP_MILLISECONDS,
-            randomize: true,
-          },
-        );
-      }
-    })()
+          }),
+        ),
+        Effect.retry(
+          Schedule.exponential(RECONNECT_FIRST_BACKOFF_MILLISECONDS).pipe(
+            Schedule.jittered,
+            Schedule.modifyDelay(({ duration }) =>
+              Effect.succeed(
+                Math.max(
+                  RECONNECT_FIRST_BACKOFF_MILLISECONDS,
+                  Math.min(
+                    Duration.toMillis(duration),
+                    RECONNECT_CAP_MILLISECONDS,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Effect.forever,
+      ),
+      { signal: lifetime.signal },
+    )
       .catch((error: unknown) => {
         if (!lifetime.signal.aborted)
           console.warn("Station event reconnect stopped", error);
@@ -828,33 +887,50 @@ export function createStationConnection(
     return message.answer;
   }
 
-  async function retryOperationRequest<Result>(
-    request: (signal: AbortSignal) => Promise<Result>,
-    signal: AbortSignal,
+  function retryOperationEffect<Result, Requirements>(
+    request: Effect.Effect<Result, unknown, Requirements>,
+  ): Effect.Effect<Result, unknown, Requirements> {
+    return request.pipe(
+      Effect.retry({
+        schedule: Schedule.spaced(100),
+        while: (error) => error instanceof TypeError,
+      }),
+      Effect.timeoutOrElse({
+        duration: REPLY_TIMEOUT_MILLISECONDS,
+        orElse: () =>
+          Effect.fail(new StationTimeoutError("Station request timed out")),
+      }),
+    );
+  }
+
+  async function runOperationEffect<Result>(
+    operation: Effect.Effect<Result, unknown>,
+    signal?: AbortSignal,
   ): Promise<Result> {
-    const deadline = performance.now() + REPLY_TIMEOUT_MILLISECONDS;
-    while (true) {
-      signal.throwIfAborted();
-      const remaining = Math.max(0, Math.ceil(deadline - performance.now()));
-      try {
-        return await request(
-          AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
-        );
-      } catch (error) {
-        signal.throwIfAborted();
-        if (
-          !(error instanceof TypeError) ||
-          performance.now() + 100 >= deadline
-        )
-          throw error;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+    signal?.throwIfAborted();
+    try {
+      const result = await Effect.runPromise(
+        operation.pipe(
+          Effect.match({
+            onFailure: (error) => ({ kind: "failure" as const, error }),
+            onSuccess: (value) => ({ kind: "success" as const, value }),
+          }),
+        ),
+        { signal },
+      );
+      if (result.kind === "failure") throw result.error;
+      return result.value;
+    } catch (error) {
+      signal?.throwIfAborted();
+      throw error;
     }
   }
 
   async function submitHttpCommand(
     base: string,
-    submit: (api: ReturnType<typeof createStationApi>) => Promise<unknown>,
+    submit: (
+      api: ReturnType<typeof createStationEffectApi>,
+    ) => Effect.Effect<unknown, unknown, HttpClient.HttpClient>,
     identity: {
       operation_id: string;
       station_instance_id: string;
@@ -881,24 +957,24 @@ export function createStationConnection(
     requestSignal.throwIfAborted();
     signal?.addEventListener("abort", cancel, { once: true });
     let retainedCancellation = false;
-    const completion = async () => {
+    const effectApi = createStationEffectApi(base, base);
+    const completion = Effect.gen(function* () {
       while (true) {
-        const result = await retryOperationRequest(
-          (attempt) =>
-            createStationApi(base, base, attempt).waitOperationHttp(
-              operation_id,
-              { id: station_instance_id },
-            ),
-          requestSignal,
+        const result = yield* retryOperationEffect(
+          effectApi.waitOperationHttp(operation_id, {
+            id: station_instance_id,
+          }),
         );
         if (result !== null) return result;
       }
-    };
+    }).pipe(provideStationHttpClient);
     try {
       const answer = parseCommandAnswer(
         operation_id,
-        await retryOperationRequest(
-          (attempt) => submit(createStationApi(base, base, attempt)),
+        await runOperationEffect(
+          retryOperationEffect(submit(effectApi)).pipe(
+            provideStationHttpClient,
+          ),
           requestSignal,
         ),
       );
@@ -910,52 +986,67 @@ export function createStationConnection(
         ) {
           retainedCancellation = true;
           // INVARIANT: Failure to read completion leaves the command cancellable.
-          void pRetry(
-            () =>
-              completion().catch((cause: unknown) => {
-                throw new StationConnectionError(
-                  "Could not confirm command completion",
-                  { cause },
-                );
-              }),
-            {
-              signal: requestSignal,
-              retries: Number.POSITIVE_INFINITY,
-              maxTimeout: RECONNECT_CAP_MILLISECONDS,
-              unref: true,
-            },
-          )
-            .catch(() => {})
-            .finally(() => signal.removeEventListener("abort", cancel));
+          const trackCompletion = Effect.gen(function* () {
+            const clock = yield* Clock.Clock;
+            // WHY: Background cancellation tracking must not keep a Node process alive.
+            const backgroundClock: Clock.Clock = Object.assign(
+              Object.create(clock),
+              {
+                sleep: (duration: Duration.Duration) =>
+                  Effect.callback<void>((resume) => {
+                    const timer = setTimeout(
+                      () => resume(Effect.void),
+                      Duration.toMillis(duration),
+                    );
+                    if (typeof timer === "object") timer.unref?.();
+                    return Effect.sync(() => clearTimeout(timer));
+                  }),
+              },
+            );
+            yield* completion.pipe(
+              Effect.retry(Schedule.spaced(RECONNECT_CAP_MILLISECONDS)),
+              Effect.provideService(Clock.Clock, backgroundClock),
+            );
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => signal.removeEventListener("abort", cancel)),
+            ),
+          );
+          void Effect.runPromise(trackCompletion, {
+            signal: requestSignal,
+          }).catch(() => {});
         }
         return answer;
       }
 
-      const { records, state_sequence } = await completion();
-      if (ready) {
-        const prefix = `${station_instance_id}:`;
-        const requiredSequence = BigInt(state_sequence);
-        await waitFor(
-          () => {
-            if (!ready) return true;
-            return latestState !== null &&
-              eventCursor?.startsWith(prefix) &&
-              BigInt(eventCursor.slice(prefix.length)) >= requiredSequence
-              ? true
-              : undefined;
-          },
-          {
-            signal: requestSignal,
-            timeout: {
+      const settledCompletion = completion.pipe(
+        Effect.flatMap((result) => {
+          if (!ready) return Effect.succeed(result);
+          const prefix = `${station_instance_id}:`;
+          const requiredSequence = BigInt(result.state_sequence);
+          return waitForEffect(
+            () => {
+              if (!ready) return true;
+              return latestState !== null &&
+                eventCursor?.startsWith(prefix) &&
+                BigInt(eventCursor.slice(prefix.length)) >= requiredSequence
+                ? true
+                : undefined;
+            },
+            {
               milliseconds: REPLY_TIMEOUT_MILLISECONDS,
               error: () =>
                 new StationTimeoutError(
                   "Timed out waiting for the station state after command completion",
                 ),
             },
-          },
-        );
-      }
+          ).pipe(Effect.as(result));
+        }),
+      );
+      const { records } = await runOperationEffect(
+        settledCompletion,
+        requestSignal,
+      );
       return parseCommandAnswer(operation_id, { status: "accepted", records });
     } catch (error) {
       if (!requestSignal.aborted && !(error instanceof StationHttpError))
@@ -1016,8 +1107,8 @@ export function createStationConnection(
     if (keepalive) loseLease();
     else {
       leaseState = { kind: "idle" };
-      if (leaseRenewalTimer !== null) clearTimeout(leaseRenewalTimer);
-      leaseRenewalTimer = null;
+      leaseRenewal?.abort();
+      leaseRenewal = null;
     }
     try {
       if (keepalive) {
@@ -1115,25 +1206,38 @@ export function createStationConnection(
   }
 
   function scheduleLeaseRenewal(token: string, leaseSeconds: number): void {
-    leaseRenewalTimer = setTimeout(
-      async () => {
-        leaseRenewalTimer = null;
+    const lifetime = new AbortController();
+    leaseRenewal = lifetime;
+    const renewLease = Effect.gen(function* () {
+      while (true) {
+        yield* Effect.sleep(Math.max(100, (leaseSeconds * 1000) / 3));
         if (heldLeaseToken() !== token) return;
         if (!ready || latestState === null) {
           loseLease();
           return;
         }
-        try {
-          await stationApi().renewLeaseHttp({ lease_token: token });
-          if (heldLeaseToken() === token)
-            scheduleLeaseRenewal(token, leaseSeconds);
-        } catch (error) {
+        const base = baseUrl();
+        yield* createStationEffectApi(base, base).renewLeaseHttp({
+          lease_token: token,
+        });
+      }
+    }).pipe(
+      provideStationHttpClient,
+      Effect.catch((error) =>
+        Effect.sync(() => {
           console.warn("Lease renewal failed", error);
           if (heldLeaseToken() === token) loseLease();
-        }
-      },
-      Math.max(100, (leaseSeconds * 1000) / 3),
+        }),
+      ),
     );
+    void Effect.runPromise(renewLease, { signal: lifetime.signal })
+      .catch((error: unknown) => {
+        if (!lifetime.signal.aborted)
+          console.warn("Lease renewal stopped", error);
+      })
+      .finally(() => {
+        if (leaseRenewal === lifetime) leaseRenewal = null;
+      });
   }
 
   function baseUrl(): string {
@@ -1206,22 +1310,27 @@ export function createStationConnection(
   async function submitSequence<Payload extends object>(
     request: Payload,
     submit: (
-      api: ReturnType<typeof createStationApi>,
+      api: ReturnType<typeof createStationEffectApi>,
       submission: Payload & { request_id: string; station_instance_id: string },
-    ) => Promise<string>,
+    ) => Effect.Effect<string, unknown, HttpClient.HttpClient>,
   ): Promise<SequenceExecution> {
     const base = baseUrl();
     const payload = structuredClone(request);
     const lifetime = operationLifetime.signal;
     const request_id = newOperationId();
-    const { id: station_instance_id } = await createStationApi(
-      base,
-      base,
-      lifetime,
-    ).getStationInstance();
-    const submission = { ...payload, request_id, station_instance_id };
-    const executionId = await retryOperationRequest(
-      (signal) => submit(createStationApi(base, base, signal), submission),
+    const effectApi = createStationEffectApi(base, base);
+    const submissionProgram = Effect.gen(function* () {
+      const { id: station_instance_id } = yield* effectApi.getStationInstance();
+      const submission = { ...payload, request_id, station_instance_id };
+      const requestEffect = yield* Effect.try({
+        try: () => submit(effectApi, submission),
+        catch: (error) => error,
+      });
+      const executionId = yield* retryOperationEffect(requestEffect);
+      return { station_instance_id, executionId };
+    }).pipe(provideStationHttpClient);
+    const { station_instance_id, executionId } = await runOperationEffect(
+      submissionProgram,
       lifetime,
     );
     const reference = `${station_instance_id}~${executionId}`;
@@ -1479,38 +1588,44 @@ export function createStationConnection(
       stationApi(signal).getSequenceCameraHistory(id),
     async waitForActionSequence(actionSequenceId, options = {}) {
       const { signal, timeoutMilliseconds } = options;
-      const timeout =
-        timeoutMilliseconds === undefined
-          ? undefined
-          : AbortSignal.timeout(Math.max(0, Math.trunc(timeoutMilliseconds)));
-      const requestSignal = AbortSignal.any([
-        operationLifetime.signal,
-        ...(signal ? [signal] : []),
-        ...(timeout ? [timeout] : []),
-      ]);
+      if (
+        timeoutMilliseconds !== undefined &&
+        (!Number.isFinite(timeoutMilliseconds) ||
+          timeoutMilliseconds > 4_294_967_295)
+      )
+        throw new RangeError("Invalid action sequence timeout");
+      const requestSignal = signal
+        ? AbortSignal.any([operationLifetime.signal, signal])
+        : operationLifetime.signal;
       const base = baseUrl();
-      try {
+      const completion = Effect.gen(function* () {
         while (true) {
-          const record = await retryOperationRequest(
-            (attempt) =>
-              createStationApi(
-                base,
-                base,
-                attempt,
-              ).waitActionSequenceCompletion(actionSequenceId),
-            requestSignal,
+          const record = yield* retryOperationEffect(
+            createStationEffectApi(base, base).waitActionSequenceCompletion(
+              actionSequenceId,
+            ),
           );
-          if (record !== null)
-            return apiSchemas.shape.ActionSequenceRecord.parse(record);
+          if (record !== null) return record;
         }
-      } catch (error) {
-        if (timeout?.aborted && requestSignal.reason === timeout.reason) {
-          throw new StationTimeoutError(
-            `Timed out waiting for action sequence ${actionSequenceId}`,
-          );
-        }
-        throw error;
-      }
+      });
+      const wait =
+        timeoutMilliseconds === undefined
+          ? completion
+          : completion.pipe(
+              Effect.timeoutOrElse({
+                duration: Math.max(0, Math.trunc(timeoutMilliseconds)),
+                orElse: () =>
+                  Effect.fail(
+                    new StationTimeoutError(
+                      `Timed out waiting for action sequence ${actionSequenceId}`,
+                    ),
+                  ),
+              }),
+            );
+      return runOperationEffect(
+        wait.pipe(provideStationHttpClient),
+        requestSignal,
+      );
     },
     async cancelActionSequence(actionSequenceId) {
       try {

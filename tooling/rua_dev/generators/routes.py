@@ -300,13 +300,15 @@ def typescript_parser(schema: RouteSchema) -> str:
 def generate_typescript(operations: list[Operation]) -> str:
     lines = [
         f"// {HEADER}",
+        'import { Effect } from "effect";',
+        'import type { HttpClient } from "effect/http";',
         'import { z } from "zod";',
         "",
         'import { type ApiSchemas, apiSchemas } from "./api-schemas.js";',
-        'import { jsonRequestInit, stationFetch, stationRequest } from "../station-request.js";',
+        'import { runStationEffect, stationBinaryEffect, stationParsedJsonEffect, stationVoidEffect } from "../station-request.js";',
         "",
-        "/** One method per station HTTP route; the media service has its own address. */",
-        "export function createStationApi(stationUrl: string | URL, mediaUrl: string | URL, signal?: AbortSignal) {",
+        "/** Effect-native station routes; the caller supplies the HTTP client service. */",
+        "export function createStationEffectApi(stationUrl: string | URL, mediaUrl: string | URL) {",
         "  return {",
     ]
     for operation in operations:
@@ -322,27 +324,47 @@ def generate_typescript(operations: list[Operation]) -> str:
             for segment in operation.segments
         )
         base = "mediaUrl" if operation.direct_media else "stationUrl"
-        init = f'jsonRequestInit("{operation.method}", {"body" if operation.body else "undefined"}, signal)'
         url = f"new URL(`/{path}`, {base})"
+        body = ", body" if operation.body else ""
         lines += [
             f"    /** {operation.summary} */",
-            f"    async {operation.camel_name}({', '.join(parameters)}) {{",
+            f"    {operation.camel_name}({', '.join(parameters)}) {{",
         ]
-        reply = operation.reply
-        match reply:
+        match operation.reply:
             case NonJsonReply.FILE:
-                lines.append(f"      return stationFetch({url}, {init});")
+                lines.append(
+                    f'      return stationBinaryEffect({url}, "{operation.method}"{body});'
+                )
             case NonJsonReply.UNIT:
-                lines.append(f"      await stationFetch({url}, {init});")
+                lines.append(
+                    f'      return stationVoidEffect({url}, "{operation.method}"{body});'
+                )
             case JsonReply(schema):
                 parser = typescript_parser(schema)
                 lines.append(
-                    f"      return {parser}.parse(await stationRequest({url}, {init}));"
+                    f'      return stationParsedJsonEffect({url}, "{operation.method}", (payload) => {parser}.parse(payload){body});'
                 )
             case _:
-                assert_never(reply)
+                assert_never(operation.reply)
         lines += ["    },"]
-    lines += ["  };", "}"]
+    lines += [
+        "  };",
+        "}",
+        "",
+        "type PromiseRoutes<Routes> = {",
+        "  [Key in keyof Routes]: Routes[Key] extends (...args: infer Arguments) => Effect.Effect<infer Result, unknown, HttpClient.HttpClient>",
+        "    ? (...args: Arguments) => Promise<Result> : never;",
+        "};",
+        "",
+        "/** Promise adapter for the generated station routes. */",
+        "export function createStationApi(stationUrl: string | URL, mediaUrl: string | URL, signal?: AbortSignal) {",
+        "  const routes = createStationEffectApi(stationUrl, mediaUrl);",
+        "  return Object.fromEntries(Object.entries(routes).map(([name, route]) => [",
+        "    name,",
+        "    async (...args: unknown[]) => runStationEffect((route as (...args: unknown[]) => Effect.Effect<unknown, unknown, HttpClient.HttpClient>)(...args), signal),",
+        "  ])) as PromiseRoutes<typeof routes>;",
+        "}",
+    ]
     return "\n".join(lines) + "\n"
 
 

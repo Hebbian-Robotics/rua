@@ -10,6 +10,7 @@ import { expect, test, vi } from "vitest";
 import {
   type ActionSequenceRecord,
   createStationConnection,
+  StationTimeoutError,
 } from "../src/index.js";
 import { commandRecord, stateMessage } from "./station-fakes.js";
 
@@ -27,6 +28,50 @@ test("a cancelled acceptance-only command rejects with its abort reason", async 
     ).rejects.toBe(reason);
   } finally {
     connection.close();
+  }
+});
+
+test("a stalled command request times out and cancels its transport", async () => {
+  let notifyCommandStarted: () => void = () => {};
+  const commandStarted = new Promise<void>((resolve) => {
+    notifyCommandStarted = resolve;
+  });
+  let transportAborted = false;
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, options) => {
+      if (String(input).endsWith("/instance")) {
+        return Response.json({
+          id: "11111111-1111-4111-8111-111111111111",
+          supports_operation_completion: true,
+        });
+      }
+      notifyCommandStarted();
+      return new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => {
+            transportAborted = true;
+            reject(options.signal?.reason);
+          },
+          { once: true },
+        );
+      });
+    });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const connection = createStationConnection("http://127.0.0.1:1", "agent");
+  try {
+    const result = expect(
+      connection.arm("follower", { waitForOutcome: false }).enable(),
+    ).rejects.toBeInstanceOf(StationTimeoutError);
+    await commandStarted;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await result;
+    expect(transportAborted).toBe(true);
+  } finally {
+    connection.close();
+    vi.useRealTimers();
+    fetchSpy.mockRestore();
   }
 });
 
@@ -70,6 +115,218 @@ test("a silent event stream reconnects and refreshes an expired cursor immediate
   } finally {
     connection.close();
     vi.useRealTimers();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("closing and restarting releases the old event stream", async () => {
+  let requestCount = 0;
+  const tracingHeaders: (string | string[] | undefined)[] = [];
+  let notifyFirstStreamClosed: () => void = () => {};
+  const firstStreamClosed = new Promise<void>((resolve) => {
+    notifyFirstStreamClosed = resolve;
+  });
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/run/records?")) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end("[]");
+      return;
+    }
+    tracingHeaders.push(request.headers["traceparent"], request.headers["b3"]);
+    requestCount += 1;
+    const currentRequest = requestCount;
+    if (currentRequest === 1) response.on("close", notifyFirstStreamClosed);
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{ revision: currentRequest }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  try {
+    connection.start();
+    await connection.waitForState((state) => state.arms[0]?.revision === 1);
+    connection.close();
+    connection.start();
+    await firstStreamClosed;
+    const state = await connection.waitForState(
+      (current) => current.arms[0]?.revision === 2,
+    );
+    expect(state.arms[0]?.revision).toBe(2);
+    expect(requestCount).toBe(2);
+    expect(tracingHeaders).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("an aborted state wait stops observing later station updates", async () => {
+  let stream: ServerResponse | undefined;
+  const server = createServer((_request, response) => {
+    stream = response;
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{ revision: 1 }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  const controller = new AbortController();
+  let evaluations = 0;
+  try {
+    await connection.waitUntilConnected();
+    await expect(
+      connection.waitForState((state) => state.arms[0]?.revision === 1, {
+        timeoutMilliseconds: 0,
+      }),
+    ).resolves.toBeDefined();
+    const waiting = connection.waitForState(
+      () => {
+        evaluations += 1;
+        return false;
+      },
+      { signal: controller.signal },
+    );
+    const rejected = expect(waiting).rejects.toThrow("Stop waiting");
+    controller.abort(new Error("Stop waiting"));
+    await rejected;
+    const evaluationsAfterAbort = evaluations;
+    stream?.write(
+      `event: station\ndata: ${JSON.stringify(stateMessage([{ revision: 2 }]))}\n\n`,
+    );
+    await connection.waitForState((state) => state.arms[0]?.revision === 2);
+    expect(evaluationsAfterAbort).toBeGreaterThan(0);
+    expect(evaluations).toBe(evaluationsAfterAbort);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("replays retained run records before publishing the snapshot", async () => {
+  const delivered: string[] = [];
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/run/records?")) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end(
+        JSON.stringify([
+          {
+            kind: "run_event",
+            seq: 1,
+            received_unix_nano: "1",
+            event: { label: "first" },
+          },
+          {
+            kind: "run_event",
+            seq: 1,
+            received_unix_nano: "1",
+            event: { label: "duplicate" },
+          },
+          {
+            kind: "run_event",
+            seq: 2,
+            received_unix_nano: "2",
+            event: { label: "second" },
+          },
+        ]),
+      );
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 2, items: [stateMessage([{ revision: 1 }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+    { runAfter: 0 },
+  );
+  connection.onRunRecord((record) => {
+    if (record.kind === "run_event") delivered.push(`run:${record.seq}`);
+  });
+  connection.onState(() => delivered.push("state"));
+  try {
+    connection.start();
+    await connection.waitForState((state) => state.arms[0]?.revision === 1);
+    expect(delivered).toEqual(["run:1", "run:2", "state"]);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("restarting during replay cancels the old request and publishes only the new snapshot", async () => {
+  let eventRequests = 0;
+  let notifyReplayStarted: () => void = () => {};
+  let notifyReplayClosed: () => void = () => {};
+  const replayStarted = new Promise<void>((resolve) => {
+    notifyReplayStarted = resolve;
+  });
+  const replayClosed = new Promise<void>((resolve) => {
+    notifyReplayClosed = resolve;
+  });
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/run/records?")) {
+      response.on("close", notifyReplayClosed);
+      notifyReplayStarted();
+      return;
+    }
+    eventRequests += 1;
+    const revision = eventRequests;
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      ...(revision === 2 ? { "X-RUA-Run-Cursor": "new-instance:0" } : {}),
+    });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{ revision }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+    { runAfter: 0 },
+  );
+  const revisions: (number | undefined)[] = [];
+  connection.onState((state) => revisions.push(state.arms[0]?.revision));
+  try {
+    connection.start();
+    await replayStarted;
+    connection.close();
+    connection.start();
+    await replayClosed;
+    await connection.waitForState((state) => state.arms[0]?.revision === 2);
+    expect(revisions).toEqual([2]);
+  } finally {
+    connection.close();
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
@@ -211,6 +468,48 @@ test("an action-sequence wait can expire or be aborted", async () => {
     ).rejects.toThrow("Timed out waiting for action sequence sequence");
   } finally {
     connection.close();
+  }
+});
+
+test("aborting an action-sequence wait interrupts a network retry delay", async () => {
+  let notifyFailedRequest: () => void = () => {};
+  const failedRequest = new Promise<void>((resolve) => {
+    notifyFailedRequest = resolve;
+  });
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async () => {
+      notifyFailedRequest();
+      throw new TypeError("Network unavailable");
+    });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const cancellation = new AbortController();
+  const reason = new Error("Run canceled during retry");
+  const connection = createStationConnection("http://127.0.0.1:1", "agent");
+  try {
+    const result = connection
+      .waitForActionSequence("sequence", {
+        signal: cancellation.signal,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    await failedRequest;
+    await setImmediate();
+    cancellation.abort(reason);
+    const actual = await Promise.race([
+      result,
+      (async () => {
+        for (let turn = 0; turn < 10; turn += 1) await setImmediate();
+        return undefined;
+      })(),
+    ]);
+    expect(actual).toBe(reason);
+  } finally {
+    connection.close();
+    vi.useRealTimers();
+    fetchSpy.mockRestore();
   }
 });
 
@@ -675,6 +974,45 @@ test("renewal failure invalidates a held lease", async () => {
     expect(lease.isHeld()).toBe(true);
     await vi.waitFor(() => expect(lease.isHeld()).toBe(false));
     expect(() => lease.arm("follower").streamJoints([0, 0, 0, 0, 0])).toThrow();
+  } finally {
+    await close();
+  }
+});
+
+test("returning a lease interrupts an in-flight renewal", async () => {
+  let renewalCount = 0;
+  let notifyRenewalStarted: () => void = () => {};
+  let notifyRenewalClosed: () => void = () => {};
+  const renewalStarted = new Promise<void>((resolve) => {
+    notifyRenewalStarted = resolve;
+  });
+  const renewalClosed = new Promise<void>((resolve) => {
+    notifyRenewalClosed = resolve;
+  });
+  const { connection, close } = await startLeaseStation(
+    0.3,
+    (request, response) => {
+      if (request.url === "/leases/renew") {
+        renewalCount += 1;
+        if (renewalCount === 1) response.writeHead(204).end();
+        else {
+          response.on("close", notifyRenewalClosed);
+          notifyRenewalStarted();
+        }
+      } else if (request.url === "/leases/release") {
+        response.writeHead(204).end();
+      } else {
+        response.writeHead(404).end();
+      }
+    },
+  );
+  try {
+    connection.start();
+    const lease = await connection.acquireLease("test");
+    await renewalStarted;
+    await lease.return();
+    await renewalClosed;
+    expect(lease.isHeld()).toBe(false);
   } finally {
     await close();
   }

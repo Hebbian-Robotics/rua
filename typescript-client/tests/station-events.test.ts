@@ -1,3 +1,4 @@
+import { Effect, Stream } from "effect";
 import { expect, test } from "vitest";
 import { readStationEvents, type StationEvent } from "../src/station-events.js";
 
@@ -12,9 +13,18 @@ test("preserves the station cursor when mapping events for application handlers"
     },
   });
   const events: StationEvent[] = [];
-  await readStationEvents(new Response(body), async (event) => {
-    events.push(event);
-  });
+  await Effect.runPromise(
+    readStationEvents(
+      Stream.fromReadableStream({
+        evaluate: () => body,
+        onError: (error) => error,
+      }),
+      (event) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
+    ),
+  );
   expect(events).toEqual([
     { kind: "station", id: "station:7", data: '{"label":\n"café"}' },
     { kind: "resync_required", id: "station:7", data: "fell behind" },

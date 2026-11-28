@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { createStationHttpClient } from "../src/index.js";
@@ -12,7 +14,10 @@ function stubFetch(answer: (url: URL) => Response) {
       requested.push({
         url: String(url),
         method: init?.method ?? "GET",
-        body: init?.body,
+        body:
+          init?.body === undefined
+            ? undefined
+            : await new Request(url, init).text(),
       });
       return answer(url);
     }),
@@ -40,6 +45,35 @@ test("cameras list only the available ones and snapshots carry the capture time"
     "http://station:8792/cameras",
     "http://station:8792/cameras/wrist",
   ]);
+});
+
+test("camera bytes remain readable until a streamed response finishes", async () => {
+  let finishResponse: () => void = () => {};
+  let notifyFirstChunk: () => void = () => {};
+  const firstChunk = new Promise<void>((resolve) => {
+    notifyFirstChunk = resolve;
+  });
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "image/jpeg" });
+    response.write(new Uint8Array([1, 2]));
+    finishResponse = () => response.end(new Uint8Array([3, 4]));
+    notifyFirstChunk();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  try {
+    const frame = createStationHttpClient({
+      stationUrl: `http://127.0.0.1:${address.port}`,
+    }).cameraJpeg("wrist");
+    await firstChunk;
+    finishResponse();
+    expect([...(await frame).jpeg]).toEqual([1, 2, 3, 4]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 });
 
 test("a camera without a frame checks the configured direct media service", async () => {
