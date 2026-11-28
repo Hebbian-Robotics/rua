@@ -724,3 +724,42 @@ test("renewal failure invalidates a held lease", async () => {
     await close();
   }
 });
+
+test("returning a lease interrupts an in-flight renewal", async () => {
+  let renewalCount = 0;
+  let notifyRenewalStarted: () => void = () => {};
+  let notifyRenewalClosed: () => void = () => {};
+  const renewalStarted = new Promise<void>((resolve) => {
+    notifyRenewalStarted = resolve;
+  });
+  const renewalClosed = new Promise<void>((resolve) => {
+    notifyRenewalClosed = resolve;
+  });
+  const { connection, close } = await startLeaseStation(
+    0.3,
+    (request, response) => {
+      if (request.url === "/leases/renew") {
+        renewalCount += 1;
+        if (renewalCount === 1) response.writeHead(204).end();
+        else {
+          response.on("close", notifyRenewalClosed);
+          notifyRenewalStarted();
+        }
+      } else if (request.url === "/leases/release") {
+        response.writeHead(204).end();
+      } else {
+        response.writeHead(404).end();
+      }
+    },
+  );
+  try {
+    connection.start();
+    const lease = await connection.acquireLease("test");
+    await renewalStarted;
+    await lease.return();
+    await renewalClosed;
+    expect(lease.isHeld()).toBe(false);
+  } finally {
+    await close();
+  }
+});

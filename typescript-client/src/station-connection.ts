@@ -370,7 +370,7 @@ export function createStationConnection(
     | { kind: "idle" }
     | { kind: "acquiring" }
     | { kind: "held"; token: string } = { kind: "idle" };
-  let leaseRenewalTimer: ReturnType<typeof setTimeout> | null = null;
+  let leaseRenewal: AbortController | null = null;
   const heldLeaseToken = (): string | null =>
     leaseState.kind === "held" ? leaseState.token : null;
   let latestState: StationState | null = null;
@@ -449,8 +449,8 @@ export function createStationConnection(
   function loseLease(): void {
     if (leaseState.kind !== "held") return;
     leaseState = { kind: "idle" };
-    if (leaseRenewalTimer !== null) clearTimeout(leaseRenewalTimer);
-    leaseRenewalTimer = null;
+    leaseRenewal?.abort();
+    leaseRenewal = null;
     for (const listener of leaseLostListeners) listener();
   }
 
@@ -1044,8 +1044,8 @@ export function createStationConnection(
     if (keepalive) loseLease();
     else {
       leaseState = { kind: "idle" };
-      if (leaseRenewalTimer !== null) clearTimeout(leaseRenewalTimer);
-      leaseRenewalTimer = null;
+      leaseRenewal?.abort();
+      leaseRenewal = null;
     }
     try {
       if (keepalive) {
@@ -1143,25 +1143,38 @@ export function createStationConnection(
   }
 
   function scheduleLeaseRenewal(token: string, leaseSeconds: number): void {
-    leaseRenewalTimer = setTimeout(
-      async () => {
-        leaseRenewalTimer = null;
+    const lifetime = new AbortController();
+    leaseRenewal = lifetime;
+    const renewLease = Effect.gen(function* () {
+      while (true) {
+        yield* Effect.sleep(Math.max(100, (leaseSeconds * 1000) / 3));
         if (heldLeaseToken() !== token) return;
         if (!ready || latestState === null) {
           loseLease();
           return;
         }
-        try {
-          await stationApi().renewLeaseHttp({ lease_token: token });
-          if (heldLeaseToken() === token)
-            scheduleLeaseRenewal(token, leaseSeconds);
-        } catch (error) {
+        yield* Effect.tryPromise({
+          try: (signal) =>
+            stationApi(signal).renewLeaseHttp({ lease_token: token }),
+          catch: (error) => error,
+        });
+      }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
           console.warn("Lease renewal failed", error);
           if (heldLeaseToken() === token) loseLease();
-        }
-      },
-      Math.max(100, (leaseSeconds * 1000) / 3),
+        }),
+      ),
     );
+    void Effect.runPromise(renewLease, { signal: lifetime.signal })
+      .catch((error: unknown) => {
+        if (!lifetime.signal.aborted)
+          console.warn("Lease renewal stopped", error);
+      })
+      .finally(() => {
+        if (leaseRenewal === lifetime) leaseRenewal = null;
+      });
   }
 
   function baseUrl(): string {
