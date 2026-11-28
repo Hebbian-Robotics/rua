@@ -79,6 +79,7 @@ test("a silent event stream reconnects and refreshes an expired cursor immediate
 
 test("closing and restarting releases the old event stream", async () => {
   let requestCount = 0;
+  const tracingHeaders: (string | string[] | undefined)[] = [];
   let notifyFirstStreamClosed: () => void = () => {};
   const firstStreamClosed = new Promise<void>((resolve) => {
     notifyFirstStreamClosed = resolve;
@@ -88,6 +89,7 @@ test("closing and restarting releases the old event stream", async () => {
       response.writeHead(200, { "Content-Type": "application/json" }).end("[]");
       return;
     }
+    tracingHeaders.push(request.headers["traceparent"], request.headers["b3"]);
     requestCount += 1;
     const currentRequest = requestCount;
     if (currentRequest === 1) response.on("close", notifyFirstStreamClosed);
@@ -113,6 +115,12 @@ test("closing and restarting releases the old event stream", async () => {
     );
     expect(state.arms[0]?.revision).toBe(2);
     expect(requestCount).toBe(2);
+    expect(tracingHeaders).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
   } finally {
     connection.close();
     server.closeAllConnections();

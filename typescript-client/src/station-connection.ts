@@ -668,7 +668,10 @@ export function createStationConnection(
         );
         if (!retryWithoutCursor) return;
       }
-    }).pipe(Effect.provide(FetchHttpClient.layer));
+    }).pipe(
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.provide(FetchHttpClient.layer),
+    );
   }
 
   function connect(): void {
