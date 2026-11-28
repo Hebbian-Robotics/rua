@@ -14,7 +14,9 @@ source commit. The Python wheels include the station, media companion, `hebbian-
 
 Choose a new version across all three registries. Update the release package
 manifests, the contracts dependency version in `sdk/Cargo.toml`, and the
-lockfiles. Run the version check with the planned tag, substituting the
+lockfiles. In the same change, update documentation that names the previous
+version or describes changed behaviour; `rg` for the previous version number
+finds the pins. Run the version check with the planned tag, substituting the
 version you are preparing, for example
 `uv run --locked rua-dev check-release-versions --tag v0.1.8`. Regenerate and
 verify affected contracts with `uv run --locked rua-dev contracts --check` after
@@ -76,6 +78,6 @@ that are already live.
 After publishing, install the exact release from each registry in a clean
 project and verify the SDK imports, station startup, and a simulator connection.
 
-Update the Python and TypeScript example dependency pins and lockfiles once the
-new version is available on PyPI and npm. Keep release-age exemptions limited to
+Once the new version is available on PyPI and npm, open a follow-up pull request
+that updates the Python and TypeScript example dependency pins and lockfiles. Keep release-age exemptions limited to
 the RUA SDK so the usual delay still applies to third-party dependencies.
