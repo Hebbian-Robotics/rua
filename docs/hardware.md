@@ -36,7 +36,7 @@ If you already calibrated your SO-101 with LeRobot, point a local RUA profile
 at its calibration ID and serial port. For a new arm, follow the
 [SO-101 calibration guide](so101-calibration.md).
 
-The profile below works with RUA 0.1.9. Use the hardware guide from the matching
+The profile below works with RUA 0.1.10. Use the hardware guide from the matching
 checkout if you are running an earlier release.
 
 Every physical arm needs its own serial port, LeRobot calibration and verified

@@ -1,6 +1,6 @@
 [package]
 name = "hebbian-rua-server"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 rust-version = "1.92"
 authors = ["Hebbian Robotics"]
