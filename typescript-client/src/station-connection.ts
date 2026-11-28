@@ -1586,15 +1586,15 @@ export function createStationConnection(
       stationApi(signal).getSequenceCameraHistory(id),
     async waitForActionSequence(actionSequenceId, options = {}) {
       const { signal, timeoutMilliseconds } = options;
-      const timeout =
-        timeoutMilliseconds === undefined
-          ? undefined
-          : AbortSignal.timeout(Math.max(0, Math.trunc(timeoutMilliseconds)));
-      const requestSignal = AbortSignal.any([
-        operationLifetime.signal,
-        ...(signal ? [signal] : []),
-        ...(timeout ? [timeout] : []),
-      ]);
+      if (
+        timeoutMilliseconds !== undefined &&
+        (!Number.isFinite(timeoutMilliseconds) ||
+          timeoutMilliseconds > 4_294_967_295)
+      )
+        throw new RangeError("Invalid action sequence timeout");
+      const requestSignal = signal
+        ? AbortSignal.any([operationLifetime.signal, signal])
+        : operationLifetime.signal;
       const base = baseUrl();
       const completion = Effect.gen(function* () {
         while (true) {
@@ -1606,16 +1606,21 @@ export function createStationConnection(
           if (record !== null) return record;
         }
       });
-      try {
-        return await runOperationEffect(completion, requestSignal);
-      } catch (error) {
-        if (timeout?.aborted && requestSignal.reason === timeout.reason) {
-          throw new StationTimeoutError(
-            `Timed out waiting for action sequence ${actionSequenceId}`,
-          );
-        }
-        throw error;
-      }
+      const wait =
+        timeoutMilliseconds === undefined
+          ? completion
+          : completion.pipe(
+              Effect.timeoutOrElse({
+                duration: Math.max(0, Math.trunc(timeoutMilliseconds)),
+                orElse: () =>
+                  Effect.fail(
+                    new StationTimeoutError(
+                      `Timed out waiting for action sequence ${actionSequenceId}`,
+                    ),
+                  ),
+              }),
+            );
+      return runOperationEffect(wait, requestSignal);
     },
     async cancelActionSequence(actionSequenceId) {
       try {
