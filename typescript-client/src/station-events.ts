@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { createParser } from "eventsource-parser";
 import { z } from "zod";
 
@@ -71,50 +71,41 @@ export function parseRunReplay(payload: unknown): IncomingStationMessage[] {
 
 /** Read events in order, awaiting application handling before reading more bytes. */
 export function readStationEvents(
-  response: Response,
+  bytes: Stream.Stream<Uint8Array, unknown>,
   handleEvent: (event: StationEvent) => Promise<void>,
   byteReadTimeoutMilliseconds?: number,
 ): Effect.Effect<void, unknown> {
-  if (!response.body)
-    return Effect.fail(new Error("Station event stream has no body"));
-  const body = response.body;
-  const decoder = new TextDecoder();
-  let cursor: string | null = null;
-  const pending: StationEvent[] = [];
-  const parser = createParser({
-    onId: (id) => {
-      cursor = id;
-    },
-    onEvent: (event) => {
-      pending.push({
-        kind: event.event || "message",
-        data: event.data,
-        id: cursor,
-      });
-    },
-  });
-  return Effect.acquireUseRelease(
-    Effect.try({ try: () => body.getReader(), catch: (error) => error }),
-    (reader) =>
-      Effect.gen(function* () {
-        while (true) {
-          const read = Effect.tryPromise({
-            try: () => reader.read(),
-            catch: (error) => error,
-          });
-          const chunk = yield* byteReadTimeoutMilliseconds === undefined
-            ? read
-            : read.pipe(
-                Effect.timeoutOrElse({
-                  duration: byteReadTimeoutMilliseconds,
-                  orElse: () =>
-                    Effect.fail(new Error("Station event stream went silent")),
-                }),
-              );
-          if (chunk.done) break;
+  return Effect.suspend(() => {
+    let cursor: string | null = null;
+    const pending: StationEvent[] = [];
+    const parser = createParser({
+      onId: (id) => {
+        cursor = id;
+      },
+      onEvent: (event) => {
+        pending.push({
+          kind: event.event || "message",
+          data: event.data,
+          id: cursor,
+        });
+      },
+    });
+    const timedBytes =
+      byteReadTimeoutMilliseconds === undefined
+        ? bytes
+        : bytes.pipe(
+            Stream.timeoutOrElse({
+              duration: byteReadTimeoutMilliseconds,
+              orElse: () =>
+                Stream.fail(new Error("Station event stream went silent")),
+            }),
+          );
+    return timedBytes.pipe(
+      Stream.decodeText,
+      Stream.runForEach((text) =>
+        Effect.gen(function* () {
           yield* Effect.try({
-            try: () =>
-              parser.feed(decoder.decode(chunk.value, { stream: true })),
+            try: () => parser.feed(text),
             catch: (error) => error,
           });
           for (const event of pending) {
@@ -124,18 +115,8 @@ export function readStationEvents(
             });
           }
           pending.length = 0;
-        }
-      }),
-    (reader) =>
-      Effect.tryPromise({
-        try: async () => {
-          try {
-            await reader.cancel();
-          } finally {
-            reader.releaseLock();
-          }
-        },
-        catch: (error) => error,
-      }).pipe(Effect.ignore),
-  );
+        }),
+      ),
+    );
+  });
 }

@@ -1,4 +1,5 @@
 import { Duration, Effect, Schedule } from "effect";
+import { FetchHttpClient, HttpClient } from "effect/http";
 import pRetry from "p-retry";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
@@ -564,85 +565,80 @@ export function createStationConnection(
     attempt: AbortController,
   ): Effect.Effect<void, unknown> {
     return Effect.gen(function* () {
+      const client = HttpClient.withScope(yield* HttpClient.HttpClient);
       while (true) {
-        const cursor = eventCursor;
-        const response = yield* Effect.tryPromise({
-          try: (signal) =>
-            fetch(url, {
-              signal: AbortSignal.any([signal, attempt.signal]),
-              headers: {
-                ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
-                "X-RUA-Run-Cursor":
-                  runAfter === undefined
-                    ? "latest"
-                    : runInstance === undefined
-                      ? String(runAfter)
-                      : `${runInstance}:${runAfter}`,
-              },
-            }),
-          catch: (error) => error,
-        }).pipe(
-          Effect.timeoutOrElse({
-            duration: CONNECT_TIMEOUT_MILLISECONDS,
-            orElse: () =>
-              Effect.fail(
-                new StationTimeoutError("Station event handshake timed out"),
+        const retryWithoutCursor = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const cursor = eventCursor;
+            const response = yield* client
+              .get(url, {
+                headers: {
+                  ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
+                  "X-RUA-Run-Cursor":
+                    runAfter === undefined
+                      ? "latest"
+                      : runInstance === undefined
+                        ? String(runAfter)
+                        : `${runInstance}:${runAfter}`,
+                },
+              })
+              .pipe(
+                Effect.timeoutOrElse({
+                  duration: CONNECT_TIMEOUT_MILLISECONDS,
+                  orElse: () =>
+                    Effect.fail(
+                      new StationTimeoutError(
+                        "Station event handshake timed out",
+                      ),
+                    ),
+                }),
+              );
+            if (response.status === 409 && cursor !== null) {
+              eventCursor = null;
+              return true;
+            }
+            if (response.status < 200 || response.status >= 300)
+              return yield* Effect.fail(
+                new StationConnectionError(
+                  `Station event stream returned ${response.status}`,
+                ),
+              );
+            const replayGap = yield* readStationEvents(
+              response.stream,
+              (event) =>
+                applyStationEvent(
+                  event,
+                  url,
+                  attempt.signal,
+                  response.headers["x-rua-run-cursor"] ?? null,
+                ),
+              EVENT_READ_TIMEOUT_MILLISECONDS,
+            ).pipe(
+              Effect.as(false),
+              Effect.catch((error) =>
+                error instanceof StationReplayGap
+                  ? Effect.succeed(true)
+                  : Effect.fail(error),
               ),
+            );
+            if (!replayGap)
+              return yield* Effect.fail(
+                new StationConnectionError("Station event stream ended"),
+              );
+            const retry = eventCursor !== null && !ready;
+            eventCursor = null;
+            if (!retry)
+              return yield* Effect.fail(
+                new StationReplayGap(
+                  "Station event replay requires a snapshot",
+                ),
+              );
+            return true;
           }),
         );
-        if (response.status === 409 && cursor !== null) {
-          eventCursor = null;
-          yield* Effect.tryPromise({
-            try: async () => {
-              await response.body?.cancel();
-            },
-            catch: (error) => error,
-          });
-          continue;
-        }
-        if (!response.ok) {
-          yield* Effect.tryPromise({
-            try: async () => {
-              await response.body?.cancel();
-            },
-            catch: (error) => error,
-          }).pipe(Effect.ignore);
-          return yield* Effect.fail(
-            new StationConnectionError(
-              `Station event stream returned ${response.status}`,
-            ),
-          );
-        }
-        const replayGap = yield* readStationEvents(
-          response,
-          (event) =>
-            applyStationEvent(
-              event,
-              url,
-              attempt.signal,
-              response.headers.get("X-RUA-Run-Cursor"),
-            ),
-          EVENT_READ_TIMEOUT_MILLISECONDS,
-        ).pipe(
-          Effect.as(false),
-          Effect.catch((error) =>
-            error instanceof StationReplayGap
-              ? Effect.succeed(true)
-              : Effect.fail(error),
-          ),
-        );
-        if (!replayGap)
-          return yield* Effect.fail(
-            new StationConnectionError("Station event stream ended"),
-          );
-        const retryWithoutCursor = eventCursor !== null && !ready;
-        eventCursor = null;
-        if (!retryWithoutCursor)
-          return yield* Effect.fail(
-            new StationReplayGap("Station event replay requires a snapshot"),
-          );
+        if (!retryWithoutCursor) return;
       }
-    });
+    }).pipe(Effect.provide(FetchHttpClient.layer));
   }
 
   function connect(): void {
