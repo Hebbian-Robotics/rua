@@ -40,6 +40,18 @@ impl TestStation {
         .await
         .map(Self)
     }
+
+    async fn with_media(address: std::net::SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+        SimulatedStation::start(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles"),
+            &[ARM],
+            || NoPhysicsStandIn::at(REST.to_vec(), 0.02).with_gripper(0.0),
+            axum::Router::new(),
+            Some(address),
+        )
+        .await
+        .map(Self)
+    }
 }
 
 struct Run {
@@ -104,6 +116,229 @@ async fn output_is_compact_by_default_and_raw_keeps_si_records() -> TestResult {
     assert!(arm["tool"]["position"].is_array());
     assert!(arm["tool"]["model_points"].is_array());
     assert!(arm["commanded_joints"].is_null());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn observation_and_compilation_workflows_use_station_state() -> TestResult {
+    let station = TestStation::start().await?;
+    let observation = cli(&station.url, &["observation", "--arm", ARM]).await;
+    assert_eq!(
+        observation.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&observation.output.stderr)
+    );
+    assert_eq!(observation.stdout_json()["state"]["arms"][0]["arm"], ARM);
+
+    let source_path =
+        std::env::temp_dir().join(format!("rua-cli-sequence-{}.json", std::process::id()));
+    let artifact_path =
+        std::env::temp_dir().join(format!("rua-cli-artifact-{}.json", std::process::id()));
+    std::fs::write(
+        &source_path,
+        format!(
+            r#"{{"steps":[{{"arms":{{"{ARM}":{{"goal":{{"joints_degrees":[0,-30,30,0,0]}}}}}}}}]}}"#
+        ),
+    )?;
+    let compiled = cli(
+        &station.url,
+        &["compilation", "compile", source_path.to_str().unwrap()],
+    )
+    .await;
+    assert_eq!(
+        compiled.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&compiled.output.stderr)
+    );
+    let artifact = compiled.stdout_json();
+    let id = artifact["compilation_id"].as_str().unwrap();
+    std::fs::write(&artifact_path, &compiled.output.stdout)?;
+    let inspected = cli(&station.url, &["compilation", "inspect", id]).await;
+    assert_eq!(inspected.code(), Some(0));
+    assert_eq!(inspected.stdout_json()["compilation_id"], id);
+    let imported = cli(
+        &station.url,
+        &["compilation", "import", artifact_path.to_str().unwrap()],
+    )
+    .await;
+    assert_eq!(
+        imported.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&imported.output.stderr)
+    );
+    assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
+    let executed = cli(&station.url, &["compilation", "run", id]).await;
+    assert_eq!(
+        executed.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&executed.output.stderr)
+    );
+    let completed = executed.stdout_json();
+    assert_eq!(completed["result"]["phase"]["state"], "completed");
+    let prior_execution = completed["execution_id"].as_str().unwrap();
+    verify_continuation_and_revision(&station, &source_path, prior_execution).await?;
+    std::fs::remove_file(source_path)?;
+    std::fs::remove_file(artifact_path)?;
+    Ok(())
+}
+
+async fn verify_continuation_and_revision(
+    station: &TestStation,
+    source_path: &Path,
+    prior_execution: &str,
+) -> TestResult {
+    std::fs::write(
+        source_path,
+        format!(
+            r#"{{"steps":[{{"arms":{{"{ARM}":{{"goal":{{"joints_degrees":[0,-30,30,0,0]}}}}}}}},{{"arms":{{"{ARM}":{{"gripper_opening":0.5}}}}}}]}}"#
+        ),
+    )?;
+    let revised = cli(
+        &station.url,
+        &["compilation", "compile", source_path.to_str().unwrap()],
+    )
+    .await;
+    assert_eq!(
+        revised.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&revised.output.stderr)
+    );
+    let revised_artifact = revised.stdout_json();
+    let revised_id = revised_artifact["compilation_id"].as_str().unwrap();
+    let continued = cli(
+        &station.url,
+        &[
+            "compilation",
+            "run",
+            revised_id,
+            "--prior-execution",
+            prior_execution,
+            "--next-step",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(
+        continued.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&continued.output.stderr)
+    );
+    assert_eq!(
+        continued.stdout_json()["result"]["phase"]["state"],
+        "completed"
+    );
+    let state = cli(&station.url, &["--raw", "state"]).await.stdout_json();
+    let different_revision = state["arms"][0]["revision"].as_u64().unwrap() + 1;
+    let rejected_run = cli(
+        &station.url,
+        &[
+            "--expected-revision",
+            &format!("{ARM}={different_revision}"),
+            "action-sequence",
+            "run",
+            source_path.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert_eq!(
+        rejected_run.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&rejected_run.output.stderr)
+    );
+    assert!(
+        rejected_run
+            .stderr_json()
+            .to_string()
+            .contains("stale_revision")
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sequence_camera_history_is_saved_after_a_run() -> TestResult {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let station = TestStation::with_media(listener.local_addr()?).await?;
+    let media = axum::Router::new().route(
+        "/cameras/{name}",
+        axum::routing::get(|| async {
+            (
+                [(axum::http::header::CONTENT_TYPE, "image/jpeg")],
+                "example frame",
+            )
+        }),
+    );
+    let media_task = tokio::spawn(async move { axum::serve(listener, media).await });
+    let directory = std::env::temp_dir().join(format!("rua-cli-history-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)?;
+    let source = directory.join("steps.json");
+    std::fs::write(
+        &source,
+        format!(r#"{{"steps":[{{"arms":{{"{ARM}":{{"gripper_opening":0.5}}}}}}]}}"#),
+    )?;
+    assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
+    let run = cli(
+        &station.url,
+        &[
+            "action-sequence",
+            "run",
+            source.to_str().unwrap(),
+            "--camera",
+            "front",
+        ],
+    )
+    .await;
+    assert_eq!(
+        run.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.output.stderr)
+    );
+    let result = run.stdout_json();
+    let id = result["execution_id"].as_str().unwrap();
+    let output = directory.join("images");
+    let mut history = Value::Null;
+    for _ in 0..50 {
+        let fetched = cli(
+            &station.url,
+            &[
+                "action-sequence",
+                "images",
+                id,
+                "--output",
+                output.to_str().unwrap(),
+            ],
+        )
+        .await;
+        assert_eq!(
+            fetched.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&fetched.output.stderr)
+        );
+        history = fetched.stdout_json();
+        if !history.is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let images = history["images"].as_array().expect("retained history");
+    let first_image = images.first().expect("at least one captured frame");
+    assert_eq!(first_image["camera"], "front");
+    assert_eq!(
+        std::fs::read(first_image["path"].as_str().unwrap())?,
+        b"example frame"
+    );
+    assert!(first_image["elapsed_seconds"].is_number());
+    assert!(history["missed_samples"].is_number());
+    std::fs::remove_dir_all(directory)?;
+    media_task.abort();
     Ok(())
 }
 

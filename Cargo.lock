@@ -1363,6 +1363,7 @@ name = "hebbian-rua-cli"
 version = "0.1.9"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "clap",
  "hebbian-rua",
  "hebbian-rua-core",

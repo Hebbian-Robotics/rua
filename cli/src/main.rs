@@ -1,21 +1,25 @@
 mod commands;
 mod output;
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::Parser;
 use hebbian_rua::contracts::{
-    ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, JointSpeed, LeaseHolder,
-    MoveArmsCommand, PhoneInviteRequest, PreviewPose,
+    ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, CompilationArtifact,
+    CompilationOutcome, JointSpeed, LeaseHolder, MoveArmsCommand, ObservationAnswer,
+    ObservationFrame, ObservationRequest, PhoneInviteRequest, PreviewPose, ProgramContinuation,
+    SnapshotName,
 };
 use hebbian_rua::{CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use commands::{
-    ActionSequenceCommand, CameraCommand, Cli, Command, LeaseCommand, MotionFileArgs,
-    RecordCommand, TracesCommand, TrajectoryArgs,
+    ActionSequenceCommand, CameraCommand, Cli, Command, CompilationCommand, LeaseCommand,
+    MotionFileArgs, RecordCommand, TracesCommand, TrajectoryArgs,
 };
 use output::{Failure, json_value, print_compactable};
 
@@ -38,7 +42,15 @@ macro_rules! with_motion_lease {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let raw = cli.raw;
+    let raw = cli.raw
+        || matches!(
+            cli.command,
+            Command::Compilation(
+                CompilationCommand::Compile { .. }
+                    | CompilationCommand::Inspect { .. }
+                    | CompilationCommand::Import { .. }
+            )
+        );
     let invite_url_only = matches!(cli.command, Command::PhoneInvite { .. }) && !raw;
     match execute(cli).await {
         Ok(value) => {
@@ -104,6 +116,14 @@ async fn dispatch(
     let options = || session.options.clone();
     match command {
         Command::State => json_value(&station.get_state().await?),
+        Command::Observation {
+            arm,
+            camera,
+            optional_camera,
+            output,
+        } => capture_observation(station, arm, camera, optional_camera, &output).await,
+        Command::Operation { id } => json_value(&station.get_operation(&id).await?),
+        Command::Compilation(command) => compilation(station, session, command).await,
         Command::Enable { arm } => json_value(&station.enable_with(&arm, options()).await?),
         Command::ApproveRecovery { arm } => {
             json_value(&station.approve_recovery_with(&arm, options()).await?)
@@ -148,12 +168,7 @@ async fn dispatch(
                     .await?)
             })?)
         }
-        Command::MoveArms { input } => {
-            let command: MoveArmsCommand = read_json(&input)?;
-            json_value(&with_motion_lease!(station, session, lease, {
-                Ok(lease.run_arms_with(command, options()).await?)
-            })?)
-        }
+        Command::MoveArms { input } => move_arms(station, session, &input).await,
         Command::Gripper { arm, opening } => {
             let opening = hebbian_rua::contracts::GripperOpening::try_from(opening)
                 .map_err(|error| Failure::Usage(error.to_string()))?;
@@ -197,6 +212,142 @@ async fn dispatch(
     }
 }
 
+async fn move_arms(
+    station: &Station,
+    session: &Session,
+    input: &MotionFileArgs,
+) -> Result<Value, Failure> {
+    let command: MoveArmsCommand = read_json(input)?;
+    json_value(&with_motion_lease!(station, session, lease, {
+        Ok(lease
+            .run_arms_with(command, session.options.clone())
+            .await?)
+    })?)
+}
+
+async fn capture_observation(
+    station: &Station,
+    arm: Vec<String>,
+    camera: Vec<String>,
+    optional_camera: Vec<String>,
+    output: &Path,
+) -> Result<Value, Failure> {
+    let answer = station
+        .capture_observation_http(&ObservationRequest {
+            arms: arm,
+            required_cameras: parse_camera_names(camera)?,
+            optional_cameras: parse_camera_names(optional_camera)?,
+            wait: None,
+        })
+        .await?;
+    match answer {
+        ObservationAnswer::ObservationCaptured {
+            state,
+            cameras,
+            missing_optional_cameras,
+        } => {
+            let frames = save_observation_frames(output, cameras)?;
+            Ok(
+                json!({"status": "observation_captured", "state": state, "cameras": frames, "missing_optional_cameras": missing_optional_cameras}),
+            )
+        }
+        other => Err(Failure::Rejected {
+            kind: "observation_failed".into(),
+            detail: "station could not capture the observation".into(),
+            record: json!(other),
+        }),
+    }
+}
+
+fn save_observation_frames(
+    output: &Path,
+    cameras: BTreeMap<String, ObservationFrame>,
+) -> Result<serde_json::Map<String, Value>, Failure> {
+    if !cameras.is_empty() {
+        std::fs::create_dir_all(output).map_err(|error| Failure::Io(error.to_string()))?;
+    }
+    let mut frames = serde_json::Map::new();
+    for (index, (name, frame)) in cameras.into_iter().enumerate() {
+        let bytes = STANDARD
+            .decode(&frame.jpeg_base64)
+            .map_err(|error| Failure::Io(format!("invalid camera frame: {error}")))?;
+        let path = output.join(format!("{index:03}.jpg"));
+        write_file(&path, &bytes)?;
+        frames.insert(name, json!({"path": path, "captured_at_unix_ns": frame.captured_at_unix_ns, "retrieved_between_unix_seconds": frame.retrieved_between_unix_seconds}));
+    }
+    Ok(frames)
+}
+
+fn parse_camera_names(names: Vec<String>) -> Result<Vec<SnapshotName>, Failure> {
+    names
+        .into_iter()
+        .map(|name| SnapshotName::try_from(name).map_err(|error| Failure::Usage(error.to_string())))
+        .collect()
+}
+
+async fn compilation(
+    station: &Station,
+    session: &Session,
+    command: CompilationCommand,
+) -> Result<Value, Failure> {
+    match command {
+        CompilationCommand::Compile { input } => {
+            compilation_outcome(station.compile_action_sequence(&read_json(&input)?).await?)
+        }
+        CompilationCommand::Import { path } => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|error| Failure::Io(format!("{}: {error}", path.display())))?;
+            let artifact: CompilationArtifact = serde_json::from_str(&text)
+                .map_err(|error| Failure::Usage(format!("{}: {error}", path.display())))?;
+            compilation_outcome(station.import_compilation(&artifact).await?)
+        }
+        CompilationCommand::Inspect { id } => json_value(&station.inspect_compilation(&id).await?),
+        CompilationCommand::Run {
+            id,
+            prior_execution,
+            next_step,
+        } => {
+            let continuation = match (prior_execution, next_step) {
+                (Some(prior_execution_id), Some(next_step)) => Some(ProgramContinuation {
+                    prior_execution_id,
+                    next_step,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(Failure::Usage(
+                        "both --prior-execution and --next-step are required".into(),
+                    ));
+                }
+            };
+            let record = with_motion_lease!(station, session, lease, {
+                let record = lease
+                    .start_compiled_execution(
+                        &id,
+                        session.options.expected_revisions.clone(),
+                        continuation,
+                    )
+                    .await?
+                    .wait()
+                    .await?;
+                finished_action_sequence(&record)?;
+                Ok(record)
+            })?;
+            Ok(json!({"execution_id": record.id, "result": record}))
+        }
+    }
+}
+
+fn compilation_outcome(outcome: CompilationOutcome) -> Result<Value, Failure> {
+    match outcome {
+        CompilationOutcome::Compiled { artifact } => json_value(&*artifact),
+        rejected @ CompilationOutcome::Rejected { .. } => Err(Failure::Rejected {
+            kind: "compilation_rejected".into(),
+            detail: "station rejected the compilation".into(),
+            record: json!(rejected),
+        }),
+    }
+}
+
 fn requested_speed(speed: Option<f64>) -> Result<Option<JointSpeed>, Failure> {
     speed
         .map(JointSpeed::new)
@@ -235,14 +386,36 @@ async fn action_sequence(
     command: ActionSequenceCommand,
 ) -> Result<Value, Failure> {
     match command {
-        ActionSequenceCommand::Run { input } => {
-            let request: ActionSequenceRequest = read_json(&input)?;
+        ActionSequenceCommand::Run { input, camera } => {
+            let mut request: ActionSequenceRequest = read_json(&input)?;
+            for (arm, revision) in &session.options.expected_revisions {
+                if request
+                    .expected_revisions
+                    .get(arm)
+                    .is_some_and(|existing| existing != revision)
+                {
+                    return Err(Failure::Usage(format!(
+                        "conflicting expected revisions for arm {arm}"
+                    )));
+                }
+                request.expected_revisions.insert(arm.clone(), *revision);
+            }
+            let cameras = parse_camera_names(camera)?;
+            let capture_requested = !cameras.is_empty();
             let record = with_motion_lease!(station, session, lease, {
-                let record = lease.run_action_sequence(request).await?;
+                let record = lease
+                    .start_sequence_execution(request, cameras)
+                    .await?
+                    .wait()
+                    .await?;
                 finished_action_sequence(&record)?;
                 Ok(record)
             })?;
-            json_value(&record)
+            if capture_requested {
+                Ok(json!({"execution_id": record.id, "result": record}))
+            } else {
+                json_value(&record)
+            }
         }
         ActionSequenceCommand::Cancel { id } => {
             let mut record = station.get_action_sequence(&id).await?;
@@ -253,7 +426,31 @@ async fn action_sequence(
             json_value(&record)
         }
         ActionSequenceCommand::Get { id } => json_value(&station.get_action_sequence(&id).await?),
+        ActionSequenceCommand::Images { id, output } => {
+            sequence_images(station, &id, &output).await
+        }
     }
+}
+
+async fn sequence_images(station: &Station, id: &str, output: &Path) -> Result<Value, Failure> {
+    let Some(history) = station.get_sequence_camera_history(id).await? else {
+        return Ok(Value::Null);
+    };
+    if !history.images.is_empty() {
+        std::fs::create_dir_all(output).map_err(|error| Failure::Io(error.to_string()))?;
+    }
+    let mut images = Vec::with_capacity(history.images.len());
+    for (index, image) in history.images.into_iter().enumerate() {
+        let bytes = STANDARD
+            .decode(&image.frame.jpeg_base64)
+            .map_err(|error| Failure::Io(format!("invalid camera frame: {error}")))?;
+        let path = output.join(format!("{index:03}.jpg"));
+        write_file(&path, &bytes)?;
+        images.push(json!({"camera": image.camera, "path": path, "elapsed_seconds": image.elapsed_seconds, "boundary": image.boundary, "captured_at_unix_ns": image.frame.captured_at_unix_ns, "retrieved_between_unix_seconds": image.frame.retrieved_between_unix_seconds}));
+    }
+    Ok(
+        json!({"expires_in_seconds": history.expires_in_seconds, "missed_samples": history.missed_samples, "truncated": history.truncated, "images": images}),
+    )
 }
 
 fn finished_action_sequence(record: &ActionSequenceRecord) -> Result<(), Failure> {
@@ -340,4 +537,34 @@ fn read_json<T: DeserializeOwned>(request: &MotionFileArgs) -> Result<T, Failure
         hebbian_rua::normalize_robot_tool_arguments(arguments).map_err(|error| usage(&error))?
     };
     serde_json::from_value(arguments).map_err(|error| usage(&error))
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "Test setup and assertions fail the test on error."
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn observation_frames_keep_camera_names_out_of_file_paths() {
+        let root =
+            std::env::temp_dir().join(format!("rua-observation-paths-{}", std::process::id()));
+        let output = root.join("images");
+        let camera_name = "sim_nested/../../outside";
+        let frame = ObservationFrame {
+            jpeg_base64: STANDARD.encode(b"frame"),
+            captured_at_unix_ns: Some("123".into()),
+            retrieved_between_unix_seconds: [1.0, 2.0],
+        };
+        let frames =
+            save_observation_frames(&output, BTreeMap::from([(camera_name.into(), frame)]))
+                .expect("frame is saved");
+        assert_eq!(frames[camera_name]["path"], json!(output.join("000.jpg")));
+        assert_eq!(std::fs::read(output.join("000.jpg")).unwrap(), b"frame");
+        assert!(!root.join("outside.jpg").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
