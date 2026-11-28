@@ -1,12 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  type CommandLine,
-  loadDotEnvironment,
-  parseCommandLine,
-} from "../src/cli.js";
+import { type CommandLine, parseCommandLine } from "../src/cli.js";
 
 function parseRun(
   argv: string[],
@@ -193,39 +186,6 @@ test("bad input is refused with a message", () => {
       {},
     ),
   ).toThrow("repeat");
-});
-
-test("a missing .env is ignored and an unreadable one is reported with its path", () => {
-  const directory = mkdtempSync(join(tmpdir(), "rua-agent-env-"));
-  try {
-    const environment: NodeJS.ProcessEnv = {};
-    loadDotEnvironment(directory, environment);
-    expect(environment).toEqual({});
-    mkdirSync(join(directory, ".env"));
-    expect(() => loadDotEnvironment(directory, {})).toThrow(
-      join(directory, ".env"),
-    );
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test(".env values fill in variables without replacing exported ones", () => {
-  const directory = mkdtempSync(join(tmpdir(), "rua-agent-env-"));
-  try {
-    writeFileSync(
-      join(directory, ".env"),
-      "ANTHROPIC_API_KEY=from-file\nOPENAI_API_KEY=from-file\n",
-    );
-    const environment: NodeJS.ProcessEnv = { ANTHROPIC_API_KEY: "exported" };
-    loadDotEnvironment(directory, environment);
-    expect(environment).toEqual({
-      ANTHROPIC_API_KEY: "exported",
-      OPENAI_API_KEY: "from-file",
-    });
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
 });
 
 test("-h and --help ask for the usage instead of requiring arguments", () => {

@@ -1,9 +1,8 @@
 #!/usr/bin/env -S pnpm exec tsx --conditions=development
 
-import { readFileSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseEnv } from "node:util";
 import { Command, CommanderError, Option } from "commander";
 import { DEFAULT_STATION_URL, type OnInterruption } from "hebbian-rua";
 import { type LoopConfig, requirePositiveModelTurnLimit } from "./loop.js";
@@ -153,36 +152,22 @@ export function parseCommandLine(
   };
 }
 
-/**
- * Load `.env` from the invocation directory into `environment`. A missing file is
- * ignored; any other read error is thrown with the file path.
- */
-export function loadDotEnvironment(
-  invocationDirectory: string,
-  environment: NodeJS.ProcessEnv = process.env,
-): void {
-  const dotEnvironmentPath = join(invocationDirectory, ".env");
-  let contents: string;
+// CONSTRAINT: `pnpm --filter` runs the script in the package directory; INIT_CWD is where pnpm was invoked.
+function loadDotEnvironment(): void {
+  const invocationDirectory = process.env["INIT_CWD"] ?? process.cwd();
   try {
-    contents = readFileSync(dotEnvironmentPath, "utf8");
+    // INVARIANT: Does not replace variables that are already exported.
+    process.loadEnvFile(join(invocationDirectory, ".env"));
   } catch (error) {
     // WHY: The dotenv file is optional when credentials come from the environment.
     if (error instanceof Error && "code" in error && error.code === "ENOENT")
       return;
-    throw new Error(
-      `Could not read ${dotEnvironmentPath}: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-  for (const [name, value] of Object.entries(parseEnv(contents))) {
-    // INVARIANT: Does not replace variables that are already exported.
-    if (environment[name] === undefined) environment[name] = value;
+    throw error;
   }
 }
 
 async function main(): Promise<number> {
-  // CONSTRAINT: `pnpm --filter` runs the script in the package directory; INIT_CWD is where pnpm was invoked.
-  loadDotEnvironment(process.env["INIT_CWD"] ?? process.cwd());
+  loadDotEnvironment();
   const commandLine = parseCommandLine(process.argv.slice(2));
   if (commandLine === "help") {
     createCommand().outputHelp();
