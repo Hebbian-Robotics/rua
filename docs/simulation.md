@@ -22,7 +22,7 @@ uv sync --project examples/python --locked
 Start the station from the repository root:
 
 ```sh
-uvx --from hebbian-rua==0.1.9 rua serve --local-only-no-remote-cameras \
+uv run --project examples/mujoco_sim --locked rua serve --local-only-no-remote-cameras \
   --profile "$PWD/examples/mujoco_sim/profiles/single.toml" \
   --work-directory /tmp/hebbian-station
 ```
@@ -42,7 +42,7 @@ station command.
 ## 2. Run hello_robot
 
 Wait for populated `measured_joints` in [station state](http://127.0.0.1:8792/state)
-or run `uvx --from hebbian-rua==0.1.9 hebbian-rua --raw state`. Then run the
+or run `uv run --project examples/mujoco_sim --locked hebbian-rua --raw state`. Then run the
 [Python example](../examples/python/hello_robot.py) in a third terminal:
 
 ```sh
@@ -78,7 +78,7 @@ onnx = "/absolute/path/to/policy.onnx"
 EOF
 
 ORT_DYLIB_PATH=/absolute/path/to/libonnxruntime.so \
-  uvx --from hebbian-rua==0.1.9 rua serve --local-only-no-remote-cameras \
+  uv run --project examples/mujoco_sim --locked rua serve --local-only-no-remote-cameras \
   --profile "$policy_directory/policy.toml" \
   --work-directory /tmp/hebbian-station
 ```
@@ -95,8 +95,8 @@ For headless rendering on Linux, install OSMesa (`libosmesa6` on
 Ubuntu) or set `MUJOCO_GL` to a backend supported by your system.
 
 ```sh
-uvx --from hebbian-rua==0.1.9 hebbian-rua camera list
-uvx --from hebbian-rua==0.1.9 hebbian-rua camera snapshot sim_overview --out overview.jpg
+uv run --project examples/mujoco_sim --locked hebbian-rua camera list
+uv run --project examples/mujoco_sim --locked hebbian-rua camera snapshot sim_overview --out overview.jpg
 ```
 
 Use `sim_wrist` for a single-arm wrist view or `sim_left_wrist` and
