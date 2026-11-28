@@ -394,52 +394,60 @@ export function createStationConnection(
    * Wait until `check` returns a value; it runs again after every change. A
    * check that throws rejects the wait, and so does closing the connection.
    */
-  function waitFor<Result>(
+  function waitForEffect<Result>(
     check: () => Result | undefined,
-    wait: Wait = {},
-  ): Promise<Result> {
-    return new Promise((resolve, reject) => {
-      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-      const finish = () => {
+    timeout?: Wait["timeout"],
+  ): Effect.Effect<Result, Error> {
+    const changes = Effect.callback<Result, Error>((resume) => {
+      function finish(result: Effect.Effect<Result, Error>): void {
         changeListeners.delete(evaluate);
-        wait.signal?.removeEventListener("abort", abort);
-        clearTimeout(timeoutTimer);
-      };
-      const fail = (error: Error) => {
-        finish();
-        reject(error);
-      };
-      const abort = () => fail(asError(wait.signal?.reason));
-      if (wait.signal?.aborted) {
-        abort();
-        return;
+        resume(result);
       }
-      wait.signal?.addEventListener("abort", abort, { once: true });
       function evaluate(): void {
         if (closed) {
-          fail(new StationConnectionError("The station connection is closed"));
+          finish(
+            Effect.fail(
+              new StationConnectionError("The station connection is closed"),
+            ),
+          );
           return;
         }
-        let value: Result | undefined;
         try {
-          value = check();
+          const value = check();
+          if (value !== undefined) finish(Effect.succeed(value));
         } catch (error) {
-          fail(asError(error));
-          return;
+          finish(Effect.fail(asError(error)));
         }
-        if (value !== undefined) {
-          finish();
-          resolve(value);
-          return;
-        }
-      }
-      if (wait.timeout) {
-        const { milliseconds, error } = wait.timeout;
-        timeoutTimer = setTimeout(() => fail(error()), milliseconds);
       }
       changeListeners.add(evaluate);
       evaluate();
+      return Effect.sync(() => {
+        changeListeners.delete(evaluate);
+      });
     });
+    return timeout === undefined
+      ? changes
+      : changes.pipe(
+          Effect.timeoutOrElse({
+            duration: timeout.milliseconds,
+            orElse: () => Effect.fail(timeout.error()),
+          }),
+        );
+  }
+
+  async function waitFor<Result>(
+    check: () => Result | undefined,
+    wait: Wait = {},
+  ): Promise<Result> {
+    try {
+      return await runOperationEffect(
+        waitForEffect(check, wait.timeout),
+        wait.signal,
+      );
+    } catch (error) {
+      if (wait.signal?.aborted) throw asError(wait.signal.reason);
+      throw error;
+    }
   }
 
   function loseLease(): void {
@@ -897,9 +905,9 @@ export function createStationConnection(
 
   async function runOperationEffect<Result>(
     operation: Effect.Effect<Result, unknown>,
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<Result> {
-    signal.throwIfAborted();
+    signal?.throwIfAborted();
     try {
       const result = await Effect.runPromise(
         operation.pipe(
@@ -913,7 +921,7 @@ export function createStationConnection(
       if (result.kind === "failure") throw result.error;
       return result.value;
     } catch (error) {
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       throw error;
     }
   }
@@ -1014,34 +1022,34 @@ export function createStationConnection(
         return answer;
       }
 
-      const { records, state_sequence } = await runOperationEffect(
-        completion,
-        requestSignal,
-      );
-      if (ready) {
-        const prefix = `${station_instance_id}:`;
-        const requiredSequence = BigInt(state_sequence);
-        await waitFor(
-          () => {
-            if (!ready) return true;
-            return latestState !== null &&
-              eventCursor?.startsWith(prefix) &&
-              BigInt(eventCursor.slice(prefix.length)) >= requiredSequence
-              ? true
-              : undefined;
-          },
-          {
-            signal: requestSignal,
-            timeout: {
+      const settledCompletion = completion.pipe(
+        Effect.flatMap((result) => {
+          if (!ready) return Effect.succeed(result);
+          const prefix = `${station_instance_id}:`;
+          const requiredSequence = BigInt(result.state_sequence);
+          return waitForEffect(
+            () => {
+              if (!ready) return true;
+              return latestState !== null &&
+                eventCursor?.startsWith(prefix) &&
+                BigInt(eventCursor.slice(prefix.length)) >= requiredSequence
+                ? true
+                : undefined;
+            },
+            {
               milliseconds: REPLY_TIMEOUT_MILLISECONDS,
               error: () =>
                 new StationTimeoutError(
                   "Timed out waiting for the station state after command completion",
                 ),
             },
-          },
-        );
-      }
+          ).pipe(Effect.as(result));
+        }),
+      );
+      const { records } = await runOperationEffect(
+        settledCompletion,
+        requestSignal,
+      );
       return parseCommandAnswer(operation_id, { status: "accepted", records });
     } catch (error) {
       if (!requestSignal.aborted && !(error instanceof StationHttpError))

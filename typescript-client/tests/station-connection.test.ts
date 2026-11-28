@@ -175,6 +175,56 @@ test("closing and restarting releases the old event stream", async () => {
   }
 });
 
+test("an aborted state wait stops observing later station updates", async () => {
+  let stream: ServerResponse | undefined;
+  const server = createServer((_request, response) => {
+    stream = response;
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{ revision: 1 }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  const controller = new AbortController();
+  let evaluations = 0;
+  try {
+    await connection.waitUntilConnected();
+    await expect(
+      connection.waitForState((state) => state.arms[0]?.revision === 1, {
+        timeoutMilliseconds: 0,
+      }),
+    ).resolves.toBeDefined();
+    const waiting = connection.waitForState(
+      () => {
+        evaluations += 1;
+        return false;
+      },
+      { signal: controller.signal },
+    );
+    const rejected = expect(waiting).rejects.toThrow("Stop waiting");
+    controller.abort(new Error("Stop waiting"));
+    await rejected;
+    const evaluationsAfterAbort = evaluations;
+    stream?.write(
+      `event: station\ndata: ${JSON.stringify(stateMessage([{ revision: 2 }]))}\n\n`,
+    );
+    await connection.waitForState((state) => state.arms[0]?.revision === 2);
+    expect(evaluationsAfterAbort).toBeGreaterThan(0);
+    expect(evaluations).toBe(evaluationsAfterAbort);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("replays retained run records before publishing the snapshot", async () => {
   const delivered: string[] = [];
   const server = createServer((request, response) => {
