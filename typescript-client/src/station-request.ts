@@ -17,6 +17,28 @@ const errorBodySchema = z.object({ detail: z.string() });
 const HTTP_TIMEOUT_MILLISECONDS = 30_000;
 const MAX_PLAIN_TEXT_ERROR_LENGTH = 500;
 
+/**
+ * Provide the fetch-backed HTTP client, resolving `globalThis.fetch` each time the
+ * effect runs.
+ *
+ * WHY: `FetchHttpClient.Fetch` defaults to the `fetch` seen on first use and caches
+ * it, so a replaced global `fetch` would otherwise never be used.
+ */
+export function provideStationHttpClient<Result, Failure, Requirements>(
+  effect: Effect.Effect<Result, Failure, Requirements>,
+): Effect.Effect<
+  Result,
+  Failure,
+  Exclude<Requirements, HttpClient.HttpClient>
+> {
+  return Effect.suspend(() =>
+    effect.pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+    ),
+  );
+}
+
 function parseJsonOrNull(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -86,7 +108,6 @@ function stationResponseEffect<Result>(
       orElse: () =>
         Effect.fail(new StationTimeoutError("Station request timed out")),
     }),
-    Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
     Effect.provideService(HttpClient.TracerPropagationEnabled, false),
     Effect.mapError((error) =>
       HttpClientError.isHttpClientError(error) &&
@@ -159,7 +180,7 @@ export async function runStationEffect<Result>(
   try {
     const result = await Effect.runPromise(
       operation.pipe(
-        Effect.provide(FetchHttpClient.layer),
+        provideStationHttpClient,
         Effect.match({
           onFailure: (error) => ({ kind: "failure" as const, error }),
           onSuccess: (value) => ({ kind: "success" as const, value }),

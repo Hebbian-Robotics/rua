@@ -1,5 +1,5 @@
 import { Clock, Duration, Effect, Schedule } from "effect";
-import { FetchHttpClient, HttpClient } from "effect/http";
+import { HttpClient } from "effect/http";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
 import { apiSchemas } from "./generated/api-schemas.js";
@@ -27,6 +27,7 @@ import {
 } from "./station-events.js";
 import {
   jsonRequestInit,
+  provideStationHttpClient,
   stationFetch,
   stationJsonEffect,
 } from "./station-request.js";
@@ -678,7 +679,7 @@ export function createStationConnection(
       }
     }).pipe(
       Effect.provideService(HttpClient.TracerPropagationEnabled, false),
-      Effect.provide(FetchHttpClient.layer),
+      provideStationHttpClient,
     );
   }
 
@@ -966,13 +967,13 @@ export function createStationConnection(
         );
         if (result !== null) return result;
       }
-    }).pipe(Effect.provide(FetchHttpClient.layer));
+    }).pipe(provideStationHttpClient);
     try {
       const answer = parseCommandAnswer(
         operation_id,
         await runOperationEffect(
           retryOperationEffect(submit(effectApi)).pipe(
-            Effect.provide(FetchHttpClient.layer),
+            provideStationHttpClient,
           ),
           requestSignal,
         ),
@@ -1221,7 +1222,7 @@ export function createStationConnection(
         });
       }
     }).pipe(
-      Effect.provide(FetchHttpClient.layer),
+      provideStationHttpClient,
       Effect.catch((error) =>
         Effect.sync(() => {
           console.warn("Lease renewal failed", error);
@@ -1327,7 +1328,7 @@ export function createStationConnection(
       });
       const executionId = yield* retryOperationEffect(requestEffect);
       return { station_instance_id, executionId };
-    }).pipe(Effect.provide(FetchHttpClient.layer));
+    }).pipe(provideStationHttpClient);
     const { station_instance_id, executionId } = await runOperationEffect(
       submissionProgram,
       lifetime,
@@ -1622,7 +1623,7 @@ export function createStationConnection(
               }),
             );
       return runOperationEffect(
-        wait.pipe(Effect.provide(FetchHttpClient.layer)),
+        wait.pipe(provideStationHttpClient),
         requestSignal,
       );
     },

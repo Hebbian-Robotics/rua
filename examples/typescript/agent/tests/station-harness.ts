@@ -277,7 +277,10 @@ export class ScriptedConversation implements ModelConversation {
     this.position += 1;
     if (step === undefined) throw new Error("The script ran out of turns");
     if (step instanceof Error) throw step;
-    return typeof step === "function" ? step(this) : step;
+    if (typeof step !== "function") return step;
+    const scriptedTurn = step(this);
+    await letStationEventsArrive();
+    return scriptedTurn;
   }
 
   addToolResults(results: RobotToolResult[], observation?: Observation): void {
@@ -293,6 +296,17 @@ export class ScriptedConversation implements ModelConversation {
   addObservation(observation: Observation): void {
     this.received.push({ kind: "observation", observation });
   }
+}
+
+const MODEL_TURN_EVENT_LOOP_TURNS = 20;
+
+/**
+ * WHY: A real model turn takes seconds, so station events emitted during it reach
+ * the connection before the turn ends. Yield to the event loop to model that.
+ */
+async function letStationEventsArrive(): Promise<void> {
+  for (let turns = 0; turns < MODEL_TURN_EVENT_LOOP_TURNS; turns += 1)
+    await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 export function turn(...calls: [string, unknown][]): ModelTurn {
