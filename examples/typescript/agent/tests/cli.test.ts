@@ -1,10 +1,12 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { type CommandLine, parseCommandLine } from "../src/cli.js";
+import {
+  type CommandLine,
+  loadDotEnvironment,
+  parseCommandLine,
+} from "../src/cli.js";
 
 function parseRun(
   argv: string[],
@@ -193,24 +195,34 @@ test("bad input is refused with a message", () => {
   ).toThrow("repeat");
 });
 
-test("the CLI ignores a missing .env but reports a file read error", () => {
+test("a missing .env is ignored and an unreadable one is reported with its path", () => {
   const directory = mkdtempSync(join(tmpdir(), "rua-agent-env-"));
-  const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-  const runHelp = () =>
-    spawnSync(
-      process.execPath,
-      ["--import", "tsx", "--conditions=development", cliPath, "--help"],
-      {
-        encoding: "utf8",
-        env: { ...process.env, INIT_CWD: directory },
-      },
-    );
   try {
-    expect(runHelp().status).toBe(0);
+    const environment: NodeJS.ProcessEnv = {};
+    loadDotEnvironment(directory, environment);
+    expect(environment).toEqual({});
     mkdirSync(join(directory, ".env"));
-    const result = runHelp();
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(".env");
+    expect(() => loadDotEnvironment(directory, {})).toThrow(
+      join(directory, ".env"),
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test(".env values fill in variables without replacing exported ones", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rua-agent-env-"));
+  try {
+    writeFileSync(
+      join(directory, ".env"),
+      "ANTHROPIC_API_KEY=from-file\nOPENAI_API_KEY=from-file\n",
+    );
+    const environment: NodeJS.ProcessEnv = { ANTHROPIC_API_KEY: "exported" };
+    loadDotEnvironment(directory, environment);
+    expect(environment).toEqual({
+      ANTHROPIC_API_KEY: "exported",
+      OPENAI_API_KEY: "from-file",
+    });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
