@@ -19,9 +19,10 @@ test("preserves the station cursor when mapping events for application handlers"
         evaluate: () => body,
         onError: (error) => error,
       }),
-      async (event) => {
-        events.push(event);
-      },
+      (event) =>
+        Effect.sync(() => {
+          events.push(event);
+        }),
     ),
   );
   expect(events).toEqual([

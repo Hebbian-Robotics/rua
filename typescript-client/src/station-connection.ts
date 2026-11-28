@@ -1,5 +1,5 @@
 import { Duration, Effect, Schedule } from "effect";
-import { FetchHttpClient, HttpClient } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import pRetry from "p-retry";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
@@ -23,11 +23,7 @@ import {
   readStationEvents,
   type StationEvent,
 } from "./station-events.js";
-import {
-  jsonRequestInit,
-  stationFetch,
-  stationRequest,
-} from "./station-request.js";
+import { jsonRequestInit, stationFetch } from "./station-request.js";
 import {
   type ActionSequenceRecord,
   type ActionSequenceRequest,
@@ -505,65 +501,101 @@ export function createStationConnection(
       .exhaustive();
   }
 
-  async function applyStationEvent(
+  function applyStationEvent(
     event: StationEvent,
     streamUrl: URL,
-    signal: AbortSignal,
     runStreamInstance: string | null,
-  ): Promise<void> {
-    const incoming = parseStationEvent(event);
-    if (incoming.kind === "resync_required")
-      throw new StationReplayGap("Station event replay requires a snapshot");
-    if (incoming.kind === "ignored_event") {
-      console.warn("Ignoring unknown station stream event", incoming.wireKind);
-      return;
-    }
-    if (event.kind === "run" && incoming.kind !== "snapshot") {
-      receive(incoming);
-      runInstance = runStreamInstance ?? runInstance;
-      return;
-    }
-    const previousStateFrameCount = stateFrameCount;
-    if (incoming.kind === "snapshot") {
+  ): Effect.Effect<void, unknown, HttpClient.HttpClient> {
+    return Effect.gen(function* () {
+      const incoming = yield* Effect.try({
+        try: () => parseStationEvent(event),
+        catch: (error) => error,
+      });
+      if (incoming.kind === "resync_required")
+        return yield* Effect.fail(
+          new StationReplayGap("Station event replay requires a snapshot"),
+        );
+      if (incoming.kind === "ignored_event") {
+        console.warn(
+          "Ignoring unknown station stream event",
+          incoming.wireKind,
+        );
+        return;
+      }
+      if (event.kind === "run" && incoming.kind !== "snapshot") {
+        yield* Effect.try({
+          try: () => {
+            receive(incoming);
+            runInstance = runStreamInstance ?? runInstance;
+          },
+          catch: (error) => error,
+        });
+        return;
+      }
+      const previousStateFrameCount = stateFrameCount;
       const replay =
-        runStreamInstance !== null || runAfter === undefined
-          ? []
-          : await replayRunRecords(streamUrl, runAfter, signal);
-      signal.throwIfAborted();
-      // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
-      latestState = null;
-      runAfter ??= incoming.runSequence;
-      runInstance ??= incoming.stationInstanceId;
-      for (const record of replay) receive(record);
-      for (const message of incoming.messages) receive(message);
-    } else {
-      receive(incoming);
-    }
-    eventCursor = event.id || eventCursor;
-    lastError = null;
-    if (!ready) setReady(true);
-    else if (stateFrameCount !== previousStateFrameCount) notify();
+        incoming.kind === "snapshot" &&
+        runStreamInstance === null &&
+        runAfter !== undefined
+          ? yield* replayRunRecords(streamUrl, runAfter)
+          : [];
+      yield* Effect.try({
+        try: () => {
+          if (incoming.kind === "snapshot") {
+            // INVARIANT: Parse both batches before replacing cached state or notifying listeners.
+            latestState = null;
+            runAfter ??= incoming.runSequence;
+            runInstance ??= incoming.stationInstanceId;
+            for (const record of replay) receive(record);
+            for (const message of incoming.messages) receive(message);
+          } else {
+            receive(incoming);
+          }
+          eventCursor = event.id || eventCursor;
+          lastError = null;
+          if (!ready) setReady(true);
+          else if (stateFrameCount !== previousStateFrameCount) notify();
+        },
+        catch: (error) => error,
+      });
+    });
   }
 
-  async function replayRunRecords(
+  function replayRunRecords(
     streamUrl: URL,
     after: number,
-    signal: AbortSignal,
-  ) {
+  ): Effect.Effect<
+    IncomingStationMessage[],
+    StationConnectionError,
+    HttpClient.HttpClient
+  > {
     const url = new URL("/run/records", streamUrl);
     url.searchParams.set("after", String(after));
-    try {
-      const payload = await stationRequest(url, { signal });
-      return parseRunReplay(payload);
-    } catch (error) {
-      throw new StationConnectionError("Run replay failed", { cause: error });
-    }
+    return Effect.gen(function* () {
+      const client = HttpClient.withScope(yield* HttpClient.HttpClient);
+      const response = yield* client
+        .get(url)
+        .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk));
+      const payload = yield* response.json;
+      return yield* Effect.try({
+        try: () => parseRunReplay(payload),
+        catch: (error) => error,
+      });
+    }).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: REPLY_TIMEOUT_MILLISECONDS,
+        orElse: () =>
+          Effect.fail(new StationTimeoutError("Run replay timed out")),
+      }),
+      Effect.mapError(
+        (error) =>
+          new StationConnectionError("Run replay failed", { cause: error }),
+      ),
+    );
   }
 
-  function consumeEventStream(
-    url: URL,
-    attempt: AbortController,
-  ): Effect.Effect<void, unknown> {
+  function consumeEventStream(url: URL): Effect.Effect<void, unknown> {
     return Effect.gen(function* () {
       const client = HttpClient.withScope(yield* HttpClient.HttpClient);
       while (true) {
@@ -609,7 +641,6 @@ export function createStationConnection(
                 applyStationEvent(
                   event,
                   url,
-                  attempt.signal,
                   response.headers["x-rua-run-cursor"] ?? null,
                 ),
               EVENT_READ_TIMEOUT_MILLISECONDS,
@@ -648,32 +679,25 @@ export function createStationConnection(
     // WHY: Ending a healthy session starts a fresh retry budget. Opening HTTP
     // successfully is insufficient until we have applied a station event.
     void Effect.runPromise(
-      Effect.acquireUseRelease(
-        Effect.sync(() => new AbortController()),
-        (attempt) =>
-          consumeEventStream(new URL("/events", baseUrl()), attempt).pipe(
-            Effect.catch((error) =>
-              Effect.suspend(() => {
-                if (!attempt.signal.aborted)
-                  console.warn("Station event stream ended", error);
-                const wasReady = ready;
-                latestState = null;
-                if (!wasReady) lastError = "The station refused the connection";
-                loseLease();
-                setReady(false);
-                return wasReady
-                  ? Effect.void
-                  : Effect.fail(
-                      new StationConnectionError(
-                        "The station refused the connection",
-                        { cause: error },
-                      ),
-                    );
-              }),
-            ),
-          ),
-        (attempt) => Effect.sync(() => attempt.abort()),
-      ).pipe(
+      consumeEventStream(new URL("/events", baseUrl())).pipe(
+        Effect.catch((error) =>
+          Effect.suspend(() => {
+            console.warn("Station event stream ended", error);
+            const wasReady = ready;
+            latestState = null;
+            if (!wasReady) lastError = "The station refused the connection";
+            loseLease();
+            setReady(false);
+            return wasReady
+              ? Effect.void
+              : Effect.fail(
+                  new StationConnectionError(
+                    "The station refused the connection",
+                    { cause: error },
+                  ),
+                );
+          }),
+        ),
         Effect.retry(
           Schedule.exponential(RECONNECT_FIRST_BACKOFF_MILLISECONDS).pipe(
             Schedule.jittered,

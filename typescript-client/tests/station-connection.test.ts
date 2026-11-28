@@ -122,6 +122,115 @@ test("closing and restarting releases the old event stream", async () => {
   }
 });
 
+test("replays retained run records before publishing the snapshot", async () => {
+  const delivered: string[] = [];
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/run/records?")) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end(
+        JSON.stringify([
+          {
+            kind: "run_event",
+            seq: 1,
+            received_unix_nano: "1",
+            event: { label: "first" },
+          },
+          {
+            kind: "run_event",
+            seq: 1,
+            received_unix_nano: "1",
+            event: { label: "duplicate" },
+          },
+          {
+            kind: "run_event",
+            seq: 2,
+            received_unix_nano: "2",
+            event: { label: "second" },
+          },
+        ]),
+      );
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 2, items: [stateMessage([{ revision: 1 }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+    { runAfter: 0 },
+  );
+  connection.onRunRecord((record) => {
+    if (record.kind === "run_event") delivered.push(`run:${record.seq}`);
+  });
+  connection.onState(() => delivered.push("state"));
+  try {
+    connection.start();
+    await connection.waitForState((state) => state.arms[0]?.revision === 1);
+    expect(delivered).toEqual(["run:1", "run:2", "state"]);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("restarting during replay cancels the old request and publishes only the new snapshot", async () => {
+  let eventRequests = 0;
+  let notifyReplayStarted: () => void = () => {};
+  let notifyReplayClosed: () => void = () => {};
+  const replayStarted = new Promise<void>((resolve) => {
+    notifyReplayStarted = resolve;
+  });
+  const replayClosed = new Promise<void>((resolve) => {
+    notifyReplayClosed = resolve;
+  });
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/run/records?")) {
+      response.on("close", notifyReplayClosed);
+      notifyReplayStarted();
+      return;
+    }
+    eventRequests += 1;
+    const revision = eventRequests;
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      ...(revision === 2 ? { "X-RUA-Run-Cursor": "new-instance:0" } : {}),
+    });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{ revision }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+    { runAfter: 0 },
+  );
+  const revisions: (number | undefined)[] = [];
+  connection.onState((state) => revisions.push(state.arms[0]?.revision));
+  try {
+    connection.start();
+    await replayStarted;
+    connection.close();
+    connection.start();
+    await replayClosed;
+    await connection.waitForState((state) => state.arms[0]?.revision === 2);
+    expect(revisions).toEqual([2]);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("a malformed snapshot never publishes its state before reconnecting", async () => {
   const cursor = "11111111-1111-4111-8111-111111111111:1";
   let sentMalformedSnapshot = false;

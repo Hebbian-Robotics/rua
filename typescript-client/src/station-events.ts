@@ -70,11 +70,13 @@ export function parseRunReplay(payload: unknown): IncomingStationMessage[] {
 }
 
 /** Read events in order, awaiting application handling before reading more bytes. */
-export function readStationEvents(
+export function readStationEvents<Requirements>(
   bytes: Stream.Stream<Uint8Array, unknown>,
-  handleEvent: (event: StationEvent) => Promise<void>,
+  handleEvent: (
+    event: StationEvent,
+  ) => Effect.Effect<void, unknown, Requirements>,
   byteReadTimeoutMilliseconds?: number,
-): Effect.Effect<void, unknown> {
+): Effect.Effect<void, unknown, Requirements> {
   return Effect.suspend(() => {
     let cursor: string | null = null;
     const pending: StationEvent[] = [];
@@ -109,10 +111,7 @@ export function readStationEvents(
             catch: (error) => error,
           });
           for (const event of pending) {
-            yield* Effect.tryPromise({
-              try: () => handleEvent(event),
-              catch: (error) => error,
-            });
+            yield* handleEvent(event);
           }
           pending.length = 0;
         }),
