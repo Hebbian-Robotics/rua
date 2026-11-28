@@ -370,6 +370,10 @@ jobs:
           git switch -c "${branch}"
           git commit -am "Pin the examples to ${RELEASE_TAG}"
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${branch}"
+          if [ -n "$(gh pr list --head "${branch}" --state open --json number --jq '.[].number')" ]; then
+            printf 'Updated the open pull request for %s\n' "${branch}"
+            exit 0
+          fi
           gh pr create --base main --head "${branch}" \
             --title "Pin the examples to ${RELEASE_TAG}" \
             --body "Pins every example to the published ${RELEASE_TAG} packages on PyPI and npm and refreshes their lockfiles."

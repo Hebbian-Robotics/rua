@@ -80,7 +80,6 @@ EOF
 ORT_DYLIB_PATH=/absolute/path/to/libonnxruntime.so \
   uvx --from hebbian-rua==0.1.9 rua serve --local-only-no-remote-cameras \
   --profile "$policy_directory/policy.toml" \
-  --profile-directory "$PWD/profiles" \
   --work-directory /tmp/hebbian-station
 ```
 
