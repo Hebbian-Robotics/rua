@@ -1,6 +1,5 @@
-import { Duration, Effect, Schedule } from "effect";
+import { Clock, Duration, Effect, Schedule } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
-import pRetry from "p-retry";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
 import { apiSchemas } from "./generated/api-schemas.js";
@@ -974,23 +973,38 @@ export function createStationConnection(
         ) {
           retainedCancellation = true;
           // INVARIANT: Failure to read completion leaves the command cancellable.
-          void pRetry(
-            () =>
-              completion().catch((cause: unknown) => {
-                throw new StationConnectionError(
-                  "Could not confirm command completion",
-                  { cause },
-                );
-              }),
-            {
-              signal: requestSignal,
-              retries: Number.POSITIVE_INFINITY,
-              maxTimeout: RECONNECT_CAP_MILLISECONDS,
-              unref: true,
-            },
-          )
-            .catch(() => {})
-            .finally(() => signal.removeEventListener("abort", cancel));
+          const trackCompletion = Effect.gen(function* () {
+            const clock = yield* Clock.Clock;
+            // WHY: Background cancellation tracking must not keep a Node process alive.
+            const backgroundClock: Clock.Clock = Object.assign(
+              Object.create(clock),
+              {
+                sleep: (duration: Duration.Duration) =>
+                  Effect.callback<void>((resume) => {
+                    const timer = setTimeout(
+                      () => resume(Effect.void),
+                      Duration.toMillis(duration),
+                    );
+                    if (typeof timer === "object") timer.unref?.();
+                    return Effect.sync(() => clearTimeout(timer));
+                  }),
+              },
+            );
+            yield* Effect.tryPromise({
+              try: completion,
+              catch: (error) => error,
+            }).pipe(
+              Effect.retry(Schedule.spaced(RECONNECT_CAP_MILLISECONDS)),
+              Effect.provideService(Clock.Clock, backgroundClock),
+            );
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => signal.removeEventListener("abort", cancel)),
+            ),
+          );
+          void Effect.runPromise(trackCompletion, {
+            signal: requestSignal,
+          }).catch(() => {});
         }
         return answer;
       }
