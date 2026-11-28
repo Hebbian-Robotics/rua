@@ -10,6 +10,7 @@ import { expect, test, vi } from "vitest";
 import {
   type ActionSequenceRecord,
   createStationConnection,
+  StationTimeoutError,
 } from "../src/index.js";
 import { commandRecord, stateMessage } from "./station-fakes.js";
 
@@ -27,6 +28,50 @@ test("a cancelled acceptance-only command rejects with its abort reason", async 
     ).rejects.toBe(reason);
   } finally {
     connection.close();
+  }
+});
+
+test("a stalled command request times out and cancels its transport", async () => {
+  let notifyCommandStarted: () => void = () => {};
+  const commandStarted = new Promise<void>((resolve) => {
+    notifyCommandStarted = resolve;
+  });
+  let transportAborted = false;
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, options) => {
+      if (String(input).endsWith("/instance")) {
+        return Response.json({
+          id: "11111111-1111-4111-8111-111111111111",
+          supports_operation_completion: true,
+        });
+      }
+      notifyCommandStarted();
+      return new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => {
+            transportAborted = true;
+            reject(options.signal?.reason);
+          },
+          { once: true },
+        );
+      });
+    });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const connection = createStationConnection("http://127.0.0.1:1", "agent");
+  try {
+    const result = expect(
+      connection.arm("follower", { waitForOutcome: false }).enable(),
+    ).rejects.toBeInstanceOf(StationTimeoutError);
+    await commandStarted;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await result;
+    expect(transportAborted).toBe(true);
+  } finally {
+    connection.close();
+    vi.useRealTimers();
+    fetchSpy.mockRestore();
   }
 });
 

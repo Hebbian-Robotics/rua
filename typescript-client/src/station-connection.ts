@@ -598,7 +598,7 @@ export function createStationConnection(
     return Effect.gen(function* () {
       const client = HttpClient.withScope(yield* HttpClient.HttpClient);
       while (true) {
-        const retryWithoutCursor = yield* Effect.scoped(
+        yield* Effect.scoped(
           Effect.gen(function* () {
             const cursor = eventCursor;
             const response = yield* client
@@ -626,7 +626,7 @@ export function createStationConnection(
               );
             if (response.status === 409 && cursor !== null) {
               eventCursor = null;
-              return true;
+              return;
             }
             if (response.status < 200 || response.status >= 300)
               return yield* Effect.fail(
@@ -663,10 +663,8 @@ export function createStationConnection(
                   "Station event replay requires a snapshot",
                 ),
               );
-            return true;
           }),
         );
-        if (!retryWithoutCursor) return;
       }
     }).pipe(
       Effect.provideService(HttpClient.TracerPropagationEnabled, false),
@@ -881,23 +879,20 @@ export function createStationConnection(
   function retryOperationRequestEffect<Result>(
     request: (signal: AbortSignal) => Promise<Result>,
   ): Effect.Effect<Result, unknown> {
-    return Effect.suspend(() => {
-      const deadline = performance.now() + REPLY_TIMEOUT_MILLISECONDS;
-      return Effect.suspend(() => {
-        const remaining = Math.max(0, Math.ceil(deadline - performance.now()));
-        return Effect.tryPromise({
-          try: (signal) =>
-            request(AbortSignal.any([signal, AbortSignal.timeout(remaining)])),
-          catch: (error) => error,
-        });
-      }).pipe(
-        Effect.retry({
-          schedule: Schedule.spaced(100),
-          while: (error) =>
-            error instanceof TypeError && performance.now() + 100 < deadline,
-        }),
-      );
-    });
+    return Effect.tryPromise({
+      try: request,
+      catch: (error) => error,
+    }).pipe(
+      Effect.retry({
+        schedule: Schedule.spaced(100),
+        while: (error) => error instanceof TypeError,
+      }),
+      Effect.timeoutOrElse({
+        duration: REPLY_TIMEOUT_MILLISECONDS,
+        orElse: () =>
+          Effect.fail(new StationTimeoutError("Station request timed out")),
+      }),
+    );
   }
 
   async function runOperationEffect<Result>(
