@@ -139,7 +139,9 @@ it cannot recover every missed event. Command submissions retry transport failur
 for up to 30 seconds with the same operation ID and station instance ID, so the
 station can recognize a repeated submission. A failed request does not by itself
 establish whether the station acted; inspect the resulting state before deciding
-what to do next. `waitUntilConnected()` rejects when the station refuses the connection.
+what to do next. An operation request that times out throws `StationTimeoutError`.
+Supply an operation ID when submitting if you need to check its outcome after a timeout.
+`waitUntilConnected()` rejects when the station refuses the connection.
 
 - `connection.arm("arm")` has the commands that need no lease: `enable()`,
   `disable()`, `clearFault()`, `approveRecovery()` and `stop()`. `lease.arm("arm")`
