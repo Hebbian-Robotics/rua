@@ -1,6 +1,7 @@
 mod commands;
 mod output;
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -9,7 +10,8 @@ use clap::Parser;
 use hebbian_rua::contracts::{
     ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, CompilationArtifact,
     CompilationOutcome, JointSpeed, LeaseHolder, MoveArmsCommand, ObservationAnswer,
-    ObservationRequest, PhoneInviteRequest, PreviewPose, ProgramContinuation, SnapshotName,
+    ObservationFrame, ObservationRequest, PhoneInviteRequest, PreviewPose, ProgramContinuation,
+    SnapshotName,
 };
 use hebbian_rua::{CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station};
 use serde::de::DeserializeOwned;
@@ -244,21 +246,7 @@ async fn capture_observation(
             cameras,
             missing_optional_cameras,
         } => {
-            if !cameras.is_empty() {
-                std::fs::create_dir_all(output).map_err(|error| Failure::Io(error.to_string()))?;
-            }
-            let mut frames = serde_json::Map::new();
-            for (name, frame) in cameras {
-                SnapshotName::try_from(name.clone()).map_err(|error| {
-                    Failure::Io(format!("invalid camera name from station: {error}"))
-                })?;
-                let bytes = STANDARD
-                    .decode(&frame.jpeg_base64)
-                    .map_err(|error| Failure::Io(format!("invalid camera frame: {error}")))?;
-                let path = output.join(format!("{name}.jpg"));
-                write_file(&path, &bytes)?;
-                frames.insert(name, json!({"path": path, "captured_at_unix_ns": frame.captured_at_unix_ns, "retrieved_between_unix_seconds": frame.retrieved_between_unix_seconds}));
-            }
+            let frames = save_observation_frames(output, cameras)?;
             Ok(
                 json!({"status": "observation_captured", "state": state, "cameras": frames, "missing_optional_cameras": missing_optional_cameras}),
             )
@@ -269,6 +257,25 @@ async fn capture_observation(
             record: json!(other),
         }),
     }
+}
+
+fn save_observation_frames(
+    output: &Path,
+    cameras: BTreeMap<String, ObservationFrame>,
+) -> Result<serde_json::Map<String, Value>, Failure> {
+    if !cameras.is_empty() {
+        std::fs::create_dir_all(output).map_err(|error| Failure::Io(error.to_string()))?;
+    }
+    let mut frames = serde_json::Map::new();
+    for (index, (name, frame)) in cameras.into_iter().enumerate() {
+        let bytes = STANDARD
+            .decode(&frame.jpeg_base64)
+            .map_err(|error| Failure::Io(format!("invalid camera frame: {error}")))?;
+        let path = output.join(format!("{index:03}.jpg"));
+        write_file(&path, &bytes)?;
+        frames.insert(name, json!({"path": path, "captured_at_unix_ns": frame.captured_at_unix_ns, "retrieved_between_unix_seconds": frame.retrieved_between_unix_seconds}));
+    }
+    Ok(frames)
 }
 
 fn parse_camera_names(names: Vec<String>) -> Result<Vec<SnapshotName>, Failure> {
@@ -530,4 +537,34 @@ fn read_json<T: DeserializeOwned>(request: &MotionFileArgs) -> Result<T, Failure
         hebbian_rua::normalize_robot_tool_arguments(arguments).map_err(|error| usage(&error))?
     };
     serde_json::from_value(arguments).map_err(|error| usage(&error))
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "Test setup and assertions fail the test on error."
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn observation_frames_keep_camera_names_out_of_file_paths() {
+        let root =
+            std::env::temp_dir().join(format!("rua-observation-paths-{}", std::process::id()));
+        let output = root.join("images");
+        let camera_name = "sim_nested/../../outside";
+        let frame = ObservationFrame {
+            jpeg_base64: STANDARD.encode(b"frame"),
+            captured_at_unix_ns: Some("123".into()),
+            retrieved_between_unix_seconds: [1.0, 2.0],
+        };
+        let frames =
+            save_observation_frames(&output, BTreeMap::from([(camera_name.into(), frame)]))
+                .expect("frame is saved");
+        assert_eq!(frames[camera_name]["path"], json!(output.join("000.jpg")));
+        assert_eq!(std::fs::read(output.join("000.jpg")).unwrap(), b"frame");
+        assert!(!root.join("outside.jpg").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
