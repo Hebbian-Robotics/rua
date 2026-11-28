@@ -880,23 +880,39 @@ export function createStationConnection(
     request: (signal: AbortSignal) => Promise<Result>,
     signal: AbortSignal,
   ): Promise<Result> {
+    signal.throwIfAborted();
     const deadline = performance.now() + REPLY_TIMEOUT_MILLISECONDS;
-    while (true) {
-      signal.throwIfAborted();
+    const attempt = Effect.suspend(() => {
       const remaining = Math.max(0, Math.ceil(deadline - performance.now()));
-      try {
-        return await request(
-          AbortSignal.any([signal, AbortSignal.timeout(remaining)]),
-        );
-      } catch (error) {
-        signal.throwIfAborted();
-        if (
-          !(error instanceof TypeError) ||
-          performance.now() + 100 >= deadline
-        )
-          throw error;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+      return Effect.tryPromise({
+        try: (attemptSignal) =>
+          request(
+            AbortSignal.any([
+              signal,
+              attemptSignal,
+              AbortSignal.timeout(remaining),
+            ]),
+          ),
+        catch: (error) => error,
+      });
+    }).pipe(
+      Effect.retry({
+        schedule: Schedule.spaced(100),
+        while: (error) =>
+          error instanceof TypeError && performance.now() + 100 < deadline,
+      }),
+      Effect.match({
+        onFailure: (error) => ({ kind: "failure" as const, error }),
+        onSuccess: (value) => ({ kind: "success" as const, value }),
+      }),
+    );
+    try {
+      const result = await Effect.runPromise(attempt, { signal });
+      if (result.kind === "failure") throw result.error;
+      return result.value;
+    } catch (error) {
+      signal.throwIfAborted();
+      throw error;
     }
   }
 

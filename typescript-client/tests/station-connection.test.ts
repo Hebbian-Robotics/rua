@@ -368,6 +368,48 @@ test("an action-sequence wait can expire or be aborted", async () => {
   }
 });
 
+test("aborting an action-sequence wait interrupts a network retry delay", async () => {
+  let notifyFailedRequest: () => void = () => {};
+  const failedRequest = new Promise<void>((resolve) => {
+    notifyFailedRequest = resolve;
+  });
+  const fetchSpy = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async () => {
+      notifyFailedRequest();
+      throw new TypeError("Network unavailable");
+    });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const cancellation = new AbortController();
+  const reason = new Error("Run canceled during retry");
+  const connection = createStationConnection("http://127.0.0.1:1", "agent");
+  try {
+    const result = connection
+      .waitForActionSequence("sequence", {
+        signal: cancellation.signal,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    await failedRequest;
+    await setImmediate();
+    cancellation.abort(reason);
+    const actual = await Promise.race([
+      result,
+      (async () => {
+        for (let turn = 0; turn < 10; turn += 1) await setImmediate();
+        return undefined;
+      })(),
+    ]);
+    expect(actual).toBe(reason);
+  } finally {
+    connection.close();
+    vi.useRealTimers();
+    fetchSpy.mockRestore();
+  }
+});
+
 test.each(["before", "after"] as const)(
   "action-sequence waits started %s closing reject instead of hanging",
   async (timing) => {
