@@ -902,17 +902,6 @@ export function createStationConnection(
     );
   }
 
-  function retryOperationRequestEffect<Result>(
-    request: (signal: AbortSignal) => Promise<Result>,
-  ): Effect.Effect<Result, unknown> {
-    return retryOperationEffect(
-      Effect.tryPromise({
-        try: request,
-        catch: (error) => error,
-      }),
-    );
-  }
-
   async function runOperationEffect<Result>(
     operation: Effect.Effect<Result, unknown>,
     signal?: AbortSignal,
@@ -934,13 +923,6 @@ export function createStationConnection(
       signal?.throwIfAborted();
       throw error;
     }
-  }
-
-  function retryOperationRequest<Result>(
-    request: (signal: AbortSignal) => Promise<Result>,
-    signal: AbortSignal,
-  ): Promise<Result> {
-    return runOperationEffect(retryOperationRequestEffect(request), signal);
   }
 
   async function submitHttpCommand(
@@ -1233,13 +1215,13 @@ export function createStationConnection(
           loseLease();
           return;
         }
-        yield* Effect.tryPromise({
-          try: (signal) =>
-            stationApi(signal).renewLeaseHttp({ lease_token: token }),
-          catch: (error) => error,
+        const base = baseUrl();
+        yield* createStationEffectApi(base, base).renewLeaseHttp({
+          lease_token: token,
         });
       }
     }).pipe(
+      Effect.provide(FetchHttpClient.layer),
       Effect.catch((error) =>
         Effect.sync(() => {
           console.warn("Lease renewal failed", error);
@@ -1327,22 +1309,27 @@ export function createStationConnection(
   async function submitSequence<Payload extends object>(
     request: Payload,
     submit: (
-      api: ReturnType<typeof createStationApi>,
+      api: ReturnType<typeof createStationEffectApi>,
       submission: Payload & { request_id: string; station_instance_id: string },
-    ) => Promise<string>,
+    ) => Effect.Effect<string, unknown, HttpClient.HttpClient>,
   ): Promise<SequenceExecution> {
     const base = baseUrl();
     const payload = structuredClone(request);
     const lifetime = operationLifetime.signal;
     const request_id = newOperationId();
-    const { id: station_instance_id } = await createStationApi(
-      base,
-      base,
-      lifetime,
-    ).getStationInstance();
-    const submission = { ...payload, request_id, station_instance_id };
-    const executionId = await retryOperationRequest(
-      (signal) => submit(createStationApi(base, base, signal), submission),
+    const effectApi = createStationEffectApi(base, base);
+    const submissionProgram = Effect.gen(function* () {
+      const { id: station_instance_id } = yield* effectApi.getStationInstance();
+      const submission = { ...payload, request_id, station_instance_id };
+      const requestEffect = yield* Effect.try({
+        try: () => submit(effectApi, submission),
+        catch: (error) => error,
+      });
+      const executionId = yield* retryOperationEffect(requestEffect);
+      return { station_instance_id, executionId };
+    }).pipe(Effect.provide(FetchHttpClient.layer));
+    const { station_instance_id, executionId } = await runOperationEffect(
+      submissionProgram,
       lifetime,
     );
     const reference = `${station_instance_id}~${executionId}`;
