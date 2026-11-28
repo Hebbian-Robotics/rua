@@ -177,9 +177,87 @@ async fn observation_and_compilation_workflows_use_station_state() -> TestResult
         "{}",
         String::from_utf8_lossy(&executed.output.stderr)
     );
-    assert_eq!(executed.stdout_json()["phase"]["state"], "completed");
+    let completed = executed.stdout_json();
+    assert_eq!(completed["result"]["phase"]["state"], "completed");
+    let prior_execution = completed["execution_id"].as_str().unwrap();
+    verify_continuation_and_revision(&station, &source_path, prior_execution).await?;
     std::fs::remove_file(source_path)?;
     std::fs::remove_file(artifact_path)?;
+    Ok(())
+}
+
+async fn verify_continuation_and_revision(
+    station: &TestStation,
+    source_path: &Path,
+    prior_execution: &str,
+) -> TestResult {
+    std::fs::write(
+        source_path,
+        format!(
+            r#"{{"steps":[{{"arms":{{"{ARM}":{{"goal":{{"joints_degrees":[0,-30,30,0,0]}}}}}}}},{{"arms":{{"{ARM}":{{"gripper_opening":0.5}}}}}}]}}"#
+        ),
+    )?;
+    let revised = cli(
+        &station.url,
+        &["compilation", "compile", source_path.to_str().unwrap()],
+    )
+    .await;
+    assert_eq!(
+        revised.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&revised.output.stderr)
+    );
+    let revised_artifact = revised.stdout_json();
+    let revised_id = revised_artifact["compilation_id"].as_str().unwrap();
+    let continued = cli(
+        &station.url,
+        &[
+            "compilation",
+            "run",
+            revised_id,
+            "--prior-execution",
+            prior_execution,
+            "--next-step",
+            "1",
+        ],
+    )
+    .await;
+    assert_eq!(
+        continued.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&continued.output.stderr)
+    );
+    assert_eq!(
+        continued.stdout_json()["result"]["phase"]["state"],
+        "completed"
+    );
+    let state = cli(&station.url, &["--raw", "state"]).await.stdout_json();
+    let different_revision = state["arms"][0]["revision"].as_u64().unwrap() + 1;
+    let rejected_run = cli(
+        &station.url,
+        &[
+            "--expected-revision",
+            &format!("{ARM}={different_revision}"),
+            "action-sequence",
+            "run",
+            source_path.to_str().unwrap(),
+        ],
+    )
+    .await;
+    assert_eq!(
+        rejected_run.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&rejected_run.output.stderr)
+    );
+    assert!(
+        rejected_run
+            .stderr_json()
+            .to_string()
+            .contains("stale_revision")
+    );
     Ok(())
 }
 

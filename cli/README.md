@@ -84,6 +84,10 @@ a saved artifact for this station. Save an artifact using shell redirection. `co
 <id>` acquires a motion lease and waits for the result, applying `--expected-revision`.
 Compile input uses model units by default or native units with `--input-station`. Artifacts
 are always printed in native units so they can be imported unchanged.
+The run prints `execution_id` alongside the result. To continue a finished execution from
+an unattempted zero-based step in a compatible revised compilation, use
+`compilation run <id> --prior-execution <execution-id> --next-step <index>`.
+The station checks that the prior prefix matches and refuses to repeat attempted steps.
 
 `state`; `enable|disable|stop|clear-fault|rehome <arm>`; `move-joints`; `move-pose`;
 `move-arms <file|->` (JSON `MoveArmsCommand`); `gripper <arm> <opening>`; `preview-pose`;
@@ -124,6 +128,8 @@ arm name if needed.
 Both CLI input formats use the `arms` map and measure `at_seconds` from the
 start of the step. See [optional move timing](../docs/control-model.md#optional-move-timing)
 for how the station applies those times.
+The global `--expected-revision ARM=REV` also applies to `action-sequence run`; it is
+merged with revisions in the request, and conflicting values are rejected.
 
 To sample cameras during a sequence, repeat `--camera` on the run command:
 

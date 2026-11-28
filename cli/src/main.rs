@@ -9,7 +9,7 @@ use clap::Parser;
 use hebbian_rua::contracts::{
     ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, CompilationArtifact,
     CompilationOutcome, JointSpeed, LeaseHolder, MoveArmsCommand, ObservationAnswer,
-    ObservationRequest, PhoneInviteRequest, PreviewPose, SnapshotName,
+    ObservationRequest, PhoneInviteRequest, PreviewPose, ProgramContinuation, SnapshotName,
 };
 use hebbian_rua::{CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station};
 use serde::de::DeserializeOwned;
@@ -295,15 +295,37 @@ async fn compilation(
             compilation_outcome(station.import_compilation(&artifact).await?)
         }
         CompilationCommand::Inspect { id } => json_value(&station.inspect_compilation(&id).await?),
-        CompilationCommand::Run { id } => {
+        CompilationCommand::Run {
+            id,
+            prior_execution,
+            next_step,
+        } => {
+            let continuation = match (prior_execution, next_step) {
+                (Some(prior_execution_id), Some(next_step)) => Some(ProgramContinuation {
+                    prior_execution_id,
+                    next_step,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(Failure::Usage(
+                        "both --prior-execution and --next-step are required".into(),
+                    ));
+                }
+            };
             let record = with_motion_lease!(station, session, lease, {
                 let record = lease
-                    .run_compiled_sequence(&id, session.options.expected_revisions.clone())
+                    .start_compiled_execution(
+                        &id,
+                        session.options.expected_revisions.clone(),
+                        continuation,
+                    )
+                    .await?
+                    .wait()
                     .await?;
                 finished_action_sequence(&record)?;
                 Ok(record)
             })?;
-            json_value(&record)
+            Ok(json!({"execution_id": record.id, "result": record}))
         }
     }
 }
@@ -358,7 +380,19 @@ async fn action_sequence(
 ) -> Result<Value, Failure> {
     match command {
         ActionSequenceCommand::Run { input, camera } => {
-            let request: ActionSequenceRequest = read_json(&input)?;
+            let mut request: ActionSequenceRequest = read_json(&input)?;
+            for (arm, revision) in &session.options.expected_revisions {
+                if request
+                    .expected_revisions
+                    .get(arm)
+                    .is_some_and(|existing| existing != revision)
+                {
+                    return Err(Failure::Usage(format!(
+                        "conflicting expected revisions for arm {arm}"
+                    )));
+                }
+                request.expected_revisions.insert(arm.clone(), *revision);
+            }
             let cameras = parse_camera_names(camera)?;
             let capture_requested = !cameras.is_empty();
             let record = with_motion_lease!(station, session, lease, {

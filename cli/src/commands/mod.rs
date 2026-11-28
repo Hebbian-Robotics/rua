@@ -444,7 +444,15 @@ pub enum CompilationCommand {
     /// Import a native-unit artifact, recompiling its source for this station.
     Import { path: PathBuf },
     /// Run a retained compilation under a motion lease and wait for its outcome.
-    Run { id: String },
+    Run {
+        id: String,
+        /// Prior finished execution whose prefix must match this compilation.
+        #[arg(long, requires = "next_step")]
+        prior_execution: Option<String>,
+        /// Zero-based index of the first unattempted step.
+        #[arg(long, requires = "prior_execution")]
+        next_step: Option<usize>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
