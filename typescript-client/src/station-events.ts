@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { createParser } from "eventsource-parser";
 import { z } from "zod";
 
@@ -69,13 +70,14 @@ export function parseRunReplay(payload: unknown): IncomingStationMessage[] {
 }
 
 /** Read events in order, awaiting application handling before reading more bytes. */
-export async function readStationEvents(
+export function readStationEvents(
   response: Response,
   handleEvent: (event: StationEvent) => Promise<void>,
-  byteReadTimeout?: { milliseconds: number; abort: () => void },
-): Promise<void> {
-  if (!response.body) throw new Error("Station event stream has no body");
-  const reader = response.body.getReader();
+  byteReadTimeoutMilliseconds?: number,
+): Effect.Effect<void, unknown> {
+  if (!response.body)
+    return Effect.fail(new Error("Station event stream has no body"));
+  const body = response.body;
   const decoder = new TextDecoder();
   let cursor: string | null = null;
   const pending: StationEvent[] = [];
@@ -91,18 +93,49 @@ export async function readStationEvents(
       });
     },
   });
-  try {
-    while (true) {
-      const timeout = byteReadTimeout
-        ? setTimeout(byteReadTimeout.abort, byteReadTimeout.milliseconds)
-        : undefined;
-      const chunk = await reader.read().finally(() => clearTimeout(timeout));
-      if (chunk.done) break;
-      parser.feed(decoder.decode(chunk.value, { stream: true }));
-      for (const event of pending) await handleEvent(event);
-      pending.length = 0;
-    }
-  } finally {
-    reader.releaseLock();
-  }
+  return Effect.acquireUseRelease(
+    Effect.try({ try: () => body.getReader(), catch: (error) => error }),
+    (reader) =>
+      Effect.gen(function* () {
+        while (true) {
+          const read = Effect.tryPromise({
+            try: () => reader.read(),
+            catch: (error) => error,
+          });
+          const chunk = yield* byteReadTimeoutMilliseconds === undefined
+            ? read
+            : read.pipe(
+                Effect.timeoutOrElse({
+                  duration: byteReadTimeoutMilliseconds,
+                  orElse: () =>
+                    Effect.fail(new Error("Station event stream went silent")),
+                }),
+              );
+          if (chunk.done) break;
+          yield* Effect.try({
+            try: () =>
+              parser.feed(decoder.decode(chunk.value, { stream: true })),
+            catch: (error) => error,
+          });
+          for (const event of pending) {
+            yield* Effect.tryPromise({
+              try: () => handleEvent(event),
+              catch: (error) => error,
+            });
+          }
+          pending.length = 0;
+        }
+      }),
+    (reader) =>
+      Effect.tryPromise({
+        try: async () => {
+          try {
+            await reader.cancel();
+          } finally {
+            reader.releaseLock();
+          }
+        },
+        catch: (error) => error,
+      }).pipe(Effect.ignore),
+  );
 }

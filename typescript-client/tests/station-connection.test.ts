@@ -77,6 +77,51 @@ test("a silent event stream reconnects and refreshes an expired cursor immediate
   }
 });
 
+test("closing and restarting releases the old event stream", async () => {
+  let requestCount = 0;
+  let notifyFirstStreamClosed: () => void = () => {};
+  const firstStreamClosed = new Promise<void>((resolve) => {
+    notifyFirstStreamClosed = resolve;
+  });
+  const server = createServer((request, response) => {
+    if (request.url?.startsWith("/run/records?")) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end("[]");
+      return;
+    }
+    requestCount += 1;
+    const currentRequest = requestCount;
+    if (currentRequest === 1) response.on("close", notifyFirstStreamClosed);
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.write(
+      `event: snapshot\ndata: ${JSON.stringify({ run_sequence: 0, items: [stateMessage([{ revision: currentRequest }])] })}\n\n`,
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  const connection = createStationConnection(
+    `http://127.0.0.1:${address.port}`,
+    "agent",
+  );
+  try {
+    connection.start();
+    await connection.waitForState((state) => state.arms[0]?.revision === 1);
+    connection.close();
+    connection.start();
+    await firstStreamClosed;
+    const state = await connection.waitForState(
+      (current) => current.arms[0]?.revision === 2,
+    );
+    expect(state.arms[0]?.revision).toBe(2);
+    expect(requestCount).toBe(2);
+  } finally {
+    connection.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test("a malformed snapshot never publishes its state before reconnecting", async () => {
   const cursor = "11111111-1111-4111-8111-111111111111:1";
   let sentMalformedSnapshot = false;

@@ -1,3 +1,4 @@
+import { Duration, Effect, Schedule } from "effect";
 import pRetry from "p-retry";
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
@@ -558,118 +559,145 @@ export function createStationConnection(
     }
   }
 
-  async function consumeEventStream(
+  function consumeEventStream(
     url: URL,
     attempt: AbortController,
-    signal: AbortSignal,
-  ): Promise<never> {
-    while (true) {
-      const cursor = eventCursor;
-      const handshake = setTimeout(
-        () =>
-          attempt.abort(
-            new StationTimeoutError("Station event handshake timed out"),
-          ),
-        CONNECT_TIMEOUT_MILLISECONDS,
-      );
-      const response = await fetch(url, {
-        signal,
-        headers: {
-          ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
-          "X-RUA-Run-Cursor":
-            runAfter === undefined
-              ? "latest"
-              : runInstance === undefined
-                ? String(runAfter)
-                : `${runInstance}:${runAfter}`,
-        },
-      }).finally(() => clearTimeout(handshake));
-      signal.throwIfAborted();
-      if (response.status === 409 && cursor !== null) {
-        eventCursor = null;
-        await response.body?.cancel();
-        continue;
-      }
-      if (!response.ok)
-        throw new StationConnectionError(
-          `Station event stream returned ${response.status}`,
+  ): Effect.Effect<void, unknown> {
+    return Effect.gen(function* () {
+      while (true) {
+        const cursor = eventCursor;
+        const response = yield* Effect.tryPromise({
+          try: (signal) =>
+            fetch(url, {
+              signal: AbortSignal.any([signal, attempt.signal]),
+              headers: {
+                ...(cursor === null ? {} : { "Last-Event-ID": cursor }),
+                "X-RUA-Run-Cursor":
+                  runAfter === undefined
+                    ? "latest"
+                    : runInstance === undefined
+                      ? String(runAfter)
+                      : `${runInstance}:${runAfter}`,
+              },
+            }),
+          catch: (error) => error,
+        }).pipe(
+          Effect.timeoutOrElse({
+            duration: CONNECT_TIMEOUT_MILLISECONDS,
+            orElse: () =>
+              Effect.fail(
+                new StationTimeoutError("Station event handshake timed out"),
+              ),
+          }),
         );
-      try {
-        await readStationEvents(
+        if (response.status === 409 && cursor !== null) {
+          eventCursor = null;
+          yield* Effect.tryPromise({
+            try: async () => {
+              await response.body?.cancel();
+            },
+            catch: (error) => error,
+          });
+          continue;
+        }
+        if (!response.ok) {
+          yield* Effect.tryPromise({
+            try: async () => {
+              await response.body?.cancel();
+            },
+            catch: (error) => error,
+          }).pipe(Effect.ignore);
+          return yield* Effect.fail(
+            new StationConnectionError(
+              `Station event stream returned ${response.status}`,
+            ),
+          );
+        }
+        const replayGap = yield* readStationEvents(
           response,
           (event) =>
             applyStationEvent(
               event,
               url,
-              signal,
+              attempt.signal,
               response.headers.get("X-RUA-Run-Cursor"),
             ),
-          {
-            milliseconds: EVENT_READ_TIMEOUT_MILLISECONDS,
-            abort: () =>
-              attempt.abort(
-                new StationTimeoutError("Station event stream went silent"),
-              ),
-          },
+          EVENT_READ_TIMEOUT_MILLISECONDS,
+        ).pipe(
+          Effect.as(false),
+          Effect.catch((error) =>
+            error instanceof StationReplayGap
+              ? Effect.succeed(true)
+              : Effect.fail(error),
+          ),
         );
-        throw new StationConnectionError("Station event stream ended");
-      } catch (error) {
-        signal.throwIfAborted();
-        if (!(error instanceof StationReplayGap)) throw error;
+        if (!replayGap)
+          return yield* Effect.fail(
+            new StationConnectionError("Station event stream ended"),
+          );
         const retryWithoutCursor = eventCursor !== null && !ready;
         eventCursor = null;
-        if (!retryWithoutCursor) throw error;
-        await response.body?.cancel();
+        if (!retryWithoutCursor)
+          return yield* Effect.fail(
+            new StationReplayGap("Station event replay requires a snapshot"),
+          );
       }
-    }
+    });
   }
 
   function connect(): void {
     if (connectionLoop !== null || closed) return;
     const lifetime = new AbortController();
     connectionLoop = lifetime;
-    void (async () => {
-      // WHY: Ending a healthy session starts a fresh retry budget. Opening HTTP
-      // successfully is insufficient until we have applied a station event.
-      while (!lifetime.signal.aborted) {
-        await pRetry(
-          async () => {
-            const attempt = new AbortController();
-            const signal = AbortSignal.any([lifetime.signal, attempt.signal]);
-            try {
-              await consumeEventStream(
-                new URL("/events", baseUrl()),
-                attempt,
-                signal,
-              );
-            } catch (error) {
-              lifetime.signal.throwIfAborted();
-              if (!attempt.signal.aborted)
-                console.warn("Station event stream ended", error);
-              const wasReady = ready;
-              latestState = null;
-              if (!wasReady) lastError = "The station refused the connection";
-              loseLease();
-              setReady(false);
-              if (!wasReady)
-                throw new StationConnectionError(
-                  "The station refused the connection",
-                  { cause: error },
-                );
-            } finally {
-              attempt.abort();
-            }
-          },
-          {
-            signal: lifetime.signal,
-            retries: Number.POSITIVE_INFINITY,
-            minTimeout: RECONNECT_FIRST_BACKOFF_MILLISECONDS,
-            maxTimeout: RECONNECT_CAP_MILLISECONDS,
-            randomize: true,
-          },
-        );
-      }
-    })()
+    // WHY: Ending a healthy session starts a fresh retry budget. Opening HTTP
+    // successfully is insufficient until we have applied a station event.
+    void Effect.runPromise(
+      Effect.acquireUseRelease(
+        Effect.sync(() => new AbortController()),
+        (attempt) =>
+          consumeEventStream(new URL("/events", baseUrl()), attempt).pipe(
+            Effect.catch((error) =>
+              Effect.suspend(() => {
+                if (!attempt.signal.aborted)
+                  console.warn("Station event stream ended", error);
+                const wasReady = ready;
+                latestState = null;
+                if (!wasReady) lastError = "The station refused the connection";
+                loseLease();
+                setReady(false);
+                return wasReady
+                  ? Effect.void
+                  : Effect.fail(
+                      new StationConnectionError(
+                        "The station refused the connection",
+                        { cause: error },
+                      ),
+                    );
+              }),
+            ),
+          ),
+        (attempt) => Effect.sync(() => attempt.abort()),
+      ).pipe(
+        Effect.retry(
+          Schedule.exponential(RECONNECT_FIRST_BACKOFF_MILLISECONDS).pipe(
+            Schedule.jittered,
+            Schedule.modifyDelay(({ duration }) =>
+              Effect.succeed(
+                Math.max(
+                  RECONNECT_FIRST_BACKOFF_MILLISECONDS,
+                  Math.min(
+                    Duration.toMillis(duration),
+                    RECONNECT_CAP_MILLISECONDS,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Effect.forever,
+      ),
+      { signal: lifetime.signal },
+    )
       .catch((error: unknown) => {
         if (!lifetime.signal.aborted)
           console.warn("Station event reconnect stopped", error);
