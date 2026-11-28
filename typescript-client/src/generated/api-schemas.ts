@@ -3877,6 +3877,25 @@ export const apiSchemas = z.object({
         )
         .optional(),
       segment: z.union([z.string(), z.null()]).optional(),
+      shoulder_pan_axis_position_meters: z
+        .union([
+          z
+            .array(z.number())
+            .min(3)
+            .max(3)
+            .describe(
+              "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+            ),
+          z
+            .null()
+            .describe(
+              "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+            ),
+        ])
+        .describe(
+          "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+        )
+        .default(null),
       tool: z
         .union([
           z
@@ -13536,6 +13555,25 @@ export const apiSchemas = z.object({
                   )
                   .optional(),
                 segment: z.union([z.string(), z.null()]).optional(),
+                shoulder_pan_axis_position_meters: z
+                  .union([
+                    z
+                      .array(z.number())
+                      .min(3)
+                      .max(3)
+                      .describe(
+                        "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                      ),
+                  ])
+                  .describe(
+                    "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                  )
+                  .default(null),
                 tool: z
                   .union([
                     z
@@ -21043,6 +21081,25 @@ export const apiSchemas = z.object({
                         "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.",
                       ),
                     segment: z.union([z.string(), z.null()]),
+                    shoulder_pan_axis_position_meters: z
+                      .union([
+                        z
+                          .array(z.number())
+                          .min(3)
+                          .max(3)
+                          .describe(
+                            "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                          ),
+                        z
+                          .null()
+                          .describe(
+                            "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                          ),
+                      ])
+                      .describe(
+                        "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                      )
+                      .default(null),
                     tool: z
                       .union([
                         z
@@ -23655,6 +23712,25 @@ export const apiSchemas = z.object({
                 "Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.",
               ),
             segment: z.union([z.string(), z.null()]),
+            shoulder_pan_axis_position_meters: z
+              .union([
+                z
+                  .array(z.number())
+                  .min(3)
+                  .max(3)
+                  .describe(
+                    "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                  ),
+                z
+                  .null()
+                  .describe(
+                    "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+                  ),
+              ])
+              .describe(
+                "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+              )
+              .default(null),
             tool: z
               .union([
                 z

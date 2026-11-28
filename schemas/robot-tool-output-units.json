@@ -1,5 +1,10 @@
 [
   [
+    "shoulder_pan_axis_position_meters",
+    "shoulder_pan_axis_position_mm",
+    1000.0
+  ],
+  [
     "position",
     "position_mm",
     1000.0

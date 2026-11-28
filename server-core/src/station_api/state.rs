@@ -39,6 +39,9 @@ async fn arm_state(arm: &str, link: &LinkHandle) -> ArmState {
     ArmState {
         arm: arm.to_owned(),
         base_pose: config.base_pose,
+        shoulder_pan_axis_position_meters: link
+            .planner()
+            .and_then(crate::planning::Planner::shoulder_pan_axis_position),
         interlocks,
         revision,
         mode,

@@ -1,6 +1,7 @@
 {
   "arm": [
     "arm",
+    "shoulder_pan_axis_position_meters",
     "mode",
     "fault",
     "active_trip",

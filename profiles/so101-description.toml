@@ -16,8 +16,8 @@ not the wrist_roll joint angle. For the same approach, yaw + 90 degrees gives a
 perpendicular closing line; yaw + 180 gives the same line but swaps the fingers.
 When either 180-degree alternative suits the task, preview both and prefer less
 wrist rotation from the current pose. Wrist limits exclude some yaws. The arm swings in a
-vertical plane through its shoulder_pan axis, so the approach direction's
-heading follows the target's direction from that arm's base; choose its tilt
+vertical plane through its shoulder_pan axis; the target direction from that axis
+guides the approach heading. Use preview to check reachability and choose tilt
 (down, forward or between). Receipts report achieved approach,
 tilt from down, jaw yaw and target errors; the examples specify
 orientation, not collision-free grasp positions."""

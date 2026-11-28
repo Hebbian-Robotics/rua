@@ -806,6 +806,9 @@ pub struct ArmState {
     /// The arm's URDF root in the station world frame. None means the world origin.
     #[serde(default)]
     pub base_pose: Option<BasePose>,
+    /// Fixed shoulder-pan joint origin in the station world frame, when available, in metres.
+    #[serde(default)]
+    pub shoulder_pan_axis_position_meters: Option<[f64; 3]>,
     pub mode: ArmMode,
     /// Station receipt time of the newest sample in Unix nanoseconds. Absent before the first sample.
     pub sampled_unix_nano: Option<UnixNanos>,

@@ -274,6 +274,7 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
     station_context: &["description", "lease"],
     arm: &[
         "arm",
+        "shoulder_pan_axis_position_meters",
         "mode",
         "fault",
         "active_trip",
@@ -310,6 +311,11 @@ pub const MODEL_RESPONSE_FIELDS: ModelResponseFields = ModelResponseFields {
 
 /// Station field, model field, and multiplier for model-facing output.
 pub const MODEL_OUTPUT_UNITS: &[(&str, &str, f64)] = &[
+    (
+        "shoulder_pan_axis_position_meters",
+        "shoulder_pan_axis_position_mm",
+        MILLIMETRES_PER_METRE,
+    ),
     ("position", "position_mm", MILLIMETRES_PER_METRE),
     ("goal_position", "goal_position_mm", MILLIMETRES_PER_METRE),
     (
@@ -666,7 +672,7 @@ impl RobotToolCapability {
                 action_sequence_tool_schema(configuration)?,
             ),
             Self::PreviewPose => (
-                "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Omitting orientation lets the solver choose one. Preview does not check clearance from workspace objects.".into(),
+                "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. within_tolerance is a preview result, not a command input. Omitting orientation lets the solver choose one. Point previews do not validate the sequence path or clearance from workspace objects.".into(),
                 model_arguments::<PreviewPoseArguments>(),
             ),
             Self::MoveArms => (

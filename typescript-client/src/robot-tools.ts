@@ -483,6 +483,10 @@ function createRobotToolsCore(
       arms: state.arms.map((item) => ({
         name: item.arm,
         hasGripper: item.gripper_opening !== null,
+        shoulderPanAxisPositionMm:
+          item.shoulder_pan_axis_position_meters?.map(
+            (coordinate) => coordinate * 1000,
+          ) ?? null,
       })),
       maxJointSpeedDegreesPerSecond: (state.max_joint_speed * 180) / Math.PI,
       jawClosingAxis: state.jaw_closing_axis,

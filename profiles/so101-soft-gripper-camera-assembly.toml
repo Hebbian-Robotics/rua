@@ -13,8 +13,8 @@ The camera is above the gripper in the resting pose and looks toward the fingers
 Its board connector is on the rear edge nearest the gripper. The hardware profile
 provides no optical calibration for pose, image rotation or mirroring. Use the
 images to establish the current scene.
-The arm swings in a vertical plane through shoulder_pan: approach heading follows
-the target direction from the base. Jaw yaw is a world-frame orientation, not the
+The arm swings in a vertical plane through shoulder_pan: the target direction from
+that axis guides approach heading; use preview to check reachability. Jaw yaw is a world-frame orientation, not the
 wrist_roll joint angle. For the same approach, yaw + 90 degrees gives a perpendicular
 closing line; yaw + 180 gives the same line but swaps the fingers and turns the camera.
 When either 180-degree alternative suits the task, preview both and prefer less wrist

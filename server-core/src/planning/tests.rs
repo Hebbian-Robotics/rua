@@ -207,6 +207,21 @@ fn so101_planner(settings: &Value) -> Planner {
 }
 
 #[test]
+fn shoulder_pan_axis_uses_the_configured_world_placement() {
+    let planner = so101_planner(&json!({
+        "base_pose": {"position_meters": [0.5, -0.2, 0.1],
+                      "yaw_radians": std::f64::consts::FRAC_PI_2}
+    }));
+    let axis = planner.shoulder_pan_axis_position().unwrap();
+    assert!(
+        axis.iter()
+            .zip([0.5, -0.161_164_7, 0.1624])
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-6),
+        "{axis:?}"
+    );
+}
+
+#[test]
 fn turning_the_so101_wrist_roll_turns_the_jaw_yaw_by_as_much_and_nothing_else() {
     // INVARIANT: The jaw yaw ranges rest on this: the wrist roll turns about minus the
     // approach, positive roll toward positive yaw.

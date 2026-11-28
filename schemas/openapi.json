@@ -727,6 +727,20 @@
               "null"
             ]
           },
+          "shoulder_pan_axis_position_meters": {
+            "default": null,
+            "description": "Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "tool": {
             "anyOf": [
               {
