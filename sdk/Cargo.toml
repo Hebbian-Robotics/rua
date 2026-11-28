@@ -1,6 +1,6 @@
 [package]
 name = "hebbian-rua"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT"
@@ -14,7 +14,7 @@ name = "hebbian_rua"
 
 [dependencies]
 base64 = "0.22"
-hebbian-contracts = { package = "hebbian-rua-contracts", version = "0.1.8", path = "../contracts" }
+hebbian-contracts = { package = "hebbian-rua-contracts", version = "0.1.9", path = "../contracts" }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
 serde = { version = "1", features = ["derive"] }
