@@ -372,7 +372,7 @@ export const robotToolSpecifications = [
   },
   {
     description:
-      "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Omitting orientation lets the solver choose one. Preview does not check clearance from workspace objects.",
+      "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. within_tolerance is a preview result, not a command input. Omitting orientation lets the solver choose one. Point previews do not validate the sequence path or clearance from workspace objects.",
     name: "preview_pose",
     operation: "preview",
     parameters: {
@@ -830,6 +830,11 @@ export const robotToolInputUnits = [
   },
 ] as const;
 export const modelOutputUnits = [
+  [
+    "shoulder_pan_axis_position_meters",
+    "shoulder_pan_axis_position_mm",
+    1000.0,
+  ],
   ["position", "position_mm", 1000.0],
   ["goal_position", "goal_position_mm", 1000.0],
   ["destination_position", "destination_position_mm", 1000.0],
@@ -936,6 +941,7 @@ export const modelOutcomes = {
 export const modelResponseFields = {
   arm: [
     "arm",
+    "shoulder_pan_axis_position_meters",
     "mode",
     "fault",
     "active_trip",

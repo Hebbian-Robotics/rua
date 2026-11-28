@@ -379,7 +379,7 @@
     }
   },
   {
-    "description": "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. Omitting orientation lets the solver choose one. Preview does not check clearance from workspace objects.",
+    "description": "Resolve pose feasibility without moving: returns projected poses, errors, available jaw yaws or refusal in input order. within_tolerance is a preview result, not a command input. Omitting orientation lets the solver choose one. Point previews do not validate the sequence path or clearance from workspace objects.",
     "name": "preview_pose",
     "operation": "preview",
     "parameters": {

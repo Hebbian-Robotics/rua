@@ -18,6 +18,7 @@
       "arms": [
         {
           "arm": "follower",
+          "shoulder_pan_axis_position_meters": [0.0388353, 0.0, 0.0624],
           "mode": "holding",
           "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
@@ -198,6 +199,7 @@
       "arms": [
         {
           "arm": "follower",
+          "shoulder_pan_axis_position_meters": [0.0388353, 0.0, 0.0624],
           "mode": "holding",
           "sampled_unix_nano": "1794806421587446200",
           "measured_joints": [
@@ -254,6 +256,7 @@
       "arms": [
         {
           "arm": "follower",
+          "shoulder_pan_axis_position_mm": [38.8, 0.0, 62.4],
           "mode": "holding",
           "sampled_unix_nano": "1794806421587446200",
           "measured_joints_degrees": [

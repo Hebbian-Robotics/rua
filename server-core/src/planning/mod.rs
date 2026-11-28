@@ -49,6 +49,20 @@ pub struct Planner {
 }
 
 impl Planner {
+    // WHY: A later joint origin may move with preceding joints, so it is not a fixed axis location.
+    #[must_use]
+    pub fn shoulder_pan_axis_position(&self) -> Option<[f64; 3]> {
+        let joint = self.joint_names.first()?;
+        if joint != "shoulder_pan" && !joint.ends_with("_shoulder_pan") {
+            return None;
+        }
+        self.solver
+            .tool_pose_and_model_points(&vec![0.0; self.joint_names.len()])
+            .1
+            .first()
+            .copied()
+    }
+
     pub fn for_arm(config: &ControllerConfig) -> anyhow::Result<Option<Self>> {
         if config.tool_link.is_none() {
             return Ok(None);

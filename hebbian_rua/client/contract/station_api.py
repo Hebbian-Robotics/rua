@@ -2678,6 +2678,14 @@ class ArmState(BaseModel):
         ),
     ] = None
     segment: str | None = None
+    shoulder_pan_axis_position_meters: Annotated[
+        list[StrictFloat] | None,
+        Field(
+            description="Fixed shoulder-pan joint origin in the station world frame, when available, in metres.",
+            max_length=3,
+            min_length=3,
+        ),
+    ] = None
     tool: Annotated[
         PoseDescription | None,
         Field(
