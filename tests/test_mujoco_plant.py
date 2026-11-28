@@ -69,3 +69,19 @@ def test_unpowered_actuators_release_and_powered_commands_restore_torque(
         plant._deliver(data, connection, 0.11)
         mujoco.mj_forward(model, data)
         assert all(force > 0 for force in data.actuator_force)
+
+        plant._apply(
+            data,
+            connection,
+            SimStep(positions=[0.0], gripper_angle=0.0, powered=True, seconds=0.1),
+            0.12,
+        )
+        plant._apply(
+            data,
+            connection,
+            SimStep(positions=[0.0], powered=False, seconds=0.1),
+            0.125,
+        )
+        plant._deliver(data, connection, 0.14)
+        mujoco.mj_forward(model, data)
+        assert all(force == 0 for force in data.actuator_force)
