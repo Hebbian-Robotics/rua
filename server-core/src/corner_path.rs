@@ -894,15 +894,33 @@ mod tests {
     #[test]
     fn continuous_move_smoothly_slows_and_recovers_without_missing_waypoints() {
         let mut motion = planned_move(&STANDARD_KNOTS, None);
+        let mut full_speed_motion = planned_move(&STANDARD_KNOTS, None);
+        let mut sustained_slow_motion = planned_move(&STANDARD_KNOTS, None);
         let limits = ControllerConfig::parse(TEST_CONFIG)
             .unwrap()
             .motion
             .trajectory_limits();
         let mut measured = [0.0];
+        let mut full_speed_measured = [0.0];
+        let mut sustained_slow_measured = [0.0];
         let mut previous_acceleration = 0.0;
-        let mut slowed_samples = 0;
         for sample in 0..2_000 {
             let speed_fraction = if (25..65).contains(&sample) { 0.3 } else { 1.0 };
+            if sample <= 110 {
+                full_speed_motion
+                    .advance_with_speed_fraction(&full_speed_measured, 0.01, 1.0)
+                    .unwrap();
+                full_speed_measured[0] = full_speed_motion.reference().positions[0];
+                let sustained_speed_fraction = if sample >= 25 { 0.3 } else { 1.0 };
+                sustained_slow_motion
+                    .advance_with_speed_fraction(
+                        &sustained_slow_measured,
+                        0.01,
+                        sustained_speed_fraction,
+                    )
+                    .unwrap();
+                sustained_slow_measured[0] = sustained_slow_motion.reference().positions[0];
+            }
             motion
                 .advance_with_speed_fraction(&measured, 0.01, speed_fraction)
                 .unwrap();
@@ -915,14 +933,17 @@ mod tests {
             );
             previous_acceleration = reference.accelerations[0];
             measured[0] = reference.positions[0];
-            if speed_fraction < 1.0 {
-                slowed_samples += 1;
+            if sample == 64 {
+                assert!(measured[0] < full_speed_measured[0] - 1e-4);
+            }
+            if sample == 110 {
+                assert!(measured[0] > sustained_slow_measured[0] + 1e-4);
             }
             if motion.done() {
+                assert!(sample >= 110, "Move ended before the recovery comparison");
                 break;
             }
         }
-        assert!(slowed_samples > 0);
         assert!(matches!(motion.end(), Some(MotionEnd::Reached)));
         let labels: Vec<&str> = motion
             .new_checkpoints(0)
