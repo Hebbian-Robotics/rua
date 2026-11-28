@@ -2,8 +2,9 @@
 robot_assembly = { variant = "soft-gripper-camera" }
 description = """\
 SO-101 with TPU fingers and a wrist camera attached to the gripper body;
-the camera follows wrist_roll. World +X is forward, +Y left, +Z up. When
-the base is on the workspace surface at world Z=0, that surface is the
+the camera follows wrist_roll. Relative to the base, world +X is forward,
++Y left, and +Z up, not relative to the camera image.
+When the base is on the workspace surface at world Z=0, that surface is the
 nominal tabletop. Tool position is the nominal midpoint between the inward distal
 finger surfaces at gripper angle zero, not the lowest point of the fingers.
 Tool local +Z points from palm toward fingertips; the jaws close along local X.
@@ -13,7 +14,10 @@ Its board connector is on the rear edge nearest the gripper. The hardware profil
 provides no optical calibration for pose, image rotation or mirroring. Use the
 images to establish the current scene.
 The arm swings in a vertical plane through shoulder_pan: approach heading follows
-the target direction from the base. Wrist roll sets jaw yaw; yaw + 180 gives the
-same closing line when one yaw is unreachable. Gripper opening uses the configured
+the target direction from the base. Jaw yaw is a world-frame orientation, not the
+wrist_roll joint angle. For the same approach, yaw + 90 degrees gives a perpendicular
+closing line; yaw + 180 gives the same line but swaps the fingers and turns the camera.
+When either 180-degree alternative suits the task, preview both and prefer less wrist
+rotation from the current pose. Wrist limits exclude some yaws. Gripper opening uses the configured
 endpoints. TPU deformation and secure grasp are not established by
 model geometry or estimated contact."""

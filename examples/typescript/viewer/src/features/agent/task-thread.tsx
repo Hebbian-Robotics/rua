@@ -5,6 +5,7 @@ import {
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { useState } from "react";
+import { Button } from "@/components/ui/button.js";
 import {
   ReasoningContent,
   ReasoningRoot,
@@ -144,17 +145,29 @@ function AssistantTaskMessage() {
   );
 }
 export function TaskThread() {
+  const [collapseGeneration, setCollapseGeneration] = useState(0);
   return (
-    <ThreadPrimitive.Viewport
-      className="agent-thread-viewport grid content-start gap-3"
-      autoScroll
-    >
-      <ThreadPrimitive.Messages
-        components={{
-          UserMessage: UserTaskMessage,
-          AssistantMessage: AssistantTaskMessage,
-        }}
-      />
-    </ThreadPrimitive.Viewport>
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        onClick={() => setCollapseGeneration((value) => value + 1)}
+      >
+        Collapse all
+      </Button>
+      <ThreadPrimitive.Viewport
+        className="agent-thread-viewport grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3"
+        autoScroll
+      >
+        <ThreadPrimitive.Messages
+          key={collapseGeneration}
+          components={{
+            UserMessage: UserTaskMessage,
+            AssistantMessage: AssistantTaskMessage,
+          }}
+        />
+      </ThreadPrimitive.Viewport>
+    </>
   );
 }

@@ -368,6 +368,7 @@ export const RunPanels = memo(function RunPanels({
   const [tab, setTab] = useState<"activity" | "trace">(
     traceOnly ? "trace" : "activity",
   );
+  const [collapseGeneration, setCollapseGeneration] = useState(0);
   const [zoom, setZoom] = useState(30);
   const [selectedSpan, setSelectedSpan] = useState<string | null>(null);
   const [clearedRun, setClearedRun] = useState<ClearedRun | null>(null);
@@ -508,13 +509,21 @@ export const RunPanels = memo(function RunPanels({
               {memory && <RunMemory memory={memory} showTask={!agentRun} />}
               <div className="agent-feed">
                 <h3>Activity</h3>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => setCollapseGeneration((value) => value + 1)}
+                >
+                  Collapse all
+                </Button>
                 {agentActivity.length === 0 && visibleRun === null ? (
                   <p>No agent activity yet.</p>
                 ) : (
                   agentActivity.map((span) =>
                     span.attributes["hebbian.kind"] === "tool" ? (
                       <AgentToolEntry
-                        key={span.span_id}
+                        key={`${span.span_id}:${collapseGeneration}`}
                         span={span}
                         onInspect={() => {
                           inspect(spanStart(span), span);
@@ -522,7 +531,10 @@ export const RunPanels = memo(function RunPanels({
                         }}
                       />
                     ) : (
-                      <details className="reasoning-entry" key={span.span_id}>
+                      <details
+                        className="reasoning-entry"
+                        key={`${span.span_id}:${collapseGeneration}`}
+                      >
                         <summary>
                           <strong>Reasoning</strong>
                           <ActivityTiming span={span} />

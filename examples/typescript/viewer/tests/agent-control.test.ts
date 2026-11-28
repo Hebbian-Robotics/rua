@@ -210,6 +210,13 @@ test("a custom model is saved, restored on reload, and submitted by ID", async (
       },
     },
   ]);
+  expect(requireControl<HTMLTextAreaElement>("textarea").value).toBe(
+    "Inspect the work area",
+  );
+  await mountAgentControl(requests);
+  expect(requireControl<HTMLTextAreaElement>("textarea").value).toBe(
+    "Inspect the work area",
+  );
 });
 
 test("changing providers clears a custom model and requires a fresh selection", async () => {
