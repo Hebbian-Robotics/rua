@@ -1596,20 +1596,18 @@ export function createStationConnection(
         ...(timeout ? [timeout] : []),
       ]);
       const base = baseUrl();
-      try {
+      const completion = Effect.gen(function* () {
         while (true) {
-          const record = await retryOperationRequest(
-            (attempt) =>
-              createStationApi(
-                base,
-                base,
-                attempt,
-              ).waitActionSequenceCompletion(actionSequenceId),
-            requestSignal,
+          const record = yield* retryOperationRequestEffect((attempt) =>
+            createStationApi(base, base, attempt).waitActionSequenceCompletion(
+              actionSequenceId,
+            ),
           );
-          if (record !== null)
-            return apiSchemas.shape.ActionSequenceRecord.parse(record);
+          if (record !== null) return record;
         }
+      });
+      try {
+        return await runOperationEffect(completion, requestSignal);
       } catch (error) {
         if (timeout?.aborted && requestSignal.reason === timeout.reason) {
           throw new StationTimeoutError(
