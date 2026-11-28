@@ -266,10 +266,9 @@ export function AgentControl({
         }
         const started = await onStartRun(request);
         if (!started) throw new MessageNotSentError();
-        setTask("");
-        try {
-          localStorage.removeItem("hebbian-agent-task:v1");
-        } catch {}
+        if (!runtime.thread.composer.getState().text) {
+          runtime.thread.composer.setText(messageText);
+        }
       }
     },
   });
@@ -314,6 +313,7 @@ export function AgentControl({
             <div className="grid gap-2 rounded-xl border border-border bg-background p-2 focus-within:ring-2 focus-within:ring-ring/50">
               <ComposerPrimitive.Input
                 id="agent-task"
+                value={task}
                 className="min-h-20 resize-y border-0 bg-transparent shadow-none focus-visible:ring-0"
                 disabled={settingsLocked}
                 onChange={(event) => {
@@ -418,22 +418,35 @@ export function AgentControl({
                     }
                     className="inline-flex"
                   >
-                    <ComposerPrimitive.Send
-                      className="inline-flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground"
-                      type="submit"
-                      aria-label={startingRun ? "Starting task" : "Start task"}
-                      aria-describedby={
-                        armNeedsEnable ? "enable-arm-hint" : undefined
-                      }
-                      disabled={
-                        preparingPromptImage ||
-                        !!keyMissing ||
-                        !!unavailable ||
-                        decision.kind === "blocked"
-                      }
-                    >
-                      <ArrowUp aria-hidden="true" className="size-4" />
-                    </ComposerPrimitive.Send>
+                    {armNeedsEnable ? (
+                      <a
+                        href="#enable-arm"
+                        className="inline-flex size-8 cursor-default items-center justify-center rounded-lg bg-disabled !text-disabled-foreground no-underline"
+                        aria-label="Enable the arm before starting a task"
+                        aria-describedby="enable-arm-hint"
+                      >
+                        <ArrowUp aria-hidden="true" className="size-4" />
+                      </a>
+                    ) : (
+                      <ComposerPrimitive.Send
+                        className="inline-flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground"
+                        type="submit"
+                        aria-label={
+                          startingRun ? "Starting task" : "Start task"
+                        }
+                        aria-describedby={
+                          armNeedsEnable ? "enable-arm-hint" : undefined
+                        }
+                        disabled={
+                          preparingPromptImage ||
+                          !!keyMissing ||
+                          !!unavailable ||
+                          decision.kind === "blocked"
+                        }
+                      >
+                        <ArrowUp aria-hidden="true" className="size-4" />
+                      </ComposerPrimitive.Send>
+                    )}
                   </Tooltip>
                 )}
               </div>

@@ -45,7 +45,7 @@ export function ToolCall({
       data-slot="tool-call"
       open={open}
       onOpenChange={onOpenChange}
-      className={cn("w-full max-w-sm", className)}
+      className={cn("min-w-0 w-full max-w-sm", className)}
     >
       <CollapsibleTrigger className="group/trigger text-muted-foreground hover:text-foreground/90 flex w-full items-center gap-2 rounded-md py-1 text-[13.5px] transition-colors outline-none">
         <ChevronRightIcon className="size-3.5 shrink-0 opacity-60 transition-transform duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-open/trigger:rotate-90 group-data-panel-open/trigger:rotate-90 motion-reduce:transition-none" />
@@ -85,14 +85,16 @@ export function ToolCall({
         <div className={cn(field, "mt-2 overflow-hidden rounded-2xl text-xs")}>
           <div className="px-3.5 pt-2.5 pb-2">
             <p className={cn(mono, "text-muted-foreground mb-1")}>Request</p>
-            <p className="text-muted-foreground font-mono break-words">
+            <p className="text-muted-foreground font-mono [overflow-wrap:anywhere]">
               {request}
             </p>
           </div>
           <div className="bg-foreground/[0.06] mx-3.5 h-px" />
           <div className="px-3.5 pt-2 pb-2.5">
             <p className={cn(mono, "text-muted-foreground mb-1")}>Result</p>
-            <p className="text-foreground/90 break-words">{result}</p>
+            <p className="text-foreground/90 [overflow-wrap:anywhere]">
+              {result}
+            </p>
           </div>
         </div>
       </CollapsibleContent>

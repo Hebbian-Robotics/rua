@@ -9,10 +9,13 @@ person placed; the label describes where, and their poses are unknown.
 Camera extrinsics and the table plane are not verified. Gripper opening 0
 is closed and 1 is open; contact is an estimate.
 
-Frames: world +X forward, +Y left, +Z up. gripper_frame_link local +Z points
-toward the jaw tips; the jaws close along local X. Jaw yaw is set by
-wrist_roll, whose limits exclude some yaws; the jaws close along the same
-line at yaw plus a half turn, so try that after a rejection. The arm swings in a
+Frames: relative to the base, world +X is forward, +Y left, and +Z up,
+not relative to the camera image. gripper_frame_link local +Z points toward
+the jaw tips; the jaws close along local X. Jaw yaw is a world-frame orientation,
+not the wrist_roll joint angle. For the same approach, yaw + 90 degrees gives a
+perpendicular closing line; yaw + 180 gives the same line but swaps the fingers.
+When either 180-degree alternative suits the task, preview both and prefer less
+wrist rotation from the current pose. Wrist limits exclude some yaws. The arm swings in a
 vertical plane through its shoulder_pan axis, so the approach direction's
 heading follows the target's direction from that arm's base; choose its tilt
 (down, forward or between). Receipts report achieved approach,
