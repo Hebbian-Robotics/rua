@@ -539,20 +539,18 @@ fn step_status(
             detail: "Controller admitted the step without command records".into(),
         });
     }
-    if records
+    if let Some(failed) = records
         .iter()
-        .any(|record| !record.record.is_pending() && !command_allows_next_step(&record.record))
+        .find(|record| !record.record.is_pending() && !command_allows_next_step(&record.record))
     {
-        let limited = records.iter().any(|record| record.record.was_limited());
-        return Err(ExecutionFailure::Execution {
-            step,
-            detail: if limited {
-                "A motion was limited before reaching the requested target; see the step result for details"
-            } else {
-                "A command in the step did not reach its requested target"
-            }
-            .into(),
-        });
+        let detail = if failed.record.was_limited() {
+            "A motion was limited before reaching the requested target; see the step result for details".to_owned()
+        } else if let Some(reason) = failed.record.detail().filter(|detail| !detail.is_empty()) {
+            format!("{} ({}): {reason}", failed.arm, failed.record.label)
+        } else {
+            "A command in the step did not reach its requested target".to_owned()
+        };
+        return Err(ExecutionFailure::Execution { step, detail });
     }
     if records.iter().all(|record| !record.record.is_pending()) {
         Ok(WaitDecision::Ready)
@@ -1044,6 +1042,29 @@ mod tests {
         assert!(matches!(
             registry.lookup("left-sequence").unwrap().phase,
             ActionSequencePhase::Completed
+        ));
+    }
+
+    #[test]
+    fn sequence_failure_includes_the_failed_command_detail() {
+        let (_, mut command) = pending_sequence_step();
+        command.phase = CommandPhase::Finished {
+            completion: CommandCompletion {
+                finished_unix_nano: hebbian_contracts::UnixNanos(1),
+                outcome: KnownCommandOutcome::Failed,
+                detail: Some("Loop deadline missed: 204ms".into()),
+                gripper: None,
+            },
+            achieved: None,
+        };
+        let records = vec![ArmRecord {
+            arm: "arm".into(),
+            record: command,
+        }];
+        assert!(matches!(
+            step_status(7, ExecutionAuthority::Current, &records),
+            Err(ExecutionFailure::Execution { step: 7, detail })
+                if detail == "arm (move_to_pose): Loop deadline missed: 204ms"
         ));
     }
 

@@ -1,7 +1,8 @@
 use anyhow::{Context, Result, ensure};
 use hebbian_contracts::{CornerPlan, MotionLimits};
 use rsruckig::prelude::{
-    DataArrayOrVec, InputParameter, Ruckig, RuckigResult, ThrowErrorHandler, Trajectory,
+    ControlInterface, DataArrayOrVec, InputParameter, OutputParameter, Ruckig, RuckigResult,
+    ThrowErrorHandler, Trajectory,
 };
 
 use super::{CONTINUITY_RADIANS, INITIAL_PERIOD_SECONDS, plan_initial_corner, validate_plan};
@@ -13,6 +14,9 @@ pub(crate) struct ContinuousPath {
     positions: DataArrayOrVec<f64, 0>,
     velocities: DataArrayOrVec<f64, 0>,
     accelerations: DataArrayOrVec<f64, 0>,
+    clock_generator: Ruckig<1, ThrowErrorHandler>,
+    clock_input: InputParameter<1>,
+    clock_output: OutputParameter<1>,
 }
 
 impl ContinuousPath {
@@ -39,8 +43,9 @@ impl ContinuousPath {
             .iter()
             .map(|segment| DataArrayOrVec::Heap(segment.corners[1].clone()))
             .collect();
-        input.max_acceleration.fill(limits.acceleration_limit);
-        input.max_jerk.fill(limits.jerk_limit);
+        // WHY: Reserve half the acceleration and jerk for smoothly changing the path clock.
+        input.max_acceleration.fill(limits.acceleration_limit * 0.5);
+        input.max_jerk.fill(limits.jerk_limit * 0.5);
         if maximum_step_seconds > 0.0
             || plan
                 .segments
@@ -101,12 +106,25 @@ impl ContinuousPath {
             peak_joint_speed.is_finite() && peak_joint_speed > 0.0,
             "Invalid continuous path speed"
         );
+        let mut clock_input = InputParameter::<1>::new(None);
+        clock_input.control_interface = ControlInterface::Velocity;
+        clock_input.current_velocity[0] = 1.0;
+        clock_input.target_velocity[0] = 1.0;
+        // WHY: The chain rule bounds q'' = q_tt * clock_velocity² + q_t * clock_acceleration,
+        // q''' = q_ttt * clock_velocity³ + 3*q_tt*clock_velocity*clock_acceleration
+        //          + q_t*clock_jerk. Allocate the remaining limit to those terms.
+        clock_input.max_acceleration[0] = (0.5 * limits.acceleration_limit / peak_joint_speed)
+            .min(limits.jerk_limit / (6.0 * limits.acceleration_limit));
+        clock_input.max_jerk[0] = limits.jerk_limit / (4.0 * peak_joint_speed);
         Ok(Self {
             trajectory,
             peak_joint_speed,
             positions: DataArrayOrVec::new(Some(joint_count), 0.0),
             velocities: DataArrayOrVec::new(Some(joint_count), 0.0),
             accelerations: DataArrayOrVec::new(Some(joint_count), 0.0),
+            clock_generator: Ruckig::new(None, INITIAL_PERIOD_SECONDS),
+            clock_input,
+            clock_output: OutputParameter::new(None),
         })
     }
 
@@ -154,6 +172,31 @@ impl ContinuousPath {
         Ok(())
     }
 
+    pub(crate) fn advance_clock(&mut self, interval: f64, speed_fraction: f64) -> Result<f64> {
+        ensure!(
+            interval.is_finite()
+                && interval > 0.0
+                && speed_fraction.is_finite()
+                && (super::MIN_TRACKING_SPEED_FRACTION..=1.0).contains(&speed_fraction),
+            "Invalid continuous path clock request"
+        );
+        self.clock_generator.delta_time = interval;
+        self.clock_input.target_velocity[0] = speed_fraction;
+        let result = self
+            .clock_generator
+            .update(&self.clock_input, &mut self.clock_output)?;
+        ensure!(
+            matches!(result, RuckigResult::Working | RuckigResult::Finished),
+            "Continuous path clock failed: {result:?}"
+        );
+        ensure!(
+            (0.0..=1.000_000_001).contains(&self.clock_output.new_velocity[0]),
+            "Continuous path clock exceeded its speed bounds"
+        );
+        self.clock_output.pass_to_input(&mut self.clock_input);
+        Ok(self.clock_output.new_position[0])
+    }
+
     pub(crate) fn sample(&mut self, seconds: f64, reference: &mut Reference) {
         self.trajectory.at_time(
             seconds,
@@ -164,8 +207,13 @@ impl ContinuousPath {
             &mut None,
         );
         reference.positions.copy_from_slice(&self.positions);
-        reference.velocities.copy_from_slice(&self.velocities);
-        reference.accelerations.copy_from_slice(&self.accelerations);
+        let clock_velocity = self.clock_output.new_velocity[0];
+        let clock_acceleration = self.clock_output.new_acceleration[0];
+        for joint in 0..self.positions.len() {
+            reference.velocities[joint] = self.velocities[joint] * clock_velocity;
+            reference.accelerations[joint] = self.accelerations[joint] * clock_velocity.powi(2)
+                + self.velocities[joint] * clock_acceleration;
+        }
     }
 }
 
@@ -281,6 +329,9 @@ mod tests {
             positions: DataArrayOrVec::new(Some(2), 0.0),
             velocities: DataArrayOrVec::new(Some(2), 0.0),
             accelerations: DataArrayOrVec::new(Some(2), 0.0),
+            clock_generator: Ruckig::new(None, INITIAL_PERIOD_SECONDS),
+            clock_input: InputParameter::new(None),
+            clock_output: OutputParameter::new(None),
         };
         assert!(
             path.check_joint_bounds(&[0.0, 0.0], &[-1.0, -1.0], &[6.0, 11.0])
