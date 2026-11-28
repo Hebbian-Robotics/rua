@@ -125,6 +125,20 @@ Both CLI input formats use the `arms` map and measure `at_seconds` from the
 start of the step. See [optional move timing](../docs/control-model.md#optional-move-timing)
 for how the station applies those times.
 
+To sample cameras during a sequence, repeat `--camera` on the run command:
+
+```sh
+hebbian-rua action-sequence run steps.json --camera wrist --camera overhead
+hebbian-rua action-sequence images <execution-id> --output sequence-images
+```
+
+When cameras are selected, the run prints `execution_id` alongside its result. The images command saves numbered JPEGs and
+prints their camera names, capture times, elapsed times and sequence boundaries, along with
+retention, missed sample and truncation information. Capture is best effort and does not
+delay motion. It returns `null` while capture is pending or if history is unavailable. A
+completed history expires after five minutes or earlier if evicted. Compiled sequence runs
+do not currently request camera capture.
+
 ## Set up live cameras
 
 Follow the [camera guide](../docs/cameras.md) to configure LiveKit, select

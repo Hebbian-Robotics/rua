@@ -40,6 +40,18 @@ impl TestStation {
         .await
         .map(Self)
     }
+
+    async fn with_media(address: std::net::SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+        SimulatedStation::start(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles"),
+            &[ARM],
+            || NoPhysicsStandIn::at(REST.to_vec(), 0.02).with_gripper(0.0),
+            axum::Router::new(),
+            Some(address),
+        )
+        .await
+        .map(Self)
+    }
 }
 
 struct Run {
@@ -168,6 +180,87 @@ async fn observation_and_compilation_workflows_use_station_state() -> TestResult
     assert_eq!(executed.stdout_json()["phase"]["state"], "completed");
     std::fs::remove_file(source_path)?;
     std::fs::remove_file(artifact_path)?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sequence_camera_history_is_saved_after_a_run() -> TestResult {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let station = TestStation::with_media(listener.local_addr()?).await?;
+    let media = axum::Router::new().route(
+        "/cameras/{name}",
+        axum::routing::get(|| async {
+            (
+                [(axum::http::header::CONTENT_TYPE, "image/jpeg")],
+                "example frame",
+            )
+        }),
+    );
+    let media_task = tokio::spawn(async move { axum::serve(listener, media).await });
+    let directory = std::env::temp_dir().join(format!("rua-cli-history-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)?;
+    let source = directory.join("steps.json");
+    std::fs::write(
+        &source,
+        format!(r#"{{"steps":[{{"arms":{{"{ARM}":{{"gripper_opening":0.5}}}}}}]}}"#),
+    )?;
+    assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
+    let run = cli(
+        &station.url,
+        &[
+            "action-sequence",
+            "run",
+            source.to_str().unwrap(),
+            "--camera",
+            "front",
+        ],
+    )
+    .await;
+    assert_eq!(
+        run.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.output.stderr)
+    );
+    let result = run.stdout_json();
+    let id = result["execution_id"].as_str().unwrap();
+    let output = directory.join("images");
+    let mut history = Value::Null;
+    for _ in 0..50 {
+        let fetched = cli(
+            &station.url,
+            &[
+                "action-sequence",
+                "images",
+                id,
+                "--output",
+                output.to_str().unwrap(),
+            ],
+        )
+        .await;
+        assert_eq!(
+            fetched.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&fetched.output.stderr)
+        );
+        history = fetched.stdout_json();
+        if !history.is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let images = history["images"].as_array().expect("retained history");
+    let first_image = images.first().expect("at least one captured frame");
+    assert_eq!(first_image["camera"], "front");
+    assert_eq!(
+        std::fs::read(first_image["path"].as_str().unwrap())?,
+        b"example frame"
+    );
+    assert!(first_image["elapsed_seconds"].is_number());
+    assert!(history["missed_samples"].is_number());
+    std::fs::remove_dir_all(directory)?;
+    media_task.abort();
     Ok(())
 }
 

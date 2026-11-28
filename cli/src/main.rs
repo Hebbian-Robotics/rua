@@ -230,19 +230,11 @@ async fn capture_observation(
     optional_camera: Vec<String>,
     output: &Path,
 ) -> Result<Value, Failure> {
-    let parse_names = |names: Vec<String>| {
-        names
-            .into_iter()
-            .map(|name| {
-                SnapshotName::try_from(name).map_err(|error| Failure::Usage(error.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()
-    };
     let answer = station
         .capture_observation_http(&ObservationRequest {
             arms: arm,
-            required_cameras: parse_names(camera)?,
-            optional_cameras: parse_names(optional_camera)?,
+            required_cameras: parse_camera_names(camera)?,
+            optional_cameras: parse_camera_names(optional_camera)?,
             wait: None,
         })
         .await?;
@@ -277,6 +269,13 @@ async fn capture_observation(
             record: json!(other),
         }),
     }
+}
+
+fn parse_camera_names(names: Vec<String>) -> Result<Vec<SnapshotName>, Failure> {
+    names
+        .into_iter()
+        .map(|name| SnapshotName::try_from(name).map_err(|error| Failure::Usage(error.to_string())))
+        .collect()
 }
 
 async fn compilation(
@@ -358,14 +357,24 @@ async fn action_sequence(
     command: ActionSequenceCommand,
 ) -> Result<Value, Failure> {
     match command {
-        ActionSequenceCommand::Run { input } => {
+        ActionSequenceCommand::Run { input, camera } => {
             let request: ActionSequenceRequest = read_json(&input)?;
+            let cameras = parse_camera_names(camera)?;
+            let capture_requested = !cameras.is_empty();
             let record = with_motion_lease!(station, session, lease, {
-                let record = lease.run_action_sequence(request).await?;
+                let record = lease
+                    .start_sequence_execution(request, cameras)
+                    .await?
+                    .wait()
+                    .await?;
                 finished_action_sequence(&record)?;
                 Ok(record)
             })?;
-            json_value(&record)
+            if capture_requested {
+                Ok(json!({"execution_id": record.id, "result": record}))
+            } else {
+                json_value(&record)
+            }
         }
         ActionSequenceCommand::Cancel { id } => {
             let mut record = station.get_action_sequence(&id).await?;
@@ -376,7 +385,31 @@ async fn action_sequence(
             json_value(&record)
         }
         ActionSequenceCommand::Get { id } => json_value(&station.get_action_sequence(&id).await?),
+        ActionSequenceCommand::Images { id, output } => {
+            sequence_images(station, &id, &output).await
+        }
     }
+}
+
+async fn sequence_images(station: &Station, id: &str, output: &Path) -> Result<Value, Failure> {
+    let Some(history) = station.get_sequence_camera_history(id).await? else {
+        return Ok(Value::Null);
+    };
+    if !history.images.is_empty() {
+        std::fs::create_dir_all(output).map_err(|error| Failure::Io(error.to_string()))?;
+    }
+    let mut images = Vec::with_capacity(history.images.len());
+    for (index, image) in history.images.into_iter().enumerate() {
+        let bytes = STANDARD
+            .decode(&image.frame.jpeg_base64)
+            .map_err(|error| Failure::Io(format!("invalid camera frame: {error}")))?;
+        let path = output.join(format!("{index:03}.jpg"));
+        write_file(&path, &bytes)?;
+        images.push(json!({"camera": image.camera, "path": path, "elapsed_seconds": image.elapsed_seconds, "boundary": image.boundary, "captured_at_unix_ns": image.frame.captured_at_unix_ns, "retrieved_between_unix_seconds": image.frame.retrieved_between_unix_seconds}));
+    }
+    Ok(
+        json!({"expires_in_seconds": history.expires_in_seconds, "missed_samples": history.missed_samples, "truncated": history.truncated, "images": images}),
+    )
 }
 
 fn finished_action_sequence(record: &ActionSequenceRecord) -> Result<(), Failure> {

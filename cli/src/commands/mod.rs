@@ -410,6 +410,9 @@ pub enum ActionSequenceCommand {
     Run {
         #[command(flatten)]
         input: MotionFileArgs,
+        /// Sample this camera during the sequence; repeat for multiple cameras.
+        #[arg(long)]
+        camera: Vec<String>,
     },
     /// Cancel a running action sequence by id and print its final record.
     ///
@@ -419,6 +422,14 @@ pub enum ActionSequenceCommand {
     ///
     /// Example: hebbian-rua action-sequence get seq-1
     Get { id: String },
+    /// Save retained sequence images and print their timing and retention metadata.
+    /// Returns null if capture is pending or history is unavailable.
+    Images {
+        id: String,
+        /// Directory for JPEG files.
+        #[arg(long, default_value = "sequence-images")]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]

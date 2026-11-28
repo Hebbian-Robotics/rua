@@ -95,6 +95,9 @@ impl Failure {
             Self::ActionSequenceStopped { detail, record } => {
                 put("kind", json!("incomplete"));
                 put("detail", json!(detail));
+                if let Some(id) = record.get("id") {
+                    put("execution_id", id.clone());
+                }
                 put("record", record.clone());
             }
             Self::Io(detail) => {

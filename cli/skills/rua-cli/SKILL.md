@@ -40,6 +40,7 @@ and a nonzero exit code. Motion waits for its outcome.
 - Power and recovery: `enable`, `disable`, `stop`, `clear-fault`, `approve-recovery`, `rehome` take an arm name. Approve recovery only after inspecting and supporting the arm.
 - Move: `move-joints`, `move-pose`, `gripper`; use `preview-pose` (one pose) or `preview-poses <arm> <file|->` (many, answered in order) to inspect feasibility without moving.
 - Coordinated moves: `move-arms <file|->`; ordered steps: `action-sequence run <file|->`, `get <id>`, `cancel <id>`. Read their help for JSON contracts; `-` reads stdin.
+- Sequence images: run `action-sequence run steps.json --camera wrist` (repeat `--camera`), then `action-sequence images ID --output DIR`. Capture is best effort; metadata reports timing, missed samples and truncation. `null` means pending or unavailable; completed history expires after five minutes or earlier if evicted. Compiled runs do not capture images.
 - Images: `camera snapshot <name> --out <path>` saves a JPEG to inspect; a `camera_unavailable` error lists the cameras the media service knows and the station's `last_error` for that camera (why it failed to open), and `camera list` shows each one's availability; `phone-invite <label>` creates a phone-stream invite.
 - Recording: `record start|status|stop`. It continues until stopped, independently of the motion lease.
 - Diagnostics: `traces pull [names...] --output <directory>` saves gzip-compressed traces.
