@@ -85,9 +85,10 @@ export function createStationHttpClient(
           );
         throw error;
       });
-      const capturedAt = response.headers.get(CAPTURED_AT_HEADER);
+      const capturedAt =
+        response.headers[CAPTURED_AT_HEADER.toLowerCase()] ?? null;
       return {
-        jpeg: new Uint8Array(await response.arrayBuffer()),
+        jpeg: response.bytes,
         capturedAtUnixNanoseconds:
           capturedAt !== null && /^[0-9]+$/.test(capturedAt)
             ? BigInt(capturedAt)
@@ -101,7 +102,7 @@ export function createStationHttpClient(
     listTraces: (): Promise<TraceFile[]> => api.listTraces(),
     /** A trace file's bytes exactly as served: gzip-compressed. */
     async downloadTrace(name: string): Promise<Uint8Array> {
-      return new Uint8Array(await (await api.getTraceFile(name)).arrayBuffer());
+      return (await api.getTraceFile(name)).bytes;
     },
   };
 }

@@ -1,8 +1,15 @@
 import { Effect } from "effect";
-import { HttpClient } from "effect/http";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientError,
+  HttpClientRequest,
+  type HttpClientResponse,
+  type HttpMethod,
+} from "effect/http";
 import { z } from "zod";
 
-import { StationHttpError } from "./station-errors.js";
+import { StationHttpError, StationTimeoutError } from "./station-errors.js";
 
 const errorBodySchema = z.object({ detail: z.string() });
 
@@ -35,25 +42,137 @@ function stationHttpError(
   );
 }
 
-/** Fetch and decode a JSON response within the current Effect HTTP scope. */
-export function stationJsonEffect(
+function stationResponseEffect<Result>(
   url: URL,
-): Effect.Effect<unknown, unknown, HttpClient.HttpClient> {
+  method: HttpMethod.HttpMethod,
+  body: unknown,
+  consume: (
+    response: HttpClientResponse.HttpClientResponse,
+  ) => Effect.Effect<Result, unknown>,
+): Effect.Effect<Result, unknown, HttpClient.HttpClient> {
   return Effect.gen(function* () {
     const client = HttpClient.withScope(yield* HttpClient.HttpClient);
-    const response = yield* client.get(url);
+    const request = yield* Effect.try({
+      try: () => {
+        const initial = HttpClientRequest.make(method)(url);
+        return body === undefined
+          ? initial
+          : HttpClientRequest.bodyText(
+              initial,
+              JSON.stringify(body),
+              "application/json",
+            );
+      },
+      catch: (error) => error,
+    });
+    const response = yield* client.execute(request);
     if (response.status < 200 || response.status >= 300) {
-      const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
+      const errorBody = yield* response.text.pipe(
+        Effect.orElseSucceed(() => ""),
+      );
       return yield* Effect.fail(
         stationHttpError(
           response.status,
-          body,
+          errorBody,
           response.headers["content-type"],
         ),
       );
     }
-    return yield* response.json;
-  }).pipe(Effect.scoped);
+    return yield* consume(response);
+  }).pipe(
+    Effect.scoped,
+    Effect.timeoutOrElse({
+      duration: HTTP_TIMEOUT_MILLISECONDS,
+      orElse: () =>
+        Effect.fail(new StationTimeoutError("Station request timed out")),
+    }),
+    Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+    Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+    Effect.mapError((error) =>
+      HttpClientError.isHttpClientError(error) &&
+      (error.reason._tag === "TransportError" ||
+        error.reason._tag === "DecodeError") &&
+      error.reason.cause !== undefined
+        ? error.reason.cause
+        : error,
+    ),
+  );
+}
+
+/** Fetch and decode a JSON response within the current Effect HTTP scope. */
+export function stationJsonEffect(
+  url: URL,
+  method: HttpMethod.HttpMethod = "GET",
+  body?: unknown,
+): Effect.Effect<unknown, unknown, HttpClient.HttpClient> {
+  return stationResponseEffect(url, method, body, (response) => response.json);
+}
+
+/** Decode a JSON route response at the HTTP boundary. */
+export function stationParsedJsonEffect<Result>(
+  url: URL,
+  method: HttpMethod.HttpMethod,
+  parse: (payload: unknown) => Result,
+  body?: unknown,
+): Effect.Effect<Result, unknown, HttpClient.HttpClient> {
+  return stationJsonEffect(url, method, body).pipe(
+    Effect.flatMap((payload) =>
+      Effect.try({
+        try: () => parse(payload),
+        catch: (error) => error,
+      }),
+    ),
+  );
+}
+
+/** Read a binary response before releasing its HTTP scope. */
+export function stationBinaryEffect(
+  url: URL,
+  method: HttpMethod.HttpMethod,
+  body?: unknown,
+) {
+  return stationResponseEffect(url, method, body, (response) =>
+    response.arrayBuffer.pipe(
+      Effect.map((buffer) => ({
+        bytes: new Uint8Array(buffer),
+        headers: response.headers,
+      })),
+    ),
+  );
+}
+
+/** Send a request whose successful response has no body. */
+export function stationVoidEffect(
+  url: URL,
+  method: HttpMethod.HttpMethod,
+  body?: unknown,
+) {
+  return stationResponseEffect(url, method, body, () => Effect.void);
+}
+
+/** Execute a generated route using the ordinary Promise interface. */
+export async function runStationEffect<Result>(
+  operation: Effect.Effect<Result, unknown, HttpClient.HttpClient>,
+  signal?: AbortSignal,
+): Promise<Result> {
+  signal?.throwIfAborted();
+  try {
+    const result = await Effect.runPromise(
+      operation.pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.match({
+          onFailure: (error) => ({ kind: "failure" as const, error }),
+          onSuccess: (value) => ({ kind: "success" as const, value }),
+        }),
+      ),
+      { signal },
+    );
+    if (result.kind === "failure") throw result.error;
+    return result.value;
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  }
 }
 
 /** Fetch from the station, throwing `StationHttpError` for an error status. */

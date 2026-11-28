@@ -7,7 +7,10 @@ import {
   armMotionCommands,
   armPowerCommands,
 } from "./generated/arm-commands.js";
-import { createStationApi } from "./generated/http-routes.js";
+import {
+  createStationApi,
+  createStationEffectApi,
+} from "./generated/http-routes.js";
 import {
   LeaseHeldElsewhereError,
   LeaseLostError,
@@ -883,13 +886,10 @@ export function createStationConnection(
     return message.answer;
   }
 
-  function retryOperationRequestEffect<Result>(
-    request: (signal: AbortSignal) => Promise<Result>,
-  ): Effect.Effect<Result, unknown> {
-    return Effect.tryPromise({
-      try: request,
-      catch: (error) => error,
-    }).pipe(
+  function retryOperationEffect<Result, Requirements>(
+    request: Effect.Effect<Result, unknown, Requirements>,
+  ): Effect.Effect<Result, unknown, Requirements> {
+    return request.pipe(
       Effect.retry({
         schedule: Schedule.spaced(100),
         while: (error) => error instanceof TypeError,
@@ -898,6 +898,17 @@ export function createStationConnection(
         duration: REPLY_TIMEOUT_MILLISECONDS,
         orElse: () =>
           Effect.fail(new StationTimeoutError("Station request timed out")),
+      }),
+    );
+  }
+
+  function retryOperationRequestEffect<Result>(
+    request: (signal: AbortSignal) => Promise<Result>,
+  ): Effect.Effect<Result, unknown> {
+    return retryOperationEffect(
+      Effect.tryPromise({
+        try: request,
+        catch: (error) => error,
       }),
     );
   }
@@ -934,7 +945,9 @@ export function createStationConnection(
 
   async function submitHttpCommand(
     base: string,
-    submit: (api: ReturnType<typeof createStationApi>) => Promise<unknown>,
+    submit: (
+      api: ReturnType<typeof createStationEffectApi>,
+    ) => Effect.Effect<unknown, unknown, HttpClient.HttpClient>,
     identity: {
       operation_id: string;
       station_instance_id: string;
@@ -961,22 +974,24 @@ export function createStationConnection(
     requestSignal.throwIfAborted();
     signal?.addEventListener("abort", cancel, { once: true });
     let retainedCancellation = false;
+    const effectApi = createStationEffectApi(base, base);
     const completion = Effect.gen(function* () {
       while (true) {
-        const result = yield* retryOperationRequestEffect((attempt) =>
-          createStationApi(base, base, attempt).waitOperationHttp(
-            operation_id,
-            { id: station_instance_id },
-          ),
+        const result = yield* retryOperationEffect(
+          effectApi.waitOperationHttp(operation_id, {
+            id: station_instance_id,
+          }),
         );
         if (result !== null) return result;
       }
-    });
+    }).pipe(Effect.provide(FetchHttpClient.layer));
     try {
       const answer = parseCommandAnswer(
         operation_id,
-        await retryOperationRequest(
-          (attempt) => submit(createStationApi(base, base, attempt)),
+        await runOperationEffect(
+          retryOperationEffect(submit(effectApi)).pipe(
+            Effect.provide(FetchHttpClient.layer),
+          ),
           requestSignal,
         ),
       );
@@ -1597,8 +1612,8 @@ export function createStationConnection(
       const base = baseUrl();
       const completion = Effect.gen(function* () {
         while (true) {
-          const record = yield* retryOperationRequestEffect((attempt) =>
-            createStationApi(base, base, attempt).waitActionSequenceCompletion(
+          const record = yield* retryOperationEffect(
+            createStationEffectApi(base, base).waitActionSequenceCompletion(
               actionSequenceId,
             ),
           );
@@ -1619,7 +1634,10 @@ export function createStationConnection(
                   ),
               }),
             );
-      return runOperationEffect(wait, requestSignal);
+      return runOperationEffect(
+        wait.pipe(Effect.provide(FetchHttpClient.layer)),
+        requestSignal,
+      );
     },
     async cancelActionSequence(actionSequenceId) {
       try {
