@@ -81,6 +81,7 @@ project and verify the SDK imports, station startup, and a simulator connection.
 Every example installs the published packages, so their pins can only move
 after publication. Once PyPI and npm serve the new version, the workflow opens a
 pull request that pins the Python and TypeScript examples to it and refreshes
-their lockfiles. Merge it after its checks pass. Keep release-age exemptions
+their lockfiles. Pull requests opened by the workflow token do not start
+checks, so close and reopen it to run them, then merge it after they pass. Keep release-age exemptions
 limited to the RUA SDK so the usual delay still applies to third-party
 dependencies.
