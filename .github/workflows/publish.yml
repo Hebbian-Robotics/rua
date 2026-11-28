@@ -309,3 +309,67 @@ jobs:
     permissions:
       contents: write
       id-token: write
+
+  pin-examples:
+    if: github.repository == 'Hebbian-Robotics/rua' && github.event_name == 'release'
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      UV_EXCLUDE_NEWER: ""
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.13.6"
+          enable-cache: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Wait for the release on PyPI and npm
+        run: |
+          version="${RELEASE_TAG#v}"
+          for attempt in $(seq 60); do
+            if curl --silent --fail --output /dev/null "https://pypi.org/pypi/hebbian-rua/${version}/json" \
+              && npm view "hebbian-rua@${version}" version > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 10
+          done
+          printf 'hebbian-rua %s is not available on both PyPI and npm\n' "${version}" >&2
+          exit 1
+      - name: Pin the examples to the release
+        run: |
+          version="${RELEASE_TAG#v}"
+          sed -i -E "s/\"hebbian-rua==[^\"]+\"/\"hebbian-rua==${version}\"/" \
+            examples/python/pyproject.toml examples/mujoco_sim/pyproject.toml
+          sed -i -E "s/\"hebbian-rua\": \"[^\"]+\"/\"hebbian-rua\": \"${version}\"/" \
+            package.json examples/typescript/agent/package.json
+          uv lock --project examples/python
+          uv lock --project examples/mujoco_sim
+          pnpm install --lockfile-only
+      - name: Open the example pin pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then
+            printf 'The examples already pin %s\n' "${RELEASE_TAG}"
+            exit 0
+          fi
+          branch="release/pin-examples-${RELEASE_TAG}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "${branch}"
+          git commit -am "Pin the examples to ${RELEASE_TAG}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${branch}"
+          gh pr create --base main --head "${branch}" \
+            --title "Pin the examples to ${RELEASE_TAG}" \
+            --body "Pins every example to the published ${RELEASE_TAG} packages on PyPI and npm and refreshes their lockfiles."

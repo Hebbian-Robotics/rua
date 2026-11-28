@@ -4,8 +4,8 @@ Start a station with [a real arm connected](../../docs/getting-started.md)
 whenever available. Reserve [simulation](../../docs/simulation.md) for testing
 without hardware. The examples connect to the station at `HEBBIAN_STATION_URL`
 or the local default.
-The example environment builds the Python SDK from this checkout. Use a
-station built from the same checkout. From the repository root:
+The example environment installs the published Python SDK pinned in
+`pyproject.toml`. Run a station of the same version. From the repository root:
 
 ```sh
 cd examples/python

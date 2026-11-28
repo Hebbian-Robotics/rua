@@ -447,41 +447,14 @@ wheels = [
 [[package]]
 name = "hebbian-rua"
 version = "0.1.9"
-source = { editable = "../../" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=2.8.0" },
-    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=3.1.0" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=3.49.0" },
-    { name = "pydantic", specifier = ">=2.11" },
-    { name = "python-dotenv", specifier = ">=1.2.4" },
-]
-provides-extras = ["openai", "anthropic", "gemini"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "anthropic", specifier = ">=2.8.0" },
-    { name = "datamodel-code-generator", specifier = ">=0.89.0" },
-    { name = "google-genai", specifier = ">=3.1.0" },
-    { name = "httpx2", specifier = ">=2.16.0" },
-    { name = "import-linter", specifier = ">=2.15" },
-    { name = "mujoco", specifier = ">=3.17.0" },
-    { name = "numpy", specifier = ">=2" },
-    { name = "openai", specifier = ">=3.49.0" },
-    { name = "opentelemetry-api", specifier = ">=1.39" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39" },
-    { name = "opentelemetry-sdk", specifier = ">=1.39" },
-    { name = "pillow", specifier = ">=12.3.0" },
-    { name = "psutil", specifier = ">=7.2.2" },
-    { name = "pytest", specifier = ">=9.2.0" },
-    { name = "rua-dev", editable = "../../tooling" },
-    { name = "ruff" },
-    { name = "ty" },
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/08/01756a8a5be40d9dc72c4332eb0cca1a064a2f0c712897114b527fdc4be6/hebbian_rua-0.1.9-cp312-abi3-macosx_14_0_arm64.whl", hash = "sha256:a57997ac15cceb32e89f292420eeb487332f9fc71959e84da60308195e2fc82c", size = 39845234, upload-time = "2026-11-28T14:24:13.529Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/51/07fc996e9dbcf56879876c9f45e3e89e8d7941710508fda81bbed8751b72/hebbian_rua-0.1.9-cp312-abi3-manylinux_2_39_x86_64.whl", hash = "sha256:03e8293ed8fe326ec8a342e43ff3c1df3d162aace380d608235e26f35075f44f", size = 44103439, upload-time = "2026-11-28T14:24:16.351Z" },
 ]
 
 [[package]]
@@ -1029,7 +1002,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=2.8.0" },
     { name = "cyclopts", specifier = ">=5.3.2" },
     { name = "google-genai", specifier = ">=3.1.0" },
-    { name = "hebbian-rua", editable = "../../" },
+    { name = "hebbian-rua", specifier = "==0.1.9" },
     { name = "openai", specifier = ">=3.49.0" },
     { name = "opentelemetry-api", specifier = ">=1.39" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39" },

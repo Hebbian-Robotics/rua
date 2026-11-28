@@ -4,6 +4,9 @@ packages:
   - typescript-client
   - examples/typescript/agent
 minimumReleaseAge: 4320
+# WHY: Examples pin the RUA SDK release that was just published.
+minimumReleaseAgeExclude:
+  - hebbian-rua
 allowBuilds:
   esbuild: true
   workerd: true

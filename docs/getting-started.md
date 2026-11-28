@@ -2,8 +2,8 @@
 
 Use the browser viewer to verify manual control and run your first agent.
 Use the examples from the [RUA 0.1.9 release](https://github.com/Hebbian-Robotics/rua/tree/v0.1.9)
-with the published station. The viewer uses the SDK from the checkout, so use
-the checkout matching the station release. For development,
+with the published station. The examples pin the published SDK of that
+release, so use the checkout matching the station release. For development,
 follow [Install from source](install-from-source.md).
 
 If you need to calibrate your arm, follow the [SO-101 calibration guide](so101-calibration.md).

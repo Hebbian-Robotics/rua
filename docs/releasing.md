@@ -78,6 +78,9 @@ that are already live.
 After publishing, install the exact release from each registry in a clean
 project and verify the SDK imports, station startup, and a simulator connection.
 
-Once the new version is available on PyPI and npm, open a follow-up pull request
-that updates the Python and TypeScript example dependency pins and lockfiles. Keep release-age exemptions limited to
-the RUA SDK so the usual delay still applies to third-party dependencies.
+Every example installs the published packages, so their pins can only move
+after publication. Once PyPI and npm serve the new version, the workflow opens a
+pull request that pins the Python and TypeScript examples to it and refreshes
+their lockfiles. Merge it after its checks pass. Keep release-age exemptions
+limited to the RUA SDK so the usual delay still applies to third-party
+dependencies.
