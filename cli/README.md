@@ -71,6 +71,20 @@ fields `position_mm`, `joints_degrees`, and
 
 ## Commands
 
+`observation [--arm NAME] [--camera NAME] [--optional-camera NAME] --output DIR`
+captures selected arms and saves JPEGs, with per-frame timestamps and missing optional
+cameras. The station checks selected arm revisions across capture; frames are not necessarily
+simultaneous. Required cameras fail the observation if unavailable.
+`operation <id>` reads retained operation status. Cancellation requires the original
+lease; use `stop` or `action-sequence cancel` where appropriate.
+
+`compilation compile <file|->` compiles a sequence without moving and prints its native-unit
+artifact; `compilation inspect <id>` retrieves it, and `compilation import <file>` recompiles
+a saved artifact for this station. Save an artifact using shell redirection. `compilation run
+<id>` acquires a motion lease and waits for the result, applying `--expected-revision`.
+Compile input uses model units by default or native units with `--input-station`. Artifacts
+are always printed in native units so they can be imported unchanged.
+
 `state`; `enable|disable|stop|clear-fault|rehome <arm>`; `move-joints`; `move-pose`;
 `move-arms <file|->` (JSON `MoveArmsCommand`); `gripper <arm> <opening>`; `preview-pose`;
 `preview-poses <arm> <file|->` (a JSON array of poses, one answer each, in order);

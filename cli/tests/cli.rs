@@ -108,6 +108,70 @@ async fn output_is_compact_by_default_and_raw_keeps_si_records() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn observation_and_compilation_workflows_use_station_state() -> TestResult {
+    let station = TestStation::start().await?;
+    let observation = cli(&station.url, &["observation", "--arm", ARM]).await;
+    assert_eq!(
+        observation.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&observation.output.stderr)
+    );
+    assert_eq!(observation.stdout_json()["state"]["arms"][0]["arm"], ARM);
+
+    let source_path =
+        std::env::temp_dir().join(format!("rua-cli-sequence-{}.json", std::process::id()));
+    let artifact_path =
+        std::env::temp_dir().join(format!("rua-cli-artifact-{}.json", std::process::id()));
+    std::fs::write(
+        &source_path,
+        format!(
+            r#"{{"steps":[{{"arms":{{"{ARM}":{{"goal":{{"joints_degrees":[0,-30,30,0,0]}}}}}}}}]}}"#
+        ),
+    )?;
+    let compiled = cli(
+        &station.url,
+        &["compilation", "compile", source_path.to_str().unwrap()],
+    )
+    .await;
+    assert_eq!(
+        compiled.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&compiled.output.stderr)
+    );
+    let artifact = compiled.stdout_json();
+    let id = artifact["compilation_id"].as_str().unwrap();
+    std::fs::write(&artifact_path, &compiled.output.stdout)?;
+    let inspected = cli(&station.url, &["compilation", "inspect", id]).await;
+    assert_eq!(inspected.code(), Some(0));
+    assert_eq!(inspected.stdout_json()["compilation_id"], id);
+    let imported = cli(
+        &station.url,
+        &["compilation", "import", artifact_path.to_str().unwrap()],
+    )
+    .await;
+    assert_eq!(
+        imported.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&imported.output.stderr)
+    );
+    assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));
+    let executed = cli(&station.url, &["compilation", "run", id]).await;
+    assert_eq!(
+        executed.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&executed.output.stderr)
+    );
+    assert_eq!(executed.stdout_json()["phase"]["state"], "completed");
+    std::fs::remove_file(source_path)?;
+    std::fs::remove_file(artifact_path)?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn enable_then_move_to_joints_completes() -> TestResult {
     let station = TestStation::start().await?;
     assert_eq!(cli(&station.url, &["enable", ARM]).await.code(), Some(0));

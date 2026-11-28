@@ -4,18 +4,20 @@ mod output;
 use std::path::Path;
 use std::process::ExitCode;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::Parser;
 use hebbian_rua::contracts::{
-    ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, JointSpeed, LeaseHolder,
-    MoveArmsCommand, PhoneInviteRequest, PreviewPose,
+    ActionSequencePhase, ActionSequenceRecord, ActionSequenceRequest, CompilationArtifact,
+    CompilationOutcome, JointSpeed, LeaseHolder, MoveArmsCommand, ObservationAnswer,
+    ObservationRequest, PhoneInviteRequest, PreviewPose, SnapshotName,
 };
 use hebbian_rua::{CommandOptions, ConnectOptions, Error, LeaseGuard, LeaseRequest, Station};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use commands::{
-    ActionSequenceCommand, CameraCommand, Cli, Command, LeaseCommand, MotionFileArgs,
-    RecordCommand, TracesCommand, TrajectoryArgs,
+    ActionSequenceCommand, CameraCommand, Cli, Command, CompilationCommand, LeaseCommand,
+    MotionFileArgs, RecordCommand, TracesCommand, TrajectoryArgs,
 };
 use output::{Failure, json_value, print_compactable};
 
@@ -38,7 +40,15 @@ macro_rules! with_motion_lease {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let raw = cli.raw;
+    let raw = cli.raw
+        || matches!(
+            cli.command,
+            Command::Compilation(
+                CompilationCommand::Compile { .. }
+                    | CompilationCommand::Inspect { .. }
+                    | CompilationCommand::Import { .. }
+            )
+        );
     let invite_url_only = matches!(cli.command, Command::PhoneInvite { .. }) && !raw;
     match execute(cli).await {
         Ok(value) => {
@@ -104,6 +114,14 @@ async fn dispatch(
     let options = || session.options.clone();
     match command {
         Command::State => json_value(&station.get_state().await?),
+        Command::Observation {
+            arm,
+            camera,
+            optional_camera,
+            output,
+        } => capture_observation(station, arm, camera, optional_camera, &output).await,
+        Command::Operation { id } => json_value(&station.get_operation(&id).await?),
+        Command::Compilation(command) => compilation(station, session, command).await,
         Command::Enable { arm } => json_value(&station.enable_with(&arm, options()).await?),
         Command::ApproveRecovery { arm } => {
             json_value(&station.approve_recovery_with(&arm, options()).await?)
@@ -148,12 +166,7 @@ async fn dispatch(
                     .await?)
             })?)
         }
-        Command::MoveArms { input } => {
-            let command: MoveArmsCommand = read_json(&input)?;
-            json_value(&with_motion_lease!(station, session, lease, {
-                Ok(lease.run_arms_with(command, options()).await?)
-            })?)
-        }
+        Command::MoveArms { input } => move_arms(station, session, &input).await,
         Command::Gripper { arm, opening } => {
             let opening = hebbian_rua::contracts::GripperOpening::try_from(opening)
                 .map_err(|error| Failure::Usage(error.to_string()))?;
@@ -194,6 +207,116 @@ async fn dispatch(
         }
         Command::Camera(command) => camera(station, command).await,
         Command::Traces(command) => traces(station, command).await,
+    }
+}
+
+async fn move_arms(
+    station: &Station,
+    session: &Session,
+    input: &MotionFileArgs,
+) -> Result<Value, Failure> {
+    let command: MoveArmsCommand = read_json(input)?;
+    json_value(&with_motion_lease!(station, session, lease, {
+        Ok(lease
+            .run_arms_with(command, session.options.clone())
+            .await?)
+    })?)
+}
+
+async fn capture_observation(
+    station: &Station,
+    arm: Vec<String>,
+    camera: Vec<String>,
+    optional_camera: Vec<String>,
+    output: &Path,
+) -> Result<Value, Failure> {
+    let parse_names = |names: Vec<String>| {
+        names
+            .into_iter()
+            .map(|name| {
+                SnapshotName::try_from(name).map_err(|error| Failure::Usage(error.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let answer = station
+        .capture_observation_http(&ObservationRequest {
+            arms: arm,
+            required_cameras: parse_names(camera)?,
+            optional_cameras: parse_names(optional_camera)?,
+            wait: None,
+        })
+        .await?;
+    match answer {
+        ObservationAnswer::ObservationCaptured {
+            state,
+            cameras,
+            missing_optional_cameras,
+        } => {
+            if !cameras.is_empty() {
+                std::fs::create_dir_all(output).map_err(|error| Failure::Io(error.to_string()))?;
+            }
+            let mut frames = serde_json::Map::new();
+            for (name, frame) in cameras {
+                SnapshotName::try_from(name.clone()).map_err(|error| {
+                    Failure::Io(format!("invalid camera name from station: {error}"))
+                })?;
+                let bytes = STANDARD
+                    .decode(&frame.jpeg_base64)
+                    .map_err(|error| Failure::Io(format!("invalid camera frame: {error}")))?;
+                let path = output.join(format!("{name}.jpg"));
+                write_file(&path, &bytes)?;
+                frames.insert(name, json!({"path": path, "captured_at_unix_ns": frame.captured_at_unix_ns, "retrieved_between_unix_seconds": frame.retrieved_between_unix_seconds}));
+            }
+            Ok(
+                json!({"status": "observation_captured", "state": state, "cameras": frames, "missing_optional_cameras": missing_optional_cameras}),
+            )
+        }
+        other => Err(Failure::Rejected {
+            kind: "observation_failed".into(),
+            detail: "station could not capture the observation".into(),
+            record: json!(other),
+        }),
+    }
+}
+
+async fn compilation(
+    station: &Station,
+    session: &Session,
+    command: CompilationCommand,
+) -> Result<Value, Failure> {
+    match command {
+        CompilationCommand::Compile { input } => {
+            compilation_outcome(station.compile_action_sequence(&read_json(&input)?).await?)
+        }
+        CompilationCommand::Import { path } => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|error| Failure::Io(format!("{}: {error}", path.display())))?;
+            let artifact: CompilationArtifact = serde_json::from_str(&text)
+                .map_err(|error| Failure::Usage(format!("{}: {error}", path.display())))?;
+            compilation_outcome(station.import_compilation(&artifact).await?)
+        }
+        CompilationCommand::Inspect { id } => json_value(&station.inspect_compilation(&id).await?),
+        CompilationCommand::Run { id } => {
+            let record = with_motion_lease!(station, session, lease, {
+                let record = lease
+                    .run_compiled_sequence(&id, session.options.expected_revisions.clone())
+                    .await?;
+                finished_action_sequence(&record)?;
+                Ok(record)
+            })?;
+            json_value(&record)
+        }
+    }
+}
+
+fn compilation_outcome(outcome: CompilationOutcome) -> Result<Value, Failure> {
+    match outcome {
+        CompilationOutcome::Compiled { artifact } => json_value(&*artifact),
+        rejected @ CompilationOutcome::Rejected { .. } => Err(Failure::Rejected {
+            kind: "compilation_rejected".into(),
+            detail: "station rejected the compilation".into(),
+            record: json!(rejected),
+        }),
     }
 }
 

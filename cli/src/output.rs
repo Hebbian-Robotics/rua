@@ -16,6 +16,11 @@ pub enum Failure {
         record: Value,
     },
     Usage(String),
+    Rejected {
+        kind: String,
+        detail: String,
+        record: Value,
+    },
     Io(String),
 }
 
@@ -52,7 +57,7 @@ impl Failure {
     pub fn exit_code(&self) -> ExitCode {
         ExitCode::from(match self {
             Self::Usage(_) => 2,
-            Self::Io(_) | Self::ActionSequenceStopped { .. } => 1,
+            Self::Io(_) | Self::ActionSequenceStopped { .. } | Self::Rejected { .. } => 1,
             Self::Sdk { error, .. } => match error {
                 Error::Connection(_) | Error::Timeout(_) => 3,
                 Error::LeaseHeldElsewhere(_) => 4,
@@ -74,6 +79,15 @@ impl Failure {
             error.insert(key.to_owned(), value);
         };
         match self {
+            Self::Rejected {
+                kind,
+                detail,
+                record,
+            } => {
+                put("kind", json!(kind));
+                put("detail", json!(detail));
+                put("record", record.clone());
+            }
             Self::Usage(detail) => {
                 put("kind", json!("usage"));
                 put("detail", json!(detail));

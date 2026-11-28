@@ -83,6 +83,24 @@ pub enum Command {
     ///
     /// Example: hebbian-rua state
     State,
+    /// Capture selected arms and camera frames while checking arm revisions.
+    /// Camera timestamps may differ; repeat --camera or --optional-camera.
+    Observation {
+        #[arg(long)]
+        arm: Vec<String>,
+        #[arg(long)]
+        camera: Vec<String>,
+        #[arg(long)]
+        optional_camera: Vec<String>,
+        /// Directory for captured JPEG files.
+        #[arg(long, default_value = "observation")]
+        output: PathBuf,
+    },
+    /// Inspect the retained status of an operation by ID.
+    Operation { id: String },
+    /// Compile, inspect, import or run a retained action sequence.
+    #[command(subcommand)]
+    Compilation(CompilationCommand),
     /// Preflight, then enable the arm holding its current pose.
     ///
     /// Example: hebbian-rua enable arm
@@ -401,6 +419,21 @@ pub enum ActionSequenceCommand {
     ///
     /// Example: hebbian-rua action-sequence get seq-1
     Get { id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CompilationCommand {
+    /// Compile an action sequence without moving the robot.
+    Compile {
+        #[command(flatten)]
+        input: MotionFileArgs,
+    },
+    /// Print a portable, native-unit compilation artifact.
+    Inspect { id: String },
+    /// Import a native-unit artifact, recompiling its source for this station.
+    Import { path: PathBuf },
+    /// Run a retained compilation under a motion lease and wait for its outcome.
+    Run { id: String },
 }
 
 #[derive(Debug, Subcommand)]
