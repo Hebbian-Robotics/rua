@@ -875,44 +875,56 @@ export function createStationConnection(
     return message.answer;
   }
 
-  async function retryOperationRequest<Result>(
+  function retryOperationRequestEffect<Result>(
     request: (signal: AbortSignal) => Promise<Result>,
+  ): Effect.Effect<Result, unknown> {
+    return Effect.suspend(() => {
+      const deadline = performance.now() + REPLY_TIMEOUT_MILLISECONDS;
+      return Effect.suspend(() => {
+        const remaining = Math.max(0, Math.ceil(deadline - performance.now()));
+        return Effect.tryPromise({
+          try: (signal) =>
+            request(AbortSignal.any([signal, AbortSignal.timeout(remaining)])),
+          catch: (error) => error,
+        });
+      }).pipe(
+        Effect.retry({
+          schedule: Schedule.spaced(100),
+          while: (error) =>
+            error instanceof TypeError && performance.now() + 100 < deadline,
+        }),
+      );
+    });
+  }
+
+  async function runOperationEffect<Result>(
+    operation: Effect.Effect<Result, unknown>,
     signal: AbortSignal,
   ): Promise<Result> {
     signal.throwIfAborted();
-    const deadline = performance.now() + REPLY_TIMEOUT_MILLISECONDS;
-    const attempt = Effect.suspend(() => {
-      const remaining = Math.max(0, Math.ceil(deadline - performance.now()));
-      return Effect.tryPromise({
-        try: (attemptSignal) =>
-          request(
-            AbortSignal.any([
-              signal,
-              attemptSignal,
-              AbortSignal.timeout(remaining),
-            ]),
-          ),
-        catch: (error) => error,
-      });
-    }).pipe(
-      Effect.retry({
-        schedule: Schedule.spaced(100),
-        while: (error) =>
-          error instanceof TypeError && performance.now() + 100 < deadline,
-      }),
-      Effect.match({
-        onFailure: (error) => ({ kind: "failure" as const, error }),
-        onSuccess: (value) => ({ kind: "success" as const, value }),
-      }),
-    );
     try {
-      const result = await Effect.runPromise(attempt, { signal });
+      const result = await Effect.runPromise(
+        operation.pipe(
+          Effect.match({
+            onFailure: (error) => ({ kind: "failure" as const, error }),
+            onSuccess: (value) => ({ kind: "success" as const, value }),
+          }),
+        ),
+        { signal },
+      );
       if (result.kind === "failure") throw result.error;
       return result.value;
     } catch (error) {
       signal.throwIfAborted();
       throw error;
     }
+  }
+
+  function retryOperationRequest<Result>(
+    request: (signal: AbortSignal) => Promise<Result>,
+    signal: AbortSignal,
+  ): Promise<Result> {
+    return runOperationEffect(retryOperationRequestEffect(request), signal);
   }
 
   async function submitHttpCommand(
@@ -944,19 +956,17 @@ export function createStationConnection(
     requestSignal.throwIfAborted();
     signal?.addEventListener("abort", cancel, { once: true });
     let retainedCancellation = false;
-    const completion = async () => {
+    const completion = Effect.gen(function* () {
       while (true) {
-        const result = await retryOperationRequest(
-          (attempt) =>
-            createStationApi(base, base, attempt).waitOperationHttp(
-              operation_id,
-              { id: station_instance_id },
-            ),
-          requestSignal,
+        const result = yield* retryOperationRequestEffect((attempt) =>
+          createStationApi(base, base, attempt).waitOperationHttp(
+            operation_id,
+            { id: station_instance_id },
+          ),
         );
         if (result !== null) return result;
       }
-    };
+    });
     try {
       const answer = parseCommandAnswer(
         operation_id,
@@ -990,10 +1000,7 @@ export function createStationConnection(
                   }),
               },
             );
-            yield* Effect.tryPromise({
-              try: completion,
-              catch: (error) => error,
-            }).pipe(
+            yield* completion.pipe(
               Effect.retry(Schedule.spaced(RECONNECT_CAP_MILLISECONDS)),
               Effect.provideService(Clock.Clock, backgroundClock),
             );
@@ -1009,7 +1016,10 @@ export function createStationConnection(
         return answer;
       }
 
-      const { records, state_sequence } = await completion();
+      const { records, state_sequence } = await runOperationEffect(
+        completion,
+        requestSignal,
+      );
       if (ready) {
         const prefix = `${station_instance_id}:`;
         const requiredSequence = BigInt(state_sequence);
